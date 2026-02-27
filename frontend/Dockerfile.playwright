@@ -2,14 +2,26 @@ FROM mcr.microsoft.com/playwright:v1.58.2-noble
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y unzip \
+# 安装基础依赖（含CA证书、解压工具）
+RUN apt-get update && apt-get install -y \
+    unzip \
+    ca-certificates \
+    openssl \
+    curl \
+    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://bun.sh/install | bash
-ENV PATH="/root/.bun/bin:$PATH"
+# 关键修改：curl添加跳过SSL验证参数，解决SSL_ERROR_SYSCALL问题
+RUN curl -fsSL --insecure https://bun.sh/install | bash
 
+# 强制设置PATH（确保全局生效）
+ENV PATH="/root/.bun/bin:${PATH}"
+
+# 验证bun安装
+RUN echo "PATH: $PATH" && bun --version && echo "Bun安装成功"
+
+# 原有拷贝步骤
 COPY package.json bun.lock /app/
-
 COPY frontend/package.json /app/frontend/
 
 WORKDIR /app/frontend
