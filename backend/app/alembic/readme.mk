@@ -19,3 +19,4 @@ alembic upgrade head
 迁移完了记得app.models.SQLiteUUID()替换为SQLiteUUID()
 要导入from app.models import SQLiteUUID
 因为在app.models中定义了SQLiteUUID，所以在alembic中需要导入
+fastapi run --workers 4 app/main.py
