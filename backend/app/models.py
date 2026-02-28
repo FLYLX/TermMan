@@ -4,6 +4,23 @@ from datetime import datetime, timezone
 from pydantic import EmailStr
 from sqlalchemy import DateTime
 from sqlmodel import Field, Relationship, SQLModel
+from sqlalchemy.dialects.sqlite import CHAR
+from sqlalchemy import TypeDecorator
+
+# Add UUID support for SQLite
+class SQLiteUUID(TypeDecorator):
+    impl = CHAR
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        return str(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        return uuid.UUID(value)
 
 
 def get_datetime_utc() -> datetime:
@@ -47,7 +64,7 @@ class UpdatePassword(SQLModel):
 
 # Database model, database table inferred from class name
 class User(UserBase, table=True):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True, sa_type=SQLiteUUID)
     hashed_password: str
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
@@ -85,13 +102,13 @@ class ItemUpdate(ItemBase):
 
 # Database model, database table inferred from class name
 class Item(ItemBase, table=True):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True, sa_type=SQLiteUUID)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
     )
     owner_id: uuid.UUID = Field(
-        foreign_key="user.id", nullable=False, ondelete="CASCADE"
+        foreign_key="user.id", nullable=False, ondelete="CASCADE", sa_type=SQLiteUUID
     )
     owner: User | None = Relationship(back_populates="items")
 

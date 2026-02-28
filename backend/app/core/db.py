@@ -1,10 +1,27 @@
 from sqlmodel import Session, create_engine, select
-
-from app import crud
 from app.core.config import settings
 from app.models import User, UserCreate
+import uuid
 
-engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
+# Local import to avoid circular imports
+from app import crud
+
+# Create engine with SQLite-specific configuration
+engine = create_engine(
+    str(settings.SQLALCHEMY_DATABASE_URI),
+    connect_args={"check_same_thread": False} if "sqlite" in str(settings.SQLALCHEMY_DATABASE_URI) else {},
+)
+
+# Register UUID type for SQLite
+from sqlalchemy import types
+import sqlalchemy
+if sqlalchemy.__version__ >= "2.0":
+    from sqlalchemy import event
+    @event.listens_for(engine, "connect")
+    def _connect_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 # make sure all SQLModel models are imported (app.models) before initializing DB
