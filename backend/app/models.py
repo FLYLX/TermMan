@@ -108,7 +108,7 @@ class User(UserBase, table=True):
     )
     items: List["Item"] = Relationship(back_populates="owner", cascade_delete=True)
     handlers: List["ItemHandler"] = Relationship(back_populates="users", link_model=ItemHandlerUser)
-    item_handlers: List["ItemHandler"] = Relationship(back_populates="owner", cascade_delete=True)
+    owned_handlers: List["ItemHandler"] = Relationship(back_populates="owner", cascade_delete=True)
 
 
 # Properties to return via API, id is always required
@@ -175,7 +175,7 @@ class ItemPublic(ItemBase):
 # ITEM_HANDLER models
 class ItemHandlerBase(SQLModel):
     name: str = Field(min_length=1, max_length=255)
-    model: str = Field(min_length=1, max_length=255)
+    model: Optional[str] = Field(default=None, max_length=255)
     api_key: Optional[str] = Field(default=None, max_length=255)
     api_url: Optional[str] = Field(default=None, max_length=255)
 
@@ -205,11 +205,12 @@ class ItemHandler(ItemHandlerBase, table=True):
     )
     items: List[Item] = Relationship(back_populates="handlers", link_model=ItemHandlerItem)
     users: List[User] = Relationship(back_populates="handlers", link_model=ItemHandlerUser)
-    owner: Optional[User] = Relationship(back_populates="item_handlers")
+    owner: Optional[User] = Relationship(back_populates="owned_handlers")
 
 
 class ItemHandlerPublic(ItemHandlerBase):
     id: uuid.UUID
+    owner_id: uuid.UUID
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

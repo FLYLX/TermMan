@@ -1,8 +1,8 @@
-"""Initial migration
+"""Update models
 
-Revision ID: 90a9ee9fcf5a
+Revision ID: 442afb0c2490
 Revises: 
-Create Date: 2026-03-03 16:55:57.251116
+Create Date: 2026-03-03 21:39:20.172600
 
 """
 from alembic import op
@@ -10,10 +10,8 @@ import sqlalchemy as sa
 import sqlmodel.sql.sqltypes
 from app.models import SQLiteUUID
 
-
-
 # revision identifiers, used by Alembic.
-revision = '90a9ee9fcf5a'
+revision = '442afb0c2490'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -49,7 +47,7 @@ def upgrade():
     )
     op.create_table('itemhandler',
     sa.Column('name', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False),
-    sa.Column('model', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False),
+    sa.Column('model', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('api_key', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('api_url', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('id', SQLiteUUID(), nullable=False),
