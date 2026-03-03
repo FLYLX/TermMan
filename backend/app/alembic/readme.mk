@@ -8,6 +8,8 @@ alembic init alembic
 ### 生成迁移文件
 ```bash
 alembic revision --autogenerate -m "Initial migration"
+更新：
+alembic revision --autogenerate -m "Update models"
 ```
 
 ### 应用迁移
