@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: 057afbdd935d
+Revision ID: d274ebf7ebd4
 Revises: 
-Create Date: 2026-03-03 23:40:04.869699
+Create Date: 2026-03-04 15:23:21.228170
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ import sqlmodel.sql.sqltypes
 from app.models import SQLiteUUID
 
 # revision identifiers, used by Alembic.
-revision = '057afbdd935d'
+revision = 'd274ebf7ebd4'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -34,10 +34,19 @@ def upgrade():
     sa.Column('title', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False),
     sa.Column('description', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('status', sa.Enum('stopped', 'running', 'starting', 'stopping', 'error', name='itemstatus'), nullable=False),
-    sa.Column('type', sa.Enum('normal', 'parent', 'child', name='itemtype'), nullable=False),
     sa.Column('config', sa.JSON(), nullable=True),
     sa.Column('resource_usage', sa.JSON(), nullable=True),
     sa.Column('log_path', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
+    sa.Column('log_max_size_mb', sa.Integer(), nullable=True),
+    sa.Column('socket_connection_type', sa.Enum('local', 'remote', name='socketconnectiontype'), nullable=False),
+    sa.Column('socket_host', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
+    sa.Column('socket_port', sa.Integer(), nullable=True),
+    sa.Column('socket_connected', sa.Boolean(), nullable=True),
+    sa.Column('socket_last_connected', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('socket_unique_id', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
+    sa.Column('command', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
+    sa.Column('executable_path', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
+    sa.Column('working_directory', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('id', SQLiteUUID(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),

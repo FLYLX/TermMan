@@ -38,10 +38,12 @@ class ItemStatus(str, Enum):
     error = "error"
 
 
-class ItemType(str, Enum):
-    normal = "normal"
-    parent = "parent"
-    child = "child"
+
+
+
+class SocketConnectionType(str, Enum):
+    local = "local"
+    remote = "remote"
 
 
 # Shared properties
@@ -127,10 +129,19 @@ class ItemBase(SQLModel):
     title: str = Field(min_length=1, max_length=255)
     description: Optional[str] = Field(default=None, max_length=255)
     status: ItemStatus = Field(default=ItemStatus.stopped, sa_type=SAEnum(ItemStatus))
-    type: ItemType = Field(default=ItemType.normal, sa_type=SAEnum(ItemType))
     config: Optional[dict] = Field(default=None, sa_type=JSON)
     resource_usage: Optional[dict] = Field(default=None, sa_type=JSON)
     log_path: Optional[str] = Field(default=None, max_length=255)
+    log_max_size_mb: Optional[int] = Field(default=100, ge=10, le=1000)
+    socket_connection_type: SocketConnectionType = Field(default=SocketConnectionType.local, sa_type=SAEnum(SocketConnectionType))
+    socket_host: Optional[str] = Field(default="localhost", max_length=255)
+    socket_port: Optional[int] = Field(default=9000, ge=1, le=65535)
+    socket_connected: Optional[bool] = Field(default=False)
+    socket_last_connected: Optional[datetime] = Field(default=None, sa_type=DateTime(timezone=True))
+    socket_unique_id: Optional[str] = Field(default=None, max_length=255)
+    command: Optional[str] = Field(default=None, max_length=500)
+    executable_path: Optional[str] = Field(default=None, max_length=255)
+    working_directory: Optional[str] = Field(default=None, max_length=255)
 
 
 # Properties to receive on item creation
@@ -141,8 +152,23 @@ class ItemCreate(ItemBase):
 # Properties to receive on item update
 class ItemUpdate(ItemBase):
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)  # type: ignore
-    status: Optional[ItemStatus] = None
-    type: Optional[ItemType] = None
+    description: Optional[str] = Field(default=None, max_length=255)
+    status: Optional[ItemStatus] = Field(default=None, sa_type=SAEnum(ItemStatus))
+    config: Optional[dict] = Field(default=None, sa_type=JSON)
+    resource_usage: Optional[dict] = Field(default=None, sa_type=JSON)
+    log_path: Optional[str] = Field(default=None, max_length=255)
+    log_max_size_mb: Optional[int] = Field(default=None, ge=10, le=1000)
+    socket_connection_type: Optional[SocketConnectionType] = Field(default=None, sa_type=SAEnum(SocketConnectionType))
+    socket_host: Optional[str] = Field(default=None, max_length=255)
+    socket_port: Optional[int] = Field(default=None, ge=1, le=65535)
+    socket_timeout: Optional[int] = Field(default=None, ge=5, le=300)
+    socket_connected: Optional[bool] = None
+    socket_last_connected: Optional[datetime] = None
+    socket_unique_id: Optional[str] = Field(default=None, max_length=255)
+    command: Optional[str] = Field(default=None, max_length=500)
+    command_args: Optional[list] = Field(default=None, sa_type=JSON)
+    executable_path: Optional[str] = Field(default=None, max_length=255)
+    working_directory: Optional[str] = Field(default=None, max_length=255)
 
 
 # Database model, database table inferred from class name
