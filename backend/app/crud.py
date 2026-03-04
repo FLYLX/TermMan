@@ -4,7 +4,7 @@ from typing import Any
 from sqlmodel import Session, select
 
 from app.core.security import get_password_hash, verify_password
-from app.models import Item, ItemCreate, User, UserCreate, UserUpdate
+from app.models import Item, ItemCreate, User, UserCreate, UserUpdate, ItemHandler, ItemHandlerCreate, ItemHandlerUpdate
 
 
 def create_user(*, session: Session, user_create: UserCreate) -> User:
@@ -66,3 +66,45 @@ def create_item(*, session: Session, item_in: ItemCreate, owner_id: uuid.UUID) -
     session.commit()
     session.refresh(db_item)
     return db_item
+
+
+def create_item_handler(*, session: Session, item_handler_in: ItemHandlerCreate, owner_id: uuid.UUID) -> ItemHandler:
+    db_obj = ItemHandler.model_validate(item_handler_in, update={"owner_id": owner_id})
+    session.add(db_obj)
+    session.commit()
+    session.refresh(db_obj)
+    return db_obj
+
+
+def get_item_handler(*, session: Session, item_handler_id: uuid.UUID) -> ItemHandler | None:
+    statement = select(ItemHandler).where(ItemHandler.id == item_handler_id)
+    return session.exec(statement).first()
+
+
+def get_item_handler_by_name(*, session: Session, name: str, owner_id: uuid.UUID) -> ItemHandler | None:
+    statement = select(ItemHandler).where(ItemHandler.name == name, ItemHandler.owner_id == owner_id)
+    return session.exec(statement).first()
+
+
+def update_item_handler(
+    *, session: Session, db_item_handler: ItemHandler, item_handler_in: ItemHandlerUpdate
+) -> ItemHandler:
+    item_handler_data = item_handler_in.model_dump(exclude_unset=True)
+    db_item_handler.sqlmodel_update(item_handler_data)
+    session.add(db_item_handler)
+    session.commit()
+    session.refresh(db_item_handler)
+    return db_item_handler
+
+
+def delete_item_handler(*, session: Session, item_handler_id: uuid.UUID) -> None:
+    statement = select(ItemHandler).where(ItemHandler.id == item_handler_id)
+    db_item_handler = session.exec(statement).first()
+    if db_item_handler:
+        session.delete(db_item_handler)
+        session.commit()
+
+
+def get_item_handlers(*, session: Session, owner_id: uuid.UUID) -> list[ItemHandler]:
+    statement = select(ItemHandler).where(ItemHandler.owner_id == owner_id)
+    return list(session.exec(statement).all())

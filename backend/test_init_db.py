@@ -4,7 +4,7 @@ import uuid
 from sqlmodel import SQLModel, create_engine, Session, select
 from app.models import (
     User, Item, ItemHandler, ItemHandlerItem, ItemHandlerUser,
-    ItemStatus, ItemType
+    ItemStatus
 )
 from app.core.security import get_password_hash
 
@@ -67,7 +67,7 @@ def init_db():
                     title="测试项目 1",
                     description="第一个测试项目",
                     status=ItemStatus.running,
-                    type=ItemType.normal,
+
                     config={"key1": "value1", "key2": "value2"},
                     resource_usage={"cpu": "10%", "memory": "200MB"},
                     log_path="/logs/test1.log",
@@ -77,7 +77,7 @@ def init_db():
                     title="测试项目 2",
                     description="第二个测试项目",
                     status=ItemStatus.stopped,
-                    type=ItemType.normal,
+
                     config={"setting1": "option1"},
                     resource_usage={"cpu": "5%", "memory": "100MB"},
                     log_path="/logs/test2.log",
@@ -87,7 +87,6 @@ def init_db():
                     title="测试项目 3",
                     description="第三个测试项目",
                     status=ItemStatus.error,
-                    type=ItemType.normal,
                     config={"param1": "data1"},
                     resource_usage={"cpu": "15%", "memory": "300MB"},
                     log_path="/logs/test3.log",
@@ -181,7 +180,7 @@ def init_db():
                     title="普通用户项目 1",
                     description="普通用户的第一个项目",
                     status=ItemStatus.running,
-                    type=ItemType.normal,
+                    
                     config={"service": "web", "port": 8080},
                     resource_usage={"cpu": "5%", "memory": "150MB"},
                     log_path="/logs/regular1.log",
@@ -191,7 +190,7 @@ def init_db():
                     title="普通用户项目 2",
                     description="普通用户的第二个项目",
                     status=ItemStatus.stopped,
-                    type=ItemType.normal,
+                    
                     config={"service": "database", "type": "postgres"},
                     resource_usage={"cpu": "8%", "memory": "300MB"},
                     log_path="/logs/regular2.log",
@@ -201,7 +200,7 @@ def init_db():
                     title="普通用户项目 3",
                     description="普通用户的第三个项目",
                     status=ItemStatus.starting,
-                    type=ItemType.normal,
+                    
                     config={"service": "cache", "ttl": 3600},
                     resource_usage={"cpu": "3%", "memory": "80MB"},
                     log_path="/logs/regular3.log",
