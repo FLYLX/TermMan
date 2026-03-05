@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: b47e0a1107b1
+Revision ID: 87e98a85c416
 Revises: 
-Create Date: 2026-03-04 15:39:30.170096
+Create Date: 2026-03-05 10:18:22.157897
 
 """
 from alembic import op
@@ -10,9 +10,8 @@ import sqlalchemy as sa
 import sqlmodel.sql.sqltypes
 from app.models import SQLiteUUID
 
-
 # revision identifiers, used by Alembic.
-revision = 'b47e0a1107b1'
+revision = '87e98a85c416'
 down_revision = None
 branch_labels = None
 depends_on = None

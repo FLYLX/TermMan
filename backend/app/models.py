@@ -161,7 +161,6 @@ class ItemUpdate(ItemBase):
     socket_connection_type: Optional[SocketConnectionType] = Field(default=None, sa_type=SAEnum(SocketConnectionType))
     socket_host: Optional[str] = Field(default=None, max_length=255)
     socket_port: Optional[int] = Field(default=None, ge=1, le=65535)
-    socket_timeout: Optional[int] = Field(default=None, ge=5, le=300)
     socket_connected: Optional[bool] = None
     socket_last_connected: Optional[datetime] = None
     socket_unique_id: Optional[str] = Field(default=None, max_length=255)
