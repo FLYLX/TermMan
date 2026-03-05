@@ -27,6 +27,7 @@ def test_create_item(
     assert "socket_connection_type" in content
     assert "socket_host" in content
     assert "socket_port" in content
+    assert "api_key" in content
     assert "command" in content
     assert "executable_path" in content
     assert "working_directory" in content
@@ -51,6 +52,7 @@ def test_read_item(
     assert content["socket_connection_type"] == item.socket_connection_type
     assert content["socket_host"] == item.socket_host
     assert content["socket_port"] == item.socket_port
+    assert content["api_key"] == item.api_key
     assert content["command"] == item.command
     assert content["executable_path"] == item.executable_path
     assert content["working_directory"] == item.working_directory
@@ -101,6 +103,7 @@ def test_update_item(
     item = create_random_item(db)
     data = {"title": "Updated title", "description": "Updated description",
             "status": "running", "socket_port": 9001,
+            "api_key": "updated-api-key",
             "command": "test command",
             "executable_path": "/path/to/executable",
             "working_directory": "/path/to/workdir"}
@@ -118,6 +121,7 @@ def test_update_item(
     # 测试更新新添加的字段
     assert content["status"] == data["status"]
     assert content["socket_port"] == data["socket_port"]
+    assert content["api_key"] == data["api_key"]
     assert content["command"] == data["command"]
     assert content["executable_path"] == data["executable_path"]
     assert content["working_directory"] == data["working_directory"]

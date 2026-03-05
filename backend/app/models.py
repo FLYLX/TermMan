@@ -139,6 +139,7 @@ class ItemBase(SQLModel):
     socket_connected: Optional[bool] = Field(default=False)
     socket_last_connected: Optional[datetime] = Field(default=None, sa_type=DateTime(timezone=True))
     socket_unique_id: Optional[str] = Field(default=None, max_length=255)
+    api_key: Optional[str] = Field(default=None, max_length=255)
     command: Optional[str] = Field(default=None, max_length=500)
     executable_path: Optional[str] = Field(default=None, max_length=255)
     working_directory: Optional[str] = Field(default=None, max_length=255)

@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: 87e98a85c416
+Revision ID: 0a1306ce2f93
 Revises: 
-Create Date: 2026-03-05 10:18:22.157897
+Create Date: 2026-03-05 12:18:21.427647
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ import sqlmodel.sql.sqltypes
 from app.models import SQLiteUUID
 
 # revision identifiers, used by Alembic.
-revision = '87e98a85c416'
+revision = '0a1306ce2f93'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -44,6 +44,7 @@ def upgrade():
     sa.Column('socket_connected', sa.Boolean(), nullable=True),
     sa.Column('socket_last_connected', sa.DateTime(timezone=True), nullable=True),
     sa.Column('socket_unique_id', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
+    sa.Column('api_key', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('command', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
     sa.Column('executable_path', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('working_directory', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
