@@ -27,9 +27,7 @@ def test_create_item(
     assert "socket_connection_type" in content
     assert "socket_host" in content
     assert "socket_port" in content
-    assert "socket_timeout" in content
     assert "command" in content
-    assert "command_args" in content
     assert "executable_path" in content
     assert "working_directory" in content
 
@@ -53,9 +51,7 @@ def test_read_item(
     assert content["socket_connection_type"] == item.socket_connection_type
     assert content["socket_host"] == item.socket_host
     assert content["socket_port"] == item.socket_port
-    assert content["socket_timeout"] == item.socket_timeout
     assert content["command"] == item.command
-    assert content["command_args"] == item.command_args
     assert content["executable_path"] == item.executable_path
     assert content["working_directory"] == item.working_directory
 
@@ -106,7 +102,7 @@ def test_update_item(
     data = {"title": "Updated title", "description": "Updated description",
             "status": "running", "socket_port": 9001,
             "command": "test command",
-            "command_args": ["arg1", "arg2"], "executable_path": "/path/to/executable",
+            "executable_path": "/path/to/executable",
             "working_directory": "/path/to/workdir"}
     response = client.put(
         f"{settings.API_V1_STR}/items/{item.id}",
@@ -122,9 +118,7 @@ def test_update_item(
     # 测试更新新添加的字段
     assert content["status"] == data["status"]
     assert content["socket_port"] == data["socket_port"]
-    assert content["socket_timeout"] == data["socket_timeout"]
     assert content["command"] == data["command"]
-    assert content["command_args"] == data["command_args"]
     assert content["executable_path"] == data["executable_path"]
     assert content["working_directory"] == data["working_directory"]
 
