@@ -123,20 +123,9 @@ export function DataTable<TData, TValue>({
                     return subRows.length > 0 ? (
                       <TableRow>
                         <TableCell colSpan={getSubRows ? columns.length + 1 : columns.length}>
-                          <div className="pl-6 pb-6">
+                          <div className="pl-6 pt-1 pb-1">
                             <Table className="w-full">
-                              <TableHeader>
-                                <TableRow>
-                                  {subRowsColumns.map((column) => (
-                                    <TableHead key={column.id}>
-                                      {typeof column.header === "function"
-                                        ? column.header({ column })
-                                        : column.header}
-                                    </TableHead>
-                                  ))}
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
+                      <TableBody>
                                 {subRows.map((subRow, index) => (
                                   <TableRow key={`${row.id}-sub-${index}`}>
                                     {subRowsColumns.map((column) => (
