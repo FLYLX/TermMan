@@ -4,13 +4,16 @@ import {
   getCoreRowModel,
   getPaginationRowModel,
   useReactTable,
+  type ExpandedState,
 } from "@tanstack/react-table"
 import {
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react"
+import React, { useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -32,55 +35,133 @@ import {
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
+  getSubRows?: (row: TData) => any[]
+  subRowsColumns?: ColumnDef<any, any>[]
 }
 
 export function DataTable<TData, TValue>({
   columns,
   data,
+  getSubRows,
+  subRowsColumns,
 }: DataTableProps<TData, TValue>) {
+  const [expanded, setExpanded] = useState<ExpandedState>({})  
+
   const table = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    getSubRows,
+    state: {
+      expanded,
+    },
+    onExpandedChange: setExpanded,
   })
 
   return (
     <div className="flex flex-col gap-4">
       <Table>
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id} className="hover:bg-transparent">
-              {headerGroup.headers.map((header) => {
-                return (
-                  <TableHead key={header.id}>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id} className="hover:bg-transparent">
+                {getSubRows && (
+                  <TableHead key="expand-header" className="w-[40px] p-0">
+                    {/* Empty header for expand/collapse button */}
                   </TableHead>
-                )
-              })}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody>
+                )}
+                {headerGroup.headers.map((header) => {
+                  return (
+                    <TableHead key={header.id}>
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                    </TableHead>
+                  )
+                })}
+              </TableRow>
+            ))}
+          </TableHeader>
+          <TableBody>
           {table.getRowModel().rows.length ? (
             table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
-              </TableRow>
+              <React.Fragment key={row.id}>
+                <TableRow key={`${row.id}-main`}>
+                  {getSubRows && (
+                    <TableCell className="p-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 p-0"
+                        onClick={() => row.toggleExpanded()}
+                      >
+                        {row.getIsExpanded() ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                        <span className="sr-only">
+                          {row.getIsExpanded() ? "Collapse" : "Expand"}
+                        </span>
+                      </Button>
+                    </TableCell>
+                  )}
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+                
+                {/* Sub rows */}
+                {row.getIsExpanded() && getSubRows && subRowsColumns && (
+                  (() => {
+                    const subRows = getSubRows(row.original);
+                    return subRows.length > 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={getSubRows ? columns.length + 1 : columns.length}>
+                          <div className="pl-6 pb-6">
+                            <Table className="w-full">
+                              <TableHeader>
+                                <TableRow>
+                                  {subRowsColumns.map((column) => (
+                                    <TableHead key={column.id}>
+                                      {typeof column.header === "function"
+                                        ? column.header({ column })
+                                        : column.header}
+                                    </TableHead>
+                                  ))}
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {subRows.map((subRow, index) => (
+                                  <TableRow key={`${row.id}-sub-${index}`}>
+                                    {subRowsColumns.map((column) => (
+                                      <TableCell key={`${row.id}-sub-${index}-${column.id || column.accessorKey || index}`}>
+                                      {typeof column.cell === "function"
+                                        ? column.cell({ row: { original: subRow }, column })
+                                        : ""}
+                                    </TableCell>
+                                    ))}
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : null;
+                  })()
+                )}
+              </React.Fragment>
             ))
           ) : (
             <TableRow className="hover:bg-transparent">
               <TableCell
-                colSpan={columns.length}
+                colSpan={getSubRows ? columns.length + 1 : columns.length}
                 className="h-32 text-center text-muted-foreground"
               >
                 No results found.

@@ -3,7 +3,179 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { ItemHandlersReadItemHandlersData, ItemHandlersReadItemHandlersResponse, ItemHandlersCreateItemHandlerData, ItemHandlersCreateItemHandlerResponse, ItemHandlersReadItemHandlerData, ItemHandlersReadItemHandlerResponse, ItemHandlersUpdateItemHandlerData, ItemHandlersUpdateItemHandlerResponse, ItemHandlersDeleteItemHandlerData, ItemHandlersDeleteItemHandlerResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { ItemHandlerAssociationsAddItemToHandlerData, ItemHandlerAssociationsAddItemToHandlerResponse, ItemHandlerAssociationsRemoveItemFromHandlerData, ItemHandlerAssociationsRemoveItemFromHandlerResponse, ItemHandlerAssociationsGetItemsForHandlerData, ItemHandlerAssociationsGetItemsForHandlerResponse, ItemHandlerAssociationsGetHandlersForItemData, ItemHandlerAssociationsGetHandlersForItemResponse, ItemHandlerAssociationsAddUserToHandlerData, ItemHandlerAssociationsAddUserToHandlerResponse, ItemHandlerAssociationsRemoveUserFromHandlerData, ItemHandlerAssociationsRemoveUserFromHandlerResponse, ItemHandlerAssociationsGetUsersForHandlerData, ItemHandlerAssociationsGetUsersForHandlerResponse, ItemHandlerAssociationsGetHandlersForUserData, ItemHandlerAssociationsGetHandlersForUserResponse, ItemHandlersReadItemHandlersData, ItemHandlersReadItemHandlersResponse, ItemHandlersCreateItemHandlerData, ItemHandlersCreateItemHandlerResponse, ItemHandlersReadItemHandlerData, ItemHandlersReadItemHandlerResponse, ItemHandlersUpdateItemHandlerData, ItemHandlersUpdateItemHandlerResponse, ItemHandlersDeleteItemHandlerData, ItemHandlersDeleteItemHandlerResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+
+export class ItemHandlerAssociationsService {
+    /**
+     * Add Item To Handler
+     * Add an item to an item handler.
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static addItemToHandler(data: ItemHandlerAssociationsAddItemToHandlerData): CancelablePromise<ItemHandlerAssociationsAddItemToHandlerResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/item-handler-associations/items',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Remove Item From Handler
+     * Remove an item from an item handler.
+     * @param data The data for the request.
+     * @param data.itemHandlerId
+     * @param data.itemId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static removeItemFromHandler(data: ItemHandlerAssociationsRemoveItemFromHandlerData): CancelablePromise<ItemHandlerAssociationsRemoveItemFromHandlerResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/item-handler-associations/items/{item_handler_id}/{item_id}',
+            path: {
+                item_handler_id: data.itemHandlerId,
+                item_id: data.itemId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Items For Handler
+     * Get all items for an item handler.
+     * @param data The data for the request.
+     * @param data.itemHandlerId
+     * @returns Item Successful Response
+     * @throws ApiError
+     */
+    public static getItemsForHandler(data: ItemHandlerAssociationsGetItemsForHandlerData): CancelablePromise<ItemHandlerAssociationsGetItemsForHandlerResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/item-handler-associations/items/{item_handler_id}',
+            path: {
+                item_handler_id: data.itemHandlerId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Handlers For Item
+     * Get all item handlers for an item.
+     * @param data The data for the request.
+     * @param data.itemId
+     * @returns ItemHandler Successful Response
+     * @throws ApiError
+     */
+    public static getHandlersForItem(data: ItemHandlerAssociationsGetHandlersForItemData): CancelablePromise<ItemHandlerAssociationsGetHandlersForItemResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/item-handler-associations/item-handlers/{item_id}',
+            path: {
+                item_id: data.itemId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Add User To Handler
+     * Add a user to an item handler.
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static addUserToHandler(data: ItemHandlerAssociationsAddUserToHandlerData): CancelablePromise<ItemHandlerAssociationsAddUserToHandlerResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/item-handler-associations/users',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Remove User From Handler
+     * Remove a user from an item handler.
+     * @param data The data for the request.
+     * @param data.itemHandlerId
+     * @param data.userId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static removeUserFromHandler(data: ItemHandlerAssociationsRemoveUserFromHandlerData): CancelablePromise<ItemHandlerAssociationsRemoveUserFromHandlerResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/item-handler-associations/users/{item_handler_id}/{user_id}',
+            path: {
+                item_handler_id: data.itemHandlerId,
+                user_id: data.userId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Users For Handler
+     * Get all users for an item handler.
+     * @param data The data for the request.
+     * @param data.itemHandlerId
+     * @returns User Successful Response
+     * @throws ApiError
+     */
+    public static getUsersForHandler(data: ItemHandlerAssociationsGetUsersForHandlerData): CancelablePromise<ItemHandlerAssociationsGetUsersForHandlerResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/item-handler-associations/users/{item_handler_id}',
+            path: {
+                item_handler_id: data.itemHandlerId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Handlers For User
+     * Get all item handlers for a user.
+     * @param data The data for the request.
+     * @param data.userId
+     * @returns ItemHandler Successful Response
+     * @throws ApiError
+     */
+    public static getHandlersForUser(data: ItemHandlerAssociationsGetHandlersForUserData): CancelablePromise<ItemHandlerAssociationsGetHandlersForUserResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/item-handler-associations/user-handlers/{user_id}',
+            path: {
+                user_id: data.userId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
 
 export class ItemHandlersService {
     /**

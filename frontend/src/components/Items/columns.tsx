@@ -5,6 +5,7 @@ import type { ItemPublic } from "@/client"
 import { Button } from "@/components/ui/button"
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import { cn } from "@/lib/utils"
+import AddItemToHandler from "./AddItemToHandler"
 import { ItemActionsMenu } from "./ItemActionsMenu"
 
 function CopyId({ id }: { id: string }) {
@@ -60,6 +61,13 @@ export const columns: ColumnDef<ItemPublic>[] = [
         </span>
       )
     },
+  },
+  {
+    id: "add-to-handler",
+    header: () => <span className="sr-only">Add to Handler</span>,
+    cell: ({ row }) => (
+      <AddItemToHandler itemId={row.original.id} />
+    ),
   },
   {
     id: "actions",

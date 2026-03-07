@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form"
 import { z } from "zod"
 
 import { type ItemPublic, ItemsService } from "@/client"
+import ItemHandlersList from "./ItemHandlersList"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -17,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { Separator } from "@/components/ui/separator"
 import {
   Form,
   FormControl,
@@ -124,6 +126,8 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
                 )}
               />
             </div>
+            <Separator className="my-4" />
+            <ItemHandlersList itemId={item.id} />
 
             <DialogFooter>
               <DialogClose asChild>
