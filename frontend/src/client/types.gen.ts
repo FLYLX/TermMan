@@ -16,14 +16,78 @@ export type HTTPValidationError = {
 export type ItemCreate = {
     title: string;
     description?: (string | null);
+    status?: ItemStatus;
+    config?: ({
+    [key: string]: unknown;
+} | null);
+    resource_usage?: ({
+    [key: string]: unknown;
+} | null);
+    log_path?: (string | null);
+    log_max_size_mb?: (number | null);
+    socket_connection_type?: SocketConnectionType;
+    socket_host?: (string | null);
+    socket_port?: (number | null);
+    socket_connected?: (boolean | null);
+    socket_last_connected?: (string | null);
+    socket_unique_id?: (string | null);
+    api_key?: (string | null);
+    command?: (string | null);
+    executable_path?: (string | null);
+    working_directory?: (string | null);
+};
+
+export type ItemHandlerCreate = {
+    name: string;
+    model?: (string | null);
+    api_key?: (string | null);
+    api_url?: (string | null);
+};
+
+export type ItemHandlerPublic = {
+    name: string;
+    model?: (string | null);
+    api_key?: (string | null);
+    api_url?: (string | null);
+    id: string;
+    owner_id: string;
+    created_at?: (string | null);
+    updated_at?: (string | null);
+};
+
+export type ItemHandlerUpdate = {
+    name?: (string | null);
+    model?: (string | null);
+    api_key?: (string | null);
+    api_url?: (string | null);
 };
 
 export type ItemPublic = {
     title: string;
     description?: (string | null);
+    status?: ItemStatus;
+    config?: ({
+    [key: string]: unknown;
+} | null);
+    resource_usage?: ({
+    [key: string]: unknown;
+} | null);
+    log_path?: (string | null);
+    log_max_size_mb?: (number | null);
+    socket_connection_type?: SocketConnectionType;
+    socket_host?: (string | null);
+    socket_port?: (number | null);
+    socket_connected?: (boolean | null);
+    socket_last_connected?: (string | null);
+    socket_unique_id?: (string | null);
+    api_key?: (string | null);
+    command?: (string | null);
+    executable_path?: (string | null);
+    working_directory?: (string | null);
     id: string;
     owner_id: string;
     created_at?: (string | null);
+    updated_at?: (string | null);
 };
 
 export type ItemsPublic = {
@@ -31,9 +95,31 @@ export type ItemsPublic = {
     count: number;
 };
 
+export type ItemStatus = 'stopped' | 'running' | 'starting' | 'stopping' | 'error';
+
 export type ItemUpdate = {
     title?: (string | null);
     description?: (string | null);
+    status?: (ItemStatus | null);
+    config?: ({
+    [key: string]: unknown;
+} | null);
+    resource_usage?: ({
+    [key: string]: unknown;
+} | null);
+    log_path?: (string | null);
+    log_max_size_mb?: (number | null);
+    socket_connection_type?: (SocketConnectionType | null);
+    socket_host?: (string | null);
+    socket_port?: (number | null);
+    socket_connected?: (boolean | null);
+    socket_last_connected?: (string | null);
+    socket_unique_id?: (string | null);
+    api_key?: (string | null);
+    command?: (string | null);
+    executable_path?: (string | null);
+    working_directory?: (string | null);
+    command_args?: (Array<unknown> | null);
 };
 
 export type Message = {
@@ -51,6 +137,8 @@ export type PrivateUserCreate = {
     full_name: string;
     is_verified?: boolean;
 };
+
+export type SocketConnectionType = 'local' | 'remote';
 
 export type Token = {
     access_token: string;
@@ -112,6 +200,38 @@ export type ValidationError = {
         [key: string]: unknown;
     };
 };
+
+export type ItemHandlersReadItemHandlersData = {
+    limit?: number;
+    skip?: number;
+};
+
+export type ItemHandlersReadItemHandlersResponse = (Array<ItemHandlerPublic>);
+
+export type ItemHandlersCreateItemHandlerData = {
+    requestBody: ItemHandlerCreate;
+};
+
+export type ItemHandlersCreateItemHandlerResponse = (ItemHandlerPublic);
+
+export type ItemHandlersReadItemHandlerData = {
+    id: string;
+};
+
+export type ItemHandlersReadItemHandlerResponse = (ItemHandlerPublic);
+
+export type ItemHandlersUpdateItemHandlerData = {
+    id: string;
+    requestBody: ItemHandlerUpdate;
+};
+
+export type ItemHandlersUpdateItemHandlerResponse = (ItemHandlerPublic);
+
+export type ItemHandlersDeleteItemHandlerData = {
+    id: string;
+};
+
+export type ItemHandlersDeleteItemHandlerResponse = (Message);
 
 export type ItemsReadItemsData = {
     limit?: number;

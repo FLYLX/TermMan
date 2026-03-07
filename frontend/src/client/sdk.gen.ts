@@ -3,7 +3,118 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { ItemHandlersReadItemHandlersData, ItemHandlersReadItemHandlersResponse, ItemHandlersCreateItemHandlerData, ItemHandlersCreateItemHandlerResponse, ItemHandlersReadItemHandlerData, ItemHandlersReadItemHandlerResponse, ItemHandlersUpdateItemHandlerData, ItemHandlersUpdateItemHandlerResponse, ItemHandlersDeleteItemHandlerData, ItemHandlersDeleteItemHandlerResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+
+export class ItemHandlersService {
+    /**
+     * Read Item Handlers
+     * Retrieve item handlers.
+     * @param data The data for the request.
+     * @param data.skip
+     * @param data.limit
+     * @returns ItemHandlerPublic Successful Response
+     * @throws ApiError
+     */
+    public static readItemHandlers(data: ItemHandlersReadItemHandlersData = {}): CancelablePromise<ItemHandlersReadItemHandlersResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/item-handlers/',
+            query: {
+                skip: data.skip,
+                limit: data.limit
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Create Item Handler
+     * Create new item handler.
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns ItemHandlerPublic Successful Response
+     * @throws ApiError
+     */
+    public static createItemHandler(data: ItemHandlersCreateItemHandlerData): CancelablePromise<ItemHandlersCreateItemHandlerResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/item-handlers/',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Read Item Handler
+     * Get item handler by ID.
+     * @param data The data for the request.
+     * @param data.id
+     * @returns ItemHandlerPublic Successful Response
+     * @throws ApiError
+     */
+    public static readItemHandler(data: ItemHandlersReadItemHandlerData): CancelablePromise<ItemHandlersReadItemHandlerResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/item-handlers/{id}',
+            path: {
+                id: data.id
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Update Item Handler
+     * Update an item handler.
+     * @param data The data for the request.
+     * @param data.id
+     * @param data.requestBody
+     * @returns ItemHandlerPublic Successful Response
+     * @throws ApiError
+     */
+    public static updateItemHandler(data: ItemHandlersUpdateItemHandlerData): CancelablePromise<ItemHandlersUpdateItemHandlerResponse> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/item-handlers/{id}',
+            path: {
+                id: data.id
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Delete Item Handler
+     * Delete an item handler.
+     * @param data The data for the request.
+     * @param data.id
+     * @returns Message Successful Response
+     * @throws ApiError
+     */
+    public static deleteItemHandler(data: ItemHandlersDeleteItemHandlerData): CancelablePromise<ItemHandlersDeleteItemHandlerResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/item-handlers/{id}',
+            path: {
+                id: data.id
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
 
 export class ItemsService {
     /**
