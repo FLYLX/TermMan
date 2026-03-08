@@ -1,11 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
-import { useState } from "react";
 
-import { ItemHandlerAssociationsService, type ItemHandlerPublic } from "@/client";
+import { ItemHandlerAssociationsService, type ItemHandler } from "@/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import useCustomToast from "@/hooks/useCustomToast";
 import { handleError } from "@/utils";
 
@@ -17,7 +15,7 @@ const ItemHandlersList = ({ itemId }: ItemHandlersListProps) => {
   const queryClient = useQueryClient();
   const { showSuccessToast, showErrorToast } = useCustomToast();
 
-  const { data: itemHandlers, isLoading } = useQuery({
+  const { data: handlers, isLoading: isHandlersLoading } = useQuery({
     queryFn: () => ItemHandlerAssociationsService.getHandlersForItem({ itemId }),
     queryKey: [`item-${itemId}-handlers`],
   });
@@ -57,8 +55,8 @@ const ItemHandlersList = ({ itemId }: ItemHandlersListProps) => {
           <div className="p-4 text-muted-foreground">No item handlers associated with this item.</div>
         ) : (
           <div className="space-y-4">
-            {handlers?.map((handler: ItemHandlerPublic) => (
-              <div key={handler.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted transition-colors">
+            {handlers?.map((handler: ItemHandler, index) => (
+              <div key={handler.id ?? index} className="flex items-center justify-between p-2 rounded-md hover:bg-muted transition-colors">
                 <div>
                   <div className="font-medium">{handler.name}</div>
                   <div className="text-sm text-muted-foreground">{handler.model || "No model"}</div>
@@ -67,7 +65,7 @@ const ItemHandlersList = ({ itemId }: ItemHandlersListProps) => {
                   variant="ghost"
                   size="icon"
                   className="text-destructive hover:text-destructive/90 hover:bg-destructive/10"
-                  onClick={() => handleRemoveHandler(handler.id)}
+                  onClick={() => handler.id && handleRemoveHandler(handler.id)}
                   disabled={mutation.isPending}
                 >
                   <Trash2 className="h-4 w-4" />

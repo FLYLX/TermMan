@@ -5,7 +5,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { type ItemPublic, ItemsService } from "@/client"
+import { type ItemPublic, type ItemUpdate, ItemsService } from "@/client"
 import ItemHandlersList from "./ItemHandlersList"
 import { Button } from "@/components/ui/button"
 import {
@@ -74,7 +74,7 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
   })
 
   const mutation = useMutation({
-    mutationFn: (data: FormData) =>
+    mutationFn: (data: ItemUpdate) =>
       ItemsService.updateItem({ id: item.id, requestBody: data }),
     onSuccess: () => {
       showSuccessToast("Item updated successfully")
@@ -88,9 +88,9 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
   })
 
   const onSubmit = (data: FormData) => {
-    const formattedData = {
+    const formattedData: ItemUpdate = {
       ...data,
-      socket_port: data.socket_port ? parseInt(data.socket_port, 10) : undefined,
+      socket_port: data.socket_port ? parseInt(data.socket_port, 10) : null,
     }
     mutation.mutate(formattedData)
   }

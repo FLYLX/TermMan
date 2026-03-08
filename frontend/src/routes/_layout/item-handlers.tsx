@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { Search } from "lucide-react"
 import { Suspense, useEffect, useState } from "react"
 
-import { ItemHandlerAssociationsService, ItemHandlersService } from "@/client"
+import { ItemHandlerAssociationsService, ItemHandlersService, type Item } from "@/client"
 import { DataTable } from "@/components/Common/DataTable"
 import AddItemHandler from "@/components/ItemHandlers/AddItemHandler"
 import { columns, itemColumns } from "@/components/ItemHandlers/columns"
@@ -20,7 +20,7 @@ function getItemHandlersQueryOptions() {
       const itemHandlersWithItems = await Promise.all(
         itemHandlers.map(async (handler) => {
           // Initialize _items as an empty array by default
-          let items = [];
+          let items: Item[] = [];
           
           // Only fetch items if handler has a valid id
             if (handler.id) {
@@ -71,7 +71,7 @@ function ItemHandlersTableContent() {
       const handlersWithItems = await Promise.all(
         initialItemHandlers.map(async (handler) => {
           // Initialize _items as an empty array by default
-          let items = [];
+          let items: Item[] = [];
           
           // Only fetch items if handler has a valid id
             if (handler.id) {

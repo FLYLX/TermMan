@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 import { Check, Copy } from "lucide-react"
 
@@ -5,7 +6,6 @@ import type { ItemPublic } from "@/client"
 import { Button } from "@/components/ui/button"
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import { cn } from "@/lib/utils"
-import AddItemToHandler from "./AddItemToHandler"
 import { ItemActionsMenu } from "./ItemActionsMenu"
 
 function CopyId({ id }: { id: string }) {
@@ -32,6 +32,16 @@ function CopyId({ id }: { id: string }) {
   )
 }
 
+function ItemTitleLink({ item }: { item: ItemPublic }) {
+  return (
+    <Button asChild variant="link" className="h-auto p-0 text-left">
+      <Link to="/items/$itemId" params={{ itemId: item.id }}>
+        {item.title}
+      </Link>
+    </Button>
+  )
+}
+
 export const columns: ColumnDef<ItemPublic>[] = [
   {
     accessorKey: "id",
@@ -41,9 +51,7 @@ export const columns: ColumnDef<ItemPublic>[] = [
   {
     accessorKey: "title",
     header: "Title",
-    cell: ({ row }) => (
-      <span className="font-medium">{row.original.title}</span>
-    ),
+    cell: ({ row }) => <ItemTitleLink item={row.original} />,
   },
   {
     accessorKey: "description",
@@ -61,13 +69,6 @@ export const columns: ColumnDef<ItemPublic>[] = [
         </span>
       )
     },
-  },
-  {
-    id: "add-to-handler",
-    header: () => <span className="sr-only">Add to Handler</span>,
-    cell: ({ row }) => (
-      <AddItemToHandler itemId={row.original.id} />
-    ),
   },
   {
     id: "actions",

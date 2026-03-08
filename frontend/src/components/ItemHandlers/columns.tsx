@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 import { Check, Copy } from "lucide-react"
 
@@ -58,7 +59,11 @@ export const itemColumns: ColumnDef<any>[] = [
     accessorKey: "title",
     header: "Item Title",
     cell: ({ row }) => (
-      <span className="font-medium">{row.original.title || "Untitled"}</span>
+      <Button asChild variant="link" className="h-auto p-0 text-left">
+        <Link to="/items/$itemId" params={{ itemId: row.original.id }}>
+          {row.original.title || "Untitled"}
+        </Link>
+      </Button>
     ),
   },
   {

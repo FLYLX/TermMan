@@ -122,16 +122,16 @@ export function DataTable<TData, TValue>({
                     const subRows = getSubRows(row.original);
                     return subRows.length > 0 ? (
                       <TableRow>
-                        <TableCell colSpan={getSubRows ? columns.length + 1 : columns.length}>
+                        <TableCell colSpan={columns.length + 1}>
                           <div className="pl-6 pt-1 pb-1">
                             <Table className="w-full">
                       <TableBody>
                                 {subRows.map((subRow, index) => (
                                   <TableRow key={`${row.id}-sub-${index}`}>
-                                    {subRowsColumns.map((column) => (
-                                      <TableCell key={`${row.id}-sub-${index}-${column.id || column.accessorKey || index}`}>
+                                    {subRowsColumns.map((column, colIndex) => (
+                                      <TableCell key={`${row.id}-sub-${index}-${colIndex}`}>
                                       {typeof column.cell === "function"
-                                        ? column.cell({ row: { original: subRow }, column })
+                                        ? (column.cell as any)({ row: { original: subRow } })
                                         : ""}
                                     </TableCell>
                                     ))}
@@ -150,7 +150,7 @@ export function DataTable<TData, TValue>({
           ) : (
             <TableRow className="hover:bg-transparent">
               <TableCell
-                colSpan={getSubRows ? columns.length + 1 : columns.length}
+                colSpan={columns.length + 1}
                 className="h-32 text-center text-muted-foreground"
               >
                 No results found.
