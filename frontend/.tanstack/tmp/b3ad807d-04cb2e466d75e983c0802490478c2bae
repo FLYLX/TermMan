@@ -1,0 +1,102 @@
+import { createFileRoute } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
+import { ItemsService } from '@/client'
+import { Suspense } from 'react'
+import PendingItems from '@/components/Pending/PendingItems'
+
+export const Route = createFileRoute('/_layout/items/id')({
+  component: ItemDetail,
+  head: () => ({
+    meta: [
+      {
+        title: 'Item Detail - FastAPI Template',
+      },
+    ],
+  }),
+})
+
+function getItemQueryOptions({ id }: { id: string }) {
+  return {
+    queryFn: () => ItemsService.readItem({ id }),
+    queryKey: ['item', id],
+  }
+}
+
+function ItemDetailContent() {
+  const { id } = Route.useParams()
+  const { data: item } = useSuspenseQuery(getItemQueryOptions({ id }))
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">{item.title}</h1>
+        <p className="text-muted-foreground mt-1">{item.description || "No description"}</p>
+      </div>
+
+      <div className="grid gap-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-muted p-4 rounded-lg">
+            <h3 className="text-sm font-medium text-muted-foreground">ID</h3>
+            <p className="font-mono text-sm">{item.id}</p>
+          </div>
+
+          <div className="bg-muted p-4 rounded-lg">
+            <h3 className="text-sm font-medium text-muted-foreground">Status</h3>
+            <p className="text-sm">{item.status || "Unknown"}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-muted p-4 rounded-lg">
+            <h3 className="text-sm font-medium text-muted-foreground">Created At</h3>
+            <p className="text-sm">{item.created_at ? new Date(item.created_at).toLocaleString() : "N/A"}</p>
+          </div>
+
+          <div className="bg-muted p-4 rounded-lg">
+            <h3 className="text-sm font-medium text-muted-foreground">Updated At</h3>
+            <p className="text-sm">{item.updated_at ? new Date(item.updated_at).toLocaleString() : "N/A"}</p>
+          </div>
+        </div>
+
+        {/* daemon Settings */}
+        <div className="bg-muted p-4 rounded-lg">
+          <h3 className="text-sm font-medium mb-3">daemon Settings</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <h4 className="text-xs font-medium text-muted-foreground">IP</h4>
+              <p className="text-sm">{item.socket_host || "N/A"}</p>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-medium text-muted-foreground">Port</h4>
+              <p className="text-sm">{item.socket_port || "N/A"}</p>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-medium text-muted-foreground">Start Command</h4>
+              <p className="text-sm font-mono truncate">{item.command || "N/A"}</p>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-medium text-muted-foreground">Executable Path</h4>
+              <p className="text-sm font-mono truncate">{item.executable_path || "N/A"}</p>
+            </div>
+
+            <div className="col-span-2">
+              <h4 className="text-xs font-medium text-muted-foreground">Working Directory</h4>
+              <p className="text-sm font-mono">{item.working_directory || "N/A"}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ItemDetail() {
+  return (
+    <Suspense fallback={<PendingItems />}>
+      <ItemDetailContent />
+    </Suspense>
+  )
+}

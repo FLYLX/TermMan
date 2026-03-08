@@ -35,6 +35,13 @@ import { handleError } from "@/utils"
 const formSchema = z.object({
   title: z.string().min(1, { message: "Title is required" }),
   description: z.string().optional(),
+  // daemon settings
+  socket_host: z.string().optional(),
+  socket_port: z.string().optional(),
+  // Command settings
+  command: z.string().optional(),
+  executable_path: z.string().optional(),
+  working_directory: z.string().optional(),
 })
 
 type FormData = z.infer<typeof formSchema>
@@ -56,6 +63,13 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
     defaultValues: {
       title: item.title,
       description: item.description ?? undefined,
+      // daemon settings
+      socket_host: item.socket_host ?? "",
+      socket_port: item.socket_port?.toString() ?? "",
+      // Command settings
+      command: item.command ?? "",
+      executable_path: item.executable_path ?? "",
+      working_directory: item.working_directory ?? "",
     },
   })
 
@@ -74,7 +88,11 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
   })
 
   const onSubmit = (data: FormData) => {
-    mutation.mutate(data)
+    const formattedData = {
+      ...data,
+      socket_port: data.socket_port ? parseInt(data.socket_port, 10) : undefined,
+    }
+    mutation.mutate(formattedData)
   }
 
   return (
@@ -125,6 +143,80 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
                   </FormItem>
                 )}
               />
+
+              {/* daemon Settings */}
+              <div className="grid gap-2">
+                <h4 className="font-semibold text-sm text-gray-700">daemon Settings</h4>
+                <FormField
+                  control={form.control}
+                  name="socket_host"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>IP</FormLabel>
+                      <FormControl>
+                        <Input placeholder="IP address" type="text" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="socket_port"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Port</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Port number" type="number" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="command"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Start Command</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Command to start the daemon" type="text" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="executable_path"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Executable Path</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Path to executable" type="text" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="working_directory"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Working Directory</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Working directory path" type="text" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
             <Separator className="my-4" />
             <ItemHandlersList itemId={item.id} />

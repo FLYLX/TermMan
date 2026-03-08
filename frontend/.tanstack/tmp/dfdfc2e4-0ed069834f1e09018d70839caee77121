@@ -1,0 +1,188 @@
+import { useSuspenseQuery } from "@tanstack/react-query"
+import { createFileRoute } from "@tanstack/react-router"
+import { Terminal, RefreshCw, Settings, Logs } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ItemsService } from "@/client"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+
+function getItemQueryOptions({ itemId }: { itemId: string }) {
+  return {
+    queryFn: () => ItemsService.readItem({ id: itemId }),
+    queryKey: ["item", itemId],
+  }
+}
+
+export const Route = createFileRoute("/_layout/items/itemId")({
+  component: ItemDetail,
+  head: ({ params }) => ({
+    meta: [
+      {
+        title: `Item ${params.itemId} - FastAPI Template`,
+      },
+    ],
+  }),
+})
+
+function ItemDetail({ params }: { params: { itemId: string } }) {
+  const { data: item } = useSuspenseQuery(getItemQueryOptions({ itemId: params.itemId }))
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{item.title}</h1>
+          <p className="text-muted-foreground">Item Details</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
+          <Button size="sm">
+            Start
+          </Button>
+          <Button variant="destructive" size="sm">
+            Stop
+          </Button>
+        </div>
+      </div>
+
+      <Tabs defaultValue="terminal" className="w-full">
+        <TabsList className="mb-4">
+          <TabsTrigger value="terminal">
+            <Terminal className="mr-2 h-4 w-4" />
+            Terminal
+          </TabsTrigger>
+          <TabsTrigger value="logs">
+            <Logs className="mr-2 h-4 w-4" />
+            Logs
+          </TabsTrigger>
+          <TabsTrigger value="settings">
+            <Settings className="mr-2 h-4 w-4" />
+            Settings
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Terminal Tab */}
+        <TabsContent value="terminal">
+          <Card className="h-[500px]">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Terminal Output</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="bg-gray-900 text-gray-100 h-full flex flex-col">
+                {/* Terminal Header */}
+                <div className="flex items-center px-4 py-2 bg-gray-800 border-b border-gray-700">
+                  <div className="flex gap-2">
+                    <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                    <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                  </div>
+                  <div className="ml-4 text-xs text-gray-400">{item.title} Terminal</div>
+                </div>
+                
+                {/* Terminal Body */}
+                <div className="flex-1 p-4 overflow-y-auto font-mono text-sm">
+                  {/* Mock terminal output */}
+                  <div className="mb-1">Starting daemon process...</div>
+                  <div className="mb-1">Daemon started successfully on port {item.socket_port}</div>
+                  <div className="mb-1">Listening for connections on {item.socket_host}:{item.socket_port}</div>
+                  <div className="mb-1">Ready to accept commands</div>
+                  <div className="flex items-center">
+                    <span className="mr-2 text-green-500">$</span>
+                    <Input 
+                      placeholder="Enter command..." 
+                      className="flex-1 bg-transparent border-none text-gray-100 placeholder:text-gray-500 focus-visible:ring-0"
+                      style={{ boxShadow: "none" }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Logs Tab */}
+        <TabsContent value="logs">
+          <Card className="h-[500px]">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Logs</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="bg-gray-900 text-gray-100 h-full flex flex-col">
+                <div className="flex-1 p-4 overflow-y-auto font-mono text-sm">
+                  {/* Mock logs */}
+                  <div className="mb-1 text-gray-400">[{new Date().toISOString()}] [INFO] Starting application</div>
+                  <div className="mb-1 text-gray-400">[{new Date().toISOString()}] [DEBUG] Loading configuration</div>
+                  <div className="mb-1 text-gray-400">[{new Date().toISOString()}] [INFO] Listening on 0.0.0.0:{item.socket_port}</div>
+                  <div className="mb-1 text-gray-400">[{new Date().toISOString()}] [INFO] Ready to handle requests</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Settings Tab */}
+        <TabsContent value="settings">
+          <Card>
+            <CardHeader>
+              <CardTitle>Settings</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="title">Title</Label>
+                  <Input id="title" value={item.title} placeholder="Title" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Input id="description" value={item.description || ""} placeholder="Description" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="ip">IP</Label>
+                  <Input id="ip" value={item.socket_host || ""} placeholder="IP address" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="port">Port</Label>
+                  <Input id="port" type="number" value={item.socket_port || ""} placeholder="Port number" />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="command">Start Command</Label>
+                <Input id="command" value={item.command || ""} placeholder="Command to start the daemon" />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="executable_path">Executable Path</Label>
+                  <Input id="executable_path" value={item.executable_path || ""} placeholder="Path to executable" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="working_directory">Working Directory</Label>
+                  <Input id="working_directory" value={item.working_directory || ""} placeholder="Working directory path" />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4">
+                <Button variant="secondary">
+                  Reset
+                </Button>
+                <Button>
+                  Save Changes
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}

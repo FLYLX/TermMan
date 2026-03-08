@@ -1,0 +1,241 @@
+import { useSuspenseQuery } from "@tanstack/react-query"
+import { createFileRoute } from "@tanstack/react-router"
+import { ArrowLeft, Play, Stop, RefreshCw, Settings, Terminal, Info, Trash2 } from "lucide-react"
+import { Suspense } from "react"
+
+import { ItemsService } from "@/client"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
+import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import PendingItems from "@/components/Pending/PendingItems"
+import { Link } from "@tanstack/react-router"
+
+function getItemQueryOptions(id: string) {
+  return {
+    queryFn: () => ItemsService.readItem({ id }),
+    queryKey: [`item`, id],
+  }
+}
+
+function ItemContent() {
+  const params = Route.useParams()
+  const { data: item } = useSuspenseQuery(getItemQueryOptions(params.id))
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Link to="/items" className="text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">{item.title}</h1>
+            <p className="text-muted-foreground">{item.description || "No description"}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="capitalize">
+            {item.status || "Unknown"}
+          </Badge>
+          <Button variant="destructive" size="sm">
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete
+          </Button>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Sidebar */}
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <h2 className="text-lg font-semibold">Actions</h2>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-2">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button className="w-full">
+                      <Play className="h-4 w-4 mr-2" />
+                      Start
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Start the daemon</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="secondary" className="w-full">
+                      <Stop className="h-4 w-4 mr-2" />
+                      Stop
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Stop the daemon</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" className="w-full">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Restart
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Restart the daemon</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <Separator />
+
+            <h3 className="font-medium">Information</h3>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">ID</span>
+                <span className="text-sm font-mono">{item.id}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Status</span>
+                <span className="text-sm capitalize">{item.status || "Unknown"}</span>
+              </div>
+              {item.socket_host && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">IP</span>
+                  <span className="text-sm">{item.socket_host}</span>
+                </div>
+              )}
+              {item.socket_port && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Port</span>
+                  <span className="text-sm">{item.socket_port}</span>
+                </div>
+              )}
+              {item.created_at && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Created</span>
+                  <span className="text-sm">{new Date(item.created_at).toLocaleDateString()}</span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Main Terminal Area */}
+        <Card className="lg:col-span-3">
+          <CardHeader className="px-4 py-3 border-b">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Terminal className="h-4 w-4 text-muted-foreground" />
+                <h2 className="text-lg font-semibold">Terminal</h2>
+              </div>
+              <Tabs defaultValue="terminal" className="w-auto">
+                <TabsList className="bg-transparent p-0">
+                  <TabsTrigger value="terminal" className="h-9 px-4">
+                    Terminal
+                  </TabsTrigger>
+                  <TabsTrigger value="settings" className="h-9 px-4">
+                    <Settings className="h-4 w-4 mr-2" />
+                    Settings
+                  </TabsTrigger>
+                  <TabsTrigger value="info" className="h-9 px-4">
+                    <Info className="h-4 w-4 mr-2" />
+                    Info
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Tabs defaultValue="terminal">
+              <TabsContent value="terminal" className="p-0">
+                {/* Terminal Interface */}
+                <div className="bg-gray-900 text-gray-100 rounded-md overflow-hidden">
+                  {/* Terminal Header */}
+                  <div className="bg-gray-800 px-4 py-2 flex items-center gap-2 border-b border-gray-700">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                      <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                      <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                    </div>
+                    <span className="text-sm text-gray-400 ml-2">{item.title} - Terminal</span>
+                  </div>
+                  
+                  {/* Terminal Body */}
+                  <ScrollArea className="h-[500px] p-4">
+                    <div className="font-mono text-sm space-y-1">
+                      <div className="text-green-400">$ Welcome to {item.title} terminal</div>
+                      <div className="text-gray-400">$ This is a simulated terminal interface</div>
+                      <div className="text-gray-400">$ The terminal functionality is not yet implemented</div>
+                      <div className="text-gray-400">$ Use the buttons on the left to control the daemon</div>
+                      <div className="text-gray-400"></div>
+                      <div className="text-gray-400">$ ls -la</div>
+                      <div className="text-gray-300">total 20</div>
+                      <div className="text-gray-300">drwxr-xr-x  5 user  staff   160 Mar  8 10:00 .</div>
+                      <div className="text-gray-300">drwxr-xr-x  3 user  staff    96 Mar  8 09:00 ..</div>
+                      <div className="text-gray-300">-rw-r--r--  1 user  staff   512 Mar  8 10:00 config.json</div>
+                      <div className="text-gray-300">-rwxr-xr-x  1 user  staff  2048 Mar  8 09:30 daemon.exe</div>
+                      <div className="text-gray-300">-rw-r--r--  1 user  staff  1024 Mar  8 09:45 log.txt</div>
+                      <div className="text-gray-400"></div>
+                      <div className="flex items-center">
+                        <span className="text-green-400">$</span>
+                        <span className="ml-2 text-gray-300">_</span>
+                      </div>
+                    </div>
+                  </ScrollArea>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="settings" className="p-4">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Settings</h3>
+                  <p className="text-muted-foreground">Settings functionality will be implemented here.</p>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="info" className="p-4">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Information</h3>
+                  <p className="text-muted-foreground">Detailed information about the item will be displayed here.</p>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+function ItemDetail() {
+  return (
+    <Suspense fallback={<PendingItems />}>
+      <ItemContent />
+    </Suspense>
+  )
+}
+
+export const Route = createFileRoute("/_layout/items/id/")({
+  component: ItemDetail,
+  head: () => ({
+    meta: [
+      {
+        title: "Item Detail - FastAPI Template",
+      },
+    ],
+  }),
+})
