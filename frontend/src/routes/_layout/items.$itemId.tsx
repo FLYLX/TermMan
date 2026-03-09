@@ -141,12 +141,10 @@ function getStatusBadge(status?: string) {
 
 function ItemDetailPage({
   item,
-  isLoading,
   isUsingFallback,
   message,
 }: {
   item: ItemPublic
-  isLoading: boolean
   isUsingFallback: boolean
   message?: string
 }) {
@@ -377,7 +375,6 @@ function ItemDetailRoute() {
   return (
     <ItemDetailPage
       item={displayItem}
-      isLoading={isPending || isFetching}
       isUsingFallback={!data || isError}
       message={message}
     />
