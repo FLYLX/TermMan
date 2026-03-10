@@ -382,6 +382,30 @@ export type ItemsDeleteItemData = {
 
 export type ItemsDeleteItemResponse = (Message);
 
+export type ItemsStopItemData = {
+    id: string;
+};
+
+export type ItemsStopItemResponse = (Message);
+
+export type ItemsRestartItemData = {
+    id: string;
+};
+
+export type ItemsRestartItemResponse = (Message);
+
+export type ItemsStartItemData = {
+    id: string;
+};
+
+export type ItemsStartItemResponse = (Message);
+
+export type ItemsConnectItemData = {
+    id: string;
+};
+
+export type ItemsConnectItemResponse = (Message);
+
 export type LoginLoginAccessTokenData = {
     formData: Body_login_login_access_token;
 };

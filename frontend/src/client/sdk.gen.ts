@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { ItemHandlerAssociationsAddItemToHandlerData, ItemHandlerAssociationsAddItemToHandlerResponse, ItemHandlerAssociationsRemoveItemFromHandlerData, ItemHandlerAssociationsRemoveItemFromHandlerResponse, ItemHandlerAssociationsGetItemsForHandlerData, ItemHandlerAssociationsGetItemsForHandlerResponse, ItemHandlerAssociationsGetHandlersForItemData, ItemHandlerAssociationsGetHandlersForItemResponse, ItemHandlerAssociationsAddUserToHandlerData, ItemHandlerAssociationsAddUserToHandlerResponse, ItemHandlerAssociationsRemoveUserFromHandlerData, ItemHandlerAssociationsRemoveUserFromHandlerResponse, ItemHandlerAssociationsGetUsersForHandlerData, ItemHandlerAssociationsGetUsersForHandlerResponse, ItemHandlerAssociationsGetHandlersForUserData, ItemHandlerAssociationsGetHandlersForUserResponse, ItemHandlersReadItemHandlersData, ItemHandlersReadItemHandlersResponse, ItemHandlersCreateItemHandlerData, ItemHandlersCreateItemHandlerResponse, ItemHandlersReadItemHandlerData, ItemHandlersReadItemHandlerResponse, ItemHandlersUpdateItemHandlerData, ItemHandlersUpdateItemHandlerResponse, ItemHandlersDeleteItemHandlerData, ItemHandlersDeleteItemHandlerResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { ItemHandlerAssociationsAddItemToHandlerData, ItemHandlerAssociationsAddItemToHandlerResponse, ItemHandlerAssociationsRemoveItemFromHandlerData, ItemHandlerAssociationsRemoveItemFromHandlerResponse, ItemHandlerAssociationsGetItemsForHandlerData, ItemHandlerAssociationsGetItemsForHandlerResponse, ItemHandlerAssociationsGetHandlersForItemData, ItemHandlerAssociationsGetHandlersForItemResponse, ItemHandlerAssociationsAddUserToHandlerData, ItemHandlerAssociationsAddUserToHandlerResponse, ItemHandlerAssociationsRemoveUserFromHandlerData, ItemHandlerAssociationsRemoveUserFromHandlerResponse, ItemHandlerAssociationsGetUsersForHandlerData, ItemHandlerAssociationsGetUsersForHandlerResponse, ItemHandlerAssociationsGetHandlersForUserData, ItemHandlerAssociationsGetHandlersForUserResponse, ItemHandlersReadItemHandlersData, ItemHandlersReadItemHandlersResponse, ItemHandlersCreateItemHandlerData, ItemHandlersCreateItemHandlerResponse, ItemHandlersReadItemHandlerData, ItemHandlersReadItemHandlerResponse, ItemHandlersUpdateItemHandlerData, ItemHandlersUpdateItemHandlerResponse, ItemHandlersDeleteItemHandlerData, ItemHandlersDeleteItemHandlerResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, ItemsStopItemData, ItemsStopItemResponse, ItemsRestartItemData, ItemsRestartItemResponse, ItemsStartItemData, ItemsStartItemResponse, ItemsConnectItemData, ItemsConnectItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class ItemHandlerAssociationsService {
     /**
@@ -389,6 +389,90 @@ export class ItemsService {
         return __request(OpenAPI, {
             method: 'DELETE',
             url: '/api/v1/items/{id}',
+            path: {
+                id: data.id
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Stop Item
+     * Stop an item.
+     * @param data The data for the request.
+     * @param data.id
+     * @returns Message Successful Response
+     * @throws ApiError
+     */
+    public static stopItem(data: ItemsStopItemData): CancelablePromise<ItemsStopItemResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/items/{id}/stop',
+            path: {
+                id: data.id
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Restart Item
+     * Restart an item.
+     * @param data The data for the request.
+     * @param data.id
+     * @returns Message Successful Response
+     * @throws ApiError
+     */
+    public static restartItem(data: ItemsRestartItemData): CancelablePromise<ItemsRestartItemResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/items/{id}/restart',
+            path: {
+                id: data.id
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Start Item
+     * Start an item.
+     * @param data The data for the request.
+     * @param data.id
+     * @returns Message Successful Response
+     * @throws ApiError
+     */
+    public static startItem(data: ItemsStartItemData): CancelablePromise<ItemsStartItemResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/items/{id}/start',
+            path: {
+                id: data.id
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Connect Item
+     * Connect to an item.
+     * @param data The data for the request.
+     * @param data.id
+     * @returns Message Successful Response
+     * @throws ApiError
+     */
+    public static connectItem(data: ItemsConnectItemData): CancelablePromise<ItemsConnectItemResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/items/{id}/connect',
             path: {
                 id: data.id
             },
