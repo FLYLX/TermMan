@@ -148,6 +148,47 @@ function ItemDetailPage({
   isUsingFallback: boolean
   message?: string
 }) {
+  const queryClient = useQueryClient()
+
+  const handleStartItem = async () => {
+    try {
+      await ItemsService.startItem({ id: item.id })
+      queryClient.invalidateQueries({ queryKey: ["item", item.id] })
+      console.log("Item started successfully")
+    } catch (error) {
+      console.error("Failed to start item:", error)
+    }
+  }
+
+  const handleConnectItem = async () => {
+    try {
+      await ItemsService.connectItem({ id: item.id })
+      queryClient.invalidateQueries({ queryKey: ["item", item.id] })
+      console.log("Item connected successfully")
+    } catch (error) {
+      console.error("Failed to connect item:", error)
+    }
+  }
+
+  const handleStopItem = async () => {
+    try {
+      await ItemsService.stopItem({ id: item.id })
+      queryClient.invalidateQueries({ queryKey: ["item", item.id] })
+      console.log("Item stopped successfully")
+    } catch (error) {
+      console.error("Failed to stop item:", error)
+    }
+  }
+
+  const handleRestartItem = async () => {
+    try {
+      await ItemsService.restartItem({ id: item.id })
+      queryClient.invalidateQueries({ queryKey: ["item", item.id] })
+      console.log("Item restarted successfully")
+    } catch (error) {
+      console.error("Failed to restart item:", error)
+    }
+  }
   return (
     <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-6">
       <section className="space-y-4">
@@ -195,6 +236,21 @@ function ItemDetailPage({
                   </p>
                 </div>
               </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" size="sm" className="h-10 px-4" onClick={handleStartItem}>
+                Start
+              </Button>
+              <Button type="button" size="sm" className="h-10 px-4" onClick={handleConnectItem}>
+                Connect
+              </Button>
+              <Button type="button" size="sm" className="h-10 px-4" onClick={handleStopItem}>
+                Stop
+              </Button>
+              <Button type="button" size="sm" className="h-10 px-4" onClick={handleRestartItem}>
+                Restart
+              </Button>
             </div>
           </div>
 
