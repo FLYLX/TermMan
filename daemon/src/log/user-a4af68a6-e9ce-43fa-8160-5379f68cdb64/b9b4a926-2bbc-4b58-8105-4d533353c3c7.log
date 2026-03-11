@@ -1,0 +1,15 @@
+Microsoft Windows [�汾 10.0.19045.6466]
+(c) Microsoft Corporation����������Ȩ����
+
+E:\dev\TermMan\dev\TermMan\daemon\src\src\workdir\user-a4af68a6-e9ce-43fa-8160-5379f68cdb64\b9b4a926-2bbc-4b58-8105-4d533353c3c7>ping -n 2 127.0.0.1
+
+���� Ping 127.0.0.1 ���� 32 �ֽڵ�����:
+���� 127.0.0.1 �Ļظ�: �ֽ�=32 ʱ��<1ms TTL=128
+���� 127.0.0.1 �Ļظ�: �ֽ�=32 ʱ��<1ms TTL=128
+
+127.0.0.1 �� Ping ͳ����Ϣ:
+    ���ݰ�: �ѷ��� = 2���ѽ��� = 2����ʧ = 0 (0% ��ʧ)��
+�����г̵Ĺ���ʱ��(�Ժ���Ϊ��λ):
+    ��� = 0ms��� = 0ms��ƽ�� = 0ms
+
+E:\dev\TermMan\dev\TermMan\daemon\src\src\workdir\user-a4af68a6-e9ce-43fa-8160-5379f68cdb64\b9b4a926-2bbc-4b58-8105-4d533353c3c7>

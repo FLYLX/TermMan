@@ -1,0 +1,160 @@
+2026-03-11 15:07:37,974 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-11 15:07:37,974 - termman-daemon - INFO - API Key: ***2024
+2026-03-11 15:08:12,896 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-11 15:08:12,896 - termman-daemon - INFO - API Key: ***2024
+2026-03-11 15:11:50,759 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-11 15:11:50,759 - termman-daemon - INFO - API Key: ***2024
+2026-03-11 15:12:02,290 - termman-daemon - INFO - Terminal started: 41ef9d83-8204-4e0a-9141-a2a519f51fd4
+2026-03-11 15:12:02,300 - termman-daemon - INFO - Terminal started via HTTP: 41ef9d83-8204-4e0a-9141-a2a519f51fd4
+2026-03-11 15:12:02,304 - termman-daemon - INFO - Terminal status queried: 41ef9d83-8204-4e0a-9141-a2a519f51fd4, status: running
+2026-03-11 15:12:02,327 - termman-daemon - ERROR - Error reading stdout for 41ef9d83-8204-4e0a-9141-a2a519f51fd4: 'utf-8' codec can't decode byte 0xb0 in position 19: invalid start byte
+2026-03-11 15:12:02,346 - termman-daemon - INFO - Terminal stopped: 41ef9d83-8204-4e0a-9141-a2a519f51fd4
+2026-03-11 15:12:02,346 - termman-daemon - INFO - Terminal stopped via HTTP: 41ef9d83-8204-4e0a-9141-a2a519f51fd4
+2026-03-11 15:12:02,351 - termman-daemon - INFO - Terminal list queried, count: 0
+2026-03-11 15:14:15,382 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-11 15:14:15,383 - termman-daemon - INFO - API Key: ***2024
+2026-03-11 15:14:23,705 - termman-daemon - INFO - Terminal started: 3b3c4a59-5b26-4188-a308-7718601002ed
+2026-03-11 15:14:23,716 - termman-daemon - INFO - Terminal started via HTTP: 3b3c4a59-5b26-4188-a308-7718601002ed
+2026-03-11 15:14:23,721 - termman-daemon - INFO - Terminal status queried: 3b3c4a59-5b26-4188-a308-7718601002ed, status: running
+2026-03-11 15:14:23,729 - termman-daemon - INFO - Socket connected: K-vVvpdsQaTt7u-cAAAB
+2026-03-11 15:14:23,739 - termman-daemon - ERROR - Error reading stdout for 3b3c4a59-5b26-4188-a308-7718601002ed: 'utf-8' codec can't decode byte 0xb0 in position 19: invalid start byte
+2026-03-11 15:14:24,732 - termman-daemon - INFO - Terminal connected: 3b3c4a59-5b26-4188-a308-7718601002ed, sid: K-vVvpdsQaTt7u-cAAAB
+2026-03-11 15:14:31,733 - termman-daemon - INFO - Socket disconnected: K-vVvpdsQaTt7u-cAAAB, item: 3b3c4a59-5b26-4188-a308-7718601002ed
+2026-03-11 15:14:32,748 - termman-daemon - INFO - Terminal stopped: 3b3c4a59-5b26-4188-a308-7718601002ed
+2026-03-11 15:14:32,749 - termman-daemon - INFO - Terminal stopped via HTTP: 3b3c4a59-5b26-4188-a308-7718601002ed
+2026-03-11 15:14:32,753 - termman-daemon - INFO - Terminal list queried, count: 0
+2026-03-11 15:16:07,760 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-11 15:16:07,760 - termman-daemon - INFO - API Key: ***2024
+2026-03-11 15:16:18,214 - termman-daemon - INFO - Terminal started: 324956cd-3db2-4c76-9d4b-170f638a0d07
+2026-03-11 15:16:18,224 - termman-daemon - INFO - Terminal started via HTTP: 324956cd-3db2-4c76-9d4b-170f638a0d07
+2026-03-11 15:16:18,228 - termman-daemon - INFO - Terminal status queried: 324956cd-3db2-4c76-9d4b-170f638a0d07, status: running
+2026-03-11 15:16:18,235 - termman-daemon - INFO - Socket connected: 5xYqBlUYMZUbSYqUAAAB
+2026-03-11 15:16:19,237 - termman-daemon - INFO - Terminal connected: 324956cd-3db2-4c76-9d4b-170f638a0d07, sid: 5xYqBlUYMZUbSYqUAAAB
+2026-03-11 15:16:26,238 - termman-daemon - INFO - Socket disconnected: 5xYqBlUYMZUbSYqUAAAB, item: 324956cd-3db2-4c76-9d4b-170f638a0d07
+2026-03-11 15:16:27,256 - termman-daemon - INFO - Terminal stopped: 324956cd-3db2-4c76-9d4b-170f638a0d07
+2026-03-11 15:16:27,257 - termman-daemon - INFO - Terminal stopped via HTTP: 324956cd-3db2-4c76-9d4b-170f638a0d07
+2026-03-11 15:16:27,262 - termman-daemon - INFO - Terminal list queried, count: 0
+2026-03-11 15:18:39,406 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-11 15:18:39,407 - termman-daemon - INFO - API Key: ***2024
+2026-03-11 15:18:49,921 - termman-daemon - INFO - Terminal started: b9b4a926-2bbc-4b58-8105-4d533353c3c7
+2026-03-11 15:18:49,932 - termman-daemon - INFO - Terminal started via HTTP: b9b4a926-2bbc-4b58-8105-4d533353c3c7
+2026-03-11 15:18:49,937 - termman-daemon - INFO - Terminal status queried: b9b4a926-2bbc-4b58-8105-4d533353c3c7, status: running
+2026-03-11 15:18:49,942 - termman-daemon - INFO - Socket connected: sPwZwO_-hqsgwSglAAAB
+2026-03-11 15:18:49,957 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:18:49,960 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:18:49,965 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:18:50,945 - termman-daemon - INFO - Terminal connected: b9b4a926-2bbc-4b58-8105-4d533353c3c7, sid: sPwZwO_-hqsgwSglAAAB
+2026-03-11 15:18:52,948 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:18:52,972 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:18:52,980 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:18:52,992 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:18:53,985 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:18:53,992 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:18:54,001 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:18:54,010 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:18:54,019 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:18:54,027 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:18:54,037 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:18:57,946 - termman-daemon - INFO - Socket disconnected: sPwZwO_-hqsgwSglAAAB, item: b9b4a926-2bbc-4b58-8105-4d533353c3c7
+2026-03-11 15:18:58,977 - termman-daemon - INFO - Terminal stopped: b9b4a926-2bbc-4b58-8105-4d533353c3c7
+2026-03-11 15:18:58,978 - termman-daemon - INFO - Terminal stopped via HTTP: b9b4a926-2bbc-4b58-8105-4d533353c3c7
+2026-03-11 15:18:58,982 - termman-daemon - INFO - Terminal list queried, count: 0
+2026-03-11 15:18:59,030 - termman-daemon - ERROR - Error broadcasting stdout to socket: cannot import name 'socket_service' from 'service.socket_service' (E:\dev\TermMan\dev\TermMan\daemon\src\service\socket_service.py)
+2026-03-11 15:19:44,480 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-11 15:19:44,480 - termman-daemon - INFO - API Key: ***2024
+2026-03-11 15:19:57,091 - termman-daemon - INFO - Terminal started: 9a633703-6f54-4303-b348-aa16dfb528de
+2026-03-11 15:19:57,104 - termman-daemon - INFO - Terminal started via HTTP: 9a633703-6f54-4303-b348-aa16dfb528de
+2026-03-11 15:19:57,110 - termman-daemon - INFO - Terminal status queried: 9a633703-6f54-4303-b348-aa16dfb528de, status: running
+2026-03-11 15:19:57,116 - termman-daemon - INFO - Socket connected: -PG9eoFxTGAXCZViAAAB
+2026-03-11 15:19:57,125 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:19:57,129 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:19:57,134 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:19:58,118 - termman-daemon - INFO - Terminal connected: 9a633703-6f54-4303-b348-aa16dfb528de, sid: -PG9eoFxTGAXCZViAAAB
+2026-03-11 15:20:00,120 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:20:00,145 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:20:00,152 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:20:00,160 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:20:01,160 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:20:01,167 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:20:01,176 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:20:01,186 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:20:01,195 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:20:01,204 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:20:01,212 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:20:05,120 - termman-daemon - INFO - Socket disconnected: -PG9eoFxTGAXCZViAAAB, item: 9a633703-6f54-4303-b348-aa16dfb528de
+2026-03-11 15:20:06,159 - termman-daemon - INFO - Terminal stopped: 9a633703-6f54-4303-b348-aa16dfb528de
+2026-03-11 15:20:06,159 - termman-daemon - INFO - Terminal stopped via HTTP: 9a633703-6f54-4303-b348-aa16dfb528de
+2026-03-11 15:20:06,163 - termman-daemon - INFO - Terminal list queried, count: 0
+2026-03-11 15:20:06,202 - termman-daemon - ERROR - Error broadcasting stdout to socket: attempted relative import beyond top-level package
+2026-03-11 15:22:37,948 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-11 15:22:37,948 - termman-daemon - INFO - API Key: ***2024
+2026-03-11 15:22:49,280 - termman-daemon - INFO - Terminal started: d8b62d93-8578-4c5b-8f94-632eee2709da
+2026-03-11 15:22:49,291 - termman-daemon - INFO - Terminal started via HTTP: d8b62d93-8578-4c5b-8f94-632eee2709da
+2026-03-11 15:22:49,295 - termman-daemon - INFO - Terminal status queried: d8b62d93-8578-4c5b-8f94-632eee2709da, status: running
+2026-03-11 15:22:49,303 - termman-daemon - INFO - Socket connected: w6l_qO40FZV8JLdxAAAB
+2026-03-11 15:22:50,305 - termman-daemon - INFO - Terminal connected: d8b62d93-8578-4c5b-8f94-632eee2709da, sid: w6l_qO40FZV8JLdxAAAB
+2026-03-11 15:22:57,307 - termman-daemon - INFO - Socket disconnected: w6l_qO40FZV8JLdxAAAB, item: d8b62d93-8578-4c5b-8f94-632eee2709da
+2026-03-11 15:22:58,335 - termman-daemon - INFO - Terminal stopped: d8b62d93-8578-4c5b-8f94-632eee2709da
+2026-03-11 15:22:58,336 - termman-daemon - INFO - Terminal stopped via HTTP: d8b62d93-8578-4c5b-8f94-632eee2709da
+2026-03-11 15:22:58,340 - termman-daemon - INFO - Terminal list queried, count: 0
+2026-03-11 16:17:14,214 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-11 16:17:14,215 - termman-daemon - INFO - API Key: ***2024
+2026-03-11 16:17:38,769 - termman-daemon - INFO - Terminal started: b72abd8e-0d69-4f95-9b78-829c2353c2bb
+2026-03-11 16:17:38,785 - termman-daemon - INFO - Terminal started via HTTP: b72abd8e-0d69-4f95-9b78-829c2353c2bb
+2026-03-11 16:17:38,806 - termman-daemon - INFO - Terminal started: bbdaed11-ff83-4160-8787-2223480fc7d5
+2026-03-11 16:17:38,806 - termman-daemon - INFO - Terminal started via HTTP: bbdaed11-ff83-4160-8787-2223480fc7d5
+2026-03-11 16:17:38,830 - termman-daemon - INFO - Terminal started: 973596d1-a7d8-4f94-96c4-ebccce5c476f
+2026-03-11 16:17:38,831 - termman-daemon - INFO - Terminal started via HTTP: 973596d1-a7d8-4f94-96c4-ebccce5c476f
+2026-03-11 16:17:38,846 - termman-daemon - INFO - Socket connected: ycPwUPlxcDlaSII6AAAD
+2026-03-11 16:17:38,848 - termman-daemon - INFO - Socket connected: ie5bBbzQRENdjepQAAAE
+2026-03-11 16:17:38,850 - termman-daemon - INFO - Socket connected: KfGj0xTovisyUavKAAAF
+2026-03-11 16:17:39,853 - termman-daemon - INFO - Terminal connected: bbdaed11-ff83-4160-8787-2223480fc7d5, sid: ie5bBbzQRENdjepQAAAE
+2026-03-11 16:17:39,854 - termman-daemon - INFO - Terminal connected: b72abd8e-0d69-4f95-9b78-829c2353c2bb, sid: ycPwUPlxcDlaSII6AAAD
+2026-03-11 16:17:39,854 - termman-daemon - INFO - Terminal connected: 973596d1-a7d8-4f94-96c4-ebccce5c476f, sid: KfGj0xTovisyUavKAAAF
+2026-03-11 16:17:39,965 - termman-daemon - INFO - Socket disconnected: ycPwUPlxcDlaSII6AAAD, item: b72abd8e-0d69-4f95-9b78-829c2353c2bb
+2026-03-11 16:17:40,967 - termman-daemon - INFO - Socket disconnected: ie5bBbzQRENdjepQAAAE, item: bbdaed11-ff83-4160-8787-2223480fc7d5
+2026-03-11 16:17:41,968 - termman-daemon - INFO - Socket disconnected: KfGj0xTovisyUavKAAAF, item: 973596d1-a7d8-4f94-96c4-ebccce5c476f
+2026-03-11 16:17:42,981 - termman-daemon - INFO - Terminal stopped: b72abd8e-0d69-4f95-9b78-829c2353c2bb
+2026-03-11 16:17:42,981 - termman-daemon - INFO - Terminal stopped via HTTP: b72abd8e-0d69-4f95-9b78-829c2353c2bb
+2026-03-11 16:17:42,988 - termman-daemon - INFO - Terminal stopped: bbdaed11-ff83-4160-8787-2223480fc7d5
+2026-03-11 16:17:42,989 - termman-daemon - INFO - Terminal stopped via HTTP: bbdaed11-ff83-4160-8787-2223480fc7d5
+2026-03-11 16:17:43,026 - termman-daemon - INFO - Terminal stopped: 973596d1-a7d8-4f94-96c4-ebccce5c476f
+2026-03-11 16:17:43,027 - termman-daemon - INFO - Terminal stopped via HTTP: 973596d1-a7d8-4f94-96c4-ebccce5c476f
+2026-03-11 16:27:59,016 - termman-daemon - INFO - Terminal started: 3844c55f-83b4-45fe-b463-d5d7668fbac4
+2026-03-11 16:27:59,016 - termman-daemon - INFO - Terminal started via HTTP: 3844c55f-83b4-45fe-b463-d5d7668fbac4
+2026-03-11 16:27:59,027 - termman-daemon - INFO - Socket connected: 1X9mz5dE70n2NGi6AAAL
+2026-03-11 16:27:59,028 - termman-daemon - INFO - Socket connected: iurByCwcvBL6e-c2AAAM
+2026-03-11 16:27:59,028 - termman-daemon - INFO - Socket connected: Tp4GYv1DiJTCouaqAAAN
+2026-03-11 16:27:59,028 - termman-daemon - INFO - Socket connected: ly1JJZB0ARyn_PN5AAAO
+2026-03-11 16:27:59,029 - termman-daemon - INFO - Socket connected: 71KfFgKfazwAoTRcAAAP
+2026-03-11 16:28:00,029 - termman-daemon - INFO - Terminal connected: 3844c55f-83b4-45fe-b463-d5d7668fbac4, sid: 1X9mz5dE70n2NGi6AAAL
+2026-03-11 16:28:00,031 - termman-daemon - INFO - Terminal connected: 3844c55f-83b4-45fe-b463-d5d7668fbac4, sid: Tp4GYv1DiJTCouaqAAAN
+2026-03-11 16:28:00,031 - termman-daemon - INFO - Terminal connected: 3844c55f-83b4-45fe-b463-d5d7668fbac4, sid: iurByCwcvBL6e-c2AAAM
+2026-03-11 16:28:00,032 - termman-daemon - INFO - Terminal connected: 3844c55f-83b4-45fe-b463-d5d7668fbac4, sid: ly1JJZB0ARyn_PN5AAAO
+2026-03-11 16:28:00,032 - termman-daemon - INFO - Terminal connected: 3844c55f-83b4-45fe-b463-d5d7668fbac4, sid: 71KfFgKfazwAoTRcAAAP
+2026-03-11 16:28:04,035 - termman-daemon - INFO - Socket disconnected: iurByCwcvBL6e-c2AAAM, item: 3844c55f-83b4-45fe-b463-d5d7668fbac4
+2026-03-11 16:28:05,037 - termman-daemon - INFO - Socket disconnected: 1X9mz5dE70n2NGi6AAAL, item: 3844c55f-83b4-45fe-b463-d5d7668fbac4
+2026-03-11 16:28:06,038 - termman-daemon - INFO - Socket disconnected: Tp4GYv1DiJTCouaqAAAN, item: 3844c55f-83b4-45fe-b463-d5d7668fbac4
+2026-03-11 16:28:07,039 - termman-daemon - INFO - Socket disconnected: ly1JJZB0ARyn_PN5AAAO, item: 3844c55f-83b4-45fe-b463-d5d7668fbac4
+2026-03-11 16:28:08,041 - termman-daemon - INFO - Socket disconnected: 71KfFgKfazwAoTRcAAAP, item: 3844c55f-83b4-45fe-b463-d5d7668fbac4
+2026-03-11 16:28:09,053 - termman-daemon - INFO - Terminal stopped: 3844c55f-83b4-45fe-b463-d5d7668fbac4
+2026-03-11 16:28:09,053 - termman-daemon - INFO - Terminal stopped via HTTP: 3844c55f-83b4-45fe-b463-d5d7668fbac4
+2026-03-11 16:35:28,933 - termman-daemon - INFO - Terminal started: b5e3a6c8-8743-4bc2-8e9f-618c27628575
+2026-03-11 16:35:28,933 - termman-daemon - INFO - Terminal started via HTTP: b5e3a6c8-8743-4bc2-8e9f-618c27628575
+2026-03-11 16:35:28,943 - termman-daemon - INFO - Socket connected: DRbt7kjtsZirnkzQAAAU
+2026-03-11 16:35:28,943 - termman-daemon - INFO - Socket connected: Dp8cPEx3mz0BYmrkAAAV
+2026-03-11 16:35:28,944 - termman-daemon - INFO - Socket connected: WOaHoUZZ6QcyznSjAAAW
+2026-03-11 16:35:28,945 - termman-daemon - INFO - Socket connected: gdyewiEaqa5LMbKAAAAX
+2026-03-11 16:35:28,955 - termman-daemon - INFO - Socket connected: U3M2-fIMd99yUacbAAAZ
+2026-03-11 16:35:29,945 - termman-daemon - INFO - Terminal connected: b5e3a6c8-8743-4bc2-8e9f-618c27628575, sid: DRbt7kjtsZirnkzQAAAU
+2026-03-11 16:35:29,945 - termman-daemon - INFO - Terminal connected: b5e3a6c8-8743-4bc2-8e9f-618c27628575, sid: Dp8cPEx3mz0BYmrkAAAV
+2026-03-11 16:35:29,945 - termman-daemon - INFO - Terminal connected: b5e3a6c8-8743-4bc2-8e9f-618c27628575, sid: WOaHoUZZ6QcyznSjAAAW
+2026-03-11 16:35:29,947 - termman-daemon - INFO - Terminal connected: b5e3a6c8-8743-4bc2-8e9f-618c27628575, sid: gdyewiEaqa5LMbKAAAAX
+2026-03-11 16:35:29,958 - termman-daemon - INFO - Terminal connected: b5e3a6c8-8743-4bc2-8e9f-618c27628575, sid: U3M2-fIMd99yUacbAAAZ
+2026-03-11 16:35:35,962 - termman-daemon - INFO - Socket disconnected: Dp8cPEx3mz0BYmrkAAAV, item: b5e3a6c8-8743-4bc2-8e9f-618c27628575
+2026-03-11 16:35:36,964 - termman-daemon - INFO - Socket disconnected: DRbt7kjtsZirnkzQAAAU, item: b5e3a6c8-8743-4bc2-8e9f-618c27628575
+2026-03-11 16:35:37,965 - termman-daemon - INFO - Socket disconnected: WOaHoUZZ6QcyznSjAAAW, item: b5e3a6c8-8743-4bc2-8e9f-618c27628575
+2026-03-11 16:35:38,967 - termman-daemon - INFO - Socket disconnected: U3M2-fIMd99yUacbAAAZ, item: b5e3a6c8-8743-4bc2-8e9f-618c27628575
+2026-03-11 16:35:39,968 - termman-daemon - INFO - Socket disconnected: gdyewiEaqa5LMbKAAAAX, item: b5e3a6c8-8743-4bc2-8e9f-618c27628575
+2026-03-11 16:35:40,976 - termman-daemon - INFO - Terminal stopped: b5e3a6c8-8743-4bc2-8e9f-618c27628575
+2026-03-11 16:35:40,976 - termman-daemon - INFO - Terminal stopped via HTTP: b5e3a6c8-8743-4bc2-8e9f-618c27628575
