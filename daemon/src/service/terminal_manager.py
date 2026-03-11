@@ -2,6 +2,7 @@ import os
 import uuid
 import subprocess
 import threading
+import chardet
 from typing import Dict, Any, Optional
 from core import memory_store, config
 from utils.logger import logger
@@ -86,17 +87,56 @@ class TerminalProcess:
                 line = self.process.stdout.readline()
                 if not line:
                     break
-                # 使用更灵活的编码方式
+                
+                # 使用chardet自动检测编码
                 try:
+                    # 首先尝试使用配置的编码
                     decoded_line = line.decode(self.encoding)
                 except UnicodeDecodeError:
-                    decoded_line = line.decode(self.encoding, errors='replace')
+                    # 如果失败，使用chardet检测编码
+                    detected = chardet.detect(line)
+                    detected_encoding = detected.get('encoding', self.encoding)
+                    decoded_line = line.decode(detected_encoding, errors='replace')
                 
                 with self.lock:
                     self.stdout_buffer.append(decoded_line)
-                    # 写入日志
-                    with open(self.log_path, "a", encoding="utf-8") as f:
-                        f.write(decoded_line)
+                    
+                    # 为所有连接的用户写入各自的日志文件
+                    try:
+                        import sys
+                        import os
+                        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                        from core import get_socket_service
+                        socket_service = get_socket_service()
+                        
+                        # 收集所有需要写入的日志路径
+                        log_paths = set()
+                        
+                        # 添加主日志路径（创建终端的用户）
+                        log_paths.add(self.log_path)
+                        
+                        # 如果有其他连接的用户，添加他们的日志路径
+                        if socket_service:
+                            # 获取所有连接的用户
+                            with socket_service.lock:
+                                if self.item_uuid in socket_service.connections:
+                                    for conn in socket_service.connections[self.item_uuid]:
+                                        user_uuid = conn['user_uuid']
+                                        # 为每个用户创建日志文件
+                                        user_log_dir = os.path.join(
+                                            config.get("LOG_DIR"),
+                                            user_uuid
+                                        )
+                                        os.makedirs(user_log_dir, exist_ok=True)
+                                        user_log_path = os.path.join(user_log_dir, f"{self.item_uuid}.log")
+                                        log_paths.add(user_log_path)
+                        
+                        # 写入所有唯一的日志路径
+                        for log_path in log_paths:
+                            with open(log_path, "a", encoding="utf-8") as f:
+                                f.write(decoded_line)
+                    except Exception as e:
+                        logger.error(f"Error writing user logs for {self.item_uuid}: {e}")
                 
                 # 转发到Socket.IO
                 try:
@@ -129,17 +169,57 @@ class TerminalProcess:
                 line = self.process.stderr.readline()
                 if not line:
                     break
-                # 使用更灵活的编码方式
+                
+                # 使用chardet自动检测编码
                 try:
+                    # 首先尝试使用配置的编码
                     decoded_line = line.decode(self.encoding)
                 except UnicodeDecodeError:
-                    decoded_line = line.decode(self.encoding, errors='replace')
+                    # 如果失败，使用chardet检测编码
+                    detected = chardet.detect(line)
+                    detected_encoding = detected.get('encoding', self.encoding)
+                    decoded_line = line.decode(detected_encoding, errors='replace')
                 
                 with self.lock:
                     self.stderr_buffer.append(decoded_line)
-                    # 写入日志
-                    with open(self.log_path, "a", encoding="utf-8") as f:
-                        f.write(f"[ERROR] {decoded_line}")
+                    
+                    # 为所有连接的用户写入各自的日志文件
+                    try:
+                        import sys
+                        import os
+                        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                        from core import get_socket_service
+                        socket_service = get_socket_service()
+                        
+                        # 收集所有需要写入的日志路径
+                        log_paths = set()
+                        
+                        # 添加主日志路径（创建终端的用户）
+                        log_paths.add(self.log_path)
+                        
+                        # 如果有其他连接的用户，添加他们的日志路径
+                        if socket_service:
+                            # 获取所有连接的用户
+                            with socket_service.lock:
+                                if self.item_uuid in socket_service.connections:
+                                    for conn in socket_service.connections[self.item_uuid]:
+                                        user_uuid = conn['user_uuid']
+                                        # 为每个用户创建日志文件
+                                        user_log_dir = os.path.join(
+                                            config.get("LOG_DIR"),
+                                            user_uuid
+                                        )
+                                        os.makedirs(user_log_dir, exist_ok=True)
+                                        user_log_path = os.path.join(user_log_dir, f"{self.item_uuid}.log")
+                                        log_paths.add(user_log_path)
+                        
+                        # 写入所有唯一的日志路径
+                        error_line = f"[ERROR] {decoded_line}"
+                        for log_path in log_paths:
+                            with open(log_path, "a", encoding="utf-8") as f:
+                                f.write(error_line)
+                    except Exception as e:
+                        logger.error(f"Error writing user logs for {self.item_uuid}: {e}")
                 
                 # 转发到Socket.IO
                 try:

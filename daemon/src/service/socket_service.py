@@ -11,8 +11,9 @@ class SocketService:
     """
     def __init__(self, sio: socketio.Server):
         self.sio = sio
-        self.connections: Dict[str, List[str]] = {}  # item_uuid: [sid, ...]
+        self.connections: Dict[str, List[Dict[str, str]]] = {}  # item_uuid: [{'sid': sid, 'user_uuid': user_uuid}, ...]
         self.sid_to_item: Dict[str, str] = {}  # sid: item_uuid
+        self.sid_to_user: Dict[str, str] = {}  # sid: user_uuid
         self.lock = threading.Lock()
         self.setup_event_handlers()
 
@@ -41,8 +42,14 @@ class SocketService:
             with self.lock:
                 if sid in self.sid_to_item:
                     item_uuid = self.sid_to_item.pop(sid)
+                    if sid in self.sid_to_user:
+                        self.sid_to_user.pop(sid)
                     if item_uuid in self.connections:
-                        self.connections[item_uuid].remove(sid)
+                        # 找到并移除对应的连接
+                        for i, conn in enumerate(self.connections[item_uuid]):
+                            if conn['sid'] == sid:
+                                self.connections[item_uuid].pop(i)
+                                break
                         if not self.connections[item_uuid]:
                             del self.connections[item_uuid]
                     logger.info(f"Socket disconnected: {sid}, item: {item_uuid}")
@@ -56,6 +63,7 @@ class SocketService:
             """
             item_uuid = data.get("item_uuid")
             token = data.get("token")
+            user_uuid = data.get("user_uuid", "unknown")
 
             if not item_uuid or not token:
                 await self.sio.emit("auth_error", {"message": "Missing item_uuid or token"}, to=sid)
@@ -71,11 +79,15 @@ class SocketService:
             with self.lock:
                 if item_uuid not in self.connections:
                     self.connections[item_uuid] = []
-                self.connections[item_uuid].append(sid)
+                self.connections[item_uuid].append({
+                    "sid": sid,
+                    "user_uuid": user_uuid
+                })
                 self.sid_to_item[sid] = item_uuid
+                self.sid_to_user[sid] = user_uuid
 
             await self.sio.emit("terminal_connected", {"item_uuid": item_uuid}, to=sid)
-            logger.info(f"Terminal connected: {item_uuid}, sid: {sid}")
+            logger.info(f"Terminal connected: {item_uuid}, sid: {sid}, user: {user_uuid}")
 
         @self.sio.event
         async def terminal_write(sid, data):
@@ -97,7 +109,8 @@ class SocketService:
         """
         with self.lock:
             if item_uuid in self.connections:
-                for sid in self.connections[item_uuid]:
+                for conn in self.connections[item_uuid]:
+                    sid = conn['sid']
                     try:
                         await self.sio.emit(event, data, to=sid)
                     except Exception as e:
