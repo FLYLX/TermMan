@@ -27,7 +27,7 @@ class IntegratedTerminalTest:
     """整合终端测试类"""
     def __init__(self):
         # 配置参数
-        self.daemon_url = "http://localhost:24444"
+        self.daemon_url = "http://localhost:9000"
         self.api_key = "termman_daemon_secret_key_2024"
         self.user_uuid = "test_user_123"
         self.terminal_item_uuid = None
@@ -174,6 +174,7 @@ class IntegratedTerminalTest:
 
         def input_loop(self):
             """用户输入循环"""
+            import sys
             print("\n=== 3. 交互式终端已启动 ===")
             print("输入 'exit' 或 'quit' 退出终端")
             print("输入 'test' 运行测试命令")
@@ -181,13 +182,18 @@ class IntegratedTerminalTest:
 
             # 发送测试命令
             self.write("echo 'Interactive terminal is ready!'")
-            self.write("whoami")
-            self.write("pwd")
+            # 使用Windows兼容的命令
+            self.write("echo %USERNAME%")
+            self.write("cd")
 
             while not self.should_exit:
                 try:
-                    # 使用input()获取用户输入
-                    command = input("")
+                    # 使用sys.stdin.readline()获取输入，更可靠地处理回车事件
+                    print(">", end="", flush=True)
+                    command = sys.stdin.readline().rstrip("\r\n")  # 移除Windows换行符
+                    
+                    if not command:  # 处理空行
+                        continue
                     
                     if command.lower() in ['exit', 'quit']:
                         self.should_exit = True
@@ -196,7 +202,8 @@ class IntegratedTerminalTest:
                     elif command.lower() == 'test':
                         # 运行测试命令
                         self.write("echo '=== 运行测试命令 ==='")
-                        self.write("ls -la")
+                        self.write("echo %USERNAME%")
+                        self.write("cd")
                         self.write("echo 'Test completed'")
                     else:
                         # 发送命令到终端

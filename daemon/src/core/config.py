@@ -19,7 +19,7 @@ class Config:
         """
         load_dotenv()
         self.config_data.update({
-            "PORT": int(os.getenv("PORT", "24444")),
+            "PORT": int(os.getenv("PORT", "9000")),
             "HOST": os.getenv("HOST", "0.0.0.0"),
             "API_KEY": os.getenv("API_KEY", ""),
             "WORKDIR": os.getenv("WORKDIR", "./src/workdir"),

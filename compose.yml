@@ -111,6 +111,32 @@ services:
       # Enable redirection for HTTP and HTTPS
       - traefik.http.routers.${STACK_NAME?Variable not set}-frontend-http.middlewares=https-redirect
 
+  daemon:
+    image: '${DOCKER_IMAGE_DAEMON:-termman-daemon}:${TAG-latest}'
+    build:
+      context: ./daemon
+      dockerfile: Dockerfile
+    restart: always
+    networks:
+      - default
+    ports:
+      - "9000:9000"
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=24444
+      - API_KEY=termman_daemon_secret_key_2024
+      - TERMINAL_SHELL=/bin/sh
+      - TERMINAL_ENCODING=utf-8
+      - WORKDIR=/app/src/workdir
+      - LOG_DIR=/app/log
+      - DATA_DIR=/app/src/data
+    volumes:
+      - ./daemon/log:/app/log
+      - ./daemon/src/workdir:/app/src/workdir
+      - ./daemon/src/data:/app/src/data
+
 volumes:
   backend-db:
 

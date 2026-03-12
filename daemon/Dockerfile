@@ -32,7 +32,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # 设置环境变量
 ENV HOST=0.0.0.0
-ENV PORT=24444
+ENV PORT=9000
 ENV API_KEY=termman_daemon_secret_key_2024
 ENV TERMINAL_SHELL=/bin/sh
 ENV TERMINAL_ENCODING=utf-8
@@ -44,7 +44,7 @@ ENV DATA_DIR=/app/src/data
 RUN mkdir -p /app/src/workdir /app/log /app/src/data/terminals /app/src/data/logs
 
 # 暴露端口
-EXPOSE 24444
+EXPOSE 9000
 
 # 设置启动命令
 CMD ["python", "src/main.py"]

@@ -6,3 +6,55 @@
 2026-03-12 16:47:40,243 - termman-daemon - WARNING - Socket connection rejected: BokMpY2ZNjY0g5AVAAAD, invalid auth
 2026-03-12 16:48:53,024 - termman-daemon - INFO - Terminal started: 18b4faf2-d156-4e50-8df1-26460c4299b0
 2026-03-12 16:48:53,025 - termman-daemon - INFO - Terminal started via HTTP: 18b4faf2-d156-4e50-8df1-26460c4299b0
+2026-03-12 12:14:22,393 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-12 12:14:22,395 - termman-daemon - INFO - API Key: ***2024
+2026-03-12 12:17:17,645 - termman-daemon - INFO - Terminal started: 3400bc61-61e1-4f4a-bcc7-299265d62901
+2026-03-12 12:17:17,647 - termman-daemon - INFO - Terminal started via HTTP: 3400bc61-61e1-4f4a-bcc7-299265d62901
+2026-03-12 12:17:40,770 - termman-daemon - INFO - Terminal started: cf4e9a60-ac9b-459a-85c1-1b81401a55ca
+2026-03-12 12:17:40,771 - termman-daemon - INFO - Terminal started via HTTP: cf4e9a60-ac9b-459a-85c1-1b81401a55ca
+2026-03-12 12:17:49,994 - termman-daemon - INFO - Terminal started: b3e001fa-4c96-45dc-b7b1-208682793b41
+2026-03-12 12:17:49,995 - termman-daemon - INFO - Terminal started via HTTP: b3e001fa-4c96-45dc-b7b1-208682793b41
+2026-03-12 12:19:05,516 - termman-daemon - INFO - Terminal started: bd1034d7-a3a9-486f-8378-adaa2f32dcc4
+2026-03-12 12:19:05,516 - termman-daemon - INFO - Terminal started via HTTP: bd1034d7-a3a9-486f-8378-adaa2f32dcc4
+2026-03-12 12:19:05,532 - termman-daemon - INFO - Socket connected: kuf8GLPdRGR0qwmCAAAB
+2026-03-12 12:19:05,535 - termman-daemon - INFO - Terminal connected: bd1034d7-a3a9-486f-8378-adaa2f32dcc4, sid: kuf8GLPdRGR0qwmCAAAB, user: test_user_123
+2026-03-12 12:19:09,960 - termman-daemon - INFO - Socket disconnected: kuf8GLPdRGR0qwmCAAAB, item: bd1034d7-a3a9-486f-8378-adaa2f32dcc4
+2026-03-12 12:19:13,930 - termman-daemon - INFO - Terminal started: a0e01f0a-e5e4-4e5b-b1b9-5836d1292a3b
+2026-03-12 12:19:13,930 - termman-daemon - INFO - Terminal started via HTTP: a0e01f0a-e5e4-4e5b-b1b9-5836d1292a3b
+2026-03-12 12:19:13,943 - termman-daemon - INFO - Socket connected: 1n1JrHBL32hEgatMAAAD
+2026-03-12 12:19:13,946 - termman-daemon - INFO - Terminal connected: a0e01f0a-e5e4-4e5b-b1b9-5836d1292a3b, sid: 1n1JrHBL32hEgatMAAAD, user: test_user_123
+2026-03-12 12:19:48,454 - termman-daemon - INFO - Socket disconnected: 1n1JrHBL32hEgatMAAAD, item: a0e01f0a-e5e4-4e5b-b1b9-5836d1292a3b
+2026-03-12 12:19:48,462 - termman-daemon - INFO - Terminal stopped: a0e01f0a-e5e4-4e5b-b1b9-5836d1292a3b
+2026-03-12 12:19:48,462 - termman-daemon - INFO - Terminal stopped via HTTP: a0e01f0a-e5e4-4e5b-b1b9-5836d1292a3b
+2026-03-12 20:20:11,862 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-12 20:20:11,862 - termman-daemon - INFO - API Key: ***2024
+2026-03-12 12:20:51,299 - termman-daemon - INFO - Terminal started: 6078ce83-41fb-441d-a0ec-fffc1f3434a3
+2026-03-12 12:20:51,300 - termman-daemon - INFO - Terminal started via HTTP: 6078ce83-41fb-441d-a0ec-fffc1f3434a3
+2026-03-12 12:20:51,307 - termman-daemon - INFO - Socket connected: WfV9eoPfUzTPsM5gAAAF
+2026-03-12 12:20:51,310 - termman-daemon - INFO - Terminal connected: 6078ce83-41fb-441d-a0ec-fffc1f3434a3, sid: WfV9eoPfUzTPsM5gAAAF, user: test_user_123
+2026-03-12 12:23:21,707 - termman-daemon - INFO - Terminal started: d48de42b-9001-4ee3-b0c7-9dce79b062ed
+2026-03-12 12:23:21,708 - termman-daemon - INFO - Terminal started via HTTP: d48de42b-9001-4ee3-b0c7-9dce79b062ed
+2026-03-12 12:23:21,716 - termman-daemon - INFO - Socket connected: L7mnedEuxSxSO1jvAAAH
+2026-03-12 12:23:21,718 - termman-daemon - INFO - Terminal connected: d48de42b-9001-4ee3-b0c7-9dce79b062ed, sid: L7mnedEuxSxSO1jvAAAH, user: test_user_123
+2026-03-12 12:23:50,586 - termman-daemon - INFO - Socket disconnected: L7mnedEuxSxSO1jvAAAH, item: d48de42b-9001-4ee3-b0c7-9dce79b062ed
+2026-03-12 12:23:53,593 - termman-daemon - INFO - Socket disconnected: WfV9eoPfUzTPsM5gAAAF, item: 6078ce83-41fb-441d-a0ec-fffc1f3434a3
+2026-03-12 12:23:53,604 - termman-daemon - INFO - Terminal stopped: 6078ce83-41fb-441d-a0ec-fffc1f3434a3
+2026-03-12 12:23:53,604 - termman-daemon - INFO - Terminal stopped via HTTP: 6078ce83-41fb-441d-a0ec-fffc1f3434a3
+2026-03-12 12:23:56,813 - termman-daemon - INFO - Terminal started: 1f75a6c4-41e8-4094-86d7-8796b827688a
+2026-03-12 12:23:56,814 - termman-daemon - INFO - Terminal started via HTTP: 1f75a6c4-41e8-4094-86d7-8796b827688a
+2026-03-12 12:23:56,829 - termman-daemon - INFO - Socket connected: BuuQiY4_RtN5hwpbAAAJ
+2026-03-12 12:23:56,831 - termman-daemon - INFO - Terminal connected: 1f75a6c4-41e8-4094-86d7-8796b827688a, sid: BuuQiY4_RtN5hwpbAAAJ, user: test_user_123
+2026-03-12 12:37:09,270 - termman-daemon - INFO - Socket disconnected: BuuQiY4_RtN5hwpbAAAJ, item: 1f75a6c4-41e8-4094-86d7-8796b827688a
+2026-03-12 12:37:09,283 - termman-daemon - INFO - Terminal stopped: 1f75a6c4-41e8-4094-86d7-8796b827688a
+2026-03-12 12:37:09,283 - termman-daemon - INFO - Terminal stopped via HTTP: 1f75a6c4-41e8-4094-86d7-8796b827688a
+2026-03-12 12:53:49,191 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-12 12:53:49,192 - termman-daemon - INFO - API Key: ***2024
+2026-03-12 20:59:57,339 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-12 20:59:57,340 - termman-daemon - INFO - API Key: ***2024
+2026-03-12 21:00:15,180 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-12 21:00:15,180 - termman-daemon - INFO - API Key: ***2024
+2026-03-12 21:00:24,090 - termman-daemon - INFO - Terminal started: b6cccc48-3d38-4d3a-ae2a-1a39ee7eefbd
+2026-03-12 21:00:24,099 - termman-daemon - INFO - Terminal started via HTTP: b6cccc48-3d38-4d3a-ae2a-1a39ee7eefbd
+2026-03-12 21:00:26,146 - termman-daemon - INFO - Socket connected: roBPaT4SBSP1iFjCAAAB
+2026-03-12 21:00:26,147 - termman-daemon - INFO - Terminal connected: b6cccc48-3d38-4d3a-ae2a-1a39ee7eefbd, sid: roBPaT4SBSP1iFjCAAAB, user: test_user_123
+2026-03-12 21:07:21,622 - termman-daemon - INFO - Socket disconnected: roBPaT4SBSP1iFjCAAAB, item: b6cccc48-3d38-4d3a-ae2a-1a39ee7eefbd

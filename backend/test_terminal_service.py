@@ -14,7 +14,7 @@ from app.services.connection_handler import ConnectionHandler
 
 # 测试配置
 DAEMON_HOST = "127.0.0.1"
-DAEMON_PORT = 24444
+DAEMON_PORT = 9000
 API_KEY = "termman_daemon_secret_key_2024"
 BASE_URL = f"http://{DAEMON_HOST}:{DAEMON_PORT}"
 
