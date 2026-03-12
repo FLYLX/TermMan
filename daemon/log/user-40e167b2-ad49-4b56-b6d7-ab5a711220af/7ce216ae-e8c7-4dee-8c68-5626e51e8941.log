@@ -1,0 +1,15 @@
+Microsoft Windows [°æ±¾ 10.0.19045.6466]
+(c) Microsoft Corporation。保留所有权利。
+
+E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-40e167b2-ad49-4b56-b6d7-ab5a711220af\7ce216ae-e8c7-4dee-8c68-5626e51e8941>echo 'Hello from user 1'
+'Hello from user 1'
+
+E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-40e167b2-ad49-4b56-b6d7-ab5a711220af\7ce216ae-e8c7-4dee-8c68-5626e51e8941>echo 'Hello from user 2'
+'Hello from user 2'
+
+E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-40e167b2-ad49-4b56-b6d7-ab5a711220af\7ce216ae-e8c7-4dee-8c68-5626e51e8941>echo 'Hello from user 3'
+'Hello from user 3'
+
+E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-40e167b2-ad49-4b56-b6d7-ab5a711220af\7ce216ae-e8c7-4dee-8c68-5626e51e8941>date
+当前日期: 2026/03/12 周四 
+输入新日期: (年月日) 

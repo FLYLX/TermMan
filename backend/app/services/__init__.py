@@ -4,6 +4,7 @@ from .connection_handler import ConnectionHandler
 from .terminal_service import TerminalService
 from .auth_service import AuthService
 from .protocol import ProtocolEvents, ProtocolCodec
+from .log_manager import LogManager
 
 __all__ = [
     "ConnectionManager",
@@ -14,5 +15,6 @@ __all__ = [
     "TerminalService",
     "AuthService",
     "ProtocolEvents",
-    "ProtocolCodec"
+    "ProtocolCodec",
+    "LogManager"
 ]

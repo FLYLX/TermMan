@@ -1,43 +1,234 @@
-2026-03-11 16:16:59,248 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
-2026-03-11 16:16:59,249 - termman-daemon - INFO - API Key: ***2024
-2026-03-11 17:07:38,838 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
-2026-03-11 17:07:38,838 - termman-daemon - INFO - API Key: ***2024
-2026-03-11 17:07:58,925 - termman-daemon - INFO - Terminal started: e63f0d71-9d5b-4a90-92b0-4136f0bc4e8a
-2026-03-11 17:07:58,933 - termman-daemon - INFO - Terminal started via HTTP: e63f0d71-9d5b-4a90-92b0-4136f0bc4e8a
-2026-03-11 17:07:58,946 - termman-daemon - INFO - Socket connected: 9lA_1fHqchPjF3ocAAAD
-2026-03-11 17:07:58,947 - termman-daemon - INFO - Socket connected: XzpGNXMnebWpOhYDAAAE
-2026-03-11 17:07:58,948 - termman-daemon - INFO - Socket connected: 23h00_m81z-HqsUZAAAF
-2026-03-11 17:07:59,949 - termman-daemon - INFO - Terminal connected: e63f0d71-9d5b-4a90-92b0-4136f0bc4e8a, sid: 9lA_1fHqchPjF3ocAAAD, user: user-2239119c-d621-4b96-b3cf-66d609e49539
-2026-03-11 17:07:59,950 - termman-daemon - INFO - Terminal connected: e63f0d71-9d5b-4a90-92b0-4136f0bc4e8a, sid: XzpGNXMnebWpOhYDAAAE, user: user-56193e43-6b1e-402c-b7ae-948120e27e7e
-2026-03-11 17:07:59,950 - termman-daemon - INFO - Terminal connected: e63f0d71-9d5b-4a90-92b0-4136f0bc4e8a, sid: 23h00_m81z-HqsUZAAAF, user: user-1d3e9159-ec21-46b1-b29d-570d0e94de2c
-2026-03-11 17:08:07,955 - termman-daemon - INFO - Socket disconnected: 9lA_1fHqchPjF3ocAAAD, item: e63f0d71-9d5b-4a90-92b0-4136f0bc4e8a
-2026-03-11 17:08:08,955 - termman-daemon - INFO - Socket disconnected: XzpGNXMnebWpOhYDAAAE, item: e63f0d71-9d5b-4a90-92b0-4136f0bc4e8a
-2026-03-11 17:08:09,958 - termman-daemon - INFO - Socket disconnected: 23h00_m81z-HqsUZAAAF, item: e63f0d71-9d5b-4a90-92b0-4136f0bc4e8a
-2026-03-11 17:08:10,970 - termman-daemon - INFO - Terminal stopped: e63f0d71-9d5b-4a90-92b0-4136f0bc4e8a
-2026-03-11 17:08:10,972 - termman-daemon - INFO - Terminal stopped via HTTP: e63f0d71-9d5b-4a90-92b0-4136f0bc4e8a
-2026-03-11 17:12:09,531 - termman-daemon - INFO - Terminal started: 9a74bc5c-cb40-409a-abbd-efe775bdc7f2
-2026-03-11 17:12:09,532 - termman-daemon - INFO - Terminal started via HTTP: 9a74bc5c-cb40-409a-abbd-efe775bdc7f2
-2026-03-11 17:12:09,540 - termman-daemon - INFO - Socket connected: JWm8TTI_wR_bOTaBAAAJ
-2026-03-11 17:12:09,541 - termman-daemon - INFO - Socket connected: h-t4ZKEcDZaXzVlnAAAK
-2026-03-11 17:12:09,543 - termman-daemon - INFO - Socket connected: Xnpf7VqXgsjjKXcfAAAL
-2026-03-11 17:12:10,544 - termman-daemon - INFO - Terminal connected: 9a74bc5c-cb40-409a-abbd-efe775bdc7f2, sid: JWm8TTI_wR_bOTaBAAAJ, user: user-7aae3efb-bb62-4b19-b759-9923c5c3998e
-2026-03-11 17:12:10,544 - termman-daemon - INFO - Terminal connected: 9a74bc5c-cb40-409a-abbd-efe775bdc7f2, sid: h-t4ZKEcDZaXzVlnAAAK, user: user-ada0d0c9-f0e7-41e6-b9a3-766a070905d2
-2026-03-11 17:12:10,546 - termman-daemon - INFO - Terminal connected: 9a74bc5c-cb40-409a-abbd-efe775bdc7f2, sid: Xnpf7VqXgsjjKXcfAAAL, user: user-63bb5028-7c02-42d8-97ef-e12f327564ea
-2026-03-11 17:12:18,552 - termman-daemon - INFO - Socket disconnected: h-t4ZKEcDZaXzVlnAAAK, item: 9a74bc5c-cb40-409a-abbd-efe775bdc7f2
-2026-03-11 17:12:19,554 - termman-daemon - INFO - Socket disconnected: JWm8TTI_wR_bOTaBAAAJ, item: 9a74bc5c-cb40-409a-abbd-efe775bdc7f2
-2026-03-11 17:12:20,555 - termman-daemon - INFO - Socket disconnected: Xnpf7VqXgsjjKXcfAAAL, item: 9a74bc5c-cb40-409a-abbd-efe775bdc7f2
-2026-03-11 17:12:21,560 - termman-daemon - INFO - Terminal stopped: 9a74bc5c-cb40-409a-abbd-efe775bdc7f2
-2026-03-11 17:12:21,561 - termman-daemon - INFO - Terminal stopped via HTTP: 9a74bc5c-cb40-409a-abbd-efe775bdc7f2
-2026-03-11 17:15:39,101 - termman-daemon - INFO - Terminal started: de7a9e78-8dfc-4d82-8df6-7f674fccf1d1
-2026-03-11 17:15:39,102 - termman-daemon - INFO - Terminal started via HTTP: de7a9e78-8dfc-4d82-8df6-7f674fccf1d1
-2026-03-11 17:15:39,111 - termman-daemon - INFO - Socket connected: 3lTjGtS5-5PTmJS4AAAO
-2026-03-11 17:15:39,113 - termman-daemon - INFO - Socket connected: 6GQN6xGvrvRuxHM1AAAP
-2026-03-11 17:15:39,130 - termman-daemon - INFO - Socket connected: bI2fUY3Y7iaGiK1xAAAR
-2026-03-11 17:15:40,113 - termman-daemon - INFO - Terminal connected: de7a9e78-8dfc-4d82-8df6-7f674fccf1d1, sid: 3lTjGtS5-5PTmJS4AAAO, user: user-2e17a723-12d4-495d-aff8-c6d8c8b88751
-2026-03-11 17:15:40,115 - termman-daemon - INFO - Terminal connected: de7a9e78-8dfc-4d82-8df6-7f674fccf1d1, sid: 6GQN6xGvrvRuxHM1AAAP, user: user-09ded01e-37e1-4edf-a150-b4e2d875ee81
-2026-03-11 17:15:40,132 - termman-daemon - INFO - Terminal connected: de7a9e78-8dfc-4d82-8df6-7f674fccf1d1, sid: bI2fUY3Y7iaGiK1xAAAR, user: user-dd04a082-eddd-446b-8cb3-9970ddf7eb04
-2026-03-11 17:15:48,139 - termman-daemon - INFO - Socket disconnected: 6GQN6xGvrvRuxHM1AAAP, item: de7a9e78-8dfc-4d82-8df6-7f674fccf1d1
-2026-03-11 17:15:49,140 - termman-daemon - INFO - Socket disconnected: 3lTjGtS5-5PTmJS4AAAO, item: de7a9e78-8dfc-4d82-8df6-7f674fccf1d1
-2026-03-11 17:15:50,142 - termman-daemon - INFO - Socket disconnected: bI2fUY3Y7iaGiK1xAAAR, item: de7a9e78-8dfc-4d82-8df6-7f674fccf1d1
-2026-03-11 17:15:51,147 - termman-daemon - INFO - Terminal stopped: de7a9e78-8dfc-4d82-8df6-7f674fccf1d1
-2026-03-11 17:15:51,147 - termman-daemon - INFO - Terminal stopped via HTTP: de7a9e78-8dfc-4d82-8df6-7f674fccf1d1
+2026-03-12 13:42:03,939 - termman-daemon - INFO - Socket connected: gaiHIpOlmgnOoLhrAAAd
+2026-03-12 13:42:03,997 - termman-daemon - INFO - Terminal started: 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c
+2026-03-12 13:42:03,998 - termman-daemon - INFO - Terminal started via HTTP: 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c
+2026-03-12 13:42:04,006 - termman-daemon - INFO - Socket connected: G24Pdb2hH9tsjHQPAAAf
+2026-03-12 13:42:04,057 - termman-daemon - INFO - 广播流事件到终端 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c: (c) Microsoft Corporation。保留所有权利。
+
+2026-03-12 13:42:04,061 - termman-daemon - INFO - 广播流事件到终端 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c: 
+
+2026-03-12 13:42:05,008 - termman-daemon - INFO - 发送terminal_connected事件到sid: G24Pdb2hH9tsjHQPAAAf, item_uuid: 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c
+2026-03-12 13:42:05,009 - termman-daemon - INFO - Terminal connected: 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c, sid: G24Pdb2hH9tsjHQPAAAf, user: user-4cdf820d-57b9-4df6-af77-e3d25a092840
+2026-03-12 13:42:08,013 - termman-daemon - INFO - 广播流事件到终端 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-4cdf820d-57b9-4df6-af77-e3d25a092840\5b24bdcb-0543-4f35-a1e3-8b154a11dd3c>echo 'Hello from user 1'
+
+2026-03-12 13:42:08,024 - termman-daemon - INFO - 广播流事件到终端 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c: 'Hello from user 1'
+
+2026-03-12 13:42:08,041 - termman-daemon - INFO - 广播流事件到终端 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c: 
+
+2026-03-12 13:42:10,022 - termman-daemon - INFO - 广播流事件到终端 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-4cdf820d-57b9-4df6-af77-e3d25a092840\5b24bdcb-0543-4f35-a1e3-8b154a11dd3c>echo 'Hello from user 2'
+
+2026-03-12 13:42:10,035 - termman-daemon - INFO - 广播流事件到终端 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c: 'Hello from user 2'
+
+2026-03-12 13:42:10,051 - termman-daemon - INFO - 广播流事件到终端 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c: 
+
+2026-03-12 13:42:12,024 - termman-daemon - INFO - 广播流事件到终端 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-4cdf820d-57b9-4df6-af77-e3d25a092840\5b24bdcb-0543-4f35-a1e3-8b154a11dd3c>echo 'Hello from user 3'
+
+2026-03-12 13:42:12,039 - termman-daemon - INFO - 广播流事件到终端 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c: 'Hello from user 3'
+
+2026-03-12 13:42:12,056 - termman-daemon - INFO - 广播流事件到终端 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c: 
+
+2026-03-12 13:42:14,029 - termman-daemon - INFO - 广播流事件到终端 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-4cdf820d-57b9-4df6-af77-e3d25a092840\5b24bdcb-0543-4f35-a1e3-8b154a11dd3c>date
+
+2026-03-12 13:42:14,050 - termman-daemon - INFO - 广播流事件到终端 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c: 当前日期: 2026/03/12 周四 
+
+2026-03-12 13:42:16,018 - termman-daemon - INFO - Terminal status queried: 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c, status: running
+2026-03-12 13:42:16,025 - termman-daemon - INFO - Terminal stopped: 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c
+2026-03-12 13:42:16,027 - termman-daemon - INFO - Terminal stopped via HTTP: 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c
+2026-03-12 13:42:16,040 - termman-daemon - INFO - 广播流事件到终端 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c: 输入新日期: (年月日) 
+
+2026-03-12 13:42:16,106 - termman-daemon - INFO - Socket disconnected: G24Pdb2hH9tsjHQPAAAf, item: 5b24bdcb-0543-4f35-a1e3-8b154a11dd3c
+2026-03-12 13:42:16,106 - termman-daemon - INFO - Socket disconnected: gaiHIpOlmgnOoLhrAAAd
+2026-03-12 13:46:24,121 - termman-daemon - INFO - Socket connected: Wo4c9nnj1_CXZPddAAAh
+2026-03-12 13:46:24,149 - termman-daemon - INFO - Terminal started: 27cce6db-4f5b-46dd-bf14-5000c688824f
+2026-03-12 13:46:24,150 - termman-daemon - INFO - Terminal started via HTTP: 27cce6db-4f5b-46dd-bf14-5000c688824f
+2026-03-12 13:46:24,158 - termman-daemon - INFO - Socket connected: wF8xbghVTBs7ZzYXAAAj
+2026-03-12 13:46:24,198 - termman-daemon - INFO - 广播流事件到终端 27cce6db-4f5b-46dd-bf14-5000c688824f: (c) Microsoft Corporation。保留所有权利。
+
+2026-03-12 13:46:24,200 - termman-daemon - INFO - 广播流事件到终端 27cce6db-4f5b-46dd-bf14-5000c688824f: 
+
+2026-03-12 13:46:25,160 - termman-daemon - INFO - 发送terminal_connected事件到sid: wF8xbghVTBs7ZzYXAAAj, item_uuid: 27cce6db-4f5b-46dd-bf14-5000c688824f
+2026-03-12 13:46:25,161 - termman-daemon - INFO - Terminal connected: 27cce6db-4f5b-46dd-bf14-5000c688824f, sid: wF8xbghVTBs7ZzYXAAAj, user: user-baf83fc8-95e2-432a-88e3-e4630763fb8b
+2026-03-12 13:46:28,165 - termman-daemon - INFO - 广播流事件到终端 27cce6db-4f5b-46dd-bf14-5000c688824f: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-baf83fc8-95e2-432a-88e3-e4630763fb8b\27cce6db-4f5b-46dd-bf14-5000c688824f>echo 'Hello from user 1'
+
+2026-03-12 13:46:28,178 - termman-daemon - INFO - 广播流事件到终端 27cce6db-4f5b-46dd-bf14-5000c688824f: 'Hello from user 1'
+
+2026-03-12 13:46:28,200 - termman-daemon - INFO - 广播流事件到终端 27cce6db-4f5b-46dd-bf14-5000c688824f: 
+
+2026-03-12 13:46:30,176 - termman-daemon - INFO - 广播流事件到终端 27cce6db-4f5b-46dd-bf14-5000c688824f: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-baf83fc8-95e2-432a-88e3-e4630763fb8b\27cce6db-4f5b-46dd-bf14-5000c688824f>echo 'Hello from user 2'
+
+2026-03-12 13:46:30,190 - termman-daemon - INFO - 广播流事件到终端 27cce6db-4f5b-46dd-bf14-5000c688824f: 'Hello from user 2'
+
+2026-03-12 13:46:30,205 - termman-daemon - INFO - 广播流事件到终端 27cce6db-4f5b-46dd-bf14-5000c688824f: 
+
+2026-03-12 13:46:32,178 - termman-daemon - INFO - 广播流事件到终端 27cce6db-4f5b-46dd-bf14-5000c688824f: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-baf83fc8-95e2-432a-88e3-e4630763fb8b\27cce6db-4f5b-46dd-bf14-5000c688824f>echo 'Hello from user 3'
+
+2026-03-12 13:46:32,191 - termman-daemon - INFO - 广播流事件到终端 27cce6db-4f5b-46dd-bf14-5000c688824f: 'Hello from user 3'
+
+2026-03-12 13:46:32,207 - termman-daemon - INFO - 广播流事件到终端 27cce6db-4f5b-46dd-bf14-5000c688824f: 
+
+2026-03-12 13:46:34,176 - termman-daemon - INFO - 广播流事件到终端 27cce6db-4f5b-46dd-bf14-5000c688824f: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-baf83fc8-95e2-432a-88e3-e4630763fb8b\27cce6db-4f5b-46dd-bf14-5000c688824f>date
+
+2026-03-12 13:46:34,191 - termman-daemon - INFO - 广播流事件到终端 27cce6db-4f5b-46dd-bf14-5000c688824f: 当前日期: 2026/03/12 周四 
+
+2026-03-12 13:46:36,169 - termman-daemon - INFO - Terminal status queried: 27cce6db-4f5b-46dd-bf14-5000c688824f, status: running
+2026-03-12 13:46:36,197 - termman-daemon - INFO - Terminal stopped: 27cce6db-4f5b-46dd-bf14-5000c688824f
+2026-03-12 13:46:36,198 - termman-daemon - INFO - Terminal stopped via HTTP: 27cce6db-4f5b-46dd-bf14-5000c688824f
+2026-03-12 13:46:36,211 - termman-daemon - INFO - 广播流事件到终端 27cce6db-4f5b-46dd-bf14-5000c688824f: 输入新日期: (年月日) 
+
+2026-03-12 13:46:36,304 - termman-daemon - INFO - Socket disconnected: wF8xbghVTBs7ZzYXAAAj, item: 27cce6db-4f5b-46dd-bf14-5000c688824f
+2026-03-12 13:46:36,305 - termman-daemon - INFO - Socket disconnected: Wo4c9nnj1_CXZPddAAAh
+2026-03-12 13:48:43,612 - termman-daemon - INFO - Socket connected: e84ZSBCsAUGL81KuAAAl
+2026-03-12 13:48:43,634 - termman-daemon - INFO - Terminal started: 1109d784-4408-4e00-83ff-ee963313f6c8
+2026-03-12 13:48:43,634 - termman-daemon - INFO - Terminal started via HTTP: 1109d784-4408-4e00-83ff-ee963313f6c8
+2026-03-12 13:48:43,646 - termman-daemon - INFO - Socket connected: hbNBbqFVKE3qgXvsAAAn
+2026-03-12 13:48:43,686 - termman-daemon - INFO - 广播流事件到终端 1109d784-4408-4e00-83ff-ee963313f6c8: (c) Microsoft Corporation。保留所有权利。
+
+2026-03-12 13:48:43,690 - termman-daemon - INFO - 广播流事件到终端 1109d784-4408-4e00-83ff-ee963313f6c8: 
+
+2026-03-12 13:48:44,649 - termman-daemon - INFO - 发送terminal_connected事件到sid: hbNBbqFVKE3qgXvsAAAn, item_uuid: 1109d784-4408-4e00-83ff-ee963313f6c8
+2026-03-12 13:48:44,649 - termman-daemon - INFO - Terminal connected: 1109d784-4408-4e00-83ff-ee963313f6c8, sid: hbNBbqFVKE3qgXvsAAAn, user: user-f903c3e5-681c-4771-9bc8-24362f9362d5
+2026-03-12 13:48:47,654 - termman-daemon - INFO - 广播流事件到终端 1109d784-4408-4e00-83ff-ee963313f6c8: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-f903c3e5-681c-4771-9bc8-24362f9362d5\1109d784-4408-4e00-83ff-ee963313f6c8>echo 'Hello from user 1'
+
+2026-03-12 13:48:47,663 - termman-daemon - INFO - 广播流事件到终端 1109d784-4408-4e00-83ff-ee963313f6c8: 'Hello from user 1'
+
+2026-03-12 13:48:47,677 - termman-daemon - INFO - 广播流事件到终端 1109d784-4408-4e00-83ff-ee963313f6c8: 
+
+2026-03-12 13:48:49,666 - termman-daemon - INFO - 广播流事件到终端 1109d784-4408-4e00-83ff-ee963313f6c8: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-f903c3e5-681c-4771-9bc8-24362f9362d5\1109d784-4408-4e00-83ff-ee963313f6c8>echo 'Hello from user 2'
+
+2026-03-12 13:48:49,679 - termman-daemon - INFO - 广播流事件到终端 1109d784-4408-4e00-83ff-ee963313f6c8: 'Hello from user 2'
+
+2026-03-12 13:48:49,694 - termman-daemon - INFO - 广播流事件到终端 1109d784-4408-4e00-83ff-ee963313f6c8: 
+
+2026-03-12 13:48:51,666 - termman-daemon - INFO - 广播流事件到终端 1109d784-4408-4e00-83ff-ee963313f6c8: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-f903c3e5-681c-4771-9bc8-24362f9362d5\1109d784-4408-4e00-83ff-ee963313f6c8>echo 'Hello from user 3'
+
+2026-03-12 13:48:51,679 - termman-daemon - INFO - 广播流事件到终端 1109d784-4408-4e00-83ff-ee963313f6c8: 'Hello from user 3'
+
+2026-03-12 13:48:51,693 - termman-daemon - INFO - 广播流事件到终端 1109d784-4408-4e00-83ff-ee963313f6c8: 
+
+2026-03-12 13:48:53,665 - termman-daemon - INFO - 广播流事件到终端 1109d784-4408-4e00-83ff-ee963313f6c8: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-f903c3e5-681c-4771-9bc8-24362f9362d5\1109d784-4408-4e00-83ff-ee963313f6c8>date
+
+2026-03-12 13:48:53,679 - termman-daemon - INFO - 广播流事件到终端 1109d784-4408-4e00-83ff-ee963313f6c8: 当前日期: 2026/03/12 周四 
+
+2026-03-12 13:48:55,657 - termman-daemon - INFO - Terminal status queried: 1109d784-4408-4e00-83ff-ee963313f6c8, status: running
+2026-03-12 13:48:55,663 - termman-daemon - INFO - Terminal stopped: 1109d784-4408-4e00-83ff-ee963313f6c8
+2026-03-12 13:48:55,664 - termman-daemon - INFO - Terminal stopped via HTTP: 1109d784-4408-4e00-83ff-ee963313f6c8
+2026-03-12 13:48:55,681 - termman-daemon - INFO - 广播流事件到终端 1109d784-4408-4e00-83ff-ee963313f6c8: 输入新日期: (年月日) 
+
+2026-03-12 13:48:55,740 - termman-daemon - INFO - Socket disconnected: e84ZSBCsAUGL81KuAAAl
+2026-03-12 13:48:55,740 - termman-daemon - INFO - Socket disconnected: hbNBbqFVKE3qgXvsAAAn, item: 1109d784-4408-4e00-83ff-ee963313f6c8
+2026-03-12 13:50:35,365 - termman-daemon - INFO - Socket connected: vNMcrv6e0LfWNehwAAAp
+2026-03-12 13:50:35,389 - termman-daemon - INFO - Terminal started: f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600
+2026-03-12 13:50:35,390 - termman-daemon - INFO - Terminal started via HTTP: f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600
+2026-03-12 13:50:35,401 - termman-daemon - INFO - Socket connected: 41THZvf4KNSToAQNAAAr
+2026-03-12 13:50:35,432 - termman-daemon - INFO - 广播流事件到终端 f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600: (c) Microsoft Corporation。保留所有权利。
+
+2026-03-12 13:50:35,437 - termman-daemon - INFO - 广播流事件到终端 f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600: 
+
+2026-03-12 13:50:36,403 - termman-daemon - INFO - 发送terminal_connected事件到sid: 41THZvf4KNSToAQNAAAr, item_uuid: f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600
+2026-03-12 13:50:36,404 - termman-daemon - INFO - Terminal connected: f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600, sid: 41THZvf4KNSToAQNAAAr, user: user-5c1cca26-c3d2-488a-8a21-095d66f9e3ec
+2026-03-12 13:50:39,409 - termman-daemon - INFO - 广播流事件到终端 f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-5c1cca26-c3d2-488a-8a21-095d66f9e3ec\f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600>echo 'Hello from user 1'
+
+2026-03-12 13:50:39,418 - termman-daemon - INFO - 广播流事件到终端 f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600: 'Hello from user 1'
+
+2026-03-12 13:50:39,431 - termman-daemon - INFO - 广播流事件到终端 f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600: 
+
+2026-03-12 13:50:41,420 - termman-daemon - INFO - 广播流事件到终端 f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-5c1cca26-c3d2-488a-8a21-095d66f9e3ec\f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600>echo 'Hello from user 2'
+
+2026-03-12 13:50:41,436 - termman-daemon - INFO - 广播流事件到终端 f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600: 'Hello from user 2'
+
+2026-03-12 13:50:41,449 - termman-daemon - INFO - 广播流事件到终端 f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600: 
+
+2026-03-12 13:50:43,419 - termman-daemon - INFO - 广播流事件到终端 f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-5c1cca26-c3d2-488a-8a21-095d66f9e3ec\f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600>echo 'Hello from user 3'
+
+2026-03-12 13:50:43,433 - termman-daemon - INFO - 广播流事件到终端 f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600: 'Hello from user 3'
+
+2026-03-12 13:50:43,446 - termman-daemon - INFO - 广播流事件到终端 f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600: 
+
+2026-03-12 13:50:45,420 - termman-daemon - INFO - 广播流事件到终端 f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-5c1cca26-c3d2-488a-8a21-095d66f9e3ec\f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600>date
+
+2026-03-12 13:50:45,434 - termman-daemon - INFO - 广播流事件到终端 f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600: 当前日期: 2026/03/12 周四 
+
+2026-03-12 13:50:47,412 - termman-daemon - INFO - Terminal status queried: f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600, status: running
+2026-03-12 13:50:47,418 - termman-daemon - INFO - Terminal stopped: f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600
+2026-03-12 13:50:47,420 - termman-daemon - INFO - Terminal stopped via HTTP: f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600
+2026-03-12 13:50:47,433 - termman-daemon - INFO - 广播流事件到终端 f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600: 输入新日期: (年月日) 
+
+2026-03-12 13:50:47,522 - termman-daemon - INFO - Socket disconnected: 41THZvf4KNSToAQNAAAr, item: f4181d5c-d002-4eb6-8c4a-8d5ef4ad8600
+2026-03-12 13:50:47,522 - termman-daemon - INFO - Socket disconnected: vNMcrv6e0LfWNehwAAAp
+2026-03-12 13:51:17,513 - termman-daemon - INFO - Socket connected: D1W7HjczTkfX6_O1AAAt
+2026-03-12 13:51:17,530 - termman-daemon - INFO - Terminal started: 2e26f509-7e1e-4238-889a-594f7ea7f890
+2026-03-12 13:51:17,530 - termman-daemon - INFO - Terminal started via HTTP: 2e26f509-7e1e-4238-889a-594f7ea7f890
+2026-03-12 13:51:17,536 - termman-daemon - INFO - Socket connected: Jclz-8VfrfvDTUOCAAAv
+2026-03-12 13:51:17,574 - termman-daemon - INFO - 广播流事件到终端 2e26f509-7e1e-4238-889a-594f7ea7f890: (c) Microsoft Corporation。保留所有权利。
+
+2026-03-12 13:51:17,578 - termman-daemon - INFO - 广播流事件到终端 2e26f509-7e1e-4238-889a-594f7ea7f890: 
+
+2026-03-12 13:51:18,539 - termman-daemon - INFO - 发送terminal_connected事件到sid: Jclz-8VfrfvDTUOCAAAv, item_uuid: 2e26f509-7e1e-4238-889a-594f7ea7f890
+2026-03-12 13:51:18,539 - termman-daemon - INFO - Terminal connected: 2e26f509-7e1e-4238-889a-594f7ea7f890, sid: Jclz-8VfrfvDTUOCAAAv, user: user-1435acdc-379c-4af0-9183-1d51571b3bc7
+2026-03-12 13:51:21,543 - termman-daemon - INFO - 广播流事件到终端 2e26f509-7e1e-4238-889a-594f7ea7f890: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-1435acdc-379c-4af0-9183-1d51571b3bc7\2e26f509-7e1e-4238-889a-594f7ea7f890>echo 'Hello from user 1'
+
+2026-03-12 13:51:21,555 - termman-daemon - INFO - 广播流事件到终端 2e26f509-7e1e-4238-889a-594f7ea7f890: 'Hello from user 1'
+
+2026-03-12 13:51:21,569 - termman-daemon - INFO - 广播流事件到终端 2e26f509-7e1e-4238-889a-594f7ea7f890: 
+
+2026-03-12 13:51:23,552 - termman-daemon - INFO - 广播流事件到终端 2e26f509-7e1e-4238-889a-594f7ea7f890: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-1435acdc-379c-4af0-9183-1d51571b3bc7\2e26f509-7e1e-4238-889a-594f7ea7f890>echo 'Hello from user 2'
+
+2026-03-12 13:51:23,565 - termman-daemon - INFO - 广播流事件到终端 2e26f509-7e1e-4238-889a-594f7ea7f890: 'Hello from user 2'
+
+2026-03-12 13:51:23,579 - termman-daemon - INFO - 广播流事件到终端 2e26f509-7e1e-4238-889a-594f7ea7f890: 
+
+2026-03-12 13:51:25,555 - termman-daemon - INFO - 广播流事件到终端 2e26f509-7e1e-4238-889a-594f7ea7f890: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-1435acdc-379c-4af0-9183-1d51571b3bc7\2e26f509-7e1e-4238-889a-594f7ea7f890>echo 'Hello from user 3'
+
+2026-03-12 13:51:25,568 - termman-daemon - INFO - 广播流事件到终端 2e26f509-7e1e-4238-889a-594f7ea7f890: 'Hello from user 3'
+
+2026-03-12 13:51:25,584 - termman-daemon - INFO - 广播流事件到终端 2e26f509-7e1e-4238-889a-594f7ea7f890: 
+
+2026-03-12 13:51:27,555 - termman-daemon - INFO - 广播流事件到终端 2e26f509-7e1e-4238-889a-594f7ea7f890: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-1435acdc-379c-4af0-9183-1d51571b3bc7\2e26f509-7e1e-4238-889a-594f7ea7f890>date
+
+2026-03-12 13:51:27,568 - termman-daemon - INFO - 广播流事件到终端 2e26f509-7e1e-4238-889a-594f7ea7f890: 当前日期: 2026/03/12 周四 
+
+2026-03-12 13:51:29,547 - termman-daemon - INFO - Terminal status queried: 2e26f509-7e1e-4238-889a-594f7ea7f890, status: running
+2026-03-12 13:51:29,554 - termman-daemon - INFO - Terminal stopped: 2e26f509-7e1e-4238-889a-594f7ea7f890
+2026-03-12 13:51:29,555 - termman-daemon - INFO - Terminal stopped via HTTP: 2e26f509-7e1e-4238-889a-594f7ea7f890
+2026-03-12 13:51:29,570 - termman-daemon - INFO - 广播流事件到终端 2e26f509-7e1e-4238-889a-594f7ea7f890: 输入新日期: (年月日) 
+
+2026-03-12 13:51:29,634 - termman-daemon - INFO - Socket disconnected: Jclz-8VfrfvDTUOCAAAv, item: 2e26f509-7e1e-4238-889a-594f7ea7f890
+2026-03-12 13:51:29,634 - termman-daemon - INFO - Socket disconnected: D1W7HjczTkfX6_O1AAAt
+2026-03-12 14:03:27,545 - termman-daemon - INFO - Socket connected: lvThgiHLxi_Vt2DnAAAx
+2026-03-12 14:03:27,561 - termman-daemon - INFO - Terminal started: 7ce216ae-e8c7-4dee-8c68-5626e51e8941
+2026-03-12 14:03:27,562 - termman-daemon - INFO - Terminal started via HTTP: 7ce216ae-e8c7-4dee-8c68-5626e51e8941
+2026-03-12 14:03:27,568 - termman-daemon - INFO - Socket connected: qfUSzQX6NDXN6AgoAAAz
+2026-03-12 14:03:27,605 - termman-daemon - INFO - 广播流事件到终端 7ce216ae-e8c7-4dee-8c68-5626e51e8941: (c) Microsoft Corporation。保留所有权利。
+
+2026-03-12 14:03:27,609 - termman-daemon - INFO - 广播流事件到终端 7ce216ae-e8c7-4dee-8c68-5626e51e8941: 
+
+2026-03-12 14:03:28,569 - termman-daemon - INFO - 发送terminal_connected事件到sid: qfUSzQX6NDXN6AgoAAAz, item_uuid: 7ce216ae-e8c7-4dee-8c68-5626e51e8941
+2026-03-12 14:03:28,570 - termman-daemon - INFO - Terminal connected: 7ce216ae-e8c7-4dee-8c68-5626e51e8941, sid: qfUSzQX6NDXN6AgoAAAz, user: user-40e167b2-ad49-4b56-b6d7-ab5a711220af
+2026-03-12 14:03:31,582 - termman-daemon - INFO - 广播流事件到终端 7ce216ae-e8c7-4dee-8c68-5626e51e8941: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-40e167b2-ad49-4b56-b6d7-ab5a711220af\7ce216ae-e8c7-4dee-8c68-5626e51e8941>echo 'Hello from user 1'
+
+2026-03-12 14:03:31,593 - termman-daemon - INFO - 广播流事件到终端 7ce216ae-e8c7-4dee-8c68-5626e51e8941: 'Hello from user 1'
+
+2026-03-12 14:03:31,613 - termman-daemon - INFO - 广播流事件到终端 7ce216ae-e8c7-4dee-8c68-5626e51e8941: 
+
+2026-03-12 14:03:33,585 - termman-daemon - INFO - 广播流事件到终端 7ce216ae-e8c7-4dee-8c68-5626e51e8941: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-40e167b2-ad49-4b56-b6d7-ab5a711220af\7ce216ae-e8c7-4dee-8c68-5626e51e8941>echo 'Hello from user 2'
+
+2026-03-12 14:03:33,597 - termman-daemon - INFO - 广播流事件到终端 7ce216ae-e8c7-4dee-8c68-5626e51e8941: 'Hello from user 2'
+
+2026-03-12 14:03:33,609 - termman-daemon - INFO - 广播流事件到终端 7ce216ae-e8c7-4dee-8c68-5626e51e8941: 
+
+2026-03-12 14:03:35,586 - termman-daemon - INFO - 广播流事件到终端 7ce216ae-e8c7-4dee-8c68-5626e51e8941: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-40e167b2-ad49-4b56-b6d7-ab5a711220af\7ce216ae-e8c7-4dee-8c68-5626e51e8941>echo 'Hello from user 3'
+
+2026-03-12 14:03:35,599 - termman-daemon - INFO - 广播流事件到终端 7ce216ae-e8c7-4dee-8c68-5626e51e8941: 'Hello from user 3'
+
+2026-03-12 14:03:35,611 - termman-daemon - INFO - 广播流事件到终端 7ce216ae-e8c7-4dee-8c68-5626e51e8941: 
+
+2026-03-12 14:03:37,586 - termman-daemon - INFO - 广播流事件到终端 7ce216ae-e8c7-4dee-8c68-5626e51e8941: E:\dev\TermMan\dev\TermMan\daemon\src\workdir\user-40e167b2-ad49-4b56-b6d7-ab5a711220af\7ce216ae-e8c7-4dee-8c68-5626e51e8941>date
+
+2026-03-12 14:03:37,599 - termman-daemon - INFO - 广播流事件到终端 7ce216ae-e8c7-4dee-8c68-5626e51e8941: 当前日期: 2026/03/12 周四 
+
+2026-03-12 14:03:39,579 - termman-daemon - INFO - Terminal status queried: 7ce216ae-e8c7-4dee-8c68-5626e51e8941, status: running
+2026-03-12 14:03:39,585 - termman-daemon - INFO - Terminal stopped: 7ce216ae-e8c7-4dee-8c68-5626e51e8941
+2026-03-12 14:03:39,586 - termman-daemon - INFO - Terminal stopped via HTTP: 7ce216ae-e8c7-4dee-8c68-5626e51e8941
+2026-03-12 14:03:39,598 - termman-daemon - INFO - 广播流事件到终端 7ce216ae-e8c7-4dee-8c68-5626e51e8941: 输入新日期: (年月日) 
+
+2026-03-12 14:03:39,658 - termman-daemon - INFO - Socket disconnected: lvThgiHLxi_Vt2DnAAAx
+2026-03-12 14:03:39,658 - termman-daemon - INFO - Socket disconnected: qfUSzQX6NDXN6AgoAAAz, item: 7ce216ae-e8c7-4dee-8c68-5626e51e8941

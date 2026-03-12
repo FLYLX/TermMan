@@ -1,4 +1,5 @@
 import socketio
+import requests
 from typing import Callable, Dict, Any, Optional
 from datetime import datetime
 from ..protocol import ProtocolEvents, ProtocolCodec
@@ -15,6 +16,11 @@ class DaemonConnection:
         self.sio = socketio.Client()
         self.last_heartbeat = None
         self.callbacks: Dict[str, Callable] = {}
+        # API配置
+        self.api_base_url = f"{self.config.base_url}/api"
+        self.headers = {
+            "X-API-Key": self.config.api_key
+        }
         self.setup_event_handlers()
 
     def setup_event_handlers(self):
@@ -99,3 +105,61 @@ class DaemonConnection:
         获取当前连接状态
         """
         return self.status
+    
+    def _http_get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        发送HTTP GET请求
+        """
+        try:
+            url = f"{self.api_base_url}/{endpoint}"
+            response = requests.get(url, headers=self.headers, params=params)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def _http_post(self, endpoint: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        发送HTTP POST请求
+        """
+        try:
+            url = f"{self.api_base_url}/{endpoint}"
+            response = requests.post(url, headers=self.headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def health_check(self) -> bool:
+        """
+        健康检查
+        """
+        try:
+            url = self.config.base_url
+            response = requests.get(url)
+            return response.status_code == 200
+        except Exception:
+            return False
+    
+    def terminal_start_http(self, user_uuid: str, token: str) -> Dict[str, Any]:
+        """
+        HTTP方式启动终端
+        """
+        return self._http_post("terminal/start", {
+            "user_uuid": user_uuid,
+            "token": token
+        })
+    
+    def terminal_stop_http(self, item_uuid: str) -> Dict[str, Any]:
+        """
+        HTTP方式停止终端
+        """
+        return self._http_post("terminal/stop", {
+            "item_uuid": item_uuid
+        })
+    
+    def terminal_status_http(self, item_uuid: str) -> Dict[str, Any]:
+        """
+        HTTP方式获取终端状态
+        """
+        return self._http_get(f"terminal/status/{item_uuid}")

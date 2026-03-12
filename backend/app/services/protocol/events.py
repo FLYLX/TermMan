@@ -3,11 +3,11 @@ from enum import Enum
 
 class ProtocolEvents(str, Enum):
     """
-    MCSM协议事件枚举
+    TermMan协议事件枚举
     """
     # 数据流事件
     STREAM = "stream"
-    WRITE = "write"
+    WRITE = "terminal_write"
     
     # 实例事件
     INSTANCE_STDOUT = "instance/stdout"
@@ -18,6 +18,9 @@ class ProtocolEvents(str, Enum):
     TERMINAL_START = "terminal/start"
     TERMINAL_STOP = "terminal/stop"
     TERMINAL_STATUS = "terminal/status"
+    
+    # 终端Socket事件
+    TERMINAL_CONNECT = "terminal_connect"
     
     # 管理事件
     HEARTBEAT = "heartbeat"

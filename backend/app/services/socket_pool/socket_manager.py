@@ -1,7 +1,8 @@
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Callable
 from datetime import datetime, timedelta
 from .item_socket import ItemSocket
 from .socket_models import TerminalStatus, TokenInfo
+from ..protocol import ProtocolEvents
 
 
 class SocketManager:
@@ -18,22 +19,23 @@ class SocketManager:
         """
         return self.sockets.get(item_uuid)
 
-    def create_socket(self, item_uuid: str, token: str, daemon_url: str) -> ItemSocket:
+    def create_socket(self, item_uuid: str, token: str, daemon_url: str, user_uuid: Optional[str] = None, api_key: Optional[str] = None) -> ItemSocket:
         """
         创建新的Item Socket连接
         """
-        socket = ItemSocket(item_uuid, token, daemon_url)
+        socket = ItemSocket(item_uuid, token, daemon_url, user_uuid)
         self.sockets[item_uuid] = socket
-        socket.connect()
+        if api_key:
+            socket.connect(api_key)
         return socket
 
-    def get_or_create_socket(self, item_uuid: str, token: str, daemon_url: str) -> ItemSocket:
+    def get_or_create_socket(self, item_uuid: str, token: str, daemon_url: str, user_uuid: Optional[str] = None, api_key: Optional[str] = None) -> ItemSocket:
         """
         获取或创建Item Socket连接
         """
         socket = self.get_socket(item_uuid)
         if not socket or not socket.is_connected():
-            socket = self.create_socket(item_uuid, token, daemon_url)
+            socket = self.create_socket(item_uuid, token, daemon_url, user_uuid, api_key)
         return socket
 
     def remove_socket(self, item_uuid: str):
@@ -81,6 +83,16 @@ class SocketManager:
         获取所有运行中的Socket连接
         """
         return [sock for sock in self.sockets.values() if sock.is_connected()]
+    
+    def register_stream_callback(self, item_uuid: str, callback: Callable) -> bool:
+        """
+        注册终端输出回调
+        """
+        socket = self.get_socket(item_uuid)
+        if socket and socket.is_connected():
+            socket.on(ProtocolEvents.STREAM, callback)
+            return True
+        return False
 
     def cleanup_expired_tokens(self):
         """

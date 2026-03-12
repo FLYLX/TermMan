@@ -1,6 +1,16 @@
 后端 Service 模块可读取数据项（item）中存储的ip、port字段，通过 item 内置的api key与目标节点机器建立并维持TCP 长连接（复用 MCSM Socket.IO 基于 HTTP 升级的长连接机制，共享节点端口）。
 daemon端也用HTTP服务器方式，接收后端的请求，如启动/中断终端，查询终端状态等。
 item对应一个daemon里面的其中一个子进程终端，通过soket连接。
+
+我要终端socket和HTTP服务器都是一个端口
+参考：
+MCSManager 实现 HTTP Server 与 Socket.IO（WebSocket）共享同一个端口 的核心原理是：Socket.IO 依附于 Node.js 原生 HTTP 服务器运行，而 Koa 框架本身也是挂载在该 HTTP 服务器上的 —— 本质上是「一个端口对应一个 HTTP 服务器，HTTP 服务和 WebSocket 服务都基于这个服务器承载」。以下是具体实现细节：
+一、核心原理：HTTP 服务器作为底层载体
+Node.js 的 http 模块创建的 HTTP 服务器是「多协议复用」的基础：
+HTTP 协议（Koa 处理的接口、静态资源）和 WebSocket 协议（Socket.IO）都基于 TCP 连接，且 WebSocket 握手阶段本身就是 HTTP 请求（带 Upgrade: websocket 头）；
+Socket.IO 会监听 HTTP 服务器的 upgrade 事件，拦截 WebSocket 握手请求，而普通 HTTP 请求则交由 Koa 处理；
+最终表现为：同一个端口既可以处理 http://ip:port/xxx 的 HTTP 请求，也可以处理 ws://ip:port/socket.io 的 WebSocket 连接。
+
 1. 终端未启动时的处理逻辑
 当 item 对应的终端未启动，用户发起 item 访问请求时：
     daemon是一个HTTP服务器，后端通过api key认证不同的daemon，认证通过后，后端通过已建立的 TCP 长连接将指令下发至节点。
@@ -14,7 +24,7 @@ item对应一个daemon里面的其中一个子进程终端，通过soket连接�
     后端接收到 token 后，更新 item 对应的数据库记录，写入远程 Socket 的 token 字段。
     此时后端可以通过item uuid + token，匹配节点内存中的映射表，建立后端与对应 item 终端 Socket 服务器的连接。注意这里是直接后端对终端socket服务器的连接，不再通过daemon端。
     但是daemon端http服务器也需要保持长连接，与后端保持通信。因为他可以控制节点终端的启动、中断某个socket连接、关闭某个socket服务器，查询状态等。
-    
+
 2. 节点端内存存储与 Socket 管理
 节点在内存中维护两张核心映射表：
 

@@ -1,24 +1,24 @@
 import os
 import uuid
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 from datetime import datetime
 from .connection_pool import ConnectionManager, DaemonConfig
 from .socket_pool import SocketManager
 from .connection_handler import ConnectionHandler
 from .protocol import ProtocolEvents
+from .log_manager import LogManager
 
 
 class TerminalService:
     """
     终端核心业务逻辑
     """
-    def __init__(self,
-                 connection_manager: ConnectionManager,
-                 socket_manager: SocketManager,
-                 connection_handler: ConnectionHandler):
+    def __init__(self, connection_manager: ConnectionManager, socket_manager: SocketManager, connection_handler: ConnectionHandler):
         self.connection_manager = connection_manager
         self.socket_manager = socket_manager
         self.connection_handler = connection_handler
+        self.log_manager = LogManager()
+        self.terminal_users = {}  # 跟踪每个终端的连接用户 {item_uuid: [user_uuid1, user_uuid2, ...]}
 
     def start_terminal(self, item_uuid: str, user_uuid: str, daemon_config: DaemonConfig) -> Dict[str, Any]:
         """
@@ -31,23 +31,19 @@ class TerminalService:
 
         # 生成终端token
         terminal_token = str(uuid.uuid4())
-        self.socket_manager.add_token(item_uuid, terminal_token)
 
-        # 构建启动命令
-        start_data = {
-            "item_uuid": item_uuid,
-            "user_uuid": user_uuid,
-            "token": terminal_token
-        }
+        # 使用HTTP方式启动终端
+        result = connection.terminal_start_http(user_uuid, terminal_token)
+        if not result.get("success"):
+            return result
 
-        # 发送启动命令到daemon
-        result = connection.emit(ProtocolEvents.TERMINAL_START, start_data)
-        if not result:
-            return {"success": False, "error": "Failed to send start command"}
+        # 使用daemon返回的item_uuid
+        actual_item_uuid = result.get("item_uuid")
+        self.socket_manager.add_token(actual_item_uuid, terminal_token)
 
         return {
             "success": True,
-            "item_uuid": item_uuid,
+            "item_uuid": actual_item_uuid,
             "token": terminal_token,
             "daemon_url": daemon_config.base_url
         }
@@ -56,21 +52,25 @@ class TerminalService:
         """
         停止终端
         """
-        result = self.connection_handler.handle_terminal_stop(daemon_id, {
-            "item_uuid": item_uuid
-        })
-        return result
+        connection = self.connection_manager.get_connection(daemon_id)
+        if not connection or not connection.is_connected():
+            return {"success": False, "error": "Daemon not connected"}
+            
+        # 使用HTTP方式停止终端
+        return connection.terminal_stop_http(item_uuid)
 
     def get_terminal_status(self, daemon_id: str, item_uuid: str) -> Dict[str, Any]:
         """
         查询终端状态
         """
-        result = self.connection_handler.handle_terminal_status(daemon_id, {
-            "item_uuid": item_uuid
-        })
-        return result
+        connection = self.connection_manager.get_connection(daemon_id)
+        if not connection or not connection.is_connected():
+            return {"success": False, "error": "Daemon not connected"}
+            
+        # 使用HTTP方式获取终端状态
+        return connection.terminal_status_http(item_uuid)
 
-    def connect_terminal(self, item_uuid: str, token: str, daemon_url: str) -> Optional[Dict[str, Any]]:
+    def connect_terminal(self, item_uuid: str, token: str, daemon_url: str, user_uuid: Optional[str] = None, api_key: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
         连接到终端
         """
@@ -79,9 +79,16 @@ class TerminalService:
             return None
 
         # 获取或创建socket连接
-        socket = self.socket_manager.get_or_create_socket(item_uuid, token, daemon_url)
+        socket = self.socket_manager.get_or_create_socket(item_uuid, token, daemon_url, user_uuid, api_key)
         if not socket.is_connected():
             return None
+        
+        # 将用户添加到终端的用户列表中
+        if user_uuid:
+            if item_uuid not in self.terminal_users:
+                self.terminal_users[item_uuid] = []
+            if user_uuid not in self.terminal_users[item_uuid]:
+                self.terminal_users[item_uuid].append(user_uuid)
 
         return {
             "success": True,
@@ -97,28 +104,69 @@ class TerminalService:
             return False
 
         return socket.write(command)
+    
+    def register_stream_callback(self, item_uuid: str, callback: Callable, user_uuid: Optional[str] = None, user_uuids: Optional[list] = None) -> bool:
+        """
+        注册终端输出回调
+        
+        Args:
+            item_uuid: 终端UUID
+            callback: 用户提供的回调函数
+            user_uuid: 用户UUID，用于保存日志文件
+            user_uuids: 用户UUID列表，用于保存多个用户的日志文件
+            
+        Returns:
+            是否成功注册
+        """
+        # 创建一个包装函数，先保存日志，再调用用户回调
+        def wrapped_callback(data):
+            # 收集需要保存日志的用户UUID
+            users_to_log = []
+            
+            # 优先使用显式提供的用户UUID
+            if user_uuid:
+                users_to_log.append(user_uuid)
+            if user_uuids:
+                users_to_log.extend(user_uuids)
+            
+            # 如果没有显式提供，使用终端的所有连接用户UUID
+            if not users_to_log and item_uuid in self.terminal_users:
+                users_to_log = self.terminal_users[item_uuid]
+            
+            # 为所有需要保存日志的用户写入日志
+            for uuid in users_to_log:
+                output = data.get("stdout", "")
+                if output:
+                    self.log_manager.write_to_log(uuid, item_uuid, output)
+                stderr = data.get("stderr", "")
+                if stderr:
+                    self.log_manager.write_to_log(uuid, item_uuid, stderr)
+            
+            # 调用用户提供的回调
+            callback(data)
+        
+        return self.socket_manager.register_stream_callback(item_uuid, wrapped_callback)
 
     def get_terminal_log(self, user_uuid: str, item_uuid: str) -> Optional[str]:
         """
         获取终端日志
         """
-        # 实际项目中应该从文件系统或数据库获取日志
-        # 这里简化实现
-        log_path = f"/tmp/terminals/{user_uuid}/{item_uuid}.log"
-        if os.path.exists(log_path):
-            with open(log_path, "r") as f:
-                return f.read()
-        return None
+        return self.log_manager.get_log_content(user_uuid, item_uuid)
 
     def delete_terminal_log(self, user_uuid: str, item_uuid: str) -> bool:
         """
         删除终端日志
         """
-        log_path = f"/tmp/terminals/{user_uuid}/{item_uuid}.log"
-        if os.path.exists(log_path):
-            os.remove(log_path)
-            return True
-        return False
+        return self.log_manager.delete_log(user_uuid, item_uuid)
+    
+    def set_log_max_size(self, max_size: int) -> None:
+        """
+        设置日志文件最大大小
+        
+        Args:
+            max_size: 最大大小，单位字节
+        """
+        self.log_manager.set_max_log_size(max_size)
 
     def list_user_terminals(self, user_uuid: str) -> Dict[str, Any]:
         """
