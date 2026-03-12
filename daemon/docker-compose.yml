@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  termman-daemon:
+    build: .
+    container_name: termman-daemon
+    ports:
+      - "24444:24444"
+    volumes:
+      - ./src/workdir:/app/src/workdir
+      - ./log:/app/log
+      - ./src/data:/app/src/data
+    environment:
+      - HOST=0.0.0.0
+      - PORT=24444
+      - API_KEY=termman_daemon_secret_key_2024
+      - WORKDIR=/app/src/workdir
+      - LOG_DIR=/app/log
+      - DATA_DIR=/app/src/data
+    restart: unless-stopped
+    networks:
+      - termman-network
+
+networks:
+  termman-network:
+    driver: bridge

@@ -107,34 +107,48 @@ class TerminalProcess:
                         import os
                         sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
                         from core import get_socket_service
-                        socket_service = get_socket_service()
+                        from core import config
                         
                         # 收集所有需要写入的日志路径
                         log_paths = set()
                         
-                        # 添加主日志路径（创建终端的用户）
-                        log_paths.add(self.log_path)
+                        # 首先获取所有连接的用户UUID
+                        connected_user_uuids = set()
+                        connected_user_uuids.add(self.user_uuid)  # 添加创建终端的用户
                         
-                        # 如果有其他连接的用户，添加他们的日志路径
+                        # 尝试获取socket服务并获取所有连接的用户
+                        socket_service = get_socket_service()
                         if socket_service:
-                            # 获取所有连接的用户
-                            with socket_service.lock:
-                                if self.item_uuid in socket_service.connections:
-                                    for conn in socket_service.connections[self.item_uuid]:
-                                        user_uuid = conn['user_uuid']
-                                        # 为每个用户创建日志文件
-                                        user_log_dir = os.path.join(
-                                            config.get("LOG_DIR"),
-                                            user_uuid
-                                        )
-                                        os.makedirs(user_log_dir, exist_ok=True)
-                                        user_log_path = os.path.join(user_log_dir, f"{self.item_uuid}.log")
-                                        log_paths.add(user_log_path)
+                            try:
+                                with socket_service.lock:
+                                    if self.item_uuid in socket_service.connections:
+                                        for conn in socket_service.connections[self.item_uuid]:
+                                            user_uuid = conn['user_uuid']
+                                            if user_uuid:
+                                                connected_user_uuids.add(user_uuid)
+                            except Exception as e:
+                                logger.error(f"Error accessing socket connections: {e}")
+                        
+                        # 为每个用户创建日志路径
+                        for user_uuid in connected_user_uuids:
+                            try:
+                                user_log_dir = os.path.join(
+                                    config.get("LOG_DIR"),
+                                    user_uuid
+                                )
+                                os.makedirs(user_log_dir, exist_ok=True)
+                                user_log_path = os.path.join(user_log_dir, f"{self.item_uuid}.log")
+                                log_paths.add(user_log_path)
+                            except Exception as e:
+                                logger.error(f"Error creating log path for user {user_uuid}: {e}")
                         
                         # 写入所有唯一的日志路径
                         for log_path in log_paths:
-                            with open(log_path, "a", encoding="utf-8") as f:
-                                f.write(decoded_line)
+                            try:
+                                with open(log_path, "a", encoding="utf-8") as f:
+                                    f.write(decoded_line)
+                            except Exception as e:
+                                logger.error(f"Error writing to log {log_path}: {e}")
                     except Exception as e:
                         logger.error(f"Error writing user logs for {self.item_uuid}: {e}")
                 
@@ -189,35 +203,49 @@ class TerminalProcess:
                         import os
                         sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
                         from core import get_socket_service
-                        socket_service = get_socket_service()
+                        from core import config
                         
                         # 收集所有需要写入的日志路径
                         log_paths = set()
                         
-                        # 添加主日志路径（创建终端的用户）
-                        log_paths.add(self.log_path)
+                        # 首先获取所有连接的用户UUID
+                        connected_user_uuids = set()
+                        connected_user_uuids.add(self.user_uuid)  # 添加创建终端的用户
                         
-                        # 如果有其他连接的用户，添加他们的日志路径
+                        # 尝试获取socket服务并获取所有连接的用户
+                        socket_service = get_socket_service()
                         if socket_service:
-                            # 获取所有连接的用户
-                            with socket_service.lock:
-                                if self.item_uuid in socket_service.connections:
-                                    for conn in socket_service.connections[self.item_uuid]:
-                                        user_uuid = conn['user_uuid']
-                                        # 为每个用户创建日志文件
-                                        user_log_dir = os.path.join(
-                                            config.get("LOG_DIR"),
-                                            user_uuid
-                                        )
-                                        os.makedirs(user_log_dir, exist_ok=True)
-                                        user_log_path = os.path.join(user_log_dir, f"{self.item_uuid}.log")
-                                        log_paths.add(user_log_path)
+                            try:
+                                with socket_service.lock:
+                                    if self.item_uuid in socket_service.connections:
+                                        for conn in socket_service.connections[self.item_uuid]:
+                                            user_uuid = conn['user_uuid']
+                                            if user_uuid:
+                                                connected_user_uuids.add(user_uuid)
+                            except Exception as e:
+                                logger.error(f"Error accessing socket connections: {e}")
+                        
+                        # 为每个用户创建日志路径
+                        for user_uuid in connected_user_uuids:
+                            try:
+                                user_log_dir = os.path.join(
+                                    config.get("LOG_DIR"),
+                                    user_uuid
+                                )
+                                os.makedirs(user_log_dir, exist_ok=True)
+                                user_log_path = os.path.join(user_log_dir, f"{self.item_uuid}.log")
+                                log_paths.add(user_log_path)
+                            except Exception as e:
+                                logger.error(f"Error creating log path for user {user_uuid}: {e}")
                         
                         # 写入所有唯一的日志路径
                         error_line = f"[ERROR] {decoded_line}"
                         for log_path in log_paths:
-                            with open(log_path, "a", encoding="utf-8") as f:
-                                f.write(error_line)
+                            try:
+                                with open(log_path, "a", encoding="utf-8") as f:
+                                    f.write(error_line)
+                            except Exception as e:
+                                logger.error(f"Error writing to log {log_path}: {e}")
                     except Exception as e:
                         logger.error(f"Error writing user logs for {self.item_uuid}: {e}")
                 

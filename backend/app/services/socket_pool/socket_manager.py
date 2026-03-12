@@ -10,40 +10,56 @@ class SocketManager:
     Item Socket池管理
     """
     def __init__(self):
-        self.sockets: Dict[str, ItemSocket] = {}
+        self.sockets: Dict[tuple, ItemSocket] = {}  # 使用(user_uuid, item_uuid)作为键
         self.tokens: Dict[str, TokenInfo] = {}
 
-    def get_socket(self, item_uuid: str) -> Optional[ItemSocket]:
+    def get_socket(self, item_uuid: str, user_uuid: str) -> Optional[ItemSocket]:
         """
-        获取指定Item的Socket连接
+        获取指定用户和Item的Socket连接
         """
-        return self.sockets.get(item_uuid)
+        return self.sockets.get((user_uuid, item_uuid))
+    
+    def get_sockets_by_item(self, item_uuid: str) -> List[ItemSocket]:
+        """
+        获取指定Item的所有Socket连接
+        """
+        return [sock for (uuid, iid), sock in self.sockets.items() if iid == item_uuid]
 
-    def create_socket(self, item_uuid: str, token: str, daemon_url: str, user_uuid: Optional[str] = None, api_key: Optional[str] = None) -> ItemSocket:
+    def create_socket(self, item_uuid: str, token: str, daemon_url: str, user_uuid: str, api_key: Optional[str] = None) -> ItemSocket:
         """
         创建新的Item Socket连接
         """
         socket = ItemSocket(item_uuid, token, daemon_url, user_uuid)
-        self.sockets[item_uuid] = socket
+        self.sockets[(user_uuid, item_uuid)] = socket
         if api_key:
             socket.connect(api_key)
         return socket
 
-    def get_or_create_socket(self, item_uuid: str, token: str, daemon_url: str, user_uuid: Optional[str] = None, api_key: Optional[str] = None) -> ItemSocket:
+    def get_or_create_socket(self, item_uuid: str, token: str, daemon_url: str, user_uuid: str, api_key: Optional[str] = None) -> ItemSocket:
         """
         获取或创建Item Socket连接
         """
-        socket = self.get_socket(item_uuid)
+        socket = self.get_socket(item_uuid, user_uuid)
         if not socket or not socket.is_connected():
             socket = self.create_socket(item_uuid, token, daemon_url, user_uuid, api_key)
         return socket
 
-    def remove_socket(self, item_uuid: str):
+    def remove_socket(self, item_uuid: str, user_uuid: str):
         """
         移除并关闭Item Socket连接
         """
-        if item_uuid in self.sockets:
-            socket = self.sockets.pop(item_uuid)
+        key = (user_uuid, item_uuid)
+        if key in self.sockets:
+            socket = self.sockets.pop(key)
+            socket.disconnect()
+    
+    def remove_all_sockets_by_item(self, item_uuid: str):
+        """
+        移除并关闭指定Item的所有Socket连接
+        """
+        keys_to_remove = [(user_uuid, iid) for (user_uuid, iid), sock in self.sockets.items() if iid == item_uuid]
+        for key in keys_to_remove:
+            socket = self.sockets.pop(key)
             socket.disconnect()
 
     def add_token(self, item_uuid: str, token: str, expire_minutes: int = 1440) -> TokenInfo:
@@ -84,11 +100,17 @@ class SocketManager:
         """
         return [sock for sock in self.sockets.values() if sock.is_connected()]
     
-    def register_stream_callback(self, item_uuid: str, callback: Callable) -> bool:
+    def get_user_sockets(self, user_uuid: str) -> List[ItemSocket]:
+        """
+        获取指定用户的所有Socket连接
+        """
+        return [sock for (uuid, iid), sock in self.sockets.items() if uuid == user_uuid]
+    
+    def register_stream_callback(self, item_uuid: str, user_uuid: str, callback: Callable) -> bool:
         """
         注册终端输出回调
         """
-        socket = self.get_socket(item_uuid)
+        socket = self.get_socket(item_uuid, user_uuid)
         if socket and socket.is_connected():
             socket.on(ProtocolEvents.STREAM, callback)
             return True

@@ -174,12 +174,13 @@ class TestTerminalService:
         """在终端上执行命令"""
         logger.info("测试4: 执行命令")
         try:
-            # 注册终端输出回调，传递所有用户的UUID，为每个用户保存日志
-            self.terminal_service.register_stream_callback(
-                self.item_uuid, 
-                self.terminal_output_callback, 
-                user_uuids=self.user_uuids  # 传递所有用户UUID
-            )
+            # 为每个用户单独注册回调函数
+            for user_uuid in self.user_uuids:
+                self.terminal_service.register_stream_callback(
+                    self.item_uuid, 
+                    user_uuid,
+                    self.terminal_output_callback
+                )
             
             all_success = True
             

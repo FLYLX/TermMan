@@ -7,16 +7,16 @@ from .socket_models import TerminalStatus, TokenInfo
 
 class ItemSocket:
     """
-    单个Item终端的Socket客户端封装
+    代表单个终端的Socket连接
     """
-    def __init__(self, item_uuid: str, token: str, daemon_url: str, user_uuid: Optional[str] = None):
+    def __init__(self, item_uuid: str, token: str, daemon_url: str, user_uuid: str):
         self.item_uuid = item_uuid
         self.token = token
         self.daemon_url = daemon_url
-        self.user_uuid = user_uuid
+        self.user_uuid = user_uuid  # 每个socket连接只对应一个用户
         self.status = TerminalStatus.STOPPED
-        self.sio = socketio.Client()
-        self.callbacks: Dict[str, Callable] = {}
+        self.callbacks = {}
+        self.sio = socketio.Client(reconnection=False)
         self.setup_event_handlers()
 
     def setup_event_handlers(self):
@@ -67,6 +67,7 @@ class ItemSocket:
             import time
             time.sleep(1)
             if self.sio.connected:
+                # 为当前socket对应的用户发送连接事件
                 self.sio.emit(ProtocolEvents.TERMINAL_CONNECT, {
                     "item_uuid": self.item_uuid,
                     "token": self.token,

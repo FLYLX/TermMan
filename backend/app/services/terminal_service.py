@@ -99,53 +99,43 @@ class TerminalService:
         """
         向终端写入命令
         """
-        socket = self.socket_manager.get_socket(item_uuid)
-        if not socket or not socket.is_connected():
+        # 获取该终端的所有socket连接
+        sockets = self.socket_manager.get_sockets_by_item(item_uuid)
+        if not sockets:
             return False
 
-        return socket.write(command)
+        # 向第一个活跃的socket连接发送命令
+        for socket in sockets:
+            if socket.is_connected():
+                return socket.write(command)
+        return False
     
-    def register_stream_callback(self, item_uuid: str, callback: Callable, user_uuid: Optional[str] = None, user_uuids: Optional[list] = None) -> bool:
+    def register_stream_callback(self, item_uuid: str, user_uuid: str, callback: Callable) -> bool:
         """
         注册终端输出回调
         
         Args:
             item_uuid: 终端UUID
+            user_uuid: 用户UUID，用于保存日志文件和关联socket
             callback: 用户提供的回调函数
-            user_uuid: 用户UUID，用于保存日志文件
-            user_uuids: 用户UUID列表，用于保存多个用户的日志文件
             
         Returns:
             是否成功注册
         """
         # 创建一个包装函数，先保存日志，再调用用户回调
         def wrapped_callback(data):
-            # 收集需要保存日志的用户UUID
-            users_to_log = []
-            
-            # 优先使用显式提供的用户UUID
-            if user_uuid:
-                users_to_log.append(user_uuid)
-            if user_uuids:
-                users_to_log.extend(user_uuids)
-            
-            # 如果没有显式提供，使用终端的所有连接用户UUID
-            if not users_to_log and item_uuid in self.terminal_users:
-                users_to_log = self.terminal_users[item_uuid]
-            
-            # 为所有需要保存日志的用户写入日志
-            for uuid in users_to_log:
-                output = data.get("stdout", "")
-                if output:
-                    self.log_manager.write_to_log(uuid, item_uuid, output)
-                stderr = data.get("stderr", "")
-                if stderr:
-                    self.log_manager.write_to_log(uuid, item_uuid, stderr)
+            # 只保存当前用户的日志
+            output = data.get("stdout", "")
+            if output:
+                self.log_manager.write_to_log(user_uuid, item_uuid, output)
+            stderr = data.get("stderr", "")
+            if stderr:
+                self.log_manager.write_to_log(user_uuid, item_uuid, stderr)
             
             # 调用用户提供的回调
             callback(data)
         
-        return self.socket_manager.register_stream_callback(item_uuid, wrapped_callback)
+        return self.socket_manager.register_stream_callback(item_uuid, user_uuid, wrapped_callback)
 
     def get_terminal_log(self, user_uuid: str, item_uuid: str) -> Optional[str]:
         """
