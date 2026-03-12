@@ -82,17 +82,26 @@ class DaemonConnection:
 #### SocketManager
 ```python
 class SocketManager:
-    def get_socket(item_uuid: str) -> Optional[ItemSocket]:
-        """获取指定Item的Socket连接"""
+    def get_socket(item_uuid: str, user_uuid: str) -> Optional[ItemSocket]:
+        """获取指定用户和Item的Socket连接"""
     
-    def create_socket(item_uuid: str, token: str, daemon_url: str) -> ItemSocket:
+    def get_sockets_by_item(item_uuid: str) -> List[ItemSocket]:
+        """获取指定Item的所有Socket连接"""
+    
+    def get_user_sockets(user_uuid: str) -> List[ItemSocket]:
+        """获取指定用户的所有Socket连接"""
+    
+    def create_socket(item_uuid: str, token: str, daemon_url: str, user_uuid: str) -> ItemSocket:
         """创建新的Item Socket连接"""
     
-    def get_or_create_socket(item_uuid: str, token: str, daemon_url: str) -> ItemSocket:
+    def get_or_create_socket(item_uuid: str, token: str, daemon_url: str, user_uuid: str) -> ItemSocket:
         """获取或创建Item Socket连接"""
     
-    def remove_socket(item_uuid: str):
+    def remove_socket(item_uuid: str, user_uuid: str):
         """移除并关闭Item Socket连接"""
+    
+    def remove_all_sockets_by_item(item_uuid: str):
+        """移除并关闭指定Item的所有Socket连接"""
     
     def add_token(item_uuid: str, token: str, expire_minutes: int = 1440) -> TokenInfo:
         """添加Token信息"""
@@ -102,12 +111,18 @@ class SocketManager:
     
     def validate_token(item_uuid: str, token: str) -> bool:
         """验证Token有效性"""
+    
+    def register_stream_callback(item_uuid: str, user_uuid: str, callback: Callable) -> bool:
+        """注册终端输出回调"""
 ```
 
 #### ItemSocket
 ```python
 class ItemSocket:
-    def connect() -> bool:
+    def __init__(self, item_uuid: str, token: str, daemon_url: str, user_uuid: str):
+        """初始化ItemSocket连接"""
+        
+    def connect(api_key: str) -> bool:
         """建立与终端Socket服务器的连接"""
     
     def disconnect():
@@ -124,12 +139,18 @@ class ItemSocket:
     
     def is_connected() -> bool:
         """检查连接是否活跃"""
+    
+    def get_status() -> TerminalStatus:
+        """获取当前状态"""
 ```
 
 ### connection_handler 模块
 
 ```python
 class ConnectionHandler:
+    def __init__(self, connection_manager: ConnectionManager, socket_manager: SocketManager):
+        """初始化ConnectionHandler"""
+        
     def handle_command(daemon_id: str, command: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """处理命令"""
     
@@ -147,6 +168,9 @@ class ConnectionHandler:
 
 ```python
 class TerminalService:
+    def __init__(self, connection_manager: ConnectionManager, socket_manager: SocketManager, connection_handler: ConnectionHandler):
+        """初始化TerminalService"""
+        
     def start_terminal(item_uuid: str, user_uuid: str, daemon_config: DaemonConfig) -> Dict[str, Any]:
         """启动终端"""
     
@@ -156,17 +180,26 @@ class TerminalService:
     def get_terminal_status(daemon_id: str, item_uuid: str) -> Dict[str, Any]:
         """查询终端状态"""
     
-    def connect_terminal(item_uuid: str, token: str, daemon_url: str) -> Optional[Dict[str, Any]]:
+    def connect_terminal(item_uuid: str, token: str, daemon_url: str, user_uuid: str, api_key: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """连接到终端"""
     
     def write_to_terminal(item_uuid: str, command: str) -> bool:
         """向终端写入命令"""
+    
+    def register_stream_callback(item_uuid: str, user_uuid: str, callback: Callable) -> bool:
+        """注册终端输出回调"""
     
     def get_terminal_log(user_uuid: str, item_uuid: str) -> Optional[str]:
         """获取终端日志"""
     
     def delete_terminal_log(user_uuid: str, item_uuid: str) -> bool:
         """删除终端日志"""
+    
+    def set_log_max_size(max_size: int) -> None:
+        """设置日志文件最大大小"""
+    
+    def list_user_terminals(user_uuid: str) -> Dict[str, Any]:
+        """列出用户的所有终端"""
 ```
 
 ### auth_service 模块
@@ -208,6 +241,7 @@ class ProtocolEvents(str, Enum):
     TERMINAL_START = "terminal/start"    # 终端启动
     TERMINAL_STOP = "terminal/stop"      # 终端停止
     TERMINAL_STATUS = "terminal/status"  # 终端状态
+    TERMINAL_CONNECT = "terminal_connect"  # 终端连接
 ```
 
 #### ProtocolCodec
@@ -230,7 +264,7 @@ class ProtocolCodec:
 
 ```python
 from app.services import TerminalService, ConnectionManager, DaemonConfig
-from app.services import AuthService
+from app.services import SocketManager, ConnectionHandler
 
 # 创建Daemon配置
 config = DaemonConfig(
@@ -240,13 +274,16 @@ config = DaemonConfig(
     api_key="termman_daemon_secret_key_2024"
 )
 
-# 获取或创建Daemon连接
+# 初始化服务
 connection_manager = ConnectionManager()
+socket_manager = SocketManager()
+connection_handler = ConnectionHandler(connection_manager, socket_manager)
+terminal_service = TerminalService(connection_manager, socket_manager, connection_handler)
+
+# 获取或创建Daemon连接
 connection = connection_manager.get_or_create_connection(config)
 
 # 启动终端
-auth_service = AuthService()
-terminal_service = TerminalService(connection_manager, SocketManager(), ConnectionHandler())
 result = terminal_service.start_terminal(
     item_uuid="item-456",
     user_uuid="user-789",
@@ -256,8 +293,23 @@ result = terminal_service.start_terminal(
 # 连接到终端
 if result["success"]:
     terminal_service.connect_terminal(
-        item_uuid=result["item_uuid"],
+        item_uuid=result["item_uuid"], 
         token=result["token"],
-        daemon_url=result["daemon_url"]
+        daemon_url=result["daemon_url"],
+        user_uuid="user-789",
+        api_key="termman_daemon_secret_key_2024"
     )
+
+# 注册终端输出回调
+def terminal_output_callback(data):
+    print(f"终端输出: {data.get('stdout', '')}")
+
+terminal_service.register_stream_callback(
+    item_uuid=result["item_uuid"],
+    user_uuid="user-789",
+    callback=terminal_output_callback
+)
+
+# 执行命令
+terminal_service.write_to_terminal(result["item_uuid"], "echo 'Hello, World!'")
 ```

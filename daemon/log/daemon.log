@@ -1,0 +1,8 @@
+2026-03-12 16:43:00,494 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-12 16:43:00,496 - termman-daemon - INFO - API Key: ***2024
+2026-03-12 16:46:02,276 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-12 16:46:02,277 - termman-daemon - INFO - API Key: ***2024
+2026-03-12 16:46:17,581 - termman-daemon - WARNING - Socket connection rejected: 3rLwO529CtnCgv7zAAAB, invalid auth
+2026-03-12 16:47:40,243 - termman-daemon - WARNING - Socket connection rejected: BokMpY2ZNjY0g5AVAAAD, invalid auth
+2026-03-12 16:48:53,024 - termman-daemon - INFO - Terminal started: 18b4faf2-d156-4e50-8df1-26460c4299b0
+2026-03-12 16:48:53,025 - termman-daemon - INFO - Terminal started via HTTP: 18b4faf2-d156-4e50-8df1-26460c4299b0
