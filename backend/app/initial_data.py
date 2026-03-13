@@ -4,7 +4,7 @@ import uuid
 from sqlmodel import Session, SQLModel
 
 from app.core.db import engine, init_db
-from app.models import User, Item, ItemHandler, ItemStatus
+from app.models import User, Item, ItemHandler, ItemStatus, SocketConnectionType
 from app.core.security import get_password_hash
 
 logging.basicConfig(level=logging.INFO)
@@ -84,7 +84,12 @@ def init_test_data() -> None:
             session.refresh(handler)
             logger.info(f"Created ItemHandler: {handler.name} with id: {handler.id}")
         
-        # Create 5 Items
+        # Create 5 Items with daemon configuration
+        # Using the same API key as the daemon for testing
+        daemon_api_key = "termman_daemon_secret_key_2024"
+        daemon_host = "daemon"  # 使用容器名称而不是localhost，确保Docker容器内可以正确连接
+        daemon_port = 9000
+        
         items = [
             Item(
                 title="测试项目 1",
@@ -93,7 +98,10 @@ def init_test_data() -> None:
                 config={"key1": "value1", "key2": "value2"},
                 resource_usage={"cpu": "10%", "memory": "200MB"},
                 log_path="/logs/item1.log",
-                api_key="item_key_001",
+                api_key=daemon_api_key,
+                socket_host=daemon_host,
+                socket_port=daemon_port,
+                socket_connection_type="local",
                 command="python run_item.py",
                 executable_path="/usr/bin/python3",
                 working_directory="/app/items/1",
@@ -106,7 +114,10 @@ def init_test_data() -> None:
                 config={"setting1": "option1", "threads": 4},
                 resource_usage={"cpu": "5%", "memory": "100MB"},
                 log_path="/logs/item2.log",
-                api_key="item_key_002",
+                api_key=daemon_api_key,
+                socket_host=daemon_host,
+                socket_port=daemon_port,
+                socket_connection_type="local",
                 command="node server.js",
                 executable_path="/usr/bin/node",
                 working_directory="/app/items/2",
@@ -119,7 +130,10 @@ def init_test_data() -> None:
                 config={"param1": "data1", "batch_size": 1000},
                 resource_usage={"cpu": "15%", "memory": "300MB"},
                 log_path="/logs/item3.log",
-                api_key="item_key_003",
+                api_key=daemon_api_key,
+                socket_host=daemon_host,
+                socket_port=daemon_port,
+                socket_connection_type="local",
                 command="java -jar processor.jar",
                 executable_path="/usr/bin/java",
                 working_directory="/app/items/3",
@@ -132,7 +146,10 @@ def init_test_data() -> None:
                 config={"service": "api", "port": 8000},
                 resource_usage={"cpu": "8%", "memory": "250MB"},
                 log_path="/logs/item4.log",
-                api_key="item_key_004",
+                api_key=daemon_api_key,
+                socket_host=daemon_host,
+                socket_port=daemon_port,
+                socket_connection_type="local",
                 command="python api_server.py",
                 executable_path="/usr/bin/python3",
                 working_directory="/app/items/4",
@@ -145,7 +162,10 @@ def init_test_data() -> None:
                 config={"service": "cron", "schedule": "*/5 * * * *"},
                 resource_usage={"cpu": "3%", "memory": "80MB"},
                 log_path="/logs/item5.log",
-                api_key="item_key_005",
+                api_key=daemon_api_key,
+                socket_host=daemon_host,
+                socket_port=daemon_port,
+                socket_connection_type="local",
                 command="python cron_job.py",
                 executable_path="/usr/bin/python3",
                 working_directory="/app/items/5",

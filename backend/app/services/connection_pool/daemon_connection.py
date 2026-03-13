@@ -54,8 +54,12 @@ class DaemonConnection:
         """
         建立与Daemon的连接
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
             self.status = ConnectionStatus.CONNECTING
+            logger.debug(f"Attempting to connect to {self.config.base_url} with API key: {self.config.api_key}")
             self.sio.connect(
                 self.config.base_url,
                 transports=["websocket"],
@@ -63,6 +67,10 @@ class DaemonConnection:
             )
             return True
         except Exception as e:
+            logger.error(f"Connection to {self.config.base_url} failed: {str(e)}")
+            logger.error(f"Error type: {type(e).__name__}")
+            import traceback
+            logger.error(f"Error traceback: {traceback.format_exc()}")
             self.status = ConnectionStatus.ERROR
             return False
 

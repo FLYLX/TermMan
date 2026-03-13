@@ -5,14 +5,14 @@ services:
     build: .
     container_name: termman-daemon
     ports:
-      - "24444:24444"
+      - "9000:9000"
     volumes:
       - ./src/workdir:/app/src/workdir
       - ./log:/app/log
       - ./src/data:/app/src/data
     environment:
       - HOST=0.0.0.0
-      - PORT=24444
+      - PORT=9000
       - API_KEY=termman_daemon_secret_key_2024
       - WORKDIR=/app/src/workdir
       - LOG_DIR=/app/log

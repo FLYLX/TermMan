@@ -27,6 +27,9 @@ services:
       - SENTRY_DSN=${SENTRY_DSN}
     volumes:
       - backend-db:/app/backend
+    depends_on:
+      daemon:
+        condition: service_started
 
   backend:
     image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}'
@@ -125,7 +128,7 @@ services:
       - .env
     environment:
       - HOST=0.0.0.0
-      - PORT=24444
+      - PORT=9000
       - API_KEY=termman_daemon_secret_key_2024
       - TERMINAL_SHELL=/bin/sh
       - TERMINAL_ENCODING=utf-8

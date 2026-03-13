@@ -5,6 +5,9 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router
 from app.core.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
@@ -31,3 +34,8 @@ if settings.all_cors_origins:
     )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+
+# 初始化daemon连接
+from app.services import initialize_daemon_connections
+initialize_daemon_connections()

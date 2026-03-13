@@ -350,7 +350,7 @@ from app.services import SocketManager, ConnectionHandler
 config = DaemonConfig(
     daemon_id="daemon-123",
     ip="127.0.0.1",
-    port=24444,
+    port=9000,
     api_key="termman_daemon_secret_key_2024"
 )
 

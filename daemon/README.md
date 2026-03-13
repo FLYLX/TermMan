@@ -248,7 +248,7 @@ class Logger:
 
 | 变量名 | 描述 | 默认值 |
 |--------|------|--------|
-| PORT | Daemon服务端口 | 24444 |
+| PORT | Daemon服务端口 | 9000 |
 | HOST | Daemon服务主机 | 0.0.0.0 |
 | API_KEY | API访问密钥 | 无 |
 | WORKDIR | 终端工作目录 | ./src/workdir |
@@ -283,7 +283,7 @@ class Logger:
 ### 启动终端（HTTP）
 
 ```bash
-curl -X POST http://localhost:24444/api/terminal/start \
+curl -X POST http://localhost:9000/api/terminal/start \
   -H "X-API-Key: termman_daemon_secret_key_2024" \
   -H "Content-Type: application/json" \
   -d '{"user_uuid": "user-123", "token": "token-456"}'
@@ -292,7 +292,7 @@ curl -X POST http://localhost:24444/api/terminal/start \
 ### 停止终端（HTTP）
 
 ```bash
-curl -X POST http://localhost:24444/api/terminal/stop \
+curl -X POST http://localhost:9000/api/terminal/stop \
   -H "X-API-Key: termman_daemon_secret_key_2024" \
   -H "Content-Type: application/json" \
   -d '{"item_uuid": "item-789"}'
@@ -301,7 +301,7 @@ curl -X POST http://localhost:24444/api/terminal/stop \
 ### 连接终端（Socket.IO）
 
 ```javascript
-const socket = io("http://localhost:24444");
+const socket = io("http://localhost:9000");
 
 socket.on("connect", () => {
   console.log("Connected to daemon");

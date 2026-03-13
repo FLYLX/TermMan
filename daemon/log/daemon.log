@@ -1,4 +1,4 @@
-2026-03-13 01:52:49,889 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-13 01:52:49,889 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
 2026-03-13 01:52:49,895 - termman-daemon - INFO - API Key: ***2024
 2026-03-13 10:13:32,818 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
 2026-03-13 10:13:32,818 - termman-daemon - INFO - API Key: ***2024
@@ -1016,5 +1016,63 @@
 2026-03-13 14:11:26,212 - termman-daemon - INFO - Terminal stopped via HTTP: 4664909c-e671-4338-9c6e-75c5033334d2
 2026-03-13 14:11:28,252 - termman-daemon - INFO - Terminal stopped: bd215621-164f-4298-840a-99472cbcd347
 2026-03-13 14:11:28,253 - termman-daemon - INFO - Terminal stopped via HTTP: bd215621-164f-4298-840a-99472cbcd347
-2026-03-13 06:16:04,670 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-13 06:16:04,670 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
 2026-03-13 06:16:04,671 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 07:12:46,701 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 07:12:46,702 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 07:23:05,404 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 07:23:05,405 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 07:30:03,087 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 07:30:03,088 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 07:34:49,624 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 07:34:49,625 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 07:53:15,909 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 07:53:15,909 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 08:58:40,275 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 08:58:40,277 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 09:07:24,075 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 09:07:24,076 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 11:54:02,117 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 11:54:02,118 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 12:40:41,797 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 12:40:41,798 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 14:59:36,431 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 14:59:36,431 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 15:04:19,695 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 15:04:19,696 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 15:05:45,793 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 15:05:45,793 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 15:12:59,136 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 15:12:59,137 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 15:31:27,674 - termman-daemon - INFO - Socket connected: 6YEsMOB1TstHym3DAAAB
+2026-03-13 15:31:30,473 - termman-daemon - INFO - Socket connected: FGvuio4j1MkH4gHQAAAE
+2026-03-13 15:31:30,476 - termman-daemon - INFO - Socket connected: uM2cpYwRQ2nXf-kaAAAF
+2026-03-13 15:31:30,484 - termman-daemon - INFO - Socket connected: drvDiCSXdF4kvF4iAAAI
+2026-03-13 15:31:30,484 - termman-daemon - INFO - Socket connected: gJ3S9M949qxAoD6pAAAJ
+2026-03-13 15:34:33,703 - termman-daemon - INFO - Socket disconnected: drvDiCSXdF4kvF4iAAAI
+2026-03-13 15:34:33,703 - termman-daemon - INFO - Socket disconnected: FGvuio4j1MkH4gHQAAAE
+2026-03-13 15:34:33,704 - termman-daemon - INFO - Socket disconnected: uM2cpYwRQ2nXf-kaAAAF
+2026-03-13 15:34:33,704 - termman-daemon - INFO - Socket disconnected: 6YEsMOB1TstHym3DAAAB
+2026-03-13 15:34:33,704 - termman-daemon - INFO - Socket disconnected: gJ3S9M949qxAoD6pAAAJ
+2026-03-13 15:35:38,233 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 15:35:38,233 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 15:37:35,807 - termman-daemon - INFO - Socket connected: tvmtBQELDcW56U_3AAAB
+2026-03-13 15:37:38,762 - termman-daemon - INFO - Socket connected: I2izXR6r9Hnl1QVEAAAD
+2026-03-13 15:37:38,801 - termman-daemon - INFO - Socket connected: st5DWi805nBwI8dNAAAG
+2026-03-13 15:37:38,809 - termman-daemon - INFO - Socket connected: csbEU3K1gYj2wvJtAAAH
+2026-03-13 15:37:38,818 - termman-daemon - INFO - Socket connected: mZNxpMnwBSOi3bheAAAJ
+2026-03-13 15:38:37,557 - termman-daemon - INFO - Socket disconnected: I2izXR6r9Hnl1QVEAAAD
+2026-03-13 15:38:37,567 - termman-daemon - INFO - Socket disconnected: csbEU3K1gYj2wvJtAAAH
+2026-03-13 15:38:37,578 - termman-daemon - INFO - Socket disconnected: mZNxpMnwBSOi3bheAAAJ
+2026-03-13 15:38:37,590 - termman-daemon - INFO - Socket disconnected: st5DWi805nBwI8dNAAAG
+2026-03-13 15:38:37,601 - termman-daemon - INFO - Socket disconnected: tvmtBQELDcW56U_3AAAB
+2026-03-13 15:40:26,526 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 15:40:26,526 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 15:41:22,984 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 15:41:22,985 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 15:52:55,727 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 15:52:55,728 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 15:53:40,157 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 15:53:40,157 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 15:53:44,955 - termman-daemon - INFO - Socket connected: KQNBwyTOAK4X_00iAAAB
+2026-03-13 15:53:46,003 - termman-daemon - INFO - Socket connected: HOofZuECGKzJVK0BAAAD

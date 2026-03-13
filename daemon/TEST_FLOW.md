@@ -30,7 +30,7 @@ copy .env.example .env
 
 ```ini
 # Daemon Configuration
-PORT=24444
+PORT=9000
 API_KEY=termman_daemon_secret_key_2024
 HOST=0.0.0.0
 WORKDIR=./src/workdir
@@ -60,12 +60,12 @@ poetry run python src/main.py
 等待服务启动成功，看到类似输出：
 
 ```
-[INFO] Starting TermMan Daemon on 0.0.0.0:24444
+[INFO] Starting TermMan Daemon on 0.0.0.0:9000
 [INFO] API Key: ***2024
 INFO:     Started server process [12345]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:24444 (Press CTRL+C to quit)
+INFO:     Uvicorn running on http://0.0.0.0:9000 (Press CTRL+C to quit)
 ```
 
 ### 第二步：运行测试脚本
@@ -85,7 +85,7 @@ poetry run python test_daemon.py
 测试脚本会依次执行以下测试用例：
 
 ### 1. 健康检查接口
-- 测试地址：`http://127.0.0.1:24444/`
+- 测试地址：`http://127.0.0.1:9000/`
 - 验证Daemon服务是否正常启动
 
 ### 2. 启动终端
@@ -100,7 +100,7 @@ poetry run python test_daemon.py
 - 输出：终端状态（running/stopped/error）
 
 ### 4. Socket.IO连接
-- 测试地址：`ws://127.0.0.1:24444/`
+- 测试地址：`ws://127.0.0.1:9000/`
 - 功能：建立与终端的Socket连接
 - 验证Token认证机制
 

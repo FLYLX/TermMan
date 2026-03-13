@@ -5,6 +5,7 @@ from .terminal_service import TerminalService
 from .auth_service import AuthService
 from .protocol import ProtocolEvents, ProtocolCodec
 from .log_manager import LogManager
+from .daemon_initializer import connection_manager, initialize_daemon_connections
 
 __all__ = [
     "ConnectionManager",
@@ -16,5 +17,7 @@ __all__ = [
     "AuthService",
     "ProtocolEvents",
     "ProtocolCodec",
-    "LogManager"
+    "LogManager",
+    "connection_manager",
+    "initialize_daemon_connections"
 ]
