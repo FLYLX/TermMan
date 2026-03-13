@@ -89,6 +89,19 @@ class TerminalService:
                 self.terminal_users[item_uuid] = []
             if user_uuid not in self.terminal_users[item_uuid]:
                 self.terminal_users[item_uuid].append(user_uuid)
+            
+            # 注册日志回调，确保终端输出被记录到日志文件
+            def log_callback(data):
+                """仅用于记录日志的回调函数"""
+                output = data.get("stdout", "")
+                if output:
+                    self.log_manager.write_to_log(user_uuid, item_uuid, output)
+                stderr = data.get("stderr", "")
+                if stderr:
+                    self.log_manager.write_to_log(user_uuid, item_uuid, stderr)
+            
+            # 注册回调，确保日志被记录
+            self.socket_manager.register_stream_callback(item_uuid, user_uuid, log_callback)
 
         return {
             "success": True,

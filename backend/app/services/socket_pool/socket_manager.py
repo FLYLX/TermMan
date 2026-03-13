@@ -1,4 +1,4 @@
-from typing import Dict, Optional, List, Callable
+from typing import Dict, Optional, List, Callable, Any
 from datetime import datetime, timedelta
 from .item_socket import ItemSocket
 from .socket_models import TerminalStatus, TokenInfo
@@ -11,7 +11,13 @@ class SocketManager:
     """
     def __init__(self):
         self.sockets: Dict[tuple, ItemSocket] = {}  # 使用(user_uuid, item_uuid)作为键
-        self.tokens: Dict[str, TokenInfo] = {}
+        self.tokens: Dict[str, TokenInfo] = {}  # item_uuid → token
+        
+        # 用户-项目映射：user_uuid → Set[item_uuid]
+        self.user_item_map: Dict[str, set] = {}  # 权限校验专用
+        
+        # 项目-用户-连接映射：item_uuid → {user_uuid: socket连接实例}
+        self.item_user_conn_map: Dict[str, Dict[str, ItemSocket]] = {}  # 断开连接专用
 
     def get_socket(self, item_uuid: str, user_uuid: str) -> Optional[ItemSocket]:
         """
@@ -31,6 +37,17 @@ class SocketManager:
         """
         socket = ItemSocket(item_uuid, token, daemon_url, user_uuid)
         self.sockets[(user_uuid, item_uuid)] = socket
+        
+        # 更新用户-项目映射
+        if user_uuid not in self.user_item_map:
+            self.user_item_map[user_uuid] = set()
+        self.user_item_map[user_uuid].add(item_uuid)
+        
+        # 更新项目-用户-连接映射
+        if item_uuid not in self.item_user_conn_map:
+            self.item_user_conn_map[item_uuid] = {}
+        self.item_user_conn_map[item_uuid][user_uuid] = socket
+        
         if api_key:
             socket.connect(api_key)
         return socket
@@ -52,15 +69,49 @@ class SocketManager:
         if key in self.sockets:
             socket = self.sockets.pop(key)
             socket.disconnect()
+            
+            # 更新用户-项目映射
+            if user_uuid in self.user_item_map:
+                self.user_item_map[user_uuid].discard(item_uuid)
+                # 如果用户没有任何项目了，移除该用户
+                if not self.user_item_map[user_uuid]:
+                    self.user_item_map.pop(user_uuid)
+            
+            # 更新项目-用户-连接映射
+            if item_uuid in self.item_user_conn_map:
+                if user_uuid in self.item_user_conn_map[item_uuid]:
+                    self.item_user_conn_map[item_uuid].pop(user_uuid)
+                # 如果项目没有任何用户了，移除该项目
+                if not self.item_user_conn_map[item_uuid]:
+                    self.item_user_conn_map.pop(item_uuid)
     
     def remove_all_sockets_by_item(self, item_uuid: str):
         """
         移除并关闭指定Item的所有Socket连接
         """
         keys_to_remove = [(user_uuid, iid) for (user_uuid, iid), sock in self.sockets.items() if iid == item_uuid]
+        
+        # 记录要更新的用户
+        affected_users = set()
+        for user_uuid, iid in keys_to_remove:
+            affected_users.add(user_uuid)
+        
+        # 移除socket连接
         for key in keys_to_remove:
             socket = self.sockets.pop(key)
             socket.disconnect()
+        
+        # 更新用户-项目映射
+        for user_uuid in affected_users:
+            if user_uuid in self.user_item_map:
+                self.user_item_map[user_uuid].discard(item_uuid)
+                # 如果用户没有任何项目了，移除该用户
+                if not self.user_item_map[user_uuid]:
+                    self.user_item_map.pop(user_uuid)
+        
+        # 更新项目-用户-连接映射
+        if item_uuid in self.item_user_conn_map:
+            self.item_user_conn_map.pop(item_uuid)
 
     def add_token(self, item_uuid: str, token: str, expire_minutes: int = 1440) -> TokenInfo:
         """
@@ -99,6 +150,53 @@ class SocketManager:
         获取所有运行中的Socket连接
         """
         return [sock for sock in self.sockets.values() if sock.is_connected()]
+    
+    def get_connection_tables(self) -> Dict[str, Any]:
+        """
+        获取所有连接表
+        
+        Returns:
+            包含用户-项目映射、项目-用户连接映射和项目-Token映射的字典
+        """
+        # 转换用户-项目映射为列表格式以便JSON序列化
+        user_item_map = {user_uuid: list(items) for user_uuid, items in self.user_item_map.items()}
+        
+        # 转换项目-用户连接映射，只保留必要信息
+        item_user_conn_map = {}
+        for item_uuid, user_conns in self.item_user_conn_map.items():
+            item_user_conn_map[item_uuid] = {
+                user_uuid: {
+                    'is_connected': conn.is_connected(),
+                    'status': conn.status.value
+                } for user_uuid, conn in user_conns.items()
+            }
+        
+        # 转换Token映射
+        item_token_map = {item_uuid: token_info.token for item_uuid, token_info in self.tokens.items()}
+        
+        return {
+            'user_item_map': user_item_map,
+            'item_user_conn_map': item_user_conn_map,
+            'item_token_map': item_token_map
+        }
+    
+    def disconnect_user_from_item(self, item_uuid: str, user_uuid: str) -> bool:
+        """
+        断开特定用户与特定项目的Socket连接
+        
+        Args:
+            item_uuid: 项目UUID
+            user_uuid: 用户UUID
+            
+        Returns:
+            是否成功断开连接
+        """
+        try:
+            # 使用remove_socket方法来断开连接（会自动更新所有映射）
+            self.remove_socket(item_uuid, user_uuid)
+            return True
+        except Exception:
+            return False
     
     def get_user_sockets(self, user_uuid: str) -> List[ItemSocket]:
         """

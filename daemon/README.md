@@ -154,14 +154,32 @@ class SocketService:
     def setup_event_handlers():
         """设置Socket.IO事件处理器"""
     
-    def broadcast_to_terminal(item_uuid: str, event: str, data: Any):
+    async def broadcast_to_terminal(item_uuid: str, event: str, data: Any):
         """向终端的所有连接广播事件"""
     
-    def send_to_terminal(item_uuid: str, event: str, data: Any):
-        """向终端发送事件"""
+    async def send_to_terminal(item_uuid: str, event: str, data: Any):
+        """向终端的第一个连接发送事件（用于控制指令）"""
     
-    def close_terminal_connections(item_uuid: str):
+    async def close_terminal_connections(item_uuid: str):
         """关闭终端的所有连接"""
+    
+    def get_terminal_connections(item_uuid: str) -> List[str]:
+        """获取终端的所有连接"""
+    
+    def get_all_connections() -> Dict[str, List[str]]:
+        """获取所有连接"""
+    
+    def get_connection_count() -> int:
+        """获取总连接数"""
+    
+    def get_terminal_count() -> int:
+        """获取终端数"""
+    
+    def get_connection_tables() -> Dict[str, Any]:
+        """获取所有连接表（用户-项目映射、项目-用户连接映射）"""
+    
+    async def disconnect_user_from_item(item_uuid: str, user_uuid: str) -> bool:
+        """断开特定用户与特定项目的Socket连接"""
 ```
 
 #### AuthService

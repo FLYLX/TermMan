@@ -117,6 +117,13 @@ class MemoryStore:
         """
         with self.lock:
             return len(self.store)
+    
+    def keys(self) -> list:
+        """
+        获取所有键列表
+        """
+        with self.lock:
+            return list(self.store.keys())
 
 
 # 创建全局内存存储实例

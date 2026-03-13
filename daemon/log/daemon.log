@@ -1,60 +1,1020 @@
-2026-03-12 16:43:00,494 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
-2026-03-12 16:43:00,496 - termman-daemon - INFO - API Key: ***2024
-2026-03-12 16:46:02,276 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
-2026-03-12 16:46:02,277 - termman-daemon - INFO - API Key: ***2024
-2026-03-12 16:46:17,581 - termman-daemon - WARNING - Socket connection rejected: 3rLwO529CtnCgv7zAAAB, invalid auth
-2026-03-12 16:47:40,243 - termman-daemon - WARNING - Socket connection rejected: BokMpY2ZNjY0g5AVAAAD, invalid auth
-2026-03-12 16:48:53,024 - termman-daemon - INFO - Terminal started: 18b4faf2-d156-4e50-8df1-26460c4299b0
-2026-03-12 16:48:53,025 - termman-daemon - INFO - Terminal started via HTTP: 18b4faf2-d156-4e50-8df1-26460c4299b0
-2026-03-12 12:14:22,393 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
-2026-03-12 12:14:22,395 - termman-daemon - INFO - API Key: ***2024
-2026-03-12 12:17:17,645 - termman-daemon - INFO - Terminal started: 3400bc61-61e1-4f4a-bcc7-299265d62901
-2026-03-12 12:17:17,647 - termman-daemon - INFO - Terminal started via HTTP: 3400bc61-61e1-4f4a-bcc7-299265d62901
-2026-03-12 12:17:40,770 - termman-daemon - INFO - Terminal started: cf4e9a60-ac9b-459a-85c1-1b81401a55ca
-2026-03-12 12:17:40,771 - termman-daemon - INFO - Terminal started via HTTP: cf4e9a60-ac9b-459a-85c1-1b81401a55ca
-2026-03-12 12:17:49,994 - termman-daemon - INFO - Terminal started: b3e001fa-4c96-45dc-b7b1-208682793b41
-2026-03-12 12:17:49,995 - termman-daemon - INFO - Terminal started via HTTP: b3e001fa-4c96-45dc-b7b1-208682793b41
-2026-03-12 12:19:05,516 - termman-daemon - INFO - Terminal started: bd1034d7-a3a9-486f-8378-adaa2f32dcc4
-2026-03-12 12:19:05,516 - termman-daemon - INFO - Terminal started via HTTP: bd1034d7-a3a9-486f-8378-adaa2f32dcc4
-2026-03-12 12:19:05,532 - termman-daemon - INFO - Socket connected: kuf8GLPdRGR0qwmCAAAB
-2026-03-12 12:19:05,535 - termman-daemon - INFO - Terminal connected: bd1034d7-a3a9-486f-8378-adaa2f32dcc4, sid: kuf8GLPdRGR0qwmCAAAB, user: test_user_123
-2026-03-12 12:19:09,960 - termman-daemon - INFO - Socket disconnected: kuf8GLPdRGR0qwmCAAAB, item: bd1034d7-a3a9-486f-8378-adaa2f32dcc4
-2026-03-12 12:19:13,930 - termman-daemon - INFO - Terminal started: a0e01f0a-e5e4-4e5b-b1b9-5836d1292a3b
-2026-03-12 12:19:13,930 - termman-daemon - INFO - Terminal started via HTTP: a0e01f0a-e5e4-4e5b-b1b9-5836d1292a3b
-2026-03-12 12:19:13,943 - termman-daemon - INFO - Socket connected: 1n1JrHBL32hEgatMAAAD
-2026-03-12 12:19:13,946 - termman-daemon - INFO - Terminal connected: a0e01f0a-e5e4-4e5b-b1b9-5836d1292a3b, sid: 1n1JrHBL32hEgatMAAAD, user: test_user_123
-2026-03-12 12:19:48,454 - termman-daemon - INFO - Socket disconnected: 1n1JrHBL32hEgatMAAAD, item: a0e01f0a-e5e4-4e5b-b1b9-5836d1292a3b
-2026-03-12 12:19:48,462 - termman-daemon - INFO - Terminal stopped: a0e01f0a-e5e4-4e5b-b1b9-5836d1292a3b
-2026-03-12 12:19:48,462 - termman-daemon - INFO - Terminal stopped via HTTP: a0e01f0a-e5e4-4e5b-b1b9-5836d1292a3b
-2026-03-12 20:20:11,862 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
-2026-03-12 20:20:11,862 - termman-daemon - INFO - API Key: ***2024
-2026-03-12 12:20:51,299 - termman-daemon - INFO - Terminal started: 6078ce83-41fb-441d-a0ec-fffc1f3434a3
-2026-03-12 12:20:51,300 - termman-daemon - INFO - Terminal started via HTTP: 6078ce83-41fb-441d-a0ec-fffc1f3434a3
-2026-03-12 12:20:51,307 - termman-daemon - INFO - Socket connected: WfV9eoPfUzTPsM5gAAAF
-2026-03-12 12:20:51,310 - termman-daemon - INFO - Terminal connected: 6078ce83-41fb-441d-a0ec-fffc1f3434a3, sid: WfV9eoPfUzTPsM5gAAAF, user: test_user_123
-2026-03-12 12:23:21,707 - termman-daemon - INFO - Terminal started: d48de42b-9001-4ee3-b0c7-9dce79b062ed
-2026-03-12 12:23:21,708 - termman-daemon - INFO - Terminal started via HTTP: d48de42b-9001-4ee3-b0c7-9dce79b062ed
-2026-03-12 12:23:21,716 - termman-daemon - INFO - Socket connected: L7mnedEuxSxSO1jvAAAH
-2026-03-12 12:23:21,718 - termman-daemon - INFO - Terminal connected: d48de42b-9001-4ee3-b0c7-9dce79b062ed, sid: L7mnedEuxSxSO1jvAAAH, user: test_user_123
-2026-03-12 12:23:50,586 - termman-daemon - INFO - Socket disconnected: L7mnedEuxSxSO1jvAAAH, item: d48de42b-9001-4ee3-b0c7-9dce79b062ed
-2026-03-12 12:23:53,593 - termman-daemon - INFO - Socket disconnected: WfV9eoPfUzTPsM5gAAAF, item: 6078ce83-41fb-441d-a0ec-fffc1f3434a3
-2026-03-12 12:23:53,604 - termman-daemon - INFO - Terminal stopped: 6078ce83-41fb-441d-a0ec-fffc1f3434a3
-2026-03-12 12:23:53,604 - termman-daemon - INFO - Terminal stopped via HTTP: 6078ce83-41fb-441d-a0ec-fffc1f3434a3
-2026-03-12 12:23:56,813 - termman-daemon - INFO - Terminal started: 1f75a6c4-41e8-4094-86d7-8796b827688a
-2026-03-12 12:23:56,814 - termman-daemon - INFO - Terminal started via HTTP: 1f75a6c4-41e8-4094-86d7-8796b827688a
-2026-03-12 12:23:56,829 - termman-daemon - INFO - Socket connected: BuuQiY4_RtN5hwpbAAAJ
-2026-03-12 12:23:56,831 - termman-daemon - INFO - Terminal connected: 1f75a6c4-41e8-4094-86d7-8796b827688a, sid: BuuQiY4_RtN5hwpbAAAJ, user: test_user_123
-2026-03-12 12:37:09,270 - termman-daemon - INFO - Socket disconnected: BuuQiY4_RtN5hwpbAAAJ, item: 1f75a6c4-41e8-4094-86d7-8796b827688a
-2026-03-12 12:37:09,283 - termman-daemon - INFO - Terminal stopped: 1f75a6c4-41e8-4094-86d7-8796b827688a
-2026-03-12 12:37:09,283 - termman-daemon - INFO - Terminal stopped via HTTP: 1f75a6c4-41e8-4094-86d7-8796b827688a
-2026-03-12 12:53:49,191 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
-2026-03-12 12:53:49,192 - termman-daemon - INFO - API Key: ***2024
-2026-03-12 20:59:57,339 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
-2026-03-12 20:59:57,340 - termman-daemon - INFO - API Key: ***2024
-2026-03-12 21:00:15,180 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
-2026-03-12 21:00:15,180 - termman-daemon - INFO - API Key: ***2024
-2026-03-12 21:00:24,090 - termman-daemon - INFO - Terminal started: b6cccc48-3d38-4d3a-ae2a-1a39ee7eefbd
-2026-03-12 21:00:24,099 - termman-daemon - INFO - Terminal started via HTTP: b6cccc48-3d38-4d3a-ae2a-1a39ee7eefbd
-2026-03-12 21:00:26,146 - termman-daemon - INFO - Socket connected: roBPaT4SBSP1iFjCAAAB
-2026-03-12 21:00:26,147 - termman-daemon - INFO - Terminal connected: b6cccc48-3d38-4d3a-ae2a-1a39ee7eefbd, sid: roBPaT4SBSP1iFjCAAAB, user: test_user_123
-2026-03-12 21:07:21,622 - termman-daemon - INFO - Socket disconnected: roBPaT4SBSP1iFjCAAAB, item: b6cccc48-3d38-4d3a-ae2a-1a39ee7eefbd
+2026-03-13 01:52:49,889 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-13 01:52:49,895 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 10:13:32,818 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 10:13:32,818 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 10:14:01,237 - termman-daemon - INFO - Terminal started: dc914d91-b2d7-466c-b5e4-12c5cc8f1766
+2026-03-13 10:14:01,243 - termman-daemon - INFO - Terminal started via HTTP: dc914d91-b2d7-466c-b5e4-12c5cc8f1766
+2026-03-13 10:14:03,306 - termman-daemon - INFO - Terminal started: a7679a9f-c045-4688-be05-d00cf204773a
+2026-03-13 10:14:03,307 - termman-daemon - INFO - Terminal started via HTTP: a7679a9f-c045-4688-be05-d00cf204773a
+2026-03-13 10:14:05,368 - termman-daemon - INFO - Terminal started: 3a4ee356-432c-4e64-9ee7-198024ebd642
+2026-03-13 10:14:05,368 - termman-daemon - INFO - Terminal started via HTTP: 3a4ee356-432c-4e64-9ee7-198024ebd642
+2026-03-13 10:14:07,421 - termman-daemon - INFO - Terminal started: 219d895e-f0da-4ba6-8d9b-303005444122
+2026-03-13 10:14:07,421 - termman-daemon - INFO - Terminal started via HTTP: 219d895e-f0da-4ba6-8d9b-303005444122
+2026-03-13 10:14:09,476 - termman-daemon - INFO - Terminal started: f238b77c-0d0c-40ed-8d5b-f5143d5ae0c3
+2026-03-13 10:14:09,476 - termman-daemon - INFO - Terminal started via HTTP: f238b77c-0d0c-40ed-8d5b-f5143d5ae0c3
+2026-03-13 10:14:17,659 - termman-daemon - INFO - Terminal stopped: dc914d91-b2d7-466c-b5e4-12c5cc8f1766
+2026-03-13 10:14:17,660 - termman-daemon - INFO - Terminal stopped via HTTP: dc914d91-b2d7-466c-b5e4-12c5cc8f1766
+2026-03-13 10:14:19,716 - termman-daemon - INFO - Terminal stopped: a7679a9f-c045-4688-be05-d00cf204773a
+2026-03-13 10:14:19,716 - termman-daemon - INFO - Terminal stopped via HTTP: a7679a9f-c045-4688-be05-d00cf204773a
+2026-03-13 10:14:21,769 - termman-daemon - INFO - Terminal stopped: 3a4ee356-432c-4e64-9ee7-198024ebd642
+2026-03-13 10:14:21,769 - termman-daemon - INFO - Terminal stopped via HTTP: 3a4ee356-432c-4e64-9ee7-198024ebd642
+2026-03-13 10:14:23,806 - termman-daemon - INFO - Terminal stopped: 219d895e-f0da-4ba6-8d9b-303005444122
+2026-03-13 10:14:23,806 - termman-daemon - INFO - Terminal stopped via HTTP: 219d895e-f0da-4ba6-8d9b-303005444122
+2026-03-13 10:14:25,859 - termman-daemon - INFO - Terminal stopped: f238b77c-0d0c-40ed-8d5b-f5143d5ae0c3
+2026-03-13 10:14:25,859 - termman-daemon - INFO - Terminal stopped via HTTP: f238b77c-0d0c-40ed-8d5b-f5143d5ae0c3
+2026-03-13 10:15:24,014 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-13 10:15:24,014 - termman-daemon - INFO - API Key: ***2024
+2026-03-13 10:15:34,495 - termman-daemon - INFO - Terminal started: 34499118-e219-4bb5-b409-5be78fb11408
+2026-03-13 10:15:34,503 - termman-daemon - INFO - Terminal started via HTTP: 34499118-e219-4bb5-b409-5be78fb11408
+2026-03-13 10:15:36,566 - termman-daemon - INFO - Terminal started: f6277a00-c066-4782-97b6-d03e350bb3e7
+2026-03-13 10:15:36,566 - termman-daemon - INFO - Terminal started via HTTP: f6277a00-c066-4782-97b6-d03e350bb3e7
+2026-03-13 10:15:38,615 - termman-daemon - INFO - Terminal started: e0398b7d-5855-465e-aa41-3bb5b23c53d4
+2026-03-13 10:15:38,615 - termman-daemon - INFO - Terminal started via HTTP: e0398b7d-5855-465e-aa41-3bb5b23c53d4
+2026-03-13 10:15:40,677 - termman-daemon - INFO - Terminal started: 537d57d5-d22f-42b2-90f1-726b3de6e218
+2026-03-13 10:15:40,677 - termman-daemon - INFO - Terminal started via HTTP: 537d57d5-d22f-42b2-90f1-726b3de6e218
+2026-03-13 10:15:42,744 - termman-daemon - INFO - Terminal started: a8d9c220-7f35-4c03-aac5-8a3e93c9db03
+2026-03-13 10:15:42,744 - termman-daemon - INFO - Terminal started via HTTP: a8d9c220-7f35-4c03-aac5-8a3e93c9db03
+2026-03-13 10:15:44,801 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:15:46,849 - termman-daemon - WARNING - Failed to disconnect user test_user_b4a8c19a-661f-4208-b102-e910edb21bff from item 34499118-e219-4bb5-b409-5be78fb11408
+2026-03-13 10:15:48,904 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:15:50,940 - termman-daemon - INFO - Terminal stopped: 34499118-e219-4bb5-b409-5be78fb11408
+2026-03-13 10:15:50,941 - termman-daemon - INFO - Terminal stopped via HTTP: 34499118-e219-4bb5-b409-5be78fb11408
+2026-03-13 10:15:52,984 - termman-daemon - INFO - Terminal stopped: f6277a00-c066-4782-97b6-d03e350bb3e7
+2026-03-13 10:15:52,985 - termman-daemon - INFO - Terminal stopped via HTTP: f6277a00-c066-4782-97b6-d03e350bb3e7
+2026-03-13 10:15:55,034 - termman-daemon - INFO - Terminal stopped: e0398b7d-5855-465e-aa41-3bb5b23c53d4
+2026-03-13 10:15:55,035 - termman-daemon - INFO - Terminal stopped via HTTP: e0398b7d-5855-465e-aa41-3bb5b23c53d4
+2026-03-13 10:15:57,084 - termman-daemon - INFO - Terminal stopped: 537d57d5-d22f-42b2-90f1-726b3de6e218
+2026-03-13 10:15:57,085 - termman-daemon - INFO - Terminal stopped via HTTP: 537d57d5-d22f-42b2-90f1-726b3de6e218
+2026-03-13 10:15:59,129 - termman-daemon - INFO - Terminal stopped: a8d9c220-7f35-4c03-aac5-8a3e93c9db03
+2026-03-13 10:15:59,129 - termman-daemon - INFO - Terminal stopped via HTTP: a8d9c220-7f35-4c03-aac5-8a3e93c9db03
+2026-03-13 10:17:12,962 - termman-daemon - INFO - Terminal started: dfb57a62-f579-4005-b757-29bb8a1064e3
+2026-03-13 10:17:12,962 - termman-daemon - INFO - Terminal started via HTTP: dfb57a62-f579-4005-b757-29bb8a1064e3
+2026-03-13 10:17:15,021 - termman-daemon - INFO - Terminal started: 723d404f-43ba-4d73-9706-b002f005fd94
+2026-03-13 10:17:15,021 - termman-daemon - INFO - Terminal started via HTTP: 723d404f-43ba-4d73-9706-b002f005fd94
+2026-03-13 10:17:17,083 - termman-daemon - INFO - Terminal started: 0aceeb1d-5600-4327-a017-b4909fdbb405
+2026-03-13 10:17:17,083 - termman-daemon - INFO - Terminal started via HTTP: 0aceeb1d-5600-4327-a017-b4909fdbb405
+2026-03-13 10:17:19,136 - termman-daemon - INFO - Terminal started: 2460f03e-68d1-48fd-a990-7e177a8c3a03
+2026-03-13 10:17:19,137 - termman-daemon - INFO - Terminal started via HTTP: 2460f03e-68d1-48fd-a990-7e177a8c3a03
+2026-03-13 10:17:21,194 - termman-daemon - INFO - Terminal started: e024e738-4c45-4215-a7b3-8488200a2869
+2026-03-13 10:17:21,194 - termman-daemon - INFO - Terminal started via HTTP: e024e738-4c45-4215-a7b3-8488200a2869
+2026-03-13 10:17:25,285 - termman-daemon - INFO - Socket connected: BGjiVZyrEIfyJDmCAAAB
+2026-03-13 10:17:30,392 - termman-daemon - INFO - Socket connected: HA-K1eH5fYyl_9BHAAAD
+2026-03-13 10:17:35,506 - termman-daemon - INFO - Socket connected: T5s1I9jtD2tywdAcAAAF
+2026-03-13 10:17:40,629 - termman-daemon - INFO - Socket connected: voZcSZL-RPlQIyh0AAAH
+2026-03-13 10:17:45,747 - termman-daemon - INFO - Socket connected: QfCwKmJj_8oQ6yALAAAJ
+2026-03-13 10:17:50,793 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:17:50,797 - termman-daemon - INFO - Socket disconnected: BGjiVZyrEIfyJDmCAAAB
+2026-03-13 10:17:50,798 - termman-daemon - INFO - Socket disconnected: HA-K1eH5fYyl_9BHAAAD
+2026-03-13 10:17:50,798 - termman-daemon - INFO - Socket disconnected: T5s1I9jtD2tywdAcAAAF
+2026-03-13 10:17:50,799 - termman-daemon - INFO - Socket disconnected: voZcSZL-RPlQIyh0AAAH
+2026-03-13 10:17:50,799 - termman-daemon - INFO - Socket disconnected: QfCwKmJj_8oQ6yALAAAJ
+2026-03-13 10:17:52,845 - termman-daemon - INFO - Terminal stopped: dfb57a62-f579-4005-b757-29bb8a1064e3
+2026-03-13 10:17:52,846 - termman-daemon - INFO - Terminal stopped via HTTP: dfb57a62-f579-4005-b757-29bb8a1064e3
+2026-03-13 10:17:54,899 - termman-daemon - INFO - Terminal stopped: 723d404f-43ba-4d73-9706-b002f005fd94
+2026-03-13 10:17:54,900 - termman-daemon - INFO - Terminal stopped via HTTP: 723d404f-43ba-4d73-9706-b002f005fd94
+2026-03-13 10:17:56,953 - termman-daemon - INFO - Terminal stopped: 0aceeb1d-5600-4327-a017-b4909fdbb405
+2026-03-13 10:17:56,953 - termman-daemon - INFO - Terminal stopped via HTTP: 0aceeb1d-5600-4327-a017-b4909fdbb405
+2026-03-13 10:17:59,007 - termman-daemon - INFO - Terminal stopped: 2460f03e-68d1-48fd-a990-7e177a8c3a03
+2026-03-13 10:17:59,007 - termman-daemon - INFO - Terminal stopped via HTTP: 2460f03e-68d1-48fd-a990-7e177a8c3a03
+2026-03-13 10:18:01,062 - termman-daemon - INFO - Terminal stopped: e024e738-4c45-4215-a7b3-8488200a2869
+2026-03-13 10:18:01,063 - termman-daemon - INFO - Terminal stopped via HTTP: e024e738-4c45-4215-a7b3-8488200a2869
+2026-03-13 10:18:41,870 - termman-daemon - INFO - Terminal started: 11272737-48ac-4b0c-84ce-3c925b7fb150
+2026-03-13 10:18:41,870 - termman-daemon - INFO - Terminal started via HTTP: 11272737-48ac-4b0c-84ce-3c925b7fb150
+2026-03-13 10:18:43,935 - termman-daemon - INFO - Terminal started: 58fe8a9c-c96a-4f65-b7f7-262e342b783d
+2026-03-13 10:18:43,936 - termman-daemon - INFO - Terminal started via HTTP: 58fe8a9c-c96a-4f65-b7f7-262e342b783d
+2026-03-13 10:18:45,992 - termman-daemon - INFO - Terminal started: 3dbcebb1-9f59-4b33-b124-0279dcd5ad64
+2026-03-13 10:18:45,992 - termman-daemon - INFO - Terminal started via HTTP: 3dbcebb1-9f59-4b33-b124-0279dcd5ad64
+2026-03-13 10:18:48,056 - termman-daemon - INFO - Terminal started: 50e215b8-783c-499d-837c-016c83491fed
+2026-03-13 10:18:48,056 - termman-daemon - INFO - Terminal started via HTTP: 50e215b8-783c-499d-837c-016c83491fed
+2026-03-13 10:18:50,106 - termman-daemon - INFO - Terminal started: d5d8a9f5-0f26-40f2-98e0-d0d386e9c2fd
+2026-03-13 10:18:50,106 - termman-daemon - INFO - Terminal started via HTTP: d5d8a9f5-0f26-40f2-98e0-d0d386e9c2fd
+2026-03-13 10:18:54,208 - termman-daemon - INFO - Socket connected: V4s8oKOYA2C6SwUhAAAL
+2026-03-13 10:18:54,209 - termman-daemon - INFO - Terminal connected: 11272737-48ac-4b0c-84ce-3c925b7fb150, sid: V4s8oKOYA2C6SwUhAAAL, user: test_user_85fb5072-f54e-4891-bf0e-e33a70bfd12d
+2026-03-13 10:18:59,315 - termman-daemon - INFO - Socket connected: H-PccLdvrcJpomRHAAAN
+2026-03-13 10:18:59,316 - termman-daemon - INFO - Terminal connected: 58fe8a9c-c96a-4f65-b7f7-262e342b783d, sid: H-PccLdvrcJpomRHAAAN, user: test_user_d3e6cd9d-a90e-434f-99ba-f8a5932c4093
+2026-03-13 10:19:04,432 - termman-daemon - INFO - Socket connected: wsgeYkAHeRFxpRPWAAAP
+2026-03-13 10:19:04,433 - termman-daemon - INFO - Terminal connected: 3dbcebb1-9f59-4b33-b124-0279dcd5ad64, sid: wsgeYkAHeRFxpRPWAAAP, user: test_user_27f67104-ddd6-4873-a985-48fcc1449e91
+2026-03-13 10:19:09,545 - termman-daemon - INFO - Socket connected: Tv9MLkeiQ_SbvB90AAAR
+2026-03-13 10:19:09,547 - termman-daemon - INFO - Terminal connected: 50e215b8-783c-499d-837c-016c83491fed, sid: Tv9MLkeiQ_SbvB90AAAR, user: test_user_85fb5072-f54e-4891-bf0e-e33a70bfd12d
+2026-03-13 10:19:14,646 - termman-daemon - INFO - Socket connected: H_B2FQE70IZxCBO4AAAT
+2026-03-13 10:19:14,646 - termman-daemon - INFO - Terminal connected: d5d8a9f5-0f26-40f2-98e0-d0d386e9c2fd, sid: H_B2FQE70IZxCBO4AAAT, user: test_user_d3e6cd9d-a90e-434f-99ba-f8a5932c4093
+2026-03-13 10:19:19,685 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:19:21,733 - termman-daemon - INFO - Socket disconnected: V4s8oKOYA2C6SwUhAAAL
+2026-03-13 10:19:21,733 - termman-daemon - INFO - Disconnected user test_user_85fb5072-f54e-4891-bf0e-e33a70bfd12d from item 11272737-48ac-4b0c-84ce-3c925b7fb150
+2026-03-13 10:19:25,762 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:19:25,766 - termman-daemon - INFO - Socket disconnected: H-PccLdvrcJpomRHAAAN, item: 58fe8a9c-c96a-4f65-b7f7-262e342b783d
+2026-03-13 10:19:25,767 - termman-daemon - INFO - Socket disconnected: wsgeYkAHeRFxpRPWAAAP, item: 3dbcebb1-9f59-4b33-b124-0279dcd5ad64
+2026-03-13 10:19:25,768 - termman-daemon - INFO - Socket disconnected: Tv9MLkeiQ_SbvB90AAAR, item: 50e215b8-783c-499d-837c-016c83491fed
+2026-03-13 10:19:25,769 - termman-daemon - INFO - Socket disconnected: H_B2FQE70IZxCBO4AAAT, item: d5d8a9f5-0f26-40f2-98e0-d0d386e9c2fd
+2026-03-13 10:19:27,818 - termman-daemon - INFO - Terminal stopped: 11272737-48ac-4b0c-84ce-3c925b7fb150
+2026-03-13 10:19:27,818 - termman-daemon - INFO - Terminal stopped via HTTP: 11272737-48ac-4b0c-84ce-3c925b7fb150
+2026-03-13 10:19:29,873 - termman-daemon - INFO - Terminal stopped: 58fe8a9c-c96a-4f65-b7f7-262e342b783d
+2026-03-13 10:19:29,873 - termman-daemon - INFO - Terminal stopped via HTTP: 58fe8a9c-c96a-4f65-b7f7-262e342b783d
+2026-03-13 10:19:31,917 - termman-daemon - INFO - Terminal stopped: 3dbcebb1-9f59-4b33-b124-0279dcd5ad64
+2026-03-13 10:19:31,918 - termman-daemon - INFO - Terminal stopped via HTTP: 3dbcebb1-9f59-4b33-b124-0279dcd5ad64
+2026-03-13 10:19:33,972 - termman-daemon - INFO - Terminal stopped: 50e215b8-783c-499d-837c-016c83491fed
+2026-03-13 10:19:33,973 - termman-daemon - INFO - Terminal stopped via HTTP: 50e215b8-783c-499d-837c-016c83491fed
+2026-03-13 10:19:36,019 - termman-daemon - INFO - Terminal stopped: d5d8a9f5-0f26-40f2-98e0-d0d386e9c2fd
+2026-03-13 10:19:36,020 - termman-daemon - INFO - Terminal stopped via HTTP: d5d8a9f5-0f26-40f2-98e0-d0d386e9c2fd
+2026-03-13 10:24:39,551 - termman-daemon - INFO - Terminal started: 4f4a6ec7-13ef-4013-a59c-8f88876a9300
+2026-03-13 10:24:39,552 - termman-daemon - INFO - Terminal started via HTTP: 4f4a6ec7-13ef-4013-a59c-8f88876a9300
+2026-03-13 10:24:39,559 - termman-daemon - INFO - Socket connected: dKO_mPrYkbS7kUkLAAAX
+2026-03-13 10:24:39,561 - termman-daemon - INFO - Socket connected: J3Ejiba20QOsXW6RAAAY
+2026-03-13 10:24:39,561 - termman-daemon - INFO - Socket connected: _hDbjFh0K-MC63uKAAAZ
+2026-03-13 10:24:40,562 - termman-daemon - INFO - Terminal connected: 4f4a6ec7-13ef-4013-a59c-8f88876a9300, sid: dKO_mPrYkbS7kUkLAAAX, user: user-bfff83e0-ce7f-417e-8cfd-96509650cc9b
+2026-03-13 10:24:40,562 - termman-daemon - INFO - Terminal connected: 4f4a6ec7-13ef-4013-a59c-8f88876a9300, sid: J3Ejiba20QOsXW6RAAAY, user: user-ae851db5-2201-4979-8b2e-967f5f59dca2
+2026-03-13 10:24:40,563 - termman-daemon - INFO - Terminal connected: 4f4a6ec7-13ef-4013-a59c-8f88876a9300, sid: _hDbjFh0K-MC63uKAAAZ, user: user-aa7dab20-75ce-4903-876c-0a8400faa401
+2026-03-13 10:24:48,569 - termman-daemon - INFO - Socket disconnected: dKO_mPrYkbS7kUkLAAAX, item: 4f4a6ec7-13ef-4013-a59c-8f88876a9300
+2026-03-13 10:24:49,570 - termman-daemon - INFO - Socket disconnected: J3Ejiba20QOsXW6RAAAY, item: 4f4a6ec7-13ef-4013-a59c-8f88876a9300
+2026-03-13 10:24:50,571 - termman-daemon - INFO - Socket disconnected: _hDbjFh0K-MC63uKAAAZ, item: 4f4a6ec7-13ef-4013-a59c-8f88876a9300
+2026-03-13 10:24:51,575 - termman-daemon - INFO - Terminal stopped: 4f4a6ec7-13ef-4013-a59c-8f88876a9300
+2026-03-13 10:24:51,576 - termman-daemon - INFO - Terminal stopped via HTTP: 4f4a6ec7-13ef-4013-a59c-8f88876a9300
+2026-03-13 10:25:53,421 - termman-daemon - INFO - Terminal started: 5f5b9cf5-7a82-4116-b3af-26ed8770485f
+2026-03-13 10:25:53,422 - termman-daemon - INFO - Terminal started via HTTP: 5f5b9cf5-7a82-4116-b3af-26ed8770485f
+2026-03-13 10:25:53,431 - termman-daemon - INFO - Socket connected: EH8xCZ0odG4X8A2KAAAd
+2026-03-13 10:25:53,432 - termman-daemon - INFO - Socket connected: RUdqrMghZ_WT5DZGAAAe
+2026-03-13 10:25:53,433 - termman-daemon - INFO - Socket connected: tC0tJ2gAIvY_kZfVAAAf
+2026-03-13 10:25:54,433 - termman-daemon - INFO - Terminal connected: 5f5b9cf5-7a82-4116-b3af-26ed8770485f, sid: EH8xCZ0odG4X8A2KAAAd, user: user-1c14950e-ce29-440b-b2b6-67a281ed8657
+2026-03-13 10:25:54,434 - termman-daemon - INFO - Terminal connected: 5f5b9cf5-7a82-4116-b3af-26ed8770485f, sid: RUdqrMghZ_WT5DZGAAAe, user: user-299107b9-db2f-485b-9ae9-5fee15d48960
+2026-03-13 10:25:54,435 - termman-daemon - INFO - Terminal connected: 5f5b9cf5-7a82-4116-b3af-26ed8770485f, sid: tC0tJ2gAIvY_kZfVAAAf, user: user-8ef70c80-9e88-492a-8180-4ff75a9b03f4
+2026-03-13 10:26:02,440 - termman-daemon - INFO - Socket disconnected: EH8xCZ0odG4X8A2KAAAd, item: 5f5b9cf5-7a82-4116-b3af-26ed8770485f
+2026-03-13 10:26:03,441 - termman-daemon - INFO - Socket disconnected: RUdqrMghZ_WT5DZGAAAe, item: 5f5b9cf5-7a82-4116-b3af-26ed8770485f
+2026-03-13 10:26:04,442 - termman-daemon - INFO - Socket disconnected: tC0tJ2gAIvY_kZfVAAAf, item: 5f5b9cf5-7a82-4116-b3af-26ed8770485f
+2026-03-13 10:26:05,446 - termman-daemon - INFO - Terminal stopped: 5f5b9cf5-7a82-4116-b3af-26ed8770485f
+2026-03-13 10:26:05,447 - termman-daemon - INFO - Terminal stopped via HTTP: 5f5b9cf5-7a82-4116-b3af-26ed8770485f
+2026-03-13 10:28:19,231 - termman-daemon - INFO - Socket connected: WQueJ765wOfrZaptAAAh
+2026-03-13 10:28:19,245 - termman-daemon - INFO - Terminal started: 89070ab2-b72e-4dd2-8754-fd3549c7d53e
+2026-03-13 10:28:19,245 - termman-daemon - INFO - Terminal started via HTTP: 89070ab2-b72e-4dd2-8754-fd3549c7d53e
+2026-03-13 10:28:19,250 - termman-daemon - INFO - Socket connected: ggiSFGViCG5EO4ddAAAj
+2026-03-13 10:28:20,252 - termman-daemon - INFO - Terminal connected: 89070ab2-b72e-4dd2-8754-fd3549c7d53e, sid: ggiSFGViCG5EO4ddAAAj, user: user-7cc949cd-a770-4aee-b3ab-85cf17f57c55
+2026-03-13 10:28:21,256 - termman-daemon - INFO - Socket connected: JtJ3b8T3k-msl3KKAAAl
+2026-03-13 10:28:22,257 - termman-daemon - INFO - Terminal connected: 89070ab2-b72e-4dd2-8754-fd3549c7d53e, sid: JtJ3b8T3k-msl3KKAAAl, user: user-d6e2064e-0eb2-4485-9423-4f8d82a790d9
+2026-03-13 10:28:23,261 - termman-daemon - INFO - Socket connected: bjo3MRp8YEwKjqNuAAAn
+2026-03-13 10:28:24,263 - termman-daemon - INFO - Terminal connected: 89070ab2-b72e-4dd2-8754-fd3549c7d53e, sid: bjo3MRp8YEwKjqNuAAAn, user: user-d46eccf1-1c52-4d7d-922e-8fddc1953ee5
+2026-03-13 10:28:33,270 - termman-daemon - INFO - Terminal status queried: 89070ab2-b72e-4dd2-8754-fd3549c7d53e, status: running
+2026-03-13 10:28:33,304 - termman-daemon - INFO - Terminal stopped: 89070ab2-b72e-4dd2-8754-fd3549c7d53e
+2026-03-13 10:28:33,306 - termman-daemon - INFO - Terminal stopped via HTTP: 89070ab2-b72e-4dd2-8754-fd3549c7d53e
+2026-03-13 10:28:33,402 - termman-daemon - INFO - Socket disconnected: WQueJ765wOfrZaptAAAh
+2026-03-13 10:28:33,402 - termman-daemon - INFO - Socket disconnected: ggiSFGViCG5EO4ddAAAj, item: 89070ab2-b72e-4dd2-8754-fd3549c7d53e
+2026-03-13 10:28:33,403 - termman-daemon - INFO - Socket disconnected: bjo3MRp8YEwKjqNuAAAn, item: 89070ab2-b72e-4dd2-8754-fd3549c7d53e
+2026-03-13 10:28:33,403 - termman-daemon - INFO - Socket disconnected: JtJ3b8T3k-msl3KKAAAl, item: 89070ab2-b72e-4dd2-8754-fd3549c7d53e
+2026-03-13 10:38:29,237 - termman-daemon - INFO - Terminal started: d140c285-c165-4cc2-b4d3-01bf53cc01bd
+2026-03-13 10:38:29,237 - termman-daemon - INFO - Terminal started via HTTP: d140c285-c165-4cc2-b4d3-01bf53cc01bd
+2026-03-13 10:38:31,295 - termman-daemon - INFO - Terminal started: ceb44ec2-e1bd-44b1-8213-b3c045fe0570
+2026-03-13 10:38:31,296 - termman-daemon - INFO - Terminal started via HTTP: ceb44ec2-e1bd-44b1-8213-b3c045fe0570
+2026-03-13 10:38:33,345 - termman-daemon - INFO - Terminal started: ba44369e-0c67-4257-807f-c4b5c99f4da2
+2026-03-13 10:38:33,345 - termman-daemon - INFO - Terminal started via HTTP: ba44369e-0c67-4257-807f-c4b5c99f4da2
+2026-03-13 10:38:35,391 - termman-daemon - INFO - Terminal started: ef3aec8a-bb93-4537-9042-3938bba01f2c
+2026-03-13 10:38:35,392 - termman-daemon - INFO - Terminal started via HTTP: ef3aec8a-bb93-4537-9042-3938bba01f2c
+2026-03-13 10:38:37,445 - termman-daemon - INFO - Terminal started: b61a705f-1f0a-4c4a-9b2c-32524fe7f0aa
+2026-03-13 10:38:37,446 - termman-daemon - INFO - Terminal started via HTTP: b61a705f-1f0a-4c4a-9b2c-32524fe7f0aa
+2026-03-13 10:38:41,571 - termman-daemon - INFO - Socket connected: BGlC4pe_XiGjR-hzAAAp
+2026-03-13 10:38:41,572 - termman-daemon - INFO - Terminal connected: d140c285-c165-4cc2-b4d3-01bf53cc01bd, sid: BGlC4pe_XiGjR-hzAAAp, user: test_user_4f9b50eb-ff3a-4e1d-99e9-895525688fcb
+2026-03-13 10:38:46,686 - termman-daemon - INFO - Socket connected: HPE7uzzRlRMM7VP9AAAr
+2026-03-13 10:38:46,688 - termman-daemon - INFO - Terminal connected: ceb44ec2-e1bd-44b1-8213-b3c045fe0570, sid: HPE7uzzRlRMM7VP9AAAr, user: test_user_2857efb0-41e3-4df8-8631-a6fa4648c73d
+2026-03-13 10:38:51,798 - termman-daemon - INFO - Socket connected: VlB5ZLq64OdMAmhsAAAt
+2026-03-13 10:38:51,799 - termman-daemon - INFO - Terminal connected: ba44369e-0c67-4257-807f-c4b5c99f4da2, sid: VlB5ZLq64OdMAmhsAAAt, user: test_user_5500fd37-0a9a-4699-b513-d7ce1742ab47
+2026-03-13 10:38:56,890 - termman-daemon - INFO - Socket connected: yo4GA3Sk4yOeDvTsAAAv
+2026-03-13 10:38:56,891 - termman-daemon - INFO - Terminal connected: ef3aec8a-bb93-4537-9042-3938bba01f2c, sid: yo4GA3Sk4yOeDvTsAAAv, user: test_user_4f9b50eb-ff3a-4e1d-99e9-895525688fcb
+2026-03-13 10:39:01,970 - termman-daemon - INFO - Socket connected: NzBFi5aZv8Cu3V9FAAAx
+2026-03-13 10:39:01,971 - termman-daemon - INFO - Terminal connected: b61a705f-1f0a-4c4a-9b2c-32524fe7f0aa, sid: NzBFi5aZv8Cu3V9FAAAx, user: test_user_2857efb0-41e3-4df8-8631-a6fa4648c73d
+2026-03-13 10:39:07,022 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:39:09,063 - termman-daemon - INFO - Socket disconnected: BGlC4pe_XiGjR-hzAAAp
+2026-03-13 10:39:09,063 - termman-daemon - INFO - Disconnected user test_user_4f9b50eb-ff3a-4e1d-99e9-895525688fcb from item d140c285-c165-4cc2-b4d3-01bf53cc01bd
+2026-03-13 10:39:13,116 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:39:13,120 - termman-daemon - INFO - Socket disconnected: HPE7uzzRlRMM7VP9AAAr, item: ceb44ec2-e1bd-44b1-8213-b3c045fe0570
+2026-03-13 10:39:13,121 - termman-daemon - INFO - Socket disconnected: VlB5ZLq64OdMAmhsAAAt, item: ba44369e-0c67-4257-807f-c4b5c99f4da2
+2026-03-13 10:39:13,122 - termman-daemon - INFO - Socket disconnected: yo4GA3Sk4yOeDvTsAAAv, item: ef3aec8a-bb93-4537-9042-3938bba01f2c
+2026-03-13 10:39:13,122 - termman-daemon - INFO - Socket disconnected: NzBFi5aZv8Cu3V9FAAAx, item: b61a705f-1f0a-4c4a-9b2c-32524fe7f0aa
+2026-03-13 10:39:15,159 - termman-daemon - INFO - Terminal stopped: d140c285-c165-4cc2-b4d3-01bf53cc01bd
+2026-03-13 10:39:15,160 - termman-daemon - INFO - Terminal stopped via HTTP: d140c285-c165-4cc2-b4d3-01bf53cc01bd
+2026-03-13 10:39:17,214 - termman-daemon - INFO - Terminal stopped: ceb44ec2-e1bd-44b1-8213-b3c045fe0570
+2026-03-13 10:39:17,214 - termman-daemon - INFO - Terminal stopped via HTTP: ceb44ec2-e1bd-44b1-8213-b3c045fe0570
+2026-03-13 10:39:19,262 - termman-daemon - INFO - Terminal stopped: ba44369e-0c67-4257-807f-c4b5c99f4da2
+2026-03-13 10:39:19,262 - termman-daemon - INFO - Terminal stopped via HTTP: ba44369e-0c67-4257-807f-c4b5c99f4da2
+2026-03-13 10:39:21,327 - termman-daemon - INFO - Terminal stopped: ef3aec8a-bb93-4537-9042-3938bba01f2c
+2026-03-13 10:39:21,327 - termman-daemon - INFO - Terminal stopped via HTTP: ef3aec8a-bb93-4537-9042-3938bba01f2c
+2026-03-13 10:39:23,380 - termman-daemon - INFO - Terminal stopped: b61a705f-1f0a-4c4a-9b2c-32524fe7f0aa
+2026-03-13 10:39:23,381 - termman-daemon - INFO - Terminal stopped via HTTP: b61a705f-1f0a-4c4a-9b2c-32524fe7f0aa
+2026-03-13 10:40:25,345 - termman-daemon - INFO - Terminal started: 457783c1-116b-417e-ad2a-8b75f89c28c5
+2026-03-13 10:40:25,345 - termman-daemon - INFO - Terminal started via HTTP: 457783c1-116b-417e-ad2a-8b75f89c28c5
+2026-03-13 10:40:27,376 - termman-daemon - INFO - Terminal started: 537c664c-408a-4c99-b206-0cd6f2b6b385
+2026-03-13 10:40:27,376 - termman-daemon - INFO - Terminal started via HTTP: 537c664c-408a-4c99-b206-0cd6f2b6b385
+2026-03-13 10:40:29,439 - termman-daemon - INFO - Terminal started: df4e482f-92d6-46bd-b2d3-af7eca9ad60a
+2026-03-13 10:40:29,439 - termman-daemon - INFO - Terminal started via HTTP: df4e482f-92d6-46bd-b2d3-af7eca9ad60a
+2026-03-13 10:40:31,496 - termman-daemon - INFO - Terminal started: 190b509a-052d-49e0-8ac2-07a51ef337b2
+2026-03-13 10:40:31,496 - termman-daemon - INFO - Terminal started via HTTP: 190b509a-052d-49e0-8ac2-07a51ef337b2
+2026-03-13 10:40:33,562 - termman-daemon - INFO - Terminal started: 044f134b-939b-4da6-bb36-88079e08c28c
+2026-03-13 10:40:33,562 - termman-daemon - INFO - Terminal started via HTTP: 044f134b-939b-4da6-bb36-88079e08c28c
+2026-03-13 10:40:37,666 - termman-daemon - INFO - Socket connected: OpocgAVI9RZh4i56AAAz
+2026-03-13 10:40:37,668 - termman-daemon - INFO - Terminal connected: 457783c1-116b-417e-ad2a-8b75f89c28c5, sid: OpocgAVI9RZh4i56AAAz, user: test_user_e06c2e4c-6b19-4c86-858c-53a7d9385828
+2026-03-13 10:40:42,756 - termman-daemon - INFO - Socket connected: 9YST_UUk1O2yjmkfAAA1
+2026-03-13 10:40:42,757 - termman-daemon - INFO - Terminal connected: 537c664c-408a-4c99-b206-0cd6f2b6b385, sid: 9YST_UUk1O2yjmkfAAA1, user: test_user_31d57685-018f-4ea3-90ad-e210204ab164
+2026-03-13 10:40:47,855 - termman-daemon - INFO - Socket connected: DoLDLnjSj3u2dwriAAA3
+2026-03-13 10:40:47,856 - termman-daemon - INFO - Terminal connected: df4e482f-92d6-46bd-b2d3-af7eca9ad60a, sid: DoLDLnjSj3u2dwriAAA3, user: test_user_600d09a4-a1f5-4422-9c47-355490bbec7d
+2026-03-13 10:40:52,935 - termman-daemon - INFO - Socket connected: V43cqTUYxcs-hYQgAAA5
+2026-03-13 10:40:52,936 - termman-daemon - INFO - Terminal connected: 190b509a-052d-49e0-8ac2-07a51ef337b2, sid: V43cqTUYxcs-hYQgAAA5, user: test_user_e06c2e4c-6b19-4c86-858c-53a7d9385828
+2026-03-13 10:40:58,024 - termman-daemon - INFO - Socket connected: Gj3quAeUstPioyjFAAA7
+2026-03-13 10:40:58,025 - termman-daemon - INFO - Terminal connected: 044f134b-939b-4da6-bb36-88079e08c28c, sid: Gj3quAeUstPioyjFAAA7, user: test_user_31d57685-018f-4ea3-90ad-e210204ab164
+2026-03-13 10:41:03,065 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:41:05,107 - termman-daemon - INFO - Socket disconnected: OpocgAVI9RZh4i56AAAz
+2026-03-13 10:41:05,107 - termman-daemon - INFO - Disconnected user test_user_e06c2e4c-6b19-4c86-858c-53a7d9385828 from item 457783c1-116b-417e-ad2a-8b75f89c28c5
+2026-03-13 10:41:09,146 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:41:09,171 - termman-daemon - INFO - Socket disconnected: 9YST_UUk1O2yjmkfAAA1, item: 537c664c-408a-4c99-b206-0cd6f2b6b385
+2026-03-13 10:41:09,172 - termman-daemon - INFO - Socket disconnected: DoLDLnjSj3u2dwriAAA3, item: df4e482f-92d6-46bd-b2d3-af7eca9ad60a
+2026-03-13 10:41:09,173 - termman-daemon - INFO - Socket disconnected: V43cqTUYxcs-hYQgAAA5, item: 190b509a-052d-49e0-8ac2-07a51ef337b2
+2026-03-13 10:41:09,174 - termman-daemon - INFO - Socket disconnected: Gj3quAeUstPioyjFAAA7, item: 044f134b-939b-4da6-bb36-88079e08c28c
+2026-03-13 10:41:11,223 - termman-daemon - INFO - Terminal stopped: 457783c1-116b-417e-ad2a-8b75f89c28c5
+2026-03-13 10:41:11,223 - termman-daemon - INFO - Terminal stopped via HTTP: 457783c1-116b-417e-ad2a-8b75f89c28c5
+2026-03-13 10:41:13,274 - termman-daemon - INFO - Terminal stopped: 537c664c-408a-4c99-b206-0cd6f2b6b385
+2026-03-13 10:41:13,275 - termman-daemon - INFO - Terminal stopped via HTTP: 537c664c-408a-4c99-b206-0cd6f2b6b385
+2026-03-13 10:41:15,319 - termman-daemon - INFO - Terminal stopped: df4e482f-92d6-46bd-b2d3-af7eca9ad60a
+2026-03-13 10:41:15,320 - termman-daemon - INFO - Terminal stopped via HTTP: df4e482f-92d6-46bd-b2d3-af7eca9ad60a
+2026-03-13 10:41:17,368 - termman-daemon - INFO - Terminal stopped: 190b509a-052d-49e0-8ac2-07a51ef337b2
+2026-03-13 10:41:17,368 - termman-daemon - INFO - Terminal stopped via HTTP: 190b509a-052d-49e0-8ac2-07a51ef337b2
+2026-03-13 10:41:19,418 - termman-daemon - INFO - Terminal stopped: 044f134b-939b-4da6-bb36-88079e08c28c
+2026-03-13 10:41:19,418 - termman-daemon - INFO - Terminal stopped via HTTP: 044f134b-939b-4da6-bb36-88079e08c28c
+2026-03-13 10:44:28,864 - termman-daemon - INFO - Terminal started: 0f4f806c-599e-450f-a3c8-9eada2532133
+2026-03-13 10:44:28,865 - termman-daemon - INFO - Terminal started via HTTP: 0f4f806c-599e-450f-a3c8-9eada2532133
+2026-03-13 10:44:30,922 - termman-daemon - INFO - Terminal started: c7ab9255-01ca-4bd4-a549-e5566fbef1b9
+2026-03-13 10:44:30,922 - termman-daemon - INFO - Terminal started via HTTP: c7ab9255-01ca-4bd4-a549-e5566fbef1b9
+2026-03-13 10:44:32,989 - termman-daemon - INFO - Terminal started: 2e5effa9-7dba-45d0-a341-dc207440f9ff
+2026-03-13 10:44:32,989 - termman-daemon - INFO - Terminal started via HTTP: 2e5effa9-7dba-45d0-a341-dc207440f9ff
+2026-03-13 10:44:35,058 - termman-daemon - INFO - Terminal started: 81d2ca0d-76dd-45b0-a210-ddb193d7ae2d
+2026-03-13 10:44:35,059 - termman-daemon - INFO - Terminal started via HTTP: 81d2ca0d-76dd-45b0-a210-ddb193d7ae2d
+2026-03-13 10:44:37,122 - termman-daemon - INFO - Terminal started: 2f0a0066-57ad-4973-90e6-a54945fbe1c1
+2026-03-13 10:44:37,123 - termman-daemon - INFO - Terminal started via HTTP: 2f0a0066-57ad-4973-90e6-a54945fbe1c1
+2026-03-13 10:44:41,205 - termman-daemon - INFO - Socket connected: RMsjeYAXxokKmwF6AAA9
+2026-03-13 10:44:41,206 - termman-daemon - INFO - Terminal connected: 0f4f806c-599e-450f-a3c8-9eada2532133, sid: RMsjeYAXxokKmwF6AAA9, user: test_user_3f84d900-956d-4103-ac3b-5d30b3e39210
+2026-03-13 10:44:46,313 - termman-daemon - INFO - Socket connected: pAQKY8jUh_Se_HwqAAA_
+2026-03-13 10:44:46,314 - termman-daemon - INFO - Terminal connected: c7ab9255-01ca-4bd4-a549-e5566fbef1b9, sid: pAQKY8jUh_Se_HwqAAA_, user: test_user_3d20e6f2-1cf6-41d9-8f06-7b1e68bbaf65
+2026-03-13 10:44:51,411 - termman-daemon - INFO - Socket connected: hG_t18o6Bi5EP-tbAABB
+2026-03-13 10:44:51,412 - termman-daemon - INFO - Terminal connected: 2e5effa9-7dba-45d0-a341-dc207440f9ff, sid: hG_t18o6Bi5EP-tbAABB, user: test_user_cedbbad2-df46-49ef-b0c7-e2f00e85c3e2
+2026-03-13 10:44:56,508 - termman-daemon - INFO - Socket connected: J7k8Viv3wNr0_CAQAABD
+2026-03-13 10:44:56,509 - termman-daemon - INFO - Terminal connected: 81d2ca0d-76dd-45b0-a210-ddb193d7ae2d, sid: J7k8Viv3wNr0_CAQAABD, user: test_user_3f84d900-956d-4103-ac3b-5d30b3e39210
+2026-03-13 10:45:01,629 - termman-daemon - INFO - Socket connected: M0Tcbz8XEJOG0131AABF
+2026-03-13 10:45:01,630 - termman-daemon - INFO - Terminal connected: 2f0a0066-57ad-4973-90e6-a54945fbe1c1, sid: M0Tcbz8XEJOG0131AABF, user: test_user_3d20e6f2-1cf6-41d9-8f06-7b1e68bbaf65
+2026-03-13 10:45:06,682 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:45:08,728 - termman-daemon - INFO - Socket disconnected: RMsjeYAXxokKmwF6AAA9
+2026-03-13 10:45:08,728 - termman-daemon - INFO - Disconnected user test_user_3f84d900-956d-4103-ac3b-5d30b3e39210 from item 0f4f806c-599e-450f-a3c8-9eada2532133
+2026-03-13 10:45:12,772 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:45:12,778 - termman-daemon - INFO - Socket disconnected: pAQKY8jUh_Se_HwqAAA_, item: c7ab9255-01ca-4bd4-a549-e5566fbef1b9
+2026-03-13 10:45:12,780 - termman-daemon - INFO - Socket disconnected: hG_t18o6Bi5EP-tbAABB, item: 2e5effa9-7dba-45d0-a341-dc207440f9ff
+2026-03-13 10:45:12,780 - termman-daemon - INFO - Socket disconnected: J7k8Viv3wNr0_CAQAABD, item: 81d2ca0d-76dd-45b0-a210-ddb193d7ae2d
+2026-03-13 10:45:12,781 - termman-daemon - INFO - Socket disconnected: M0Tcbz8XEJOG0131AABF, item: 2f0a0066-57ad-4973-90e6-a54945fbe1c1
+2026-03-13 10:45:14,825 - termman-daemon - INFO - Terminal stopped: 0f4f806c-599e-450f-a3c8-9eada2532133
+2026-03-13 10:45:14,825 - termman-daemon - INFO - Terminal stopped via HTTP: 0f4f806c-599e-450f-a3c8-9eada2532133
+2026-03-13 10:45:16,877 - termman-daemon - INFO - Terminal stopped: c7ab9255-01ca-4bd4-a549-e5566fbef1b9
+2026-03-13 10:45:16,877 - termman-daemon - INFO - Terminal stopped via HTTP: c7ab9255-01ca-4bd4-a549-e5566fbef1b9
+2026-03-13 10:45:18,928 - termman-daemon - INFO - Terminal stopped: 2e5effa9-7dba-45d0-a341-dc207440f9ff
+2026-03-13 10:45:18,928 - termman-daemon - INFO - Terminal stopped via HTTP: 2e5effa9-7dba-45d0-a341-dc207440f9ff
+2026-03-13 10:45:20,978 - termman-daemon - INFO - Terminal stopped: 81d2ca0d-76dd-45b0-a210-ddb193d7ae2d
+2026-03-13 10:45:20,979 - termman-daemon - INFO - Terminal stopped via HTTP: 81d2ca0d-76dd-45b0-a210-ddb193d7ae2d
+2026-03-13 10:45:23,026 - termman-daemon - INFO - Terminal stopped: 2f0a0066-57ad-4973-90e6-a54945fbe1c1
+2026-03-13 10:45:23,027 - termman-daemon - INFO - Terminal stopped via HTTP: 2f0a0066-57ad-4973-90e6-a54945fbe1c1
+2026-03-13 10:49:12,094 - termman-daemon - INFO - Terminal started: b510bea8-381d-46c4-9948-eeb10d245afa
+2026-03-13 10:49:12,094 - termman-daemon - INFO - Terminal started via HTTP: b510bea8-381d-46c4-9948-eeb10d245afa
+2026-03-13 10:49:14,158 - termman-daemon - INFO - Terminal started: 2fa5ea8a-f710-445c-9230-49345604adfd
+2026-03-13 10:49:14,158 - termman-daemon - INFO - Terminal started via HTTP: 2fa5ea8a-f710-445c-9230-49345604adfd
+2026-03-13 10:49:16,213 - termman-daemon - INFO - Terminal started: 5c60f6b8-1820-4490-83a2-272a53eb592b
+2026-03-13 10:49:16,214 - termman-daemon - INFO - Terminal started via HTTP: 5c60f6b8-1820-4490-83a2-272a53eb592b
+2026-03-13 10:49:18,276 - termman-daemon - INFO - Terminal started: 687c8941-4e63-4815-ac98-edea5ea6ef1e
+2026-03-13 10:49:18,276 - termman-daemon - INFO - Terminal started via HTTP: 687c8941-4e63-4815-ac98-edea5ea6ef1e
+2026-03-13 10:49:20,335 - termman-daemon - INFO - Terminal started: 070246a4-a446-40d1-812b-bbfa27815c4e
+2026-03-13 10:49:20,335 - termman-daemon - INFO - Terminal started via HTTP: 070246a4-a446-40d1-812b-bbfa27815c4e
+2026-03-13 10:49:24,443 - termman-daemon - INFO - Socket connected: mYy0wcF9zDIb7a3eAABH
+2026-03-13 10:49:24,444 - termman-daemon - INFO - Terminal connected: b510bea8-381d-46c4-9948-eeb10d245afa, sid: mYy0wcF9zDIb7a3eAABH, user: test_user_fb9edaea-3853-46d5-9652-a2533b00c573
+2026-03-13 10:49:29,548 - termman-daemon - INFO - Socket connected: _XpuTW3deheQsuWiAABJ
+2026-03-13 10:49:29,549 - termman-daemon - INFO - Terminal connected: 2fa5ea8a-f710-445c-9230-49345604adfd, sid: _XpuTW3deheQsuWiAABJ, user: test_user_9daafbb6-97b3-469d-84fa-0bbcdd1201d4
+2026-03-13 10:49:34,655 - termman-daemon - INFO - Socket connected: nGe-GXBJdXj0ajXZAABL
+2026-03-13 10:49:34,656 - termman-daemon - INFO - Terminal connected: 5c60f6b8-1820-4490-83a2-272a53eb592b, sid: nGe-GXBJdXj0ajXZAABL, user: test_user_87449627-1e58-478a-800c-dd502a2de6c6
+2026-03-13 10:49:39,742 - termman-daemon - INFO - Socket connected: MQymBw7pwT5lntfYAABN
+2026-03-13 10:49:39,744 - termman-daemon - INFO - Terminal connected: 687c8941-4e63-4815-ac98-edea5ea6ef1e, sid: MQymBw7pwT5lntfYAABN, user: test_user_fb9edaea-3853-46d5-9652-a2533b00c573
+2026-03-13 10:49:44,844 - termman-daemon - INFO - Socket connected: 0C962WncGckm6BEiAABP
+2026-03-13 10:49:44,846 - termman-daemon - INFO - Terminal connected: 070246a4-a446-40d1-812b-bbfa27815c4e, sid: 0C962WncGckm6BEiAABP, user: test_user_9daafbb6-97b3-469d-84fa-0bbcdd1201d4
+2026-03-13 10:49:49,891 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:49:51,946 - termman-daemon - INFO - Socket disconnected: mYy0wcF9zDIb7a3eAABH
+2026-03-13 10:49:51,946 - termman-daemon - INFO - Disconnected user test_user_fb9edaea-3853-46d5-9652-a2533b00c573 from item b510bea8-381d-46c4-9948-eeb10d245afa
+2026-03-13 10:49:55,991 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:49:55,996 - termman-daemon - INFO - Socket disconnected: _XpuTW3deheQsuWiAABJ, item: 2fa5ea8a-f710-445c-9230-49345604adfd
+2026-03-13 10:49:55,997 - termman-daemon - INFO - Socket disconnected: nGe-GXBJdXj0ajXZAABL, item: 5c60f6b8-1820-4490-83a2-272a53eb592b
+2026-03-13 10:49:55,997 - termman-daemon - INFO - Socket disconnected: MQymBw7pwT5lntfYAABN, item: 687c8941-4e63-4815-ac98-edea5ea6ef1e
+2026-03-13 10:49:55,998 - termman-daemon - INFO - Socket disconnected: 0C962WncGckm6BEiAABP, item: 070246a4-a446-40d1-812b-bbfa27815c4e
+2026-03-13 10:49:58,041 - termman-daemon - INFO - Terminal stopped: b510bea8-381d-46c4-9948-eeb10d245afa
+2026-03-13 10:49:58,041 - termman-daemon - INFO - Terminal stopped via HTTP: b510bea8-381d-46c4-9948-eeb10d245afa
+2026-03-13 10:50:00,088 - termman-daemon - INFO - Terminal stopped: 2fa5ea8a-f710-445c-9230-49345604adfd
+2026-03-13 10:50:00,089 - termman-daemon - INFO - Terminal stopped via HTTP: 2fa5ea8a-f710-445c-9230-49345604adfd
+2026-03-13 10:50:02,145 - termman-daemon - INFO - Terminal stopped: 5c60f6b8-1820-4490-83a2-272a53eb592b
+2026-03-13 10:50:02,146 - termman-daemon - INFO - Terminal stopped via HTTP: 5c60f6b8-1820-4490-83a2-272a53eb592b
+2026-03-13 10:50:04,198 - termman-daemon - INFO - Terminal stopped: 687c8941-4e63-4815-ac98-edea5ea6ef1e
+2026-03-13 10:50:04,198 - termman-daemon - INFO - Terminal stopped via HTTP: 687c8941-4e63-4815-ac98-edea5ea6ef1e
+2026-03-13 10:52:39,335 - termman-daemon - INFO - Terminal started: 7730065a-43d6-453c-9bdc-092c34eaef6e
+2026-03-13 10:52:39,336 - termman-daemon - INFO - Terminal started via HTTP: 7730065a-43d6-453c-9bdc-092c34eaef6e
+2026-03-13 10:52:41,402 - termman-daemon - INFO - Terminal started: 1eb5447a-4f06-4e81-8e7c-8dec19b9f62c
+2026-03-13 10:52:41,402 - termman-daemon - INFO - Terminal started via HTTP: 1eb5447a-4f06-4e81-8e7c-8dec19b9f62c
+2026-03-13 10:52:45,489 - termman-daemon - INFO - Socket connected: rMB6HL1ONhvW8TpcAABR
+2026-03-13 10:52:45,490 - termman-daemon - INFO - Terminal connected: 7730065a-43d6-453c-9bdc-092c34eaef6e, sid: rMB6HL1ONhvW8TpcAABR, user: test_user_07e982a7-deb5-4c73-b1d5-0ddc0e168ac3
+2026-03-13 10:52:50,573 - termman-daemon - INFO - Socket connected: lsCsiHCE0OOI3WBKAABT
+2026-03-13 10:52:50,574 - termman-daemon - INFO - Terminal connected: 1eb5447a-4f06-4e81-8e7c-8dec19b9f62c, sid: lsCsiHCE0OOI3WBKAABT, user: test_user_909bf883-b239-4738-907f-a6034916b815
+2026-03-13 10:52:55,615 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:53:18,488 - termman-daemon - INFO - Socket disconnected: rMB6HL1ONhvW8TpcAABR
+2026-03-13 10:53:18,488 - termman-daemon - INFO - Disconnected user test_user_07e982a7-deb5-4c73-b1d5-0ddc0e168ac3 from item 7730065a-43d6-453c-9bdc-092c34eaef6e
+2026-03-13 10:53:22,540 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:53:22,542 - termman-daemon - INFO - Socket disconnected: lsCsiHCE0OOI3WBKAABT, item: 1eb5447a-4f06-4e81-8e7c-8dec19b9f62c
+2026-03-13 10:53:24,584 - termman-daemon - INFO - Terminal stopped: 7730065a-43d6-453c-9bdc-092c34eaef6e
+2026-03-13 10:53:24,585 - termman-daemon - INFO - Terminal stopped via HTTP: 7730065a-43d6-453c-9bdc-092c34eaef6e
+2026-03-13 10:53:26,629 - termman-daemon - INFO - Terminal stopped: 1eb5447a-4f06-4e81-8e7c-8dec19b9f62c
+2026-03-13 10:53:26,630 - termman-daemon - INFO - Terminal stopped via HTTP: 1eb5447a-4f06-4e81-8e7c-8dec19b9f62c
+2026-03-13 10:53:57,598 - termman-daemon - INFO - Terminal started: 57899819-54b0-4266-94ab-7e81e1da9657
+2026-03-13 10:53:57,598 - termman-daemon - INFO - Terminal started via HTTP: 57899819-54b0-4266-94ab-7e81e1da9657
+2026-03-13 10:53:59,668 - termman-daemon - INFO - Terminal started: c6beddcc-7f79-43c4-a5cf-16ace4f336b0
+2026-03-13 10:53:59,668 - termman-daemon - INFO - Terminal started via HTTP: c6beddcc-7f79-43c4-a5cf-16ace4f336b0
+2026-03-13 10:54:03,773 - termman-daemon - INFO - Socket connected: m5KUCecwCG8wdELiAABV
+2026-03-13 10:54:03,774 - termman-daemon - INFO - Terminal connected: 57899819-54b0-4266-94ab-7e81e1da9657, sid: m5KUCecwCG8wdELiAABV, user: test_user_242f01e8-be59-4d3e-8b50-4653de293fec
+2026-03-13 10:54:08,901 - termman-daemon - INFO - Socket connected: axo9iWAY_9XskqFwAABX
+2026-03-13 10:54:08,902 - termman-daemon - INFO - Terminal connected: c6beddcc-7f79-43c4-a5cf-16ace4f336b0, sid: axo9iWAY_9XskqFwAABX, user: test_user_7f43d7f5-ee84-45c7-b4c1-292f7b878a12
+2026-03-13 10:54:13,956 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:54:36,882 - termman-daemon - INFO - Socket disconnected: m5KUCecwCG8wdELiAABV
+2026-03-13 10:54:36,883 - termman-daemon - INFO - Disconnected user test_user_242f01e8-be59-4d3e-8b50-4653de293fec from item 57899819-54b0-4266-94ab-7e81e1da9657
+2026-03-13 10:54:40,943 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:54:40,945 - termman-daemon - INFO - Socket disconnected: axo9iWAY_9XskqFwAABX, item: c6beddcc-7f79-43c4-a5cf-16ace4f336b0
+2026-03-13 10:54:42,991 - termman-daemon - INFO - Terminal stopped: 57899819-54b0-4266-94ab-7e81e1da9657
+2026-03-13 10:54:42,992 - termman-daemon - INFO - Terminal stopped via HTTP: 57899819-54b0-4266-94ab-7e81e1da9657
+2026-03-13 10:54:45,038 - termman-daemon - INFO - Terminal stopped: c6beddcc-7f79-43c4-a5cf-16ace4f336b0
+2026-03-13 10:54:45,038 - termman-daemon - INFO - Terminal stopped via HTTP: c6beddcc-7f79-43c4-a5cf-16ace4f336b0
+2026-03-13 10:55:53,580 - termman-daemon - INFO - Terminal started: 4a981905-a513-40d7-9e25-1054ce89d3cf
+2026-03-13 10:55:53,580 - termman-daemon - INFO - Terminal started via HTTP: 4a981905-a513-40d7-9e25-1054ce89d3cf
+2026-03-13 10:55:55,640 - termman-daemon - INFO - Terminal started: 118164f0-2a1d-4bf3-ad3a-e8c4ca1843a7
+2026-03-13 10:55:55,640 - termman-daemon - INFO - Terminal started via HTTP: 118164f0-2a1d-4bf3-ad3a-e8c4ca1843a7
+2026-03-13 10:55:59,754 - termman-daemon - INFO - Socket connected: s4xhSmnCvKZNSZfvAABZ
+2026-03-13 10:55:59,755 - termman-daemon - INFO - Terminal connected: 4a981905-a513-40d7-9e25-1054ce89d3cf, sid: s4xhSmnCvKZNSZfvAABZ, user: test_user_11d155ba-7965-4ef7-9688-3595cd60b149
+2026-03-13 10:56:04,856 - termman-daemon - INFO - Socket connected: gzJqBpWrfxUZPn5UAABb
+2026-03-13 10:56:04,857 - termman-daemon - INFO - Terminal connected: 118164f0-2a1d-4bf3-ad3a-e8c4ca1843a7, sid: gzJqBpWrfxUZPn5UAABb, user: test_user_38c2b265-5af6-41e6-98d9-cb4eb07af922
+2026-03-13 10:56:09,902 - termman-daemon - INFO - Connection tables queried
+2026-03-13 10:56:21,941 - termman-daemon - INFO - Socket disconnected: s4xhSmnCvKZNSZfvAABZ, item: 4a981905-a513-40d7-9e25-1054ce89d3cf
+2026-03-13 10:56:21,941 - termman-daemon - INFO - Socket disconnected: gzJqBpWrfxUZPn5UAABb, item: 118164f0-2a1d-4bf3-ad3a-e8c4ca1843a7
+2026-03-13 11:00:46,012 - termman-daemon - INFO - Terminal started: 575005c6-4e12-4f88-a019-f0e04c4a5a6d
+2026-03-13 11:00:46,012 - termman-daemon - INFO - Terminal started via HTTP: 575005c6-4e12-4f88-a019-f0e04c4a5a6d
+2026-03-13 11:00:50,109 - termman-daemon - INFO - Socket connected: t9s0owvIL-x3QeFqAABf
+2026-03-13 11:00:50,125 - termman-daemon - INFO - Socket connected: LkhB0unyBg0GqxbPAABg
+2026-03-13 11:00:50,126 - termman-daemon - INFO - Socket connected: RPqeskHSwHLQVFdfAABh
+2026-03-13 11:00:51,111 - termman-daemon - INFO - Terminal connected: 575005c6-4e12-4f88-a019-f0e04c4a5a6d, sid: t9s0owvIL-x3QeFqAABf, user: test_user_520ca5da-ec16-4bc7-a6a8-9810b19aebf8
+2026-03-13 11:00:51,128 - termman-daemon - INFO - Terminal connected: 575005c6-4e12-4f88-a019-f0e04c4a5a6d, sid: LkhB0unyBg0GqxbPAABg, user: test_user_36c77160-33ab-48a5-88d8-72ab07e0ef88
+2026-03-13 11:00:51,128 - termman-daemon - INFO - Terminal connected: 575005c6-4e12-4f88-a019-f0e04c4a5a6d, sid: RPqeskHSwHLQVFdfAABh, user: test_user_8bcc2bba-9978-4406-b410-8c33900a977d
+2026-03-13 11:01:01,184 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:01:03,226 - termman-daemon - INFO - Socket disconnected: t9s0owvIL-x3QeFqAABf
+2026-03-13 11:01:03,226 - termman-daemon - INFO - Disconnected user test_user_520ca5da-ec16-4bc7-a6a8-9810b19aebf8 from item 575005c6-4e12-4f88-a019-f0e04c4a5a6d
+2026-03-13 11:01:07,280 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:01:07,283 - termman-daemon - INFO - Socket disconnected: RPqeskHSwHLQVFdfAABh, item: 575005c6-4e12-4f88-a019-f0e04c4a5a6d
+2026-03-13 11:01:08,285 - termman-daemon - INFO - Socket disconnected: LkhB0unyBg0GqxbPAABg, item: 575005c6-4e12-4f88-a019-f0e04c4a5a6d
+2026-03-13 11:01:11,339 - termman-daemon - INFO - Terminal stopped: 575005c6-4e12-4f88-a019-f0e04c4a5a6d
+2026-03-13 11:01:11,340 - termman-daemon - INFO - Terminal stopped via HTTP: 575005c6-4e12-4f88-a019-f0e04c4a5a6d
+2026-03-13 11:05:49,581 - termman-daemon - INFO - Terminal started: dfedaf2a-5234-4162-9d67-0ebbe3d62301
+2026-03-13 11:05:49,581 - termman-daemon - INFO - Terminal started via HTTP: dfedaf2a-5234-4162-9d67-0ebbe3d62301
+2026-03-13 11:05:51,644 - termman-daemon - INFO - Terminal started: 1419ae5e-551e-417c-8ac2-304492637028
+2026-03-13 11:05:51,645 - termman-daemon - INFO - Terminal started via HTTP: 1419ae5e-551e-417c-8ac2-304492637028
+2026-03-13 11:05:53,705 - termman-daemon - INFO - Terminal started: 291ad61a-7241-47c4-9cc2-d65a55809691
+2026-03-13 11:05:53,706 - termman-daemon - INFO - Terminal started via HTTP: 291ad61a-7241-47c4-9cc2-d65a55809691
+2026-03-13 11:05:55,743 - termman-daemon - INFO - Socket connected: 0Kq7MwNGdASCCPreAABk
+2026-03-13 11:05:55,743 - termman-daemon - INFO - Socket connected: GcYj2LWTpUy9gPagAABl
+2026-03-13 11:05:55,755 - termman-daemon - INFO - Socket connected: LiwvUz2wDOcCy601AABn
+2026-03-13 11:05:56,744 - termman-daemon - INFO - Terminal connected: dfedaf2a-5234-4162-9d67-0ebbe3d62301, sid: 0Kq7MwNGdASCCPreAABk, user: test_user_2f638e57-cdf9-4e15-8ed5-9467f318594f
+2026-03-13 11:05:56,745 - termman-daemon - INFO - Terminal connected: 1419ae5e-551e-417c-8ac2-304492637028, sid: GcYj2LWTpUy9gPagAABl, user: test_user_7df51184-bc82-4007-be7c-ecf0d4454ec4
+2026-03-13 11:05:56,757 - termman-daemon - INFO - Terminal connected: 291ad61a-7241-47c4-9cc2-d65a55809691, sid: LiwvUz2wDOcCy601AABn, user: test_user_b35f26d7-de39-4aca-99f9-5aee24ed7bb9
+2026-03-13 11:05:58,816 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:06:06,865 - termman-daemon - INFO - Socket disconnected: 0Kq7MwNGdASCCPreAABk
+2026-03-13 11:06:06,865 - termman-daemon - INFO - Disconnected user test_user_2f638e57-cdf9-4e15-8ed5-9467f318594f from item dfedaf2a-5234-4162-9d67-0ebbe3d62301
+2026-03-13 11:06:08,903 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:06:08,906 - termman-daemon - INFO - Socket disconnected: GcYj2LWTpUy9gPagAABl, item: 1419ae5e-551e-417c-8ac2-304492637028
+2026-03-13 11:06:09,908 - termman-daemon - INFO - Socket disconnected: LiwvUz2wDOcCy601AABn, item: 291ad61a-7241-47c4-9cc2-d65a55809691
+2026-03-13 11:06:12,956 - termman-daemon - INFO - Terminal stopped: dfedaf2a-5234-4162-9d67-0ebbe3d62301
+2026-03-13 11:06:12,958 - termman-daemon - INFO - Terminal stopped via HTTP: dfedaf2a-5234-4162-9d67-0ebbe3d62301
+2026-03-13 11:06:15,007 - termman-daemon - INFO - Terminal stopped: 1419ae5e-551e-417c-8ac2-304492637028
+2026-03-13 11:06:15,008 - termman-daemon - INFO - Terminal stopped via HTTP: 1419ae5e-551e-417c-8ac2-304492637028
+2026-03-13 11:06:17,054 - termman-daemon - INFO - Terminal stopped: 291ad61a-7241-47c4-9cc2-d65a55809691
+2026-03-13 11:06:17,055 - termman-daemon - INFO - Terminal stopped via HTTP: 291ad61a-7241-47c4-9cc2-d65a55809691
+2026-03-13 11:10:49,162 - termman-daemon - INFO - Terminal started: 7fd30c99-e653-4c9f-9f18-c57b3dcd095e
+2026-03-13 11:10:49,163 - termman-daemon - INFO - Terminal started via HTTP: 7fd30c99-e653-4c9f-9f18-c57b3dcd095e
+2026-03-13 11:10:51,209 - termman-daemon - INFO - Terminal started: 7b783687-75a1-4acb-878f-2d451df00c1c
+2026-03-13 11:10:51,209 - termman-daemon - INFO - Terminal started via HTTP: 7b783687-75a1-4acb-878f-2d451df00c1c
+2026-03-13 11:10:53,277 - termman-daemon - INFO - Terminal started: 3f059388-b673-414c-8ecf-9a14ba948ab2
+2026-03-13 11:10:53,277 - termman-daemon - INFO - Terminal started via HTTP: 3f059388-b673-414c-8ecf-9a14ba948ab2
+2026-03-13 11:10:55,330 - termman-daemon - INFO - Socket connected: QHeah9UantZ-BMSIAABr
+2026-03-13 11:10:55,331 - termman-daemon - INFO - Socket connected: tz6RDAh4WRe490lYAABs
+2026-03-13 11:10:55,332 - termman-daemon - INFO - Socket connected: BBEE4qSTMtq6WITfAABt
+2026-03-13 11:10:56,332 - termman-daemon - INFO - Terminal connected: 7fd30c99-e653-4c9f-9f18-c57b3dcd095e, sid: QHeah9UantZ-BMSIAABr, user: test_user_8a2df8e2-4641-4a74-9aae-c9da8452a5f4
+2026-03-13 11:10:56,334 - termman-daemon - INFO - Terminal connected: 7fd30c99-e653-4c9f-9f18-c57b3dcd095e, sid: tz6RDAh4WRe490lYAABs, user: test_user_68874614-f2b8-455e-90ce-712c69097d77
+2026-03-13 11:10:56,334 - termman-daemon - INFO - Terminal connected: 7fd30c99-e653-4c9f-9f18-c57b3dcd095e, sid: BBEE4qSTMtq6WITfAABt, user: test_user_bf017a4b-2636-4dda-8b98-700f1b90503c
+2026-03-13 11:10:58,387 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:11:06,454 - termman-daemon - INFO - Socket disconnected: tz6RDAh4WRe490lYAABs
+2026-03-13 11:11:06,455 - termman-daemon - INFO - Disconnected user test_user_68874614-f2b8-455e-90ce-712c69097d77 from item 7fd30c99-e653-4c9f-9f18-c57b3dcd095e
+2026-03-13 11:11:08,504 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:11:08,506 - termman-daemon - INFO - Socket disconnected: BBEE4qSTMtq6WITfAABt, item: 7fd30c99-e653-4c9f-9f18-c57b3dcd095e
+2026-03-13 11:11:09,509 - termman-daemon - INFO - Socket disconnected: QHeah9UantZ-BMSIAABr, item: 7fd30c99-e653-4c9f-9f18-c57b3dcd095e
+2026-03-13 11:11:12,561 - termman-daemon - INFO - Terminal stopped: 7fd30c99-e653-4c9f-9f18-c57b3dcd095e
+2026-03-13 11:11:12,562 - termman-daemon - INFO - Terminal stopped via HTTP: 7fd30c99-e653-4c9f-9f18-c57b3dcd095e
+2026-03-13 11:11:14,603 - termman-daemon - INFO - Terminal stopped: 7b783687-75a1-4acb-878f-2d451df00c1c
+2026-03-13 11:11:14,603 - termman-daemon - INFO - Terminal stopped via HTTP: 7b783687-75a1-4acb-878f-2d451df00c1c
+2026-03-13 11:11:16,659 - termman-daemon - INFO - Terminal stopped: 3f059388-b673-414c-8ecf-9a14ba948ab2
+2026-03-13 11:11:16,659 - termman-daemon - INFO - Terminal stopped via HTTP: 3f059388-b673-414c-8ecf-9a14ba948ab2
+2026-03-13 11:16:06,445 - termman-daemon - INFO - Socket connected: sJl6k0nMI7e5PyfgAABv
+2026-03-13 11:16:06,458 - termman-daemon - INFO - Terminal started: 5e60b658-c3cc-45c1-aa35-f77e3668e60e
+2026-03-13 11:16:06,458 - termman-daemon - INFO - Terminal started via HTTP: 5e60b658-c3cc-45c1-aa35-f77e3668e60e
+2026-03-13 11:16:06,481 - termman-daemon - INFO - Socket connected: iZYASsxkuKyfA9Z5AABx
+2026-03-13 11:16:07,482 - termman-daemon - INFO - Terminal connected: 5e60b658-c3cc-45c1-aa35-f77e3668e60e, sid: iZYASsxkuKyfA9Z5AABx, user: user-66b3697d-ce2a-494b-8b3c-07542e73c2d4
+2026-03-13 11:16:08,501 - termman-daemon - INFO - Socket connected: hcTah1HY5iEICyhRAABz
+2026-03-13 11:16:09,504 - termman-daemon - INFO - Terminal connected: 5e60b658-c3cc-45c1-aa35-f77e3668e60e, sid: hcTah1HY5iEICyhRAABz, user: user-1b2907cc-1379-4e01-9415-4067d927a199
+2026-03-13 11:16:10,506 - termman-daemon - INFO - Socket connected: Dg2ul2p8FzJwbmH5AAB1
+2026-03-13 11:16:11,509 - termman-daemon - INFO - Terminal connected: 5e60b658-c3cc-45c1-aa35-f77e3668e60e, sid: Dg2ul2p8FzJwbmH5AAB1, user: user-f876175d-ef8a-4116-b8ff-4cfb28276b93
+2026-03-13 11:16:20,515 - termman-daemon - INFO - Terminal status queried: 5e60b658-c3cc-45c1-aa35-f77e3668e60e, status: running
+2026-03-13 11:16:20,520 - termman-daemon - INFO - Terminal stopped: 5e60b658-c3cc-45c1-aa35-f77e3668e60e
+2026-03-13 11:16:20,521 - termman-daemon - INFO - Terminal stopped via HTTP: 5e60b658-c3cc-45c1-aa35-f77e3668e60e
+2026-03-13 11:16:20,591 - termman-daemon - INFO - Socket disconnected: sJl6k0nMI7e5PyfgAABv
+2026-03-13 11:16:20,592 - termman-daemon - INFO - Socket disconnected: hcTah1HY5iEICyhRAABz, item: 5e60b658-c3cc-45c1-aa35-f77e3668e60e
+2026-03-13 11:16:20,592 - termman-daemon - INFO - Socket disconnected: Dg2ul2p8FzJwbmH5AAB1, item: 5e60b658-c3cc-45c1-aa35-f77e3668e60e
+2026-03-13 11:16:20,592 - termman-daemon - INFO - Socket disconnected: iZYASsxkuKyfA9Z5AABx, item: 5e60b658-c3cc-45c1-aa35-f77e3668e60e
+2026-03-13 11:24:22,753 - termman-daemon - INFO - Terminal started: 1c9eb0d2-1fb0-42b5-a53b-a34fbb7bacf9
+2026-03-13 11:24:22,753 - termman-daemon - INFO - Terminal started via HTTP: 1c9eb0d2-1fb0-42b5-a53b-a34fbb7bacf9
+2026-03-13 11:24:24,821 - termman-daemon - INFO - Terminal started: e2e9b34a-096a-457c-8ab0-12b0272abda6
+2026-03-13 11:24:24,821 - termman-daemon - INFO - Terminal started via HTTP: e2e9b34a-096a-457c-8ab0-12b0272abda6
+2026-03-13 11:24:26,884 - termman-daemon - INFO - Terminal started: 6b5df3dc-b0f0-4a3b-a963-b1847389609f
+2026-03-13 11:24:26,884 - termman-daemon - INFO - Terminal started via HTTP: 6b5df3dc-b0f0-4a3b-a963-b1847389609f
+2026-03-13 11:24:28,940 - termman-daemon - INFO - Terminal started: 716887cf-3e57-4631-809e-535f661016e9
+2026-03-13 11:24:28,940 - termman-daemon - INFO - Terminal started via HTTP: 716887cf-3e57-4631-809e-535f661016e9
+2026-03-13 11:24:31,003 - termman-daemon - INFO - Terminal started: 975ffedf-e7d3-4512-871e-6a2f38f242bb
+2026-03-13 11:24:31,003 - termman-daemon - INFO - Terminal started via HTTP: 975ffedf-e7d3-4512-871e-6a2f38f242bb
+2026-03-13 11:24:35,112 - termman-daemon - INFO - Socket connected: sxh5jncxuP7bEjaVAAB3
+2026-03-13 11:24:35,113 - termman-daemon - INFO - Terminal connected: 1c9eb0d2-1fb0-42b5-a53b-a34fbb7bacf9, sid: sxh5jncxuP7bEjaVAAB3, user: test_user_b66ff2f0-ef29-4d6b-8088-7da0d30aafc2
+2026-03-13 11:24:40,227 - termman-daemon - INFO - Socket connected: GSIxRHU1orR66_enAAB5
+2026-03-13 11:24:40,228 - termman-daemon - INFO - Terminal connected: e2e9b34a-096a-457c-8ab0-12b0272abda6, sid: GSIxRHU1orR66_enAAB5, user: test_user_f1e1266f-42e9-4f80-b8b9-acee926c205a
+2026-03-13 11:24:45,331 - termman-daemon - INFO - Socket connected: WDCTzz4OCcO7-5WbAAB7
+2026-03-13 11:24:45,332 - termman-daemon - INFO - Terminal connected: 6b5df3dc-b0f0-4a3b-a963-b1847389609f, sid: WDCTzz4OCcO7-5WbAAB7, user: test_user_3d2e8f21-5113-4c43-aeb3-786da724c963
+2026-03-13 11:24:50,433 - termman-daemon - INFO - Socket connected: hXtloU8NrqieBawNAAB9
+2026-03-13 11:24:50,434 - termman-daemon - INFO - Terminal connected: 716887cf-3e57-4631-809e-535f661016e9, sid: hXtloU8NrqieBawNAAB9, user: test_user_b66ff2f0-ef29-4d6b-8088-7da0d30aafc2
+2026-03-13 11:24:55,530 - termman-daemon - INFO - Socket connected: lKTLPHb4cAx1zg45AAB_
+2026-03-13 11:24:55,531 - termman-daemon - INFO - Terminal connected: 975ffedf-e7d3-4512-871e-6a2f38f242bb, sid: lKTLPHb4cAx1zg45AAB_, user: test_user_f1e1266f-42e9-4f80-b8b9-acee926c205a
+2026-03-13 11:25:00,568 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:25:02,606 - termman-daemon - INFO - Socket disconnected: sxh5jncxuP7bEjaVAAB3
+2026-03-13 11:25:02,606 - termman-daemon - INFO - Disconnected user test_user_b66ff2f0-ef29-4d6b-8088-7da0d30aafc2 from item 1c9eb0d2-1fb0-42b5-a53b-a34fbb7bacf9
+2026-03-13 11:25:06,650 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:25:06,653 - termman-daemon - INFO - Socket disconnected: GSIxRHU1orR66_enAAB5, item: e2e9b34a-096a-457c-8ab0-12b0272abda6
+2026-03-13 11:25:06,654 - termman-daemon - INFO - Socket disconnected: WDCTzz4OCcO7-5WbAAB7, item: 6b5df3dc-b0f0-4a3b-a963-b1847389609f
+2026-03-13 11:25:06,655 - termman-daemon - INFO - Socket disconnected: hXtloU8NrqieBawNAAB9, item: 716887cf-3e57-4631-809e-535f661016e9
+2026-03-13 11:25:06,656 - termman-daemon - INFO - Socket disconnected: lKTLPHb4cAx1zg45AAB_, item: 975ffedf-e7d3-4512-871e-6a2f38f242bb
+2026-03-13 11:25:08,686 - termman-daemon - INFO - Terminal stopped: 1c9eb0d2-1fb0-42b5-a53b-a34fbb7bacf9
+2026-03-13 11:25:08,687 - termman-daemon - INFO - Terminal stopped via HTTP: 1c9eb0d2-1fb0-42b5-a53b-a34fbb7bacf9
+2026-03-13 11:25:10,732 - termman-daemon - INFO - Terminal stopped: e2e9b34a-096a-457c-8ab0-12b0272abda6
+2026-03-13 11:25:10,733 - termman-daemon - INFO - Terminal stopped via HTTP: e2e9b34a-096a-457c-8ab0-12b0272abda6
+2026-03-13 11:25:12,774 - termman-daemon - INFO - Terminal stopped: 6b5df3dc-b0f0-4a3b-a963-b1847389609f
+2026-03-13 11:25:12,774 - termman-daemon - INFO - Terminal stopped via HTTP: 6b5df3dc-b0f0-4a3b-a963-b1847389609f
+2026-03-13 11:25:14,820 - termman-daemon - INFO - Terminal stopped: 716887cf-3e57-4631-809e-535f661016e9
+2026-03-13 11:25:14,821 - termman-daemon - INFO - Terminal stopped via HTTP: 716887cf-3e57-4631-809e-535f661016e9
+2026-03-13 11:25:16,870 - termman-daemon - INFO - Terminal stopped: 975ffedf-e7d3-4512-871e-6a2f38f242bb
+2026-03-13 11:25:16,871 - termman-daemon - INFO - Terminal stopped via HTTP: 975ffedf-e7d3-4512-871e-6a2f38f242bb
+2026-03-13 11:29:46,835 - termman-daemon - INFO - Terminal started: a6b89dd2-b1d8-4f53-9fdf-31bb2391f0c3
+2026-03-13 11:29:46,835 - termman-daemon - INFO - Terminal started via HTTP: a6b89dd2-b1d8-4f53-9fdf-31bb2391f0c3
+2026-03-13 11:29:48,901 - termman-daemon - INFO - Terminal started: 84408d92-0410-4cef-b02d-02b1c093c9f6
+2026-03-13 11:29:48,901 - termman-daemon - INFO - Terminal started via HTTP: 84408d92-0410-4cef-b02d-02b1c093c9f6
+2026-03-13 11:29:50,952 - termman-daemon - INFO - Terminal started: a721fe95-7ea5-4567-a462-b735a833e208
+2026-03-13 11:29:50,952 - termman-daemon - INFO - Terminal started via HTTP: a721fe95-7ea5-4567-a462-b735a833e208
+2026-03-13 11:29:53,009 - termman-daemon - INFO - Terminal started: bb5a94df-82c9-4c81-bac7-a07cb9b1ce6f
+2026-03-13 11:29:53,009 - termman-daemon - INFO - Terminal started via HTTP: bb5a94df-82c9-4c81-bac7-a07cb9b1ce6f
+2026-03-13 11:29:55,064 - termman-daemon - INFO - Terminal started: 95976e86-494a-428c-b883-9b4d93806d29
+2026-03-13 11:29:55,064 - termman-daemon - INFO - Terminal started via HTTP: 95976e86-494a-428c-b883-9b4d93806d29
+2026-03-13 11:29:59,179 - termman-daemon - INFO - Socket connected: LDlJ55hI_femvNFsAACB
+2026-03-13 11:29:59,181 - termman-daemon - INFO - Terminal connected: a6b89dd2-b1d8-4f53-9fdf-31bb2391f0c3, sid: LDlJ55hI_femvNFsAACB, user: test_user_48242686-58d3-44aa-aeae-07d1b773c65b
+2026-03-13 11:30:04,292 - termman-daemon - INFO - Socket connected: pD9WVMViulopMNCsAACD
+2026-03-13 11:30:04,294 - termman-daemon - INFO - Terminal connected: 84408d92-0410-4cef-b02d-02b1c093c9f6, sid: pD9WVMViulopMNCsAACD, user: test_user_328e4dab-4874-4ecc-9de5-e9305be18dbb
+2026-03-13 11:30:09,382 - termman-daemon - INFO - Socket connected: VYFQr993-r0c2VGDAACF
+2026-03-13 11:30:09,383 - termman-daemon - INFO - Terminal connected: a721fe95-7ea5-4567-a462-b735a833e208, sid: VYFQr993-r0c2VGDAACF, user: test_user_58bdcd85-a0de-4612-84ab-61f0be2a758b
+2026-03-13 11:30:14,476 - termman-daemon - INFO - Socket connected: hJPS5zwrmQptA5HKAACH
+2026-03-13 11:30:14,477 - termman-daemon - INFO - Terminal connected: bb5a94df-82c9-4c81-bac7-a07cb9b1ce6f, sid: hJPS5zwrmQptA5HKAACH, user: test_user_48242686-58d3-44aa-aeae-07d1b773c65b
+2026-03-13 11:30:19,602 - termman-daemon - INFO - Socket connected: JYYc1ZffJxf6LPolAACJ
+2026-03-13 11:30:19,603 - termman-daemon - INFO - Terminal connected: 95976e86-494a-428c-b883-9b4d93806d29, sid: JYYc1ZffJxf6LPolAACJ, user: test_user_328e4dab-4874-4ecc-9de5-e9305be18dbb
+2026-03-13 11:30:30,663 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:30:32,717 - termman-daemon - INFO - Socket disconnected: LDlJ55hI_femvNFsAACB
+2026-03-13 11:30:32,718 - termman-daemon - INFO - Disconnected user test_user_48242686-58d3-44aa-aeae-07d1b773c65b from item a6b89dd2-b1d8-4f53-9fdf-31bb2391f0c3
+2026-03-13 11:30:36,773 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:30:38,819 - termman-daemon - INFO - Socket disconnected: pD9WVMViulopMNCsAACD, item: 84408d92-0410-4cef-b02d-02b1c093c9f6
+2026-03-13 11:30:38,820 - termman-daemon - INFO - Socket disconnected: VYFQr993-r0c2VGDAACF, item: a721fe95-7ea5-4567-a462-b735a833e208
+2026-03-13 11:30:38,821 - termman-daemon - INFO - Socket disconnected: hJPS5zwrmQptA5HKAACH, item: bb5a94df-82c9-4c81-bac7-a07cb9b1ce6f
+2026-03-13 11:30:38,822 - termman-daemon - INFO - Socket disconnected: JYYc1ZffJxf6LPolAACJ, item: 95976e86-494a-428c-b883-9b4d93806d29
+2026-03-13 11:30:40,869 - termman-daemon - INFO - Terminal stopped: a6b89dd2-b1d8-4f53-9fdf-31bb2391f0c3
+2026-03-13 11:30:40,869 - termman-daemon - INFO - Terminal stopped via HTTP: a6b89dd2-b1d8-4f53-9fdf-31bb2391f0c3
+2026-03-13 11:30:42,917 - termman-daemon - INFO - Terminal stopped: 84408d92-0410-4cef-b02d-02b1c093c9f6
+2026-03-13 11:30:42,917 - termman-daemon - INFO - Terminal stopped via HTTP: 84408d92-0410-4cef-b02d-02b1c093c9f6
+2026-03-13 11:30:44,958 - termman-daemon - INFO - Terminal stopped: a721fe95-7ea5-4567-a462-b735a833e208
+2026-03-13 11:30:44,958 - termman-daemon - INFO - Terminal stopped via HTTP: a721fe95-7ea5-4567-a462-b735a833e208
+2026-03-13 11:30:46,995 - termman-daemon - INFO - Terminal stopped: bb5a94df-82c9-4c81-bac7-a07cb9b1ce6f
+2026-03-13 11:30:46,995 - termman-daemon - INFO - Terminal stopped via HTTP: bb5a94df-82c9-4c81-bac7-a07cb9b1ce6f
+2026-03-13 11:30:49,037 - termman-daemon - INFO - Terminal stopped: 95976e86-494a-428c-b883-9b4d93806d29
+2026-03-13 11:30:49,038 - termman-daemon - INFO - Terminal stopped via HTTP: 95976e86-494a-428c-b883-9b4d93806d29
+2026-03-13 11:36:23,644 - termman-daemon - INFO - Terminal started: b40bb335-a620-4402-85bb-851a4b218b86
+2026-03-13 11:36:23,644 - termman-daemon - INFO - Terminal started via HTTP: b40bb335-a620-4402-85bb-851a4b218b86
+2026-03-13 11:36:25,699 - termman-daemon - INFO - Terminal started: 6e992e5d-df26-44e7-82ba-f3a7eca8ccf7
+2026-03-13 11:36:25,699 - termman-daemon - INFO - Terminal started via HTTP: 6e992e5d-df26-44e7-82ba-f3a7eca8ccf7
+2026-03-13 11:36:27,765 - termman-daemon - INFO - Terminal started: 5a7d1ac5-f8ef-4bac-84c4-b8262d31488d
+2026-03-13 11:36:27,765 - termman-daemon - INFO - Terminal started via HTTP: 5a7d1ac5-f8ef-4bac-84c4-b8262d31488d
+2026-03-13 11:36:29,830 - termman-daemon - INFO - Terminal started: 88daddd5-e0df-41e9-b699-582c99dbf8e3
+2026-03-13 11:36:29,830 - termman-daemon - INFO - Terminal started via HTTP: 88daddd5-e0df-41e9-b699-582c99dbf8e3
+2026-03-13 11:36:31,901 - termman-daemon - INFO - Terminal started: 1c72a239-a82f-412d-b307-951cc9d1562e
+2026-03-13 11:36:31,902 - termman-daemon - INFO - Terminal started via HTTP: 1c72a239-a82f-412d-b307-951cc9d1562e
+2026-03-13 11:36:36,010 - termman-daemon - INFO - Socket connected: n95gnIOm8Auk78krAACL
+2026-03-13 11:36:36,011 - termman-daemon - INFO - Terminal connected: b40bb335-a620-4402-85bb-851a4b218b86, sid: n95gnIOm8Auk78krAACL, user: test_user_51f31efc-4a18-4bc8-a2f0-26dea0891264
+2026-03-13 11:36:41,114 - termman-daemon - INFO - Socket connected: XqeRlqDh6Ni7_KqLAACN
+2026-03-13 11:36:41,115 - termman-daemon - INFO - Terminal connected: 6e992e5d-df26-44e7-82ba-f3a7eca8ccf7, sid: XqeRlqDh6Ni7_KqLAACN, user: test_user_84148b74-fbc3-4b76-8846-dbde24e2eb01
+2026-03-13 11:36:46,210 - termman-daemon - INFO - Socket connected: uZJQk5yS1UBHB8cwAACP
+2026-03-13 11:36:46,211 - termman-daemon - INFO - Terminal connected: 5a7d1ac5-f8ef-4bac-84c4-b8262d31488d, sid: uZJQk5yS1UBHB8cwAACP, user: test_user_414a5de3-3275-4f9b-bdc5-57b91003da03
+2026-03-13 11:36:51,310 - termman-daemon - INFO - Socket connected: orsXIIKVplsehtNCAACR
+2026-03-13 11:36:51,311 - termman-daemon - INFO - Terminal connected: 88daddd5-e0df-41e9-b699-582c99dbf8e3, sid: orsXIIKVplsehtNCAACR, user: test_user_51f31efc-4a18-4bc8-a2f0-26dea0891264
+2026-03-13 11:36:56,422 - termman-daemon - INFO - Socket connected: j0XS4CIaLXkimTczAACT
+2026-03-13 11:36:56,423 - termman-daemon - INFO - Terminal connected: 1c72a239-a82f-412d-b307-951cc9d1562e, sid: j0XS4CIaLXkimTczAACT, user: test_user_84148b74-fbc3-4b76-8846-dbde24e2eb01
+2026-03-13 11:37:07,479 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:37:09,531 - termman-daemon - INFO - Socket disconnected: n95gnIOm8Auk78krAACL
+2026-03-13 11:37:09,531 - termman-daemon - INFO - Disconnected user test_user_51f31efc-4a18-4bc8-a2f0-26dea0891264 from item b40bb335-a620-4402-85bb-851a4b218b86
+2026-03-13 11:37:13,580 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:37:15,646 - termman-daemon - INFO - Socket disconnected: XqeRlqDh6Ni7_KqLAACN, item: 6e992e5d-df26-44e7-82ba-f3a7eca8ccf7
+2026-03-13 11:37:15,646 - termman-daemon - INFO - Socket disconnected: uZJQk5yS1UBHB8cwAACP, item: 5a7d1ac5-f8ef-4bac-84c4-b8262d31488d
+2026-03-13 11:37:15,647 - termman-daemon - INFO - Socket disconnected: orsXIIKVplsehtNCAACR, item: 88daddd5-e0df-41e9-b699-582c99dbf8e3
+2026-03-13 11:37:15,648 - termman-daemon - INFO - Socket disconnected: j0XS4CIaLXkimTczAACT, item: 1c72a239-a82f-412d-b307-951cc9d1562e
+2026-03-13 11:37:17,695 - termman-daemon - INFO - Terminal stopped: b40bb335-a620-4402-85bb-851a4b218b86
+2026-03-13 11:37:17,696 - termman-daemon - INFO - Terminal stopped via HTTP: b40bb335-a620-4402-85bb-851a4b218b86
+2026-03-13 11:37:19,747 - termman-daemon - INFO - Terminal stopped: 6e992e5d-df26-44e7-82ba-f3a7eca8ccf7
+2026-03-13 11:37:19,747 - termman-daemon - INFO - Terminal stopped via HTTP: 6e992e5d-df26-44e7-82ba-f3a7eca8ccf7
+2026-03-13 11:37:21,787 - termman-daemon - INFO - Terminal stopped: 5a7d1ac5-f8ef-4bac-84c4-b8262d31488d
+2026-03-13 11:37:21,787 - termman-daemon - INFO - Terminal stopped via HTTP: 5a7d1ac5-f8ef-4bac-84c4-b8262d31488d
+2026-03-13 11:37:23,848 - termman-daemon - INFO - Terminal stopped: 88daddd5-e0df-41e9-b699-582c99dbf8e3
+2026-03-13 11:37:23,849 - termman-daemon - INFO - Terminal stopped via HTTP: 88daddd5-e0df-41e9-b699-582c99dbf8e3
+2026-03-13 11:37:25,902 - termman-daemon - INFO - Terminal stopped: 1c72a239-a82f-412d-b307-951cc9d1562e
+2026-03-13 11:37:25,902 - termman-daemon - INFO - Terminal stopped via HTTP: 1c72a239-a82f-412d-b307-951cc9d1562e
+2026-03-13 11:37:56,248 - termman-daemon - INFO - Terminal started: b75439df-938c-47a1-ae11-4209c34adbe2
+2026-03-13 11:37:56,248 - termman-daemon - INFO - Terminal started via HTTP: b75439df-938c-47a1-ae11-4209c34adbe2
+2026-03-13 11:37:58,313 - termman-daemon - INFO - Terminal started: e84d7042-50eb-41dd-bf27-f32bb6dc8fe3
+2026-03-13 11:37:58,313 - termman-daemon - INFO - Terminal started via HTTP: e84d7042-50eb-41dd-bf27-f32bb6dc8fe3
+2026-03-13 11:38:00,372 - termman-daemon - INFO - Terminal started: 85327cba-39ee-4c05-9273-9b9a27e0b785
+2026-03-13 11:38:00,372 - termman-daemon - INFO - Terminal started via HTTP: 85327cba-39ee-4c05-9273-9b9a27e0b785
+2026-03-13 11:38:02,442 - termman-daemon - INFO - Terminal started: 2c1e6ec9-a6c0-4362-9d8e-6393835cfe5c
+2026-03-13 11:38:02,442 - termman-daemon - INFO - Terminal started via HTTP: 2c1e6ec9-a6c0-4362-9d8e-6393835cfe5c
+2026-03-13 11:38:04,509 - termman-daemon - INFO - Terminal started: 876e3539-2a86-45b1-85d8-c94dbfda5161
+2026-03-13 11:38:04,510 - termman-daemon - INFO - Terminal started via HTTP: 876e3539-2a86-45b1-85d8-c94dbfda5161
+2026-03-13 11:38:08,631 - termman-daemon - INFO - Socket connected: Cer6lu4_NAbHfyEnAACV
+2026-03-13 11:38:08,633 - termman-daemon - INFO - Terminal connected: b75439df-938c-47a1-ae11-4209c34adbe2, sid: Cer6lu4_NAbHfyEnAACV, user: test_user_15c6a1ae-2b22-4483-9275-ad5bf16d37a8
+2026-03-13 11:38:13,727 - termman-daemon - INFO - Socket connected: qtE1tpjR9FsYP6N3AACX
+2026-03-13 11:38:13,728 - termman-daemon - INFO - Terminal connected: e84d7042-50eb-41dd-bf27-f32bb6dc8fe3, sid: qtE1tpjR9FsYP6N3AACX, user: test_user_5f7b367a-8fda-4691-a140-91cddf52e269
+2026-03-13 11:38:18,847 - termman-daemon - INFO - Socket connected: nhTpDRJZXzS6Vc7gAACZ
+2026-03-13 11:38:18,848 - termman-daemon - INFO - Terminal connected: 85327cba-39ee-4c05-9273-9b9a27e0b785, sid: nhTpDRJZXzS6Vc7gAACZ, user: test_user_2fdfca06-994d-4684-bab7-edcf5b99b9a4
+2026-03-13 11:38:22,043 - termman-daemon - INFO - Socket disconnected: Cer6lu4_NAbHfyEnAACV, item: b75439df-938c-47a1-ae11-4209c34adbe2
+2026-03-13 11:38:22,044 - termman-daemon - INFO - Socket disconnected: qtE1tpjR9FsYP6N3AACX, item: e84d7042-50eb-41dd-bf27-f32bb6dc8fe3
+2026-03-13 11:38:22,044 - termman-daemon - INFO - Socket disconnected: nhTpDRJZXzS6Vc7gAACZ, item: 85327cba-39ee-4c05-9273-9b9a27e0b785
+2026-03-13 11:42:01,393 - termman-daemon - INFO - Terminal started: 12342583-d2c7-48a2-a161-b2db5355929f
+2026-03-13 11:42:01,394 - termman-daemon - INFO - Terminal started via HTTP: 12342583-d2c7-48a2-a161-b2db5355929f
+2026-03-13 11:42:03,457 - termman-daemon - INFO - Terminal started: f6f70216-66a6-4220-8bb3-70bcaa9bebaa
+2026-03-13 11:42:03,458 - termman-daemon - INFO - Terminal started via HTTP: f6f70216-66a6-4220-8bb3-70bcaa9bebaa
+2026-03-13 11:42:05,520 - termman-daemon - INFO - Terminal started: ca4a6731-4d82-43f0-8b83-1c837f094ba9
+2026-03-13 11:42:05,521 - termman-daemon - INFO - Terminal started via HTTP: ca4a6731-4d82-43f0-8b83-1c837f094ba9
+2026-03-13 11:42:07,580 - termman-daemon - INFO - Terminal started: f735a5ab-872b-4905-8413-502f6fc812ed
+2026-03-13 11:42:07,580 - termman-daemon - INFO - Terminal started via HTTP: f735a5ab-872b-4905-8413-502f6fc812ed
+2026-03-13 11:42:09,638 - termman-daemon - INFO - Terminal started: d970fe8c-bc51-4e80-bd4c-c618a320916b
+2026-03-13 11:42:09,639 - termman-daemon - INFO - Terminal started via HTTP: d970fe8c-bc51-4e80-bd4c-c618a320916b
+2026-03-13 11:42:13,731 - termman-daemon - INFO - Socket connected: X4UK1ABbZb_shpSxAACc
+2026-03-13 11:42:13,733 - termman-daemon - INFO - Terminal connected: 12342583-d2c7-48a2-a161-b2db5355929f, sid: X4UK1ABbZb_shpSxAACc, user: test_user_6cdd0f8e-da6d-4d52-a6ab-c4512cf688d8
+2026-03-13 11:42:18,843 - termman-daemon - INFO - Socket connected: fX9hx0nJaSOiXUmEAACe
+2026-03-13 11:42:18,844 - termman-daemon - INFO - Terminal connected: f6f70216-66a6-4220-8bb3-70bcaa9bebaa, sid: fX9hx0nJaSOiXUmEAACe, user: test_user_5b12887b-9442-4aaa-bce3-b70f7c56e9b5
+2026-03-13 11:42:23,935 - termman-daemon - INFO - Socket connected: U0R7U6KGL2ZM7VDhAACg
+2026-03-13 11:42:23,936 - termman-daemon - INFO - Terminal connected: ca4a6731-4d82-43f0-8b83-1c837f094ba9, sid: U0R7U6KGL2ZM7VDhAACg, user: test_user_61fca210-5173-46d7-b85e-0b07baaa2de6
+2026-03-13 11:42:29,028 - termman-daemon - INFO - Socket connected: b-Uvmm3wRGqaQLylAACi
+2026-03-13 11:42:29,030 - termman-daemon - INFO - Terminal connected: f735a5ab-872b-4905-8413-502f6fc812ed, sid: b-Uvmm3wRGqaQLylAACi, user: test_user_6cdd0f8e-da6d-4d52-a6ab-c4512cf688d8
+2026-03-13 11:42:34,120 - termman-daemon - INFO - Socket connected: DLew2a4IdXu_J9u0AACk
+2026-03-13 11:42:34,121 - termman-daemon - INFO - Terminal connected: d970fe8c-bc51-4e80-bd4c-c618a320916b, sid: DLew2a4IdXu_J9u0AACk, user: test_user_5b12887b-9442-4aaa-bce3-b70f7c56e9b5
+2026-03-13 11:42:39,165 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:42:41,214 - termman-daemon - INFO - Socket disconnected: X4UK1ABbZb_shpSxAACc
+2026-03-13 11:42:41,214 - termman-daemon - INFO - Disconnected user test_user_6cdd0f8e-da6d-4d52-a6ab-c4512cf688d8 from item 12342583-d2c7-48a2-a161-b2db5355929f
+2026-03-13 11:42:45,254 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:42:45,260 - termman-daemon - INFO - Socket connected: Rm0xErzCN2EVmigsAACm
+2026-03-13 11:42:45,265 - termman-daemon - INFO - Socket disconnected: fX9hx0nJaSOiXUmEAACe, item: f6f70216-66a6-4220-8bb3-70bcaa9bebaa
+2026-03-13 11:42:45,266 - termman-daemon - INFO - Socket disconnected: U0R7U6KGL2ZM7VDhAACg, item: ca4a6731-4d82-43f0-8b83-1c837f094ba9
+2026-03-13 11:42:45,266 - termman-daemon - INFO - Socket disconnected: b-Uvmm3wRGqaQLylAACi, item: f735a5ab-872b-4905-8413-502f6fc812ed
+2026-03-13 11:42:45,267 - termman-daemon - INFO - Socket disconnected: DLew2a4IdXu_J9u0AACk, item: d970fe8c-bc51-4e80-bd4c-c618a320916b
+2026-03-13 11:42:47,313 - termman-daemon - INFO - Terminal stopped: 12342583-d2c7-48a2-a161-b2db5355929f
+2026-03-13 11:42:47,313 - termman-daemon - INFO - Terminal stopped via HTTP: 12342583-d2c7-48a2-a161-b2db5355929f
+2026-03-13 11:42:49,360 - termman-daemon - INFO - Terminal stopped: f6f70216-66a6-4220-8bb3-70bcaa9bebaa
+2026-03-13 11:42:49,360 - termman-daemon - INFO - Terminal stopped via HTTP: f6f70216-66a6-4220-8bb3-70bcaa9bebaa
+2026-03-13 11:42:51,402 - termman-daemon - INFO - Terminal stopped: ca4a6731-4d82-43f0-8b83-1c837f094ba9
+2026-03-13 11:42:51,403 - termman-daemon - INFO - Terminal stopped via HTTP: ca4a6731-4d82-43f0-8b83-1c837f094ba9
+2026-03-13 11:42:53,452 - termman-daemon - INFO - Terminal stopped: f735a5ab-872b-4905-8413-502f6fc812ed
+2026-03-13 11:42:53,453 - termman-daemon - INFO - Terminal stopped via HTTP: f735a5ab-872b-4905-8413-502f6fc812ed
+2026-03-13 11:42:55,498 - termman-daemon - INFO - Terminal stopped: d970fe8c-bc51-4e80-bd4c-c618a320916b
+2026-03-13 11:42:55,498 - termman-daemon - INFO - Terminal stopped via HTTP: d970fe8c-bc51-4e80-bd4c-c618a320916b
+2026-03-13 11:42:55,600 - termman-daemon - INFO - Socket disconnected: Rm0xErzCN2EVmigsAACm
+2026-03-13 11:44:02,922 - termman-daemon - INFO - Terminal started: b07d1d2b-3adb-425b-9576-ed187014e5e3
+2026-03-13 11:44:02,922 - termman-daemon - INFO - Terminal started via HTTP: b07d1d2b-3adb-425b-9576-ed187014e5e3
+2026-03-13 11:44:04,981 - termman-daemon - INFO - Terminal started: 8b850b08-6a18-4827-a7cc-e6467321a088
+2026-03-13 11:44:04,981 - termman-daemon - INFO - Terminal started via HTTP: 8b850b08-6a18-4827-a7cc-e6467321a088
+2026-03-13 11:44:07,042 - termman-daemon - INFO - Terminal started: fd1dc883-ffd2-4fa5-a0e2-f52a994d3cd7
+2026-03-13 11:44:07,042 - termman-daemon - INFO - Terminal started via HTTP: fd1dc883-ffd2-4fa5-a0e2-f52a994d3cd7
+2026-03-13 11:44:09,103 - termman-daemon - INFO - Terminal started: 734c06a4-a6fa-45e1-8ca9-94a8d1faf2d1
+2026-03-13 11:44:09,104 - termman-daemon - INFO - Terminal started via HTTP: 734c06a4-a6fa-45e1-8ca9-94a8d1faf2d1
+2026-03-13 11:44:11,168 - termman-daemon - INFO - Terminal started: 6dda92b7-d602-4485-b140-d14686ac6bb9
+2026-03-13 11:44:11,168 - termman-daemon - INFO - Terminal started via HTTP: 6dda92b7-d602-4485-b140-d14686ac6bb9
+2026-03-13 11:44:15,268 - termman-daemon - INFO - Socket connected: s29By0QjVWjp35oqAACo
+2026-03-13 11:44:15,269 - termman-daemon - INFO - Terminal connected: b07d1d2b-3adb-425b-9576-ed187014e5e3, sid: s29By0QjVWjp35oqAACo, user: test_user_8a81b465-df0d-440f-b972-37c507047b40
+2026-03-13 11:44:20,376 - termman-daemon - INFO - Socket connected: UFKprE1KMx9TQ5VnAACq
+2026-03-13 11:44:20,377 - termman-daemon - INFO - Terminal connected: 8b850b08-6a18-4827-a7cc-e6467321a088, sid: UFKprE1KMx9TQ5VnAACq, user: test_user_66765b40-1c64-451c-b442-eeca206efe8a
+2026-03-13 11:44:25,490 - termman-daemon - INFO - Socket connected: fOuf2sdZk_g1JKFoAACs
+2026-03-13 11:44:25,491 - termman-daemon - INFO - Terminal connected: fd1dc883-ffd2-4fa5-a0e2-f52a994d3cd7, sid: fOuf2sdZk_g1JKFoAACs, user: test_user_754a4068-94a0-4e85-a398-f453772bffd3
+2026-03-13 11:44:30,592 - termman-daemon - INFO - Socket connected: _2SGSrjUFQBIvDLMAACu
+2026-03-13 11:44:30,593 - termman-daemon - INFO - Terminal connected: 734c06a4-a6fa-45e1-8ca9-94a8d1faf2d1, sid: _2SGSrjUFQBIvDLMAACu, user: test_user_8a81b465-df0d-440f-b972-37c507047b40
+2026-03-13 11:44:35,670 - termman-daemon - INFO - Socket connected: 96zaI02phu-PHSmYAACw
+2026-03-13 11:44:35,671 - termman-daemon - INFO - Terminal connected: 6dda92b7-d602-4485-b140-d14686ac6bb9, sid: 96zaI02phu-PHSmYAACw, user: test_user_66765b40-1c64-451c-b442-eeca206efe8a
+2026-03-13 11:44:40,725 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:44:42,776 - termman-daemon - INFO - Socket disconnected: s29By0QjVWjp35oqAACo
+2026-03-13 11:44:42,777 - termman-daemon - INFO - Disconnected user test_user_8a81b465-df0d-440f-b972-37c507047b40 from item b07d1d2b-3adb-425b-9576-ed187014e5e3
+2026-03-13 11:44:46,825 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:44:46,830 - termman-daemon - INFO - Socket connected: lAR_eD0mG5EjSuGDAACy
+2026-03-13 11:44:48,904 - termman-daemon - INFO - Socket disconnected: UFKprE1KMx9TQ5VnAACq, item: 8b850b08-6a18-4827-a7cc-e6467321a088
+2026-03-13 11:44:48,905 - termman-daemon - INFO - Socket disconnected: fOuf2sdZk_g1JKFoAACs, item: fd1dc883-ffd2-4fa5-a0e2-f52a994d3cd7
+2026-03-13 11:44:48,906 - termman-daemon - INFO - Socket disconnected: _2SGSrjUFQBIvDLMAACu, item: 734c06a4-a6fa-45e1-8ca9-94a8d1faf2d1
+2026-03-13 11:44:48,907 - termman-daemon - INFO - Socket disconnected: 96zaI02phu-PHSmYAACw, item: 6dda92b7-d602-4485-b140-d14686ac6bb9
+2026-03-13 11:44:50,947 - termman-daemon - INFO - Terminal stopped: b07d1d2b-3adb-425b-9576-ed187014e5e3
+2026-03-13 11:44:50,948 - termman-daemon - INFO - Terminal stopped via HTTP: b07d1d2b-3adb-425b-9576-ed187014e5e3
+2026-03-13 11:44:53,001 - termman-daemon - INFO - Terminal stopped: 8b850b08-6a18-4827-a7cc-e6467321a088
+2026-03-13 11:44:53,002 - termman-daemon - INFO - Terminal stopped via HTTP: 8b850b08-6a18-4827-a7cc-e6467321a088
+2026-03-13 11:44:55,056 - termman-daemon - INFO - Terminal stopped: fd1dc883-ffd2-4fa5-a0e2-f52a994d3cd7
+2026-03-13 11:44:55,056 - termman-daemon - INFO - Terminal stopped via HTTP: fd1dc883-ffd2-4fa5-a0e2-f52a994d3cd7
+2026-03-13 11:44:57,099 - termman-daemon - INFO - Terminal stopped: 734c06a4-a6fa-45e1-8ca9-94a8d1faf2d1
+2026-03-13 11:44:57,099 - termman-daemon - INFO - Terminal stopped via HTTP: 734c06a4-a6fa-45e1-8ca9-94a8d1faf2d1
+2026-03-13 11:44:59,154 - termman-daemon - INFO - Terminal stopped: 6dda92b7-d602-4485-b140-d14686ac6bb9
+2026-03-13 11:44:59,154 - termman-daemon - INFO - Terminal stopped via HTTP: 6dda92b7-d602-4485-b140-d14686ac6bb9
+2026-03-13 11:44:59,213 - termman-daemon - INFO - Socket disconnected: lAR_eD0mG5EjSuGDAACy
+2026-03-13 11:48:17,864 - termman-daemon - INFO - Terminal started: 50b6d6ad-6c80-438a-b9aa-71548607d403
+2026-03-13 11:48:17,864 - termman-daemon - INFO - Terminal started via HTTP: 50b6d6ad-6c80-438a-b9aa-71548607d403
+2026-03-13 11:48:19,912 - termman-daemon - INFO - Terminal started: f51b162b-ee3f-4804-9d52-58356d53ec00
+2026-03-13 11:48:19,913 - termman-daemon - INFO - Terminal started via HTTP: f51b162b-ee3f-4804-9d52-58356d53ec00
+2026-03-13 11:48:21,964 - termman-daemon - INFO - Terminal started: e35b4ebe-85d5-4f8a-8d4f-388e27c73be1
+2026-03-13 11:48:21,964 - termman-daemon - INFO - Terminal started via HTTP: e35b4ebe-85d5-4f8a-8d4f-388e27c73be1
+2026-03-13 11:48:24,026 - termman-daemon - INFO - Terminal started: 5cf34142-a883-4058-a69e-489f9582f7a5
+2026-03-13 11:48:24,027 - termman-daemon - INFO - Terminal started via HTTP: 5cf34142-a883-4058-a69e-489f9582f7a5
+2026-03-13 11:48:26,097 - termman-daemon - INFO - Terminal started: 4551e077-81e4-4bcc-8357-4e7a6ad7f774
+2026-03-13 11:48:26,097 - termman-daemon - INFO - Terminal started via HTTP: 4551e077-81e4-4bcc-8357-4e7a6ad7f774
+2026-03-13 11:48:30,199 - termman-daemon - INFO - Socket connected: GHsNO7aXK78paR4_AAC0
+2026-03-13 11:48:30,200 - termman-daemon - INFO - Terminal connected: 50b6d6ad-6c80-438a-b9aa-71548607d403, sid: GHsNO7aXK78paR4_AAC0, user: test_user_db3101a6-f259-480b-8014-689128a90fc5
+2026-03-13 11:48:35,311 - termman-daemon - INFO - Socket connected: S0BT4ibsuHe_C_ihAAC2
+2026-03-13 11:48:35,312 - termman-daemon - INFO - Terminal connected: f51b162b-ee3f-4804-9d52-58356d53ec00, sid: S0BT4ibsuHe_C_ihAAC2, user: test_user_a4f78c62-0548-4414-a2e6-b235104141f7
+2026-03-13 11:48:40,386 - termman-daemon - INFO - Socket connected: _pSbZoSufO2rxFFvAAC4
+2026-03-13 11:48:40,387 - termman-daemon - INFO - Terminal connected: e35b4ebe-85d5-4f8a-8d4f-388e27c73be1, sid: _pSbZoSufO2rxFFvAAC4, user: test_user_b547f53e-3beb-4942-b105-af24b5c37576
+2026-03-13 11:48:45,459 - termman-daemon - INFO - Socket connected: V1LKyOxQMvalVfcLAAC6
+2026-03-13 11:48:45,461 - termman-daemon - INFO - Terminal connected: 5cf34142-a883-4058-a69e-489f9582f7a5, sid: V1LKyOxQMvalVfcLAAC6, user: test_user_db3101a6-f259-480b-8014-689128a90fc5
+2026-03-13 11:48:50,589 - termman-daemon - INFO - Socket connected: CNYyZGWNXwbGFE05AAC8
+2026-03-13 11:48:50,590 - termman-daemon - INFO - Terminal connected: 4551e077-81e4-4bcc-8357-4e7a6ad7f774, sid: CNYyZGWNXwbGFE05AAC8, user: test_user_a4f78c62-0548-4414-a2e6-b235104141f7
+2026-03-13 11:48:55,633 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:48:57,686 - termman-daemon - INFO - Socket disconnected: GHsNO7aXK78paR4_AAC0
+2026-03-13 11:48:57,686 - termman-daemon - INFO - Disconnected user test_user_db3101a6-f259-480b-8014-689128a90fc5 from item 50b6d6ad-6c80-438a-b9aa-71548607d403
+2026-03-13 11:49:01,728 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:49:01,745 - termman-daemon - INFO - Socket connected: sxheIC0gksMd5-dyAAC-
+2026-03-13 11:49:03,777 - termman-daemon - INFO - Socket disconnected: S0BT4ibsuHe_C_ihAAC2, item: f51b162b-ee3f-4804-9d52-58356d53ec00
+2026-03-13 11:49:03,777 - termman-daemon - INFO - Socket disconnected: _pSbZoSufO2rxFFvAAC4, item: e35b4ebe-85d5-4f8a-8d4f-388e27c73be1
+2026-03-13 11:49:03,778 - termman-daemon - INFO - Socket disconnected: V1LKyOxQMvalVfcLAAC6, item: 5cf34142-a883-4058-a69e-489f9582f7a5
+2026-03-13 11:49:03,779 - termman-daemon - INFO - Socket disconnected: CNYyZGWNXwbGFE05AAC8, item: 4551e077-81e4-4bcc-8357-4e7a6ad7f774
+2026-03-13 11:49:05,827 - termman-daemon - INFO - Terminal stopped: 50b6d6ad-6c80-438a-b9aa-71548607d403
+2026-03-13 11:49:05,828 - termman-daemon - INFO - Terminal stopped via HTTP: 50b6d6ad-6c80-438a-b9aa-71548607d403
+2026-03-13 11:49:07,880 - termman-daemon - INFO - Terminal stopped: f51b162b-ee3f-4804-9d52-58356d53ec00
+2026-03-13 11:49:07,881 - termman-daemon - INFO - Terminal stopped via HTTP: f51b162b-ee3f-4804-9d52-58356d53ec00
+2026-03-13 11:49:09,922 - termman-daemon - INFO - Terminal stopped: e35b4ebe-85d5-4f8a-8d4f-388e27c73be1
+2026-03-13 11:49:09,922 - termman-daemon - INFO - Terminal stopped via HTTP: e35b4ebe-85d5-4f8a-8d4f-388e27c73be1
+2026-03-13 11:49:11,976 - termman-daemon - INFO - Terminal stopped: 5cf34142-a883-4058-a69e-489f9582f7a5
+2026-03-13 11:49:11,977 - termman-daemon - INFO - Terminal stopped via HTTP: 5cf34142-a883-4058-a69e-489f9582f7a5
+2026-03-13 11:49:14,034 - termman-daemon - INFO - Terminal stopped: 4551e077-81e4-4bcc-8357-4e7a6ad7f774
+2026-03-13 11:49:14,034 - termman-daemon - INFO - Terminal stopped via HTTP: 4551e077-81e4-4bcc-8357-4e7a6ad7f774
+2026-03-13 11:49:14,083 - termman-daemon - INFO - Socket disconnected: sxheIC0gksMd5-dyAAC-
+2026-03-13 11:50:54,066 - termman-daemon - INFO - Terminal started: 0d14d18d-cbcb-438d-b8a2-701219970656
+2026-03-13 11:50:54,066 - termman-daemon - INFO - Terminal started via HTTP: 0d14d18d-cbcb-438d-b8a2-701219970656
+2026-03-13 11:50:56,121 - termman-daemon - INFO - Terminal started: 05c08fb0-ce6f-4f09-938c-67bd9a9b3a46
+2026-03-13 11:50:56,121 - termman-daemon - INFO - Terminal started via HTTP: 05c08fb0-ce6f-4f09-938c-67bd9a9b3a46
+2026-03-13 11:50:58,170 - termman-daemon - INFO - Terminal started: 1a454d02-4aac-4769-bea5-74e8c132f561
+2026-03-13 11:50:58,171 - termman-daemon - INFO - Terminal started via HTTP: 1a454d02-4aac-4769-bea5-74e8c132f561
+2026-03-13 11:51:00,231 - termman-daemon - INFO - Terminal started: 72799e50-f195-4e2a-a1e8-d0094f742c12
+2026-03-13 11:51:00,231 - termman-daemon - INFO - Terminal started via HTTP: 72799e50-f195-4e2a-a1e8-d0094f742c12
+2026-03-13 11:51:02,266 - termman-daemon - INFO - Terminal started: 2e12e123-8d5f-4aa1-a236-b9020a4fe1ba
+2026-03-13 11:51:02,267 - termman-daemon - INFO - Terminal started via HTTP: 2e12e123-8d5f-4aa1-a236-b9020a4fe1ba
+2026-03-13 11:51:06,379 - termman-daemon - INFO - Socket connected: uqGREOSjFvs-Z5-2AADA
+2026-03-13 11:51:06,380 - termman-daemon - INFO - Terminal connected: 0d14d18d-cbcb-438d-b8a2-701219970656, sid: uqGREOSjFvs-Z5-2AADA, user: test_user_eab2559b-fa99-4e1d-aec7-9534a10486d4
+2026-03-13 11:51:11,455 - termman-daemon - INFO - Socket connected: v5mS1rzwxD7Hi1DmAADC
+2026-03-13 11:51:11,455 - termman-daemon - INFO - Terminal connected: 05c08fb0-ce6f-4f09-938c-67bd9a9b3a46, sid: v5mS1rzwxD7Hi1DmAADC, user: test_user_43db9cac-61ff-4200-9255-149cdc417145
+2026-03-13 11:51:16,535 - termman-daemon - INFO - Socket connected: UqbyBBfW8CeSlzpCAADE
+2026-03-13 11:51:16,536 - termman-daemon - INFO - Terminal connected: 1a454d02-4aac-4769-bea5-74e8c132f561, sid: UqbyBBfW8CeSlzpCAADE, user: test_user_97faa4e7-695e-49ae-b074-e968ac9b748e
+2026-03-13 11:51:21,631 - termman-daemon - INFO - Socket connected: h86x336m0iqRj3cFAADG
+2026-03-13 11:51:21,632 - termman-daemon - INFO - Terminal connected: 72799e50-f195-4e2a-a1e8-d0094f742c12, sid: h86x336m0iqRj3cFAADG, user: test_user_eab2559b-fa99-4e1d-aec7-9534a10486d4
+2026-03-13 11:51:26,747 - termman-daemon - INFO - Socket connected: wdFbe46iZ2ijYNJCAADI
+2026-03-13 11:51:26,748 - termman-daemon - INFO - Terminal connected: 2e12e123-8d5f-4aa1-a236-b9020a4fe1ba, sid: wdFbe46iZ2ijYNJCAADI, user: test_user_43db9cac-61ff-4200-9255-149cdc417145
+2026-03-13 11:51:31,799 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:51:33,845 - termman-daemon - INFO - Socket disconnected: uqGREOSjFvs-Z5-2AADA
+2026-03-13 11:51:33,845 - termman-daemon - INFO - Disconnected user test_user_eab2559b-fa99-4e1d-aec7-9534a10486d4 from item 0d14d18d-cbcb-438d-b8a2-701219970656
+2026-03-13 11:51:37,897 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:51:37,902 - termman-daemon - INFO - Socket connected: pU48OaW85pWpnqA6AADK
+2026-03-13 11:51:39,927 - termman-daemon - INFO - Socket disconnected: v5mS1rzwxD7Hi1DmAADC, item: 05c08fb0-ce6f-4f09-938c-67bd9a9b3a46
+2026-03-13 11:51:39,928 - termman-daemon - INFO - Socket disconnected: UqbyBBfW8CeSlzpCAADE, item: 1a454d02-4aac-4769-bea5-74e8c132f561
+2026-03-13 11:51:39,928 - termman-daemon - INFO - Socket disconnected: h86x336m0iqRj3cFAADG, item: 72799e50-f195-4e2a-a1e8-d0094f742c12
+2026-03-13 11:51:39,929 - termman-daemon - INFO - Socket disconnected: wdFbe46iZ2ijYNJCAADI, item: 2e12e123-8d5f-4aa1-a236-b9020a4fe1ba
+2026-03-13 11:51:41,983 - termman-daemon - INFO - Terminal stopped: 0d14d18d-cbcb-438d-b8a2-701219970656
+2026-03-13 11:51:41,983 - termman-daemon - INFO - Terminal stopped via HTTP: 0d14d18d-cbcb-438d-b8a2-701219970656
+2026-03-13 11:51:44,032 - termman-daemon - INFO - Terminal stopped: 05c08fb0-ce6f-4f09-938c-67bd9a9b3a46
+2026-03-13 11:51:44,032 - termman-daemon - INFO - Terminal stopped via HTTP: 05c08fb0-ce6f-4f09-938c-67bd9a9b3a46
+2026-03-13 11:51:46,078 - termman-daemon - INFO - Terminal stopped: 1a454d02-4aac-4769-bea5-74e8c132f561
+2026-03-13 11:51:46,078 - termman-daemon - INFO - Terminal stopped via HTTP: 1a454d02-4aac-4769-bea5-74e8c132f561
+2026-03-13 11:51:48,121 - termman-daemon - INFO - Terminal stopped: 72799e50-f195-4e2a-a1e8-d0094f742c12
+2026-03-13 11:51:48,121 - termman-daemon - INFO - Terminal stopped via HTTP: 72799e50-f195-4e2a-a1e8-d0094f742c12
+2026-03-13 11:51:50,159 - termman-daemon - INFO - Terminal stopped: 2e12e123-8d5f-4aa1-a236-b9020a4fe1ba
+2026-03-13 11:51:50,160 - termman-daemon - INFO - Terminal stopped via HTTP: 2e12e123-8d5f-4aa1-a236-b9020a4fe1ba
+2026-03-13 11:51:50,224 - termman-daemon - INFO - Socket disconnected: pU48OaW85pWpnqA6AADK
+2026-03-13 11:54:00,737 - termman-daemon - INFO - Terminal started: b28d2ef1-6719-407f-b2da-aeaba335ec0f
+2026-03-13 11:54:00,737 - termman-daemon - INFO - Terminal started via HTTP: b28d2ef1-6719-407f-b2da-aeaba335ec0f
+2026-03-13 11:54:02,790 - termman-daemon - INFO - Terminal started: d925daff-b858-4fc4-93ce-b787abc71940
+2026-03-13 11:54:02,790 - termman-daemon - INFO - Terminal started via HTTP: d925daff-b858-4fc4-93ce-b787abc71940
+2026-03-13 11:54:04,831 - termman-daemon - INFO - Terminal started: cd7fabbb-2bdd-4512-bace-c4ee355d603e
+2026-03-13 11:54:04,832 - termman-daemon - INFO - Terminal started via HTTP: cd7fabbb-2bdd-4512-bace-c4ee355d603e
+2026-03-13 11:54:06,888 - termman-daemon - INFO - Terminal started: cf125ead-5695-41a9-b575-2a2a05237b00
+2026-03-13 11:54:06,888 - termman-daemon - INFO - Terminal started via HTTP: cf125ead-5695-41a9-b575-2a2a05237b00
+2026-03-13 11:54:08,948 - termman-daemon - INFO - Terminal started: 01d57f75-b82b-4378-abf9-7ffba5894d33
+2026-03-13 11:54:08,949 - termman-daemon - INFO - Terminal started via HTTP: 01d57f75-b82b-4378-abf9-7ffba5894d33
+2026-03-13 11:54:13,058 - termman-daemon - INFO - Socket connected: vr0xQ2NAi9iKGD5nAADM
+2026-03-13 11:54:13,059 - termman-daemon - INFO - Terminal connected: b28d2ef1-6719-407f-b2da-aeaba335ec0f, sid: vr0xQ2NAi9iKGD5nAADM, user: test_user_5e9ae52e-c07b-4226-bcf8-43db4a5b56b0
+2026-03-13 11:54:18,165 - termman-daemon - INFO - Socket connected: 58mpIbDdnl6BJtXvAADO
+2026-03-13 11:54:18,166 - termman-daemon - INFO - Terminal connected: d925daff-b858-4fc4-93ce-b787abc71940, sid: 58mpIbDdnl6BJtXvAADO, user: test_user_49f2a191-6543-4743-a7ab-7664c4858589
+2026-03-13 11:54:23,282 - termman-daemon - INFO - Socket connected: E18PdZ_nQ4ERZUPLAADQ
+2026-03-13 11:54:23,284 - termman-daemon - INFO - Terminal connected: cd7fabbb-2bdd-4512-bace-c4ee355d603e, sid: E18PdZ_nQ4ERZUPLAADQ, user: test_user_6d94045c-e4df-455b-88b2-03246958bce2
+2026-03-13 11:54:28,391 - termman-daemon - INFO - Socket connected: -Dxx67g5_g5D4fAmAADS
+2026-03-13 11:54:28,393 - termman-daemon - INFO - Terminal connected: cf125ead-5695-41a9-b575-2a2a05237b00, sid: -Dxx67g5_g5D4fAmAADS, user: test_user_5e9ae52e-c07b-4226-bcf8-43db4a5b56b0
+2026-03-13 11:54:33,486 - termman-daemon - INFO - Socket connected: gGt1B9PFTFgZwreiAADU
+2026-03-13 11:54:33,487 - termman-daemon - INFO - Terminal connected: 01d57f75-b82b-4378-abf9-7ffba5894d33, sid: gGt1B9PFTFgZwreiAADU, user: test_user_49f2a191-6543-4743-a7ab-7664c4858589
+2026-03-13 11:54:38,535 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:54:40,582 - termman-daemon - INFO - Socket disconnected: vr0xQ2NAi9iKGD5nAADM
+2026-03-13 11:54:40,582 - termman-daemon - INFO - Disconnected user test_user_5e9ae52e-c07b-4226-bcf8-43db4a5b56b0 from item b28d2ef1-6719-407f-b2da-aeaba335ec0f
+2026-03-13 11:54:44,633 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:54:44,637 - termman-daemon - INFO - Socket connected: fKgTt9IEcmwikNWdAADW
+2026-03-13 11:54:52,677 - termman-daemon - INFO - Socket disconnected: 58mpIbDdnl6BJtXvAADO, item: d925daff-b858-4fc4-93ce-b787abc71940
+2026-03-13 11:54:52,678 - termman-daemon - INFO - Socket disconnected: E18PdZ_nQ4ERZUPLAADQ, item: cd7fabbb-2bdd-4512-bace-c4ee355d603e
+2026-03-13 11:54:52,679 - termman-daemon - INFO - Socket disconnected: -Dxx67g5_g5D4fAmAADS, item: cf125ead-5695-41a9-b575-2a2a05237b00
+2026-03-13 11:54:52,680 - termman-daemon - INFO - Socket disconnected: gGt1B9PFTFgZwreiAADU, item: 01d57f75-b82b-4378-abf9-7ffba5894d33
+2026-03-13 11:54:54,738 - termman-daemon - INFO - Terminal stopped: b28d2ef1-6719-407f-b2da-aeaba335ec0f
+2026-03-13 11:54:54,738 - termman-daemon - INFO - Terminal stopped via HTTP: b28d2ef1-6719-407f-b2da-aeaba335ec0f
+2026-03-13 11:54:56,788 - termman-daemon - INFO - Terminal stopped: d925daff-b858-4fc4-93ce-b787abc71940
+2026-03-13 11:54:56,788 - termman-daemon - INFO - Terminal stopped via HTTP: d925daff-b858-4fc4-93ce-b787abc71940
+2026-03-13 11:54:58,835 - termman-daemon - INFO - Terminal stopped: cd7fabbb-2bdd-4512-bace-c4ee355d603e
+2026-03-13 11:54:58,836 - termman-daemon - INFO - Terminal stopped via HTTP: cd7fabbb-2bdd-4512-bace-c4ee355d603e
+2026-03-13 11:55:00,882 - termman-daemon - INFO - Terminal stopped: cf125ead-5695-41a9-b575-2a2a05237b00
+2026-03-13 11:55:00,882 - termman-daemon - INFO - Terminal stopped via HTTP: cf125ead-5695-41a9-b575-2a2a05237b00
+2026-03-13 11:55:02,924 - termman-daemon - INFO - Terminal stopped: 01d57f75-b82b-4378-abf9-7ffba5894d33
+2026-03-13 11:55:02,924 - termman-daemon - INFO - Terminal stopped via HTTP: 01d57f75-b82b-4378-abf9-7ffba5894d33
+2026-03-13 11:55:03,012 - termman-daemon - INFO - Socket disconnected: fKgTt9IEcmwikNWdAADW
+2026-03-13 11:57:20,745 - termman-daemon - INFO - Terminal started: 68881206-cc0a-4805-a2cd-e0a43a225ad4
+2026-03-13 11:57:20,745 - termman-daemon - INFO - Terminal started via HTTP: 68881206-cc0a-4805-a2cd-e0a43a225ad4
+2026-03-13 11:57:22,795 - termman-daemon - INFO - Terminal started: 7db30b91-bf58-4ef6-8608-906bf4bcc44f
+2026-03-13 11:57:22,795 - termman-daemon - INFO - Terminal started via HTTP: 7db30b91-bf58-4ef6-8608-906bf4bcc44f
+2026-03-13 11:57:24,856 - termman-daemon - INFO - Terminal started: 47d7f1af-3bb0-4fbf-8ba0-72f3f4439450
+2026-03-13 11:57:24,856 - termman-daemon - INFO - Terminal started via HTTP: 47d7f1af-3bb0-4fbf-8ba0-72f3f4439450
+2026-03-13 11:57:26,908 - termman-daemon - INFO - Terminal started: 61451779-833d-4b4f-902c-8b7f623140f2
+2026-03-13 11:57:26,908 - termman-daemon - INFO - Terminal started via HTTP: 61451779-833d-4b4f-902c-8b7f623140f2
+2026-03-13 11:57:28,955 - termman-daemon - INFO - Terminal started: 7ccf8425-ae28-4bd0-8300-ec2659eaa769
+2026-03-13 11:57:28,955 - termman-daemon - INFO - Terminal started via HTTP: 7ccf8425-ae28-4bd0-8300-ec2659eaa769
+2026-03-13 11:57:33,067 - termman-daemon - INFO - Socket connected: zddV_bI21HkxDvjbAADY
+2026-03-13 11:57:33,068 - termman-daemon - INFO - Terminal connected: 68881206-cc0a-4805-a2cd-e0a43a225ad4, sid: zddV_bI21HkxDvjbAADY, user: test_user_09b0f1ec-6689-42db-b7b7-ef77778fa4f5
+2026-03-13 11:57:38,154 - termman-daemon - INFO - Socket connected: 9woZ4BtB6k1htxLLAADa
+2026-03-13 11:57:38,154 - termman-daemon - INFO - Terminal connected: 7db30b91-bf58-4ef6-8608-906bf4bcc44f, sid: 9woZ4BtB6k1htxLLAADa, user: test_user_29140571-fff3-42b3-8f77-e167e25c9b4b
+2026-03-13 11:57:43,233 - termman-daemon - INFO - Socket connected: pzCeHcU0WQxSfTIxAADc
+2026-03-13 11:57:43,234 - termman-daemon - INFO - Terminal connected: 47d7f1af-3bb0-4fbf-8ba0-72f3f4439450, sid: pzCeHcU0WQxSfTIxAADc, user: test_user_8e0c5841-886b-49c1-81f6-b01ec4478b0b
+2026-03-13 11:57:48,302 - termman-daemon - INFO - Socket connected: T6Cy9yRnQQUJrsAWAADe
+2026-03-13 11:57:48,303 - termman-daemon - INFO - Terminal connected: 61451779-833d-4b4f-902c-8b7f623140f2, sid: T6Cy9yRnQQUJrsAWAADe, user: test_user_09b0f1ec-6689-42db-b7b7-ef77778fa4f5
+2026-03-13 11:57:53,420 - termman-daemon - INFO - Socket connected: yo6borlCAdkwuAx3AADg
+2026-03-13 11:57:53,421 - termman-daemon - INFO - Terminal connected: 7ccf8425-ae28-4bd0-8300-ec2659eaa769, sid: yo6borlCAdkwuAx3AADg, user: test_user_29140571-fff3-42b3-8f77-e167e25c9b4b
+2026-03-13 11:57:58,468 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:58:00,525 - termman-daemon - INFO - Socket disconnected: zddV_bI21HkxDvjbAADY
+2026-03-13 11:58:00,525 - termman-daemon - INFO - Disconnected user test_user_09b0f1ec-6689-42db-b7b7-ef77778fa4f5 from item 68881206-cc0a-4805-a2cd-e0a43a225ad4
+2026-03-13 11:58:04,573 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:58:04,579 - termman-daemon - INFO - Socket connected: TvArOTmDVL3AyKXwAADi
+2026-03-13 11:58:12,608 - termman-daemon - INFO - Socket disconnected: 9woZ4BtB6k1htxLLAADa, item: 7db30b91-bf58-4ef6-8608-906bf4bcc44f
+2026-03-13 11:58:12,608 - termman-daemon - INFO - Socket disconnected: pzCeHcU0WQxSfTIxAADc, item: 47d7f1af-3bb0-4fbf-8ba0-72f3f4439450
+2026-03-13 11:58:12,609 - termman-daemon - INFO - Socket disconnected: T6Cy9yRnQQUJrsAWAADe, item: 61451779-833d-4b4f-902c-8b7f623140f2
+2026-03-13 11:58:12,610 - termman-daemon - INFO - Socket disconnected: yo6borlCAdkwuAx3AADg, item: 7ccf8425-ae28-4bd0-8300-ec2659eaa769
+2026-03-13 11:58:14,707 - termman-daemon - INFO - Terminal stopped: 68881206-cc0a-4805-a2cd-e0a43a225ad4
+2026-03-13 11:58:14,707 - termman-daemon - INFO - Terminal stopped via HTTP: 68881206-cc0a-4805-a2cd-e0a43a225ad4
+2026-03-13 11:58:16,754 - termman-daemon - INFO - Terminal stopped: 7db30b91-bf58-4ef6-8608-906bf4bcc44f
+2026-03-13 11:58:16,755 - termman-daemon - INFO - Terminal stopped via HTTP: 7db30b91-bf58-4ef6-8608-906bf4bcc44f
+2026-03-13 11:58:18,798 - termman-daemon - INFO - Terminal stopped: 47d7f1af-3bb0-4fbf-8ba0-72f3f4439450
+2026-03-13 11:58:18,799 - termman-daemon - INFO - Terminal stopped via HTTP: 47d7f1af-3bb0-4fbf-8ba0-72f3f4439450
+2026-03-13 11:58:20,831 - termman-daemon - INFO - Terminal stopped: 61451779-833d-4b4f-902c-8b7f623140f2
+2026-03-13 11:58:20,832 - termman-daemon - INFO - Terminal stopped via HTTP: 61451779-833d-4b4f-902c-8b7f623140f2
+2026-03-13 11:58:22,871 - termman-daemon - INFO - Terminal stopped: 7ccf8425-ae28-4bd0-8300-ec2659eaa769
+2026-03-13 11:58:22,872 - termman-daemon - INFO - Terminal stopped via HTTP: 7ccf8425-ae28-4bd0-8300-ec2659eaa769
+2026-03-13 11:58:22,928 - termman-daemon - INFO - Socket disconnected: TvArOTmDVL3AyKXwAADi
+2026-03-13 11:59:05,380 - termman-daemon - INFO - Terminal started: 861fc177-f7ec-4539-b7e4-bd404d8fe53b
+2026-03-13 11:59:05,380 - termman-daemon - INFO - Terminal started via HTTP: 861fc177-f7ec-4539-b7e4-bd404d8fe53b
+2026-03-13 11:59:07,442 - termman-daemon - INFO - Terminal started: f895842b-d1da-4999-9f26-3e4de2c1607a
+2026-03-13 11:59:07,442 - termman-daemon - INFO - Terminal started via HTTP: f895842b-d1da-4999-9f26-3e4de2c1607a
+2026-03-13 11:59:09,505 - termman-daemon - INFO - Terminal started: f125567a-3f88-4f33-abcc-f819f6e75607
+2026-03-13 11:59:09,506 - termman-daemon - INFO - Terminal started via HTTP: f125567a-3f88-4f33-abcc-f819f6e75607
+2026-03-13 11:59:11,538 - termman-daemon - INFO - Terminal started: c3701017-9c67-489d-a7a1-4c3d69c49a43
+2026-03-13 11:59:11,538 - termman-daemon - INFO - Terminal started via HTTP: c3701017-9c67-489d-a7a1-4c3d69c49a43
+2026-03-13 11:59:13,586 - termman-daemon - INFO - Terminal started: bda98282-7c54-4d37-bbd5-6b1573aa2914
+2026-03-13 11:59:13,586 - termman-daemon - INFO - Terminal started via HTTP: bda98282-7c54-4d37-bbd5-6b1573aa2914
+2026-03-13 11:59:17,703 - termman-daemon - INFO - Socket connected: 2HJ1GtVcGWYI0QriAADk
+2026-03-13 11:59:17,704 - termman-daemon - INFO - Terminal connected: 861fc177-f7ec-4539-b7e4-bd404d8fe53b, sid: 2HJ1GtVcGWYI0QriAADk, user: test_user_ef168e38-3dcd-4f16-be8b-6d329fe4aeaf
+2026-03-13 11:59:22,800 - termman-daemon - INFO - Socket connected: 2oNMYvNPHCNy_F1EAADm
+2026-03-13 11:59:22,801 - termman-daemon - INFO - Terminal connected: f895842b-d1da-4999-9f26-3e4de2c1607a, sid: 2oNMYvNPHCNy_F1EAADm, user: test_user_55ac1f8b-28ed-4250-a448-fd44b3f6e70e
+2026-03-13 11:59:27,938 - termman-daemon - INFO - Socket connected: 2tNnP9enSNOXtBPCAADo
+2026-03-13 11:59:27,939 - termman-daemon - INFO - Terminal connected: f125567a-3f88-4f33-abcc-f819f6e75607, sid: 2tNnP9enSNOXtBPCAADo, user: test_user_027f0383-2ec5-4539-b7c1-b63505beeaf3
+2026-03-13 11:59:33,060 - termman-daemon - INFO - Socket connected: 5WB1XRDj1t7mO6vxAADq
+2026-03-13 11:59:33,061 - termman-daemon - INFO - Terminal connected: c3701017-9c67-489d-a7a1-4c3d69c49a43, sid: 5WB1XRDj1t7mO6vxAADq, user: test_user_ef168e38-3dcd-4f16-be8b-6d329fe4aeaf
+2026-03-13 11:59:38,174 - termman-daemon - INFO - Socket connected: z7qJcWQp90hvguEqAADs
+2026-03-13 11:59:38,175 - termman-daemon - INFO - Terminal connected: bda98282-7c54-4d37-bbd5-6b1573aa2914, sid: z7qJcWQp90hvguEqAADs, user: test_user_55ac1f8b-28ed-4250-a448-fd44b3f6e70e
+2026-03-13 11:59:43,216 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:59:45,269 - termman-daemon - INFO - Socket disconnected: 2HJ1GtVcGWYI0QriAADk
+2026-03-13 11:59:45,269 - termman-daemon - INFO - Disconnected user test_user_ef168e38-3dcd-4f16-be8b-6d329fe4aeaf from item 861fc177-f7ec-4539-b7e4-bd404d8fe53b
+2026-03-13 11:59:49,304 - termman-daemon - INFO - Connection tables queried
+2026-03-13 11:59:49,310 - termman-daemon - INFO - Socket connected: ly2-aoK1fzpdT-npAADu
+2026-03-13 11:59:57,322 - termman-daemon - INFO - Socket disconnected: 2oNMYvNPHCNy_F1EAADm, item: f895842b-d1da-4999-9f26-3e4de2c1607a
+2026-03-13 11:59:57,322 - termman-daemon - INFO - Socket disconnected: 2tNnP9enSNOXtBPCAADo, item: f125567a-3f88-4f33-abcc-f819f6e75607
+2026-03-13 11:59:57,323 - termman-daemon - INFO - Socket disconnected: 5WB1XRDj1t7mO6vxAADq, item: c3701017-9c67-489d-a7a1-4c3d69c49a43
+2026-03-13 11:59:57,324 - termman-daemon - INFO - Socket disconnected: z7qJcWQp90hvguEqAADs, item: bda98282-7c54-4d37-bbd5-6b1573aa2914
+2026-03-13 11:59:59,377 - termman-daemon - INFO - Terminal stopped: 861fc177-f7ec-4539-b7e4-bd404d8fe53b
+2026-03-13 11:59:59,377 - termman-daemon - INFO - Terminal stopped via HTTP: 861fc177-f7ec-4539-b7e4-bd404d8fe53b
+2026-03-13 12:00:01,429 - termman-daemon - INFO - Terminal stopped: f895842b-d1da-4999-9f26-3e4de2c1607a
+2026-03-13 12:00:01,429 - termman-daemon - INFO - Terminal stopped via HTTP: f895842b-d1da-4999-9f26-3e4de2c1607a
+2026-03-13 12:00:03,474 - termman-daemon - INFO - Terminal stopped: f125567a-3f88-4f33-abcc-f819f6e75607
+2026-03-13 12:00:03,475 - termman-daemon - INFO - Terminal stopped via HTTP: f125567a-3f88-4f33-abcc-f819f6e75607
+2026-03-13 12:00:05,522 - termman-daemon - INFO - Terminal stopped: c3701017-9c67-489d-a7a1-4c3d69c49a43
+2026-03-13 12:00:05,523 - termman-daemon - INFO - Terminal stopped via HTTP: c3701017-9c67-489d-a7a1-4c3d69c49a43
+2026-03-13 12:00:07,564 - termman-daemon - INFO - Terminal stopped: bda98282-7c54-4d37-bbd5-6b1573aa2914
+2026-03-13 12:00:07,565 - termman-daemon - INFO - Terminal stopped via HTTP: bda98282-7c54-4d37-bbd5-6b1573aa2914
+2026-03-13 12:00:07,610 - termman-daemon - INFO - Socket disconnected: ly2-aoK1fzpdT-npAADu
+2026-03-13 12:03:07,870 - termman-daemon - INFO - Terminal started: 2cca3d05-61c4-4c88-8fb4-16f5fe94c2bd
+2026-03-13 12:03:07,870 - termman-daemon - INFO - Terminal started via HTTP: 2cca3d05-61c4-4c88-8fb4-16f5fe94c2bd
+2026-03-13 12:03:09,915 - termman-daemon - INFO - Terminal started: f6d22dc4-36b4-479b-894e-d2feae5ec50f
+2026-03-13 12:03:09,915 - termman-daemon - INFO - Terminal started via HTTP: f6d22dc4-36b4-479b-894e-d2feae5ec50f
+2026-03-13 12:03:11,978 - termman-daemon - INFO - Terminal started: 36f8d3cd-72b0-42a6-8e29-79c5a4841e05
+2026-03-13 12:03:11,978 - termman-daemon - INFO - Terminal started via HTTP: 36f8d3cd-72b0-42a6-8e29-79c5a4841e05
+2026-03-13 12:03:14,030 - termman-daemon - INFO - Terminal started: 3ea29d6b-09dd-4fb0-9301-4bf40d0e4fc4
+2026-03-13 12:03:14,031 - termman-daemon - INFO - Terminal started via HTTP: 3ea29d6b-09dd-4fb0-9301-4bf40d0e4fc4
+2026-03-13 12:03:16,094 - termman-daemon - INFO - Terminal started: 37697909-96cc-427b-ad0f-6391848d43a1
+2026-03-13 12:03:16,094 - termman-daemon - INFO - Terminal started via HTTP: 37697909-96cc-427b-ad0f-6391848d43a1
+2026-03-13 12:03:20,198 - termman-daemon - INFO - Socket connected: 20t0nj6LPFprW3uLAADw
+2026-03-13 12:03:20,199 - termman-daemon - INFO - Terminal connected: 2cca3d05-61c4-4c88-8fb4-16f5fe94c2bd, sid: 20t0nj6LPFprW3uLAADw, user: test_user_cf9786e4-8b7b-4bce-8802-2f45bf984fcf
+2026-03-13 12:03:25,309 - termman-daemon - INFO - Socket connected: zMFREfwqGu_PrQsUAADy
+2026-03-13 12:03:25,310 - termman-daemon - INFO - Terminal connected: f6d22dc4-36b4-479b-894e-d2feae5ec50f, sid: zMFREfwqGu_PrQsUAADy, user: test_user_ea4fb491-58a8-41f8-a423-50868ee8c730
+2026-03-13 12:03:30,418 - termman-daemon - INFO - Socket connected: RytPHWv6Snd2JoyJAAD0
+2026-03-13 12:03:30,419 - termman-daemon - INFO - Terminal connected: 36f8d3cd-72b0-42a6-8e29-79c5a4841e05, sid: RytPHWv6Snd2JoyJAAD0, user: test_user_6ab253d9-3630-4236-8fe7-1274ab8609ac
+2026-03-13 12:03:35,523 - termman-daemon - INFO - Socket connected: 2sLuXJovBpNlb3YhAAD2
+2026-03-13 12:03:35,524 - termman-daemon - INFO - Terminal connected: 3ea29d6b-09dd-4fb0-9301-4bf40d0e4fc4, sid: 2sLuXJovBpNlb3YhAAD2, user: test_user_cf9786e4-8b7b-4bce-8802-2f45bf984fcf
+2026-03-13 12:03:40,620 - termman-daemon - INFO - Socket connected: GQxlLNNNC3DoWTtFAAD4
+2026-03-13 12:03:40,621 - termman-daemon - INFO - Terminal connected: 37697909-96cc-427b-ad0f-6391848d43a1, sid: GQxlLNNNC3DoWTtFAAD4, user: test_user_ea4fb491-58a8-41f8-a423-50868ee8c730
+2026-03-13 12:03:45,678 - termman-daemon - INFO - Connection tables queried
+2026-03-13 12:03:47,717 - termman-daemon - INFO - Socket disconnected: 20t0nj6LPFprW3uLAADw
+2026-03-13 12:03:47,717 - termman-daemon - INFO - Disconnected user test_user_cf9786e4-8b7b-4bce-8802-2f45bf984fcf from item 2cca3d05-61c4-4c88-8fb4-16f5fe94c2bd
+2026-03-13 12:03:51,765 - termman-daemon - INFO - Connection tables queried
+2026-03-13 12:03:51,782 - termman-daemon - INFO - Socket connected: dUbCExikQy2wSUlpAAD6
+2026-03-13 12:03:59,926 - termman-daemon - INFO - Socket disconnected: zMFREfwqGu_PrQsUAADy, item: f6d22dc4-36b4-479b-894e-d2feae5ec50f
+2026-03-13 12:03:59,926 - termman-daemon - INFO - Socket disconnected: RytPHWv6Snd2JoyJAAD0, item: 36f8d3cd-72b0-42a6-8e29-79c5a4841e05
+2026-03-13 12:03:59,927 - termman-daemon - INFO - Socket disconnected: 2sLuXJovBpNlb3YhAAD2, item: 3ea29d6b-09dd-4fb0-9301-4bf40d0e4fc4
+2026-03-13 12:03:59,928 - termman-daemon - INFO - Socket disconnected: GQxlLNNNC3DoWTtFAAD4, item: 37697909-96cc-427b-ad0f-6391848d43a1
+2026-03-13 12:04:01,974 - termman-daemon - INFO - Terminal stopped: 2cca3d05-61c4-4c88-8fb4-16f5fe94c2bd
+2026-03-13 12:04:01,975 - termman-daemon - INFO - Terminal stopped via HTTP: 2cca3d05-61c4-4c88-8fb4-16f5fe94c2bd
+2026-03-13 12:04:04,023 - termman-daemon - INFO - Terminal stopped: f6d22dc4-36b4-479b-894e-d2feae5ec50f
+2026-03-13 12:04:04,023 - termman-daemon - INFO - Terminal stopped via HTTP: f6d22dc4-36b4-479b-894e-d2feae5ec50f
+2026-03-13 12:04:06,067 - termman-daemon - INFO - Terminal stopped: 36f8d3cd-72b0-42a6-8e29-79c5a4841e05
+2026-03-13 12:04:06,067 - termman-daemon - INFO - Terminal stopped via HTTP: 36f8d3cd-72b0-42a6-8e29-79c5a4841e05
+2026-03-13 12:04:08,123 - termman-daemon - INFO - Terminal stopped: 3ea29d6b-09dd-4fb0-9301-4bf40d0e4fc4
+2026-03-13 12:04:08,123 - termman-daemon - INFO - Terminal stopped via HTTP: 3ea29d6b-09dd-4fb0-9301-4bf40d0e4fc4
+2026-03-13 12:04:10,166 - termman-daemon - INFO - Terminal stopped: 37697909-96cc-427b-ad0f-6391848d43a1
+2026-03-13 12:04:10,167 - termman-daemon - INFO - Terminal stopped via HTTP: 37697909-96cc-427b-ad0f-6391848d43a1
+2026-03-13 12:04:10,231 - termman-daemon - INFO - Socket disconnected: dUbCExikQy2wSUlpAAD6
+2026-03-13 12:11:46,821 - termman-daemon - INFO - Terminal started: f9ec7edb-cdac-4e1c-9ae5-8d4be5233959
+2026-03-13 12:11:46,821 - termman-daemon - INFO - Terminal started via HTTP: f9ec7edb-cdac-4e1c-9ae5-8d4be5233959
+2026-03-13 12:11:48,883 - termman-daemon - INFO - Terminal started: 512394c7-b77d-41b8-a751-99ecde05ca32
+2026-03-13 12:11:48,884 - termman-daemon - INFO - Terminal started via HTTP: 512394c7-b77d-41b8-a751-99ecde05ca32
+2026-03-13 12:11:50,940 - termman-daemon - INFO - Terminal started: 287d6ab1-918e-45e7-a0ee-57db1912553f
+2026-03-13 12:11:50,940 - termman-daemon - INFO - Terminal started via HTTP: 287d6ab1-918e-45e7-a0ee-57db1912553f
+2026-03-13 12:11:53,006 - termman-daemon - INFO - Terminal started: 78b6afd5-cc6f-4d88-92fd-a28750513625
+2026-03-13 12:11:53,006 - termman-daemon - INFO - Terminal started via HTTP: 78b6afd5-cc6f-4d88-92fd-a28750513625
+2026-03-13 12:11:55,067 - termman-daemon - INFO - Terminal started: 58a24fcb-6683-46eb-a7de-d518cd345360
+2026-03-13 12:11:55,067 - termman-daemon - INFO - Terminal started via HTTP: 58a24fcb-6683-46eb-a7de-d518cd345360
+2026-03-13 12:11:59,185 - termman-daemon - INFO - Socket connected: 8EElx_oQm0eeQkJ2AAD8
+2026-03-13 12:11:59,186 - termman-daemon - INFO - Terminal connected: f9ec7edb-cdac-4e1c-9ae5-8d4be5233959, sid: 8EElx_oQm0eeQkJ2AAD8, user: test_user_6293d0a1-bfe6-4abf-ac59-6ac4083fb7f1
+2026-03-13 12:12:04,278 - termman-daemon - INFO - Socket connected: 5eI4qAPpq5gAcXtVAAD-
+2026-03-13 12:12:04,279 - termman-daemon - INFO - Terminal connected: 512394c7-b77d-41b8-a751-99ecde05ca32, sid: 5eI4qAPpq5gAcXtVAAD-, user: test_user_297b5b55-a1bf-4cc5-af88-844786c8de40
+2026-03-13 12:12:09,375 - termman-daemon - INFO - Socket connected: SnNExpuL7KRHDouIAAEA
+2026-03-13 12:12:09,376 - termman-daemon - INFO - Terminal connected: 287d6ab1-918e-45e7-a0ee-57db1912553f, sid: SnNExpuL7KRHDouIAAEA, user: test_user_94fa394e-7f94-46b1-922a-06f0f064a485
+2026-03-13 12:12:14,483 - termman-daemon - INFO - Socket connected: lsqFw9kMhZD5vGvYAAEC
+2026-03-13 12:12:14,485 - termman-daemon - INFO - Terminal connected: 78b6afd5-cc6f-4d88-92fd-a28750513625, sid: lsqFw9kMhZD5vGvYAAEC, user: test_user_6293d0a1-bfe6-4abf-ac59-6ac4083fb7f1
+2026-03-13 12:12:19,580 - termman-daemon - INFO - Socket connected: HlOIKq4bPXcg7F_UAAEE
+2026-03-13 12:12:19,581 - termman-daemon - INFO - Terminal connected: 58a24fcb-6683-46eb-a7de-d518cd345360, sid: HlOIKq4bPXcg7F_UAAEE, user: test_user_297b5b55-a1bf-4cc5-af88-844786c8de40
+2026-03-13 12:12:28,629 - termman-daemon - INFO - Connection tables queried
+2026-03-13 12:12:30,682 - termman-daemon - INFO - Socket disconnected: 8EElx_oQm0eeQkJ2AAD8
+2026-03-13 12:12:30,682 - termman-daemon - INFO - Disconnected user test_user_6293d0a1-bfe6-4abf-ac59-6ac4083fb7f1 from item f9ec7edb-cdac-4e1c-9ae5-8d4be5233959
+2026-03-13 12:12:34,729 - termman-daemon - INFO - Connection tables queried
+2026-03-13 12:12:34,733 - termman-daemon - INFO - Socket disconnected: 5eI4qAPpq5gAcXtVAAD-, item: 512394c7-b77d-41b8-a751-99ecde05ca32
+2026-03-13 12:12:34,734 - termman-daemon - INFO - Socket disconnected: SnNExpuL7KRHDouIAAEA, item: 287d6ab1-918e-45e7-a0ee-57db1912553f
+2026-03-13 12:12:34,735 - termman-daemon - INFO - Socket disconnected: lsqFw9kMhZD5vGvYAAEC, item: 78b6afd5-cc6f-4d88-92fd-a28750513625
+2026-03-13 12:12:34,735 - termman-daemon - INFO - Socket disconnected: HlOIKq4bPXcg7F_UAAEE, item: 58a24fcb-6683-46eb-a7de-d518cd345360
+2026-03-13 12:12:36,776 - termman-daemon - INFO - Terminal stopped: f9ec7edb-cdac-4e1c-9ae5-8d4be5233959
+2026-03-13 12:12:36,777 - termman-daemon - INFO - Terminal stopped via HTTP: f9ec7edb-cdac-4e1c-9ae5-8d4be5233959
+2026-03-13 12:12:38,833 - termman-daemon - INFO - Terminal stopped: 512394c7-b77d-41b8-a751-99ecde05ca32
+2026-03-13 12:12:38,833 - termman-daemon - INFO - Terminal stopped via HTTP: 512394c7-b77d-41b8-a751-99ecde05ca32
+2026-03-13 12:12:40,878 - termman-daemon - INFO - Terminal stopped: 287d6ab1-918e-45e7-a0ee-57db1912553f
+2026-03-13 12:12:40,879 - termman-daemon - INFO - Terminal stopped via HTTP: 287d6ab1-918e-45e7-a0ee-57db1912553f
+2026-03-13 12:12:42,926 - termman-daemon - INFO - Terminal stopped: 78b6afd5-cc6f-4d88-92fd-a28750513625
+2026-03-13 12:12:42,926 - termman-daemon - INFO - Terminal stopped via HTTP: 78b6afd5-cc6f-4d88-92fd-a28750513625
+2026-03-13 12:12:44,969 - termman-daemon - INFO - Terminal stopped: 58a24fcb-6683-46eb-a7de-d518cd345360
+2026-03-13 12:12:44,970 - termman-daemon - INFO - Terminal stopped via HTTP: 58a24fcb-6683-46eb-a7de-d518cd345360
+2026-03-13 12:15:23,802 - termman-daemon - INFO - Terminal started: 8e3eace7-e802-4cf3-ae3f-9430e0057588
+2026-03-13 12:15:23,802 - termman-daemon - INFO - Terminal started via HTTP: 8e3eace7-e802-4cf3-ae3f-9430e0057588
+2026-03-13 12:15:25,867 - termman-daemon - INFO - Terminal started: c6f82224-4433-4c77-b53b-33b77b2e37a7
+2026-03-13 12:15:25,867 - termman-daemon - INFO - Terminal started via HTTP: c6f82224-4433-4c77-b53b-33b77b2e37a7
+2026-03-13 12:15:27,921 - termman-daemon - INFO - Terminal started: 7fb3ab61-e521-48f3-8c4a-f69b3abaee3f
+2026-03-13 12:15:27,921 - termman-daemon - INFO - Terminal started via HTTP: 7fb3ab61-e521-48f3-8c4a-f69b3abaee3f
+2026-03-13 12:15:29,969 - termman-daemon - INFO - Terminal started: 874607bc-6025-4025-abbc-ca7bf51bfcf9
+2026-03-13 12:15:29,970 - termman-daemon - INFO - Terminal started via HTTP: 874607bc-6025-4025-abbc-ca7bf51bfcf9
+2026-03-13 12:15:32,025 - termman-daemon - INFO - Terminal started: 30b166b4-ee29-463a-81e5-9489ab0c028f
+2026-03-13 12:15:32,025 - termman-daemon - INFO - Terminal started via HTTP: 30b166b4-ee29-463a-81e5-9489ab0c028f
+2026-03-13 12:15:36,144 - termman-daemon - INFO - Socket connected: g0oNFd1ukhqhUnJxAAEG
+2026-03-13 12:15:36,145 - termman-daemon - INFO - Terminal connected: 8e3eace7-e802-4cf3-ae3f-9430e0057588, sid: g0oNFd1ukhqhUnJxAAEG, user: test_user_dea867f7-0732-4714-b10d-59585f7de85e
+2026-03-13 12:15:41,224 - termman-daemon - INFO - Socket connected: He91a0UyGaAfILlYAAEI
+2026-03-13 12:15:41,225 - termman-daemon - INFO - Terminal connected: c6f82224-4433-4c77-b53b-33b77b2e37a7, sid: He91a0UyGaAfILlYAAEI, user: test_user_a5349799-a391-4c02-84fb-1d19dad91ae0
+2026-03-13 12:15:46,329 - termman-daemon - INFO - Socket connected: 1fwPlrK9tJ4sN630AAEK
+2026-03-13 12:15:46,331 - termman-daemon - INFO - Terminal connected: 7fb3ab61-e521-48f3-8c4a-f69b3abaee3f, sid: 1fwPlrK9tJ4sN630AAEK, user: test_user_0e9599d6-0b7c-4e78-aa43-08c14395e58e
+2026-03-13 12:15:51,442 - termman-daemon - INFO - Socket connected: DKrfJMYgZuXYS0SgAAEM
+2026-03-13 12:15:51,444 - termman-daemon - INFO - Terminal connected: 874607bc-6025-4025-abbc-ca7bf51bfcf9, sid: DKrfJMYgZuXYS0SgAAEM, user: test_user_dea867f7-0732-4714-b10d-59585f7de85e
+2026-03-13 12:15:56,545 - termman-daemon - INFO - Socket connected: cuq1QS7H-BbK8j6SAAEO
+2026-03-13 12:15:56,546 - termman-daemon - INFO - Terminal connected: 30b166b4-ee29-463a-81e5-9489ab0c028f, sid: cuq1QS7H-BbK8j6SAAEO, user: test_user_a5349799-a391-4c02-84fb-1d19dad91ae0
+2026-03-13 12:16:05,598 - termman-daemon - INFO - Connection tables queried
+2026-03-13 12:16:07,643 - termman-daemon - INFO - Socket disconnected: g0oNFd1ukhqhUnJxAAEG
+2026-03-13 12:16:07,643 - termman-daemon - INFO - Disconnected user test_user_dea867f7-0732-4714-b10d-59585f7de85e from item 8e3eace7-e802-4cf3-ae3f-9430e0057588
+2026-03-13 12:16:11,699 - termman-daemon - INFO - Connection tables queried
+2026-03-13 12:16:11,703 - termman-daemon - INFO - Socket disconnected: He91a0UyGaAfILlYAAEI, item: c6f82224-4433-4c77-b53b-33b77b2e37a7
+2026-03-13 12:16:11,704 - termman-daemon - INFO - Socket disconnected: 1fwPlrK9tJ4sN630AAEK, item: 7fb3ab61-e521-48f3-8c4a-f69b3abaee3f
+2026-03-13 12:16:11,705 - termman-daemon - INFO - Socket disconnected: DKrfJMYgZuXYS0SgAAEM, item: 874607bc-6025-4025-abbc-ca7bf51bfcf9
+2026-03-13 12:16:11,706 - termman-daemon - INFO - Socket disconnected: cuq1QS7H-BbK8j6SAAEO, item: 30b166b4-ee29-463a-81e5-9489ab0c028f
+2026-03-13 12:16:13,754 - termman-daemon - INFO - Terminal stopped: 8e3eace7-e802-4cf3-ae3f-9430e0057588
+2026-03-13 12:16:13,755 - termman-daemon - INFO - Terminal stopped via HTTP: 8e3eace7-e802-4cf3-ae3f-9430e0057588
+2026-03-13 12:16:15,807 - termman-daemon - INFO - Terminal stopped: c6f82224-4433-4c77-b53b-33b77b2e37a7
+2026-03-13 12:16:15,807 - termman-daemon - INFO - Terminal stopped via HTTP: c6f82224-4433-4c77-b53b-33b77b2e37a7
+2026-03-13 12:16:17,846 - termman-daemon - INFO - Terminal stopped: 7fb3ab61-e521-48f3-8c4a-f69b3abaee3f
+2026-03-13 12:16:17,846 - termman-daemon - INFO - Terminal stopped via HTTP: 7fb3ab61-e521-48f3-8c4a-f69b3abaee3f
+2026-03-13 12:16:19,901 - termman-daemon - INFO - Terminal stopped: 874607bc-6025-4025-abbc-ca7bf51bfcf9
+2026-03-13 12:16:19,902 - termman-daemon - INFO - Terminal stopped via HTTP: 874607bc-6025-4025-abbc-ca7bf51bfcf9
+2026-03-13 12:16:21,950 - termman-daemon - INFO - Terminal stopped: 30b166b4-ee29-463a-81e5-9489ab0c028f
+2026-03-13 12:16:21,951 - termman-daemon - INFO - Terminal stopped via HTTP: 30b166b4-ee29-463a-81e5-9489ab0c028f
+2026-03-13 12:17:43,064 - termman-daemon - INFO - Socket connected: 65OdSC4Yq_hU5r_eAAEQ
+2026-03-13 12:17:43,085 - termman-daemon - INFO - Terminal started: 241400c3-b72a-4bf6-b902-2e285c195e37
+2026-03-13 12:17:43,085 - termman-daemon - INFO - Terminal started via HTTP: 241400c3-b72a-4bf6-b902-2e285c195e37
+2026-03-13 12:17:43,089 - termman-daemon - INFO - Socket connected: 6J_qmmjqp90ulCdMAAES
+2026-03-13 12:17:44,091 - termman-daemon - INFO - Terminal connected: 241400c3-b72a-4bf6-b902-2e285c195e37, sid: 6J_qmmjqp90ulCdMAAES, user: user-908ac66e-b68e-45f8-aabb-6ffe40926333
+2026-03-13 12:17:45,095 - termman-daemon - INFO - Socket connected: t4C6v2bNonP5dfyLAAEU
+2026-03-13 12:17:46,098 - termman-daemon - INFO - Terminal connected: 241400c3-b72a-4bf6-b902-2e285c195e37, sid: t4C6v2bNonP5dfyLAAEU, user: user-42101e10-bbb7-4f2b-8222-4ccbdce62d2e
+2026-03-13 12:17:47,099 - termman-daemon - INFO - Socket connected: RxAztMj8E4DBCxz7AAEW
+2026-03-13 12:17:48,101 - termman-daemon - INFO - Terminal connected: 241400c3-b72a-4bf6-b902-2e285c195e37, sid: RxAztMj8E4DBCxz7AAEW, user: user-3b429d62-804c-49eb-87cf-f6d9fbf46a8e
+2026-03-13 12:17:57,107 - termman-daemon - INFO - Terminal status queried: 241400c3-b72a-4bf6-b902-2e285c195e37, status: running
+2026-03-13 12:17:57,113 - termman-daemon - INFO - Terminal stopped: 241400c3-b72a-4bf6-b902-2e285c195e37
+2026-03-13 12:17:57,114 - termman-daemon - INFO - Terminal stopped via HTTP: 241400c3-b72a-4bf6-b902-2e285c195e37
+2026-03-13 12:17:57,173 - termman-daemon - INFO - Socket disconnected: 6J_qmmjqp90ulCdMAAES, item: 241400c3-b72a-4bf6-b902-2e285c195e37
+2026-03-13 12:17:57,174 - termman-daemon - INFO - Socket disconnected: t4C6v2bNonP5dfyLAAEU, item: 241400c3-b72a-4bf6-b902-2e285c195e37
+2026-03-13 12:17:57,174 - termman-daemon - INFO - Socket disconnected: RxAztMj8E4DBCxz7AAEW, item: 241400c3-b72a-4bf6-b902-2e285c195e37
+2026-03-13 12:17:57,175 - termman-daemon - INFO - Socket disconnected: 65OdSC4Yq_hU5r_eAAEQ
+2026-03-13 14:10:30,239 - termman-daemon - INFO - Terminal started: 34076071-73f4-4af9-86fc-37f8d0495020
+2026-03-13 14:10:30,240 - termman-daemon - INFO - Terminal started via HTTP: 34076071-73f4-4af9-86fc-37f8d0495020
+2026-03-13 14:10:32,286 - termman-daemon - INFO - Terminal started: e96f9a64-a77f-4ad2-8a0a-ef2ea7711481
+2026-03-13 14:10:32,286 - termman-daemon - INFO - Terminal started via HTTP: e96f9a64-a77f-4ad2-8a0a-ef2ea7711481
+2026-03-13 14:10:34,344 - termman-daemon - INFO - Terminal started: 3a9427b3-5535-4a16-9820-4c734dfc76b1
+2026-03-13 14:10:34,345 - termman-daemon - INFO - Terminal started via HTTP: 3a9427b3-5535-4a16-9820-4c734dfc76b1
+2026-03-13 14:10:36,388 - termman-daemon - INFO - Terminal started: 4664909c-e671-4338-9c6e-75c5033334d2
+2026-03-13 14:10:36,389 - termman-daemon - INFO - Terminal started via HTTP: 4664909c-e671-4338-9c6e-75c5033334d2
+2026-03-13 14:10:38,456 - termman-daemon - INFO - Terminal started: bd215621-164f-4298-840a-99472cbcd347
+2026-03-13 14:10:38,456 - termman-daemon - INFO - Terminal started via HTTP: bd215621-164f-4298-840a-99472cbcd347
+2026-03-13 14:10:42,549 - termman-daemon - INFO - Socket connected: WJGhQpBN-RPuFKVdAAEY
+2026-03-13 14:10:42,550 - termman-daemon - INFO - Terminal connected: 34076071-73f4-4af9-86fc-37f8d0495020, sid: WJGhQpBN-RPuFKVdAAEY, user: test_user_57125493-be52-4c9c-9a51-a072df2559fb
+2026-03-13 14:10:47,667 - termman-daemon - INFO - Socket connected: 631ByrCbKbaIhLjQAAEa
+2026-03-13 14:10:47,667 - termman-daemon - INFO - Terminal connected: e96f9a64-a77f-4ad2-8a0a-ef2ea7711481, sid: 631ByrCbKbaIhLjQAAEa, user: test_user_5f4414bc-4b1a-471d-84fb-2401bbe101e9
+2026-03-13 14:10:52,767 - termman-daemon - INFO - Socket connected: LENOgjhpjzFtD2D6AAEc
+2026-03-13 14:10:52,768 - termman-daemon - INFO - Terminal connected: 3a9427b3-5535-4a16-9820-4c734dfc76b1, sid: LENOgjhpjzFtD2D6AAEc, user: test_user_8224a335-baea-46a2-9c64-caaf394ab91c
+2026-03-13 14:10:57,824 - termman-daemon - INFO - Socket connected: 5DOUfepvULcJpswEAAEe
+2026-03-13 14:10:57,825 - termman-daemon - INFO - Terminal connected: 4664909c-e671-4338-9c6e-75c5033334d2, sid: 5DOUfepvULcJpswEAAEe, user: test_user_57125493-be52-4c9c-9a51-a072df2559fb
+2026-03-13 14:11:02,905 - termman-daemon - INFO - Socket connected: gTCeCSAD6hy0KMxlAAEg
+2026-03-13 14:11:02,906 - termman-daemon - INFO - Terminal connected: bd215621-164f-4298-840a-99472cbcd347, sid: gTCeCSAD6hy0KMxlAAEg, user: test_user_5f4414bc-4b1a-471d-84fb-2401bbe101e9
+2026-03-13 14:11:11,955 - termman-daemon - INFO - Connection tables queried
+2026-03-13 14:11:13,999 - termman-daemon - INFO - Socket disconnected: WJGhQpBN-RPuFKVdAAEY
+2026-03-13 14:11:13,999 - termman-daemon - INFO - Disconnected user test_user_57125493-be52-4c9c-9a51-a072df2559fb from item 34076071-73f4-4af9-86fc-37f8d0495020
+2026-03-13 14:11:18,021 - termman-daemon - INFO - Connection tables queried
+2026-03-13 14:11:18,025 - termman-daemon - INFO - Socket disconnected: 631ByrCbKbaIhLjQAAEa, item: e96f9a64-a77f-4ad2-8a0a-ef2ea7711481
+2026-03-13 14:11:18,026 - termman-daemon - INFO - Socket disconnected: LENOgjhpjzFtD2D6AAEc, item: 3a9427b3-5535-4a16-9820-4c734dfc76b1
+2026-03-13 14:11:18,026 - termman-daemon - INFO - Socket disconnected: 5DOUfepvULcJpswEAAEe, item: 4664909c-e671-4338-9c6e-75c5033334d2
+2026-03-13 14:11:18,027 - termman-daemon - INFO - Socket disconnected: gTCeCSAD6hy0KMxlAAEg, item: bd215621-164f-4298-840a-99472cbcd347
+2026-03-13 14:11:20,057 - termman-daemon - INFO - Terminal stopped: 34076071-73f4-4af9-86fc-37f8d0495020
+2026-03-13 14:11:20,058 - termman-daemon - INFO - Terminal stopped via HTTP: 34076071-73f4-4af9-86fc-37f8d0495020
+2026-03-13 14:11:22,111 - termman-daemon - INFO - Terminal stopped: e96f9a64-a77f-4ad2-8a0a-ef2ea7711481
+2026-03-13 14:11:22,111 - termman-daemon - INFO - Terminal stopped via HTTP: e96f9a64-a77f-4ad2-8a0a-ef2ea7711481
+2026-03-13 14:11:24,160 - termman-daemon - INFO - Terminal stopped: 3a9427b3-5535-4a16-9820-4c734dfc76b1
+2026-03-13 14:11:24,160 - termman-daemon - INFO - Terminal stopped via HTTP: 3a9427b3-5535-4a16-9820-4c734dfc76b1
+2026-03-13 14:11:26,212 - termman-daemon - INFO - Terminal stopped: 4664909c-e671-4338-9c6e-75c5033334d2
+2026-03-13 14:11:26,212 - termman-daemon - INFO - Terminal stopped via HTTP: 4664909c-e671-4338-9c6e-75c5033334d2
+2026-03-13 14:11:28,252 - termman-daemon - INFO - Terminal stopped: bd215621-164f-4298-840a-99472cbcd347
+2026-03-13 14:11:28,253 - termman-daemon - INFO - Terminal stopped via HTTP: bd215621-164f-4298-840a-99472cbcd347
+2026-03-13 06:16:04,670 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:24444
+2026-03-13 06:16:04,671 - termman-daemon - INFO - API Key: ***2024

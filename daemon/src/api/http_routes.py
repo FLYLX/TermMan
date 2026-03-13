@@ -127,3 +127,54 @@ async def get_daemon_status():
         "status": "running",
         "terminal_count": len(terminal_manager.get_all_terminals())
     }
+
+
+@router.get("/connections")
+async def get_connections(api_key: Any = Depends(verify_api_key)):
+    """
+    获取所有连接表
+    """
+    from core import get_socket_service
+    socket_service = get_socket_service()
+    if not socket_service:
+        raise HTTPException(status_code=500, detail="Socket service not available")
+    
+    tables = socket_service.get_connection_tables()
+    logger.info("Connection tables queried")
+    
+    return {
+        "success": True,
+        "data": tables
+    }
+
+
+@router.post("/connections/disconnect")
+async def disconnect_connection(data: Dict[str, Any], api_key: Any = Depends(verify_api_key)):
+    """
+    断开特定用户与特定项目的连接
+    """
+    item_uuid = data.get("item_uuid")
+    user_uuid = data.get("user_uuid")
+    
+    if not item_uuid or not user_uuid:
+        raise HTTPException(status_code=400, detail="Missing item_uuid or user_uuid")
+    
+    from core import get_socket_service
+    socket_service = get_socket_service()
+    if not socket_service:
+        raise HTTPException(status_code=500, detail="Socket service not available")
+    
+    disconnected = await socket_service.disconnect_user_from_item(item_uuid, user_uuid)
+    
+    if disconnected:
+        logger.info(f"Disconnected user {user_uuid} from item {item_uuid}")
+        return {
+            "success": True,
+            "message": "Connection disconnected successfully"
+        }
+    else:
+        logger.warning(f"Failed to disconnect user {user_uuid} from item {item_uuid}")
+        return {
+            "success": False,
+            "message": "Failed to disconnect connection"
+        }

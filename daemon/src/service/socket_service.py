@@ -170,3 +170,99 @@ class SocketService:
         """
         with self.lock:
             return len(self.connections)
+    
+    def get_connection_tables(self) -> Dict[str, Any]:
+        """
+        获取所有连接表
+        
+        Returns:
+            包含用户-项目映射、项目-用户连接映射的字典
+        """
+        with self.lock:
+            # 构建用户-项目映射: user_uuid → Set[item_uuid]
+            user_item_map = {}
+            
+            # 构建项目-用户连接映射: item_uuid → {user_uuid: [sid, ...]}
+            item_user_conn_map = {}
+            
+            # 遍历所有连接，构建映射表
+            for item_uuid, connections in self.connections.items():
+                item_user_conn_map[item_uuid] = {}
+                
+                for conn in connections:
+                    sid = conn['sid']
+                    user_uuid = conn['user_uuid']
+                    
+                    # 更新用户-项目映射
+                    if user_uuid not in user_item_map:
+                        user_item_map[user_uuid] = set()
+                    user_item_map[user_uuid].add(item_uuid)
+                    
+                    # 更新项目-用户连接映射
+                    if user_uuid not in item_user_conn_map[item_uuid]:
+                        item_user_conn_map[item_uuid][user_uuid] = []
+                    item_user_conn_map[item_uuid][user_uuid].append(sid)
+            
+            # 转换集合为列表以便JSON序列化
+            user_item_map_list = {user_uuid: list(items) for user_uuid, items in user_item_map.items()}
+            
+            # 获取项目-Token映射
+            item_token_map = {}
+            for key in memory_store.keys():
+                if key.startswith('terminal_token:'):
+                    item_uuid = key.replace('terminal_token:', '')
+                    item_token_map[item_uuid] = memory_store.get(key)
+            
+            return {
+                'user_item_map': user_item_map_list,
+                'item_user_conn_map': item_user_conn_map,
+                'item_token_map': item_token_map
+            }
+    
+    async def disconnect_user_from_item(self, item_uuid: str, user_uuid: str) -> bool:
+        """
+        断开特定用户与特定项目的Socket连接
+        
+        Args:
+            item_uuid: 项目UUID
+            user_uuid: 用户UUID
+            
+        Returns:
+            是否成功断开连接
+        """
+        disconnected = False
+        sids_to_disconnect = []
+        
+        with self.lock:
+            if item_uuid in self.connections:
+                # 找到该用户在该项目的所有连接
+                connections_to_remove = []
+                
+                for conn in self.connections[item_uuid]:
+                    if conn['user_uuid'] == user_uuid:
+                        sids_to_disconnect.append(conn['sid'])
+                        connections_to_remove.append(conn)
+                        disconnected = True
+                
+                # 移除连接
+                for conn in connections_to_remove:
+                    self.connections[item_uuid].remove(conn)
+                    
+                    # 清理sid映射
+                    if conn['sid'] in self.sid_to_item:
+                        self.sid_to_item.pop(conn['sid'])
+                    if conn['sid'] in self.sid_to_user:
+                        self.sid_to_user.pop(conn['sid'])
+                
+                # 如果项目没有任何连接了，移除该项目
+                if not self.connections[item_uuid]:
+                    del self.connections[item_uuid]
+        
+        # 断开socket连接
+        for sid in sids_to_disconnect:
+            try:
+                await self.sio.disconnect(sid)
+            except Exception as e:
+                logger.error(f"Failed to disconnect {sid}: {e}")
+        
+        return disconnected
