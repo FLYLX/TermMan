@@ -149,14 +149,20 @@ class DaemonConnection:
         except Exception:
             return False
     
-    def terminal_start_http(self, user_uuid: str, token: str) -> Dict[str, Any]:
+    def terminal_start_http(self, user_uuid: str, token: str, item_uuid: str, working_directory: Optional[str] = None, command: Optional[str] = None) -> Dict[str, Any]:
         """
         HTTP方式启动终端
         """
-        return self._http_post("terminal/start", {
+        data = {
             "user_uuid": user_uuid,
-            "token": token
-        })
+            "token": token,
+            "item_uuid": item_uuid  # 传递item UUID给daemon
+        }
+        if working_directory:
+            data["working_directory"] = working_directory
+        if command:
+            data["command"] = command
+        return self._http_post("terminal/start", data)
     
     def terminal_stop_http(self, item_uuid: str) -> Dict[str, Any]:
         """
@@ -171,3 +177,15 @@ class DaemonConnection:
         HTTP方式获取终端状态
         """
         return self._http_get(f"terminal/status/{item_uuid}")
+    
+    def get_socket_connections_http(self) -> Dict[str, Any]:
+        """
+        HTTP方式获取Daemon上的所有socket连接表
+        """
+        return self._http_get("connections")
+    
+    def get_terminals_http(self) -> Dict[str, Any]:
+        """
+        HTTP方式获取Daemon上的所有终端列表
+        """
+        return self._http_get("terminal/list")

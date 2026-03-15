@@ -139,11 +139,6 @@ export type ItemPublic = {
     updated_at?: (string | null);
 };
 
-export type ItemsPublic = {
-    data: Array<ItemPublic>;
-    count: number;
-};
-
 export type ItemStatus = 'stopped' | 'running' | 'starting' | 'stopping' | 'error';
 
 export type ItemUpdate = {
@@ -355,7 +350,9 @@ export type ItemsReadItemsData = {
     skip?: number;
 };
 
-export type ItemsReadItemsResponse = (ItemsPublic);
+export type ItemsReadItemsResponse = ({
+    [key: string]: unknown;
+});
 
 export type ItemsCreateItemData = {
     requestBody: ItemCreate;
@@ -367,7 +364,9 @@ export type ItemsReadItemData = {
     id: string;
 };
 
-export type ItemsReadItemResponse = (ItemPublic);
+export type ItemsReadItemResponse = ({
+    [key: string]: unknown;
+});
 
 export type ItemsUpdateItemData = {
     id: string;
@@ -381,6 +380,13 @@ export type ItemsDeleteItemData = {
 };
 
 export type ItemsDeleteItemResponse = (Message);
+
+export type ItemsDisconnectUserFromItemData = {
+    id: string;
+    userUuid: string;
+};
+
+export type ItemsDisconnectUserFromItemResponse = (unknown);
 
 export type ItemsStopItemData = {
     id: string;

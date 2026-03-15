@@ -18,6 +18,12 @@ class SocketManager:
         
         # 项目-用户-连接映射：item_uuid → {user_uuid: socket连接实例}
         self.item_user_conn_map: Dict[str, Dict[str, ItemSocket]] = {}  # 断开连接专用
+        
+        # 用户-IP映射：user_uuid → ip_address
+        self.user_ip_map: Dict[str, str] = {}  # 用户IP映射表
+        
+        # 项目-用户-IP映射：item_uuid → {user_uuid: ip_address}
+        self.item_user_ip_map: Dict[str, Dict[str, str]] = {}  # 项目-用户-IP映射表
 
     def get_socket(self, item_uuid: str, user_uuid: str) -> Optional[ItemSocket]:
         """
@@ -84,6 +90,20 @@ class SocketManager:
                 # 如果项目没有任何用户了，移除该项目
                 if not self.item_user_conn_map[item_uuid]:
                     self.item_user_conn_map.pop(item_uuid)
+            
+            # 更新项目-用户-IP映射
+            if item_uuid in self.item_user_ip_map:
+                if user_uuid in self.item_user_ip_map[item_uuid]:
+                    self.item_user_ip_map[item_uuid].pop(user_uuid)
+                # 如果项目没有任何用户IP映射了，移除该项目
+                if not self.item_user_ip_map[item_uuid]:
+                    self.item_user_ip_map.pop(item_uuid)
+            
+            # 更新用户-IP映射
+            if user_uuid in self.user_ip_map:
+                # 检查该用户是否还有其他项目
+                if user_uuid not in self.user_item_map or item_uuid not in self.user_item_map[user_uuid]:
+                    self.user_ip_map.pop(user_uuid)
     
     def remove_all_sockets_by_item(self, item_uuid: str):
         """
@@ -112,6 +132,20 @@ class SocketManager:
         # 更新项目-用户-连接映射
         if item_uuid in self.item_user_conn_map:
             self.item_user_conn_map.pop(item_uuid)
+        
+        # 更新项目-用户-IP映射
+        if item_uuid in self.item_user_ip_map:
+            # 记录所有受影响的用户
+            users_to_check = list(self.item_user_ip_map[item_uuid].keys())
+            # 移除该项目的所有用户IP映射
+            self.item_user_ip_map.pop(item_uuid)
+            
+            # 更新用户-IP映射
+            for user_uuid in users_to_check:
+                # 检查用户是否还有其他项目
+                if user_uuid not in self.user_item_map or item_uuid not in self.user_item_map[user_uuid]:
+                    if user_uuid in self.user_ip_map:
+                        self.user_ip_map.pop(user_uuid)
 
     def add_token(self, item_uuid: str, token: str, expire_minutes: int = 1440) -> TokenInfo:
         """
@@ -156,28 +190,37 @@ class SocketManager:
         获取所有连接表
         
         Returns:
-            包含用户-项目映射、项目-用户连接映射和项目-Token映射的字典
+            包含用户-项目映射、项目-用户连接映射、用户-IP映射和项目-Token映射的字典
         """
         # 转换用户-项目映射为列表格式以便JSON序列化
         user_item_map = {user_uuid: list(items) for user_uuid, items in self.user_item_map.items()}
         
-        # 转换项目-用户连接映射，只保留必要信息
+        # 转换项目-用户连接映射，包含IP信息
         item_user_conn_map = {}
         for item_uuid, user_conns in self.item_user_conn_map.items():
-            item_user_conn_map[item_uuid] = {
-                user_uuid: {
+            item_user_conn_map[item_uuid] = {}
+            
+            for user_uuid, conn in user_conns.items():
+                # 获取用户IP
+                ip_address = self.item_user_ip_map.get(item_uuid, {}).get(user_uuid, 'unknown')
+                
+                item_user_conn_map[item_uuid][user_uuid] = {
                     'is_connected': conn.is_connected(),
-                    'status': conn.status.value
-                } for user_uuid, conn in user_conns.items()
-            }
+                    'status': conn.status.value,
+                    'ip': ip_address
+                }
         
         # 转换Token映射
         item_token_map = {item_uuid: token_info.token for item_uuid, token_info in self.tokens.items()}
         
+        # 用户-IP映射
+        user_ip_map = self.user_ip_map.copy()
+        
         return {
             'user_item_map': user_item_map,
             'item_user_conn_map': item_user_conn_map,
-            'item_token_map': item_token_map
+            'item_token_map': item_token_map,
+            'user_ip_map': user_ip_map
         }
     
     def disconnect_user_from_item(self, item_uuid: str, user_uuid: str) -> bool:
@@ -230,8 +273,51 @@ class SocketManager:
         清理断开的Socket连接
         """
         disconnected_items = [
-            item_uuid for item_uuid, sock in self.sockets.items()
+            (user_uuid, iid) for (user_uuid, iid), sock in self.sockets.items()
             if sock.get_status() == TerminalStatus.STOPPED
         ]
-        for item_uuid in disconnected_items:
-            self.remove_socket(item_uuid)
+        for user_uuid, item_uuid in disconnected_items:
+            self.remove_socket(item_uuid, user_uuid)
+            
+    def import_socket_connections(self, item_uuid: str, connections: Dict[str, Any], daemon_url: str, api_key: str) -> bool:
+        """
+        从daemon导入socket连接表
+        
+        Args:
+            item_uuid: 项目UUID
+            connections: daemon返回的连接表，格式为 {user_uuid: socket_info}
+            daemon_url: daemon的URL
+            api_key: API密钥
+            
+        Returns:
+            是否成功导入
+        """
+        try:
+            for user_uuid, socket_info in connections.items():
+                token = socket_info.get("token")
+                if not token:
+                    continue
+                    
+                # 获取IP地址信息
+                ip_address = socket_info.get("ip", "unknown")
+                    
+                # 获取或创建socket连接
+                socket = self.get_or_create_socket(item_uuid, token, daemon_url, user_uuid, api_key)
+                if not socket.is_connected():
+                    continue
+                    
+                # 更新IP映射表
+                # 更新用户-IP映射
+                self.user_ip_map[user_uuid] = ip_address
+                
+                # 更新项目-用户-IP映射
+                if item_uuid not in self.item_user_ip_map:
+                    self.item_user_ip_map[item_uuid] = {}
+                self.item_user_ip_map[item_uuid][user_uuid] = ip_address
+                    
+            return True
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to import socket connections: {str(e)}")
+            return False

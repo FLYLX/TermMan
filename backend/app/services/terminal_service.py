@@ -2,6 +2,9 @@ import os
 import uuid
 from typing import Dict, Any, Optional, Callable
 from datetime import datetime
+from sqlmodel import Session
+from app.core.db import engine
+from app.models import Item
 from .connection_pool import ConnectionManager, DaemonConfig
 from .socket_pool import SocketManager
 from .connection_handler import ConnectionHandler
@@ -29,11 +32,19 @@ class TerminalService:
         if not connection.is_connected():
             return {"success": False, "error": "Failed to connect to daemon"}
 
+        # 从数据库获取Item信息
+        with Session(engine) as session:
+            item = session.query(Item).filter(Item.id == item_uuid).first()
+            if not item:
+                return {"success": False, "error": "Item not found"}
+
         # 生成终端token
         terminal_token = str(uuid.uuid4())
 
-        # 使用HTTP方式启动终端
-        result = connection.terminal_start_http(user_uuid, terminal_token)
+        # 使用HTTP方式启动终端，传递working_directory和command
+        result = connection.terminal_start_http(user_uuid, terminal_token, 
+                                               working_directory=item.working_directory,
+                                               command=item.command)
         if not result.get("success"):
             return result
 

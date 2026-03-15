@@ -12,12 +12,14 @@ class TerminalProcess:
     """
     终端进程类
     """
-    def __init__(self, user_uuid: str, item_uuid: str, token: str):
+    def __init__(self, user_uuid: str, item_uuid: str, token: str, working_directory: Optional[str] = None, command: Optional[str] = None):
         self.user_uuid = user_uuid
         self.item_uuid = item_uuid
         self.token = token
         self.process = None
         self.status = "stopped"
+        self.working_directory = working_directory  # 保存自定义工作目录
+        self.command = command  # 保存自定义命令
         self.workdir = self._get_workdir()
         self.log_path = self._get_log_path()
         self.stdout_buffer = []
@@ -28,11 +30,17 @@ class TerminalProcess:
         """
         获取终端工作目录
         """
-        workdir = os.path.join(
-            config.get("WORKDIR"),
-            self.user_uuid,
-            self.item_uuid
-        )
+        # 如果提供了自定义工作目录，就使用它
+        if self.working_directory:
+            workdir = self.working_directory
+        else:
+            # 否则使用默认的工作目录结构
+            workdir = os.path.join(
+                config.get("WORKDIR"),
+                self.user_uuid,
+                self.item_uuid
+            )
+        # 确保工作目录存在
         os.makedirs(workdir, exist_ok=True)
         return workdir
 
@@ -53,18 +61,31 @@ class TerminalProcess:
         """
         try:
             self.status = "starting"
-            shell = config.get("TERMINAL_SHELL")
             encoding = config.get("TERMINAL_ENCODING", "utf-8")
             self.encoding = encoding
 
-            self.process = subprocess.Popen(
-                shell,
-                cwd=self.workdir,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=True
-            )
+            # 如果提供了自定义命令，就使用它；否则使用默认的终端shell
+            if self.command:
+                # 使用自定义命令，需要shell=True来执行完整的命令
+                self.process = subprocess.Popen(
+                    self.command,
+                    cwd=self.workdir,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    shell=True
+                )
+            else:
+                # 使用默认的终端shell
+                shell = config.get("TERMINAL_SHELL")
+                self.process = subprocess.Popen(
+                    shell,
+                    cwd=self.workdir,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    shell=True
+                )
 
             # 启动线程读取stdout和stderr
             threading.Thread(target=self._read_stdout, daemon=True).start()
@@ -332,13 +353,15 @@ class TerminalManager:
         self.terminals: Dict[str, TerminalProcess] = {}
         self.lock = threading.Lock()
 
-    def create_terminal(self, user_uuid: str, token: str) -> str:
+    def create_terminal(self, user_uuid: str, token: str, working_directory: Optional[str] = None, command: Optional[str] = None, item_uuid: Optional[str] = None) -> str:
         """
         创建新终端
         """
-        item_uuid = str(uuid.uuid4())
+        # 必须提供item_uuid
+        if not item_uuid:
+            raise ValueError("Missing item_uuid")
         with self.lock:
-            terminal = TerminalProcess(user_uuid, item_uuid, token)
+            terminal = TerminalProcess(user_uuid, item_uuid, token, working_directory, command)
             self.terminals[item_uuid] = terminal
         return item_uuid
 

@@ -11,9 +11,10 @@ class SocketService:
     """
     def __init__(self, sio: socketio.Server):
         self.sio = sio
-        self.connections: Dict[str, List[Dict[str, str]]] = {}  # item_uuid: [{'sid': sid, 'user_uuid': user_uuid}, ...]
+        self.connections: Dict[str, List[Dict[str, str]]] = {}  # item_uuid: [{'sid': sid, 'user_uuid': user_uuid, 'ip': ip_address}, ...]
         self.sid_to_item: Dict[str, str] = {}  # sid: item_uuid
         self.sid_to_user: Dict[str, str] = {}  # sid: user_uuid
+        self.sid_to_ip: Dict[str, str] = {}  # sid: ip_address
         self.lock = threading.Lock()
         self.setup_event_handlers()
 
@@ -26,12 +27,18 @@ class SocketService:
             """
             处理连接事件
             """
+            # 获取用户IP地址
+            ip_address = environ.get('REMOTE_ADDR', 'unknown')
+            
             # 认证逻辑
             if auth and "api_key" in auth:
                 if auth["api_key"] == config.get("API_KEY"):
-                    logger.info(f"Socket connected: {sid}")
+                    with self.lock:
+                        # 存储IP地址
+                        self.sid_to_ip[sid] = ip_address
+                    logger.info(f"Socket connected: {sid}, IP: {ip_address}")
                     return True
-            logger.warning(f"Socket connection rejected: {sid}, invalid auth")
+            logger.warning(f"Socket connection rejected: {sid}, IP: {ip_address}, invalid auth")
             return False
 
         @self.sio.event
@@ -42,8 +49,14 @@ class SocketService:
             with self.lock:
                 if sid in self.sid_to_item:
                     item_uuid = self.sid_to_item.pop(sid)
+                    ip_address = self.sid_to_ip.get(sid, 'unknown')
+                    
                     if sid in self.sid_to_user:
                         self.sid_to_user.pop(sid)
+                    
+                    if sid in self.sid_to_ip:
+                        self.sid_to_ip.pop(sid)
+                    
                     if item_uuid in self.connections:
                         # 找到并移除对应的连接
                         for i, conn in enumerate(self.connections[item_uuid]):
@@ -52,9 +65,13 @@ class SocketService:
                                 break
                         if not self.connections[item_uuid]:
                             del self.connections[item_uuid]
-                    logger.info(f"Socket disconnected: {sid}, item: {item_uuid}")
+                    logger.info(f"Socket disconnected: {sid}, item: {item_uuid}, IP: {ip_address}")
                 else:
-                    logger.info(f"Socket disconnected: {sid}")
+                    if sid in self.sid_to_ip:
+                        ip_address = self.sid_to_ip.pop(sid)
+                        logger.info(f"Socket disconnected: {sid}, IP: {ip_address}")
+                    else:
+                        logger.info(f"Socket disconnected: {sid}")
 
         @self.sio.event
         async def terminal_connect(sid, data):
@@ -79,9 +96,12 @@ class SocketService:
             with self.lock:
                 if item_uuid not in self.connections:
                     self.connections[item_uuid] = []
+                # 获取用户IP地址
+                ip_address = self.sid_to_ip.get(sid, 'unknown')
                 self.connections[item_uuid].append({
                     "sid": sid,
-                    "user_uuid": user_uuid
+                    "user_uuid": user_uuid,
+                    "ip": ip_address
                 })
                 self.sid_to_item[sid] = item_uuid
                 self.sid_to_user[sid] = user_uuid
@@ -176,14 +196,17 @@ class SocketService:
         获取所有连接表
         
         Returns:
-            包含用户-项目映射、项目-用户连接映射的字典
+            包含用户-项目映射、项目-用户连接映射、用户-IP映射的字典
         """
         with self.lock:
             # 构建用户-项目映射: user_uuid → Set[item_uuid]
             user_item_map = {}
             
-            # 构建项目-用户连接映射: item_uuid → {user_uuid: [sid, ...]}
+            # 构建项目-用户连接映射: item_uuid → {user_uuid: {'sid': sid, 'ip': ip_address}}
             item_user_conn_map = {}
+            
+            # 构建用户-IP映射: user_uuid → ip_address
+            user_ip_map = {}
             
             # 遍历所有连接，构建映射表
             for item_uuid, connections in self.connections.items():
@@ -192,6 +215,7 @@ class SocketService:
                 for conn in connections:
                     sid = conn['sid']
                     user_uuid = conn['user_uuid']
+                    ip_address = conn['ip']
                     
                     # 更新用户-项目映射
                     if user_uuid not in user_item_map:
@@ -199,9 +223,13 @@ class SocketService:
                     user_item_map[user_uuid].add(item_uuid)
                     
                     # 更新项目-用户连接映射
-                    if user_uuid not in item_user_conn_map[item_uuid]:
-                        item_user_conn_map[item_uuid][user_uuid] = []
-                    item_user_conn_map[item_uuid][user_uuid].append(sid)
+                    item_user_conn_map[item_uuid][user_uuid] = {
+                        'sid': sid,
+                        'ip': ip_address
+                    }
+                    
+                    # 更新用户-IP映射
+                    user_ip_map[user_uuid] = ip_address
             
             # 转换集合为列表以便JSON序列化
             user_item_map_list = {user_uuid: list(items) for user_uuid, items in user_item_map.items()}
@@ -216,7 +244,8 @@ class SocketService:
             return {
                 'user_item_map': user_item_map_list,
                 'item_user_conn_map': item_user_conn_map,
-                'item_token_map': item_token_map
+                'item_token_map': item_token_map,
+                'user_ip_map': user_ip_map
             }
     
     async def disconnect_user_from_item(self, item_uuid: str, user_uuid: str) -> bool:

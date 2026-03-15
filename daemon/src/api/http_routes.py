@@ -24,13 +24,18 @@ async def start_terminal(data: Dict[str, Any], api_key: Any = Depends(verify_api
     """
     user_uuid = data.get("user_uuid")
     token = data.get("token")
+    working_directory = data.get("working_directory")
+    command = data.get("command")
+    item_uuid = data.get("item_uuid")  # 接受backend传递的item UUID
 
     if not user_uuid:
         raise HTTPException(status_code=400, detail="Missing user_uuid")
+    if not item_uuid:
+        raise HTTPException(status_code=400, detail="Missing item_uuid")
 
-    # 创建终端
-    item_uuid = terminal_manager.create_terminal(user_uuid, token)
-    memory_store.set(f"terminal_token:{item_uuid}", token, ttl_minutes=1440)
+    # 创建终端，使用backend传递的item UUID
+    created_uuid = terminal_manager.create_terminal(user_uuid, token, working_directory, command, item_uuid)
+    memory_store.set(f"terminal_token:{created_uuid}", token, ttl_minutes=1440)
 
     # 启动终端进程
     if not terminal_manager.start_terminal(item_uuid):

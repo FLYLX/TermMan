@@ -65,8 +65,8 @@ class ConnectionHandler:
         # 转发停止终端命令到daemon
         result = connection.emit(ProtocolEvents.TERMINAL_STOP, data)
         
-        # 清理本地socket连接
-        self.socket_manager.remove_socket(item_uuid)
+        # 清理本地socket连接 - 移除该item的所有socket连接
+        self.socket_manager.remove_all_sockets_by_item(item_uuid)
         
         return {"success": result}
 
@@ -90,10 +90,16 @@ class ConnectionHandler:
         """
         转发事件到Item Socket
         """
-        socket = self.socket_manager.get_socket(item_uuid)
-        if not socket or not socket.is_connected():
+        # 获取该item的所有socket连接
+        sockets = self.socket_manager.get_sockets_by_item(item_uuid)
+        if not sockets:
             return False
-        return socket.emit(event, data)
+        
+        # 向第一个活跃的socket连接发送事件
+        for socket in sockets:
+            if socket.is_connected():
+                return socket.emit(event, data)
+        return False
 
     def broadcast_to_daemons(self, event: str, data: Any) -> int:
         """

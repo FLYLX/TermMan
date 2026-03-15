@@ -121,6 +121,16 @@ services:
     ports:
       - 9323:9323
 
+  daemon:
+    restart: "no"
+    develop:
+      watch:
+        - path: ./daemon/src
+          action: sync
+          target: /app/src
+        - path: ./daemon/pyproject.toml
+          action: rebuild
+
 networks:
   traefik-public:
     # For local dev, don't expect an external Traefik network

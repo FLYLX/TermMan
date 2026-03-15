@@ -1,4 +1,4 @@
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 from .daemon_connection import DaemonConnection
 from .connection_models import DaemonConfig, ConnectionStatus
 
@@ -72,3 +72,18 @@ class ConnectionManager:
         ]
         for daemon_id in disconnected_ids:
             self.remove_connection(daemon_id)
+    
+    def get_all_socket_connections(self) -> Dict[str, Any]:
+        """
+        获取所有daemon的socket连接表
+        
+        Returns:
+            格式为 {daemon_id: {item_uuid: {user_uuid: socket_info}}}
+        """
+        all_connections = {}
+        for daemon_id, connection in self.connections.items():
+            if connection.is_connected():
+                result = connection.get_socket_connections_http()
+                if result.get("success"):
+                    all_connections[daemon_id] = result.get("connections", {})
+        return all_connections
