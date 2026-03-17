@@ -1,4 +1,4 @@
-from .connection_pool import ConnectionManager, DaemonConnection
+from .connection_pool import ConnectionManager, DaemonConnection, DaemonConfig
 from .socket_pool import SocketManager, ItemSocket
 from .connection_handler import ConnectionHandler
 from .terminal_service import TerminalService
@@ -10,6 +10,7 @@ from .daemon_initializer import connection_manager, socket_manager, initialize_d
 __all__ = [
     "ConnectionManager",
     "DaemonConnection",
+    "DaemonConfig",
     "SocketManager",
     "ItemSocket",
     "ConnectionHandler",

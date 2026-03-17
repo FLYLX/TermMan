@@ -28,6 +28,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
+import useCustomToast from "@/hooks/useCustomToast"
+import { Users } from "lucide-react"
 
 function getItemQueryOptions(itemId: string) {
   return {
@@ -149,44 +151,53 @@ function ItemDetailPage({
   message?: string
 }) {
   const queryClient = useQueryClient()
+  const { showSuccessToast, showErrorToast } = useCustomToast()
 
   const handleStartItem = async () => {
     try {
-      await ItemsService.startItem({ id: item.id })
+      const result = await ItemsService.startItem({ id: item.id })
       queryClient.invalidateQueries({ queryKey: ["item", item.id] })
-      console.log("Item started successfully")
+      queryClient.invalidateQueries({ queryKey: ["items"] })
+      showSuccessToast(result.message || "Item started successfully")
     } catch (error) {
       console.error("Failed to start item:", error)
+      showErrorToast("Failed to start item")
     }
   }
 
   const handleConnectItem = async () => {
     try {
-      await ItemsService.connectItem({ id: item.id })
+      const result = await ItemsService.connectItem({ id: item.id })
       queryClient.invalidateQueries({ queryKey: ["item", item.id] })
-      console.log("Item connected successfully")
+      queryClient.invalidateQueries({ queryKey: ["items"] })
+      showSuccessToast(result.message || "Item connected successfully")
     } catch (error) {
       console.error("Failed to connect item:", error)
+      showErrorToast("Failed to connect item")
     }
   }
 
   const handleStopItem = async () => {
     try {
-      await ItemsService.stopItem({ id: item.id })
+      const result = await ItemsService.stopItem({ id: item.id })
       queryClient.invalidateQueries({ queryKey: ["item", item.id] })
-      console.log("Item stopped successfully")
+      queryClient.invalidateQueries({ queryKey: ["items"] })
+      showSuccessToast(result.message || "Item stopped successfully")
     } catch (error) {
       console.error("Failed to stop item:", error)
+      showErrorToast("Failed to stop item")
     }
   }
 
   const handleRestartItem = async () => {
     try {
-      await ItemsService.restartItem({ id: item.id })
+      const result = await ItemsService.restartItem({ id: item.id })
       queryClient.invalidateQueries({ queryKey: ["item", item.id] })
-      console.log("Item restarted successfully")
+      queryClient.invalidateQueries({ queryKey: ["items"] })
+      showSuccessToast(result.message || "Item restarted successfully")
     } catch (error) {
       console.error("Failed to restart item:", error)
+      showErrorToast("Failed to restart item")
     }
   }
   return (
@@ -370,9 +381,32 @@ function ItemDetailPage({
           <KeyValue label="Working Directory" value={item.working_directory} />
           <KeyValue label="Log Path" value={item.log_path} />
           <KeyValue label="Log Max Size (MB)" value={item.log_max_size_mb?.toString()} />
+          <KeyValue label="Daemon URL" value={item.daemon_url} />
           <KeyValue label="Created At" value={formatDate(item.created_at)} />
           <KeyValue label="Updated At" value={formatDate(item.updated_at)} />
         </div>
+      </section>
+
+      <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+        <h2 className="text-xl font-semibold mb-4">Connected Users</h2>
+        {item.connected_users && Object.keys(item.connected_users).length > 0 ? (
+          <div className="space-y-2">
+            {Object.entries(item.connected_users).map(([sid, userInfo]) => (
+              <div key={sid} className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <div className="size-2 rounded-full bg-green-500" />
+                  <span className="font-mono text-sm">{userInfo.user_uuid}</span>
+                </div>
+                <span className="text-sm text-muted-foreground">{userInfo.ip}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            <Users className="size-8 mx-auto mb-2 opacity-50" />
+            <p>No connected users</p>
+          </div>
+        )}
       </section>
     </div>
   )

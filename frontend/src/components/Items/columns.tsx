@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Check, Copy } from "lucide-react"
+import { Check, Copy, Users } from "lucide-react"
 
 import type { ItemPublic } from "@/client"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import { cn } from "@/lib/utils"
@@ -42,6 +43,58 @@ function ItemTitleLink({ item }: { item: ItemPublic }) {
   )
 }
 
+function ConnectedUsers({ item }: { item: ItemPublic }) {
+  const connectedUsers = item.connected_users || {}
+  const userCount = Object.keys(connectedUsers).length
+  
+  return (
+    <div className="flex items-center gap-1.5">
+      <Users className="size-4 text-muted-foreground" />
+      <span className={cn(
+        "text-sm",
+        userCount > 0 ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+      )}>
+        {userCount}
+      </span>
+    </div>
+  )
+}
+
+function StatusBadge({ status }: { status?: string }) {
+  switch (status) {
+    case "running":
+      return (
+        <Badge className="border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400">
+          Running
+        </Badge>
+      )
+    case "starting":
+      return (
+        <Badge className="border-yellow-500/40 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
+          Starting
+        </Badge>
+      )
+    case "stopping":
+      return (
+        <Badge className="border-orange-500/40 bg-orange-500/10 text-orange-600 dark:text-orange-400">
+          Stopping
+        </Badge>
+      )
+    case "stopped":
+      return (
+        <Badge variant="secondary">Stopped</Badge>
+      )
+    case "error":
+      return (
+        <Badge className="border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400">
+          Error
+        </Badge>
+      )
+    default:
+      return <Badge variant="outline">Unknown</Badge>
+  }
+}
+
 export const columns: ColumnDef<ItemPublic>[] = [
   {
     accessorKey: "id",
@@ -52,6 +105,16 @@ export const columns: ColumnDef<ItemPublic>[] = [
     accessorKey: "title",
     header: "Title",
     cell: ({ row }) => <ItemTitleLink item={row.original} />,
+  },
+  {
+    accessorKey: "status",
+    header: "Status",
+    cell: ({ row }) => <StatusBadge status={row.original.status} />,
+  },
+  {
+    accessorKey: "connected_users",
+    header: "Users",
+    cell: ({ row }) => <ConnectedUsers item={row.original} />,
   },
   {
     accessorKey: "description",

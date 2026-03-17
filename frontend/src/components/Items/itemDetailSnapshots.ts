@@ -88,5 +88,8 @@ export function createFallbackItem(
     owner_id: source?.owner_id ?? "00000000-0000-0000-0000-000000000000",
     created_at: source?.created_at ?? null,
     updated_at: source?.updated_at ?? null,
+    daemon_url: source?.daemon_url,
+    connected_users: source?.connected_users,
+    token: source?.token,
   }
 }

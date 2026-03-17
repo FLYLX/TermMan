@@ -1,323 +1,356 @@
-from typing import Dict, Optional, List, Callable, Any
-from datetime import datetime, timedelta
-from .item_socket import ItemSocket
-from .socket_models import TerminalStatus, TokenInfo
+import logging
+from collections.abc import Callable
+from typing import Any
+
 from ..protocol import ProtocolEvents
+from .item_socket import ItemSocket
+from .socket_models import TerminalStatus
+
+logger = logging.getLogger(__name__)
 
 
 class SocketManager:
     """
-    Item Socket池管理
+    Item Socket池管理 - 按 UPDATE.MD 简化版连接表
+    
+    维护两张表：
+    1. Item-Token映射表: {daemon_id: {item_uuid: token}}
+    2. Item-连接映射表: [item_uuid -> {sid -> {user_uuid, ip}}]
+    
+    广播是对所有 {sid: user_uuid, ip_address}
+    单播根据 ip_address 来查找对应的 socket 连接
     """
     def __init__(self):
-        self.sockets: Dict[tuple, ItemSocket] = {}  # 使用(user_uuid, item_uuid)作为键
-        self.tokens: Dict[str, TokenInfo] = {}  # item_uuid → token
-        
-        # 用户-项目映射：user_uuid → Set[item_uuid]
-        self.user_item_map: Dict[str, set] = {}  # 权限校验专用
-        
-        # 项目-用户-连接映射：item_uuid → {user_uuid: socket连接实例}
-        self.item_user_conn_map: Dict[str, Dict[str, ItemSocket]] = {}  # 断开连接专用
-        
-        # 用户-IP映射：user_uuid → ip_address
-        self.user_ip_map: Dict[str, str] = {}  # 用户IP映射表
-        
-        # 项目-用户-IP映射：item_uuid → {user_uuid: ip_address}
-        self.item_user_ip_map: Dict[str, Dict[str, str]] = {}  # 项目-用户-IP映射表
+        import threading
+        self.sockets: dict[tuple, ItemSocket] = {}
 
-    def get_socket(self, item_uuid: str, user_uuid: str) -> Optional[ItemSocket]:
-        """
-        获取指定用户和Item的Socket连接
-        """
+        self.item_tokens: dict[str, dict[str, str]] = {}  # daemon_id -> {item_uuid: token}
+
+        self.connections: dict[str, dict[str, dict[str, str]]] = {}  # item_uuid -> {sid -> {user_uuid, ip}}
+
+        self.lock = threading.RLock()
+
+    def get_socket(self, item_uuid: str, user_uuid: str) -> ItemSocket | None:
         return self.sockets.get((user_uuid, item_uuid))
-    
-    def get_sockets_by_item(self, item_uuid: str) -> List[ItemSocket]:
-        """
-        获取指定Item的所有Socket连接
-        """
+
+    def get_sockets_by_item(self, item_uuid: str) -> list[ItemSocket]:
         return [sock for (uuid, iid), sock in self.sockets.items() if iid == item_uuid]
 
-    def create_socket(self, item_uuid: str, token: str, daemon_url: str, user_uuid: str, api_key: Optional[str] = None) -> ItemSocket:
-        """
-        创建新的Item Socket连接
-        """
+    def create_socket(self, item_uuid: str, token: str, daemon_url: str, user_uuid: str, api_key: str | None = None, ip_address: str = "unknown", sid: str | None = None) -> ItemSocket:
+        import uuid as uuid_lib
         socket = ItemSocket(item_uuid, token, daemon_url, user_uuid)
         self.sockets[(user_uuid, item_uuid)] = socket
-        
-        # 更新用户-项目映射
-        if user_uuid not in self.user_item_map:
-            self.user_item_map[user_uuid] = set()
-        self.user_item_map[user_uuid].add(item_uuid)
-        
-        # 更新项目-用户-连接映射
-        if item_uuid not in self.item_user_conn_map:
-            self.item_user_conn_map[item_uuid] = {}
-        self.item_user_conn_map[item_uuid][user_uuid] = socket
-        
+
+        if item_uuid not in self.connections:
+            self.connections[item_uuid] = {}
+
+        connection_sid = sid or str(uuid_lib.uuid4())
+        self.connections[item_uuid][connection_sid] = {
+            'user_uuid': user_uuid,
+            'ip': ip_address
+        }
+
         if api_key:
             socket.connect(api_key)
+
+        self._print_connection_tables(f"Created Socket Connection for Item {item_uuid} by User {user_uuid}")
         return socket
 
-    def get_or_create_socket(self, item_uuid: str, token: str, daemon_url: str, user_uuid: str, api_key: Optional[str] = None) -> ItemSocket:
-        """
-        获取或创建Item Socket连接
-        """
+    def get_or_create_socket(self, item_uuid: str, token: str, daemon_url: str, user_uuid: str, api_key: str | None = None, ip_address: str = "unknown", sid: str | None = None) -> ItemSocket:
         socket = self.get_socket(item_uuid, user_uuid)
         if not socket or not socket.is_connected():
-            socket = self.create_socket(item_uuid, token, daemon_url, user_uuid, api_key)
+            socket = self.create_socket(item_uuid, token, daemon_url, user_uuid, api_key, ip_address, sid)
         return socket
 
     def remove_socket(self, item_uuid: str, user_uuid: str):
-        """
-        移除并关闭Item Socket连接
-        """
-        key = (user_uuid, item_uuid)
-        if key in self.sockets:
-            socket = self.sockets.pop(key)
-            socket.disconnect()
-            
-            # 更新用户-项目映射
-            if user_uuid in self.user_item_map:
-                self.user_item_map[user_uuid].discard(item_uuid)
-                # 如果用户没有任何项目了，移除该用户
-                if not self.user_item_map[user_uuid]:
-                    self.user_item_map.pop(user_uuid)
-            
-            # 更新项目-用户-连接映射
-            if item_uuid in self.item_user_conn_map:
-                if user_uuid in self.item_user_conn_map[item_uuid]:
-                    self.item_user_conn_map[item_uuid].pop(user_uuid)
-                # 如果项目没有任何用户了，移除该项目
-                if not self.item_user_conn_map[item_uuid]:
-                    self.item_user_conn_map.pop(item_uuid)
-            
-            # 更新项目-用户-IP映射
-            if item_uuid in self.item_user_ip_map:
-                if user_uuid in self.item_user_ip_map[item_uuid]:
-                    self.item_user_ip_map[item_uuid].pop(user_uuid)
-                # 如果项目没有任何用户IP映射了，移除该项目
-                if not self.item_user_ip_map[item_uuid]:
-                    self.item_user_ip_map.pop(item_uuid)
-            
-            # 更新用户-IP映射
-            if user_uuid in self.user_ip_map:
-                # 检查该用户是否还有其他项目
-                if user_uuid not in self.user_item_map or item_uuid not in self.user_item_map[user_uuid]:
-                    self.user_ip_map.pop(user_uuid)
-    
-    def remove_all_sockets_by_item(self, item_uuid: str):
-        """
-        移除并关闭指定Item的所有Socket连接
-        """
-        keys_to_remove = [(user_uuid, iid) for (user_uuid, iid), sock in self.sockets.items() if iid == item_uuid]
-        
-        # 记录要更新的用户
-        affected_users = set()
-        for user_uuid, iid in keys_to_remove:
-            affected_users.add(user_uuid)
-        
-        # 移除socket连接
-        for key in keys_to_remove:
-            socket = self.sockets.pop(key)
-            socket.disconnect()
-        
-        # 更新用户-项目映射
-        for user_uuid in affected_users:
-            if user_uuid in self.user_item_map:
-                self.user_item_map[user_uuid].discard(item_uuid)
-                # 如果用户没有任何项目了，移除该用户
-                if not self.user_item_map[user_uuid]:
-                    self.user_item_map.pop(user_uuid)
-        
-        # 更新项目-用户-连接映射
-        if item_uuid in self.item_user_conn_map:
-            self.item_user_conn_map.pop(item_uuid)
-        
-        # 更新项目-用户-IP映射
-        if item_uuid in self.item_user_ip_map:
-            # 记录所有受影响的用户
-            users_to_check = list(self.item_user_ip_map[item_uuid].keys())
-            # 移除该项目的所有用户IP映射
-            self.item_user_ip_map.pop(item_uuid)
-            
-            # 更新用户-IP映射
-            for user_uuid in users_to_check:
-                # 检查用户是否还有其他项目
-                if user_uuid not in self.user_item_map or item_uuid not in self.user_item_map[user_uuid]:
-                    if user_uuid in self.user_ip_map:
-                        self.user_ip_map.pop(user_uuid)
+        with self.lock:
+            key = (user_uuid, item_uuid)
+            if key in self.sockets:
+                socket = self.sockets.pop(key)
+                socket.disconnect()
 
-    def add_token(self, item_uuid: str, token: str, expire_minutes: int = 1440) -> TokenInfo:
+            if item_uuid in self.connections:
+                sids_to_remove = [
+                    sid for sid, conn_info in self.connections[item_uuid].items()
+                    if conn_info['user_uuid'] == user_uuid
+                ]
+                for sid in sids_to_remove:
+                    self.connections[item_uuid].pop(sid)
+
+                if not self.connections[item_uuid]:
+                    self.connections.pop(item_uuid)
+
+    def remove_all_sockets_by_item(self, item_uuid: str):
+        with self.lock:
+            keys_to_remove = [(user_uuid, iid) for (user_uuid, iid), sock in self.sockets.items() if iid == item_uuid]
+
+            for key in keys_to_remove:
+                socket = self.sockets.pop(key)
+                socket.disconnect()
+
+            if item_uuid in self.connections:
+                self.connections.pop(item_uuid)
+
+    def add_token(self, daemon_id: str, item_uuid: str, token: str) -> dict[str, str]:
         """
         添加Token信息
+        
+        Args:
+            daemon_id: Daemon标识符
+            item_uuid: 项目UUID
+            token: Token字符串
+            
+        Returns:
+            Token信息字典
         """
-        expire_time = datetime.now() + timedelta(minutes=expire_minutes)
-        token_info = TokenInfo(item_uuid, token, expire_time)
-        self.tokens[item_uuid] = token_info
-        return token_info
+        with self.lock:
+            logger.info(f"Adding token for daemon {daemon_id}, item {item_uuid}")
+            
+            if daemon_id not in self.item_tokens:
+                self.item_tokens[daemon_id] = {}
+            
+            self.item_tokens[daemon_id][item_uuid] = token
+            
+            self._print_connection_tables(f"Added Token for Item {item_uuid}")
+            return {'token': token}
 
-    def get_token(self, item_uuid: str) -> Optional[TokenInfo]:
+    def get_token(self, daemon_id: str, item_uuid: str) -> str | None:
         """
         获取Token信息
+        
+        Args:
+            daemon_id: Daemon标识符
+            item_uuid: 项目UUID
+            
+        Returns:
+            Token字符串，如果不存在返回 None
         """
-        token_info = self.tokens.get(item_uuid)
-        if token_info and token_info.is_expired():
-            self.tokens.pop(item_uuid)
+        with self.lock:
+            if daemon_id in self.item_tokens:
+                return self.item_tokens[daemon_id].get(item_uuid)
             return None
-        return token_info
 
-    def validate_token(self, item_uuid: str, token: str) -> bool:
+    def get_token_by_item(self, item_uuid: str) -> tuple[str | None, str | None]:
         """
-        验证Token有效性
+        根据item_uuid获取daemon_id和token
+        
+        Args:
+            item_uuid: 项目UUID
+            
+        Returns:
+            (daemon_id, token) 元组，如果不存在返回 (None, None)
         """
-        token_info = self.get_token(item_uuid)
-        return token_info is not None and token_info.token == token
+        with self.lock:
+            for daemon_id, items in self.item_tokens.items():
+                if item_uuid in items:
+                    return (daemon_id, items[item_uuid])
+            return (None, None)
 
-    def get_all_sockets(self) -> List[ItemSocket]:
-        """
-        获取所有Socket连接
-        """
+    def remove_token(self, daemon_id: str, item_uuid: str) -> bool:
+        with self.lock:
+            if daemon_id in self.item_tokens and item_uuid in self.item_tokens[daemon_id]:
+                del self.item_tokens[daemon_id][item_uuid]
+                logger.info(f"Removed token for item {item_uuid}")
+                if not self.item_tokens[daemon_id]:
+                    del self.item_tokens[daemon_id]
+                return True
+            return False
+
+    def remove_all_tokens_by_item(self, item_uuid: str):
+        with self.lock:
+            for daemon_id in list(self.item_tokens.keys()):
+                if item_uuid in self.item_tokens[daemon_id]:
+                    del self.item_tokens[daemon_id][item_uuid]
+                    if not self.item_tokens[daemon_id]:
+                        del self.item_tokens[daemon_id]
+
+    def validate_token(self, daemon_id: str, item_uuid: str, token: str) -> bool:
+        with self.lock:
+            stored_token = self.get_token(daemon_id, item_uuid)
+            return stored_token is not None and stored_token == token
+
+    def get_all_sockets(self) -> list[ItemSocket]:
         return list(self.sockets.values())
 
-    def get_running_sockets(self) -> List[ItemSocket]:
-        """
-        获取所有运行中的Socket连接
-        """
+    def get_running_sockets(self) -> list[ItemSocket]:
         return [sock for sock in self.sockets.values() if sock.is_connected()]
-    
-    def get_connection_tables(self) -> Dict[str, Any]:
+
+    def get_connection_tables(self) -> dict[str, Any]:
         """
         获取所有连接表
         
         Returns:
-            包含用户-项目映射、项目-用户连接映射、用户-IP映射和项目-Token映射的字典
+            包含 item_tokens 和 item_connections 的字典
         """
-        # 转换用户-项目映射为列表格式以便JSON序列化
-        user_item_map = {user_uuid: list(items) for user_uuid, items in self.user_item_map.items()}
-        
-        # 转换项目-用户连接映射，包含IP信息
-        item_user_conn_map = {}
-        for item_uuid, user_conns in self.item_user_conn_map.items():
-            item_user_conn_map[item_uuid] = {}
-            
-            for user_uuid, conn in user_conns.items():
-                # 获取用户IP
-                ip_address = self.item_user_ip_map.get(item_uuid, {}).get(user_uuid, 'unknown')
-                
-                item_user_conn_map[item_uuid][user_uuid] = {
-                    'is_connected': conn.is_connected(),
-                    'status': conn.status.value,
-                    'ip': ip_address
-                }
-        
-        # 转换Token映射
-        item_token_map = {item_uuid: token_info.token for item_uuid, token_info in self.tokens.items()}
-        
-        # 用户-IP映射
-        user_ip_map = self.user_ip_map.copy()
-        
         return {
-            'user_item_map': user_item_map,
-            'item_user_conn_map': item_user_conn_map,
-            'item_token_map': item_token_map,
-            'user_ip_map': user_ip_map
+            'item_tokens': {k: v.copy() for k, v in self.item_tokens.items()},
+            'item_connections': {k: v.copy() for k, v in self.connections.items()}
         }
-    
+
     def disconnect_user_from_item(self, item_uuid: str, user_uuid: str) -> bool:
-        """
-        断开特定用户与特定项目的Socket连接
-        
-        Args:
-            item_uuid: 项目UUID
-            user_uuid: 用户UUID
-            
-        Returns:
-            是否成功断开连接
-        """
         try:
-            # 使用remove_socket方法来断开连接（会自动更新所有映射）
             self.remove_socket(item_uuid, user_uuid)
             return True
         except Exception:
             return False
-    
-    def get_user_sockets(self, user_uuid: str) -> List[ItemSocket]:
-        """
-        获取指定用户的所有Socket连接
-        """
+
+    def get_user_sockets(self, user_uuid: str) -> list[ItemSocket]:
         return [sock for (uuid, iid), sock in self.sockets.items() if uuid == user_uuid]
-    
+
     def register_stream_callback(self, item_uuid: str, user_uuid: str, callback: Callable) -> bool:
-        """
-        注册终端输出回调
-        """
         socket = self.get_socket(item_uuid, user_uuid)
         if socket and socket.is_connected():
             socket.on(ProtocolEvents.STREAM, callback)
             return True
         return False
 
-    def cleanup_expired_tokens(self):
-        """
-        清理过期的Token
-        """
-        expired_items = [
-            item_uuid for item_uuid, token_info in self.tokens.items()
-            if token_info.is_expired()
-        ]
-        for item_uuid in expired_items:
-            self.tokens.pop(item_uuid)
-
     def cleanup_disconnected_sockets(self):
-        """
-        清理断开的Socket连接
-        """
         disconnected_items = [
             (user_uuid, iid) for (user_uuid, iid), sock in self.sockets.items()
             if sock.get_status() == TerminalStatus.STOPPED
         ]
         for user_uuid, item_uuid in disconnected_items:
             self.remove_socket(item_uuid, user_uuid)
-            
-    def import_socket_connections(self, item_uuid: str, connections: Dict[str, Any], daemon_url: str, api_key: str) -> bool:
+
+    def _print_connection_tables(self, message: str = "Connection Tables Updated"):
+        logger.info(f"\n{'='*80}")
+        logger.info(f"[Backend SocketManager] {message}")
+        logger.info(f"{'='*80}")
+
+        tables = self.get_connection_tables()
+
+        logger.info("\n1. Item-Token映射表 [daemon_id -> {item_uuid: token}]")
+        logger.info("-" * 100)
+        logger.info(f"{'Daemon ID':<40} | {'Item UUID':<36} | {'Token':<36}")
+        logger.info("-" * 100)
+
+        token_count = 0
+        for daemon_id, items in tables['item_tokens'].items():
+            for item_uuid, token in items.items():
+                logger.info(f"{daemon_id:<40} | {item_uuid:<36} | {token[:16]}...")
+                token_count += 1
+
+        if token_count == 0:
+            logger.info("  无数据")
+        else:
+            logger.info(f"  共 {token_count} 个Token")
+
+        logger.info("\n2. Item-连接映射表 [item_uuid -> {sid -> {user_uuid, ip}}]")
+        logger.info("-" * 100)
+        logger.info(f"{'Item UUID':<36} | {'SID':<36} | {'User UUID':<36} | {'IP':<15}")
+        logger.info("-" * 100)
+
+        conn_count = 0
+        for item_uuid, sids in tables['item_connections'].items():
+            for sid, conn_info in sids.items():
+                user_uuid = conn_info.get('user_uuid', 'unknown')
+                ip = conn_info.get('ip', 'unknown')
+                logger.info(f"{item_uuid:<36} | {sid[:16]}...{' '*17} | {user_uuid:<36} | {ip:<15}")
+                conn_count += 1
+
+        if conn_count == 0:
+            logger.info("  无数据")
+        else:
+            logger.info(f"  共 {conn_count} 个连接")
+
+        logger.info(f"\n{'='*80}\n")
+
+    def import_socket_connections(self, item_uuid: str, connections: dict[str, Any], daemon_url: str, api_key: str, daemon_id: str = None) -> bool:
         """
         从daemon导入socket连接表
         
         Args:
             item_uuid: 项目UUID
-            connections: daemon返回的连接表，格式为 {user_uuid: socket_info}
+            connections: daemon返回的连接表，格式为 {sid: {user_uuid, ip}}
             daemon_url: daemon的URL
             api_key: API密钥
+            daemon_id: Daemon标识符
             
         Returns:
             是否成功导入
         """
         try:
-            for user_uuid, socket_info in connections.items():
-                token = socket_info.get("token")
-                if not token:
-                    continue
-                    
-                # 获取IP地址信息
-                ip_address = socket_info.get("ip", "unknown")
-                    
-                # 获取或创建socket连接
-                socket = self.get_or_create_socket(item_uuid, token, daemon_url, user_uuid, api_key)
-                if not socket.is_connected():
-                    continue
-                    
-                # 更新IP映射表
-                # 更新用户-IP映射
-                self.user_ip_map[user_uuid] = ip_address
-                
-                # 更新项目-用户-IP映射
-                if item_uuid not in self.item_user_ip_map:
-                    self.item_user_ip_map[item_uuid] = {}
-                self.item_user_ip_map[item_uuid][user_uuid] = ip_address
-                    
+            logger.info(f"Importing socket connections for item {item_uuid}, total sids: {len(connections)}")
+
+            token = None
+            if daemon_id:
+                token = self.get_token(daemon_id, item_uuid)
+            else:
+                _, token = self.get_token_by_item(item_uuid)
+            
+            if not token:
+                logger.warning(f"No token found for item {item_uuid}")
+                return False
+
+            self.connections[item_uuid] = {}
+
+            for sid, conn_info in connections.items():
+                user_uuid = conn_info.get('user_uuid', 'unknown')
+                ip_address = conn_info.get('ip', 'unknown')
+
+                logger.info(f"Processing sid {sid}, user: {user_uuid}, ip: {ip_address}")
+
+                self.connections[item_uuid][sid] = {
+                    'user_uuid': user_uuid,
+                    'ip': ip_address
+                }
+
+                socket = self.get_socket(item_uuid, user_uuid)
+                if not socket or not socket.is_connected():
+                    self.create_socket(item_uuid, token, daemon_url, user_uuid, api_key, ip_address, sid)
+
+            self._print_connection_tables(f"Imported Socket Connections for Item {item_uuid}")
             return True
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"Failed to import socket connections: {str(e)}")
             return False
+
+    def get_connections_by_ip(self, item_uuid: str, ip_address: str) -> list[dict[str, str]]:
+        """
+        根据IP地址获取连接信息（用于单播）
+        """
+        result = []
+        if item_uuid in self.connections:
+            for sid, conn_info in self.connections[item_uuid].items():
+                if conn_info.get('ip') == ip_address:
+                    result.append({
+                        'sid': sid,
+                        'user_uuid': conn_info.get('user_uuid'),
+                        'ip': conn_info.get('ip')
+                    })
+        return result
+
+    def get_all_connections_for_broadcast(self, item_uuid: str) -> list[dict[str, str]]:
+        """
+        获取项目的所有连接信息（用于广播）
+        """
+        result = []
+        if item_uuid in self.connections:
+            for sid, conn_info in self.connections[item_uuid].items():
+                result.append({
+                    'sid': sid,
+                    'user_uuid': conn_info.get('user_uuid'),
+                    'ip': conn_info.get('ip')
+                })
+        return result
+
+    def update_connections_from_daemon(self, item_uuid: str, connections: dict[str, Any]) -> bool:
+        """
+        从daemon返回的连接池更新本地连接表
+        
+        Args:
+            item_uuid: 项目UUID
+            connections: daemon返回的连接表 {sid: {user_uuid, ip}}
+            
+        Returns:
+            是否成功更新
+        """
+        with self.lock:
+            self.connections[item_uuid] = {}
+            for sid, conn_info in connections.items():
+                self.connections[item_uuid][sid] = {
+                    'user_uuid': conn_info.get('user_uuid', 'unknown'),
+                    'ip': conn_info.get('ip', 'unknown')
+                }
+            self._print_connection_tables(f"Updated Connections for Item {item_uuid}")
+            return True

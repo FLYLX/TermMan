@@ -1,7 +1,9 @@
-from typing import Callable, Dict, Any, Optional
-from .connection_pool import ConnectionManager, DaemonConnection
-from .socket_pool import SocketManager, ItemSocket
-from .protocol import ProtocolEvents, ProtocolCodec
+from collections.abc import Callable
+from typing import Any
+
+from .connection_pool import ConnectionManager
+from .protocol import ProtocolEvents
+from .socket_pool import SocketManager
 
 
 class ConnectionHandler:
@@ -11,7 +13,7 @@ class ConnectionHandler:
     def __init__(self, connection_manager: ConnectionManager, socket_manager: SocketManager):
         self.connection_manager = connection_manager
         self.socket_manager = socket_manager
-        self.command_handlers: Dict[str, Callable] = {}
+        self.command_handlers: dict[str, Callable] = {}
         self.setup_command_handlers()
 
     def setup_command_handlers(self):
@@ -22,7 +24,7 @@ class ConnectionHandler:
         self.command_handlers[ProtocolEvents.TERMINAL_STOP] = self.handle_terminal_stop
         self.command_handlers[ProtocolEvents.TERMINAL_STATUS] = self.handle_terminal_status
 
-    def handle_command(self, daemon_id: str, command: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_command(self, daemon_id: str, command: str, data: dict[str, Any]) -> dict[str, Any]:
         """
         处理命令
         """
@@ -33,7 +35,7 @@ class ConnectionHandler:
                 return {"success": False, "error": str(e)}
         return {"success": False, "error": "Unknown command"}
 
-    def handle_terminal_start(self, daemon_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_terminal_start(self, daemon_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """
         处理终端启动命令
         """
@@ -50,7 +52,7 @@ class ConnectionHandler:
         result = connection.emit(ProtocolEvents.TERMINAL_START, data)
         return {"success": result}
 
-    def handle_terminal_stop(self, daemon_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_terminal_stop(self, daemon_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """
         处理终端停止命令
         """
@@ -64,13 +66,13 @@ class ConnectionHandler:
 
         # 转发停止终端命令到daemon
         result = connection.emit(ProtocolEvents.TERMINAL_STOP, data)
-        
+
         # 清理本地socket连接 - 移除该item的所有socket连接
         self.socket_manager.remove_all_sockets_by_item(item_uuid)
-        
+
         return {"success": result}
 
-    def handle_terminal_status(self, daemon_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_terminal_status(self, daemon_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """
         处理终端状态查询命令
         """
@@ -94,7 +96,7 @@ class ConnectionHandler:
         sockets = self.socket_manager.get_sockets_by_item(item_uuid)
         if not sockets:
             return False
-        
+
         # 向第一个活跃的socket连接发送事件
         for socket in sockets:
             if socket.is_connected():

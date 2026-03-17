@@ -1,8 +1,10 @@
+from collections.abc import Callable
+from typing import Any
+
 import socketio
-from typing import Callable, Dict, Any, Optional
-from datetime import datetime
-from ..protocol import ProtocolEvents, ProtocolCodec
-from .socket_models import TerminalStatus, TokenInfo
+
+from ..protocol import ProtocolEvents
+from .socket_models import TerminalStatus
 
 
 class ItemSocket:
@@ -62,7 +64,7 @@ class ItemSocket:
                 transports=["websocket"],
                 auth={"api_key": api_key}
             )
-            
+
             # 连接成功后，发送终端连接事件
             import time
             time.sleep(1)
@@ -73,9 +75,9 @@ class ItemSocket:
                     "token": self.token,
                     "user_uuid": self.user_uuid
                 })
-            
+
             return True
-        except Exception as e:
+        except Exception:
             self.status = TerminalStatus.ERROR
             return False
 

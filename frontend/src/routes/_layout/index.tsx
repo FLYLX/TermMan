@@ -32,10 +32,9 @@ function Dashboard() {
     // 默认展开所有item
   })
 
-  // 定义类型
+  // 定义类型 - 根据新的连接表结构
   type ConnectedUser = {
-    is_connected: boolean
-    status: string
+    user_uuid: string
     ip: string
   }
 
@@ -43,6 +42,7 @@ function Dashboard() {
     id: string
     title: string
     description: string
+    status: string
     connected_users: Record<string, ConnectedUser>
     daemon_id?: string
     daemon_url?: string
@@ -73,13 +73,12 @@ function Dashboard() {
     fetchItems()
   }, [])
 
-  // 获取已连接的用户列表
+  // 获取已连接的用户列表 - 根据新连接表结构 {sid: {user_uuid, ip}}
   const getConnectedUsers = (item: Item) => {
-    return Object.entries(item.connected_users || {}).map(([userUuid, userInfo]) => ({
-      userUuid,
-      ip: userInfo.ip || "unknown",
-      isConnected: userInfo.is_connected || false,
-      status: userInfo.status || "unknown"
+    return Object.entries(item.connected_users || {}).map(([sid, connInfo]) => ({
+      sid,
+      userUuid: connInfo.user_uuid || "unknown",
+      ip: connInfo.ip || "unknown"
     }))
   }
 
@@ -236,16 +235,12 @@ function Dashboard() {
                                   <div className="space-y-2">
                                     <h5 className="font-medium text-sm">Connected Users:</h5>
                                     {connectedUsers.map((user) => (
-                                      <div key={user.userUuid} className="flex items-center justify-between p-3 border rounded-lg bg-white">
+                                      <div key={user.sid} className="flex items-center justify-between p-3 border rounded-lg bg-white">
                                         <div>
                                           <p className="font-medium text-sm">{user.userUuid}</p>
-                                          <p className="text-xs text-muted-foreground">IP: {user.ip}</p>
+                                          <p className="text-xs text-muted-foreground">SID: {user.sid} | IP: {user.ip}</p>
                                         </div>
                                         <div className="flex items-center">
-                                          <span className={`px-2 py-1 rounded-full text-xs mr-2 ${user.isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                            {user.isConnected ? 'Connected' : 'Disconnected'}
-                                          </span>
-                                          <span className="text-xs mr-3">Status: {user.status}</span>
                                           <Button 
                                             variant="ghost" 
                                             size="icon" 

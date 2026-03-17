@@ -3,9 +3,6 @@ from typing import Dict, Any
 
 
 class ConnectionStatus(str, Enum):
-    """
-    连接状态枚举
-    """
     CONNECTED = "connected"
     DISCONNECTED = "disconnected"
     CONNECTING = "connecting"
@@ -13,14 +10,11 @@ class ConnectionStatus(str, Enum):
 
 
 class DaemonConfig:
-    """
-    Daemon节点配置类
-    """
-    def __init__(self, daemon_id: str, ip: str, port: int, api_key: str):
-        self.daemon_id = daemon_id
+    def __init__(self, ip: str, port: int, api_key: str):
         self.ip = ip
         self.port = port
         self.api_key = api_key
+        self.daemon_id = f"{ip}:{port}:{api_key}"
         self.base_url = f"http://{ip}:{port}"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -30,3 +24,11 @@ class DaemonConfig:
             "port": self.port,
             "base_url": self.base_url
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DaemonConfig":
+        return cls(
+            ip=data["ip"],
+            port=data["port"],
+            api_key=data["api_key"]
+        )

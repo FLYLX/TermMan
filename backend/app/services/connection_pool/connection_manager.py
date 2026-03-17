@@ -1,89 +1,101 @@
 from typing import Dict, Optional, List, Any
+import logging
 from .daemon_connection import DaemonConnection
 from .connection_models import DaemonConfig, ConnectionStatus
+
+logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
     """
-    Daemon连接池管理
+    Daemon连接池管理 - 只维护一张表
+    
+    daemon连接池表: [daemon ip:port:apikey] -> DaemonConnection
+    - 有连接的放进去，没有连接的就拿出来
     """
     def __init__(self):
         self.connections: Dict[str, DaemonConnection] = {}
 
     def get_connection(self, daemon_id: str) -> Optional[DaemonConnection]:
-        """
-        获取指定Daemon的连接
-        """
         return self.connections.get(daemon_id)
 
     def create_connection(self, config: DaemonConfig) -> DaemonConnection:
-        """
-        创建新的Daemon连接
-        """
         connection = DaemonConnection(config)
         self.connections[config.daemon_id] = connection
         connection.connect()
+        self._print_connection_pool("Created Daemon Connection")
         return connection
 
     def get_or_create_connection(self, config: DaemonConfig) -> DaemonConnection:
-        """
-        获取或创建Daemon连接
-        """
         connection = self.get_connection(config.daemon_id)
-        if not connection or not connection.is_connected():
+        if not connection:
             connection = self.create_connection(config)
+        elif not connection.is_connected():
+            logger.info(f"Connection {config.daemon_id} is disconnected, attempting to reconnect...")
+            try:
+                connection.connect()
+            except Exception as e:
+                logger.error(f"Failed to reconnect to {config.daemon_id}: {e}")
         return connection
 
     def remove_connection(self, daemon_id: str):
-        """
-        移除并关闭Daemon连接
-        """
         if daemon_id in self.connections:
             connection = self.connections.pop(daemon_id)
             connection.disconnect()
+            self._print_connection_pool("Removed Daemon Connection")
 
     def get_all_connections(self) -> List[DaemonConnection]:
-        """
-        获取所有连接
-        """
         return list(self.connections.values())
 
     def get_connected_connections(self) -> List[DaemonConnection]:
-        """
-        获取所有已连接的连接
-        """
         return [conn for conn in self.connections.values() if conn.is_connected()]
 
     def heartbeat_all(self):
-        """
-        向所有连接发送心跳检测
-        """
         for connection in self.connections.values():
             if connection.is_connected():
                 connection.emit("heartbeat", {})
 
     def cleanup_disconnected(self):
-        """
-        清理断开的连接
-        """
         disconnected_ids = [
             daemon_id for daemon_id, conn in self.connections.items()
             if conn.get_status() == ConnectionStatus.DISCONNECTED
         ]
         for daemon_id in disconnected_ids:
             self.remove_connection(daemon_id)
-    
-    def get_all_socket_connections(self) -> Dict[str, Any]:
+
+    def get_connection_pool(self) -> Dict[str, Any]:
         """
-        获取所有daemon的socket连接表
+        获取daemon连接池表
         
         Returns:
-            格式为 {daemon_id: {item_uuid: {user_uuid: socket_info}}}
+            格式为 {daemon_id: {ip, port, status}}
         """
-        all_connections = {}
-        for daemon_id, connection in self.connections.items():
-            if connection.is_connected():
-                result = connection.get_socket_connections_http()
-                if result.get("success"):
-                    all_connections[daemon_id] = result.get("connections", {})
-        return all_connections
+        pool = {}
+        for daemon_id, conn in self.connections.items():
+            pool[daemon_id] = {
+                "ip": conn.config.ip,
+                "port": conn.config.port,
+                "status": conn.get_status().value
+            }
+        return pool
+
+    def _print_connection_pool(self, message: str = "Connection Pool Updated"):
+        """
+        打印daemon连接池表
+        """
+        logger.info(f"\n{'='*60}")
+        logger.info(f"{message}")
+        logger.info(f"{'='*60}")
+        logger.info("\nDaemon连接池表 [daemon ip:port:apikey]")
+        logger.info("-" * 80)
+        logger.info(f"{'Daemon ID':<50} | {'Status':<15}")
+        logger.info("-" * 80)
+        
+        for daemon_id, conn in self.connections.items():
+            status = conn.get_status().value
+            logger.info(f"{daemon_id:<50} | {status:<15}")
+        
+        if not self.connections:
+            logger.info("  无连接")
+        
+        logger.info(f"\n{'='*60}")

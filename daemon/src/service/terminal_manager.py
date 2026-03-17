@@ -18,36 +18,28 @@ class TerminalProcess:
         self.token = token
         self.process = None
         self.status = "stopped"
-        self.working_directory = working_directory  # 保存自定义工作目录
-        self.command = command  # 保存自定义命令
+        self.working_directory = working_directory
+        self.command = command
         self.workdir = self._get_workdir()
         self.log_path = self._get_log_path()
         self.stdout_buffer = []
         self.stderr_buffer = []
         self.lock = threading.Lock()
+        self._running = True
 
     def _get_workdir(self) -> str:
-        """
-        获取终端工作目录
-        """
-        # 如果提供了自定义工作目录，就使用它
         if self.working_directory:
             workdir = self.working_directory
         else:
-            # 否则使用默认的工作目录结构
             workdir = os.path.join(
                 config.get("WORKDIR"),
                 self.user_uuid,
                 self.item_uuid
             )
-        # 确保工作目录存在
         os.makedirs(workdir, exist_ok=True)
         return workdir
 
     def _get_log_path(self) -> str:
-        """
-        获取日志文件路径
-        """
         log_dir = os.path.join(
             config.get("LOG_DIR"),
             self.user_uuid
@@ -56,17 +48,13 @@ class TerminalProcess:
         return os.path.join(log_dir, f"{self.item_uuid}.log")
 
     def start(self) -> bool:
-        """
-        启动终端进程
-        """
         try:
             self.status = "starting"
+            self._running = True
             encoding = config.get("TERMINAL_ENCODING", "utf-8")
             self.encoding = encoding
 
-            # 如果提供了自定义命令，就使用它；否则使用默认的终端shell
             if self.command:
-                # 使用自定义命令，需要shell=True来执行完整的命令
                 self.process = subprocess.Popen(
                     self.command,
                     cwd=self.workdir,
@@ -76,7 +64,6 @@ class TerminalProcess:
                     shell=True
                 )
             else:
-                # 使用默认的终端shell
                 shell = config.get("TERMINAL_SHELL")
                 self.process = subprocess.Popen(
                     shell,
@@ -87,7 +74,6 @@ class TerminalProcess:
                     shell=True
                 )
 
-            # 启动线程读取stdout和stderr
             threading.Thread(target=self._read_stdout, daemon=True).start()
             threading.Thread(target=self._read_stderr, daemon=True).start()
 
@@ -99,203 +85,109 @@ class TerminalProcess:
             logger.error(f"Failed to start terminal {self.item_uuid}: {e}")
             return False
 
-    def _read_stdout(self):
-        """
-        读取stdout
-        """
+    def _write_log(self, line: str, is_error: bool = False):
         try:
-            while self.process and self.process.stdout:
-                line = self.process.stdout.readline()
-                if not line:
+            from core import get_socket_service, config
+            
+            log_paths = set()
+            connected_user_uuids = {self.user_uuid}
+            
+            socket_service = get_socket_service()
+            if socket_service:
+                try:
+                    with socket_service.lock:
+                        if self.item_uuid in socket_service.connections:
+                            for sid, conn_info in socket_service.connections[self.item_uuid].items():
+                                user_uuid = conn_info.get('user_uuid')
+                                if user_uuid:
+                                    connected_user_uuids.add(user_uuid)
+                except Exception:
+                    pass
+            
+            for user_uuid in connected_user_uuids:
+                try:
+                    user_log_dir = os.path.join(config.get("LOG_DIR"), user_uuid)
+                    os.makedirs(user_log_dir, exist_ok=True)
+                    log_paths.add(os.path.join(user_log_dir, f"{self.item_uuid}.log"))
+                except Exception:
+                    pass
+            
+            content = f"[ERROR] {line}" if is_error else line
+            for log_path in log_paths:
+                try:
+                    with open(log_path, "a", encoding="utf-8") as f:
+                        f.write(content)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _broadcast(self, data: dict):
+        try:
+            from core import get_socket_service
+            socket_service = get_socket_service()
+            if socket_service:
+                socket_service.sync_broadcast(self.item_uuid, "stream", data)
+        except Exception:
+            pass
+
+    def _read_stdout(self):
+        try:
+            while self._running and self.process and self.process.stdout:
+                try:
+                    line = self.process.stdout.readline()
+                    if not line:
+                        break
+                except Exception:
                     break
                 
-                # 使用chardet自动检测编码
                 try:
-                    # 首先尝试使用配置的编码
                     decoded_line = line.decode(self.encoding)
                 except UnicodeDecodeError:
-                    # 如果失败，使用chardet检测编码
-                    detected = chardet.detect(line)
-                    detected_encoding = detected.get('encoding', self.encoding)
-                    decoded_line = line.decode(detected_encoding, errors='replace')
+                    try:
+                        detected = chardet.detect(line)
+                        detected_encoding = detected.get('encoding', self.encoding)
+                        decoded_line = line.decode(detected_encoding, errors='replace')
+                    except Exception:
+                        decoded_line = line.decode(self.encoding, errors='replace')
                 
                 with self.lock:
                     self.stdout_buffer.append(decoded_line)
-                    
-                    # 为所有连接的用户写入各自的日志文件
-                    try:
-                        import sys
-                        import os
-                        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                        from core import get_socket_service
-                        from core import config
-                        
-                        # 收集所有需要写入的日志路径
-                        log_paths = set()
-                        
-                        # 首先获取所有连接的用户UUID
-                        connected_user_uuids = set()
-                        connected_user_uuids.add(self.user_uuid)  # 添加创建终端的用户
-                        
-                        # 尝试获取socket服务并获取所有连接的用户
-                        socket_service = get_socket_service()
-                        if socket_service:
-                            try:
-                                with socket_service.lock:
-                                    if self.item_uuid in socket_service.connections:
-                                        for conn in socket_service.connections[self.item_uuid]:
-                                            user_uuid = conn['user_uuid']
-                                            if user_uuid:
-                                                connected_user_uuids.add(user_uuid)
-                            except Exception as e:
-                                logger.error(f"Error accessing socket connections: {e}")
-                        
-                        # 为每个用户创建日志路径
-                        for user_uuid in connected_user_uuids:
-                            try:
-                                user_log_dir = os.path.join(
-                                    config.get("LOG_DIR"),
-                                    user_uuid
-                                )
-                                os.makedirs(user_log_dir, exist_ok=True)
-                                user_log_path = os.path.join(user_log_dir, f"{self.item_uuid}.log")
-                                log_paths.add(user_log_path)
-                            except Exception as e:
-                                logger.error(f"Error creating log path for user {user_uuid}: {e}")
-                        
-                        # 写入所有唯一的日志路径
-                        for log_path in log_paths:
-                            try:
-                                with open(log_path, "a", encoding="utf-8") as f:
-                                    f.write(decoded_line)
-                            except Exception as e:
-                                logger.error(f"Error writing to log {log_path}: {e}")
-                    except Exception as e:
-                        logger.error(f"Error writing user logs for {self.item_uuid}: {e}")
                 
-                # 转发到Socket.IO
-                try:
-                    import sys
-                    import os
-                    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                    from core import get_socket_service
-                    import asyncio
-                    socket_service = get_socket_service()
-                    if socket_service:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        loop.run_until_complete(
-                            socket_service.broadcast_to_terminal(
-                                self.item_uuid, "stream", {"stdout": decoded_line}
-                            )
-                        )
-                        loop.close()
-                except Exception as e:
-                    logger.error(f"Error broadcasting stdout to socket: {e}")
+                self._write_log(decoded_line)
+                self._broadcast({"stdout": decoded_line})
         except Exception as e:
             logger.error(f"Error reading stdout for {self.item_uuid}: {e}")
 
     def _read_stderr(self):
-        """
-        读取stderr
-        """
         try:
-            while self.process and self.process.stderr:
-                line = self.process.stderr.readline()
-                if not line:
+            while self._running and self.process and self.process.stderr:
+                try:
+                    line = self.process.stderr.readline()
+                    if not line:
+                        break
+                except Exception:
                     break
                 
-                # 使用chardet自动检测编码
                 try:
-                    # 首先尝试使用配置的编码
                     decoded_line = line.decode(self.encoding)
                 except UnicodeDecodeError:
-                    # 如果失败，使用chardet检测编码
-                    detected = chardet.detect(line)
-                    detected_encoding = detected.get('encoding', self.encoding)
-                    decoded_line = line.decode(detected_encoding, errors='replace')
+                    try:
+                        detected = chardet.detect(line)
+                        detected_encoding = detected.get('encoding', self.encoding)
+                        decoded_line = line.decode(detected_encoding, errors='replace')
+                    except Exception:
+                        decoded_line = line.decode(self.encoding, errors='replace')
                 
                 with self.lock:
                     self.stderr_buffer.append(decoded_line)
-                    
-                    # 为所有连接的用户写入各自的日志文件
-                    try:
-                        import sys
-                        import os
-                        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                        from core import get_socket_service
-                        from core import config
-                        
-                        # 收集所有需要写入的日志路径
-                        log_paths = set()
-                        
-                        # 首先获取所有连接的用户UUID
-                        connected_user_uuids = set()
-                        connected_user_uuids.add(self.user_uuid)  # 添加创建终端的用户
-                        
-                        # 尝试获取socket服务并获取所有连接的用户
-                        socket_service = get_socket_service()
-                        if socket_service:
-                            try:
-                                with socket_service.lock:
-                                    if self.item_uuid in socket_service.connections:
-                                        for conn in socket_service.connections[self.item_uuid]:
-                                            user_uuid = conn['user_uuid']
-                                            if user_uuid:
-                                                connected_user_uuids.add(user_uuid)
-                            except Exception as e:
-                                logger.error(f"Error accessing socket connections: {e}")
-                        
-                        # 为每个用户创建日志路径
-                        for user_uuid in connected_user_uuids:
-                            try:
-                                user_log_dir = os.path.join(
-                                    config.get("LOG_DIR"),
-                                    user_uuid
-                                )
-                                os.makedirs(user_log_dir, exist_ok=True)
-                                user_log_path = os.path.join(user_log_dir, f"{self.item_uuid}.log")
-                                log_paths.add(user_log_path)
-                            except Exception as e:
-                                logger.error(f"Error creating log path for user {user_uuid}: {e}")
-                        
-                        # 写入所有唯一的日志路径
-                        error_line = f"[ERROR] {decoded_line}"
-                        for log_path in log_paths:
-                            try:
-                                with open(log_path, "a", encoding="utf-8") as f:
-                                    f.write(error_line)
-                            except Exception as e:
-                                logger.error(f"Error writing to log {log_path}: {e}")
-                    except Exception as e:
-                        logger.error(f"Error writing user logs for {self.item_uuid}: {e}")
                 
-                # 转发到Socket.IO
-                try:
-                    import sys
-                    import os
-                    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                    from core import get_socket_service
-                    import asyncio
-                    socket_service = get_socket_service()
-                    if socket_service:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        loop.run_until_complete(
-                            socket_service.broadcast_to_terminal(
-                                self.item_uuid, "stream", {"stderr": decoded_line}
-                            )
-                        )
-                        loop.close()
-                except Exception as e:
-                    logger.error(f"Error broadcasting stderr to socket: {e}")
+                self._write_log(decoded_line, is_error=True)
+                self._broadcast({"stderr": decoded_line})
         except Exception as e:
             logger.error(f"Error reading stderr for {self.item_uuid}: {e}")
 
     def write(self, data: str) -> bool:
-        """
-        向终端写入数据
-        """
         try:
             if self.process and self.process.stdin and self.status == "running":
                 if isinstance(data, str):
@@ -309,25 +201,47 @@ class TerminalProcess:
             return False
 
     def stop(self) -> bool:
-        """
-        停止终端进程
-        """
         try:
+            self._running = False
+            
             if self.process:
+                try:
+                    self.process.stdin.close()
+                except Exception:
+                    pass
+                
                 self.process.terminate()
-                self.process.wait(timeout=5)
+                
+                try:
+                    self.process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+                    try:
+                        self.process.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        pass
+                
+                try:
+                    self.process.stdout.close()
+                except Exception:
+                    pass
+                try:
+                    self.process.stderr.close()
+                except Exception:
+                    pass
+                
                 self.process = None
+                
             self.status = "stopped"
             logger.info(f"Terminal stopped: {self.item_uuid}")
             return True
         except Exception as e:
             logger.error(f"Failed to stop terminal {self.item_uuid}: {e}")
-            return False
+            self.status = "stopped"
+            self.process = None
+            return True
 
     def get_status(self) -> Dict[str, Any]:
-        """
-        获取终端状态
-        """
         with self.lock:
             stdout = "".join(self.stdout_buffer)
             stderr = "".join(self.stderr_buffer)
@@ -354,10 +268,6 @@ class TerminalManager:
         self.lock = threading.Lock()
 
     def create_terminal(self, user_uuid: str, token: str, working_directory: Optional[str] = None, command: Optional[str] = None, item_uuid: Optional[str] = None) -> str:
-        """
-        创建新终端
-        """
-        # 必须提供item_uuid
         if not item_uuid:
             raise ValueError("Missing item_uuid")
         with self.lock:
@@ -366,57 +276,41 @@ class TerminalManager:
         return item_uuid
 
     def get_terminal(self, item_uuid: str) -> Optional[TerminalProcess]:
-        """
-        获取终端
-        """
         with self.lock:
             return self.terminals.get(item_uuid)
 
     def start_terminal(self, item_uuid: str) -> bool:
-        """
-        启动终端
-        """
         terminal = self.get_terminal(item_uuid)
         if not terminal:
             return False
         return terminal.start()
 
     def stop_terminal(self, item_uuid: str) -> bool:
-        """
-        停止终端
-        """
         terminal = self.get_terminal(item_uuid)
         if not terminal:
-            return False
-        result = terminal.stop()
-        if result:
-            with self.lock:
-                if item_uuid in self.terminals:
-                    del self.terminals[item_uuid]
-        return result
+            return True
+        
+        terminal.stop()
+        
+        with self.lock:
+            if item_uuid in self.terminals:
+                del self.terminals[item_uuid]
+        
+        return True
 
     def write_to_terminal(self, item_uuid: str, data: str) -> bool:
-        """
-        向终端写入数据
-        """
         terminal = self.get_terminal(item_uuid)
         if not terminal:
             return False
         return terminal.write(data)
 
     def get_terminal_status(self, item_uuid: str) -> Optional[Dict[str, Any]]:
-        """
-        获取终端状态
-        """
         terminal = self.get_terminal(item_uuid)
         if not terminal:
             return None
         return terminal.get_status()
 
     def get_user_terminals(self, user_uuid: str) -> list:
-        """
-        获取用户的所有终端
-        """
         with self.lock:
             return [
                 terminal.get_status()
@@ -425,12 +319,8 @@ class TerminalManager:
             ]
 
     def get_all_terminals(self) -> list:
-        """
-        获取所有终端
-        """
         with self.lock:
             return [terminal.get_status() for terminal in self.terminals.values()]
 
 
-# 创建全局终端管理器实例
 terminal_manager = TerminalManager()

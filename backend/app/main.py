@@ -1,3 +1,8 @@
+import logging
+
+# 配置日志
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 import sentry_sdk
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
@@ -5,7 +10,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router
 from app.core.config import settings
-import logging
+from app.services import initialize_daemon_connections
 
 logger = logging.getLogger(__name__)
 
@@ -37,5 +42,9 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
 # 初始化daemon连接
-from app.services import initialize_daemon_connections
 initialize_daemon_connections()
+
+
+# 注意：已移除每次请求后更新daemon连接池表的中间件
+# 改为在start和stop操作中只同步特定item的连接表，减少不必要的数据传输
+# 仍保留定时同步功能

@@ -137,6 +137,14 @@ export type ItemPublic = {
     owner_id: string;
     created_at?: (string | null);
     updated_at?: (string | null);
+    daemon_url?: string;
+    connected_users?: {
+        [sid: string]: {
+            user_uuid: string;
+            ip: string;
+        };
+    };
+    token?: string;
 };
 
 export type ItemStatus = 'stopped' | 'running' | 'starting' | 'stopping' | 'error';
