@@ -6,7 +6,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { ChevronDown, ChevronRight, Trash2 } from "lucide-react"
+import { ChevronDown, ChevronRight, Trash2, RefreshCw } from "lucide-react"
 
 export const Route = createFileRoute("/_layout/")({
   component: Dashboard,
@@ -46,12 +46,16 @@ function Dashboard() {
     connected_users: Record<string, ConnectedUser>
     daemon_id?: string
     daemon_url?: string
+    daemon_online?: boolean
+    daemon_status?: string
     [key: string]: any
   }
 
   type Daemon = {
     id: string
     url: string
+    online: boolean
+    status: string
     items: Item[]
   }
 
@@ -100,6 +104,24 @@ function Dashboard() {
     }
   }
 
+  // 重连daemon
+  const handleReconnectDaemon = async (daemonId: string) => {
+    try {
+      const result = await ItemsService.reconnectDaemon({ daemonId })
+      if (result.success) {
+        toast.success(result.message)
+        // 刷新项目列表
+        const response = await ItemsService.readItems()
+        setItems(response.data || [])
+      } else {
+        toast.error(result.message)
+      }
+    } catch (error) {
+      console.error("Failed to reconnect daemon:", error)
+      toast.error("Failed to reconnect daemon. Please try again.")
+    }
+  }
+
   // 切换daemon展开/折叠状态
   const toggleDaemonExpand = (daemonId: string) => {
     setExpandedDaemons(prev => ({
@@ -129,6 +151,8 @@ function Dashboard() {
         daemonMap[daemonId] = {
           id: daemonId,
           url: daemonUrl,
+          online: item.daemon_online || false,
+          status: item.daemon_status || "unknown",
           items: []
         }
       }
@@ -182,7 +206,30 @@ function Dashboard() {
                         <ChevronRight className="h-5 w-5 mr-2" />
                       )}
                       <div>
-                        <h3 className="font-medium">Daemon: {daemon.id}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium">Daemon: {daemon.id}</h3>
+                          <span className={`px-2 py-0.5 rounded-full text-xs ${
+                            daemon.online 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {daemon.online ? 'Online' : 'Offline'}
+                          </span>
+                          {!daemon.online && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 px-2"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleReconnectDaemon(daemon.id)
+                              }}
+                            >
+                              <RefreshCw className="h-3 w-3 mr-1" />
+                              Reconnect
+                            </Button>
+                          )}
+                        </div>
                         <p className="text-sm text-muted-foreground">URL: {daemon.url}</p>
                       </div>
                     </div>

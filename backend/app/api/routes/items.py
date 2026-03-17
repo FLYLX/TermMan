@@ -15,6 +15,41 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/items", tags=["items"])
 
 
+def _get_daemon_status(item: Item) -> dict:
+    """
+    获取item对应daemon的连接状态
+    
+    Args:
+        item: Item对象
+        
+    Returns:
+        dict: 包含daemon_id, daemon_online, daemon_status
+    """
+    if not item.socket_host or not item.socket_port or not item.api_key:
+        return {
+            "daemon_id": None,
+            "daemon_online": False,
+            "daemon_status": "not_configured"
+        }
+    
+    daemon_id = f"{item.socket_host}:{item.socket_port}:{item.api_key}"
+    
+    daemon_connection = connection_manager.get_connection(daemon_id)
+    
+    if daemon_connection and daemon_connection.is_connected():
+        return {
+            "daemon_id": daemon_id,
+            "daemon_online": True,
+            "daemon_status": "connected"
+        }
+    else:
+        return {
+            "daemon_id": daemon_id,
+            "daemon_online": False,
+            "daemon_status": "disconnected"
+        }
+
+
 @router.get("/", response_model=dict[str, Any])
 def read_items(
     session: SessionDep, current_user: CurrentUser, skip: int = 0, limit: int = 100
@@ -34,6 +69,11 @@ def read_items(
         for item in items:
             item_data = ItemPublic.model_validate(item).model_dump()
             item_data["daemon_url"] = f"http://{item.socket_host}:{item.socket_port}"
+            
+            daemon_status = _get_daemon_status(item)
+            item_data["daemon_id"] = daemon_status["daemon_id"]
+            item_data["daemon_online"] = daemon_status["daemon_online"]
+            item_data["daemon_status"] = daemon_status["daemon_status"]
 
             if str(item.id) in item_connections:
                 item_data['connected_users'] = item_connections[str(item.id)]
@@ -65,6 +105,11 @@ def read_items(
         for item in items:
             item_data = ItemPublic.model_validate(item).model_dump()
             item_data["daemon_url"] = f"http://{item.socket_host}:{item.socket_port}"
+            
+            daemon_status = _get_daemon_status(item)
+            item_data["daemon_id"] = daemon_status["daemon_id"]
+            item_data["daemon_online"] = daemon_status["daemon_online"]
+            item_data["daemon_status"] = daemon_status["daemon_status"]
 
             if str(item.id) in item_connections:
                 item_data['connected_users'] = item_connections[str(item.id)]
@@ -86,6 +131,11 @@ def read_item(session: SessionDep, current_user: CurrentUser, id: uuid.UUID) -> 
 
     item_data = ItemPublic.model_validate(item).model_dump()
     item_data["daemon_url"] = f"http://{item.socket_host}:{item.socket_port}"
+    
+    daemon_status = _get_daemon_status(item)
+    item_data["daemon_id"] = daemon_status["daemon_id"]
+    item_data["daemon_online"] = daemon_status["daemon_online"]
+    item_data["daemon_status"] = daemon_status["daemon_status"]
 
     connection_tables = socket_manager.get_connection_tables()
     item_connections = connection_tables.get('item_connections', {})
@@ -100,6 +150,33 @@ def read_item(session: SessionDep, current_user: CurrentUser, id: uuid.UUID) -> 
         item_data['token'] = item_tokens[str(item.id)]
 
     return item_data
+
+
+@router.post("/daemon/reconnect")
+def reconnect_daemon(
+    session: SessionDep, current_user: CurrentUser, daemon_id: str
+) -> Any:
+    """
+    尝试重新连接daemon
+    
+    Args:
+        daemon_id: daemon的唯一标识 (host:port:api_key)
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    
+    parts = daemon_id.split(":")
+    if len(parts) < 3:
+        raise HTTPException(status_code=400, detail="Invalid daemon_id format")
+    
+    host = parts[0]
+    port = int(parts[1])
+    api_key = ":".join(parts[2:])
+    
+    config = DaemonConfig(ip=host, port=port, api_key=api_key)
+    result = connection_manager.reconnect_connection(config)
+    
+    return result
 
 
 @router.post("/", response_model=ItemPublic)

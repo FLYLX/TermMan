@@ -3066,3 +3066,333 @@ $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 2026-03-17 14:57:47,721 - termman-daemon - INFO - 
 ================================================================================
 
+2026-03-17 15:02:21,516 - termman-daemon - INFO - [WebSocket] Terminal stop request: item=cfe659d6-1278-4b83-8796-3e29794a81c1, request_id=76d0ff0d-fdbc-4eea-85d0-75bf5946b919
+2026-03-17 15:02:21,516 - termman-daemon - INFO - Terminal stopped: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:21,516 - termman-daemon - INFO - [WebSocket] Terminal stopped: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:22,857 - termman-daemon - INFO - [WebSocket] Terminal start request: item=cfe659d6-1278-4b83-8796-3e29794a81c1, user=de199175-d30f-469c-a74b-449ce0ca2ad6, request_id=2498108d-595b-4c38-96a0-86668eaa0109
+2026-03-17 15:02:22,859 - termman-daemon - INFO - Terminal started: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:22,860 - termman-daemon - INFO - [WebSocket] Terminal started: cfe659d6-1278-4b83-8796-3e29794a81c1, token: 7c5dbf7f-6f32-41d9-95e2-84ac2fc9083b
+2026-03-17 15:02:22,860 - termman-daemon - INFO - 
+================================================================================
+2026-03-17 15:02:22,860 - termman-daemon - INFO - [Daemon SocketService] Terminal Started: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:22,860 - termman-daemon - INFO - ================================================================================
+2026-03-17 15:02:22,860 - termman-daemon - INFO - 
+1. Backend连接表 [sid -> {backend_id, ip}]
+2026-03-17 15:02:22,861 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:22,861 - termman-daemon - INFO - SID                                  | Backend ID           | IP             
+2026-03-17 15:02:22,861 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:22,861 - termman-daemon - INFO - 8jnOyNnS-W08w8Nr...                  | daemon:termman_      | 127.0.0.1      
+2026-03-17 15:02:22,861 - termman-daemon - INFO -   共 1 个Backend连接
+2026-03-17 15:02:22,862 - termman-daemon - INFO - 
+2. Item-Token映射表 [item_uuid: token]
+2026-03-17 15:02:22,862 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:22,862 - termman-daemon - INFO - Item UUID                            | Token                               
+2026-03-17 15:02:22,862 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:22,862 - termman-daemon - INFO - cfe659d6-1278-4b83-8796-3e29794a81c1 | 7c5dbf7f-6f32-41...
+2026-03-17 15:02:22,862 - termman-daemon - INFO -   共 1 个Token
+2026-03-17 15:02:22,862 - termman-daemon - INFO - 
+3. Item-连接映射表 [item_uuid -> {sid -> {user_uuid, ip}}]
+2026-03-17 15:02:22,863 - termman-daemon - INFO - ----------------------------------------------------------------------------------------------------
+2026-03-17 15:02:22,863 - termman-daemon - INFO - Item UUID                            | SID                  | User UUID                            | IP             
+2026-03-17 15:02:22,863 - termman-daemon - INFO - ----------------------------------------------------------------------------------------------------
+2026-03-17 15:02:22,863 - termman-daemon - INFO -   无数据
+2026-03-17 15:02:22,863 - termman-daemon - INFO - 
+================================================================================
+
+2026-03-17 15:02:24,379 - termman-daemon - INFO - [WebSocket] Terminal stop request: item=cfe659d6-1278-4b83-8796-3e29794a81c1, request_id=e3400ca5-adbd-4e3e-b57a-0c6bf14cc161
+2026-03-17 15:02:24,379 - termman-daemon - INFO - Terminal stopped: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:24,379 - termman-daemon - INFO - [WebSocket] Terminal stopped: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:25,488 - termman-daemon - INFO - [WebSocket] Terminal start request: item=cfe659d6-1278-4b83-8796-3e29794a81c1, user=de199175-d30f-469c-a74b-449ce0ca2ad6, request_id=44d152ac-966e-4184-9fb1-8ac47fa25a9d
+2026-03-17 15:02:25,490 - termman-daemon - INFO - Terminal started: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:25,490 - termman-daemon - INFO - [WebSocket] Terminal started: cfe659d6-1278-4b83-8796-3e29794a81c1, token: cc062385-0796-4b3e-9abe-966cd228dd58
+2026-03-17 15:02:25,490 - termman-daemon - INFO - 
+================================================================================
+2026-03-17 15:02:25,491 - termman-daemon - INFO - [Daemon SocketService] Terminal Started: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:25,491 - termman-daemon - INFO - ================================================================================
+2026-03-17 15:02:25,491 - termman-daemon - INFO - 
+1. Backend连接表 [sid -> {backend_id, ip}]
+2026-03-17 15:02:25,491 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:25,491 - termman-daemon - INFO - SID                                  | Backend ID           | IP             
+2026-03-17 15:02:25,492 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:25,492 - termman-daemon - INFO - 8jnOyNnS-W08w8Nr...                  | daemon:termman_      | 127.0.0.1      
+2026-03-17 15:02:25,492 - termman-daemon - INFO -   共 1 个Backend连接
+2026-03-17 15:02:25,492 - termman-daemon - INFO - 
+2. Item-Token映射表 [item_uuid: token]
+2026-03-17 15:02:25,492 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:25,492 - termman-daemon - INFO - Item UUID                            | Token                               
+2026-03-17 15:02:25,493 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:25,493 - termman-daemon - INFO - cfe659d6-1278-4b83-8796-3e29794a81c1 | cc062385-0796-4b...
+2026-03-17 15:02:25,493 - termman-daemon - INFO -   共 1 个Token
+2026-03-17 15:02:25,493 - termman-daemon - INFO - 
+3. Item-连接映射表 [item_uuid -> {sid -> {user_uuid, ip}}]
+2026-03-17 15:02:25,493 - termman-daemon - INFO - ----------------------------------------------------------------------------------------------------
+2026-03-17 15:02:25,494 - termman-daemon - INFO - Item UUID                            | SID                  | User UUID                            | IP             
+2026-03-17 15:02:25,494 - termman-daemon - INFO - ----------------------------------------------------------------------------------------------------
+2026-03-17 15:02:25,494 - termman-daemon - INFO -   无数据
+2026-03-17 15:02:25,494 - termman-daemon - INFO - 
+================================================================================
+
+2026-03-17 15:02:26,201 - termman-daemon - INFO - [WebSocket] Terminal stop request: item=cfe659d6-1278-4b83-8796-3e29794a81c1, request_id=50e9cda5-b0bd-41aa-ba3a-dcc87e09672f
+2026-03-17 15:02:26,202 - termman-daemon - INFO - Terminal stopped: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:26,202 - termman-daemon - INFO - [WebSocket] Terminal stopped: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:27,263 - termman-daemon - INFO - [WebSocket] Terminal start request: item=cfe659d6-1278-4b83-8796-3e29794a81c1, user=de199175-d30f-469c-a74b-449ce0ca2ad6, request_id=665d9dea-e07f-4fe8-85f8-a0a2d742795f
+2026-03-17 15:02:27,265 - termman-daemon - INFO - Terminal started: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:27,265 - termman-daemon - INFO - [WebSocket] Terminal started: cfe659d6-1278-4b83-8796-3e29794a81c1, token: 0ae6f03f-be2b-4b85-b173-81e276d71d77
+2026-03-17 15:02:27,265 - termman-daemon - INFO - 
+================================================================================
+2026-03-17 15:02:27,266 - termman-daemon - INFO - [Daemon SocketService] Terminal Started: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:27,266 - termman-daemon - INFO - ================================================================================
+2026-03-17 15:02:27,266 - termman-daemon - INFO - 
+1. Backend连接表 [sid -> {backend_id, ip}]
+2026-03-17 15:02:27,266 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:27,267 - termman-daemon - INFO - SID                                  | Backend ID           | IP             
+2026-03-17 15:02:27,267 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:27,267 - termman-daemon - INFO - 8jnOyNnS-W08w8Nr...                  | daemon:termman_      | 127.0.0.1      
+2026-03-17 15:02:27,267 - termman-daemon - INFO -   共 1 个Backend连接
+2026-03-17 15:02:27,267 - termman-daemon - INFO - 
+2. Item-Token映射表 [item_uuid: token]
+2026-03-17 15:02:27,267 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:27,268 - termman-daemon - INFO - Item UUID                            | Token                               
+2026-03-17 15:02:27,268 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:27,268 - termman-daemon - INFO - cfe659d6-1278-4b83-8796-3e29794a81c1 | 0ae6f03f-be2b-4b...
+2026-03-17 15:02:27,268 - termman-daemon - INFO -   共 1 个Token
+2026-03-17 15:02:27,268 - termman-daemon - INFO - 
+3. Item-连接映射表 [item_uuid -> {sid -> {user_uuid, ip}}]
+2026-03-17 15:02:27,269 - termman-daemon - INFO - ----------------------------------------------------------------------------------------------------
+2026-03-17 15:02:27,269 - termman-daemon - INFO - Item UUID                            | SID                  | User UUID                            | IP             
+2026-03-17 15:02:27,269 - termman-daemon - INFO - ----------------------------------------------------------------------------------------------------
+2026-03-17 15:02:27,269 - termman-daemon - INFO -   无数据
+2026-03-17 15:02:27,269 - termman-daemon - INFO - 
+================================================================================
+
+2026-03-17 15:02:28,033 - termman-daemon - INFO - [WebSocket] Terminal stop request: item=cfe659d6-1278-4b83-8796-3e29794a81c1, request_id=3b3fb033-55e5-48ae-9a4c-7662c8d39fe3
+2026-03-17 15:02:28,034 - termman-daemon - INFO - Terminal stopped: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:28,034 - termman-daemon - INFO - [WebSocket] Terminal stopped: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:28,679 - termman-daemon - INFO - [WebSocket] Terminal start request: item=cfe659d6-1278-4b83-8796-3e29794a81c1, user=de199175-d30f-469c-a74b-449ce0ca2ad6, request_id=e58d1554-9d46-447f-8b80-2d2e818e27b8
+2026-03-17 15:02:28,681 - termman-daemon - INFO - Terminal started: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:28,681 - termman-daemon - INFO - [WebSocket] Terminal started: cfe659d6-1278-4b83-8796-3e29794a81c1, token: ef2ec442-7add-43e1-9005-ffa3851f8c0e
+2026-03-17 15:02:28,682 - termman-daemon - INFO - 
+================================================================================
+2026-03-17 15:02:28,682 - termman-daemon - INFO - [Daemon SocketService] Terminal Started: cfe659d6-1278-4b83-8796-3e29794a81c1
+2026-03-17 15:02:28,682 - termman-daemon - INFO - ================================================================================
+2026-03-17 15:02:28,682 - termman-daemon - INFO - 
+1. Backend连接表 [sid -> {backend_id, ip}]
+2026-03-17 15:02:28,682 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:28,683 - termman-daemon - INFO - SID                                  | Backend ID           | IP             
+2026-03-17 15:02:28,683 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:28,683 - termman-daemon - INFO - 8jnOyNnS-W08w8Nr...                  | daemon:termman_      | 127.0.0.1      
+2026-03-17 15:02:28,683 - termman-daemon - INFO -   共 1 个Backend连接
+2026-03-17 15:02:28,683 - termman-daemon - INFO - 
+2. Item-Token映射表 [item_uuid: token]
+2026-03-17 15:02:28,683 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:28,684 - termman-daemon - INFO - Item UUID                            | Token                               
+2026-03-17 15:02:28,684 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:02:28,684 - termman-daemon - INFO - cfe659d6-1278-4b83-8796-3e29794a81c1 | ef2ec442-7add-43...
+2026-03-17 15:02:28,684 - termman-daemon - INFO -   共 1 个Token
+2026-03-17 15:02:28,684 - termman-daemon - INFO - 
+3. Item-连接映射表 [item_uuid -> {sid -> {user_uuid, ip}}]
+2026-03-17 15:02:28,684 - termman-daemon - INFO - ----------------------------------------------------------------------------------------------------
+2026-03-17 15:02:28,684 - termman-daemon - INFO - Item UUID                            | SID                  | User UUID                            | IP             
+2026-03-17 15:02:28,685 - termman-daemon - INFO - ----------------------------------------------------------------------------------------------------
+2026-03-17 15:02:28,685 - termman-daemon - INFO -   无数据
+2026-03-17 15:02:28,685 - termman-daemon - INFO - 
+================================================================================
+
+2026-03-17 15:08:54,916 - termman-daemon - INFO - 
+============================================================
+2026-03-17 15:08:54,917 - termman-daemon - INFO - [Disconnect] Socket断开处理开始
+2026-03-17 15:08:54,917 - termman-daemon - INFO - ============================================================
+2026-03-17 15:08:54,917 - termman-daemon - INFO -   断开的SID: 8jnOyNnS-W08w8NrAAAH
+2026-03-17 15:08:54,917 - termman-daemon - INFO -   类型: Backend连接
+2026-03-17 15:08:54,917 - termman-daemon - INFO -   Backend ID: daemon:termman_
+2026-03-17 15:08:54,918 - termman-daemon - INFO - ============================================================
+
+2026-03-17 15:19:00,006 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-17 15:19:00,007 - termman-daemon - INFO - API Key: ***2024
+2026-03-17 15:41:38,629 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-17 15:41:38,629 - termman-daemon - INFO - API Key: ***2024
+2026-03-17 15:43:17,173 - termman-daemon - INFO - [WebSocket] Backend connected: b-zyZ0TfWktPbK2bAAAB, IP: 127.0.0.1
+2026-03-17 15:43:17,177 - termman-daemon - INFO - [WebSocket] Backend authenticated: b-zyZ0TfWktPbK2bAAAB, backend_id: daemon:termman_
+2026-03-17 15:43:17,178 - termman-daemon - INFO - 
+================================================================================
+2026-03-17 15:43:17,178 - termman-daemon - INFO - [Daemon SocketService] Backend Authenticated: daemon:termman_
+2026-03-17 15:43:17,178 - termman-daemon - INFO - ================================================================================
+2026-03-17 15:43:17,178 - termman-daemon - INFO - 
+1. Backend连接表 [sid -> {backend_id, ip}]
+2026-03-17 15:43:17,179 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:43:17,179 - termman-daemon - INFO - SID                                  | Backend ID           | IP             
+2026-03-17 15:43:17,179 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:43:17,179 - termman-daemon - INFO - b-zyZ0TfWktPbK2b...                  | daemon:termman_      | 127.0.0.1      
+2026-03-17 15:43:17,179 - termman-daemon - INFO -   共 1 个Backend连接
+2026-03-17 15:43:17,180 - termman-daemon - INFO - 
+2. Item-Token映射表 [item_uuid: token]
+2026-03-17 15:43:17,180 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:43:17,180 - termman-daemon - INFO - Item UUID                            | Token                               
+2026-03-17 15:43:17,180 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:43:17,180 - termman-daemon - INFO -   无数据
+2026-03-17 15:43:17,181 - termman-daemon - INFO - 
+3. Item-连接映射表 [item_uuid -> {sid -> {user_uuid, ip}}]
+2026-03-17 15:43:17,181 - termman-daemon - INFO - ----------------------------------------------------------------------------------------------------
+2026-03-17 15:43:17,181 - termman-daemon - INFO - Item UUID                            | SID                  | User UUID                            | IP             
+2026-03-17 15:43:17,181 - termman-daemon - INFO - ----------------------------------------------------------------------------------------------------
+2026-03-17 15:43:17,181 - termman-daemon - INFO -   无数据
+2026-03-17 15:43:17,182 - termman-daemon - INFO - 
+================================================================================
+
+2026-03-17 15:43:17,182 - termman-daemon - INFO - 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+2026-03-17 15:43:17,182 - termman-daemon - INFO - [Daemon] Backend认证成功，发送全量连接池数据
+2026-03-17 15:43:17,182 - termman-daemon - INFO - %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+2026-03-17 15:43:17,182 - termman-daemon - INFO -   目标 Backend: daemon:termman_
+2026-03-17 15:43:17,183 - termman-daemon - INFO -   目标 SID: b-zyZ0TfWktPbK2b...
+2026-03-17 15:43:17,183 - termman-daemon - INFO -   Items 数量: 0
+2026-03-17 15:43:17,183 - termman-daemon - INFO -   连接池详情: 无任何连接
+2026-03-17 15:43:17,183 - termman-daemon - INFO -   [OK] 已发送全量连接池数据
+2026-03-17 15:43:17,184 - termman-daemon - INFO - %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+2026-03-17 15:43:17,190 - termman-daemon - INFO - 
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+2026-03-17 15:43:17,191 - termman-daemon - INFO - [Daemon] 收到 Backend 全量连接池查询请求
+2026-03-17 15:43:17,191 - termman-daemon - INFO - $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+2026-03-17 15:43:17,191 - termman-daemon - INFO -   请求来源 SID: b-zyZ0TfWktPbK2b...
+2026-03-17 15:43:17,191 - termman-daemon - INFO -   Request ID: 4f9ed634-a350-4741-ace4-dbb37697afe5
+2026-03-17 15:43:17,192 - termman-daemon - INFO -   返回 Items 数量: 0
+2026-03-17 15:43:17,192 - termman-daemon - INFO - $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+2026-03-17 15:43:54,328 - termman-daemon - INFO - 
+============================================================
+2026-03-17 15:43:54,345 - termman-daemon - INFO - [Disconnect] Socket断开处理开始
+2026-03-17 15:43:54,346 - termman-daemon - INFO - ============================================================
+2026-03-17 15:43:54,347 - termman-daemon - INFO -   断开的SID: b-zyZ0TfWktPbK2bAAAB
+2026-03-17 15:43:54,347 - termman-daemon - INFO -   类型: Backend连接
+2026-03-17 15:43:54,347 - termman-daemon - INFO -   Backend ID: daemon:termman_
+2026-03-17 15:43:54,347 - termman-daemon - INFO - ============================================================
+
+2026-03-17 15:43:55,865 - termman-daemon - INFO - [WebSocket] Backend connected: HNZqO6EQg-S_pc5RAAAD, IP: 127.0.0.1
+2026-03-17 15:43:55,868 - termman-daemon - INFO - [WebSocket] Backend authenticated: HNZqO6EQg-S_pc5RAAAD, backend_id: daemon:termman_
+2026-03-17 15:43:55,869 - termman-daemon - INFO - 
+================================================================================
+2026-03-17 15:43:55,869 - termman-daemon - INFO - [Daemon SocketService] Backend Authenticated: daemon:termman_
+2026-03-17 15:43:55,870 - termman-daemon - INFO - ================================================================================
+2026-03-17 15:43:55,870 - termman-daemon - INFO - 
+1. Backend连接表 [sid -> {backend_id, ip}]
+2026-03-17 15:43:55,870 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:43:55,870 - termman-daemon - INFO - SID                                  | Backend ID           | IP             
+2026-03-17 15:43:55,870 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:43:55,871 - termman-daemon - INFO - HNZqO6EQg-S_pc5R...                  | daemon:termman_      | 127.0.0.1      
+2026-03-17 15:43:55,871 - termman-daemon - INFO -   共 1 个Backend连接
+2026-03-17 15:43:55,871 - termman-daemon - INFO - 
+2. Item-Token映射表 [item_uuid: token]
+2026-03-17 15:43:55,871 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:43:55,871 - termman-daemon - INFO - Item UUID                            | Token                               
+2026-03-17 15:43:55,872 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:43:55,872 - termman-daemon - INFO -   无数据
+2026-03-17 15:43:55,872 - termman-daemon - INFO - 
+3. Item-连接映射表 [item_uuid -> {sid -> {user_uuid, ip}}]
+2026-03-17 15:43:55,872 - termman-daemon - INFO - ----------------------------------------------------------------------------------------------------
+2026-03-17 15:43:55,872 - termman-daemon - INFO - Item UUID                            | SID                  | User UUID                            | IP             
+2026-03-17 15:43:55,872 - termman-daemon - INFO - ----------------------------------------------------------------------------------------------------
+2026-03-17 15:43:55,873 - termman-daemon - INFO -   无数据
+2026-03-17 15:43:55,873 - termman-daemon - INFO - 
+================================================================================
+
+2026-03-17 15:43:55,873 - termman-daemon - INFO - 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+2026-03-17 15:43:55,873 - termman-daemon - INFO - [Daemon] Backend认证成功，发送全量连接池数据
+2026-03-17 15:43:55,873 - termman-daemon - INFO - %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+2026-03-17 15:43:55,874 - termman-daemon - INFO -   目标 Backend: daemon:termman_
+2026-03-17 15:43:55,874 - termman-daemon - INFO -   目标 SID: HNZqO6EQg-S_pc5R...
+2026-03-17 15:43:55,874 - termman-daemon - INFO -   Items 数量: 0
+2026-03-17 15:43:55,874 - termman-daemon - INFO -   连接池详情: 无任何连接
+2026-03-17 15:43:55,875 - termman-daemon - INFO -   [OK] 已发送全量连接池数据
+2026-03-17 15:43:55,875 - termman-daemon - INFO - %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+2026-03-17 15:43:55,882 - termman-daemon - INFO - 
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+2026-03-17 15:43:55,882 - termman-daemon - INFO - [Daemon] 收到 Backend 全量连接池查询请求
+2026-03-17 15:43:55,882 - termman-daemon - INFO - $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+2026-03-17 15:43:55,883 - termman-daemon - INFO -   请求来源 SID: HNZqO6EQg-S_pc5R...
+2026-03-17 15:43:55,883 - termman-daemon - INFO -   Request ID: c73a7989-965c-4ed6-940d-9db862a7d860
+2026-03-17 15:43:55,883 - termman-daemon - INFO -   返回 Items 数量: 0
+2026-03-17 15:43:55,883 - termman-daemon - INFO - $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+2026-03-17 15:47:55,007 - termman-daemon - INFO - 
+============================================================
+2026-03-17 15:47:55,007 - termman-daemon - INFO - [Disconnect] Socket断开处理开始
+2026-03-17 15:47:55,007 - termman-daemon - INFO - ============================================================
+2026-03-17 15:47:55,008 - termman-daemon - INFO -   断开的SID: HNZqO6EQg-S_pc5RAAAD
+2026-03-17 15:47:55,008 - termman-daemon - INFO -   类型: Backend连接
+2026-03-17 15:47:55,008 - termman-daemon - INFO -   Backend ID: daemon:termman_
+2026-03-17 15:47:55,009 - termman-daemon - INFO - ============================================================
+
+2026-03-17 15:47:59,618 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-17 15:47:59,618 - termman-daemon - INFO - API Key: ***2024
+2026-03-17 15:48:01,217 - termman-daemon - INFO - [WebSocket] Backend connected: gxCHmdchv_l-mIJtAAAB, IP: 127.0.0.1
+2026-03-17 15:48:04,364 - termman-daemon - INFO - 
+============================================================
+2026-03-17 15:48:04,364 - termman-daemon - INFO - [Disconnect] Socket断开处理开始
+2026-03-17 15:48:04,365 - termman-daemon - INFO - ============================================================
+2026-03-17 15:48:04,365 - termman-daemon - INFO -   断开的SID: gxCHmdchv_l-mIJtAAAB
+2026-03-17 15:48:04,365 - termman-daemon - INFO -   类型: 未认证连接
+2026-03-17 15:48:04,365 - termman-daemon - INFO -   IP: 127.0.0.1
+2026-03-17 15:48:04,366 - termman-daemon - INFO - ============================================================
+
+2026-03-17 15:49:56,161 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-17 15:49:56,162 - termman-daemon - INFO - API Key: ***2024
+2026-03-17 15:49:59,516 - termman-daemon - INFO - [WebSocket] Backend connected: QejG07Rt7PgcgBsKAAAB, IP: 127.0.0.1
+2026-03-17 15:49:59,519 - termman-daemon - INFO - [WebSocket] Backend authenticated: QejG07Rt7PgcgBsKAAAB, backend_id: daemon:termman_
+2026-03-17 15:49:59,520 - termman-daemon - INFO - 
+================================================================================
+2026-03-17 15:49:59,520 - termman-daemon - INFO - [Daemon SocketService] Backend Authenticated: daemon:termman_
+2026-03-17 15:49:59,520 - termman-daemon - INFO - ================================================================================
+2026-03-17 15:49:59,520 - termman-daemon - INFO - 
+1. Backend连接表 [sid -> {backend_id, ip}]
+2026-03-17 15:49:59,520 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:49:59,521 - termman-daemon - INFO - SID                                  | Backend ID           | IP             
+2026-03-17 15:49:59,521 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:49:59,521 - termman-daemon - INFO - QejG07Rt7PgcgBsK...                  | daemon:termman_      | 127.0.0.1      
+2026-03-17 15:49:59,521 - termman-daemon - INFO -   共 1 个Backend连接
+2026-03-17 15:49:59,522 - termman-daemon - INFO - 
+2. Item-Token映射表 [item_uuid: token]
+2026-03-17 15:49:59,522 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:49:59,522 - termman-daemon - INFO - Item UUID                            | Token                               
+2026-03-17 15:49:59,522 - termman-daemon - INFO - --------------------------------------------------------------------------------
+2026-03-17 15:49:59,522 - termman-daemon - INFO -   无数据
+2026-03-17 15:49:59,523 - termman-daemon - INFO - 
+3. Item-连接映射表 [item_uuid -> {sid -> {user_uuid, ip}}]
+2026-03-17 15:49:59,523 - termman-daemon - INFO - ----------------------------------------------------------------------------------------------------
+2026-03-17 15:49:59,523 - termman-daemon - INFO - Item UUID                            | SID                  | User UUID                            | IP             
+2026-03-17 15:49:59,523 - termman-daemon - INFO - ----------------------------------------------------------------------------------------------------
+2026-03-17 15:49:59,524 - termman-daemon - INFO -   无数据
+2026-03-17 15:49:59,524 - termman-daemon - INFO - 
+================================================================================
+
+2026-03-17 15:49:59,524 - termman-daemon - INFO - 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+2026-03-17 15:49:59,524 - termman-daemon - INFO - [Daemon] Backend认证成功，发送全量连接池数据
+2026-03-17 15:49:59,524 - termman-daemon - INFO - %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+2026-03-17 15:49:59,525 - termman-daemon - INFO -   目标 Backend: daemon:termman_
+2026-03-17 15:49:59,525 - termman-daemon - INFO -   目标 SID: QejG07Rt7PgcgBsK...
+2026-03-17 15:49:59,525 - termman-daemon - INFO -   Items 数量: 0
+2026-03-17 15:49:59,525 - termman-daemon - INFO -   连接池详情: 无任何连接
+2026-03-17 15:49:59,526 - termman-daemon - INFO -   [OK] 已发送全量连接池数据
+2026-03-17 15:49:59,526 - termman-daemon - INFO - %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+2026-03-17 15:49:59,529 - termman-daemon - INFO - 
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+2026-03-17 15:49:59,530 - termman-daemon - INFO - [Daemon] 收到 Backend 全量连接池查询请求
+2026-03-17 15:49:59,530 - termman-daemon - INFO - $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+2026-03-17 15:49:59,530 - termman-daemon - INFO -   请求来源 SID: QejG07Rt7PgcgBsK...
+2026-03-17 15:49:59,530 - termman-daemon - INFO -   Request ID: 2b070ff9-9115-4ba4-b78f-ed90e60a3a80
+2026-03-17 15:49:59,531 - termman-daemon - INFO -   返回 Items 数量: 0
+2026-03-17 15:49:59,531 - termman-daemon - INFO - $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+2026-03-17 15:52:33,962 - termman-daemon - INFO - 
+============================================================
+2026-03-17 15:52:33,962 - termman-daemon - INFO - [Disconnect] Socket断开处理开始
+2026-03-17 15:52:33,962 - termman-daemon - INFO - ============================================================
+2026-03-17 15:52:33,962 - termman-daemon - INFO -   断开的SID: QejG07Rt7PgcgBsKAAAB
+2026-03-17 15:52:33,963 - termman-daemon - INFO -   类型: Backend连接
+2026-03-17 15:52:33,963 - termman-daemon - INFO -   Backend ID: daemon:termman_
+2026-03-17 15:52:33,963 - termman-daemon - INFO - ============================================================
+

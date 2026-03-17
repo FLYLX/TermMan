@@ -38,6 +38,65 @@ class ConnectionManager:
                 logger.error(f"Failed to reconnect to {config.daemon_id}: {e}")
         return connection
 
+    def reconnect_connection(self, config: DaemonConfig) -> Dict[str, Any]:
+        """
+        尝试重新连接daemon
+        
+        Args:
+            config: Daemon配置
+            
+        Returns:
+            dict: 包含success和message的字典
+        """
+        daemon_id = config.daemon_id
+        connection = self.get_connection(daemon_id)
+        
+        if connection:
+            if connection.is_connected():
+                return {
+                    "success": True,
+                    "message": f"Daemon {daemon_id} is already connected"
+                }
+            else:
+                try:
+                    connection.connect()
+                    if connection.is_connected():
+                        self._print_connection_pool(f"Reconnected Daemon: {daemon_id}")
+                        return {
+                            "success": True,
+                            "message": f"Successfully reconnected to daemon {daemon_id}"
+                        }
+                    else:
+                        return {
+                            "success": False,
+                            "message": f"Failed to reconnect to daemon {daemon_id}"
+                        }
+                except Exception as e:
+                    logger.error(f"Failed to reconnect to {daemon_id}: {e}")
+                    return {
+                        "success": False,
+                        "message": f"Failed to reconnect to daemon {daemon_id}: {str(e)}"
+                    }
+        else:
+            try:
+                new_connection = self.create_connection(config)
+                if new_connection.is_connected():
+                    return {
+                        "success": True,
+                        "message": f"Successfully connected to daemon {daemon_id}"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "message": f"Failed to connect to daemon {daemon_id}"
+                    }
+            except Exception as e:
+                logger.error(f"Failed to create connection to {daemon_id}: {e}")
+                return {
+                    "success": False,
+                    "message": f"Failed to connect to daemon {daemon_id}: {str(e)}"
+                }
+
     def remove_connection(self, daemon_id: str):
         if daemon_id in self.connections:
             connection = self.connections.pop(daemon_id)

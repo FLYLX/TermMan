@@ -137,14 +137,6 @@ export type ItemPublic = {
     owner_id: string;
     created_at?: (string | null);
     updated_at?: (string | null);
-    daemon_url?: string;
-    connected_users?: {
-        [sid: string]: {
-            user_uuid: string;
-            ip: string;
-        };
-    };
-    token?: string;
 };
 
 export type ItemStatus = 'stopped' | 'running' | 'starting' | 'stopping' | 'error';
@@ -389,6 +381,12 @@ export type ItemsDeleteItemData = {
 
 export type ItemsDeleteItemResponse = (Message);
 
+export type ItemsReconnectDaemonData = {
+    daemonId: string;
+};
+
+export type ItemsReconnectDaemonResponse = (unknown);
+
 export type ItemsDisconnectUserFromItemData = {
     id: string;
     userUuid: string;
@@ -413,12 +411,6 @@ export type ItemsStartItemData = {
 };
 
 export type ItemsStartItemResponse = (Message);
-
-export type ItemsConnectItemData = {
-    id: string;
-};
-
-export type ItemsConnectItemResponse = (Message);
 
 export type LoginLoginAccessTokenData = {
     formData: Body_login_login_access_token;
