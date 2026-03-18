@@ -16,7 +16,6 @@ import { useEffect, useMemo } from "react"
 import {
   ApiError,
   type ItemPublic,
-  type ItemsPublic,
   ItemsService,
 } from "@/client"
 import {
@@ -31,6 +30,20 @@ import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
 import { Users } from "lucide-react"
 
+type ItemWithExtras = ItemPublic & {
+  daemon_url?: string;
+  daemon_id?: string;
+  daemon_online?: boolean;
+  daemon_status?: string;
+  connected_users?: Record<string, { user_uuid: string; ip: string }>;
+  token?: string;
+}
+
+type ItemsResponse = {
+  data: ItemWithExtras[];
+  count: number;
+}
+
 function getItemQueryOptions(itemId: string) {
   return {
     queryFn: () => ItemsService.readItem({ id: itemId }),
@@ -40,8 +53,8 @@ function getItemQueryOptions(itemId: string) {
   }
 }
 
-function getCachedItem(items: ItemsPublic | undefined, itemId: string) {
-  return items?.data.find((item) => item.id === itemId)
+function getCachedItem(items: ItemsResponse | undefined, itemId: string) {
+  return items?.data.find((item: ItemWithExtras) => item.id === itemId)
 }
 
 function formatDate(value?: string | null) {
@@ -146,7 +159,7 @@ function ItemDetailPage({
   isUsingFallback,
   message,
 }: {
-  item: ItemPublic
+  item: ItemWithExtras
   isUsingFallback: boolean
   message?: string
 }) {
@@ -162,18 +175,6 @@ function ItemDetailPage({
     } catch (error) {
       console.error("Failed to start item:", error)
       showErrorToast("Failed to start item")
-    }
-  }
-
-  const handleConnectItem = async () => {
-    try {
-      const result = await ItemsService.connectItem({ id: item.id })
-      queryClient.invalidateQueries({ queryKey: ["item", item.id] })
-      queryClient.invalidateQueries({ queryKey: ["items"] })
-      showSuccessToast(result.message || "Item connected successfully")
-    } catch (error) {
-      console.error("Failed to connect item:", error)
-      showErrorToast("Failed to connect item")
     }
   }
 
@@ -252,9 +253,6 @@ function ItemDetailPage({
             <div className="flex flex-wrap gap-2">
               <Button type="button" size="sm" className="h-10 px-4" onClick={handleStartItem}>
                 Start
-              </Button>
-              <Button type="button" size="sm" className="h-10 px-4" onClick={handleConnectItem}>
-                Connect
               </Button>
               <Button type="button" size="sm" className="h-10 px-4" onClick={handleStopItem}>
                 Stop
@@ -427,12 +425,12 @@ function ItemDetailRoute() {
   const { itemId } = Route.useParams()
   const queryClient = useQueryClient()
 
-  const cachedDetailItem = queryClient.getQueryData<ItemPublic>([
+  const cachedDetailItem = queryClient.getQueryData<ItemWithExtras>([
     "items",
     "detail",
     itemId,
   ])
-  const cachedItems = queryClient.getQueryData<ItemsPublic>(["items"])
+  const cachedItems = queryClient.getQueryData<ItemsResponse>(["items"])
   const cachedListItem = getCachedItem(cachedItems, itemId)
   const storedItem = useMemo(() => getStoredItemSnapshot(itemId), [itemId])
   const seedItem = useMemo(
@@ -451,11 +449,11 @@ function ItemDetailRoute() {
 
   useEffect(() => {
     if (data) {
-      saveItemSnapshot(data)
+      saveItemSnapshot(data as ItemWithExtras)
     }
   }, [data])
 
-  const displayItem = data ?? seedItem
+  const displayItem = (data as ItemWithExtras) ?? seedItem
   const message = isError
     ? getErrorMessage(error)
     : !data && (isPending || isFetching)

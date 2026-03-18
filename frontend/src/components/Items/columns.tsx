@@ -9,6 +9,10 @@ import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import { cn } from "@/lib/utils"
 import { ItemActionsMenu } from "./ItemActionsMenu"
 
+type ItemWithExtras = ItemPublic & {
+  connected_users?: Record<string, { user_uuid: string; ip: string }>;
+}
+
 function CopyId({ id }: { id: string }) {
   const [copiedText, copy] = useCopyToClipboard()
   const isCopied = copiedText === id
@@ -33,7 +37,7 @@ function CopyId({ id }: { id: string }) {
   )
 }
 
-function ItemTitleLink({ item }: { item: ItemPublic }) {
+function ItemTitleLink({ item }: { item: ItemWithExtras }) {
   return (
     <Button asChild variant="link" className="h-auto p-0 text-left">
       <Link to="/items/$itemId" params={{ itemId: item.id }}>
@@ -43,7 +47,7 @@ function ItemTitleLink({ item }: { item: ItemPublic }) {
   )
 }
 
-function ConnectedUsers({ item }: { item: ItemPublic }) {
+function ConnectedUsers({ item }: { item: ItemWithExtras }) {
   const connectedUsers = item.connected_users || {}
   const userCount = Object.keys(connectedUsers).length
   
@@ -95,7 +99,7 @@ function StatusBadge({ status }: { status?: string }) {
   }
 }
 
-export const columns: ColumnDef<ItemPublic>[] = [
+export const columns: ColumnDef<ItemWithExtras>[] = [
   {
     accessorKey: "id",
     header: "ID",

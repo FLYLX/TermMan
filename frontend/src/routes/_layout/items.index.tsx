@@ -30,7 +30,9 @@ export const Route = createFileRoute("/_layout/items/")({
 function ItemsTableContent() {
   const { data: items } = useSuspenseQuery(getItemsQueryOptions())
 
-  if (items.data.length === 0) {
+  const itemsData = (items as any)?.data || []
+
+  if (itemsData.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center text-center py-12">
         <div className="rounded-full bg-muted p-4 mb-4">
@@ -42,7 +44,7 @@ function ItemsTableContent() {
     )
   }
 
-  return <DataTable columns={columns} data={items.data} />
+  return <DataTable columns={columns} data={itemsData} />
 }
 
 function ItemsTable() {

@@ -2,7 +2,16 @@ import type { ItemPublic } from "@/client"
 
 const ITEM_SNAPSHOT_STORAGE_KEY = "termman:item-detail-snapshots"
 
-type ItemSnapshotMap = Record<string, ItemPublic>
+type ItemWithExtras = ItemPublic & {
+  daemon_url?: string;
+  daemon_id?: string;
+  daemon_online?: boolean;
+  daemon_status?: string;
+  connected_users?: Record<string, { user_uuid: string; ip: string }>;
+  token?: string;
+}
+
+type ItemSnapshotMap = Record<string, ItemWithExtras>
 
 function canUseStorage() {
   return (
@@ -42,13 +51,13 @@ export function getStoredItemSnapshot(itemId: string) {
   return readSnapshotMap()[itemId]
 }
 
-export function saveItemSnapshot(item: ItemPublic) {
+export function saveItemSnapshot(item: ItemWithExtras) {
   const snapshotMap = readSnapshotMap()
   snapshotMap[item.id] = item
   writeSnapshotMap(snapshotMap)
 }
 
-export function saveItemSnapshots(items: ItemPublic[]) {
+export function saveItemSnapshots(items: ItemWithExtras[]) {
   const snapshotMap = readSnapshotMap()
 
   for (const item of items) {
@@ -60,8 +69,8 @@ export function saveItemSnapshots(items: ItemPublic[]) {
 
 export function createFallbackItem(
   itemId: string,
-  source?: Partial<ItemPublic>,
-): ItemPublic {
+  source?: Partial<ItemWithExtras>,
+): ItemWithExtras {
   const shortId = itemId.slice(0, 8).toUpperCase()
 
   return {

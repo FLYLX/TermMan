@@ -50,7 +50,7 @@ const AddItemToHandler = ({ itemHandlerId }: AddItemToHandlerProps) => {
     queryKey: ["items"],
   });
   
-  const items = itemsResult?.data || [];
+  const items = (itemsResult as any)?.data || [];
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -119,7 +119,7 @@ const AddItemToHandler = ({ itemHandlerId }: AddItemToHandlerProps) => {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {items?.map((item) => (
+                        {items?.map((item: any) => (
                           <SelectItem key={item.id} value={item.id}>
                             {item.title} (ID: {item.id.slice(0, 8)}...)
                           </SelectItem>

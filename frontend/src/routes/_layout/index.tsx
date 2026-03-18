@@ -65,7 +65,7 @@ function Dashboard() {
       try {
         setLoading(true)
         const response = await ItemsService.readItems()
-        setItems(response.data || [])
+        setItems((response as any).data || [])
       } catch (error) {
         console.error("Failed to fetch items:", error)
         toast.error("Failed to fetch items. Please try again.")
@@ -91,13 +91,13 @@ function Dashboard() {
     try {
       await ItemsService.disconnectUserFromItem({
         id: itemId,
-        user_uuid: userUuid
+        userUuid: userUuid
       })
       toast.success("User disconnected successfully.")
 
       // 刷新项目列表
       const response = await ItemsService.readItems()
-      setItems(response.data || [])
+      setItems((response as any).data || [])
     } catch (error) {
       console.error("Failed to disconnect user:", error)
       toast.error("Failed to disconnect user. Please try again.")
@@ -107,12 +107,12 @@ function Dashboard() {
   // 重连daemon
   const handleReconnectDaemon = async (daemonId: string) => {
     try {
-      const result = await ItemsService.reconnectDaemon({ daemonId })
+      const result = await ItemsService.reconnectDaemon({ daemonId }) as any
       if (result.success) {
         toast.success(result.message)
         // 刷新项目列表
         const response = await ItemsService.readItems()
-        setItems(response.data || [])
+        setItems((response as any).data || [])
       } else {
         toast.error(result.message)
       }
@@ -185,7 +185,7 @@ function Dashboard() {
           {loading ? (
             <p>Loading items...</p>
           ) : items.length === 0 ? (
-            <Alert variant="info">
+            <Alert>
               <AlertTitle>No items found</AlertTitle>
               <AlertDescription>You don't have any items yet.</AlertDescription>
             </Alert>
@@ -257,7 +257,7 @@ function Dashboard() {
                                   <ChevronRight className="h-5 w-5 mr-2" />
                                 )}
                                 <div>
-                                  <Link to={`/items/${item.id}`} className="font-medium hover:text-blue-600 hover:underline" onClick={(e) => e.stopPropagation()}>
+                                  <Link to="/items/$itemId" params={{ itemId: item.id }} className="font-medium hover:text-blue-600 hover:underline" onClick={(e) => e.stopPropagation()}>
                                     {item.title}
                                   </Link>
                                   <p className="text-sm text-muted-foreground">{item.description || "No description"}</p>
