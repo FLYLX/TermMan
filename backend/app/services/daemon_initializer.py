@@ -1,6 +1,10 @@
 """
 Daemon连接初始化模块
 负责在应用启动时初始化所有daemon连接
+
+按 pool.md 规范：
+- ConnectionManager: 管理 Backend → Daemon 的主连接（管控指令）
+- backend_conn_pool: 全局连接池单例，追踪 Daemon 主连接状态
 """
 
 import logging
@@ -10,17 +14,16 @@ from sqlmodel import Session
 
 from app.core.db import engine
 from app.models import Item, ItemStatus
-from app.services.connection_pool import ConnectionManager, DaemonConfig
+from app.services.connection_pool import ConnectionManager, DaemonConfig, backend_conn_pool
 from app.services.socket_pool import SocketManager
 
 logger = logging.getLogger(__name__)
 
 connection_manager = ConnectionManager()
-
 socket_manager = SocketManager()
 
 
-def handle_connection_update(data):
+def handle_connection_update(data: dict):
     """
     处理来自daemon的连接池更新
     
@@ -28,46 +31,22 @@ def handle_connection_update(data):
         data: 包含type和connections的字典
             - type: "full_sync" 或 "item_update"
             - connections: 连接池数据
+            - rooms: Room信息
     """
     update_type = data.get("type")
-    connections = data.get("connections", {})
+    rooms = data.get("rooms", {})
     
     logger.info(f"\n{'*'*80}")
     logger.info(f"[Backend] 收到 Daemon 连接池同步通知")
     logger.info(f"{'*'*80}")
     logger.info(f"  同步类型: {update_type}")
+    logger.info(f"  Rooms 数量: {len(rooms)}")
     
-    if update_type == "full_sync":
-        logger.info(f"  全量同步: {len(connections)} 个Items")
-        
-        for item_uuid, item_conns in connections.items():
-            logger.info(f"    Item: {item_uuid}")
-            if item_conns:
-                for sid, conn_info in item_conns.items():
-                    logger.info(f"      - SID: {sid[:16]}... | User: {conn_info.get('user_uuid', 'unknown')} | IP: {conn_info.get('ip', 'unknown')}")
-            else:
-                logger.info(f"      - 无连接")
-        
-        socket_manager.connections = connections
-        socket_manager._print_connection_tables("全量同步自 Daemon")
-        
-    elif update_type == "item_update":
-        item_uuid = data.get("item_uuid")
-        item_connections = data.get("item_connections", {})
-        
-        if item_uuid:
-            logger.info(f"  增量更新 Item: {item_uuid}")
-            logger.info(f"  连接数: {len(item_connections)}")
-            
-            if item_connections:
-                logger.info(f"  连接详情:")
-                for sid, conn_info in item_connections.items():
-                    logger.info(f"    - SID: {sid[:16]}... | User: {conn_info.get('user_uuid', 'unknown')} | IP: {conn_info.get('ip', 'unknown')}")
-            else:
-                logger.info(f"  连接详情: 无连接")
-            
-            socket_manager.connections[item_uuid] = item_connections
-            socket_manager._print_connection_tables(f"增量更新: {item_uuid}")
+    if rooms:
+        for room_id, room_info in rooms.items():
+            logger.info(f"    Room: {room_id}")
+            logger.info(f"      - permanent: {room_info.get('permanent_count', 0)}")
+            logger.info(f"      - temporary: {room_info.get('temporary_count', 0)}")
     
     logger.info(f"{'*'*80}\n")
 
@@ -80,6 +59,7 @@ def initialize_daemon_connections():
     3. 为每个daemon创建WebSocket连接
     4. 将连接添加到连接池
     5. 设置连接更新回调
+    6. 更新 backend_conn_pool 中的 daemon_main_conn_state
     """
     logger.info("Starting up application and initializing daemon connections...")
 
@@ -87,7 +67,7 @@ def initialize_daemon_connections():
         items = session.query(Item).all()
         logger.info(f"Found {len(items)} items in database")
 
-        unique_configs = {}
+        unique_configs: dict[str, dict] = {}
 
         for item in items:
             if item.socket_host and item.socket_port and item.api_key:
@@ -98,7 +78,6 @@ def initialize_daemon_connections():
                         "host": item.socket_host,
                         "port": item.socket_port,
                         "api_key": item.api_key,
-                        "endpoint": f"{item.socket_host}:{item.socket_port}",
                         "items": [item],
                     }
                 else:
@@ -110,10 +89,7 @@ def initialize_daemon_connections():
             host = config["host"]
             port = config["port"]
             api_key = config["api_key"]
-            endpoint = config["endpoint"]
             items_list = config["items"]
-
-            logger.info(f"Connecting to daemon at {endpoint} via WebSocket...")
 
             daemon_config = DaemonConfig(ip=host, port=port, api_key=api_key)
 
@@ -123,7 +99,13 @@ def initialize_daemon_connections():
                 connection.on("connection_update", handle_connection_update)
 
                 if connection.is_connected():
-                    logger.info(f"Successfully connected to daemon at {endpoint} via WebSocket")
+                    logger.info(f"Successfully connected to daemon at {host}:{port}")
+                    
+                    daemon_state = backend_conn_pool.create_daemon_main_conn_state(
+                        api_key, 
+                        daemon_config.base_url
+                    )
+                    daemon_state.set_connected()
 
                     with Session(engine) as update_session:
                         for item in items_list:
@@ -134,32 +116,26 @@ def initialize_daemon_connections():
                                 update_item.socket_last_connected = datetime.now()
                         update_session.commit()
                 else:
-                    logger.error(f"Failed to connect to daemon at {endpoint}")
+                    logger.error(f"Failed to connect to daemon at {host}:{port}")
+                    _mark_items_disconnected(items_list)
 
-                    with Session(engine) as update_session:
-                        for item in items_list:
-                            update_item = update_session.get(Item, item.id)
-                            if update_item:
-                                update_item.status = ItemStatus.stopped
-                                update_item.socket_connected = False
-                        update_session.commit()
             except Exception as e:
-                logger.error(f"Error connecting to daemon at {endpoint}: {str(e)}")
-
-                with Session(engine) as update_session:
-                    for item in items_list:
-                        update_item = update_session.get(Item, item.id)
-                        if update_item:
-                            update_item.status = ItemStatus.stopped
-                            update_item.socket_connected = False
-                    update_session.commit()
+                logger.error(f"Error connecting to daemon at {host}:{port}: {str(e)}")
+                _mark_items_disconnected(items_list)
 
     logger.info("Daemon initialization completed")
 
 
-def start_daemon_initialization():
-    initialize_daemon_connections()
+def _mark_items_disconnected(items: list[Item]):
+    """标记items为断开状态"""
+    with Session(engine) as update_session:
+        for item in items:
+            update_item = update_session.get(Item, item.id)
+            if update_item:
+                update_item.status = ItemStatus.stopped
+                update_item.socket_connected = False
+        update_session.commit()
 
 
 if __name__ == "__main__":
-    start_daemon_initialization()
+    initialize_daemon_connections()

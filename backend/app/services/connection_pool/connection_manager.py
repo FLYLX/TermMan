@@ -8,10 +8,14 @@ logger = logging.getLogger(__name__)
 
 class ConnectionManager:
     """
-    Daemon连接池管理 - 只维护一张表
+    Daemon主连接管理器 - 管理 Backend → Daemon 的管控连接
     
-    daemon连接池表: [daemon ip:port:apikey] -> DaemonConnection
-    - 有连接的放进去，没有连接的就拿出来
+    按 pool.md 规范：
+    - 此连接池管理 Backend 主动向 Daemon 发起的主连接
+    - 用于发送管控指令（启动/停止/重启终端等）
+    - 与 BackendConnPool 中的 daemon_main_conn_state 配合使用
+    
+    连接池表: {daemon_id -> DaemonConnection}
     """
     def __init__(self):
         self.connections: Dict[str, DaemonConnection] = {}
@@ -39,15 +43,6 @@ class ConnectionManager:
         return connection
 
     def reconnect_connection(self, config: DaemonConfig) -> Dict[str, Any]:
-        """
-        尝试重新连接daemon
-        
-        Args:
-            config: Daemon配置
-            
-        Returns:
-            dict: 包含success和message的字典
-        """
         daemon_id = config.daemon_id
         connection = self.get_connection(daemon_id)
         
@@ -123,12 +118,6 @@ class ConnectionManager:
             self.remove_connection(daemon_id)
 
     def get_connection_pool(self) -> Dict[str, Any]:
-        """
-        获取daemon连接池表
-        
-        Returns:
-            格式为 {daemon_id: {ip, port, status}}
-        """
         pool = {}
         for daemon_id, conn in self.connections.items():
             pool[daemon_id] = {
@@ -139,13 +128,10 @@ class ConnectionManager:
         return pool
 
     def _print_connection_pool(self, message: str = "Connection Pool Updated"):
-        """
-        打印daemon连接池表
-        """
         logger.info(f"\n{'='*60}")
         logger.info(f"{message}")
         logger.info(f"{'='*60}")
-        logger.info("\nDaemon连接池表 [daemon ip:port:apikey]")
+        logger.info("\nDaemon主连接池表 [daemon ip:port:apikey]")
         logger.info("-" * 80)
         logger.info(f"{'Daemon ID':<50} | {'Status':<15}")
         logger.info("-" * 80)

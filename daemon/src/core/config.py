@@ -22,6 +22,7 @@ class Config:
             "PORT": int(os.getenv("PORT", "9000")),
             "HOST": os.getenv("HOST", "0.0.0.0"),
             "API_KEY": os.getenv("API_KEY", ""),
+            "SECRET_KEY": os.getenv("SECRET_KEY", "default-secret-key-change-in-production"),
             "WORKDIR": os.getenv("WORKDIR", "./src/workdir"),
             "LOG_DIR": os.getenv("LOG_DIR", "./log"),
             "DATA_DIR": os.getenv("DATA_DIR", "./src/data"),

@@ -3,11 +3,16 @@ from .memory_store import MemoryStore, memory_store
 from .file_storage import FileStorage
 from .global_instances import (
     set_socket_service, 
-    get_socket_service,
-    add_backend_connection,
-    remove_backend_connection,
-    get_backend_connections,
-    is_backend_connected
+    get_socket_service
+)
+from .daemon_conn_pool import (
+    DaemonConnPool, 
+    daemon_conn_pool,
+    ConnectionStatus,
+    AuthStatus,
+    BackendMainConnection,
+    BrowserTerminalConnection,
+    BackendRoomListenConnection
 )
 
 __all__ = [
@@ -18,8 +23,11 @@ __all__ = [
     "FileStorage", 
     "set_socket_service", 
     "get_socket_service",
-    "add_backend_connection",
-    "remove_backend_connection",
-    "get_backend_connections",
-    "is_backend_connected"
+    "DaemonConnPool",
+    "daemon_conn_pool",
+    "ConnectionStatus",
+    "AuthStatus",
+    "BackendMainConnection",
+    "BrowserTerminalConnection",
+    "BackendRoomListenConnection"
 ]

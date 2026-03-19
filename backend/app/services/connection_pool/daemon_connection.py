@@ -1,6 +1,9 @@
 import socketio
 import asyncio
 import uuid
+import time
+import threading
+import concurrent.futures
 from typing import Callable, Dict, Any, Optional
 from datetime import datetime
 from ..protocol import ProtocolEvents
@@ -22,6 +25,7 @@ class DaemonConnection:
     def __init__(self, config: DaemonConfig):
         self.config = config
         self.status = ConnectionStatus.DISCONNECTED
+        self._auth_completed = threading.Event()
         
         self.sio = socketio.Client(
             reconnection=True,
@@ -33,8 +37,9 @@ class DaemonConnection:
         )
         
         self.callbacks: Dict[str, Callable] = {}
-        self.pending_requests: Dict[str, asyncio.Future] = {}
+        self.pending_requests: Dict[str, concurrent.futures.Future] = {}
         self.last_heartbeat = None
+        self._lock = threading.Lock()
         
         self._setup_event_handlers()
 
@@ -51,12 +56,14 @@ class DaemonConnection:
         @self.sio.event
         def disconnect():
             self.status = ConnectionStatus.DISCONNECTED
+            self._auth_completed.clear()
             logger.info(f"[WebSocket] Disconnected from {self.config.base_url}")
             
-            for future in self.pending_requests.values():
-                if not future.done():
-                    future.set_exception(Exception("Connection disconnected"))
-            self.pending_requests.clear()
+            with self._lock:
+                for future in self.pending_requests.values():
+                    if not future.done():
+                        future.set_exception(Exception("Connection disconnected"))
+                self.pending_requests.clear()
             
             if "disconnect" in self.callbacks:
                 self.callbacks["disconnect"]()
@@ -65,6 +72,7 @@ class DaemonConnection:
         def on_auth(data):
             if data.get("success"):
                 logger.info(f"[WebSocket] Authenticated with daemon: {self.config.base_url}")
+                self._auth_completed.set()
                 self._sync_all_connections()
             else:
                 logger.error(f"[WebSocket] Authentication failed: {data.get('message')}")
@@ -108,8 +116,8 @@ class DaemonConnection:
 
         @self.sio.on("stream")
         def on_stream(data):
-            if ProtocolEvents.INSTANCE_STDOUT in self.callbacks:
-                self.callbacks[ProtocolEvents.INSTANCE_STDOUT](data)
+            if ProtocolEvents.STREAM in self.callbacks:
+                self.callbacks[ProtocolEvents.STREAM](data)
 
         @self.sio.on("terminal_connected")
         def on_terminal_connected(data):
@@ -121,9 +129,10 @@ class DaemonConnection:
 
     def _handle_response(self, event: str, data: Dict[str, Any]):
         request_id = data.get("request_id")
-        if request_id and request_id in self.pending_requests:
-            future = self.pending_requests.pop(request_id)
-            if not future.done():
+        if request_id:
+            with self._lock:
+                future = self.pending_requests.pop(request_id, None)
+            if future and not future.done():
                 future.set_result(data)
         else:
             if event in self.callbacks:
@@ -132,30 +141,34 @@ class DaemonConnection:
     def _generate_request_id(self) -> str:
         return str(uuid.uuid4())
 
-    async def _emit_and_wait(self, event: str, data: Dict[str, Any], timeout: float = 30.0) -> Dict[str, Any]:
+    def _emit_and_wait_sync(self, event: str, data: Dict[str, Any], timeout: float = 30.0) -> Dict[str, Any]:
+        """同步发送请求并等待响应 - 使用线程安全的 Future"""
         if self.status != ConnectionStatus.CONNECTED:
             return {"success": False, "error": "Not connected to daemon"}
         
         request_id = self._generate_request_id()
         data["request_id"] = request_id
         
-        future = asyncio.Future()
-        self.pending_requests[request_id] = future
+        future = concurrent.futures.Future()
+        with self._lock:
+            self.pending_requests[request_id] = future
         
         try:
             self.sio.emit(event, data)
-            
-            result = await asyncio.wait_for(future, timeout=timeout)
+            result = future.result(timeout=timeout)
             return result
-        except asyncio.TimeoutError:
-            self.pending_requests.pop(request_id, None)
+        except concurrent.futures.TimeoutError:
+            with self._lock:
+                self.pending_requests.pop(request_id, None)
             return {"success": False, "error": "Request timeout"}
         except Exception as e:
-            self.pending_requests.pop(request_id, None)
+            with self._lock:
+                self.pending_requests.pop(request_id, None)
             return {"success": False, "error": str(e)}
 
     def connect(self) -> bool:
         try:
+            self._auth_completed.clear()
             self.sio.connect(
                 self.config.base_url,
                 transports=["websocket"],
@@ -166,7 +179,12 @@ class DaemonConnection:
                 "backend_id": f"{self.config.ip}:{self.config.api_key[:8]}"
             })
             
-            return True
+            if self._auth_completed.wait(timeout=10):
+                logger.info(f"[WebSocket] Auth completed for {self.config.base_url}")
+                return True
+            else:
+                logger.warning(f"[WebSocket] Auth timeout for {self.config.base_url}, but connection is established")
+                return True
         except Exception as e:
             logger.error(f"Failed to connect to {self.config.base_url}: {str(e)}")
             self.status = ConnectionStatus.ERROR
@@ -178,135 +196,16 @@ class DaemonConnection:
         except Exception:
             pass
         self.status = ConnectionStatus.DISCONNECTED
+        self._auth_completed.clear()
 
     def on(self, event: str, callback: Callable):
         self.callbacks[event] = callback
 
     def is_connected(self) -> bool:
-        return self.status == ConnectionStatus.CONNECTED
+        return self.status == ConnectionStatus.CONNECTED and self.sio.connected
 
     def get_status(self) -> ConnectionStatus:
         return self.status
-
-    async def terminal_start(self, user_uuid: str, item_uuid: str, working_directory: str = None, command: str = None) -> Dict[str, Any]:
-        data = {
-            "user_uuid": user_uuid,
-            "item_uuid": item_uuid
-        }
-        if working_directory:
-            data["working_directory"] = working_directory
-        if command:
-            data["command"] = command
-        
-        return await self._emit_and_wait("terminal/start", data)
-
-    async def terminal_stop(self, item_uuid: str) -> Dict[str, Any]:
-        return await self._emit_and_wait("terminal/stop", {
-            "item_uuid": item_uuid
-        })
-
-    async def terminal_restart(self, item_uuid: str, user_uuid: str = None, working_directory: str = None, command: str = None) -> Dict[str, Any]:
-        data = {"item_uuid": item_uuid}
-        if user_uuid:
-            data["user_uuid"] = user_uuid
-        if working_directory:
-            data["working_directory"] = working_directory
-        if command:
-            data["command"] = command
-        
-        return await self._emit_and_wait("terminal/restart", data)
-
-    async def terminal_status(self, item_uuid: str) -> Dict[str, Any]:
-        return await self._emit_and_wait("terminal/status", {
-            "item_uuid": item_uuid
-        })
-
-    async def terminal_list(self) -> Dict[str, Any]:
-        return await self._emit_and_wait("terminal/list", {})
-
-    async def get_connections(self, item_uuid: str) -> Dict[str, Any]:
-        return await self._emit_and_wait("connections/get", {
-            "item_uuid": item_uuid
-        })
-
-    async def get_all_connections(self) -> Dict[str, Any]:
-        return await self._emit_and_wait("connections/get_all", {})
-
-    def _sync_all_connections(self):
-        import threading
-        def run_sync():
-            try:
-                asyncio.run(self._do_sync_all_connections())
-            except Exception as e:
-                logger.error(f"[WebSocket] Failed to sync all connections: {str(e)}")
-        
-        thread = threading.Thread(target=run_sync, daemon=True)
-        thread.start()
-
-    async def _do_sync_all_connections(self):
-        try:
-            result = await self.get_all_connections()
-            if result.get("success"):
-                connections = result.get("connections", {})
-                
-                logger.info(f"\n{'@'*80}")
-                logger.info(f"[DaemonConnection] 收到 Daemon 全量连接池数据")
-                logger.info(f"{'@'*80}")
-                logger.info(f"  来源: {self.config.base_url}")
-                logger.info(f"  Items 数量: {len(connections)}")
-                
-                if connections:
-                    logger.info(f"  连接池详情:")
-                    for item_uuid, item_conns in connections.items():
-                        logger.info(f"    Item: {item_uuid}")
-                        if item_conns:
-                            for sid, conn_info in item_conns.items():
-                                logger.info(f"      - SID: {sid[:16]}... | User: {conn_info.get('user_uuid', 'unknown')} | IP: {conn_info.get('ip', 'unknown')}")
-                        else:
-                            logger.info(f"      - 无连接")
-                
-                if "connection_update" in self.callbacks:
-                    self.callbacks["connection_update"]({
-                        "type": "full_sync",
-                        "connections": connections
-                    })
-                    logger.info(f"  [OK] 已触发 connection_update 回调")
-                
-                logger.info(f"{'@'*80}\n")
-        except Exception as e:
-            logger.error(f"[WebSocket] Failed to sync all connections: {str(e)}")
-
-    async def disconnect_connection(self, item_uuid: str, user_uuid: str = None, ip_address: str = None) -> Dict[str, Any]:
-        data = {"item_uuid": item_uuid}
-        if user_uuid:
-            data["user_uuid"] = user_uuid
-        if ip_address:
-            data["ip_address"] = ip_address
-        
-        return await self._emit_and_wait("connections/disconnect", data)
-
-    def emit(self, event: str, data: Any) -> bool:
-        if self.status != ConnectionStatus.CONNECTED:
-            return False
-        try:
-            self.sio.emit(event, data)
-            return True
-        except Exception:
-            return False
-
-    def _run_async(self, coro):
-        """同步运行异步协程"""
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, coro)
-                    return future.result(timeout=30)
-            else:
-                return loop.run_until_complete(coro)
-        except RuntimeError:
-            return asyncio.run(coro)
 
     def terminal_start_http(self, user_uuid: str, item_uuid: str, working_directory: str = None, command: str = None) -> Dict[str, Any]:
         """
@@ -318,7 +217,19 @@ class DaemonConnection:
             token: 访问令牌
             message: 消息
         """
-        return self._run_async(self.terminal_start(user_uuid, item_uuid, working_directory, command))
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected to daemon"}
+        
+        data = {
+            "user_uuid": user_uuid,
+            "item_uuid": item_uuid
+        }
+        if working_directory:
+            data["working_directory"] = working_directory
+        if command:
+            data["command"] = command
+        
+        return self._emit_and_wait_sync("terminal/start", data)
 
     def terminal_stop_http(self, item_uuid: str) -> Dict[str, Any]:
         """
@@ -329,25 +240,42 @@ class DaemonConnection:
             item_uuid: 终端UUID
             message: 消息
         """
-        return self._run_async(self.terminal_stop(item_uuid))
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected to daemon"}
+        return self._emit_and_wait_sync("terminal/stop", {"item_uuid": item_uuid})
 
     def terminal_restart_http(self, item_uuid: str, user_uuid: str = None, working_directory: str = None, command: str = None) -> Dict[str, Any]:
         """
         重启终端 - 同步方法
         """
-        return self._run_async(self.terminal_restart(item_uuid, user_uuid, working_directory, command))
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected to daemon"}
+        
+        data = {"item_uuid": item_uuid}
+        if user_uuid:
+            data["user_uuid"] = user_uuid
+        if working_directory:
+            data["working_directory"] = working_directory
+        if command:
+            data["command"] = command
+        
+        return self._emit_and_wait_sync("terminal/restart", data)
 
     def terminal_status_http(self, item_uuid: str) -> Dict[str, Any]:
         """
         查询终端状态 - 同步方法
         """
-        return self._run_async(self.terminal_status(item_uuid))
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected to daemon"}
+        return self._emit_and_wait_sync("terminal/status", {"item_uuid": item_uuid})
 
     def terminal_list_http(self) -> Dict[str, Any]:
         """
         获取终端列表 - 同步方法
         """
-        return self._run_async(self.terminal_list())
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected to daemon"}
+        return self._emit_and_wait_sync("terminal/list", {})
 
     def get_connections_http(self, item_uuid: str) -> Dict[str, Any]:
         """
@@ -358,7 +286,9 @@ class DaemonConnection:
             item_uuid: 终端UUID
             connections: 连接池表 {sid: {user_uuid, ip}}
         """
-        return self._run_async(self.get_connections(item_uuid))
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected to daemon"}
+        return self._emit_and_wait_sync("connections/get", {"item_uuid": item_uuid})
 
     def get_all_connections_http(self) -> Dict[str, Any]:
         """
@@ -368,7 +298,9 @@ class DaemonConnection:
             success: 是否成功
             connections: 所有连接池表
         """
-        return self._run_async(self.get_all_connections())
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected to daemon"}
+        return self._emit_and_wait_sync("connections/get_all", {})
 
     def disconnect_connection_http(self, item_uuid: str, user_uuid: str = None, ip_address: str = None) -> Dict[str, Any]:
         """
@@ -380,4 +312,59 @@ class DaemonConnection:
             message: 消息
             connections: 更新后的连接池表
         """
-        return self._run_async(self.disconnect_connection(item_uuid, user_uuid, ip_address))
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected to daemon"}
+        
+        data = {"item_uuid": item_uuid}
+        if user_uuid:
+            data["user_uuid"] = user_uuid
+        if ip_address:
+            data["ip_address"] = ip_address
+        
+        return self._emit_and_wait_sync("connections/disconnect", data)
+
+    def _sync_all_connections(self):
+        def run_sync():
+            try:
+                result = self._emit_and_wait_sync("connections/get_all", {}, timeout=10.0)
+                if result.get("success"):
+                    connections = result.get("connections", {})
+                    
+                    logger.info(f"\n{'@'*80}")
+                    logger.info(f"[DaemonConnection] 收到 Daemon 全量连接池数据")
+                    logger.info(f"{'@'*80}")
+                    logger.info(f"  来源: {self.config.base_url}")
+                    logger.info(f"  Items 数量: {len(connections)}")
+                    
+                    if connections:
+                        logger.info(f"  连接池详情:")
+                        for item_uuid, item_conns in connections.items():
+                            logger.info(f"    Item: {item_uuid}")
+                            if item_conns:
+                                for sid, conn_info in item_conns.items():
+                                    logger.info(f"      - SID: {sid[:16]}... | User: {conn_info.get('user_uuid', 'unknown')} | IP: {conn_info.get('ip', 'unknown')}")
+                            else:
+                                logger.info(f"      - 无连接")
+                    
+                    if "connection_update" in self.callbacks:
+                        self.callbacks["connection_update"]({
+                            "type": "full_sync",
+                            "connections": connections
+                        })
+                        logger.info(f"  [OK] 已触发 connection_update 回调")
+                    
+                    logger.info(f"{'@'*80}\n")
+            except Exception as e:
+                logger.error(f"[WebSocket] Failed to sync all connections: {str(e)}")
+        
+        thread = threading.Thread(target=run_sync, daemon=True)
+        thread.start()
+
+    def emit(self, event: str, data: Any) -> bool:
+        if self.status != ConnectionStatus.CONNECTED:
+            return False
+        try:
+            self.sio.emit(event, data)
+            return True
+        except Exception:
+            return False

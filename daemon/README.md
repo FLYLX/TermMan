@@ -1,497 +1,387 @@
-# TermMan Daemon
+# TermMan Daemon - 终端管理守护进程
 
-TermMan Daemon是一个终端管理守护进程，负责管理和运行终端进程，并通过WebSocket与Backend进行通信。
+## 概述
+
+TermMan Daemon 是一个轻量级的终端管理守护进程，负责管理终端子进程的生命周期、处理 WebSocket 连接、以及与 Backend 的通信。它采用「凭证唯一签发中心」架构，Backend 负责所有 Token/凭证的签发，Daemon 仅做凭证验证。
+
+## 核心架构
+
+### 三层通信架构
+
+```
+┌─────────────┐      HTTP/WS       ┌─────────────┐      WS        ┌─────────────┐
+│   Browser   │ ◄───────────────► │   Backend   │ ◄────────────► │   Daemon    │
+└─────────────┘                    └─────────────┘                └─────────────┘
+       │                                  │                              │
+       │ 1. 登录获取用户Token              │                              │
+       │ ──────────────────────────────► │                              │
+       │                                  │                              │
+       │ 2. 申请终端临时Token             │                              │
+       │ ──────────────────────────────► │                              │
+       │                                  │                              │
+       │ ◄────────────────────────────── │                              │
+       │    返回: access_token + daemon_url                             │
+       │                                  │                              │
+       │ 3. 直连Daemon (携带access_token) │                              │
+       │ ────────────────────────────────────────────────────────────► │
+       │                                  │                              │
+       │ ◄──────────────────────────────────────────────────────────── │
+       │    验证通过，建立WebSocket连接                                   │
+       │                                  │                              │
+```
+
+### Room 机制（按 UPDATE.MD 规范）
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                              Item Room (item_uuid)                            │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────────┐                    ┌─────────────────────┐         │
+│  │  Permanent (Backend) │                    │ Temporary (Browser) │         │
+│  │                     │                    │                     │         │
+│  │  • 监听输出写日志     │                    │  • 实时渲染终端      │         │
+│  │  • 永久订阅者        │                    │  • 临时订阅者        │         │
+│  │  • Item启动时加入    │                    │  • 用户连接时加入    │         │
+│  │  • Item停止时移除    │                    │  • 断开时移除        │         │
+│  └─────────────────────┘                    └─────────────────────┘         │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                        Terminal Output                               │    │
+│  │                                                                      │    │
+│  │   Item Subprocess ─── stdout/stderr ───► Broadcast to Room ───► All │    │
+│  │                                                                      │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Room 机制核心价值**：
+1. **统一广播**：Daemon 只需将 Item 输出广播至 Room，无需区分 Backend / 浏览器
+2. **隔离性**：每个 Item 对应独立 Room，无交叉污染
+3. **可靠性**：Backend 作为永久订阅者，确保即使无浏览器连接，Item 输出也能被监听并写入日志
+
+## 认证体系
+
+### 凭证类型
+
+| 凭证类型 | 格式 | 用途 | 有效期 |
+|---------|------|------|--------|
+| 用户Token | JWT | 浏览器登录Backend后的会话凭证 | 数小时/天 |
+| 终端临时Token | item_uuid:user_uuid:timestamp:expires_in:signature | 浏览器直连Daemon | 10分钟 |
+| API Key | 预配置字符串 | Backend连接Daemon认证 | 永久 |
+| Daemon Token | UUID | Daemon内部终端会话标识 | 1天 |
+
+### 认证流程
+
+#### 1. Backend连接Daemon（预认证）
+
+```
+Backend ──── WS连接 ────► Daemon
+       │                    │
+       │ ─── auth事件 ────► │
+       │    {api_key}       │
+       │                    │
+       │ ◄── auth响应 ───── │
+       │    {success}       │
+```
+
+#### 2. 浏览器直连Daemon
+
+```
+Browser ──── WS连接 ────► Daemon
+       │                    │
+       │ ─ terminal/connect │
+       │   {access_token,   │
+       │    item_uuid}      │
+       │                    │
+       │ ◄─ terminal_connected │
+       │    或 auth_error    │
+```
 
 ## 目录结构
 
 ```
 daemon/
-├── pyproject.toml            # 项目配置
-├── .env                      # 环境变量配置
-├── .env.example              # 环境变量示例
 ├── src/
-│   ├── __init__.py           # Python包标记
-│   ├── core/                 # 核心模块
-│   │   ├── __init__.py
-│   │   ├── config.py         # 配置管理
-│   │   ├── memory_store.py   # 内存存储
-│   │   ├── file_storage.py   # 文件存储
-│   │   └── global_instances.py # 全局实例管理
-│   ├── service/              # 业务服务
-│   │   ├── __init__.py
+│   ├── main.py              # 应用入口
+│   ├── api/
+│   │   ├── http_routes.py   # HTTP API路由
+│   │   └── socket_routes.py # WebSocket事件处理
+│   ├── core/
+│   │   ├── config.py        # 配置管理
+│   │   ├── memory_store.py  # 内存存储（TTL支持）
+│   │   ├── file_storage.py  # 文件存储
+│   │   └── global_instances.py # 全局实例
+│   ├── service/
+│   │   ├── auth_service.py  # 认证服务
+│   │   ├── socket_service.py # Socket连接管理
 │   │   ├── terminal_manager.py # 终端进程管理
-│   │   └── socket_service.py   # Socket.IO连接池管理
-│   ├── api/                  # API接口
-│   │   ├── __init__.py
-│   │   ├── http_routes.py    # HTTP路由（健康检查、文件操作）
-│   │   └── socket_routes.py  # WebSocket路由（主要通信方式）
-│   ├── utils/                # 工具模块
-│   │   ├── __init__.py
-│   │   └── logger.py         # 日志工具
-│   ├── data/                 # 数据目录
-│   │   ├── config.json       # 配置文件
-│   │   └── terminals/        # 终端配置
-│   ├── workdir/              # 终端工作目录
-│   └── main.py               # 入口文件
-└── log/                      # 应用日志目录
+│   │   └── room_manager.py  # Room管理器（新增）
+│   └── utils/
+│       └── logger.py        # 日志工具
+├── log/                     # 日志目录
+├── .env                     # 环境配置
+└── Dockerfile               # Docker构建文件
 ```
 
-## 连接池表结构
+## 核心模块
 
-Daemon维护三张核心连接表，用于管理Backend连接和终端连接：
+### 1. DaemonRoomManager (room_manager.py) - 新增
 
-### 1. Backend连接表
-```
-[sid -> {backend_id, ip, connected_at}]
-```
-- 记录所有已认证的Backend WebSocket连接
-- `sid`: Socket.IO会话ID
-- `backend_id`: Backend标识（格式：`{ip}:{apikey前8位}`）
-- `ip`: Backend的IP地址
-- `connected_at`: 连接时间
+Room 管理器，按 UPDATE.MD 规范实现：
+- 每个 item_uuid 对应一个 Room
+- 区分 permanent（Backend）和 temporary（Browser）订阅者
+- 支持输出缓存，断连重连时可恢复
+- Item 停止时销毁 Room
 
-### 2. Item-Token映射表
-```
-{item_uuid: token}
-```
-- 记录每个终端实例的访问Token
-- `item_uuid`: 终端实例UUID
-- `token`: 访问Token（UUID格式）
+```python
+from service.room_manager import room_manager, Subscriber
 
-### 3. Item-连接映射表
-```
-[item_uuid -> {sid -> {user_uuid, ip}}]
-```
-- 记录每个终端实例的所有WebSocket连接
-- `item_uuid`: 终端实例UUID
-- `sid`: Socket.IO会话ID
-- `user_uuid`: 用户UUID（backend连接标记为"backend"）
-- `ip`: 用户IP地址
+# 创建 Room
+room_manager.create_room(item_uuid)
 
-## HTTP API路由
+# 添加订阅者
+subscriber = Subscriber(sid, "backend", user_uuid, ip)
+room_manager.add_subscriber(item_uuid, subscriber)
 
-| 路径 | 方法 | 认证 | 描述 |
-|------|------|------|------|
-| `/` | GET | 无 | Daemon健康检查 |
-| `/api/status` | GET | 无 | 获取Daemon状态 |
-| `/api/health` | GET | 无 | 健康检查 |
-| `/api/file/upload` | POST | X-API-Key | 文件上传（预留） |
-| `/api/file/download` | GET | X-API-Key | 文件下载（预留） |
+# 获取 Room 信息
+room_info = room_manager.get_room_info(item_uuid)
+# 返回: {"room_id": "xxx", "permanent_count": 1, "temporary_count": 2, ...}
 
-### 示例
-
-**获取Daemon状态**
-```bash
-curl http://localhost:9000/api/status
-# 响应: {"success": true, "version": "0.1.0", "status": "running", "terminal_count": 2}
+# 销毁 Room（Item 停止时）
+sids = room_manager.destroy_room(item_uuid)
 ```
 
-**健康检查**
-```bash
-curl http://localhost:9000/api/health
-# 响应: {"status": "ok"}
+### 2. AuthService (auth_service.py)
+
+认证服务，负责：
+- API Key 验证（Backend连接认证）
+- 终端Token管理（Daemon内部使用）
+- 浏览器Access Token验证（与Backend共享密钥）
+
+```python
+from service.auth_service import auth_service
+
+# 验证API Key
+is_valid = auth_service.validate_api_key(api_key)
+
+# 验证浏览器Access Token
+result = auth_service.verify_access_token(access_token, item_uuid)
+# 返回: {"success": True, "user_uuid": "xxx", "item_uuid": "xxx"}
 ```
 
-## WebSocket路由
+### 3. SocketService (socket_service.py)
 
-### 连接认证
+Socket连接池管理，使用Room机制实现消息隔离：
+- Backend主连接表: `[sid -> {backend_id, ip}]`
+- Item-Token映射表: `{item_uuid: token}`
+- SID映射表: `[sid -> {item_uuid, user_uuid, ip, type}]`
 
-**连接时认证**
-```javascript
-socket = io("http://localhost:9000", {
-  auth: { api_key: "your_api_key" }
-});
+```python
+# 加入 Room（区分订阅者类型）
+await socket_service.join_item_room(sid, item_uuid, "backend", user_uuid)
+await socket_service.join_item_room(sid, item_uuid, "browser", user_uuid)
+
+# 广播到终端Room
+await socket_service.broadcast_to_terminal(item_uuid, "stream", data)
+
+# 关闭终端所有连接（销毁 Room）
+await socket_service.close_terminal_connections(item_uuid)
 ```
 
-**连接后认证**
-```javascript
-socket.emit("auth", { backend_id: "backend-identifier" });
-// 响应: { success: true, message: "Authentication successful" }
+### 4. TerminalManager (terminal_manager.py)
+
+终端进程管理，负责：
+- 创建/启动/停止终端进程
+- 管理进程stdin/stdout/stderr
+- 输出广播到WebSocket
+
+```python
+from service.terminal_manager import terminal_manager
+
+# 创建并启动终端
+terminal_manager.create_terminal(user_uuid, token, workdir, command, item_uuid)
+terminal_manager.start_terminal(item_uuid)
+
+# 写入命令
+terminal.write("ls -la\n")
+
+# 停止终端
+terminal_manager.stop_terminal(item_uuid)
 ```
 
-### 终端管理路由
+## WebSocket事件
 
-#### terminal/start - 启动终端
+### Backend -> Daemon
 
-**请求**
-```javascript
-socket.emit("terminal/start", {
-  user_uuid: "user-uuid",
-  item_uuid: "item-uuid",
-  working_directory: "/path/to/workdir",  // 可选
-  command: "npm start"                    // 可选
-});
-```
+| 事件 | 描述 | 参数 |
+|------|------|------|
+| `auth` | Backend认证 | `{backend_id}` |
+| `terminal/start` | 启动终端 | `{user_uuid, item_uuid, working_directory?, command?}` |
+| `terminal/stop` | 停止终端 | `{item_uuid}` |
+| `terminal/restart` | 重启终端 | `{item_uuid, user_uuid?, working_directory?, command?}` |
+| `terminal/status` | 查询状态 | `{item_uuid}` |
+| `terminal/list` | 终端列表 | `{}` |
+| `connections/get` | 获取Item连接 | `{item_uuid}` |
+| `connections/get_all` | 获取所有连接 | `{}` |
+| `connections/disconnect` | 断开连接 | `{item_uuid, user_uuid?}` |
 
-**响应**
-```javascript
-{
-  success: true,
-  item_uuid: "item-uuid",
-  token: "generated-token",
-  message: "启动成功"
-}
-```
+### Browser -> Daemon
 
-**错误响应**
-```javascript
-{
-  success: false,
-  error: "Missing user_uuid or item_uuid"
-}
-```
+| 事件 | 描述 | 参数 |
+|------|------|------|
+| `terminal/connect` | 连接终端 | `{item_uuid, access_token, subscriber_type?}` 或 `{item_uuid, token, subscriber_type?}` |
+| `terminal/write` | 写入命令 | `{command}` |
 
-#### terminal/stop - 停止终端
+### Daemon -> Client
 
-**请求**
-```javascript
-socket.emit("terminal/stop", {
-  item_uuid: "item-uuid"
-});
-```
+| 事件 | 描述 | 数据 |
+|------|------|------|
+| `stream` | 终端输出 | `{stdout?}` 或 `{stderr?}` |
+| `terminal_connected` | 连接成功 | `{item_uuid, subscriber_type, room_info}` |
+| `auth_error` | 认证失败 | `{message}` |
+| `connection_update` | 连接池更新 | `{type, connections, rooms}` |
 
-**响应**
-```javascript
-{
-  success: true,
-  item_uuid: "item-uuid",
-  message: "终端已成功停止"
-}
-```
+## 关键流程
 
-#### terminal/restart - 重启终端
-
-**请求**
-```javascript
-socket.emit("terminal/restart", {
-  item_uuid: "item-uuid",
-  user_uuid: "user-uuid",
-  working_directory: "/path/to/workdir",  // 可选
-  command: "npm start"                    // 可选
-});
-```
-
-**响应**
-```javascript
-{
-  success: true,
-  item_uuid: "item-uuid",
-  token: "new-token",
-  message: "终端已成功重启"
-}
-```
-
-#### terminal/status - 获取终端状态
-
-**请求**
-```javascript
-socket.emit("terminal/status", {
-  item_uuid: "item-uuid"
-});
-```
-
-**响应**
-```javascript
-{
-  success: true,
-  data: {
-    item_uuid: "item-uuid",
-    status: "running",
-    pid: 12345,
-    created_at: "2024-01-01T00:00:00"
-  }
-}
-```
-
-#### terminal/list - 获取终端列表
-
-**请求**
-```javascript
-socket.emit("terminal/list", {});
-```
-
-**响应**
-```javascript
-{
-  success: true,
-  count: 2,
-  data: [
-    { item_uuid: "item-1", status: "running" },
-    { item_uuid: "item-2", status: "running" }
-  ]
-}
-```
-
-### 连接管理路由
-
-#### connections/get - 获取单个Item连接表
-
-**请求**
-```javascript
-socket.emit("connections/get", {
-  item_uuid: "item-uuid"
-});
-```
-
-**响应**
-```javascript
-{
-  success: true,
-  item_uuid: "item-uuid",
-  connections: {
-    "sid-1": { user_uuid: "user-1", ip: "192.168.1.1" },
-    "sid-2": { user_uuid: "backend", ip: "127.0.0.1" }
-  }
-}
-```
-
-#### connections/get_all - 获取所有Item连接表
-
-**请求**
-```javascript
-socket.emit("connections/get_all", {});
-```
-
-**响应**
-```javascript
-{
-  success: true,
-  connections: {
-    "item-uuid-1": {
-      "sid-1": { user_uuid: "user-1", ip: "192.168.1.1" }
-    },
-    "item-uuid-2": {
-      "sid-2": { user_uuid: "user-2", ip: "192.168.1.2" }
-    }
-  }
-}
-```
-
-#### connections/disconnect - 断开用户连接
-
-**请求**
-```javascript
-socket.emit("connections/disconnect", {
-  item_uuid: "item-uuid",
-  user_uuid: "user-uuid"  // 或 ip_address: "192.168.1.1"
-});
-```
-
-**响应**
-```javascript
-{
-  success: true,
-  item_uuid: "item-uuid",
-  message: "连接已断开",
-  connections: { /* 更新后的连接表 */ }
-}
-```
-
-### 用户终端连接路由
-
-#### terminal/connect - 用户连接终端
-
-**请求**
-```javascript
-socket.emit("terminal/connect", {
-  item_uuid: "item-uuid",
-  token: "access-token",
-  user_uuid: "user-uuid"
-});
-```
-
-**响应**
-```javascript
-// 成功
-socket.on("terminal_connected", { item_uuid: "item-uuid" });
-
-// 失败
-socket.on("auth_error", { message: "Invalid token" });
-```
-
-#### terminal/write - 向终端写入命令
-
-**请求**
-```javascript
-socket.emit("terminal/write", {
-  command: "echo hello"
-});
-```
-
-### 服务端推送事件
-
-#### connection_update - 连接池更新通知
-
-当有新的用户连接或断开时，Daemon会向所有Backend推送更新：
-
-```javascript
-socket.on("connection_update", {
-  type: "item_update",  // 或 "full_sync"
-  item_uuid: "item-uuid",
-  item_connections: {
-    "sid-1": { user_uuid: "user-1", ip: "192.168.1.1" }
-  }
-});
-```
-
-#### stream - 终端输出流
-
-```javascript
-socket.on("stream", {
-  stdout: "terminal output..."
-});
-```
-
-## 工作流程
-
-### 1. Backend连接Daemon流程
+### Item 启动 + Backend 加入 Room
 
 ```
-Backend                          Daemon
-  |                                |
-  |-- connect(auth: api_key) ---->|
-  |                                |
-  |<----- connect success ---------|
-  |                                |
-  |------ auth(backend_id) ------>|
-  |                                |
-  |<----- auth success ------------|
-  |                                |
-  |<-- connection_update(full_sync) --|  # 自动同步所有连接表
-  |                                |
+Backend                     Daemon                      Item Subprocess
+   │                           │                              │
+   │ ─── terminal/start ─────► │                              │
+   │     {item_uuid}           │                              │
+   │                           │                              │
+   │                           │ ─── 创建 Item Room ────────► │
+   │                           │     (room_id=item_uuid)      │
+   │                           │                              │
+   │                           │ ─── 启动子进程 ────────────► │
+   │                           │                              │
+   │ ◄── terminal/start ────── │                              │
+   │     {token, success}      │                              │
+   │                           │                              │
+   │ ─── terminal/connect ───► │                              │
+   │     {token, item_uuid,    │                              │
+   │      subscriber_type=     │                              │
+   │      "backend"}           │                              │
+   │                           │                              │
+   │                           │ ─── 加入 Room ────────────►  │
+   │                           │     (permanent订阅者)        │
+   │                           │                              │
+   │ ◄── terminal_connected ── │                              │
+   │     {room_info}           │                              │
+   │                           │                              │
+   │ ◄─────────────────────── stream ──────────────────────► │
+   │     {stdout/stderr}       │     (广播到Room)             │
+   │                           │                              │
+   │ ─── 写入日志 ──────────── │                              │
+   │                           │                              │
 ```
 
-### 2. 启动终端流程
+### Item 停止 + 销毁 Room
 
 ```
-Backend                          Daemon
-  |                                |
-  |-- terminal/start(item_uuid) ->|
-  |                                |
-  |                  创建终端进程   |
-  |                  生成Token      |
-  |                  更新Token表    |
-  |                                |
-  |<-- terminal/start(success) ----|
-  |    {token, message}            |
+Backend                     Daemon                      Item Subprocess
+   │                           │                              │
+   │ ─── terminal/stop ──────► │                              │
+   │     {item_uuid}           │                              │
+   │                           │                              │
+   │                           │ ─── 停止子进程 ────────────► │
+   │                           │                              │
+   │                           │ ─── 销毁 Room ────────────► │
+   │                           │     (移除所有订阅者)         │
+   │                           │                              │
+   │ ◄── terminal/stop ─────── │                              │
+   │     {success}             │                              │
+   │                           │                              │
+   │ ◄── WebSocket断开 ─────── │                              │
+   │     (Backend订阅者被移除) │                              │
+   │                           │                              │
 ```
 
-### 3. 用户连接终端流程
+## 配置
 
-```
-User                             Daemon
-  |                                |
-  |-- terminal/connect(token) ---->|
-  |                                |
-  |                  验证Token      |
-  |                  更新连接表      |
-  |                                |
-  |<-- terminal_connected ---------|
-  |                                |
-  |                --通知Backend-->|
-  |                connection_update|
-```
+### 环境变量 (.env)
 
-### 4. 终端输出广播流程
+```env
+# 服务配置
+PORT=9000
+HOST=0.0.0.0
 
-```
-Terminal Process                  Daemon                    User/Backend
-  |                                |                           |
-  |---- stdout ------------------->|                           |
-  |                                |                           |
-  |                  broadcast_to_terminal("stream")          |
-  |                                |                           |
-  |                                |-- stream(stdout) -------->|
+# 认证配置（必须与Backend一致）
+API_KEY=your_api_key_here
+SECRET_KEY=your_secret_key_here
+
+# 目录配置
+WORKDIR=./src/workdir
+LOG_DIR=./log
+DATA_DIR=./src/data
+
+# 终端配置
+TERMINAL_SHELL=cmd.exe  # Windows使用cmd.exe，Linux使用bash
+TERMINAL_ENCODING=utf-8
+TERMINAL_BUFFER_SIZE=8192
 ```
 
-## 环境变量配置
+### 重要：SECRET_KEY配置
 
-| 变量名 | 描述 | 默认值 |
-|--------|------|--------|
-| PORT | Daemon服务端口 | 9000 |
-| HOST | Daemon服务主机 | 0.0.0.0 |
-| API_KEY | API访问密钥 | 无（必须设置） |
-| WORKDIR | 终端工作目录 | ./src/workdir |
-| LOG_DIR | 日志目录 | ./log |
-| DATA_DIR | 数据目录 | ./src/data |
-| TERMINAL_SHELL | 终端Shell | cmd.exe (Windows) / bash (Linux) |
-| TERMINAL_ENCODING | 终端编码 | utf-8 |
-| TERMINAL_BUFFER_SIZE | 终端缓冲区大小 | 8192 |
+`SECRET_KEY` 必须与 Backend 的 `SECRET_KEY` 保持一致，否则浏览器 Access Token 验证会失败。
 
-## 启动方式
+```env
+# Backend (.env)
+SECRET_KEY=termman_secret_key_for_access_token_2024
 
-### 使用Poetry
+# Daemon (.env)
+SECRET_KEY=termman_secret_key_for_access_token_2024
+```
+
+## 运行
+
+### 本地开发
 
 ```bash
-cd daemon
-poetry install
-poetry run python src/main.py
+# 安装依赖
+pip install -r requirements.txt
+
+# 运行
+python src/main.py
 ```
 
-### 使用Docker
+### Docker
 
 ```bash
+# 构建
 docker build -t termman-daemon .
-docker run -p 9000:9000 -e API_KEY=your_secret_key termman-daemon
+
+# 运行
+docker run -d \
+  -p 9000:9000 \
+  -e API_KEY=your_api_key \
+  -e SECRET_KEY=your_secret_key \
+  -v ./log:/app/log \
+  termman-daemon
 ```
 
-## 核心类说明
+## 安全注意事项
 
-### SocketService
+1. **API Key 保护**：API Key 不应通过网络传输，仅在 Backend 和 Daemon 启动时预配置
+2. **SECRET_KEY 同步**：确保 Backend 和 Daemon 的 SECRET_KEY 一致
+3. **Token 有效期**：浏览器 Access Token 有效期为 10 分钟，短期有效降低泄露风险
+4. **IP 白名单**：生产环境建议配置 IP 白名单限制 Backend 连接
 
-```python
-class SocketService:
-    """Socket.IO连接池管理"""
-    
-    # 连接表
-    connections: Dict[str, Dict[str, Dict[str, str]]]  # Item-连接映射表
-    backend_connections: Dict[str, Dict[str, str]]      # Backend连接表
-    item_tokens: Dict[str, str]                         # Item-Token映射表
-    
-    # 核心方法
-    async def handle_disconnect(sid: str)              # 处理断开连接
-    async def broadcast_to_terminal(item_uuid, event, data)  # 广播到终端
-    async def notify_connection_update(item_uuid)      # 通知Backend连接更新
-    async def close_terminal_connections(item_uuid)    # 关闭终端所有连接
-    def get_item_connections(item_uuid)                # 获取终端连接
-    def get_all_connections()                          # 获取所有连接
+## 日志
+
+日志文件位于 `./log/` 目录：
+- `daemon.log` - Daemon主日志
+- `{user_uuid}/{item_uuid}.log` - 终端输出日志
+
+## 健康检查
+
+```bash
+# HTTP健康检查
+curl http://localhost:9000/api/health
+
+# 状态检查
+curl http://localhost:9000/api/status
 ```
-
-### TerminalManager
-
-```python
-class TerminalManager:
-    """终端进程管理"""
-    
-    def create_terminal(user_uuid, token, workdir, command, item_uuid)  # 创建终端
-    def get_terminal(item_uuid) -> TerminalProcess                       # 获取终端
-    def start_terminal(item_uuid) -> bool                                # 启动终端
-    def stop_terminal(item_uuid) -> bool                                 # 停止终端
-    def get_all_terminals() -> list                                      # 获取所有终端
-```
-
-### TerminalProcess
-
-```python
-class TerminalProcess:
-    """终端进程实例"""
-    
-    def start() -> bool              # 启动进程
-    def write(data: str) -> bool     # 写入数据
-    def stop() -> bool               # 停止进程
-    def get_status() -> dict         # 获取状态
-```
-
-## 日志说明
-
-- **应用日志**: `./log/daemon.log`
-- **终端日志**: `./log/{user_uuid}/{item_uuid}.log`
-- **日志级别**: INFO、WARNING、ERROR、CRITICAL
-- **日志格式**: `时间戳 - 日志名 - 级别 - 消息`
-
-## 安全说明
-
-1. **API Key认证**: 所有WebSocket连接必须提供有效的API Key
-2. **Token验证**: 用户连接终端时需要验证Token
-3. **Backend保护**: backend连接不能被disconnect接口断开
-4. **CORS配置**: 默认允许所有来源（生产环境应限制）

@@ -1,11 +1,12 @@
 import socketio
+import uuid as uuid_lib
 from service.socket_service import SocketService
 from service.terminal_manager import terminal_manager
-from core import memory_store, config
+from service.room_manager import room_manager
+from core import config, daemon_conn_pool
 from utils.logger import logger
 
 sio = socketio.AsyncServer(cors_allowed_origins="*", async_mode="asgi")
-
 socket_service = SocketService(sio)
 
 import sys
@@ -21,10 +22,14 @@ async def connect(sid, environ, auth=None):
     
     if auth and "api_key" in auth:
         if auth["api_key"] == config.get("API_KEY"):
-            with socket_service.lock:
-                socket_service.sid_to_ip[sid] = ip_address
             logger.info(f"[WebSocket] Backend connected: {sid}, IP: {ip_address}")
             return True
+    
+    if auth and "access_token" in auth:
+        browser_conn = daemon_conn_pool.create_browser_terminal_conn("pending", sid)
+        browser_conn.ip = ip_address
+        logger.info(f"[WebSocket] Browser connected (pending auth): {sid}, IP: {ip_address}")
+        return True
     
     logger.warning(f"[WebSocket] Connection rejected: {sid}, IP: {ip_address}, invalid auth")
     return False
@@ -38,69 +43,47 @@ async def disconnect(sid):
 @sio.on("auth")
 async def on_auth(sid, data):
     backend_id = data.get("backend_id", "unknown")
-    from datetime import datetime
+    api_key = config.get("API_KEY")
     
-    existing_sid = None
-    with socket_service.lock:
-        for old_sid, conn_info in socket_service.backend_connections.items():
-            if conn_info.get("backend_id") == backend_id:
-                existing_sid = old_sid
-                break
-    
-    if existing_sid:
-        logger.info(f"[WebSocket] Backend {backend_id} already connected with SID {existing_sid[:16]}..., disconnecting old connection")
+    existing_conn = daemon_conn_pool.get_backend_main_conn(api_key)
+    if existing_conn and existing_conn.conn_id:
+        logger.info(f"[WebSocket] Backend {backend_id} already connected, disconnecting old connection")
         try:
-            await sio.disconnect(existing_sid)
+            await sio.disconnect(existing_conn.conn_id)
         except Exception as e:
             logger.warning(f"Failed to disconnect old connection: {e}")
-            with socket_service.lock:
-                if existing_sid in socket_service.backend_connections:
-                    del socket_service.backend_connections[existing_sid]
     
-    with socket_service.lock:
-        socket_service.backend_connections[sid] = {
-            "backend_id": backend_id,
-            "ip": socket_service.sid_to_ip.get(sid, "unknown"),
-            "connected_at": datetime.now().isoformat()
-        }
+    backend_conn = daemon_conn_pool.create_backend_main_conn(api_key)
+    backend_conn.set_connected(None, sid, auth_token=None)
     
     logger.info(f"[WebSocket] Backend authenticated: {sid}, backend_id: {backend_id}")
     
-    await sio.emit("auth", {
-        "success": True,
-        "message": "Authentication successful"
-    }, to=sid)
-    
-    socket_service._print_connection_tables(f"Backend Authenticated: {backend_id}")
+    await sio.emit("auth", {"success": True, "message": "Authentication successful"}, to=sid)
     
     all_connections = socket_service.get_all_connections()
+    rooms_info = room_manager.get_all_rooms_info()
     
-    logger.info(f"\n{'%'*80}")
-    logger.info(f"[Daemon] Backend认证成功，发送全量连接池数据")
-    logger.info(f"{'%'*80}")
-    logger.info(f"  目标 Backend: {backend_id}")
-    logger.info(f"  目标 SID: {sid[:16]}...")
-    logger.info(f"  Items 数量: {len(all_connections)}")
-    
-    if all_connections:
-        logger.info(f"  连接池详情:")
-        for item_uuid, item_conns in all_connections.items():
-            logger.info(f"    Item: {item_uuid}")
-            if item_conns:
-                for conn_sid, conn_info in item_conns.items():
-                    logger.info(f"      - SID: {conn_sid[:16]}... | User: {conn_info.get('user_uuid', 'unknown')} | IP: {conn_info.get('ip', 'unknown')}")
-            else:
-                logger.info(f"      - 无连接")
-    else:
-        logger.info(f"  连接池详情: 无任何连接")
+    logger.info(f"[Daemon] Backend认证成功，发送全量连接池数据: {len(rooms_info)} Rooms")
     
     await sio.emit("connection_update", {
         "type": "full_sync",
-        "connections": all_connections
+        "connections": all_connections,
+        "rooms": rooms_info
     }, to=sid)
+
+
+@sio.on("verify_access_token")
+async def on_verify_access_token(sid, data):
+    from service.auth_service import auth_service
     
-    logger.info(f"  [OK] 已发送全量连接池数据")
-    logger.info(f"{'%'*80}\n")
+    access_token = data.get("access_token")
+    item_uuid = data.get("item_uuid")
+    request_id = data.get("request_id")
+    
+    result = auth_service.verify_access_token(access_token, item_uuid)
+    result["request_id"] = request_id
+    
+    await sio.emit("verify_access_token", result, to=sid)
 
 
 @sio.on("terminal/start")
@@ -111,7 +94,7 @@ async def on_terminal_start(sid, data):
     command = data.get("command")
     request_id = data.get("request_id")
     
-    logger.info(f"[WebSocket] Terminal start request: item={item_uuid}, user={user_uuid}, request_id={request_id}")
+    logger.info(f"[WebSocket] Terminal start: item={item_uuid}, user={user_uuid}")
     
     if not user_uuid or not item_uuid:
         await sio.emit("terminal/start", {
@@ -121,34 +104,33 @@ async def on_terminal_start(sid, data):
         }, to=sid)
         return
     
-    import uuid
-    
     existing_terminal = terminal_manager.get_terminal(item_uuid)
     if existing_terminal:
-        with socket_service.lock:
-            token = socket_service.item_tokens.get(item_uuid)
-            if not token:
-                token = str(uuid.uuid4())
-                socket_service.item_tokens[item_uuid] = token
+        token = socket_service.get_item_token(item_uuid)
+        if not token:
+            token = str(uuid_lib.uuid4())
+            socket_service.store_item_token(item_uuid, token)
         
-        logger.info(f"[WebSocket] Terminal already running: {item_uuid}")
         await sio.emit("terminal/start", {
             "success": True,
             "item_uuid": item_uuid,
             "token": token,
-            "message": "item已启动",
+            "already_running": True,
+            "message": "该item终端已在运行中",
             "request_id": request_id
         }, to=sid)
         return
     
-    token = str(uuid.uuid4())
+    room_manager.create_room(item_uuid)
     
-    created_uuid = terminal_manager.create_terminal(user_uuid, token, working_directory, command, item_uuid)
+    token = str(uuid_lib.uuid4())
+    terminal_manager.create_terminal(user_uuid, token, working_directory, command, item_uuid)
     
-    with socket_service.lock:
-        socket_service.item_tokens[created_uuid] = token
+    socket_service.store_item_token(item_uuid, token)
     
     if not terminal_manager.start_terminal(item_uuid):
+        room_manager.destroy_room(item_uuid)
+        socket_service.remove_item_token(item_uuid)
         await sio.emit("terminal/start", {
             "success": False,
             "error": "Failed to start terminal",
@@ -156,9 +138,7 @@ async def on_terminal_start(sid, data):
         }, to=sid)
         return
     
-    logger.info(f"[WebSocket] Terminal started: {item_uuid}, token: {token}")
-    
-    socket_service._print_connection_tables(f"Terminal Started: {item_uuid}")
+    logger.info(f"[WebSocket] Terminal started: {item_uuid}")
     
     await sio.emit("terminal/start", {
         "success": True,
@@ -174,7 +154,7 @@ async def on_terminal_stop(sid, data):
     item_uuid = data.get("item_uuid")
     request_id = data.get("request_id")
     
-    logger.info(f"[WebSocket] Terminal stop request: item={item_uuid}, request_id={request_id}")
+    logger.info(f"[WebSocket] Terminal stop: item={item_uuid}")
     
     if not item_uuid:
         await sio.emit("terminal/stop", {
@@ -186,7 +166,6 @@ async def on_terminal_stop(sid, data):
     
     terminal = terminal_manager.get_terminal(item_uuid)
     if not terminal:
-        logger.info(f"[WebSocket] Terminal not found: {item_uuid}")
         await sio.emit("terminal/stop", {
             "success": True,
             "item_uuid": item_uuid,
@@ -195,13 +174,8 @@ async def on_terminal_stop(sid, data):
         }, to=sid)
         return
     
-    with socket_service.lock:
-        if item_uuid in socket_service.item_tokens:
-            del socket_service.item_tokens[item_uuid]
-    
+    socket_service.remove_item_token(item_uuid)
     terminal_manager.stop_terminal(item_uuid)
-    
-    logger.info(f"[WebSocket] Terminal stopped: {item_uuid}")
     
     await socket_service.close_terminal_connections(item_uuid)
     
@@ -221,7 +195,7 @@ async def on_terminal_restart(sid, data):
     command = data.get("command")
     request_id = data.get("request_id")
     
-    logger.info(f"[WebSocket] Terminal restart request: item={item_uuid}, request_id={request_id}")
+    logger.info(f"[WebSocket] Terminal restart: item={item_uuid}")
     
     if not item_uuid:
         await sio.emit("terminal/restart", {
@@ -233,29 +207,26 @@ async def on_terminal_restart(sid, data):
     
     terminal = terminal_manager.get_terminal(item_uuid)
     if terminal:
-        with socket_service.lock:
-            if item_uuid in socket_service.item_tokens:
-                del socket_service.item_tokens[item_uuid]
+        socket_service.remove_item_token(item_uuid)
         terminal_manager.stop_terminal(item_uuid)
         await socket_service.close_terminal_connections(item_uuid)
     
-    import uuid
-    token = str(uuid.uuid4())
+    token = str(uuid_lib.uuid4())
+    
+    room_manager.create_room(item_uuid)
     
     if user_uuid:
         terminal_manager.create_terminal(user_uuid, token, working_directory, command, item_uuid)
-        with socket_service.lock:
-            socket_service.item_tokens[item_uuid] = token
+        socket_service.store_item_token(item_uuid, token)
         
         if not terminal_manager.start_terminal(item_uuid):
+            room_manager.destroy_room(item_uuid)
             await sio.emit("terminal/restart", {
                 "success": False,
                 "error": "Failed to start terminal",
                 "request_id": request_id
             }, to=sid)
             return
-    
-    logger.info(f"[WebSocket] Terminal restarted: {item_uuid}")
     
     await sio.emit("terminal/restart", {
         "success": True,
@@ -322,10 +293,13 @@ async def on_connections_get(sid, data):
         return
     
     result = socket_service.get_item_connections(item_uuid)
+    room_info = room_manager.get_room_info(item_uuid)
+    
     await sio.emit("connections/get", {
         "success": True,
         "item_uuid": result['item_uuid'],
         "connections": result['connections'],
+        "room_info": room_info,
         "request_id": request_id
     }, to=sid)
 
@@ -334,30 +308,13 @@ async def on_connections_get(sid, data):
 async def on_connections_get_all(sid, data):
     request_id = data.get("request_id")
     
-    logger.info(f"\n{'$'*80}")
-    logger.info(f"[Daemon] 收到 Backend 全量连接池查询请求")
-    logger.info(f"{'$'*80}")
-    logger.info(f"  请求来源 SID: {sid[:16]}...")
-    logger.info(f"  Request ID: {request_id}")
-    
     all_connections = socket_service.get_all_connections()
-    
-    logger.info(f"  返回 Items 数量: {len(all_connections)}")
-    if all_connections:
-        logger.info(f"  连接池详情:")
-        for item_uuid, item_conns in all_connections.items():
-            logger.info(f"    Item: {item_uuid}")
-            if item_conns:
-                for conn_sid, conn_info in item_conns.items():
-                    logger.info(f"      - SID: {conn_sid[:16]}... | User: {conn_info.get('user_uuid', 'unknown')} | IP: {conn_info.get('ip', 'unknown')}")
-            else:
-                logger.info(f"      - 无连接")
-    
-    logger.info(f"{'$'*80}\n")
+    rooms_info = room_manager.get_all_rooms_info()
     
     await sio.emit("connections/get_all", {
         "success": True,
         "connections": all_connections,
+        "rooms": rooms_info,
         "request_id": request_id
     }, to=sid)
 
@@ -387,10 +344,8 @@ async def on_connections_disconnect(sid, data):
     
     if user_uuid:
         connections = await socket_service.disconnect_user_from_item(item_uuid, user_uuid)
-        logger.info(f"[WebSocket] Disconnected user {user_uuid} from item {item_uuid}")
     else:
         connections = await socket_service.disconnect_by_ip(item_uuid, ip_address)
-        logger.info(f"[WebSocket] Disconnected ip {ip_address} from item {item_uuid}")
     
     await sio.emit("connections/disconnect", {
         "success": True,
@@ -403,74 +358,105 @@ async def on_connections_disconnect(sid, data):
 
 @sio.on("terminal/connect")
 async def on_terminal_connect(sid, data):
+    from service.auth_service import auth_service
+    
     item_uuid = data.get("item_uuid")
     token = data.get("token")
+    access_token = data.get("access_token")
     user_uuid = data.get("user_uuid", "unknown")
+    subscriber_type = data.get("subscriber_type", "browser")
 
-    logger.info(f"\n{'='*60}")
-    logger.info(f"[Connect] 用户连接终端请求")
-    logger.info(f"{'='*60}")
-    logger.info(f"  SID: {sid}")
-    logger.info(f"  Item UUID: {item_uuid}")
-    logger.info(f"  User UUID: {user_uuid}")
-    logger.info(f"  Token: {token[:16]}..." if token else "  Token: None")
-
-    if not item_uuid or not token:
-        logger.error(f"  [FAIL] 缺少 item_uuid 或 token")
-        logger.info(f"{'='*60}\n")
-        await sio.emit("auth_error", {"message": "Missing item_uuid or token"}, to=sid)
-        return
-
-    with socket_service.lock:
-        stored_token = socket_service.item_tokens.get(item_uuid)
+    logger.info(f"[Connect] 终端连接请求: item={item_uuid}, user={user_uuid}, type={subscriber_type}")
     
-    if not stored_token or stored_token != token:
-        logger.error(f"  [FAIL] Token验证失败")
-        logger.info(f"    存储的Token: {stored_token[:16] if stored_token else 'None'}...")
-        logger.info(f"{'='*60}\n")
-        await sio.emit("auth_error", {"message": "Invalid token"}, to=sid)
-        return
-
-    with socket_service.lock:
-        if item_uuid not in socket_service.connections:
-            socket_service.connections[item_uuid] = {}
-        ip_address = socket_service.sid_to_ip.get(sid, 'unknown')
-        socket_service.connections[item_uuid][sid] = {
-            "user_uuid": user_uuid,
-            "ip": ip_address
-        }
-        socket_service.sid_to_item[sid] = item_uuid
-        socket_service.sid_to_user[sid] = user_uuid
-
-    logger.info(f"  [OK] 连接成功")
-    logger.info(f"  IP: {ip_address}")
-    logger.info(f"  当前Item连接数: {len(socket_service.connections[item_uuid])}")
-    logger.info(f"{'='*60}")
-
-    await sio.emit("terminal_connected", {"item_uuid": item_uuid}, to=sid)
+    if access_token:
+        if not item_uuid:
+            await sio.emit("auth_error", {"message": "Missing item_uuid"}, to=sid)
+            return
+        
+        result = auth_service.verify_access_token(access_token, item_uuid)
+        
+        if not result["success"]:
+            await sio.emit("auth_error", {"message": result["error"]}, to=sid)
+            return
+        
+        user_uuid = result["user_uuid"]
+        subscriber_type = "browser"
+        
+        pending_conn = daemon_conn_pool.get_browser_terminal_conn("pending", sid)
+        if pending_conn:
+            daemon_conn_pool.remove_browser_terminal_conn("pending", sid)
+        
+        browser_conn = daemon_conn_pool.create_browser_terminal_conn(item_uuid, sid)
+        browser_conn.set_authenticated(user_uuid)
     
-    socket_service._print_connection_tables(f"用户连接终端: {user_uuid}@{ip_address}")
+    elif subscriber_type == "backend":
+        if not item_uuid or not token:
+            await sio.emit("auth_error", {"message": "Missing item_uuid or token"}, to=sid)
+            return
+
+        stored_token = socket_service.get_item_token(item_uuid)
+        if not stored_token or stored_token != token:
+            await sio.emit("auth_error", {"message": "Invalid token"}, to=sid)
+            return
+        
+        room_listen_conn = daemon_conn_pool.create_backend_room_listen_conn(item_uuid)
+        room_listen_conn.set_connected(None, sid)
+        daemon_conn_pool._log_pool_state(f"Backend Room监听连接已建立: item={item_uuid}")
     
-    logger.info(f"\n{'#'*60}")
-    logger.info(f"[Connect] 触发连接池同步通知...")
-    logger.info(f"{'#'*60}")
+    else:
+        if not item_uuid or not token:
+            await sio.emit("auth_error", {"message": "Missing item_uuid or token"}, to=sid)
+            return
+
+        stored_token = socket_service.get_item_token(item_uuid)
+        if not stored_token or stored_token != token:
+            await sio.emit("auth_error", {"message": "Invalid token"}, to=sid)
+            return
+        
+        pending_conn = daemon_conn_pool.get_browser_terminal_conn("pending", sid)
+        if pending_conn:
+            daemon_conn_pool.remove_browser_terminal_conn("pending", sid)
+        
+        browser_conn = daemon_conn_pool.create_browser_terminal_conn(item_uuid, sid)
+        browser_conn.set_authenticated(user_uuid)
+
+    if not room_manager.room_exists(item_uuid):
+        logger.warning(f"Room {item_uuid} 不存在，创建新 Room")
+        room_manager.create_room(item_uuid)
+
+    await socket_service.join_item_room(sid, item_uuid, subscriber_type, user_uuid)
+
+    room_info = room_manager.get_room_info(item_uuid)
+    
+    logger.info(f"[Connect] 连接成功: type={subscriber_type}, permanent={room_info['permanent_count']}, temporary={room_info['temporary_count']}")
+
+    await sio.emit("terminal_connected", {
+        "item_uuid": item_uuid,
+        "subscriber_type": subscriber_type,
+        "room_info": room_info
+    }, to=sid)
+    
+    if subscriber_type == "backend":
+        terminal_manager.notify_backend_connected(item_uuid)
+        logger.info(f"[Connect] Notified terminal that Backend connected: {item_uuid}")
+    
     await socket_service.notify_connection_update(item_uuid)
 
 
 @sio.on("terminal/write")
 async def on_terminal_write(sid, data):
-    with socket_service.lock:
-        if sid in socket_service.sid_to_item:
-            item_uuid = socket_service.sid_to_item[sid]
-            terminal = terminal_manager.get_terminal(item_uuid)
+    for item_uuid, conns in daemon_conn_pool.get_all_browser_terminal_conns().items():
+        for conn in conns:
+            if conn.sid == sid:
+                terminal = terminal_manager.get_terminal(item_uuid)
+                if terminal:
+                    terminal.write(data.get("command", "") + "\n")
+                return
+    
+    room_listen_conns = daemon_conn_pool.get_all_backend_room_listen_conns()
+    for conn in room_listen_conns:
+        if conn.conn_id == sid:
+            terminal = terminal_manager.get_terminal(conn.item_uuid)
             if terminal:
                 terminal.write(data.get("command", "") + "\n")
-
-
-@sio.on("instance/stdout")
-async def on_instance_stdout(sid, data):
-    item_uuid = data.get("item_uuid")
-    stdout = data.get("stdout")
-    
-    if item_uuid and stdout:
-        await socket_service.broadcast_to_terminal(item_uuid, "stream", {"stdout": stdout})
+            return

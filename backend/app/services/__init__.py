@@ -1,8 +1,16 @@
-from .connection_pool import ConnectionManager, DaemonConnection, DaemonConfig
+from .connection_pool import (
+    ConnectionManager, 
+    DaemonConnection, 
+    DaemonConfig,
+    ConnectionStatus,
+    RoomListenConnection,
+    DaemonMainConnState,
+    BackendConnPool,
+    backend_conn_pool
+)
 from .socket_pool import SocketManager, ItemSocket
-from .connection_handler import ConnectionHandler
 from .terminal_service import TerminalService
-from .auth_service import AuthService
+from .auth_service import AuthService, auth_service
 from .protocol import ProtocolEvents, ProtocolCodec
 from .log_manager import LogManager
 from .daemon_initializer import connection_manager, socket_manager, initialize_daemon_connections
@@ -11,11 +19,16 @@ __all__ = [
     "ConnectionManager",
     "DaemonConnection",
     "DaemonConfig",
+    "ConnectionStatus",
+    "RoomListenConnection",
+    "DaemonMainConnState",
+    "BackendConnPool",
+    "backend_conn_pool",
     "SocketManager",
     "ItemSocket",
-    "ConnectionHandler",
     "TerminalService",
     "AuthService",
+    "auth_service",
     "ProtocolEvents",
     "ProtocolCodec",
     "LogManager",
