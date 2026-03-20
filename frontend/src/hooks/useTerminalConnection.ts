@@ -52,9 +52,9 @@ export function useTerminalConnection({
   const [output, setOutput] = useState<TerminalOutput[]>([])
   
   const socketRef = useRef<Socket | null>(null)
-  const reconnectAttemptRef = useRef(0)
   const connectingRef = useRef(false)
-  const maxReconnectAttempts = 3
+  const mountedRef = useRef(true)
+  const connectionIdRef = useRef(0)
   
   const onConnectedRef = useRef(onConnected)
   const onDisconnectedRef = useRef(onDisconnected)
@@ -71,8 +71,10 @@ export function useTerminalConnection({
   }, [])
 
   const disconnect = useCallback(() => {
-    if (socketRef.current) {
-      socketRef.current.disconnect()
+    const socket = socketRef.current
+    if (socket) {
+      socket.removeAllListeners()
+      socket.disconnect()
       socketRef.current = null
     }
     setIsConnected(false)
@@ -80,15 +82,30 @@ export function useTerminalConnection({
     connectingRef.current = false
   }, [])
 
-  const connect = useCallback(async () => {
-    if (!enabled || !itemId || connectingRef.current) return
+  const doConnect = useCallback(async () => {
+    if (!enabled || !itemId) {
+      return
+    }
+    
+    if (connectingRef.current) {
+      return
+    }
+    
+    if (socketRef.current) {
+      return
+    }
 
+    const currentConnectionId = ++connectionIdRef.current
     connectingRef.current = true
     setIsConnecting(true)
     setError(null)
 
     try {
       const tokenData = await ItemsService.getTerminalToken({ id: itemId })
+      
+      if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+        return
+      }
       
       if (!tokenData.success) {
         throw new Error("Failed to get terminal token")
@@ -109,6 +126,12 @@ export function useTerminalConnection({
         reconnection: false,
       })
 
+      if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+        socket.removeAllListeners()
+        socket.disconnect()
+        return
+      }
+
       socketRef.current = socket
 
       socket.on("connect", () => {
@@ -116,15 +139,20 @@ export function useTerminalConnection({
       })
 
       socket.on("terminal_connected", (data: TerminalConnectedData) => {
+        if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+          return
+        }
         console.log("[Terminal] Terminal connected:", data)
         setIsConnected(true)
         setIsConnecting(false)
         connectingRef.current = false
-        reconnectAttemptRef.current = 0
         onConnectedRef.current?.(data)
       })
 
       socket.on("auth_error", (data: { message: string }) => {
+        if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+          return
+        }
         console.error("[Terminal] Auth error:", data.message)
         setError(data.message)
         setIsConnecting(false)
@@ -134,18 +162,27 @@ export function useTerminalConnection({
       })
 
       socket.on("stream", (data: TerminalOutput) => {
+        if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+          return
+        }
         setOutput((prev) => [...prev, data])
       })
 
       socket.on("disconnect", (reason) => {
         console.log("[Terminal] Disconnected:", reason)
-        setIsConnected(false)
-        setIsConnecting(false)
-        connectingRef.current = false
-        onDisconnectedRef.current?.()
+        if (socketRef.current === socket) {
+          setIsConnected(false)
+          setIsConnecting(false)
+          connectingRef.current = false
+          socketRef.current = null
+          onDisconnectedRef.current?.()
+        }
       })
 
       socket.on("connect_error", (err) => {
+        if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+          return
+        }
         console.error("[Terminal] Connect error:", err.message)
         setError(err.message)
         setIsConnecting(false)
@@ -154,6 +191,9 @@ export function useTerminalConnection({
       })
 
     } catch (err) {
+      if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+        return
+      }
       console.error("[Terminal] Connection error:", err)
       const errorMessage = err instanceof Error ? err.message : "Connection failed"
       setError(errorMessage)
@@ -164,15 +204,14 @@ export function useTerminalConnection({
   }, [enabled, itemId])
 
   const reconnect = useCallback(() => {
-    if (reconnectAttemptRef.current < maxReconnectAttempts) {
-      reconnectAttemptRef.current++
-      console.log(`[Terminal] Reconnecting... Attempt ${reconnectAttemptRef.current}`)
-      disconnect()
-      setTimeout(connect, 1000)
-    } else {
-      setError("Max reconnection attempts reached")
-    }
-  }, [connect, disconnect])
+    disconnect()
+    connectionIdRef.current++
+    setTimeout(() => {
+      if (mountedRef.current) {
+        doConnect()
+      }
+    }, 300)
+  }, [doConnect, disconnect])
 
   const sendCommand = useCallback((command: string) => {
     if (socketRef.current && isConnected) {
@@ -181,12 +220,22 @@ export function useTerminalConnection({
   }, [isConnected])
 
   useEffect(() => {
+    mountedRef.current = true
+    
     if (enabled && itemId) {
-      connect()
+      doConnect()
     }
 
     return () => {
-      disconnect()
+      mountedRef.current = false
+      connectionIdRef.current++
+      const socket = socketRef.current
+      if (socket) {
+        socket.removeAllListeners()
+        socket.disconnect()
+        socketRef.current = null
+      }
+      connectingRef.current = false
     }
   }, [enabled, itemId])
 

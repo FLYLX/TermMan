@@ -68,10 +68,13 @@ class ItemSocket:
             logger.info(f"[ItemSocket] *** STREAM EVENT RECEIVED *** for item={self.item_uuid}")
             stdout = data.get("stdout", "")
             stderr = data.get("stderr", "")
+            stdin = data.get("stdin", "")
             if stdout:
                 logger.info(f"[ItemSocket] Received stdout for item={self.item_uuid}:\n{stdout.rstrip()}")
             if stderr:
                 logger.info(f"[ItemSocket] Received stderr for item={self.item_uuid}:\n{stderr.rstrip()}")
+            if stdin:
+                logger.info(f"[ItemSocket] Received stdin for item={self.item_uuid}:\n{stdin.rstrip()}")
             if ProtocolEvents.STREAM in self.callbacks:
                 logger.info(f"[ItemSocket] Calling stream callback for item={self.item_uuid}")
                 self.callbacks[ProtocolEvents.STREAM](data)

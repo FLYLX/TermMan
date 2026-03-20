@@ -108,7 +108,11 @@ class TerminalService:
         def log_callback(data):
             output = data.get("stdout", "")
             stderr = data.get("stderr", "")
-            logger.info(f"[TerminalService] log_callback called for item={item_uuid}: stdout={len(output)} chars, stderr={len(stderr)} chars")
+            stdin = data.get("stdin", "")
+            logger.info(f"[TerminalService] log_callback called for item={item_uuid}: stdout={len(output)} chars, stderr={len(stderr)} chars, stdin={len(stdin)} chars")
+            if stdin:
+                success = self.log_manager.write_to_log(owner_uuid, item_uuid, f"$ {stdin.strip()}\n")
+                logger.info(f"[TerminalService] Wrote stdin to log: success={success}")
             if output:
                 success = self.log_manager.write_to_log(owner_uuid, item_uuid, output)
                 logger.info(f"[TerminalService] Wrote stdout to log: success={success}")

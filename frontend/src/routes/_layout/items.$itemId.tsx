@@ -231,9 +231,10 @@ function ItemDetailPage({
     try {
       disconnect()
       const result = await ItemsService.restartItem({ id: item.id })
-      queryClient.invalidateQueries({ queryKey: ["item", item.id] })
+      await queryClient.invalidateQueries({ queryKey: ["item", item.id] })
       queryClient.invalidateQueries({ queryKey: ["items"] })
       showSuccessToast(result.message || "Item restarted successfully")
+      reconnect()
     } catch (error) {
       console.error("Failed to restart item:", error)
       showErrorToast("Failed to restart item")
