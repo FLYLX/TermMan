@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { ItemHandlerAssociationsAddItemToHandlerData, ItemHandlerAssociationsAddItemToHandlerResponse, ItemHandlerAssociationsRemoveItemFromHandlerData, ItemHandlerAssociationsRemoveItemFromHandlerResponse, ItemHandlerAssociationsGetItemsForHandlerData, ItemHandlerAssociationsGetItemsForHandlerResponse, ItemHandlerAssociationsGetHandlersForItemData, ItemHandlerAssociationsGetHandlersForItemResponse, ItemHandlerAssociationsAddUserToHandlerData, ItemHandlerAssociationsAddUserToHandlerResponse, ItemHandlerAssociationsRemoveUserFromHandlerData, ItemHandlerAssociationsRemoveUserFromHandlerResponse, ItemHandlerAssociationsGetUsersForHandlerData, ItemHandlerAssociationsGetUsersForHandlerResponse, ItemHandlerAssociationsGetHandlersForUserData, ItemHandlerAssociationsGetHandlersForUserResponse, ItemHandlersReadItemHandlersData, ItemHandlersReadItemHandlersResponse, ItemHandlersCreateItemHandlerData, ItemHandlersCreateItemHandlerResponse, ItemHandlersReadItemHandlerData, ItemHandlersReadItemHandlerResponse, ItemHandlersUpdateItemHandlerData, ItemHandlersUpdateItemHandlerResponse, ItemHandlersDeleteItemHandlerData, ItemHandlersDeleteItemHandlerResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, ItemsReconnectDaemonData, ItemsReconnectDaemonResponse, ItemsDisconnectUserFromItemData, ItemsDisconnectUserFromItemResponse, ItemsStopItemData, ItemsStopItemResponse, ItemsRestartItemData, ItemsRestartItemResponse, ItemsStartItemData, ItemsStartItemResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { ItemHandlerAssociationsAddItemToHandlerData, ItemHandlerAssociationsAddItemToHandlerResponse, ItemHandlerAssociationsRemoveItemFromHandlerData, ItemHandlerAssociationsRemoveItemFromHandlerResponse, ItemHandlerAssociationsGetItemsForHandlerData, ItemHandlerAssociationsGetItemsForHandlerResponse, ItemHandlerAssociationsGetHandlersForItemData, ItemHandlerAssociationsGetHandlersForItemResponse, ItemHandlerAssociationsAddUserToHandlerData, ItemHandlerAssociationsAddUserToHandlerResponse, ItemHandlerAssociationsRemoveUserFromHandlerData, ItemHandlerAssociationsRemoveUserFromHandlerResponse, ItemHandlerAssociationsGetUsersForHandlerData, ItemHandlerAssociationsGetUsersForHandlerResponse, ItemHandlerAssociationsGetHandlersForUserData, ItemHandlerAssociationsGetHandlersForUserResponse, ItemHandlersReadItemHandlersData, ItemHandlersReadItemHandlersResponse, ItemHandlersCreateItemHandlerData, ItemHandlersCreateItemHandlerResponse, ItemHandlersReadItemHandlerData, ItemHandlersReadItemHandlerResponse, ItemHandlersUpdateItemHandlerData, ItemHandlersUpdateItemHandlerResponse, ItemHandlersDeleteItemHandlerData, ItemHandlersDeleteItemHandlerResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, ItemsReconnectDaemonData, ItemsReconnectDaemonResponse, ItemsStartItemData, ItemsStartItemResponse, ItemsStopItemData, ItemsStopItemResponse, ItemsRestartItemData, ItemsRestartItemResponse, ItemsGetTerminalTokenData, ItemsGetTerminalTokenResponse, ItemsVerifyTerminalTokenData, ItemsVerifyTerminalTokenResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class ItemHandlerAssociationsService {
     /**
@@ -395,10 +395,6 @@ export class ItemsService {
     
     /**
      * Reconnect Daemon
-     * 尝试重新连接daemon
-     *
-     * Args:
-     * daemon_id: daemon的唯一标识 (host:port:api_key)
      * @param data The data for the request.
      * @param data.daemonId
      * @returns unknown Successful Response
@@ -418,22 +414,18 @@ export class ItemsService {
     }
     
     /**
-     * Disconnect User From Item
+     * Start Item
      * @param data The data for the request.
      * @param data.id
-     * @param data.userUuid
-     * @returns unknown Successful Response
+     * @returns Message Successful Response
      * @throws ApiError
      */
-    public static disconnectUserFromItem(data: ItemsDisconnectUserFromItemData): CancelablePromise<ItemsDisconnectUserFromItemResponse> {
+    public static startItem(data: ItemsStartItemData): CancelablePromise<ItemsStartItemResponse> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/v1/items/{id}/disconnect-user',
+            url: '/api/v1/items/{id}/start',
             path: {
                 id: data.id
-            },
-            query: {
-                user_uuid: data.userUuid
             },
             errors: {
                 422: 'Validation Error'
@@ -443,7 +435,6 @@ export class ItemsService {
     
     /**
      * Stop Item
-     * Stop an item via WebSocket.
      * @param data The data for the request.
      * @param data.id
      * @returns Message Successful Response
@@ -464,7 +455,6 @@ export class ItemsService {
     
     /**
      * Restart Item
-     * Restart an item via WebSocket.
      * @param data The data for the request.
      * @param data.id
      * @returns Message Successful Response
@@ -484,19 +474,44 @@ export class ItemsService {
     }
     
     /**
-     * Start Item
-     * Start an item via WebSocket.
+     * Get Terminal Token
      * @param data The data for the request.
      * @param data.id
-     * @returns Message Successful Response
+     * @returns unknown Successful Response
      * @throws ApiError
      */
-    public static startItem(data: ItemsStartItemData): CancelablePromise<ItemsStartItemResponse> {
+    public static getTerminalToken(data: ItemsGetTerminalTokenData): CancelablePromise<ItemsGetTerminalTokenResponse> {
         return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/v1/items/{id}/start',
+            method: 'GET',
+            url: '/api/v1/items/{id}/terminal-token',
             path: {
                 id: data.id
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Verify Terminal Token
+     * @param data The data for the request.
+     * @param data.id
+     * @param data.tempToken
+     * @param data.itemUuid
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static verifyTerminalToken(data: ItemsVerifyTerminalTokenData): CancelablePromise<ItemsVerifyTerminalTokenResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/items/{id}/verify-terminal-token',
+            path: {
+                id: data.id
+            },
+            query: {
+                temp_token: data.tempToken,
+                item_uuid: data.itemUuid
             },
             errors: {
                 422: 'Validation Error'

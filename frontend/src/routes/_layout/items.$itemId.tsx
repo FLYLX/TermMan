@@ -10,8 +10,9 @@ import {
   Send,
   Terminal,
   WifiOff,
+  Loader2,
 } from "lucide-react"
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 import {
   ApiError,
@@ -28,6 +29,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
+import { useTerminalConnection } from "@/hooks/useTerminalConnection"
 import { Users } from "lucide-react"
 
 type ItemWithExtras = ItemPublic & {
@@ -165,6 +167,40 @@ function ItemDetailPage({
 }) {
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
+  const [command, setCommand] = useState("")
+  const outputRef = useRef<HTMLDivElement>(null)
+
+  const shouldConnect = item.status === "running" && item.daemon_online
+
+  const {
+    isConnected,
+    isConnecting,
+    error: connectionError,
+    output,
+    sendCommand,
+    reconnect,
+    disconnect,
+  } = useTerminalConnection({
+    itemId: item.id,
+    enabled: shouldConnect,
+    onConnected: (data) => {
+      console.log("[Terminal] Connected:", data)
+      showSuccessToast("Terminal connected")
+    },
+    onDisconnected: () => {
+      console.log("[Terminal] Disconnected")
+    },
+    onError: (error) => {
+      console.error("[Terminal] Error:", error)
+      showErrorToast(`Terminal error: ${error}`)
+    },
+  })
+
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight
+    }
+  }, [output])
 
   const handleStartItem = async () => {
     try {
@@ -180,6 +216,7 @@ function ItemDetailPage({
 
   const handleStopItem = async () => {
     try {
+      disconnect()
       const result = await ItemsService.stopItem({ id: item.id })
       queryClient.invalidateQueries({ queryKey: ["item", item.id] })
       queryClient.invalidateQueries({ queryKey: ["items"] })
@@ -192,6 +229,7 @@ function ItemDetailPage({
 
   const handleRestartItem = async () => {
     try {
+      disconnect()
       const result = await ItemsService.restartItem({ id: item.id })
       queryClient.invalidateQueries({ queryKey: ["item", item.id] })
       queryClient.invalidateQueries({ queryKey: ["items"] })
@@ -199,6 +237,20 @@ function ItemDetailPage({
     } catch (error) {
       console.error("Failed to restart item:", error)
       showErrorToast("Failed to restart item")
+    }
+  }
+
+  const handleSendCommand = () => {
+    if (command.trim()) {
+      sendCommand(command)
+      setCommand("")
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      handleSendCommand()
     }
   }
   return (
@@ -286,11 +338,23 @@ function ItemDetailPage({
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {item.socket_connected ? (
+              {isConnecting ? (
+                <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                  <Loader2 className="size-3 mr-1 animate-spin" />
+                  Connecting...
+                </Badge>
+              ) : isConnected ? (
                 <>
+                  <Badge className="border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400">
+                    Connected
+                  </Badge>
                   <Badge variant="secondary">Realtime Console</Badge>
-                  <Badge variant="secondary">History Reserved</Badge>
                 </>
+              ) : connectionError ? (
+                <Badge className="border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400">
+                  <AlertCircle className="size-3 mr-1" />
+                  Error
+                </Badge>
               ) : (
                 <Badge variant="outline" className="border-yellow-500/40 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
                   <WifiOff className="size-3 mr-1" />
@@ -306,43 +370,98 @@ function ItemDetailPage({
               <span className="size-3 rounded-full bg-yellow-400" />
               <span className="size-3 rounded-full bg-green-400" />
               <span className="ml-2 font-mono text-xs tracking-wide text-slate-400">
-                terminal
+                terminal - {item.title}
               </span>
             </div>
 
-            {item.socket_connected ? (
+            {isConnecting ? (
+              <div className="max-h-[38rem] min-h-[30rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] flex flex-col items-center justify-center gap-6 px-4 py-8">
+                <Loader2 className="size-12 text-blue-400 animate-spin" />
+                <div className="text-center space-y-2">
+                  <h3 className="text-lg font-semibold text-slate-200">Connecting...</h3>
+                  <p className="text-sm text-slate-400">
+                    Establishing connection to terminal...
+                  </p>
+                </div>
+              </div>
+            ) : isConnected ? (
               <>
-                <div className="max-h-[38rem] min-h-[30rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] px-4 py-3 font-mono text-[15px] leading-[1.45] tracking-[0.01em]">
-                  <div className="text-lime-400">[System] Terminal connected. Waiting for output...</div>
+                <div 
+                  ref={outputRef}
+                  className="max-h-[38rem] min-h-[30rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] px-4 py-3 font-mono text-[15px] leading-[1.45] tracking-[0.01em]"
+                >
+                  {output.length === 0 ? (
+                    <div className="text-lime-400">[System] Terminal connected. Waiting for output...</div>
+                  ) : (
+                    output.map((out, idx) => (
+                      <div key={idx}>
+                        {out.stdin && <div className="text-cyan-400 whitespace-pre-wrap">$ {out.stdin.trim()}</div>}
+                        {out.stdout && <div className="text-slate-100 whitespace-pre-wrap">{out.stdout}</div>}
+                        {out.stderr && <div className="text-red-400 whitespace-pre-wrap">{out.stderr}</div>}
+                      </div>
+                    ))
+                  )}
                 </div>
 
                 <div className="mt-4 flex flex-col gap-3 lg:flex-row">
                   <Input
+                    value={command}
+                    onChange={(e) => setCommand(e.target.value)}
+                    onKeyDown={handleKeyDown}
                     placeholder="Enter command and press enter to send"
                     className="h-10 border-zinc-700 bg-zinc-900/80 font-mono text-sm text-slate-100 placeholder:text-slate-500"
                   />
-                  <Button type="button" size="sm" className="h-10 px-4 lg:min-w-24">
+                  <Button 
+                    type="button" 
+                    size="sm" 
+                    className="h-10 px-4 lg:min-w-24"
+                    onClick={handleSendCommand}
+                    disabled={!command.trim()}
+                  >
                     <Send className="size-4" />
                     Send
                   </Button>
                 </div>
               </>
+            ) : connectionError ? (
+              <div className="max-h-[38rem] min-h-[30rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] flex flex-col items-center justify-center gap-6 px-4 py-8">
+                <div className="rounded-full bg-red-500/20 p-6">
+                  <AlertCircle className="size-12 text-red-400" />
+                </div>
+                <div className="text-center space-y-2">
+                  <h3 className="text-lg font-semibold text-slate-200">Connection Error</h3>
+                  <p className="text-sm text-red-400 max-w-md">
+                    {connectionError}
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" className="mt-2" onClick={reconnect}>
+                  <Plug className="size-4 mr-2" />
+                  Retry Connection
+                </Button>
+              </div>
             ) : (
               <div className="max-h-[38rem] min-h-[30rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] flex flex-col items-center justify-center gap-6 px-4 py-8">
                 <div className="rounded-full bg-muted/20 p-6">
                   <Plug className="size-12 text-muted-foreground" />
                 </div>
                 <div className="text-center space-y-2">
-                  <h3 className="text-lg font-semibold text-slate-200">Socket Not Connected</h3>
+                  <h3 className="text-lg font-semibold text-slate-200">Terminal Not Available</h3>
                   <p className="text-sm text-slate-400 max-w-md">
-                    The terminal is not connected to the backend socket. 
-                    Please check the connection settings and ensure the target service is running.
+                    {item.status !== "running" 
+                      ? "Start the item to connect to its terminal."
+                      : "The daemon is offline. Please check the connection."}
                   </p>
                 </div>
                 <div className="grid gap-2 text-sm text-slate-400 bg-muted/10 rounded-lg p-4 w-full max-w-sm">
                   <div className="flex justify-between">
-                    <span>Connection Type:</span>
-                    <span className="font-mono">{item.socket_connection_type || "local"}</span>
+                    <span>Status:</span>
+                    <span className="font-mono">{item.status}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Daemon:</span>
+                    <span className={`font-mono ${item.daemon_online ? 'text-green-400' : 'text-red-400'}`}>
+                      {item.daemon_online ? 'Online' : 'Offline'}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Host:</span>
@@ -353,10 +472,12 @@ function ItemDetailPage({
                     <span className="font-mono">{item.socket_port || 9000}</span>
                   </div>
                 </div>
-                <Button variant="outline" size="sm" className="mt-2">
-                  <Plug className="size-4 mr-2" />
-                  Retry Connection
-                </Button>
+                {item.status === "running" && !item.daemon_online && (
+                  <Button variant="outline" size="sm" className="mt-2" onClick={reconnect}>
+                    <Plug className="size-4 mr-2" />
+                    Retry Connection
+                  </Button>
+                )}
               </div>
             )}
           </div>

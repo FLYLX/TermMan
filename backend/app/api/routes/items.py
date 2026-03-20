@@ -2,7 +2,7 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Body
 from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep
@@ -269,7 +269,6 @@ def get_terminal_token(
     session: SessionDep, current_user: CurrentUser, id: uuid.UUID
 ) -> dict[str, Any]:
     from app.services.auth_service import auth_service
-    from app.core.config import settings
     
     item = session.get(Item, id)
     if not item:
@@ -281,24 +280,26 @@ def get_terminal_token(
     if not daemon_token:
         raise HTTPException(status_code=400, detail="Item not running or token not available")
     
-    access_token = auth_service.generate_access_token(
+    daemon_status = _get_daemon_status(item)
+    if not daemon_status["daemon_online"]:
+        raise HTTPException(status_code=400, detail="Daemon is not connected")
+    
+    temp_token_info = auth_service.generate_terminal_temp_token(
         item_uuid=str(id),
         user_id=str(current_user.id),
-        secret_key=settings.SECRET_KEY,
-        expire_seconds=600
+        expire_minutes=5
     )
     
-    logger.info(f"Generated terminal access token for user {current_user.id}, item {id}")
+    logger.info(f"Generated terminal temp token for user={current_user.id}, item={id}")
     
     return {
         "success": True,
-        "access_token": access_token,
-        "token_type": "Bearer",
-        "expires_in": 600,
+        "temp_token": temp_token_info["token"],
         "item_uuid": str(id),
         "user_uuid": str(current_user.id),
-        "daemon_url": f"ws://{item.socket_host}:{item.socket_port}",
-        "daemon_id": daemon_id
+        "ws_url": f"ws://{item.socket_host}:{item.socket_port}",
+        "daemon_id": daemon_id,
+        "expire_seconds": temp_token_info["expires_in"]
     }
 
 
@@ -306,24 +307,23 @@ def get_terminal_token(
 def verify_terminal_token(
     session: SessionDep,
     id: uuid.UUID,
-    access_token: str,
-    item_uuid: str
+    temp_token: str = Body(...),
+    item_uuid: str = Body(...)
 ) -> dict[str, Any]:
     from app.services.auth_service import auth_service
-    from app.core.config import settings
     
     if str(id) != item_uuid:
         return {"success": False, "error": "Item UUID mismatch"}
     
-    result = auth_service.verify_access_token(
-        token=access_token,
+    result = auth_service.validate_terminal_temp_token(
+        token=temp_token,
         item_uuid=item_uuid,
-        secret_key=settings.SECRET_KEY
+        mark_used=True
     )
     
     if result["success"]:
-        logger.info(f"Terminal token verified for item {id}, user {result['user_id']}")
+        logger.info(f"Terminal temp token verified for item={id}, user={result['user_id']}")
     else:
-        logger.warning(f"Terminal token verification failed: {result['error']}")
+        logger.warning(f"Terminal temp token verification failed: {result['error']}")
     
     return result

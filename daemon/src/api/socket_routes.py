@@ -1,5 +1,6 @@
 import socketio
 import uuid as uuid_lib
+import requests
 from service.socket_service import SocketService
 from service.terminal_manager import terminal_manager
 from service.room_manager import room_manager
@@ -16,6 +17,46 @@ from core import set_socket_service
 set_socket_service(socket_service)
 
 
+async def verify_temp_token_with_backend(temp_token: str, item_uuid: str) -> dict:
+    """
+    向Backend验证临时Token
+    
+    Args:
+        temp_token: 临时Token
+        item_uuid: Item UUID
+        
+    Returns:
+        验证结果 {success, user_id, error}
+    """
+    try:
+        backend_url = config.get("BACKEND_URL", "http://backend:8000")
+        url = f"{backend_url}/api/v1/items/{item_uuid}/verify-terminal-token"
+        
+        response = requests.post(
+            url,
+            json={
+                "temp_token": temp_token,
+                "item_uuid": item_uuid
+            },
+            timeout=5
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            logger.info(f"[Auth] Temp token verified: item={item_uuid}, user={result.get('user_id')}")
+            return result
+        else:
+            logger.warning(f"[Auth] Temp token verification failed: status={response.status_code}")
+            return {"success": False, "error": f"Backend returned {response.status_code}"}
+            
+    except requests.exceptions.Timeout:
+        logger.error(f"[Auth] Temp token verification timeout")
+        return {"success": False, "error": "Backend timeout"}
+    except Exception as e:
+        logger.error(f"[Auth] Temp token verification error: {e}")
+        return {"success": False, "error": str(e)}
+
+
 @sio.event
 async def connect(sid, environ, auth=None):
     ip_address = environ.get('REMOTE_ADDR', 'unknown')
@@ -24,6 +65,49 @@ async def connect(sid, environ, auth=None):
         if auth["api_key"] == config.get("API_KEY"):
             logger.info(f"[WebSocket] Backend connected: {sid}, IP: {ip_address}")
             return True
+    
+    if auth and "temp_token" in auth and "item_uuid" in auth:
+        temp_token = auth["temp_token"]
+        item_uuid = auth["item_uuid"]
+        
+        browser_conn = daemon_conn_pool.create_browser_terminal_conn("pending", sid)
+        browser_conn.ip = ip_address
+        logger.info(f"[WebSocket] Browser connected (pending temp token auth): {sid}, IP: {ip_address}, item={item_uuid}")
+        
+        result = await verify_temp_token_with_backend(temp_token, item_uuid)
+        
+        if result.get("success"):
+            user_uuid = result.get("user_id")
+            
+            daemon_conn_pool.remove_browser_terminal_conn("pending", sid)
+            
+            browser_conn = daemon_conn_pool.create_browser_terminal_conn(item_uuid, sid)
+            browser_conn.set_authenticated(user_uuid)
+            browser_conn.ip = ip_address
+            
+            if not room_manager.room_exists(item_uuid):
+                room_manager.create_room(item_uuid)
+            
+            await socket_service.join_item_room(sid, item_uuid, "browser", user_uuid)
+            
+            room_info = room_manager.get_room_info(item_uuid)
+            
+            logger.info(f"[WebSocket] Browser authenticated via temp token: {sid}, user={user_uuid}, item={item_uuid}")
+            
+            await sio.emit("terminal_connected", {
+                "item_uuid": item_uuid,
+                "subscriber_type": "browser",
+                "room_info": room_info,
+                "user_uuid": user_uuid
+            }, to=sid)
+            
+            await socket_service.notify_connection_update(item_uuid)
+            
+            return True
+        else:
+            logger.warning(f"[WebSocket] Temp token auth failed: {sid}, error={result.get('error')}")
+            await sio.emit("auth_error", {"message": result.get("error", "Token verification failed")}, to=sid)
+            return False
     
     if auth and "access_token" in auth:
         browser_conn = daemon_conn_pool.create_browser_terminal_conn("pending", sid)

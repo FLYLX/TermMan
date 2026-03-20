@@ -387,12 +387,11 @@ export type ItemsReconnectDaemonData = {
 
 export type ItemsReconnectDaemonResponse = (unknown);
 
-export type ItemsDisconnectUserFromItemData = {
+export type ItemsStartItemData = {
     id: string;
-    userUuid: string;
 };
 
-export type ItemsDisconnectUserFromItemResponse = (unknown);
+export type ItemsStartItemResponse = (Message);
 
 export type ItemsStopItemData = {
     id: string;
@@ -406,11 +405,23 @@ export type ItemsRestartItemData = {
 
 export type ItemsRestartItemResponse = (Message);
 
-export type ItemsStartItemData = {
+export type ItemsGetTerminalTokenData = {
     id: string;
 };
 
-export type ItemsStartItemResponse = (Message);
+export type ItemsGetTerminalTokenResponse = ({
+    [key: string]: unknown;
+});
+
+export type ItemsVerifyTerminalTokenData = {
+    id: string;
+    itemUuid: string;
+    tempToken: string;
+};
+
+export type ItemsVerifyTerminalTokenResponse = ({
+    [key: string]: unknown;
+});
 
 export type LoginLoginAccessTokenData = {
     formData: Body_login_login_access_token;

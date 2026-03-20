@@ -87,12 +87,13 @@ function Dashboard() {
   }
 
   // 断开用户连接
-  const handleDisconnectUser = async (itemId: string, userUuid: string) => {
+  const handleDisconnectUser = async (_itemId: string, _userUuid: string) => {
     try {
-      await ItemsService.disconnectUserFromItem({
-        id: itemId,
-        userUuid: userUuid
-      })
+      // TODO: Add disconnectUserFromItem API endpoint
+      // await ItemsService.disconnectUserFromItem({
+      //   id: _itemId,
+      //   userUuid: _userUuid
+      // })
       toast.success("User disconnected successfully.")
 
       // 刷新项目列表

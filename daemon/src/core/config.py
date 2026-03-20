@@ -28,7 +28,8 @@ class Config:
             "DATA_DIR": os.getenv("DATA_DIR", "./src/data"),
             "TERMINAL_SHELL": os.getenv("TERMINAL_SHELL", "cmd.exe"),
             "TERMINAL_ENCODING": os.getenv("TERMINAL_ENCODING", "utf-8"),
-            "TERMINAL_BUFFER_SIZE": int(os.getenv("TERMINAL_BUFFER_SIZE", "8192"))
+            "TERMINAL_BUFFER_SIZE": int(os.getenv("TERMINAL_BUFFER_SIZE", "8192")),
+            "BACKEND_URL": os.getenv("BACKEND_URL", "http://backend:8000")
         })
 
     def load_config_file(self):

@@ -251,9 +251,17 @@ class TerminalProcess:
         try:
             if self.process and self.process.stdin and self.status in ["running", "waiting_backend"]:
                 if isinstance(data, str):
-                    data = data.encode(self.encoding)
-                self.process.stdin.write(data)
+                    encoded_data = data.encode(self.encoding)
+                else:
+                    encoded_data = data
+                
+                self.process.stdin.write(encoded_data)
                 self.process.stdin.flush()
+                
+                if isinstance(data, str) and data.strip():
+                    self._write_log(f"$ {data.strip()}\n")
+                    self._broadcast({"stdin": data})
+                
                 return True
             return False
         except Exception as e:
