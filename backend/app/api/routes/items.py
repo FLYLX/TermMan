@@ -7,7 +7,7 @@ from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Item, ItemCreate, ItemPublic, ItemUpdate, Message, ItemStatus, User
-from app.services import DaemonConfig, connection_manager, socket_manager, backend_conn_pool
+from app.services import DaemonConfig, connection_manager, socket_manager, backend_conn_pool, log_manager
 from app.services.terminal_service import TerminalService
 
 logger = logging.getLogger(__name__)
@@ -452,3 +452,28 @@ def disconnect_item_subscriber(
     )
     
     return result
+
+
+@router.get("/{id}/output")
+def get_item_output(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    lines: int = 64
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+    
+    if lines < 1 or lines > 1000:
+        raise HTTPException(status_code=400, detail="lines must be between 1 and 1000")
+    
+    output = log_manager.get_last_lines(str(id), lines)
+    
+    return {
+        "success": True,
+        "item_uuid": str(id),
+        "lines": lines,
+        "output": output
+    }

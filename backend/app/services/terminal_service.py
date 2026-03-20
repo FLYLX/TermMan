@@ -14,6 +14,8 @@ from .socket_pool import SocketManager
 
 logger = logging.getLogger(__name__)
 
+log_manager = LogManager()
+
 
 class TerminalService:
     """
@@ -33,7 +35,6 @@ class TerminalService:
     def __init__(self, connection_manager: ConnectionManager, socket_manager: SocketManager):
         self.connection_manager = connection_manager
         self.socket_manager = socket_manager
-        self.log_manager = LogManager()
         self.terminal_users: dict[str, list[str]] = {}
 
     def start_terminal(self, item_uuid: str, user_uuid: str, daemon_config: DaemonConfig) -> dict[str, Any]:
@@ -111,13 +112,13 @@ class TerminalService:
             stdin = data.get("stdin", "")
             logger.info(f"[TerminalService] log_callback called for item={item_uuid}: stdout={len(output)} chars, stderr={len(stderr)} chars, stdin={len(stdin)} chars")
             if stdin:
-                success = self.log_manager.write_to_log(owner_uuid, item_uuid, f"$ {stdin.strip()}\n")
+                success = log_manager.write_to_log(owner_uuid, item_uuid, f"$ {stdin.strip()}\n")
                 logger.info(f"[TerminalService] Wrote stdin to log: success={success}")
             if output:
-                success = self.log_manager.write_to_log(owner_uuid, item_uuid, output)
+                success = log_manager.write_to_log(owner_uuid, item_uuid, output)
                 logger.info(f"[TerminalService] Wrote stdout to log: success={success}")
             if stderr:
-                success = self.log_manager.write_to_log(owner_uuid, item_uuid, stderr)
+                success = log_manager.write_to_log(owner_uuid, item_uuid, stderr)
                 logger.info(f"[TerminalService] Wrote stderr to log: success={success}")
         
         socket.on(ProtocolEvents.STREAM, log_callback)
@@ -204,13 +205,13 @@ class TerminalService:
         return self.socket_manager.register_stream_callback(item_uuid, user_uuid, callback, "browser")
 
     def get_terminal_log(self, user_uuid: str, item_uuid: str) -> str | None:
-        return self.log_manager.get_log_content(user_uuid, item_uuid)
+        return log_manager.get_log_content(user_uuid, item_uuid)
 
     def delete_terminal_log(self, user_uuid: str, item_uuid: str) -> bool:
-        return self.log_manager.delete_log(user_uuid, item_uuid)
+        return log_manager.delete_log(user_uuid, item_uuid)
 
     def set_log_max_size(self, max_size: int) -> None:
-        self.log_manager.set_max_log_size(max_size)
+        log_manager.set_max_log_size(max_size)
 
     def list_user_terminals(self, user_uuid: str) -> dict[str, Any]:
         terminals = []

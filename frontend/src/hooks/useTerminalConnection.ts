@@ -101,6 +101,18 @@ export function useTerminalConnection({
     setError(null)
 
     try {
+      const outputData = await ItemsService.getItemOutput({ id: itemId }) as {
+        success: boolean
+        output: string | null
+      }
+      if (outputData.success && outputData.output) {
+        setOutput([{ stdout: outputData.output }])
+      }
+      
+      if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+        return
+      }
+      
       const tokenData = await ItemsService.getTerminalToken({ id: itemId })
       
       if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {

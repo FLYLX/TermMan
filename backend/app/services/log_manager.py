@@ -86,6 +86,31 @@ class LogManager:
             self.logger.error(f"Failed to read log for terminal {item_uuid}: {e}")
             return None
     
+    def get_last_lines(self, item_uuid: str, lines: int = 64) -> Optional[str]:
+        """
+        获取日志文件最后N行内容
+        
+        Args:
+            item_uuid: 终端UUID
+            lines: 要获取的行数，默认64行
+            
+        Returns:
+            最后N行日志内容，如果文件不存在返回None
+        """
+        try:
+            log_path = self.get_log_path(item_uuid)
+            if not os.path.exists(log_path):
+                return None
+            
+            with open(log_path, "r", encoding="utf-8") as f:
+                all_lines = f.readlines()
+            
+            last_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+            return "".join(last_lines)
+        except Exception as e:
+            self.logger.error(f"Failed to read last {lines} lines for terminal {item_uuid}: {e}")
+            return None
+    
     def delete_log(self, user_uuid: str, item_uuid: str) -> bool:
         """
         删除日志文件

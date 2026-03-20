@@ -449,6 +449,15 @@ export type ItemsDisconnectItemSubscriberResponse = ({
     [key: string]: unknown;
 });
 
+export type ItemsGetItemOutputData = {
+    id: string;
+    lines?: number;
+};
+
+export type ItemsGetItemOutputResponse = ({
+    [key: string]: unknown;
+});
+
 export type LoginLoginAccessTokenData = {
     formData: Body_login_login_access_token;
 };

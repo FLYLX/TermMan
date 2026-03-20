@@ -15,6 +15,8 @@ from .protocol import ProtocolEvents, ProtocolCodec
 from .log_manager import LogManager
 from .daemon_initializer import connection_manager, socket_manager, initialize_daemon_connections
 
+log_manager = LogManager()
+
 __all__ = [
     "ConnectionManager",
     "DaemonConnection",
@@ -32,6 +34,7 @@ __all__ = [
     "ProtocolEvents",
     "ProtocolCodec",
     "LogManager",
+    "log_manager",
     "connection_manager",
     "socket_manager",
     "initialize_daemon_connections"
