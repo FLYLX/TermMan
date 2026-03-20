@@ -3,7 +3,8 @@ import uuid
 import subprocess
 import threading
 import chardet
-import time
+import select
+import fcntl
 from typing import Dict, Any, Optional
 from datetime import datetime
 from core import config
@@ -123,8 +124,12 @@ class TerminalProcess:
                 shell=True
             )
 
-            threading.Thread(target=self._read_stdout, daemon=True).start()
-            threading.Thread(target=self._read_stderr, daemon=True).start()
+            for fd in [self.process.stdout, self.process.stderr]:
+                if fd:
+                    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+                    fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
+            threading.Thread(target=self._read_output, daemon=True).start()
 
             self.status = "waiting_backend"
             logger.info(f"[Terminal] Shell started, waiting for Backend connection: {self.item_uuid}")
@@ -142,25 +147,12 @@ class TerminalProcess:
                     logger.info(f"[Terminal] Backend connected, executing commands for item={self.item_uuid}")
                     self.status = "running"
                     
-                    time.sleep(0.3)
-                    
-                    if self.working_directory:
-                        cd_cmd = f"cd {self.working_directory}\n"
-                        self.write(cd_cmd)
-                        self._write_log(f"$ {cd_cmd}")
-                        time.sleep(0.1)
-                    
                     if self.command:
                         cmd = f"{self.command}\n"
                         self.write(cmd)
-                        self._write_log(f"$ {self.command}\n")
                 else:
                     logger.warning(f"[Terminal] Backend connection timeout, proceeding anyway for item={self.item_uuid}")
                     self.status = "running"
-                    
-                    if self.working_directory:
-                        cd_cmd = f"cd {self.working_directory}\n"
-                        self.write(cd_cmd)
                     
                     if self.command:
                         cmd = f"{self.command}\n"
@@ -191,65 +183,66 @@ class TerminalProcess:
         except Exception as e:
             logger.error(f"[TerminalProcess] Broadcast failed: {e}")
 
-    def _read_stdout(self):
+    def _read_output(self):
+        """使用 select 同时读取 stdout 和 stderr，保持正确的顺序"""
         try:
-            while self._running and self.process and self.process.stdout:
-                try:
-                    line = self.process.stdout.readline()
-                    if not line:
-                        break
-                except Exception:
+            while self._running and self.process:
+                stdout_fd = self.process.stdout
+                stderr_fd = self.process.stderr
+                
+                if not stdout_fd and not stderr_fd:
                     break
                 
-                try:
-                    decoded_line = line.decode(self.encoding)
-                except UnicodeDecodeError:
+                readable, _, _ = select.select(
+                    [fd for fd in [stdout_fd, stderr_fd] if fd],
+                    [],
+                    [],
+                    0.1
+                )
+                
+                for fd in readable:
                     try:
-                        detected = chardet.detect(line)
-                        detected_encoding = detected.get('encoding', self.encoding)
-                        decoded_line = line.decode(detected_encoding, errors='replace')
-                    except Exception:
-                        decoded_line = line.decode(self.encoding, errors='replace')
-                
-                with self.lock:
-                    self.stdout_buffer.append(decoded_line)
-                
-                self._write_log(decoded_line)
-                self._broadcast({"stdout": decoded_line})
+                        data = os.read(fd.fileno(), 4096)
+                        if not data:
+                            continue
+                        
+                        try:
+                            decoded = data.decode(self.encoding)
+                        except UnicodeDecodeError:
+                            try:
+                                detected = chardet.detect(data)
+                                detected_encoding = detected.get('encoding', self.encoding)
+                                decoded = data.decode(detected_encoding, errors='replace')
+                            except Exception:
+                                decoded = data.decode(self.encoding, errors='replace')
+                        
+                        is_stderr = (fd == stderr_fd)
+                        
+                        with self.lock:
+                            if is_stderr:
+                                self.stderr_buffer.append(decoded)
+                            else:
+                                self.stdout_buffer.append(decoded)
+                        
+                        self._write_log(decoded)
+                        self._broadcast({"stderr" if is_stderr else "stdout": decoded})
+                        
+                    except BlockingIOError:
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error reading from fd for {self.item_uuid}: {e}")
+                        continue
+                        
         except Exception as e:
-            logger.error(f"Error reading stdout for {self.item_uuid}: {e}")
-
-    def _read_stderr(self):
-        try:
-            while self._running and self.process and self.process.stderr:
-                try:
-                    line = self.process.stderr.readline()
-                    if not line:
-                        break
-                except Exception:
-                    break
-                
-                try:
-                    decoded_line = line.decode(self.encoding)
-                except UnicodeDecodeError:
-                    try:
-                        detected = chardet.detect(line)
-                        detected_encoding = detected.get('encoding', self.encoding)
-                        decoded_line = line.decode(detected_encoding, errors='replace')
-                    except Exception:
-                        decoded_line = line.decode(self.encoding, errors='replace')
-                
-                with self.lock:
-                    self.stderr_buffer.append(decoded_line)
-                
-                self._write_log(decoded_line)
-                self._broadcast({"stderr": decoded_line})
-        except Exception as e:
-            logger.error(f"Error reading stderr for {self.item_uuid}: {e}")
+            logger.error(f"Error in _read_output for {self.item_uuid}: {e}")
 
     def write(self, data: str) -> bool:
         try:
             if self.process and self.process.stdin and self.status in ["running", "waiting_backend"]:
+                if isinstance(data, str) and data.strip():
+                    self._write_log(f"$ {data.strip()}\n")
+                    self._broadcast({"stdin": data})
+                
                 if isinstance(data, str):
                     encoded_data = data.encode(self.encoding)
                 else:
@@ -257,10 +250,6 @@ class TerminalProcess:
                 
                 self.process.stdin.write(encoded_data)
                 self.process.stdin.flush()
-                
-                if isinstance(data, str) and data.strip():
-                    self._write_log(f"$ {data.strip()}\n")
-                    self._broadcast({"stdin": data})
                 
                 return True
             return False
