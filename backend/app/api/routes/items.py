@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Body
 from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep
-from app.models import Item, ItemCreate, ItemPublic, ItemUpdate, Message, ItemStatus
+from app.models import Item, ItemCreate, ItemPublic, ItemUpdate, Message, ItemStatus, User
 from app.services import DaemonConfig, connection_manager, socket_manager, backend_conn_pool
 from app.services.terminal_service import TerminalService
 
@@ -28,7 +28,7 @@ def _get_daemon_status(item: Item) -> dict:
     return {"daemon_id": daemon_id, "daemon_online": False, "daemon_status": "disconnected"}
 
 
-def _get_item_data(item: Item) -> dict:
+def _get_item_data(item: Item, session: SessionDep = None) -> dict:
     """获取item的完整数据（包含daemon状态和连接信息）"""
     item_data = ItemPublic.model_validate(item).model_dump()
     item_data["daemon_url"] = f"http://{item.socket_host}:{item.socket_port}"
@@ -42,7 +42,55 @@ def _get_item_data(item: Item) -> dict:
     if token:
         item_data['token'] = token
     
+    subscribers = _get_item_subscribers_internal(item)
+    
+    if session and subscribers.get("subscribers"):
+        user_ids = set()
+        for sub in subscribers["subscribers"]:
+            if sub.get("user_uuid"):
+                try:
+                    user_ids.add(uuid.UUID(sub["user_uuid"]))
+                except (ValueError, TypeError):
+                    pass
+        
+        if user_ids:
+            users = session.exec(select(User).where(User.id.in_(user_ids))).all()
+            user_map = {str(user.id): user.full_name or user.email for user in users}
+            
+            for sub in subscribers["subscribers"]:
+                user_uuid = sub.get("user_uuid", "")
+                sub["user_name"] = user_map.get(user_uuid, user_uuid[:8] + "...")
+    
+    item_data["subscribers"] = subscribers.get("subscribers", [])
+    item_data["browser_count"] = subscribers.get("browser_count", 0)
+    item_data["backend_connected"] = subscribers.get("backend_connected", False)
+    
     return item_data
+
+
+def _get_item_subscribers_internal(item: Item) -> dict:
+    """获取item的订阅者信息（内部方法）"""
+    daemon_status = _get_daemon_status(item)
+    if not daemon_status["daemon_online"]:
+        return {
+            "subscribers": [],
+            "browser_count": 0,
+            "backend_connected": False
+        }
+    
+    connection = connection_manager.get_connection(
+        f"{item.socket_host}:{item.socket_port}:{item.api_key}"
+    )
+    
+    if not connection or not connection.is_connected():
+        return {
+            "subscribers": [],
+            "browser_count": 0,
+            "backend_connected": False
+        }
+    
+    result = connection.get_item_subscribers_http(str(item.id))
+    return result
 
 
 def _check_item_permission(item: Item, current_user: CurrentUser):
@@ -77,7 +125,7 @@ def read_items(
         )
         items = session.exec(statement).all()
 
-    items_with_data = [_get_item_data(item) for item in items]
+    items_with_data = [_get_item_data(item, session) for item in items]
     return {"data": items_with_data, "count": count}
 
 
@@ -325,5 +373,82 @@ def verify_terminal_token(
         logger.info(f"Terminal temp token verified for item={id}, user={result['user_id']}")
     else:
         logger.warning(f"Terminal temp token verification failed: {result['error']}")
+    
+    return result
+
+
+@router.get("/{id}/subscribers")
+def get_item_subscribers(
+    session: SessionDep, current_user: CurrentUser, id: uuid.UUID
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+    
+    daemon_status = _get_daemon_status(item)
+    if not daemon_status["daemon_online"]:
+        return {
+            "success": True,
+            "item_uuid": str(id),
+            "subscribers": [],
+            "browser_count": 0,
+            "backend_connected": False,
+            "daemon_online": False
+        }
+    
+    connection = connection_manager.get_connection(
+        f"{item.socket_host}:{item.socket_port}:{item.api_key}"
+    )
+    
+    if not connection or not connection.is_connected():
+        return {
+            "success": True,
+            "item_uuid": str(id),
+            "subscribers": [],
+            "browser_count": 0,
+            "backend_connected": False,
+            "daemon_online": True,
+            "error": "Backend not connected to daemon"
+        }
+    
+    result = connection.get_item_subscribers_http(str(id))
+    
+    result["daemon_online"] = True
+    return result
+
+
+@router.post("/{id}/disconnect-subscriber")
+def disconnect_item_subscriber(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    user_uuid: str = Body(default=None),
+    ip_address: str = Body(default=None)
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+    
+    if not user_uuid and not ip_address:
+        raise HTTPException(status_code=400, detail="Must provide user_uuid or ip_address")
+    
+    daemon_status = _get_daemon_status(item)
+    if not daemon_status["daemon_online"]:
+        raise HTTPException(status_code=400, detail="Daemon is not connected")
+    
+    connection = connection_manager.get_connection(
+        f"{item.socket_host}:{item.socket_port}:{item.api_key}"
+    )
+    
+    if not connection or not connection.is_connected():
+        raise HTTPException(status_code=400, detail="Backend not connected to daemon")
+    
+    result = connection.disconnect_connection_http(
+        item_uuid=str(id),
+        user_uuid=user_uuid,
+        ip_address=ip_address
+    )
     
     return result

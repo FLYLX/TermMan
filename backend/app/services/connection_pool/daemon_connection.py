@@ -109,6 +109,10 @@ class DaemonConnection:
         def on_connections_disconnect(data):
             self._handle_response("connections/disconnect", data)
 
+        @self.sio.on("item/subscribers")
+        def on_item_subscribers(data):
+            self._handle_response("item/subscribers", data)
+
         @self.sio.on("connection_update")
         def on_connection_update(data):
             if "connection_update" in self.callbacks:
@@ -322,6 +326,22 @@ class DaemonConnection:
             data["ip_address"] = ip_address
         
         return self._emit_and_wait_sync("connections/disconnect", data)
+
+    def get_item_subscribers_http(self, item_uuid: str) -> Dict[str, Any]:
+        """
+        获取item的订阅者信息 - 同步方法
+        
+        返回:
+            success: 是否成功
+            item_uuid: 终端UUID
+            subscribers: 订阅者列表 [{sid, user_uuid, ip, type, join_time, last_active_time}]
+            browser_count: 浏览器连接数
+            backend_connected: Backend是否连接
+            room_info: Room信息
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected to daemon"}
+        return self._emit_and_wait_sync("item/subscribers", {"item_uuid": item_uuid})
 
     def _sync_all_connections(self):
         def run_sync():

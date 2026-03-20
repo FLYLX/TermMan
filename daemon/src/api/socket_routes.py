@@ -426,10 +426,7 @@ async def on_connections_disconnect(sid, data):
         }, to=sid)
         return
     
-    if user_uuid:
-        connections = await socket_service.disconnect_user_from_item(item_uuid, user_uuid)
-    else:
-        connections = await socket_service.disconnect_by_ip(item_uuid, ip_address)
+    connections = await socket_service.disconnect_user_from_item(item_uuid, user_uuid, ip_address)
     
     await sio.emit("connections/disconnect", {
         "success": True,
@@ -544,3 +541,45 @@ async def on_terminal_write(sid, data):
             if terminal:
                 terminal.write(data.get("command", "") + "\n")
             return
+
+
+@sio.on("item/subscribers")
+async def on_item_subscribers(sid, data):
+    item_uuid = data.get("item_uuid")
+    request_id = data.get("request_id")
+    
+    if not item_uuid:
+        await sio.emit("item/subscribers", {
+            "success": False,
+            "error": "Missing item_uuid",
+            "request_id": request_id
+        }, to=sid)
+        return
+    
+    browser_conns = daemon_conn_pool.get_browser_terminal_conns(item_uuid)
+    room_listen_conn = daemon_conn_pool.get_backend_room_listen_conn(item_uuid)
+    room_info = room_manager.get_room_info(item_uuid)
+    
+    subscribers = []
+    for conn in browser_conns:
+        if conn.is_authenticated():
+            subscribers.append({
+                "sid": conn.sid[:16] + "...",
+                "user_uuid": conn.user_uuid,
+                "ip": conn.ip,
+                "type": "browser",
+                "join_time": conn.join_time,
+                "last_active_time": conn.last_active_time
+            })
+    
+    backend_connected = room_listen_conn and room_listen_conn.is_connected() if room_listen_conn else False
+    
+    await sio.emit("item/subscribers", {
+        "success": True,
+        "item_uuid": item_uuid,
+        "subscribers": subscribers,
+        "browser_count": len(subscribers),
+        "backend_connected": backend_connected,
+        "room_info": room_info,
+        "request_id": request_id
+    }, to=sid)

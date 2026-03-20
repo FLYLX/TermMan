@@ -36,6 +36,37 @@ export const AddUserToHandlerRequestSchema = {
     title: 'AddUserToHandlerRequest'
 } as const;
 
+export const Body_items_disconnect_item_subscriberSchema = {
+    properties: {
+        user_uuid: {
+            type: 'string',
+            title: 'User Uuid'
+        },
+        ip_address: {
+            type: 'string',
+            title: 'Ip Address'
+        }
+    },
+    type: 'object',
+    title: 'Body_items-disconnect_item_subscriber'
+} as const;
+
+export const Body_items_verify_terminal_tokenSchema = {
+    properties: {
+        temp_token: {
+            type: 'string',
+            title: 'Temp Token'
+        },
+        item_uuid: {
+            type: 'string',
+            title: 'Item Uuid'
+        }
+    },
+    type: 'object',
+    required: ['temp_token', 'item_uuid'],
+    title: 'Body_items-verify_terminal_token'
+} as const;
+
 export const Body_login_login_access_tokenSchema = {
     properties: {
         grant_type: {

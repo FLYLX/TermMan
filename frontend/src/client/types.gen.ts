@@ -10,6 +10,16 @@ export type AddUserToHandlerRequest = {
     user_id: string;
 };
 
+export type Body_items_disconnect_item_subscriber = {
+    user_uuid?: string;
+    ip_address?: string;
+};
+
+export type Body_items_verify_terminal_token = {
+    temp_token: string;
+    item_uuid: string;
+};
+
 export type Body_login_login_access_token = {
     grant_type?: (string | null);
     username: string;
@@ -415,11 +425,27 @@ export type ItemsGetTerminalTokenResponse = ({
 
 export type ItemsVerifyTerminalTokenData = {
     id: string;
-    itemUuid: string;
-    tempToken: string;
+    requestBody: Body_items_verify_terminal_token;
 };
 
 export type ItemsVerifyTerminalTokenResponse = ({
+    [key: string]: unknown;
+});
+
+export type ItemsGetItemSubscribersData = {
+    id: string;
+};
+
+export type ItemsGetItemSubscribersResponse = ({
+    [key: string]: unknown;
+});
+
+export type ItemsDisconnectItemSubscriberData = {
+    id: string;
+    requestBody?: Body_items_disconnect_item_subscriber;
+};
+
+export type ItemsDisconnectItemSubscriberResponse = ({
     [key: string]: unknown;
 });
 

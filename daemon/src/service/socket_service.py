@@ -205,12 +205,20 @@ class SocketService:
             'connections': self.get_terminal_connections(item_uuid)
         }
 
-    async def disconnect_user_from_item(self, item_uuid: str, user_uuid: str) -> Dict[str, Any]:
+    async def disconnect_user_from_item(self, item_uuid: str, user_uuid: str = None, ip_address: str = None) -> Dict[str, Any]:
         conns = daemon_conn_pool.get_browser_terminal_conns(item_uuid)
         
         sids_to_disconnect = []
         for conn in conns:
-            if conn.user_uuid == user_uuid:
+            match = False
+            if user_uuid and ip_address:
+                match = conn.user_uuid == user_uuid and conn.ip == ip_address
+            elif user_uuid:
+                match = conn.user_uuid == user_uuid
+            elif ip_address:
+                match = conn.ip == ip_address
+            
+            if match:
                 sids_to_disconnect.append(conn.sid)
         
         for sid in sids_to_disconnect:
@@ -224,22 +232,7 @@ class SocketService:
         return self.get_terminal_connections(item_uuid)
 
     async def disconnect_by_ip(self, item_uuid: str, ip_address: str) -> Dict[str, Any]:
-        conns = daemon_conn_pool.get_browser_terminal_conns(item_uuid)
-        
-        sids_to_disconnect = []
-        for conn in conns:
-            if conn.ip == ip_address:
-                sids_to_disconnect.append(conn.sid)
-        
-        for sid in sids_to_disconnect:
-            try:
-                await self.leave_item_room(sid, item_uuid)
-                await self.sio.disconnect(sid)
-                daemon_conn_pool.remove_browser_terminal_conn(item_uuid, sid)
-            except Exception as e:
-                logger.error(f"Failed to disconnect {sid}: {e}")
-        
-        return self.get_terminal_connections(item_uuid)
+        return await self.disconnect_user_from_item(item_uuid, ip_address=ip_address)
 
     def get_room_manager(self):
         return room_manager

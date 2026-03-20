@@ -6,114 +6,125 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { ChevronDown, ChevronRight, Trash2, RefreshCw } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { ChevronDown, ChevronRight, Trash2, RefreshCw, User, Shield } from "lucide-react"
 
 export const Route = createFileRoute("/_layout/")({
   component: Dashboard,
   head: () => ({
     meta: [
       {
-        title: "Dashboard - FastAPI Template",
+        title: "Dashboard - TermMan",
       },
     ],
   }),
 })
 
+type Subscriber = {
+  sid: string
+  user_uuid: string
+  user_name: string
+  ip: string
+  type: string
+  join_time: number
+  last_active_time: number
+}
+
+type Item = {
+  id: string
+  title: string
+  description: string | null
+  status: string
+  owner_id: string
+  daemon_id?: string
+  daemon_url?: string
+  daemon_online?: boolean
+  daemon_status?: string
+  subscribers?: Subscriber[]
+  browser_count?: number
+  backend_connected?: boolean
+  [key: string]: unknown
+}
+
+type Daemon = {
+  id: string
+  url: string
+  online: boolean
+  status: string
+  items: Item[]
+}
+
 function Dashboard() {
   const { user: currentUser } = useAuth()
-  const [items, setItems] = useState<any[]>([])
+  const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
-  
-  // 展开/折叠状态管理
-  const [expandedDaemons, setExpandedDaemons] = useState<Record<string, boolean>>({
-    // 默认展开所有daemon
-  })
-  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
-    // 默认展开所有item
-  })
-
-  // 定义类型 - 根据新的连接表结构
-  type ConnectedUser = {
-    user_uuid: string
+  const [expandedDaemons, setExpandedDaemons] = useState<Record<string, boolean>>({})
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({})
+  const [disconnectDialog, setDisconnectDialog] = useState<{
+    open: boolean
+    itemId: string
+    itemTitle: string
+    userUuid: string
+    userName: string
     ip: string
-  }
+  } | null>(null)
+  const [disconnecting, setDisconnecting] = useState(false)
 
-  type Item = {
-    id: string
-    title: string
-    description: string
-    status: string
-    connected_users: Record<string, ConnectedUser>
-    daemon_id?: string
-    daemon_url?: string
-    daemon_online?: boolean
-    daemon_status?: string
-    [key: string]: any
-  }
+  const isAdmin = currentUser?.is_superuser ?? false
 
-  type Daemon = {
-    id: string
-    url: string
-    online: boolean
-    status: string
-    items: Item[]
-  }
-
-  // 获取项目列表
   useEffect(() => {
-    const fetchItems = async () => {
-      try {
-        setLoading(true)
-        const response = await ItemsService.readItems()
-        setItems((response as any).data || [])
-      } catch (error) {
-        console.error("Failed to fetch items:", error)
-        toast.error("Failed to fetch items. Please try again.")
-      } finally {
-        setLoading(false)
-      }
-    }
-
     fetchItems()
   }, [])
 
-  // 获取已连接的用户列表 - 根据新连接表结构 {sid: {user_uuid, ip}}
-  const getConnectedUsers = (item: Item) => {
-    return Object.entries(item.connected_users || {}).map(([sid, connInfo]) => ({
-      sid,
-      userUuid: connInfo.user_uuid || "unknown",
-      ip: connInfo.ip || "unknown"
-    }))
-  }
-
-  // 断开用户连接
-  const handleDisconnectUser = async (_itemId: string, _userUuid: string) => {
+  const fetchItems = async () => {
     try {
-      // TODO: Add disconnectUserFromItem API endpoint
-      // await ItemsService.disconnectUserFromItem({
-      //   id: _itemId,
-      //   userUuid: _userUuid
-      // })
-      toast.success("User disconnected successfully.")
-
-      // 刷新项目列表
+      setLoading(true)
       const response = await ItemsService.readItems()
-      setItems((response as any).data || [])
+      setItems((response as { data: Item[] }).data || [])
     } catch (error) {
-      console.error("Failed to disconnect user:", error)
-      toast.error("Failed to disconnect user. Please try again.")
+      console.error("Failed to fetch items:", error)
+      toast.error("Failed to fetch items. Please try again.")
+    } finally {
+      setLoading(false)
     }
   }
 
-  // 重连daemon
+  const handleDisconnectUser = async () => {
+    if (!disconnectDialog) return
+
+    try {
+      setDisconnecting(true)
+      await ItemsService.disconnectItemSubscriber({
+        id: disconnectDialog.itemId,
+        requestBody: {
+          user_uuid: disconnectDialog.userUuid,
+          ip_address: disconnectDialog.ip,
+        },
+      })
+      toast.success("User disconnected successfully.")
+      await fetchItems()
+    } catch (error) {
+      console.error("Failed to disconnect user:", error)
+      toast.error("Failed to disconnect user. Please try again.")
+    } finally {
+      setDisconnecting(false)
+      setDisconnectDialog(null)
+    }
+  }
+
   const handleReconnectDaemon = async (daemonId: string) => {
     try {
-      const result = await ItemsService.reconnectDaemon({ daemonId }) as any
+      const result = (await ItemsService.reconnectDaemon({ daemonId })) as { success: boolean; message: string }
       if (result.success) {
         toast.success(result.message)
-        // 刷新项目列表
-        const response = await ItemsService.readItems()
-        setItems((response as any).data || [])
+        await fetchItems()
       } else {
         toast.error(result.message)
       }
@@ -123,28 +134,24 @@ function Dashboard() {
     }
   }
 
-  // 切换daemon展开/折叠状态
   const toggleDaemonExpand = (daemonId: string) => {
-    setExpandedDaemons(prev => ({
+    setExpandedDaemons((prev) => ({
       ...prev,
-      [daemonId]: !prev[daemonId]
+      [daemonId]: !prev[daemonId],
     }))
   }
 
-  // 切换item展开/折叠状态
   const toggleItemExpand = (itemId: string) => {
-    setExpandedItems(prev => ({
+    setExpandedItems((prev) => ({
       ...prev,
-      [itemId]: !prev[itemId]
+      [itemId]: !prev[itemId],
     }))
   }
 
-  // 按daemon分组items
   const groupItemsByDaemon = (items: Item[]): Daemon[] => {
     const daemonMap: Record<string, Daemon> = {}
 
-    items.forEach(item => {
-      // 使用daemon_url或daemon_id作为daemon的唯一标识
+    items.forEach((item) => {
       const daemonUrl = item.daemon_url || "unknown-daemon"
       const daemonId = item.daemon_id || daemonUrl
 
@@ -152,9 +159,9 @@ function Dashboard() {
         daemonMap[daemonId] = {
           id: daemonId,
           url: daemonUrl,
-          online: item.daemon_online || false,
-          status: item.daemon_status || "unknown",
-          items: []
+          online: item.daemon_online ?? false,
+          status: item.daemon_status ?? "unknown",
+          items: [],
         }
       }
 
@@ -164,23 +171,43 @@ function Dashboard() {
     return Object.values(daemonMap)
   }
 
-  // 按daemon分组items
   const daemons = groupItemsByDaemon(items)
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl truncate max-w-sm">
-          Hi, {currentUser?.full_name || currentUser?.email} 👋
-        </h1>
-        <p className="text-muted-foreground">
-          Welcome back, nice to see you again!!!
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl truncate max-w-sm">
+            Hi, {currentUser?.full_name || currentUser?.email} 👋
+          </h1>
+          <p className="text-muted-foreground">
+            Welcome back, nice to see you again!
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {isAdmin ? (
+            <div className="flex items-center gap-1 text-sm text-primary">
+              <Shield className="h-4 w-4" />
+              <span>Admin</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-sm text-muted-foreground">
+              <User className="h-4 w-4" />
+              <span>User</span>
+            </div>
+          )}
+        </div>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Connected Items Dashboard</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>
+            {isAdmin ? "All Items Dashboard" : "My Items"}
+          </CardTitle>
+          <Button variant="outline" size="sm" onClick={fetchItems} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -188,16 +215,18 @@ function Dashboard() {
           ) : items.length === 0 ? (
             <Alert>
               <AlertTitle>No items found</AlertTitle>
-              <AlertDescription>You don't have any items yet.</AlertDescription>
+              <AlertDescription>
+                {isAdmin
+                  ? "There are no items in the system."
+                  : "You don't have any items yet."}
+              </AlertDescription>
             </Alert>
-          ) : (
+          ) : isAdmin ? (
             <div className="space-y-4">
-              {/* 显示所有daemon节点 */}
               {daemons.map((daemon) => (
                 <div key={daemon.id} className="border rounded-lg">
-                  {/* Daemon头部 - 可点击展开/折叠 */}
-                  <div 
-                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted" 
+                  <div
+                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted"
                     onClick={() => toggleDaemonExpand(daemon.id)}
                   >
                     <div className="flex items-center">
@@ -209,12 +238,14 @@ function Dashboard() {
                       <div>
                         <div className="flex items-center gap-2">
                           <h3 className="font-medium">Daemon: {daemon.id}</h3>
-                          <span className={`px-2 py-0.5 rounded-full text-xs ${
-                            daemon.online 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-red-100 text-red-800'
-                          }`}>
-                            {daemon.online ? 'Online' : 'Offline'}
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-xs ${
+                              daemon.online
+                                ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                                : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+                            }`}
+                          >
+                            {daemon.online ? "Online" : "Offline"}
                           </span>
                           {!daemon.online && (
                             <Button
@@ -234,88 +265,182 @@ function Dashboard() {
                         <p className="text-sm text-muted-foreground">URL: {daemon.url}</p>
                       </div>
                     </div>
-                    <div className="text-sm font-medium">
-                      {daemon.items.length} items
-                    </div>
+                    <div className="text-sm font-medium">{daemon.items.length} items</div>
                   </div>
 
-                  {/* Daemon展开内容 - 显示所有items */}
                   {expandedDaemons[daemon.id] && (
                     <div className="border-t">
-                      {daemon.items.map((item) => {
-                        const connectedUsers = getConnectedUsers(item)
-                        return (
-                          <div key={item.id} className="border-b last:border-b-0 ml-4">
-                            {/* Item头部 - 可点击展开/折叠 */}
-                            <div 
-                              className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted" 
-                              onClick={() => toggleItemExpand(item.id)}
-                            >
-                              <div className="flex items-center">
-                                {expandedItems[item.id] ? (
-                                  <ChevronDown className="h-5 w-5 mr-2" />
-                                ) : (
-                                  <ChevronRight className="h-5 w-5 mr-2" />
-                                )}
-                                <div>
-                                  <Link to="/items/$itemId" params={{ itemId: item.id }} className="font-medium hover:text-blue-600 hover:underline" onClick={(e) => e.stopPropagation()}>
-                                    {item.title}
-                                  </Link>
-                                  <p className="text-sm text-muted-foreground">{item.description || "No description"}</p>
-                                </div>
-                              </div>
-                              <div className="text-sm">
-                                <span className={`px-2 py-1 rounded-full text-xs ${item.status === 'running' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                  {item.status}
-                                </span>
-                                <span className="ml-2">
-                                  {connectedUsers.length} connected users
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Item展开内容 - 显示已连接的用户 */}
-                            {expandedItems[item.id] && (
-                              <div className="p-4 bg-muted/50">
-                                {connectedUsers.length === 0 ? (
-                                  <p className="text-sm text-muted-foreground">No users connected to this item</p>
-                                ) : (
-                                  <div className="space-y-2">
-                                    <h5 className="font-medium text-sm">Connected Users:</h5>
-                                    {connectedUsers.map((user) => (
-                                      <div key={user.sid} className="flex items-center justify-between p-3 border rounded-lg bg-white">
-                                        <div>
-                                          <p className="font-medium text-sm">{user.userUuid}</p>
-                                          <p className="text-xs text-muted-foreground">SID: {user.sid} | IP: {user.ip}</p>
-                                        </div>
-                                        <div className="flex items-center">
-                                          <Button 
-                                            variant="ghost" 
-                                            size="icon" 
-                                            className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                                            onClick={() => handleDisconnectUser(item.id, user.userUuid)}
-                                          >
-                                            <Trash2 className="h-4 w-4" />
-                                            <span className="sr-only">Disconnect user</span>
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
+                      {daemon.items.map((item) => (
+                        <ItemCard
+                          key={item.id}
+                          item={item}
+                          expanded={expandedItems[item.id]}
+                          onToggleExpand={() => toggleItemExpand(item.id)}
+                          onDisconnectUser={(userUuid, userName, ip) =>
+                            setDisconnectDialog({
+                              open: true,
+                              itemId: item.id,
+                              itemTitle: item.title,
+                              userUuid,
+                              userName,
+                              ip,
+                            })
+                          }
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
               ))}
             </div>
+          ) : (
+            <div className="space-y-4">
+              {items.map((item) => (
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  expanded={expandedItems[item.id]}
+                  onToggleExpand={() => toggleItemExpand(item.id)}
+                  onDisconnectUser={(userUuid, userName, ip) =>
+                    setDisconnectDialog({
+                      open: true,
+                      itemId: item.id,
+                      itemTitle: item.title,
+                      userUuid,
+                      userName,
+                      ip,
+                    })
+                  }
+                  showOwner={false}
+                />
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={disconnectDialog?.open} onOpenChange={(open) => !open && setDisconnectDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Disconnect User</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to disconnect user{" "}
+              <strong>{disconnectDialog?.userName || disconnectDialog?.userUuid}</strong> (IP: {disconnectDialog?.ip}) from item{" "}
+              <strong>{disconnectDialog?.itemTitle}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDisconnectDialog(null)} disabled={disconnecting}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDisconnectUser}
+              disabled={disconnecting}
+              variant="destructive"
+            >
+              {disconnecting ? "Disconnecting..." : "Disconnect"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
+
+function ItemCard({
+  item,
+  expanded,
+  onToggleExpand,
+  onDisconnectUser,
+  showOwner = true,
+}: {
+  item: Item
+  expanded: boolean
+  onToggleExpand: () => void
+  onDisconnectUser: (userUuid: string, userName: string, ip: string) => void
+  showOwner?: boolean
+}) {
+  const subscribers = item.subscribers ?? []
+
+  return (
+    <div className="border-b last:border-b-0 ml-4">
+      <div
+        className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted"
+        onClick={onToggleExpand}
+      >
+        <div className="flex items-center">
+          {expanded ? (
+            <ChevronDown className="h-5 w-5 mr-2" />
+          ) : (
+            <ChevronRight className="h-5 w-5 mr-2" />
+          )}
+          <div>
+            <Link
+              to="/items/$itemId"
+              params={{ itemId: item.id }}
+              className="font-medium hover:text-blue-600 hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {item.title}
+            </Link>
+            <p className="text-sm text-muted-foreground">{item.description || "No description"}</p>
+            {showOwner && (
+              <p className="text-xs text-muted-foreground">Owner: {item.owner_id}</p>
+            )}
+          </div>
+        </div>
+        <div className="text-sm flex items-center gap-2">
+          <span
+            className={`px-2 py-1 rounded-full text-xs ${
+              item.status === "running"
+                ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+            }`}
+          >
+            {item.status}
+          </span>
+          <span className="text-muted-foreground">{item.browser_count ?? 0} connected</span>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="p-4 bg-muted/50">
+          {subscribers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No users connected to this item</p>
+          ) : (
+            <div className="space-y-2">
+              <h5 className="font-medium text-sm">Connected Users:</h5>
+              {subscribers.map((sub) => (
+                <div
+                  key={sub.sid}
+                  className="flex items-center justify-between p-3 border rounded-lg bg-background"
+                >
+                  <div>
+                    <p className="font-medium text-sm">{sub.user_name || sub.user_uuid}</p>
+                    <p className="text-xs text-muted-foreground">
+                      IP: {sub.ip}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Joined: {new Date(sub.join_time * 1000).toLocaleString()}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                    onClick={() => onDisconnectUser(sub.user_uuid, sub.user_name, sub.ip)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span className="sr-only">Disconnect user</span>
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default Dashboard
