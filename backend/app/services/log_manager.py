@@ -1,5 +1,6 @@
 import os
 import logging
+import threading
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -16,12 +17,20 @@ class LogManager:
     def __init__(self, base_dir: str = None, max_log_size: int = None):
         self.base_dir = base_dir or os.path.join(os.path.dirname(os.path.abspath(__file__)), LOG_DIR)
         self.max_log_size = max_log_size or DEFAULT_MAX_LOG_SIZE
+        self._locks: Dict[str, threading.Lock] = {}
+        self._global_lock = threading.Lock()
         
         os.makedirs(self.base_dir, exist_ok=True)
         
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
         self.logger.info(f"[LogManager] Initialized with base_dir: {self.base_dir}")
+    
+    def _get_lock(self, item_uuid: str) -> threading.Lock:
+        with self._global_lock:
+            if item_uuid not in self._locks:
+                self._locks[item_uuid] = threading.Lock()
+            return self._locks[item_uuid]
         
     def get_log_path(self, item_uuid: str) -> str:
         """
@@ -47,23 +56,25 @@ class LogManager:
         Returns:
             是否成功写入
         """
-        try:
-            log_path = self.get_log_path(item_uuid)
-            self.logger.info(f"[LogManager] Writing to log: {log_path}, content length: {len(content)}")
-            
-            if os.path.exists(log_path):
-                file_size = os.path.getsize(log_path)
-                if file_size >= self.max_log_size:
-                    with open(log_path, "w", encoding="utf-8") as f:
-                        f.write("""=== 日志文件已超出最大大小，已清空 ===\n\n""")
-            
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(content)
-            
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to write log for terminal {item_uuid}: {e}")
-            return False
+        lock = self._get_lock(item_uuid)
+        with lock:
+            try:
+                log_path = self.get_log_path(item_uuid)
+                self.logger.info(f"[LogManager] Writing to log: {log_path}, content length: {len(content)}")
+                
+                if os.path.exists(log_path):
+                    file_size = os.path.getsize(log_path)
+                    if file_size >= self.max_log_size:
+                        with open(log_path, "w", encoding="utf-8") as f:
+                            f.write("""=== 日志文件已超出最大大小，已清空 ===\n\n""")
+                
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(content)
+                
+                return True
+            except Exception as e:
+                self.logger.error(f"Failed to write log for terminal {item_uuid}: {e}")
+                return False
     
     def get_log_content(self, user_uuid: str, item_uuid: str) -> Optional[str]:
         """

@@ -1,7 +1,8 @@
 import asyncio
 import socketio
-from typing import Dict, Any, List, Optional
+import queue
 import threading
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from core import config, daemon_conn_pool
 from utils.logger import logger
@@ -27,6 +28,9 @@ class SocketService:
         self.sio = sio
         self.item_tokens: Dict[str, str] = {}
         self.lock = threading.Lock()
+        self._broadcast_queues: Dict[str, queue.Queue] = {}
+        self._broadcast_threads: Dict[str, threading.Thread] = {}
+        self._running = True
 
     def get_room_name(self, item_uuid: str) -> str:
         return item_uuid
@@ -106,21 +110,37 @@ class SocketService:
             logger.error(f"Failed to broadcast to room {room}: {e}")
 
     def sync_broadcast(self, item_uuid: str, event: str, data: Any):
+        if item_uuid not in self._broadcast_queues:
+            with self.lock:
+                if item_uuid not in self._broadcast_queues:
+                    self._broadcast_queues[item_uuid] = queue.Queue()
+                    thread = threading.Thread(
+                        target=self._broadcast_worker,
+                        args=(item_uuid,),
+                        daemon=True
+                    )
+                    thread.start()
+                    self._broadcast_threads[item_uuid] = thread
+        
+        self._broadcast_queues[item_uuid].put((event, data))
+
+    def _broadcast_worker(self, item_uuid: str):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         try:
-            loop = asyncio.get_event_loop()
-            logger.info(f"[SocketService] sync_broadcast called, loop running: {loop.is_running()}")
-            if loop.is_running():
-                asyncio.create_task(self.broadcast_to_terminal(item_uuid, event, data))
-            else:
-                loop.run_until_complete(self.broadcast_to_terminal(item_uuid, event, data))
-        except RuntimeError:
-            logger.info(f"[SocketService] sync_broadcast: creating new event loop")
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(self.broadcast_to_terminal(item_uuid, event, data))
-            finally:
-                loop.close()
+            while self._running:
+                try:
+                    event, data = self._broadcast_queues[item_uuid].get(timeout=0.1)
+                    loop.run_until_complete(
+                        self.broadcast_to_terminal(item_uuid, event, data)
+                    )
+                except queue.Empty:
+                    continue
+                except Exception as e:
+                    logger.error(f"Broadcast worker error for {item_uuid}: {e}")
+        finally:
+            loop.close()
 
     async def close_terminal_connections(self, item_uuid: str):
         room_id = self.get_room_name(item_uuid)

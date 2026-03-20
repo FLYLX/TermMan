@@ -25,28 +25,38 @@ class DaemonLogManager:
         else:
             self.base_dir = base_dir
         self.max_log_size = max_log_size or (3 * 1024 * 1024)
+        self._locks: Dict[str, threading.Lock] = {}
+        self._global_lock = threading.Lock()
         os.makedirs(self.base_dir, exist_ok=True)
+    
+    def _get_lock(self, item_uuid: str) -> threading.Lock:
+        with self._global_lock:
+            if item_uuid not in self._locks:
+                self._locks[item_uuid] = threading.Lock()
+            return self._locks[item_uuid]
 
     def get_log_path(self, item_uuid: str) -> str:
         return os.path.join(self.base_dir, f"{item_uuid}.log")
 
     def write_to_log(self, item_uuid: str, content: str) -> bool:
-        try:
-            log_path = self.get_log_path(item_uuid)
-            
-            if os.path.exists(log_path):
-                file_size = os.path.getsize(log_path)
-                if file_size >= self.max_log_size:
-                    with open(log_path, "w", encoding="utf-8") as f:
-                        f.write("=== 日志文件已超出最大大小，已清空 ===\n\n")
-            
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(content)
-            
-            return True
-        except Exception as e:
-            logger.error(f"Failed to write log for terminal {item_uuid}: {e}")
-            return False
+        lock = self._get_lock(item_uuid)
+        with lock:
+            try:
+                log_path = self.get_log_path(item_uuid)
+                
+                if os.path.exists(log_path):
+                    file_size = os.path.getsize(log_path)
+                    if file_size >= self.max_log_size:
+                        with open(log_path, "w", encoding="utf-8") as f:
+                            f.write("=== 日志文件已超出最大大小，已清空 ===\n\n")
+                
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(content)
+                
+                return True
+            except Exception as e:
+                logger.error(f"Failed to write log for terminal {item_uuid}: {e}")
+                return False
 
     def delete_log(self, item_uuid: str) -> bool:
         try:
@@ -175,9 +185,7 @@ class TerminalProcess:
             from core import get_socket_service
             socket_service = get_socket_service()
             if socket_service:
-                logger.info(f"[TerminalProcess] Broadcasting to room {self.item_uuid}: {str(data)[:100]}...")
                 socket_service.sync_broadcast(self.item_uuid, "stream", data)
-                logger.info(f"[TerminalProcess] Broadcast completed")
             else:
                 logger.error(f"[TerminalProcess] socket_service is None!")
         except Exception as e:
