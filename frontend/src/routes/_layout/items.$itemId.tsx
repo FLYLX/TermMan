@@ -178,6 +178,7 @@ function ItemDetailPage({
     error: connectionError,
     output,
     sendCommand,
+    sendCtrlC,
     reconnect,
     disconnect,
   } = useTerminalConnection({
@@ -394,13 +395,13 @@ function ItemDetailPage({
                   {output.length === 0 ? (
                     <div className="text-lime-400">[System] Terminal connected. Waiting for output...</div>
                   ) : (
-                    output.map((out, idx) => (
-                      <div key={idx}>
-                        {out.stdin && <div className="text-cyan-400 whitespace-pre-wrap">$ {out.stdin.trim()}</div>}
-                        {out.stdout && <div className="text-slate-100 whitespace-pre-wrap">{out.stdout}</div>}
-                        {out.stderr && <div className="text-red-400 whitespace-pre-wrap">{out.stderr}</div>}
-                      </div>
-                    ))
+                    output.map((out, idx) => {
+                      const text = out.stdout || ''
+                      const isInput = /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] #/.test(text)
+                      return (
+                        <span key={idx} className={`whitespace-pre ${isInput ? 'text-green-400' : 'text-blue-300'}`}>{text}</span>
+                      )
+                    })
                   )}
                 </div>
 
@@ -412,16 +413,28 @@ function ItemDetailPage({
                     placeholder="Enter command and press enter to send"
                     className="h-10 border-zinc-700 bg-zinc-900/80 font-mono text-sm text-slate-100 placeholder:text-slate-500"
                   />
-                  <Button 
-                    type="button" 
-                    size="sm" 
-                    className="h-10 px-4 lg:min-w-24"
-                    onClick={handleSendCommand}
-                    disabled={!command.trim()}
-                  >
-                    <Send className="size-4" />
-                    Send
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button 
+                      type="button" 
+                      size="sm" 
+                      className="h-10 px-4 lg:min-w-24"
+                      onClick={handleSendCommand}
+                      disabled={!command.trim()}
+                    >
+                      <Send className="size-4" />
+                      Send
+                    </Button>
+                    <Button 
+                      type="button" 
+                      size="sm" 
+                      variant="destructive"
+                      className="h-10 px-4"
+                      onClick={sendCtrlC}
+                      title="Send Ctrl+C"
+                    >
+                      Ctrl+C
+                    </Button>
+                  </div>
                 </div>
               </>
             ) : connectionError ? (

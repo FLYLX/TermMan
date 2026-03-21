@@ -4,7 +4,6 @@ import { ItemsService } from "@/client"
 
 interface TerminalOutput {
   stdout?: string
-  stderr?: string
   stdin?: string
 }
 
@@ -35,6 +34,7 @@ interface UseTerminalConnectionReturn {
   output: TerminalOutput[]
   clearOutput: () => void
   sendCommand: (command: string) => void
+  sendCtrlC: () => void
   reconnect: () => void
   disconnect: () => void
 }
@@ -106,7 +106,9 @@ export function useTerminalConnection({
         output: string | null
       }
       if (outputData.success && outputData.output) {
-        setOutput([{ stdout: outputData.output }])
+        const lines = outputData.output.split('\n')
+        const outputLines = lines.filter(line => line.trim()).map(line => ({ stdout: line + '\n' }))
+        setOutput(outputLines)
       }
       
       if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
@@ -231,6 +233,12 @@ export function useTerminalConnection({
     }
   }, [isConnected])
 
+  const sendCtrlC = useCallback(() => {
+    if (socketRef.current && isConnected) {
+      socketRef.current.emit("terminal/write", { command: "\x03" })
+    }
+  }, [isConnected])
+
   useEffect(() => {
     mountedRef.current = true
     
@@ -258,6 +266,7 @@ export function useTerminalConnection({
     output,
     clearOutput,
     sendCommand,
+    sendCtrlC,
     reconnect,
     disconnect,
   }

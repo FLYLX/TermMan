@@ -1,10 +1,11 @@
 import os
-import uuid
-import subprocess
+import pty
+import struct
+import fcntl
+import termios
 import threading
 import chardet
-import select
-import fcntl
+import signal
 from typing import Dict, Any, Optional
 from datetime import datetime
 from core import config
@@ -74,31 +75,33 @@ daemon_log_manager = DaemonLogManager()
 
 class TerminalProcess:
     """
-    终端进程类 - 按 UPDATE.MD 规范
+    终端进程类 - 使用 PTY 伪终端
     
-    启动流程：
-    1. 先启动 shell
-    2. 等待 Backend 日志 socket 连接进入 room
-    3. 执行 cd workdir
-    4. 执行 command
-    5. 广播输出到 Room，同时写入本地日志
+    优势：
+    1. 完全模拟真实终端行为
+    2. 支持 Python 交互模式（>>> 提示符）
+    3. 实时回显
+    4. 正确处理颜色和特殊字符
     """
     def __init__(self, user_uuid: str, item_uuid: str, token: str, working_directory: Optional[str] = None, command: Optional[str] = None):
         self.user_uuid = user_uuid
         self.item_uuid = item_uuid
         self.token = token
-        self.process = None
+        self.pid = None
+        self.master_fd = None
         self.status = "stopped"
         self.working_directory = working_directory
         self.command = command
         self.workdir = self._get_workdir()
         self.stdout_buffer = []
-        self.stderr_buffer = []
         self.lock = threading.Lock()
         self._running = True
         self._backend_connected = threading.Event()
         self._backend_connected_timeout = 30
         self.encoding = "utf-8"
+        self._rows = 24
+        self._cols = 80
+        self._line_buffer = ""
 
     def _get_workdir(self) -> str:
         if self.working_directory:
@@ -113,71 +116,84 @@ class TerminalProcess:
         return workdir
 
     def notify_backend_connected(self):
-        """通知 Backend 日志 socket 已连接"""
         logger.info(f"[Terminal] Backend connected for item={self.item_uuid}")
         self._backend_connected.set()
+
+    def set_terminal_size(self, rows: int, cols: int):
+        self._rows = rows
+        self._cols = cols
+        if self.master_fd is not None:
+            try:
+                winsize = struct.pack('HHHH', rows, cols, 0, 0)
+                fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
+            except Exception as e:
+                logger.error(f"Failed to set terminal size: {e}")
 
     def start(self) -> bool:
         try:
             self.status = "starting"
             self._running = True
             self.encoding = config.get("TERMINAL_ENCODING", "utf-8")
-
+            
             shell = config.get("TERMINAL_SHELL", "/bin/bash")
             
-            self.process = subprocess.Popen(
-                shell,
-                cwd=self.workdir,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=True
-            )
-
-            for fd in [self.process.stdout, self.process.stderr]:
-                if fd:
-                    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-                    fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-
-            threading.Thread(target=self._read_output, daemon=True).start()
-
-            self.status = "waiting_backend"
-            logger.info(f"[Terminal] Shell started, waiting for Backend connection: {self.item_uuid}")
-
-            self._write_log(f"\n{'='*60}\n")
-            self._write_log(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Terminal started\n")
-            self._write_log(f"  Item UUID: {self.item_uuid}\n")
-            self._write_log(f"  User UUID: {self.user_uuid}\n")
-            self._write_log(f"  Working Directory: {self.workdir}\n")
-            self._write_log(f"  Command: {self.command or '(interactive shell)'}\n")
-            self._write_log(f"{'='*60}\n\n")
-
-            def wait_and_execute():
-                if self._backend_connected.wait(timeout=self._backend_connected_timeout):
-                    logger.info(f"[Terminal] Backend connected, executing commands for item={self.item_uuid}")
-                    self.status = "running"
-                    
-                    if self.command:
-                        cmd = f"{self.command}\n"
-                        self.write(cmd)
-                else:
-                    logger.warning(f"[Terminal] Backend connection timeout, proceeding anyway for item={self.item_uuid}")
-                    self.status = "running"
-                    
-                    if self.command:
-                        cmd = f"{self.command}\n"
-                        self.write(cmd)
-
-            threading.Thread(target=wait_and_execute, daemon=True).start()
+            pid, master_fd = pty.fork()
             
-            return True
+            if pid == 0:
+                os.chdir(self.workdir)
+                
+                os.environ['TERM'] = 'xterm-256color'
+                os.environ['COLUMNS'] = str(self._cols)
+                os.environ['LINES'] = str(self._rows)
+                
+                os.execvp(shell, [shell])
+            else:
+                self.pid = pid
+                self.master_fd = master_fd
+                
+                flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
+                fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+                
+                self.set_terminal_size(self._rows, self._cols)
+                
+                threading.Thread(target=self._read_output, daemon=True).start()
+                
+                self.status = "waiting_backend"
+                logger.info(f"[Terminal] PTY started (pid={pid}), waiting for Backend connection: {self.item_uuid}")
+                
+                self._write_log(f"\n{'='*60}\n")
+                self._write_log(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Terminal started (PTY mode)\n")
+                self._write_log(f"  Item UUID: {self.item_uuid}\n")
+                self._write_log(f"  User UUID: {self.user_uuid}\n")
+                self._write_log(f"  Working Directory: {self.workdir}\n")
+                self._write_log(f"  Command: {self.command or '(interactive shell)'}\n")
+                self._write_log(f"{'='*60}\n\n")
+                
+                def wait_and_execute():
+                    if self._backend_connected.wait(timeout=self._backend_connected_timeout):
+                        logger.info(f"[Terminal] Backend connected, executing commands for item={self.item_uuid}")
+                        self.status = "running"
+                        
+                        if self.command:
+                            cmd = f"{self.command}\n"
+                            self.write(cmd)
+                    else:
+                        logger.warning(f"[Terminal] Backend connection timeout, proceeding anyway for item={self.item_uuid}")
+                        self.status = "running"
+                        
+                        if self.command:
+                            cmd = f"{self.command}\n"
+                            self.write(cmd)
+                
+                threading.Thread(target=wait_and_execute, daemon=True).start()
+                
+                return True
         except Exception as e:
             self.status = "error"
             logger.error(f"Failed to start terminal {self.item_uuid}: {e}")
             return False
 
     def _write_log(self, content: str):
-        """写入本地日志"""
         daemon_log_manager.write_to_log(self.item_uuid, content)
 
     def _broadcast(self, data: dict):
@@ -186,79 +202,70 @@ class TerminalProcess:
             socket_service = get_socket_service()
             if socket_service:
                 socket_service.sync_broadcast(self.item_uuid, "stream", data)
-            else:
-                logger.error(f"[TerminalProcess] socket_service is None!")
         except Exception as e:
             logger.error(f"[TerminalProcess] Broadcast failed: {e}")
 
     def _read_output(self):
-        """使用 select 同时读取 stdout 和 stderr，保持正确的顺序"""
-        try:
-            while self._running and self.process:
-                stdout_fd = self.process.stdout
-                stderr_fd = self.process.stderr
-                
-                if not stdout_fd and not stderr_fd:
+        while self._running and self.master_fd is not None:
+            try:
+                data = os.read(self.master_fd, 4096)
+                if not data:
+                    logger.info(f"[Terminal] PTY master closed for {self.item_uuid}")
                     break
                 
-                readable, _, _ = select.select(
-                    [fd for fd in [stdout_fd, stderr_fd] if fd],
-                    [],
-                    [],
-                    0.1
-                )
-                
-                for fd in readable:
+                try:
+                    decoded = data.decode(self.encoding)
+                except UnicodeDecodeError:
                     try:
-                        data = os.read(fd.fileno(), 4096)
-                        if not data:
-                            continue
-                        
-                        try:
-                            decoded = data.decode(self.encoding)
-                        except UnicodeDecodeError:
-                            try:
-                                detected = chardet.detect(data)
-                                detected_encoding = detected.get('encoding', self.encoding)
-                                decoded = data.decode(detected_encoding, errors='replace')
-                            except Exception:
-                                decoded = data.decode(self.encoding, errors='replace')
-                        
-                        is_stderr = (fd == stderr_fd)
-                        
-                        with self.lock:
-                            if is_stderr:
-                                self.stderr_buffer.append(decoded)
-                            else:
-                                self.stdout_buffer.append(decoded)
-                        
-                        self._write_log(decoded)
-                        self._broadcast({"stderr" if is_stderr else "stdout": decoded})
-                        
-                    except BlockingIOError:
-                        continue
-                    except Exception as e:
-                        logger.error(f"Error reading from fd for {self.item_uuid}: {e}")
-                        continue
-                        
-        except Exception as e:
-            logger.error(f"Error in _read_output for {self.item_uuid}: {e}")
+                        detected = chardet.detect(data)
+                        detected_encoding = detected.get('encoding', self.encoding)
+                        decoded = data.decode(detected_encoding, errors='replace')
+                    except Exception:
+                        decoded = data.decode(self.encoding, errors='replace')
+                
+                with self.lock:
+                    self.stdout_buffer.append(decoded)
+                
+                if '\r' in decoded and '\n' not in decoded:
+                    self._broadcast({"stdout": decoded})
+                    continue
+                
+                self._line_buffer += decoded
+                self._line_buffer = self._line_buffer.replace('\r\n', '\n').replace('\r', '')
+                lines = self._line_buffer.split('\n')
+                self._line_buffer = lines[-1]
+                
+                for line in lines[:-1]:
+                    if line.strip():
+                        timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+                        timestamped_line = f"{timestamp} {line}\n"
+                        self._write_log(timestamped_line)
+                        self._broadcast({"stdout": timestamped_line})
+                
+            except BlockingIOError:
+                import time
+                time.sleep(0.01)
+            except OSError:
+                break
+            except Exception as e:
+                logger.error(f"Error reading output for {self.item_uuid}: {e}")
+                break
+        
+        self._running = False
+        self.status = "stopped"
 
     def write(self, data: str) -> bool:
         try:
-            if self.process and self.process.stdin and self.status in ["running", "waiting_backend"]:
+            if self.master_fd is not None and self.status in ["running", "waiting_backend"]:
                 if isinstance(data, str) and data.strip():
                     self._write_log(f"$ {data.strip()}\n")
-                    self._broadcast({"stdin": data})
                 
                 if isinstance(data, str):
                     encoded_data = data.encode(self.encoding)
                 else:
                     encoded_data = data
                 
-                self.process.stdin.write(encoded_data)
-                self.process.stdin.flush()
-                
+                os.write(self.master_fd, encoded_data)
                 return True
             return False
         except Exception as e:
@@ -273,57 +280,47 @@ class TerminalProcess:
             self._write_log(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Terminal stopped\n")
             self._write_log(f"{'='*60}\n")
             
-            if self.process:
+            if self.pid is not None:
                 try:
-                    self.process.stdin.close()
-                except Exception:
-                    pass
-                
-                self.process.terminate()
-                
-                try:
-                    self.process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self.process.kill()
+                    os.kill(self.pid, signal.SIGTERM)
+                    import time
+                    time.sleep(0.1)
                     try:
-                        self.process.wait(timeout=1)
-                    except subprocess.TimeoutExpired:
+                        os.kill(self.pid, signal.SIGKILL)
+                    except ProcessLookupError:
                         pass
-                
+                except ProcessLookupError:
+                    pass
+                self.pid = None
+            
+            if self.master_fd is not None:
                 try:
-                    self.process.stdout.close()
+                    os.close(self.master_fd)
                 except Exception:
                     pass
-                try:
-                    self.process.stderr.close()
-                except Exception:
-                    pass
-                
-                self.process = None
-                
+                self.master_fd = None
+            
             self.status = "stopped"
             logger.info(f"Terminal stopped: {self.item_uuid}")
             return True
         except Exception as e:
             logger.error(f"Failed to stop terminal {self.item_uuid}: {e}")
             self.status = "stopped"
-            self.process = None
+            self.pid = None
+            self.master_fd = None
             return True
 
     def get_status(self) -> Dict[str, Any]:
         with self.lock:
             stdout = "".join(self.stdout_buffer)
-            stderr = "".join(self.stderr_buffer)
             self.stdout_buffer = []
-            self.stderr_buffer = []
 
         return {
             "item_uuid": self.item_uuid,
             "user_uuid": self.user_uuid,
             "status": self.status,
             "workdir": self.workdir,
-            "stdout": stdout,
-            "stderr": stderr
+            "stdout": stdout
         }
 
 
