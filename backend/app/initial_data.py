@@ -4,7 +4,7 @@ import uuid
 from sqlmodel import Session, SQLModel
 
 from app.core.db import engine, init_db
-from app.models import User, Item, ItemHandler, ItemStatus, SocketConnectionType
+from app.models import User, Item, ItemHandler, ItemStatus
 from app.core.security import get_password_hash
 
 logging.basicConfig(level=logging.INFO)
@@ -95,31 +95,30 @@ def init_test_data() -> None:
                 title="测试项目 1",
                 description="第一个测试项目，用于演示系统功能",
                 status=ItemStatus.running,
-                config={"key1": "value1", "key2": "value2"},
-                resource_usage={"cpu": "10%", "memory": "200MB"},
-                log_path="/logs/item1.log",
                 api_key=daemon_api_key,
                 socket_host=daemon_host,
                 socket_port=daemon_port,
-                socket_connection_type="local",
                 command="python run_item.py",
-                executable_path="/usr/bin/python3",
                 working_directory="/app/items/1",
-                owner_id=superuser.id
+                owner_id=superuser.id,
+                input_filter_enabled=True,
+                input_filter_mode="whitelist",
+                input_noise_patterns=["^\\s*$", "^\\d+%$"],
+                input_event_patterns={"error": ["error:", "failed:"], "warning": ["warning:"]},
+                output_filter_enabled=True,
+                output_filter_mode="blacklist",
+                output_command_list=["rm -rf", "chmod 777", "shutdown"],
+                output_sensitive_patterns=["password", "api_key", "secret"],
+                output_rate_limit=10
             ),
             Item(
                 title="测试项目 2",
                 description="第二个测试项目，用于性能测试",
                 status=ItemStatus.stopped,
-                config={"setting1": "option1", "threads": 4},
-                resource_usage={"cpu": "5%", "memory": "100MB"},
-                log_path="/logs/item2.log",
                 api_key=daemon_api_key,
                 socket_host=daemon_host,
                 socket_port=daemon_port,
-                socket_connection_type="local",
                 command="node server.js",
-                executable_path="/usr/bin/node",
                 working_directory="/app/items/2",
                 owner_id=superuser.id
             ),
@@ -127,15 +126,10 @@ def init_test_data() -> None:
                 title="测试项目 3",
                 description="第三个测试项目，用于数据处理",
                 status=ItemStatus.error,
-                config={"param1": "data1", "batch_size": 1000},
-                resource_usage={"cpu": "15%", "memory": "300MB"},
-                log_path="/logs/item3.log",
                 api_key=daemon_api_key,
                 socket_host=daemon_host,
                 socket_port=daemon_port,
-                socket_connection_type="local",
                 command="java -jar processor.jar",
-                executable_path="/usr/bin/java",
                 working_directory="/app/items/3",
                 owner_id=superuser.id
             ),
@@ -143,15 +137,10 @@ def init_test_data() -> None:
                 title="测试项目 4",
                 description="第四个测试项目，用于API服务",
                 status=ItemStatus.running,
-                config={"service": "api", "port": 8000},
-                resource_usage={"cpu": "8%", "memory": "250MB"},
-                log_path="/logs/item4.log",
                 api_key=daemon_api_key,
                 socket_host=daemon_host,
                 socket_port=daemon_port,
-                socket_connection_type="local",
                 command="python api_server.py",
-                executable_path="/usr/bin/python3",
                 working_directory="/app/items/4",
                 owner_id=superuser.id
             ),
@@ -159,15 +148,10 @@ def init_test_data() -> None:
                 title="测试项目 5",
                 description="第五个测试项目，用于定时任务",
                 status=ItemStatus.starting,
-                config={"service": "cron", "schedule": "*/5 * * * *"},
-                resource_usage={"cpu": "3%", "memory": "80MB"},
-                log_path="/logs/item5.log",
                 api_key=daemon_api_key,
                 socket_host=daemon_host,
                 socket_port=daemon_port,
-                socket_connection_type="local",
                 command="python cron_job.py",
-                executable_path="/usr/bin/python3",
                 working_directory="/app/items/5",
                 owner_id=superuser.id
             )

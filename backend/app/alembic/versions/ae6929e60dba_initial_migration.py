@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: 0a1306ce2f93
+Revision ID: ae6929e60dba
 Revises: 
-Create Date: 2026-03-05 12:18:21.427647
+Create Date: 2026-03-22 20:27:29.508658
 
 """
 from alembic import op
@@ -10,8 +10,9 @@ import sqlalchemy as sa
 import sqlmodel.sql.sqltypes
 from app.models import SQLiteUUID
 
+
 # revision identifiers, used by Alembic.
-revision = '0a1306ce2f93'
+revision = 'ae6929e60dba'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -34,20 +35,23 @@ def upgrade():
     sa.Column('title', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False),
     sa.Column('description', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('status', sa.Enum('stopped', 'running', 'starting', 'stopping', 'error', name='itemstatus'), nullable=False),
-    sa.Column('config', sa.JSON(), nullable=True),
-    sa.Column('resource_usage', sa.JSON(), nullable=True),
-    sa.Column('log_path', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('log_max_size_mb', sa.Integer(), nullable=True),
-    sa.Column('socket_connection_type', sa.Enum('local', 'remote', name='socketconnectiontype'), nullable=False),
     sa.Column('socket_host', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('socket_port', sa.Integer(), nullable=True),
     sa.Column('socket_connected', sa.Boolean(), nullable=True),
     sa.Column('socket_last_connected', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('socket_unique_id', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('api_key', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('command', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
-    sa.Column('executable_path', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('working_directory', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
+    sa.Column('input_filter_enabled', sa.Boolean(), nullable=False),
+    sa.Column('input_filter_mode', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('input_noise_patterns', sa.JSON(), nullable=True),
+    sa.Column('input_event_patterns', sa.JSON(), nullable=True),
+    sa.Column('output_filter_enabled', sa.Boolean(), nullable=False),
+    sa.Column('output_filter_mode', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('output_command_list', sa.JSON(), nullable=True),
+    sa.Column('output_sensitive_patterns', sa.JSON(), nullable=True),
+    sa.Column('output_rate_limit', sa.Integer(), nullable=False),
     sa.Column('id', SQLiteUUID(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
