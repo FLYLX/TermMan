@@ -504,19 +504,36 @@ function ItemDetailPage({
           <CopyValue label="ID" value={item.id} />
           <KeyValue label="Status" value={item.status} />
           <KeyValue label="Owner ID" value={item.owner_id} />
-          <KeyValue label="Connection Type" value={item.socket_connection_type} />
           <KeyValue label="Socket Host" value={item.socket_host} />
           <KeyValue label="Socket Port" value={item.socket_port?.toString()} />
           <KeyValue label="Socket Connected" value={item.socket_connected ? "Yes" : "No"} />
-          <KeyValue label="Socket Unique ID" value={item.socket_unique_id} />
           <KeyValue label="Command" value={item.command} />
-          <KeyValue label="Executable Path" value={item.executable_path} />
           <KeyValue label="Working Directory" value={item.working_directory} />
-          <KeyValue label="Log Path" value={item.log_path} />
           <KeyValue label="Log Max Size (MB)" value={item.log_max_size_mb?.toString()} />
           <KeyValue label="Daemon URL" value={item.daemon_url} />
           <KeyValue label="Created At" value={formatDate(item.created_at)} />
           <KeyValue label="Updated At" value={formatDate(item.updated_at)} />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+        <h2 className="text-xl font-semibold mb-4">Input Filter Settings</h2>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <KeyValue label="Enabled" value={item.input_filter_enabled ? "Yes" : "No"} />
+          <KeyValue label="Mode" value={item.input_filter_mode} />
+          <KeyValue label="Noise Patterns" value={item.input_noise_patterns ? JSON.stringify(item.input_noise_patterns) : "-"} />
+          <KeyValue label="Event Patterns" value={item.input_event_patterns ? JSON.stringify(item.input_event_patterns) : "-"} />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+        <h2 className="text-xl font-semibold mb-4">Output Filter Settings</h2>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <KeyValue label="Enabled" value={item.output_filter_enabled ? "Yes" : "No"} />
+          <KeyValue label="Mode" value={item.output_filter_mode} />
+          <KeyValue label="Command List" value={item.output_command_list ? JSON.stringify(item.output_command_list) : "-"} />
+          <KeyValue label="Sensitive Patterns" value={item.output_sensitive_patterns ? JSON.stringify(item.output_sensitive_patterns) : "-"} />
+          <KeyValue label="Rate Limit" value={item.output_rate_limit?.toString()} />
         </div>
       </section>
 

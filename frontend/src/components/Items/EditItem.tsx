@@ -35,12 +35,9 @@ import { handleError } from "@/utils"
 const formSchema = z.object({
   title: z.string().min(1, { message: "Title is required" }),
   description: z.string().optional(),
-  // daemon settings
   socket_host: z.string().optional(),
   socket_port: z.string().optional(),
-  // Command settings
   command: z.string().optional(),
-  executable_path: z.string().optional(),
   working_directory: z.string().optional(),
 })
 
@@ -63,12 +60,9 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
     defaultValues: {
       title: item.title,
       description: item.description ?? undefined,
-      // daemon settings
       socket_host: item.socket_host ?? "",
       socket_port: item.socket_port?.toString() ?? "",
-      // Command settings
       command: item.command ?? "",
-      executable_path: item.executable_path ?? "",
       working_directory: item.working_directory ?? "",
     },
   })
@@ -144,9 +138,8 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
                 )}
               />
 
-              {/* daemon Settings */}
               <div className="grid gap-2">
-                <h4 className="font-semibold text-sm text-gray-700">daemon Settings</h4>
+                <h4 className="font-semibold text-sm text-gray-700">Daemon Settings</h4>
                 <FormField
                   control={form.control}
                   name="socket_host"
@@ -183,20 +176,6 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
                       <FormLabel>Start Command</FormLabel>
                       <FormControl>
                         <Input placeholder="Command to start the daemon" type="text" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="executable_path"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Executable Path</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Path to executable" type="text" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

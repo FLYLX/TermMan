@@ -6,10 +6,13 @@ import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import DeleteItem from "../Items/DeleteItem"
 import EditItem from "../Items/EditItem"
+import EditInputFilter from "../Items/EditInputFilter"
+import EditOutputFilter from "../Items/EditOutputFilter"
 
 interface ItemActionsMenuProps {
   item: ItemPublic
@@ -27,6 +30,10 @@ export const ItemActionsMenu = ({ item }: ItemActionsMenuProps) => {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <EditItem item={item} onSuccess={() => setOpen(false)} />
+        <DropdownMenuSeparator />
+        <EditInputFilter item={item} onSuccess={() => setOpen(false)} />
+        <EditOutputFilter item={item} onSuccess={() => setOpen(false)} />
+        <DropdownMenuSeparator />
         <DeleteItem id={item.id} onSuccess={() => setOpen(false)} />
       </DropdownMenuContent>
     </DropdownMenu>

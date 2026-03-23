@@ -162,42 +162,6 @@ export const ItemSchema = {
             '$ref': '#/components/schemas/ItemStatus',
             default: 'stopped'
         },
-        config: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Config'
-        },
-        resource_usage: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Resource Usage'
-        },
-        log_path: {
-            anyOf: [
-                {
-                    type: 'string',
-                    maxLength: 255
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Log Path'
-        },
         log_max_size_mb: {
             anyOf: [
                 {
@@ -211,10 +175,6 @@ export const ItemSchema = {
             ],
             title: 'Log Max Size Mb',
             default: 100
-        },
-        socket_connection_type: {
-            '$ref': '#/components/schemas/SocketConnectionType',
-            default: 'local'
         },
         socket_host: {
             anyOf: [
@@ -267,18 +227,6 @@ export const ItemSchema = {
             ],
             title: 'Socket Last Connected'
         },
-        socket_unique_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    maxLength: 255
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Socket Unique Id'
-        },
         api_key: {
             anyOf: [
                 {
@@ -303,18 +251,6 @@ export const ItemSchema = {
             ],
             title: 'Command'
         },
-        executable_path: {
-            anyOf: [
-                {
-                    type: 'string',
-                    maxLength: 255
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Executable Path'
-        },
         working_directory: {
             anyOf: [
                 {
@@ -326,6 +262,85 @@ export const ItemSchema = {
                 }
             ],
             title: 'Working Directory'
+        },
+        input_filter_enabled: {
+            type: 'boolean',
+            title: 'Input Filter Enabled',
+            default: false
+        },
+        input_filter_mode: {
+            type: 'string',
+            title: 'Input Filter Mode',
+            default: 'blacklist'
+        },
+        input_noise_patterns: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Input Noise Patterns'
+        },
+        input_event_patterns: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Input Event Patterns'
+        },
+        output_filter_enabled: {
+            type: 'boolean',
+            title: 'Output Filter Enabled',
+            default: false
+        },
+        output_filter_mode: {
+            type: 'string',
+            title: 'Output Filter Mode',
+            default: 'blacklist'
+        },
+        output_command_list: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Output Command List'
+        },
+        output_sensitive_patterns: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Output Sensitive Patterns'
+        },
+        output_rate_limit: {
+            type: 'integer',
+            title: 'Output Rate Limit',
+            default: 10
         },
         id: {
             type: 'string',
@@ -377,42 +392,6 @@ export const ItemCreateSchema = {
             '$ref': '#/components/schemas/ItemStatus',
             default: 'stopped'
         },
-        config: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Config'
-        },
-        resource_usage: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Resource Usage'
-        },
-        log_path: {
-            anyOf: [
-                {
-                    type: 'string',
-                    maxLength: 255
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Log Path'
-        },
         log_max_size_mb: {
             anyOf: [
                 {
@@ -426,10 +405,6 @@ export const ItemCreateSchema = {
             ],
             title: 'Log Max Size Mb',
             default: 100
-        },
-        socket_connection_type: {
-            '$ref': '#/components/schemas/SocketConnectionType',
-            default: 'local'
         },
         socket_host: {
             anyOf: [
@@ -482,18 +457,6 @@ export const ItemCreateSchema = {
             ],
             title: 'Socket Last Connected'
         },
-        socket_unique_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    maxLength: 255
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Socket Unique Id'
-        },
         api_key: {
             anyOf: [
                 {
@@ -518,18 +481,6 @@ export const ItemCreateSchema = {
             ],
             title: 'Command'
         },
-        executable_path: {
-            anyOf: [
-                {
-                    type: 'string',
-                    maxLength: 255
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Executable Path'
-        },
         working_directory: {
             anyOf: [
                 {
@@ -541,6 +492,85 @@ export const ItemCreateSchema = {
                 }
             ],
             title: 'Working Directory'
+        },
+        input_filter_enabled: {
+            type: 'boolean',
+            title: 'Input Filter Enabled',
+            default: false
+        },
+        input_filter_mode: {
+            type: 'string',
+            title: 'Input Filter Mode',
+            default: 'blacklist'
+        },
+        input_noise_patterns: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Input Noise Patterns'
+        },
+        input_event_patterns: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Input Event Patterns'
+        },
+        output_filter_enabled: {
+            type: 'boolean',
+            title: 'Output Filter Enabled',
+            default: false
+        },
+        output_filter_mode: {
+            type: 'string',
+            title: 'Output Filter Mode',
+            default: 'blacklist'
+        },
+        output_command_list: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Output Command List'
+        },
+        output_sensitive_patterns: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Output Sensitive Patterns'
+        },
+        output_rate_limit: {
+            type: 'integer',
+            title: 'Output Rate Limit',
+            default: 10
         }
     },
     type: 'object',
@@ -832,42 +862,6 @@ export const ItemPublicSchema = {
             '$ref': '#/components/schemas/ItemStatus',
             default: 'stopped'
         },
-        config: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Config'
-        },
-        resource_usage: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Resource Usage'
-        },
-        log_path: {
-            anyOf: [
-                {
-                    type: 'string',
-                    maxLength: 255
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Log Path'
-        },
         log_max_size_mb: {
             anyOf: [
                 {
@@ -881,10 +875,6 @@ export const ItemPublicSchema = {
             ],
             title: 'Log Max Size Mb',
             default: 100
-        },
-        socket_connection_type: {
-            '$ref': '#/components/schemas/SocketConnectionType',
-            default: 'local'
         },
         socket_host: {
             anyOf: [
@@ -937,18 +927,6 @@ export const ItemPublicSchema = {
             ],
             title: 'Socket Last Connected'
         },
-        socket_unique_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    maxLength: 255
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Socket Unique Id'
-        },
         api_key: {
             anyOf: [
                 {
@@ -973,18 +951,6 @@ export const ItemPublicSchema = {
             ],
             title: 'Command'
         },
-        executable_path: {
-            anyOf: [
-                {
-                    type: 'string',
-                    maxLength: 255
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Executable Path'
-        },
         working_directory: {
             anyOf: [
                 {
@@ -996,6 +962,85 @@ export const ItemPublicSchema = {
                 }
             ],
             title: 'Working Directory'
+        },
+        input_filter_enabled: {
+            type: 'boolean',
+            title: 'Input Filter Enabled',
+            default: false
+        },
+        input_filter_mode: {
+            type: 'string',
+            title: 'Input Filter Mode',
+            default: 'blacklist'
+        },
+        input_noise_patterns: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Input Noise Patterns'
+        },
+        input_event_patterns: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Input Event Patterns'
+        },
+        output_filter_enabled: {
+            type: 'boolean',
+            title: 'Output Filter Enabled',
+            default: false
+        },
+        output_filter_mode: {
+            type: 'string',
+            title: 'Output Filter Mode',
+            default: 'blacklist'
+        },
+        output_command_list: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Output Command List'
+        },
+        output_sensitive_patterns: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Output Sensitive Patterns'
+        },
+        output_rate_limit: {
+            type: 'integer',
+            title: 'Output Rate Limit',
+            default: 10
         },
         id: {
             type: 'string',
@@ -1080,42 +1125,6 @@ export const ItemUpdateSchema = {
                 }
             ]
         },
-        config: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Config'
-        },
-        resource_usage: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Resource Usage'
-        },
-        log_path: {
-            anyOf: [
-                {
-                    type: 'string',
-                    maxLength: 255
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Log Path'
-        },
         log_max_size_mb: {
             anyOf: [
                 {
@@ -1128,16 +1137,6 @@ export const ItemUpdateSchema = {
                 }
             ],
             title: 'Log Max Size Mb'
-        },
-        socket_connection_type: {
-            anyOf: [
-                {
-                    '$ref': '#/components/schemas/SocketConnectionType'
-                },
-                {
-                    type: 'null'
-                }
-            ]
         },
         socket_host: {
             anyOf: [
@@ -1187,18 +1186,6 @@ export const ItemUpdateSchema = {
             ],
             title: 'Socket Last Connected'
         },
-        socket_unique_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    maxLength: 255
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Socket Unique Id'
-        },
         api_key: {
             anyOf: [
                 {
@@ -1223,18 +1210,6 @@ export const ItemUpdateSchema = {
             ],
             title: 'Command'
         },
-        executable_path: {
-            anyOf: [
-                {
-                    type: 'string',
-                    maxLength: 255
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Executable Path'
-        },
         working_directory: {
             anyOf: [
                 {
@@ -1247,17 +1222,114 @@ export const ItemUpdateSchema = {
             ],
             title: 'Working Directory'
         },
-        command_args: {
+        input_filter_enabled: {
             anyOf: [
                 {
-                    items: {},
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Input Filter Enabled'
+        },
+        input_filter_mode: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Input Filter Mode'
+        },
+        input_noise_patterns: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
                     type: 'array'
                 },
                 {
                     type: 'null'
                 }
             ],
-            title: 'Command Args'
+            title: 'Input Noise Patterns'
+        },
+        input_event_patterns: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Input Event Patterns'
+        },
+        output_filter_enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Output Filter Enabled'
+        },
+        output_filter_mode: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Output Filter Mode'
+        },
+        output_command_list: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Output Command List'
+        },
+        output_sensitive_patterns: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Output Sensitive Patterns'
+        },
+        output_rate_limit: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Output Rate Limit'
         }
     },
     type: 'object',
@@ -1317,12 +1389,6 @@ export const PrivateUserCreateSchema = {
     type: 'object',
     required: ['email', 'password', 'full_name'],
     title: 'PrivateUserCreate'
-} as const;
-
-export const SocketConnectionTypeSchema = {
-    type: 'string',
-    enum: ['local', 'remote'],
-    title: 'SocketConnectionType'
 } as const;
 
 export const TokenSchema = {

@@ -37,24 +37,25 @@ export type Item = {
     title: string;
     description?: (string | null);
     status?: ItemStatus;
-    config?: ({
-    [key: string]: unknown;
-} | null);
-    resource_usage?: ({
-    [key: string]: unknown;
-} | null);
-    log_path?: (string | null);
     log_max_size_mb?: (number | null);
-    socket_connection_type?: SocketConnectionType;
     socket_host?: (string | null);
     socket_port?: (number | null);
     socket_connected?: (boolean | null);
     socket_last_connected?: (string | null);
-    socket_unique_id?: (string | null);
     api_key?: (string | null);
     command?: (string | null);
-    executable_path?: (string | null);
     working_directory?: (string | null);
+    input_filter_enabled?: boolean;
+    input_filter_mode?: string;
+    input_noise_patterns?: (Array<(string)> | null);
+    input_event_patterns?: ({
+    [key: string]: unknown;
+} | null);
+    output_filter_enabled?: boolean;
+    output_filter_mode?: string;
+    output_command_list?: (Array<(string)> | null);
+    output_sensitive_patterns?: (Array<(string)> | null);
+    output_rate_limit?: number;
     id?: string;
     created_at?: string;
     updated_at?: string;
@@ -65,24 +66,25 @@ export type ItemCreate = {
     title: string;
     description?: (string | null);
     status?: ItemStatus;
-    config?: ({
-    [key: string]: unknown;
-} | null);
-    resource_usage?: ({
-    [key: string]: unknown;
-} | null);
-    log_path?: (string | null);
     log_max_size_mb?: (number | null);
-    socket_connection_type?: SocketConnectionType;
     socket_host?: (string | null);
     socket_port?: (number | null);
     socket_connected?: (boolean | null);
     socket_last_connected?: (string | null);
-    socket_unique_id?: (string | null);
     api_key?: (string | null);
     command?: (string | null);
-    executable_path?: (string | null);
     working_directory?: (string | null);
+    input_filter_enabled?: boolean;
+    input_filter_mode?: string;
+    input_noise_patterns?: (Array<(string)> | null);
+    input_event_patterns?: ({
+    [key: string]: unknown;
+} | null);
+    output_filter_enabled?: boolean;
+    output_filter_mode?: string;
+    output_command_list?: (Array<(string)> | null);
+    output_sensitive_patterns?: (Array<(string)> | null);
+    output_rate_limit?: number;
 };
 
 export type ItemHandler = {
@@ -125,24 +127,25 @@ export type ItemPublic = {
     title: string;
     description?: (string | null);
     status?: ItemStatus;
-    config?: ({
-    [key: string]: unknown;
-} | null);
-    resource_usage?: ({
-    [key: string]: unknown;
-} | null);
-    log_path?: (string | null);
     log_max_size_mb?: (number | null);
-    socket_connection_type?: SocketConnectionType;
     socket_host?: (string | null);
     socket_port?: (number | null);
     socket_connected?: (boolean | null);
     socket_last_connected?: (string | null);
-    socket_unique_id?: (string | null);
     api_key?: (string | null);
     command?: (string | null);
-    executable_path?: (string | null);
     working_directory?: (string | null);
+    input_filter_enabled?: boolean;
+    input_filter_mode?: string;
+    input_noise_patterns?: (Array<(string)> | null);
+    input_event_patterns?: ({
+    [key: string]: unknown;
+} | null);
+    output_filter_enabled?: boolean;
+    output_filter_mode?: string;
+    output_command_list?: (Array<(string)> | null);
+    output_sensitive_patterns?: (Array<(string)> | null);
+    output_rate_limit?: number;
     id: string;
     owner_id: string;
     created_at?: (string | null);
@@ -155,25 +158,25 @@ export type ItemUpdate = {
     title?: (string | null);
     description?: (string | null);
     status?: (ItemStatus | null);
-    config?: ({
-    [key: string]: unknown;
-} | null);
-    resource_usage?: ({
-    [key: string]: unknown;
-} | null);
-    log_path?: (string | null);
     log_max_size_mb?: (number | null);
-    socket_connection_type?: (SocketConnectionType | null);
     socket_host?: (string | null);
     socket_port?: (number | null);
     socket_connected?: (boolean | null);
     socket_last_connected?: (string | null);
-    socket_unique_id?: (string | null);
     api_key?: (string | null);
     command?: (string | null);
-    executable_path?: (string | null);
     working_directory?: (string | null);
-    command_args?: (Array<unknown> | null);
+    input_filter_enabled?: (boolean | null);
+    input_filter_mode?: (string | null);
+    input_noise_patterns?: (Array<(string)> | null);
+    input_event_patterns?: ({
+    [key: string]: unknown;
+} | null);
+    output_filter_enabled?: (boolean | null);
+    output_filter_mode?: (string | null);
+    output_command_list?: (Array<(string)> | null);
+    output_sensitive_patterns?: (Array<(string)> | null);
+    output_rate_limit?: (number | null);
 };
 
 export type Message = {
@@ -191,8 +194,6 @@ export type PrivateUserCreate = {
     full_name: string;
     is_verified?: boolean;
 };
-
-export type SocketConnectionType = 'local' | 'remote';
 
 export type Token = {
     access_token: string;
