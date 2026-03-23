@@ -119,6 +119,19 @@ count = sdk.get_subscriber_count(item_uuid)
 
 用于向终端发送命令。
 
+## 核心概念
+
+**处理器是持久的**：`register_socket_handler` 注册一次后，可以多次发送命令，不需要每次发送都新建处理器。
+
+```
+注册阶段（一次）          发送阶段（多次）
+─────────────           ─────────────
+register_handler()  →   send() → 处理器执行
+                       send() → 处理器执行
+                       send() → 处理器执行
+                       ...
+```
+
 ## 快速开始
 
 ### 1. 注册输入处理器
@@ -146,11 +159,12 @@ from app.services.socket_pool import InputSDK
 
 sdk = InputSDK()
 
-# 自动使用 SocketManager 写入
+# 使用 backend socket 连接发送命令
 h_id = sdk.register_socket_handler(
     item_uuid="your-item-uuid",
     socket_manager=socket_manager
 )
+# 注册后可多次调用 send() 发送命令
 ```
 
 ### 3. 发送命令
@@ -210,6 +224,32 @@ class InputCommand:
     command: str        # 要执行的命令
     source: str         # 来源标识 (默认 "sdk")
     timestamp: datetime # 创建时间
+```
+
+## 典型使用场景
+
+```python
+class TerminalService:
+    def __init__(self):
+        self.input_sdk = InputSDK()
+        self.handlers = {}
+    
+    def on_item_connect(self, item_uuid: str, socket_manager):
+        # 连接时注册一次
+        h_id = self.input_sdk.register_socket_handler(
+            item_uuid, socket_manager
+        )
+        self.handlers[item_uuid] = h_id
+    
+    def execute_command(self, item_uuid: str, command: str):
+        # 多次发送命令
+        return self.input_sdk.send(item_uuid, command)
+    
+    def on_item_disconnect(self, item_uuid: str):
+        # 断开时注销
+        if item_uuid in self.handlers:
+            self.input_sdk.unregister(self.handlers[item_uuid])
+            del self.handlers[item_uuid]
 ```
 
 ---
