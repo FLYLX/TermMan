@@ -257,9 +257,6 @@ class TerminalProcess:
     def write(self, data: str) -> bool:
         try:
             if self.master_fd is not None and self.status in ["running", "waiting_backend"]:
-                if isinstance(data, str) and data.strip():
-                    self._write_log(f"$ {data.strip()}\n")
-                
                 if isinstance(data, str):
                     encoded_data = data.encode(self.encoding)
                 else:

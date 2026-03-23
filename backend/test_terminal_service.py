@@ -10,6 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.services.terminal_service import TerminalService
 from app.services.connection_pool import ConnectionManager, DaemonConfig
 from app.services.socket_pool import SocketManager
+from app.services.socket_pool.subscriber_sdk import ItemSubscriberSDK
 from app.services.connection_handler import ConnectionHandler
 
 # 测试配置
@@ -159,28 +160,24 @@ class TestTerminalService:
             logger.error(f"✗ 用户连接异常: {e}")
             return False
     
-    def terminal_output_callback(self, data):
-        """终端输出回调函数"""
-        output = data.get("stdout", "")
-        if output:
-            self.terminal_output.append(output)
-            logger.info(f"终端输出: {output.strip()}")
-        stderr = data.get("stderr", "")
-        if stderr:
-            self.terminal_output.append(stderr)
-            logger.error(f"终端错误: {stderr.strip()}")
-    
     def run_commands(self):
         """在终端上执行命令"""
         logger.info("测试4: 执行命令")
         try:
-            # 为每个用户单独注册回调函数
-            for user_uuid in self.user_uuids:
-                self.terminal_service.register_stream_callback(
-                    self.item_uuid, 
-                    user_uuid,
-                    self.terminal_output_callback
-                )
+            sdk = ItemSubscriberSDK()
+            
+            def stream_callback(event):
+                data = event.data
+                output = data.get("stdout", "")
+                if output:
+                    self.terminal_output.append(output)
+                    logger.info(f"终端输出: {output.strip()}")
+                stderr = data.get("stderr", "")
+                if stderr:
+                    self.terminal_output.append(stderr)
+                    logger.error(f"终端错误: {stderr.strip()}")
+            
+            sdk.subscribe_stream(self.item_uuid, stream_callback)
             
             all_success = True
             

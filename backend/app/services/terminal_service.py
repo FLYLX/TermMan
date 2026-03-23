@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from typing import Any
 import logging
 
@@ -9,8 +8,8 @@ from app.models import Item
 
 from .connection_pool import ConnectionManager, DaemonConfig, backend_conn_pool
 from .log_manager import LogManager
-from .protocol import ProtocolEvents
 from .socket_pool import SocketManager
+from .socket_pool.subscriber_sdk import ItemSubscriberSDK
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +26,10 @@ class TerminalService:
     3. Item 启动时创建 Backend 永久订阅者连接
     4. Item 停止时销毁 Room，移除所有订阅者
     
+    订阅模式：
+    - ItemSocket 接收事件 -> 发布到 SubscriptionCenter
+    - LogSubscriber 通过 SDK 订阅 -> 实时写入日志文件
+    
     连接池管理：
     - ConnectionManager: 管理 Backend → Daemon 的主连接（管控指令）
     - SocketManager: 管理 Backend → Daemon Room 的监听连接（日志）
@@ -36,6 +39,8 @@ class TerminalService:
         self.connection_manager = connection_manager
         self.socket_manager = socket_manager
         self.terminal_users: dict[str, list[str]] = {}
+        self._log_subscribers: dict[str, str] = {}
+        self._sdk = ItemSubscriberSDK()
 
     def start_terminal(self, item_uuid: str, user_uuid: str, daemon_config: DaemonConfig) -> dict[str, Any]:
         connection = self.connection_manager.get_or_create_connection(daemon_config)
@@ -106,19 +111,14 @@ class TerminalService:
         
         logger.info(f"[TerminalService] Backend socket connected for item={item_uuid}")
         
-        def log_callback(data):
-            output = data.get("stdout", "")
-            stdin = data.get("stdin", "")
-            logger.info(f"[TerminalService] log_callback called for item={item_uuid}: stdout={len(output)} chars, stdin={len(stdin)} chars")
-            if stdin:
-                success = log_manager.write_to_log(owner_uuid, item_uuid, f"$ {stdin.strip()}\n")
-                logger.info(f"[TerminalService] Wrote stdin to log: success={success}")
-            if output:
-                success = log_manager.write_to_log(owner_uuid, item_uuid, output)
-                logger.info(f"[TerminalService] Wrote stdout to log: success={success}")
-        
-        socket.on(ProtocolEvents.STREAM, log_callback)
-        logger.info(f"[TerminalService] Registered STREAM callback for item={item_uuid}")
+        sub_id = self._sdk.subscribe_log(
+            item_uuid=item_uuid,
+            owner_uuid=owner_uuid,
+            log_manager=log_manager,
+            subscriber_type="backend_log"
+        )
+        self._log_subscribers[item_uuid] = sub_id
+        logger.info(f"[TerminalService] Log subscriber registered: {sub_id} for item={item_uuid}")
         
         room_listen_conn = backend_conn_pool.create_room_listen_conn(item_uuid, api_key)
         room_listen_conn.set_connected(socket, socket.sio.sid if hasattr(socket.sio, 'sid') else None)
@@ -140,6 +140,12 @@ class TerminalService:
         if result.get("success"):
             self.socket_manager.remove_all_tokens_by_item(item_uuid)
             self.socket_manager.clear_sockets_by_item(item_uuid)
+            
+            if item_uuid in self._log_subscribers:
+                self._sdk.unsubscribe(self._log_subscribers[item_uuid])
+                del self._log_subscribers[item_uuid]
+            
+            self._sdk.unsubscribe_item(item_uuid)
             
             backend_conn_pool.remove_room_listen_conn(item_uuid)
             
@@ -196,9 +202,6 @@ class TerminalService:
             if socket.is_connected():
                 return socket.write(command)
         return False
-
-    def register_stream_callback(self, item_uuid: str, user_uuid: str, callback: Callable) -> bool:
-        return self.socket_manager.register_stream_callback(item_uuid, user_uuid, callback, "browser")
 
     def get_terminal_log(self, user_uuid: str, item_uuid: str) -> str | None:
         return log_manager.get_log_content(user_uuid, item_uuid)

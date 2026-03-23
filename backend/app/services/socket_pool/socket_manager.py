@@ -1,9 +1,7 @@
 import logging
 import threading
-from collections.abc import Callable
 from typing import Any
 
-from ..protocol import ProtocolEvents
 from .item_socket import ItemSocket
 from .socket_models import TerminalStatus
 
@@ -159,19 +157,6 @@ class SocketManager:
 
     def get_user_sockets(self, user_uuid: str) -> list[ItemSocket]:
         return [sock for (u, _, _), sock in self.sockets.items() if u == user_uuid]
-
-    def register_stream_callback(
-        self, 
-        item_uuid: str, 
-        user_uuid: str, 
-        callback: Callable, 
-        subscriber_type: str = "browser"
-    ) -> bool:
-        socket = self.get_socket(item_uuid, user_uuid, subscriber_type)
-        if socket and socket.is_connected():
-            socket.on(ProtocolEvents.STREAM, callback)
-            return True
-        return False
 
     def cleanup_disconnected_sockets(self):
         with self.lock:
