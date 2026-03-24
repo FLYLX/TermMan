@@ -69,7 +69,13 @@ export const columns: ColumnDef<ItemHandlerPublic>[] = [
     header: "Name",
     cell: ({ row }) => (
       <div className="flex items-center">
-        <span className="font-medium">{row.original.name}</span>
+        <Link
+          to="/item-handlers/$itemHandlerId"
+          params={{ itemHandlerId: row.original.id }}
+          className="font-medium hover:underline"
+        >
+          {row.original.name}
+        </Link>
         <ItemCount itemHandlerId={row.original.id} />
       </div>
     ),
