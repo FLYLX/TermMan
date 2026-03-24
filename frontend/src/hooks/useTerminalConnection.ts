@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { io, Socket } from "socket.io-client"
+import { io, type Socket } from "socket.io-client"
 import { ItemsService } from "@/client"
 
 interface TerminalOutput {
@@ -50,16 +50,16 @@ export function useTerminalConnection({
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [output, setOutput] = useState<TerminalOutput[]>([])
-  
+
   const socketRef = useRef<Socket | null>(null)
   const connectingRef = useRef(false)
   const mountedRef = useRef(true)
   const connectionIdRef = useRef(0)
-  
+
   const onConnectedRef = useRef(onConnected)
   const onDisconnectedRef = useRef(onDisconnected)
   const onErrorRef = useRef(onError)
-  
+
   useEffect(() => {
     onConnectedRef.current = onConnected
     onDisconnectedRef.current = onDisconnected
@@ -86,11 +86,11 @@ export function useTerminalConnection({
     if (!enabled || !itemId) {
       return
     }
-    
+
     if (connectingRef.current) {
       return
     }
-    
+
     if (socketRef.current) {
       return
     }
@@ -101,26 +101,34 @@ export function useTerminalConnection({
     setError(null)
 
     try {
-      const outputData = await ItemsService.getItemOutput({ id: itemId }) as {
+      const outputData = (await ItemsService.getItemOutput({ id: itemId })) as {
         success: boolean
         output: string | null
       }
       if (outputData.success && outputData.output) {
-        const lines = outputData.output.split('\n')
-        const outputLines = lines.filter(line => line.trim()).map(line => ({ stdout: line + '\n' }))
+        const lines = outputData.output.split("\n")
+        const outputLines = lines
+          .filter((line) => line.trim())
+          .map((line) => ({ stdout: `${line}\n` }))
         setOutput(outputLines)
       }
-      
-      if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+
+      if (
+        !mountedRef.current ||
+        currentConnectionId !== connectionIdRef.current
+      ) {
         return
       }
-      
+
       const tokenData = await ItemsService.getTerminalToken({ id: itemId })
-      
-      if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+
+      if (
+        !mountedRef.current ||
+        currentConnectionId !== connectionIdRef.current
+      ) {
         return
       }
-      
+
       if (!tokenData.success) {
         throw new Error("Failed to get terminal token")
       }
@@ -140,7 +148,10 @@ export function useTerminalConnection({
         reconnection: false,
       })
 
-      if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+      if (
+        !mountedRef.current ||
+        currentConnectionId !== connectionIdRef.current
+      ) {
         socket.removeAllListeners()
         socket.disconnect()
         return
@@ -153,7 +164,10 @@ export function useTerminalConnection({
       })
 
       socket.on("terminal_connected", (data: TerminalConnectedData) => {
-        if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+        if (
+          !mountedRef.current ||
+          currentConnectionId !== connectionIdRef.current
+        ) {
           return
         }
         console.log("[Terminal] Terminal connected:", data)
@@ -164,7 +178,10 @@ export function useTerminalConnection({
       })
 
       socket.on("auth_error", (data: { message: string }) => {
-        if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+        if (
+          !mountedRef.current ||
+          currentConnectionId !== connectionIdRef.current
+        ) {
           return
         }
         console.error("[Terminal] Auth error:", data.message)
@@ -176,7 +193,10 @@ export function useTerminalConnection({
       })
 
       socket.on("stream", (data: TerminalOutput) => {
-        if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+        if (
+          !mountedRef.current ||
+          currentConnectionId !== connectionIdRef.current
+        ) {
           return
         }
         setOutput((prev) => [...prev, data])
@@ -194,7 +214,10 @@ export function useTerminalConnection({
       })
 
       socket.on("connect_error", (err) => {
-        if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+        if (
+          !mountedRef.current ||
+          currentConnectionId !== connectionIdRef.current
+        ) {
           return
         }
         console.error("[Terminal] Connect error:", err.message)
@@ -203,13 +226,16 @@ export function useTerminalConnection({
         connectingRef.current = false
         onErrorRef.current?.(err.message)
       })
-
     } catch (err) {
-      if (!mountedRef.current || currentConnectionId !== connectionIdRef.current) {
+      if (
+        !mountedRef.current ||
+        currentConnectionId !== connectionIdRef.current
+      ) {
         return
       }
       console.error("[Terminal] Connection error:", err)
-      const errorMessage = err instanceof Error ? err.message : "Connection failed"
+      const errorMessage =
+        err instanceof Error ? err.message : "Connection failed"
       setError(errorMessage)
       setIsConnecting(false)
       connectingRef.current = false
@@ -227,11 +253,14 @@ export function useTerminalConnection({
     }, 300)
   }, [doConnect, disconnect])
 
-  const sendCommand = useCallback((command: string) => {
-    if (socketRef.current && isConnected) {
-      socketRef.current.emit("terminal/write", { command })
-    }
-  }, [isConnected])
+  const sendCommand = useCallback(
+    (command: string) => {
+      if (socketRef.current && isConnected) {
+        socketRef.current.emit("terminal/write", { command })
+      }
+    },
+    [isConnected],
+  )
 
   const sendCtrlC = useCallback(() => {
     if (socketRef.current && isConnected) {
@@ -241,7 +270,7 @@ export function useTerminalConnection({
 
   useEffect(() => {
     mountedRef.current = true
-    
+
     if (enabled && itemId) {
       doConnect()
     }
@@ -257,7 +286,7 @@ export function useTerminalConnection({
       }
       connectingRef.current = false
     }
-  }, [enabled, itemId])
+  }, [enabled, itemId, doConnect])
 
   return {
     isConnected,

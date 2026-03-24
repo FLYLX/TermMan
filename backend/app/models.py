@@ -205,6 +205,7 @@ class ItemHandlerBase(SQLModel):
     model: Optional[str] = Field(default=None, max_length=255)
     api_key: Optional[str] = Field(default=None, max_length=255)
     api_url: Optional[str] = Field(default=None, max_length=255)
+    enabled_skills: Optional[List[str]] = Field(default=None, sa_type=JSON)
 
 
 class ItemHandlerCreate(ItemHandlerBase):
@@ -216,6 +217,7 @@ class ItemHandlerUpdate(ItemHandlerBase):
     model: Optional[str] = Field(default=None, max_length=255)
     api_key: Optional[str] = Field(default=None, max_length=255)
     api_url: Optional[str] = Field(default=None, max_length=255)
+    enabled_skills: Optional[List[str]] = Field(default=None, sa_type=JSON)
 
 
 class ItemHandler(ItemHandlerBase, table=True):

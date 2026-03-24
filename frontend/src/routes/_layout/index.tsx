@@ -1,11 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { useState, useEffect } from "react"
-import { ItemsService } from "@/client/sdk.gen"
-import useAuth from "@/hooks/useAuth"
+import {
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+  Shield,
+  Trash2,
+  User,
+} from "lucide-react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
+import { ItemsService } from "@/client/sdk.gen"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   Dialog,
   DialogContent,
@@ -14,7 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { ChevronDown, ChevronRight, Trash2, RefreshCw, User, Shield } from "lucide-react"
+import useAuth from "@/hooks/useAuth"
 
 export const Route = createFileRoute("/_layout/")({
   component: Dashboard,
@@ -65,8 +72,12 @@ function Dashboard() {
   const { user: currentUser } = useAuth()
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
-  const [expandedDaemons, setExpandedDaemons] = useState<Record<string, boolean>>({})
-  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({})
+  const [expandedDaemons, setExpandedDaemons] = useState<
+    Record<string, boolean>
+  >({})
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>(
+    {},
+  )
   const [disconnectDialog, setDisconnectDialog] = useState<{
     open: boolean
     itemId: string
@@ -78,10 +89,6 @@ function Dashboard() {
   const [disconnecting, setDisconnecting] = useState(false)
 
   const isAdmin = currentUser?.is_superuser ?? false
-
-  useEffect(() => {
-    fetchItems()
-  }, [])
 
   const fetchItems = async () => {
     try {
@@ -95,6 +102,10 @@ function Dashboard() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    fetchItems()
+  }, [])
 
   const handleDisconnectUser = async () => {
     if (!disconnectDialog) return
@@ -121,7 +132,10 @@ function Dashboard() {
 
   const handleReconnectDaemon = async (daemonId: string) => {
     try {
-      const result = (await ItemsService.reconnectDaemon({ daemonId })) as { success: boolean; message: string }
+      const result = (await ItemsService.reconnectDaemon({ daemonId })) as {
+        success: boolean
+        message: string
+      }
       if (result.success) {
         toast.success(result.message)
         await fetchItems()
@@ -201,11 +215,16 @@ function Dashboard() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>
-            {isAdmin ? "All Items Dashboard" : "My Items"}
-          </CardTitle>
-          <Button variant="outline" size="sm" onClick={fetchItems} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+          <CardTitle>{isAdmin ? "All Items Dashboard" : "My Items"}</CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchItems}
+            disabled={loading}
+          >
+            <RefreshCw
+              className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
         </CardHeader>
@@ -262,10 +281,14 @@ function Dashboard() {
                             </Button>
                           )}
                         </div>
-                        <p className="text-sm text-muted-foreground">URL: {daemon.url}</p>
+                        <p className="text-sm text-muted-foreground">
+                          URL: {daemon.url}
+                        </p>
                       </div>
                     </div>
-                    <div className="text-sm font-medium">{daemon.items.length} items</div>
+                    <div className="text-sm font-medium">
+                      {daemon.items.length} items
+                    </div>
                   </div>
 
                   {expandedDaemons[daemon.id] && (
@@ -319,18 +342,28 @@ function Dashboard() {
         </CardContent>
       </Card>
 
-      <Dialog open={disconnectDialog?.open} onOpenChange={(open) => !open && setDisconnectDialog(null)}>
+      <Dialog
+        open={disconnectDialog?.open}
+        onOpenChange={(open) => !open && setDisconnectDialog(null)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Disconnect User</DialogTitle>
             <DialogDescription>
               Are you sure you want to disconnect user{" "}
-              <strong>{disconnectDialog?.userName || disconnectDialog?.userUuid}</strong> (IP: {disconnectDialog?.ip}) from item{" "}
+              <strong>
+                {disconnectDialog?.userName || disconnectDialog?.userUuid}
+              </strong>{" "}
+              (IP: {disconnectDialog?.ip}) from item{" "}
               <strong>{disconnectDialog?.itemTitle}</strong>?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDisconnectDialog(null)} disabled={disconnecting}>
+            <Button
+              variant="outline"
+              onClick={() => setDisconnectDialog(null)}
+              disabled={disconnecting}
+            >
               Cancel
             </Button>
             <Button
@@ -383,9 +416,13 @@ function ItemCard({
             >
               {item.title}
             </Link>
-            <p className="text-sm text-muted-foreground">{item.description || "No description"}</p>
+            <p className="text-sm text-muted-foreground">
+              {item.description || "No description"}
+            </p>
             {showOwner && (
-              <p className="text-xs text-muted-foreground">Owner: {item.owner_id}</p>
+              <p className="text-xs text-muted-foreground">
+                Owner: {item.owner_id}
+              </p>
             )}
           </div>
         </div>
@@ -399,14 +436,18 @@ function ItemCard({
           >
             {item.status}
           </span>
-          <span className="text-muted-foreground">{item.browser_count ?? 0} connected</span>
+          <span className="text-muted-foreground">
+            {item.browser_count ?? 0} connected
+          </span>
         </div>
       </div>
 
       {expanded && (
         <div className="p-4 bg-muted/50">
           {subscribers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No users connected to this item</p>
+            <p className="text-sm text-muted-foreground">
+              No users connected to this item
+            </p>
           ) : (
             <div className="space-y-2">
               <h5 className="font-medium text-sm">Connected Users:</h5>
@@ -416,7 +457,9 @@ function ItemCard({
                   className="flex items-center justify-between p-3 border rounded-lg bg-background"
                 >
                   <div>
-                    <p className="font-medium text-sm">{sub.user_name || sub.user_uuid}</p>
+                    <p className="font-medium text-sm">
+                      {sub.user_name || sub.user_uuid}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       IP: {sub.ip}
                     </p>
@@ -428,7 +471,9 @@ function ItemCard({
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                    onClick={() => onDisconnectUser(sub.user_uuid, sub.user_name, sub.ip)}
+                    onClick={() =>
+                      onDisconnectUser(sub.user_uuid, sub.user_name, sub.ip)
+                    }
                   >
                     <Trash2 className="h-4 w-4" />
                     <span className="sr-only">Disconnect user</span>

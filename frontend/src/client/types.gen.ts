@@ -29,6 +29,18 @@ export type Body_login_login_access_token = {
     client_secret?: (string | null);
 };
 
+export type Body_skills_create_skill_file = {
+    content?: string;
+};
+
+export type Body_skills_update_skill_file = {
+    content: string;
+};
+
+export type Body_skills_upload_skill_zip = {
+    file: string;
+};
+
 export type HTTPValidationError = {
     detail?: Array<ValidationError>;
 };
@@ -92,6 +104,7 @@ export type ItemHandler = {
     model?: (string | null);
     api_key?: (string | null);
     api_url?: (string | null);
+    enabled_skills?: (Array<(string)> | null);
     id?: string;
     created_at?: string;
     updated_at?: string;
@@ -103,6 +116,7 @@ export type ItemHandlerCreate = {
     model?: (string | null);
     api_key?: (string | null);
     api_url?: (string | null);
+    enabled_skills?: (Array<(string)> | null);
 };
 
 export type ItemHandlerPublic = {
@@ -110,6 +124,7 @@ export type ItemHandlerPublic = {
     model?: (string | null);
     api_key?: (string | null);
     api_url?: (string | null);
+    enabled_skills?: (Array<(string)> | null);
     id: string;
     owner_id: string;
     created_at?: (string | null);
@@ -121,6 +136,7 @@ export type ItemHandlerUpdate = {
     model?: (string | null);
     api_key?: (string | null);
     api_url?: (string | null);
+    enabled_skills?: (Array<(string)> | null);
 };
 
 export type ItemPublic = {
@@ -193,6 +209,63 @@ export type PrivateUserCreate = {
     password: string;
     full_name: string;
     is_verified?: boolean;
+};
+
+export type SkillCreateBody = {
+    skill_id: string;
+    name: string;
+    description?: string;
+    category?: string;
+};
+
+export type SkillDetail = {
+    skill_id: string;
+    name: string;
+    description: string;
+    category: string;
+    trigger: {
+        [key: string]: unknown;
+    };
+    action: {
+        [key: string]: unknown;
+    };
+    safety: {
+        [key: string]: unknown;
+    };
+    content: string;
+    scripts: Array<(string)>;
+    templates: Array<(string)>;
+    resources: Array<(string)>;
+    examples: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+export type SkillListItem = {
+    skill_id: string;
+    name: string;
+    description: string;
+    category: string;
+};
+
+export type SkillsListResponse = {
+    data: Array<SkillListItem>;
+    count: number;
+};
+
+export type SkillUpdateBody = {
+    name?: (string | null);
+    description?: (string | null);
+    category?: (string | null);
+    trigger?: ({
+    [key: string]: unknown;
+} | null);
+    action?: ({
+    [key: string]: unknown;
+} | null);
+    safety?: ({
+    [key: string]: unknown;
+} | null);
 };
 
 export type Token = {
@@ -490,6 +563,81 @@ export type PrivateCreateUserData = {
 };
 
 export type PrivateCreateUserResponse = (UserPublic);
+
+export type SkillsListSkillsData = {
+    category?: (string | null);
+};
+
+export type SkillsListSkillsResponse = (SkillsListResponse);
+
+export type SkillsCreateSkillData = {
+    requestBody: SkillCreateBody;
+};
+
+export type SkillsCreateSkillResponse = (SkillListItem);
+
+export type SkillsGetSkillData = {
+    skillId: string;
+};
+
+export type SkillsGetSkillResponse = (SkillDetail);
+
+export type SkillsUpdateSkillData = {
+    requestBody: SkillUpdateBody;
+    skillId: string;
+};
+
+export type SkillsUpdateSkillResponse = (SkillListItem);
+
+export type SkillsDeleteSkillData = {
+    skillId: string;
+};
+
+export type SkillsDeleteSkillResponse = (unknown);
+
+export type SkillsListSkillFilesData = {
+    skillId: string;
+};
+
+export type SkillsListSkillFilesResponse = (unknown);
+
+export type SkillsGetSkillFileData = {
+    filePath: string;
+    skillId: string;
+};
+
+export type SkillsGetSkillFileResponse = (unknown);
+
+export type SkillsUpdateSkillFileData = {
+    filePath: string;
+    requestBody: Body_skills_update_skill_file;
+    skillId: string;
+};
+
+export type SkillsUpdateSkillFileResponse = (unknown);
+
+export type SkillsCreateSkillFileData = {
+    filePath: string;
+    requestBody?: Body_skills_create_skill_file;
+    skillId: string;
+};
+
+export type SkillsCreateSkillFileResponse = (unknown);
+
+export type SkillsDeleteSkillFileData = {
+    filePath: string;
+    skillId: string;
+};
+
+export type SkillsDeleteSkillFileResponse = (unknown);
+
+export type SkillsUploadSkillZipData = {
+    formData: Body_skills_upload_skill_zip;
+};
+
+export type SkillsUploadSkillZipResponse = (unknown);
+
+export type SkillsReloadSkillsResponse = (unknown);
 
 export type UsersReadUsersData = {
     limit?: number;

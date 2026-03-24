@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { ItemHandlerAssociationsAddItemToHandlerData, ItemHandlerAssociationsAddItemToHandlerResponse, ItemHandlerAssociationsRemoveItemFromHandlerData, ItemHandlerAssociationsRemoveItemFromHandlerResponse, ItemHandlerAssociationsGetItemsForHandlerData, ItemHandlerAssociationsGetItemsForHandlerResponse, ItemHandlerAssociationsGetHandlersForItemData, ItemHandlerAssociationsGetHandlersForItemResponse, ItemHandlerAssociationsAddUserToHandlerData, ItemHandlerAssociationsAddUserToHandlerResponse, ItemHandlerAssociationsRemoveUserFromHandlerData, ItemHandlerAssociationsRemoveUserFromHandlerResponse, ItemHandlerAssociationsGetUsersForHandlerData, ItemHandlerAssociationsGetUsersForHandlerResponse, ItemHandlerAssociationsGetHandlersForUserData, ItemHandlerAssociationsGetHandlersForUserResponse, ItemHandlersReadItemHandlersData, ItemHandlersReadItemHandlersResponse, ItemHandlersCreateItemHandlerData, ItemHandlersCreateItemHandlerResponse, ItemHandlersReadItemHandlerData, ItemHandlersReadItemHandlerResponse, ItemHandlersUpdateItemHandlerData, ItemHandlersUpdateItemHandlerResponse, ItemHandlersDeleteItemHandlerData, ItemHandlersDeleteItemHandlerResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, ItemsReconnectDaemonData, ItemsReconnectDaemonResponse, ItemsStartItemData, ItemsStartItemResponse, ItemsStopItemData, ItemsStopItemResponse, ItemsRestartItemData, ItemsRestartItemResponse, ItemsGetTerminalTokenData, ItemsGetTerminalTokenResponse, ItemsVerifyTerminalTokenData, ItemsVerifyTerminalTokenResponse, ItemsGetItemSubscribersData, ItemsGetItemSubscribersResponse, ItemsDisconnectItemSubscriberData, ItemsDisconnectItemSubscriberResponse, ItemsGetItemOutputData, ItemsGetItemOutputResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { ItemHandlerAssociationsAddItemToHandlerData, ItemHandlerAssociationsAddItemToHandlerResponse, ItemHandlerAssociationsRemoveItemFromHandlerData, ItemHandlerAssociationsRemoveItemFromHandlerResponse, ItemHandlerAssociationsGetItemsForHandlerData, ItemHandlerAssociationsGetItemsForHandlerResponse, ItemHandlerAssociationsGetHandlersForItemData, ItemHandlerAssociationsGetHandlersForItemResponse, ItemHandlerAssociationsAddUserToHandlerData, ItemHandlerAssociationsAddUserToHandlerResponse, ItemHandlerAssociationsRemoveUserFromHandlerData, ItemHandlerAssociationsRemoveUserFromHandlerResponse, ItemHandlerAssociationsGetUsersForHandlerData, ItemHandlerAssociationsGetUsersForHandlerResponse, ItemHandlerAssociationsGetHandlersForUserData, ItemHandlerAssociationsGetHandlersForUserResponse, ItemHandlersReadItemHandlersData, ItemHandlersReadItemHandlersResponse, ItemHandlersCreateItemHandlerData, ItemHandlersCreateItemHandlerResponse, ItemHandlersReadItemHandlerData, ItemHandlersReadItemHandlerResponse, ItemHandlersUpdateItemHandlerData, ItemHandlersUpdateItemHandlerResponse, ItemHandlersDeleteItemHandlerData, ItemHandlersDeleteItemHandlerResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, ItemsReconnectDaemonData, ItemsReconnectDaemonResponse, ItemsStartItemData, ItemsStartItemResponse, ItemsStopItemData, ItemsStopItemResponse, ItemsRestartItemData, ItemsRestartItemResponse, ItemsGetTerminalTokenData, ItemsGetTerminalTokenResponse, ItemsVerifyTerminalTokenData, ItemsVerifyTerminalTokenResponse, ItemsGetItemSubscribersData, ItemsGetItemSubscribersResponse, ItemsDisconnectItemSubscriberData, ItemsDisconnectItemSubscriberResponse, ItemsGetItemOutputData, ItemsGetItemOutputResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, PrivateCreateUserData, PrivateCreateUserResponse, SkillsListSkillsData, SkillsListSkillsResponse, SkillsCreateSkillData, SkillsCreateSkillResponse, SkillsGetSkillData, SkillsGetSkillResponse, SkillsUpdateSkillData, SkillsUpdateSkillResponse, SkillsDeleteSkillData, SkillsDeleteSkillResponse, SkillsListSkillFilesData, SkillsListSkillFilesResponse, SkillsGetSkillFileData, SkillsGetSkillFileResponse, SkillsUpdateSkillFileData, SkillsUpdateSkillFileResponse, SkillsCreateSkillFileData, SkillsCreateSkillFileResponse, SkillsDeleteSkillFileData, SkillsDeleteSkillFileResponse, SkillsUploadSkillZipData, SkillsUploadSkillZipResponse, SkillsReloadSkillsResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class ItemHandlerAssociationsService {
     /**
@@ -699,6 +699,255 @@ export class PrivateService {
             errors: {
                 422: 'Validation Error'
             }
+        });
+    }
+}
+
+export class SkillsService {
+    /**
+     * List Skills
+     * @param data The data for the request.
+     * @param data.category
+     * @returns SkillsListResponse Successful Response
+     * @throws ApiError
+     */
+    public static listSkills(data: SkillsListSkillsData = {}): CancelablePromise<SkillsListSkillsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/skills/',
+            query: {
+                category: data.category
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Create Skill
+     * @param data The data for the request.
+     * @param data.requestBody
+     * @returns SkillListItem Successful Response
+     * @throws ApiError
+     */
+    public static createSkill(data: SkillsCreateSkillData): CancelablePromise<SkillsCreateSkillResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/skills/',
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Skill
+     * @param data The data for the request.
+     * @param data.skillId
+     * @returns SkillDetail Successful Response
+     * @throws ApiError
+     */
+    public static getSkill(data: SkillsGetSkillData): CancelablePromise<SkillsGetSkillResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/skills/{skill_id}',
+            path: {
+                skill_id: data.skillId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Update Skill
+     * @param data The data for the request.
+     * @param data.skillId
+     * @param data.requestBody
+     * @returns SkillListItem Successful Response
+     * @throws ApiError
+     */
+    public static updateSkill(data: SkillsUpdateSkillData): CancelablePromise<SkillsUpdateSkillResponse> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/skills/{skill_id}',
+            path: {
+                skill_id: data.skillId
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Delete Skill
+     * @param data The data for the request.
+     * @param data.skillId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static deleteSkill(data: SkillsDeleteSkillData): CancelablePromise<SkillsDeleteSkillResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/skills/{skill_id}',
+            path: {
+                skill_id: data.skillId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * List Skill Files
+     * @param data The data for the request.
+     * @param data.skillId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static listSkillFiles(data: SkillsListSkillFilesData): CancelablePromise<SkillsListSkillFilesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/skills/{skill_id}/files',
+            path: {
+                skill_id: data.skillId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Skill File
+     * @param data The data for the request.
+     * @param data.skillId
+     * @param data.filePath
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static getSkillFile(data: SkillsGetSkillFileData): CancelablePromise<SkillsGetSkillFileResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/skills/{skill_id}/files/{file_path}',
+            path: {
+                skill_id: data.skillId,
+                file_path: data.filePath
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Update Skill File
+     * @param data The data for the request.
+     * @param data.skillId
+     * @param data.filePath
+     * @param data.requestBody
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static updateSkillFile(data: SkillsUpdateSkillFileData): CancelablePromise<SkillsUpdateSkillFileResponse> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/skills/{skill_id}/files/{file_path}',
+            path: {
+                skill_id: data.skillId,
+                file_path: data.filePath
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Create Skill File
+     * @param data The data for the request.
+     * @param data.skillId
+     * @param data.filePath
+     * @param data.requestBody
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static createSkillFile(data: SkillsCreateSkillFileData): CancelablePromise<SkillsCreateSkillFileResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/skills/{skill_id}/files/{file_path}',
+            path: {
+                skill_id: data.skillId,
+                file_path: data.filePath
+            },
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Delete Skill File
+     * @param data The data for the request.
+     * @param data.skillId
+     * @param data.filePath
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static deleteSkillFile(data: SkillsDeleteSkillFileData): CancelablePromise<SkillsDeleteSkillFileResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/skills/{skill_id}/files/{file_path}',
+            path: {
+                skill_id: data.skillId,
+                file_path: data.filePath
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Upload Skill Zip
+     * @param data The data for the request.
+     * @param data.formData
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static uploadSkillZip(data: SkillsUploadSkillZipData): CancelablePromise<SkillsUploadSkillZipResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/skills/upload-zip',
+            formData: data.formData,
+            mediaType: 'multipart/form-data',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Reload Skills
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static reloadSkills(): CancelablePromise<SkillsReloadSkillsResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/skills/reload'
         });
     }
 }

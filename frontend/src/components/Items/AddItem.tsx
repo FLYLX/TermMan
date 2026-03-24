@@ -77,7 +77,9 @@ const AddItem = () => {
   const onSubmit = (data: FormData) => {
     const formattedData: ItemCreate = {
       ...data,
-      socket_port: data.socket_port ? parseInt(data.socket_port, 10) : undefined,
+      socket_port: data.socket_port
+        ? parseInt(data.socket_port, 10)
+        : undefined,
     }
     mutation.mutate(formattedData)
   }
@@ -136,7 +138,9 @@ const AddItem = () => {
               />
 
               <div className="grid gap-2">
-                <h4 className="font-semibold text-sm text-gray-700">Daemon Settings</h4>
+                <h4 className="font-semibold text-sm text-gray-700">
+                  Daemon Settings
+                </h4>
                 <FormField
                   control={form.control}
                   name="socket_host"
@@ -144,7 +148,11 @@ const AddItem = () => {
                     <FormItem>
                       <FormLabel>IP</FormLabel>
                       <FormControl>
-                        <Input placeholder="IP address" type="text" {...field} />
+                        <Input
+                          placeholder="IP address"
+                          type="text"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -158,7 +166,11 @@ const AddItem = () => {
                     <FormItem>
                       <FormLabel>Port</FormLabel>
                       <FormControl>
-                        <Input placeholder="Port number" type="number" {...field} />
+                        <Input
+                          placeholder="Port number"
+                          type="number"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -172,7 +184,11 @@ const AddItem = () => {
                     <FormItem>
                       <FormLabel>Start Command</FormLabel>
                       <FormControl>
-                        <Input placeholder="Command to start the daemon" type="text" {...field} />
+                        <Input
+                          placeholder="Command to start the daemon"
+                          type="text"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -186,7 +202,11 @@ const AddItem = () => {
                     <FormItem>
                       <FormLabel>Working Directory</FormLabel>
                       <FormControl>
-                        <Input placeholder="Working directory path" type="text" {...field} />
+                        <Input
+                          placeholder="Working directory path"
+                          type="text"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

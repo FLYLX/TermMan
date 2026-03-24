@@ -15,7 +15,9 @@ interface ItemHandlerActionsMenuProps {
   itemHandler: ItemHandlerPublic
 }
 
-export const ItemHandlerActionsMenu = ({ itemHandler }: ItemHandlerActionsMenuProps) => {
+export const ItemHandlerActionsMenu = ({
+  itemHandler,
+}: ItemHandlerActionsMenuProps) => {
   const [open, setOpen] = useState(false)
 
   return (
@@ -26,8 +28,14 @@ export const ItemHandlerActionsMenu = ({ itemHandler }: ItemHandlerActionsMenuPr
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <EditItemHandler itemHandler={itemHandler} onSuccess={() => setOpen(false)} />
-        <DeleteItemHandler id={itemHandler.id} onSuccess={() => setOpen(false)} />
+        <EditItemHandler
+          itemHandler={itemHandler}
+          onSuccess={() => setOpen(false)}
+        />
+        <DeleteItemHandler
+          id={itemHandler.id}
+          onSuccess={() => setOpen(false)}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   )

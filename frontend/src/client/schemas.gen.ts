@@ -124,6 +124,43 @@ export const Body_login_login_access_tokenSchema = {
     title: 'Body_login-login_access_token'
 } as const;
 
+export const Body_skills_create_skill_fileSchema = {
+    properties: {
+        content: {
+            type: 'string',
+            title: 'Content',
+            default: ''
+        }
+    },
+    type: 'object',
+    title: 'Body_skills-create_skill_file'
+} as const;
+
+export const Body_skills_update_skill_fileSchema = {
+    properties: {
+        content: {
+            type: 'string',
+            title: 'Content'
+        }
+    },
+    type: 'object',
+    required: ['content'],
+    title: 'Body_skills-update_skill_file'
+} as const;
+
+export const Body_skills_upload_skill_zipSchema = {
+    properties: {
+        file: {
+            type: 'string',
+            contentMediaType: 'application/octet-stream',
+            title: 'File'
+        }
+    },
+    type: 'object',
+    required: ['file'],
+    title: 'Body_skills-upload_skill_zip'
+} as const;
+
 export const HTTPValidationErrorSchema = {
     properties: {
         detail: {
@@ -622,6 +659,20 @@ export const ItemHandlerSchema = {
             ],
             title: 'Api Url'
         },
+        enabled_skills: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled Skills'
+        },
         id: {
             type: 'string',
             format: 'uuid',
@@ -691,6 +742,20 @@ export const ItemHandlerCreateSchema = {
                 }
             ],
             title: 'Api Url'
+        },
+        enabled_skills: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled Skills'
         }
     },
     type: 'object',
@@ -741,6 +806,20 @@ export const ItemHandlerPublicSchema = {
                 }
             ],
             title: 'Api Url'
+        },
+        enabled_skills: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled Skills'
         },
         id: {
             type: 'string',
@@ -832,6 +911,20 @@ export const ItemHandlerUpdateSchema = {
                 }
             ],
             title: 'Api Url'
+        },
+        enabled_skills: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled Skills'
         }
     },
     type: 'object',
@@ -1389,6 +1482,223 @@ export const PrivateUserCreateSchema = {
     type: 'object',
     required: ['email', 'password', 'full_name'],
     title: 'PrivateUserCreate'
+} as const;
+
+export const SkillCreateBodySchema = {
+    properties: {
+        skill_id: {
+            type: 'string',
+            title: 'Skill Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        description: {
+            type: 'string',
+            title: 'Description',
+            default: ''
+        },
+        category: {
+            type: 'string',
+            title: 'Category',
+            default: 'general'
+        }
+    },
+    type: 'object',
+    required: ['skill_id', 'name'],
+    title: 'SkillCreateBody'
+} as const;
+
+export const SkillDetailSchema = {
+    properties: {
+        skill_id: {
+            type: 'string',
+            title: 'Skill Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
+        category: {
+            type: 'string',
+            title: 'Category'
+        },
+        trigger: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Trigger'
+        },
+        action: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Action'
+        },
+        safety: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Safety'
+        },
+        content: {
+            type: 'string',
+            title: 'Content'
+        },
+        scripts: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Scripts'
+        },
+        templates: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Templates'
+        },
+        resources: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Resources'
+        },
+        examples: {
+            items: {
+                additionalProperties: true,
+                type: 'object'
+            },
+            type: 'array',
+            title: 'Examples'
+        }
+    },
+    type: 'object',
+    required: ['skill_id', 'name', 'description', 'category', 'trigger', 'action', 'safety', 'content', 'scripts', 'templates', 'resources', 'examples'],
+    title: 'SkillDetail'
+} as const;
+
+export const SkillListItemSchema = {
+    properties: {
+        skill_id: {
+            type: 'string',
+            title: 'Skill Id'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
+        category: {
+            type: 'string',
+            title: 'Category'
+        }
+    },
+    type: 'object',
+    required: ['skill_id', 'name', 'description', 'category'],
+    title: 'SkillListItem'
+} as const;
+
+export const SkillUpdateBodySchema = {
+    properties: {
+        name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        category: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Category'
+        },
+        trigger: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Trigger'
+        },
+        action: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Action'
+        },
+        safety: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Safety'
+        }
+    },
+    type: 'object',
+    title: 'SkillUpdateBody'
+} as const;
+
+export const SkillsListResponseSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/SkillListItem'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'SkillsListResponse'
 } as const;
 
 export const TokenSchema = {

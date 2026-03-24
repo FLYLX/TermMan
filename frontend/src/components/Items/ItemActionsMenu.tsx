@@ -10,8 +10,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import DeleteItem from "../Items/DeleteItem"
-import EditItem from "../Items/EditItem"
 import EditInputFilter from "../Items/EditInputFilter"
+import EditItem from "../Items/EditItem"
 import EditOutputFilter from "../Items/EditOutputFilter"
 
 interface ItemActionsMenuProps {

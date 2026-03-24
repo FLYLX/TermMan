@@ -1,10 +1,10 @@
 import {
   type ColumnDef,
+  type ExpandedState,
   flexRender,
   getCoreRowModel,
   getPaginationRowModel,
   useReactTable,
-  type ExpandedState,
 } from "@tanstack/react-table"
 import {
   ChevronDown,
@@ -45,7 +45,7 @@ export function DataTable<TData, TValue>({
   getSubRows,
   subRowsColumns,
 }: DataTableProps<TData, TValue>) {
-  const [expanded, setExpanded] = useState<ExpandedState>({})  
+  const [expanded, setExpanded] = useState<ExpandedState>({})
 
   const table = useReactTable({
     data,
@@ -62,30 +62,30 @@ export function DataTable<TData, TValue>({
   return (
     <div className="flex flex-col gap-4">
       <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id} className="hover:bg-transparent">
-                {getSubRows && (
-                  <TableHead key="expand-header" className="w-[40px] p-0">
-                    {/* Empty header for expand/collapse button */}
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id} className="hover:bg-transparent">
+              {getSubRows && (
+                <TableHead key="expand-header" className="w-[40px] p-0">
+                  {/* Empty header for expand/collapse button */}
+                </TableHead>
+              )}
+              {headerGroup.headers.map((header) => {
+                return (
+                  <TableHead key={header.id}>
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
                   </TableHead>
-                )}
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead key={header.id}>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                    </TableHead>
-                  )
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
+                )
+              })}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
           {table.getRowModel().rows.length ? (
             table.getRowModel().rows.map((row) => (
               <React.Fragment key={row.id}>
@@ -111,29 +111,38 @@ export function DataTable<TData, TValue>({
                   )}
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
                     </TableCell>
                   ))}
                 </TableRow>
-                
+
                 {/* Sub rows */}
-                {row.getIsExpanded() && getSubRows && subRowsColumns && (
+                {row.getIsExpanded() &&
+                  getSubRows &&
+                  subRowsColumns &&
                   (() => {
-                    const subRows = getSubRows(row.original);
+                    const subRows = getSubRows(row.original)
                     return subRows.length > 0 ? (
                       <TableRow>
                         <TableCell colSpan={columns.length + 1}>
                           <div className="pl-6 pt-1 pb-1">
                             <Table className="w-full">
-                      <TableBody>
+                              <TableBody>
                                 {subRows.map((subRow, index) => (
                                   <TableRow key={`${row.id}-sub-${index}`}>
                                     {subRowsColumns.map((column, colIndex) => (
-                                      <TableCell key={`${row.id}-sub-${index}-${colIndex}`}>
-                                      {typeof column.cell === "function"
-                                        ? (column.cell as any)({ row: { original: subRow } })
-                                        : ""}
-                                    </TableCell>
+                                      <TableCell
+                                        key={`${row.id}-sub-${index}-${colIndex}`}
+                                      >
+                                        {typeof column.cell === "function"
+                                          ? (column.cell as any)({
+                                              row: { original: subRow },
+                                            })
+                                          : ""}
+                                      </TableCell>
                                     ))}
                                   </TableRow>
                                 ))}
@@ -142,9 +151,8 @@ export function DataTable<TData, TValue>({
                           </div>
                         </TableCell>
                       </TableRow>
-                    ) : null;
-                  })()
-                )}
+                    ) : null
+                  })()}
               </React.Fragment>
             ))
           ) : (

@@ -5,8 +5,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { type ItemPublic, type ItemUpdate, ItemsService } from "@/client"
-import ItemHandlersList from "./ItemHandlersList"
+import { type ItemPublic, ItemsService, type ItemUpdate } from "@/client"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -18,7 +17,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
-import { Separator } from "@/components/ui/separator"
 import {
   Form,
   FormControl,
@@ -29,8 +27,10 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
+import { Separator } from "@/components/ui/separator"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
+import ItemHandlersList from "./ItemHandlersList"
 
 const formSchema = z.object({
   title: z.string().min(1, { message: "Title is required" }),
@@ -139,7 +139,9 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
               />
 
               <div className="grid gap-2">
-                <h4 className="font-semibold text-sm text-gray-700">Daemon Settings</h4>
+                <h4 className="font-semibold text-sm text-gray-700">
+                  Daemon Settings
+                </h4>
                 <FormField
                   control={form.control}
                   name="socket_host"
@@ -147,7 +149,11 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
                     <FormItem>
                       <FormLabel>IP</FormLabel>
                       <FormControl>
-                        <Input placeholder="IP address" type="text" {...field} />
+                        <Input
+                          placeholder="IP address"
+                          type="text"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -161,7 +167,11 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
                     <FormItem>
                       <FormLabel>Port</FormLabel>
                       <FormControl>
-                        <Input placeholder="Port number" type="number" {...field} />
+                        <Input
+                          placeholder="Port number"
+                          type="number"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -175,7 +185,11 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
                     <FormItem>
                       <FormLabel>Start Command</FormLabel>
                       <FormControl>
-                        <Input placeholder="Command to start the daemon" type="text" {...field} />
+                        <Input
+                          placeholder="Command to start the daemon"
+                          type="text"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -189,7 +203,11 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
                     <FormItem>
                       <FormLabel>Working Directory</FormLabel>
                       <FormControl>
-                        <Input placeholder="Working directory path" type="text" {...field} />
+                        <Input
+                          placeholder="Working directory path"
+                          type="text"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

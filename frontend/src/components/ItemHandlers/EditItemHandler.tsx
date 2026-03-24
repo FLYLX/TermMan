@@ -1,12 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query"
 import { Pencil } from "lucide-react"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { type ItemHandlerPublic, ItemHandlersService } from "@/client"
-import ItemHandlerItemsList from "./ItemHandlerItemsList"
+import { type ItemHandlerPublic, ItemHandlersService, SkillsService } from "@/client"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -18,10 +17,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
-import { Separator } from "@/components/ui/separator"
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -29,14 +28,19 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
+import { Separator } from "@/components/ui/separator"
+import { Checkbox } from "@/components/ui/checkbox"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
+import ItemHandlerItemsList from "./ItemHandlerItemsList"
 
 const formSchema = z.object({
   name: z.string().min(1, { message: "Name is required" }),
   model: z.string().optional(),
   api_key: z.string().optional(),
   api_url: z.string().optional(),
+  enabled_skills: z.array(z.string()).optional(),
 })
 
 type FormData = z.infer<typeof formSchema>
@@ -51,6 +55,14 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
 
+  const { data: skillsData } = useQuery({
+    queryKey: ["skills"],
+    queryFn: () => SkillsService.listSkills({}),
+    enabled: isOpen,
+  })
+
+  const skills = skillsData?.data || []
+
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     mode: "onBlur",
@@ -60,12 +72,16 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
       model: itemHandler.model ?? "",
       api_key: itemHandler.api_key ?? "",
       api_url: itemHandler.api_url ?? "",
+      enabled_skills: itemHandler.enabled_skills ?? [],
     },
   })
 
   const mutation = useMutation({
     mutationFn: (data: FormData) =>
-      ItemHandlersService.updateItemHandler({ id: itemHandler.id, requestBody: data }),
+      ItemHandlersService.updateItemHandler({
+        id: itemHandler.id,
+        requestBody: data,
+      }),
     onSuccess: () => {
       showSuccessToast("ItemHandler updated successfully")
       setIsOpen(false)
@@ -153,6 +169,58 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
                     <FormControl>
                       <Input placeholder="API URL" type="text" {...field} />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="enabled_skills"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Enabled Skills</FormLabel>
+                    <FormDescription>
+                      Select skills to enable for this handler
+                    </FormDescription>
+                    <ScrollArea className="h-32 border rounded p-2">
+                      {skills.length === 0 ? (
+                        <p className="text-sm text-muted-foreground p-2">
+                          No skills available
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {skills.map((skill) => (
+                            <FormItem
+                              key={skill.skill_id}
+                              className="flex flex-row items-start space-x-3 space-y-0"
+                            >
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value?.includes(skill.skill_id)}
+                                  onCheckedChange={(checked) => {
+                                    const currentValue = field.value || []
+                                    if (checked) {
+                                      field.onChange([...currentValue, skill.skill_id])
+                                    } else {
+                                      field.onChange(
+                                        currentValue.filter((v) => v !== skill.skill_id)
+                                      )
+                                    }
+                                  }}
+                                />
+                              </FormControl>
+                              <FormLabel className="text-sm font-normal cursor-pointer">
+                                {skill.name}
+                                <span className="text-muted-foreground ml-1">
+                                  ({skill.skill_id})
+                                </span>
+                              </FormLabel>
+                            </FormItem>
+                          ))}
+                        </div>
+                      )}
+                    </ScrollArea>
                     <FormMessage />
                   </FormItem>
                 )}

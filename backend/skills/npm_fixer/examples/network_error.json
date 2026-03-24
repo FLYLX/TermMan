@@ -1,0 +1,4 @@
+{
+  "input": "npm ERR! code ENOTFOUND\nnpm ERR! errno ENOTFOUND\nnpm ERR! network request to https://registry.npmjs.org failed",
+  "expected_output": "npm cache clean --force && npm install --registry=https://registry.npmmirror.com"
+}

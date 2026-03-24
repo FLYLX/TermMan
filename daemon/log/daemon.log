@@ -1,0 +1,215 @@
+2026-03-24 05:39:58,007 - termman-daemon - INFO - 
+============================================================
+2026-03-24 05:39:58,011 - termman-daemon - INFO - [Disconnect] Socket断开处理: K5orH_LXc7HEgivZ...
+2026-03-24 05:39:58,012 - termman-daemon - INFO - ============================================================
+2026-03-24 05:39:58,012 - termman-daemon - INFO - 
+============================================================
+2026-03-24 05:39:58,012 - termman-daemon - INFO - [DaemonConnPool] Removed BackendMainConnection for daemon=termman_daemon_s...
+2026-03-24 05:39:58,012 - termman-daemon - INFO - ============================================================
+2026-03-24 05:39:58,013 - termman-daemon - INFO -   Backend主连接池: 0 个
+2026-03-24 05:39:58,013 - termman-daemon - INFO -   浏览器终端连接池: 0 个Item
+2026-03-24 05:39:58,013 - termman-daemon - INFO -   Backend Room监听连接池: 0 个
+2026-03-24 05:39:58,013 - termman-daemon - INFO - ============================================================
+
+2026-03-24 05:39:58,014 - termman-daemon - INFO -   类型: Backend主连接
+2026-03-24 05:39:58,014 - termman-daemon - INFO - ============================================================
+
+2026-03-24 05:40:20,921 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-24 05:40:20,922 - termman-daemon - INFO - API Key: ***2024
+2026-03-24 05:40:32,858 - termman-daemon - INFO - [WebSocket] Backend connected: vDAL_djRmbceV3mFAAAB, IP: 127.0.0.1
+2026-03-24 05:40:32,861 - termman-daemon - INFO - 
+============================================================
+2026-03-24 05:40:32,862 - termman-daemon - INFO - [DaemonConnPool] Created BackendMainConnection for daemon=termman_daemon_s...
+2026-03-24 05:40:32,862 - termman-daemon - INFO - ============================================================
+2026-03-24 05:40:32,862 - termman-daemon - INFO -   Backend主连接池: 1 个
+2026-03-24 05:40:32,862 - termman-daemon - INFO -     - termman_daemon_s... | status=disconnected
+2026-03-24 05:40:32,862 - termman-daemon - INFO -   浏览器终端连接池: 0 个Item
+2026-03-24 05:40:32,863 - termman-daemon - INFO -   Backend Room监听连接池: 0 个
+2026-03-24 05:40:32,863 - termman-daemon - INFO - ============================================================
+
+2026-03-24 05:40:32,863 - termman-daemon - INFO - [WebSocket] Backend authenticated: vDAL_djRmbceV3mFAAAB, backend_id: daemon:termman_
+2026-03-24 05:40:32,863 - termman-daemon - INFO - [Daemon] Backend认证成功，发送全量连接池数据: 0 Rooms
+2026-03-24 05:40:42,483 - termman-daemon - INFO - [WebSocket] Backend connected: CWMpz5sB6uP-15C8AAAD, IP: 127.0.0.1
+2026-03-24 05:40:42,484 - termman-daemon - INFO - [WebSocket] Backend daemon:termman_ already connected, disconnecting old connection
+2026-03-24 05:40:42,485 - termman-daemon - INFO - 
+============================================================
+2026-03-24 05:40:42,485 - termman-daemon - INFO - [Disconnect] Socket断开处理: vDAL_djRmbceV3mF...
+2026-03-24 05:40:42,485 - termman-daemon - INFO - ============================================================
+2026-03-24 05:40:42,485 - termman-daemon - INFO - 
+============================================================
+2026-03-24 05:40:42,485 - termman-daemon - INFO - [DaemonConnPool] Removed BackendMainConnection for daemon=termman_daemon_s...
+2026-03-24 05:40:42,486 - termman-daemon - INFO - ============================================================
+2026-03-24 05:40:42,486 - termman-daemon - INFO -   Backend主连接池: 0 个
+2026-03-24 05:40:42,486 - termman-daemon - INFO -   浏览器终端连接池: 0 个Item
+2026-03-24 05:40:42,486 - termman-daemon - INFO -   Backend Room监听连接池: 0 个
+2026-03-24 05:40:42,486 - termman-daemon - INFO - ============================================================
+
+2026-03-24 05:40:42,487 - termman-daemon - INFO -   类型: Backend主连接
+2026-03-24 05:40:42,487 - termman-daemon - INFO - ============================================================
+
+2026-03-24 05:40:42,487 - termman-daemon - INFO - 
+============================================================
+2026-03-24 05:40:42,487 - termman-daemon - INFO - [DaemonConnPool] Created BackendMainConnection for daemon=termman_daemon_s...
+2026-03-24 05:40:42,487 - termman-daemon - INFO - ============================================================
+2026-03-24 05:40:42,487 - termman-daemon - INFO -   Backend主连接池: 1 个
+2026-03-24 05:40:42,488 - termman-daemon - INFO -     - termman_daemon_s... | status=disconnected
+2026-03-24 05:40:42,488 - termman-daemon - INFO -   浏览器终端连接池: 0 个Item
+2026-03-24 05:40:42,488 - termman-daemon - INFO -   Backend Room监听连接池: 0 个
+2026-03-24 05:40:42,488 - termman-daemon - INFO - ============================================================
+
+2026-03-24 05:40:42,488 - termman-daemon - INFO - [WebSocket] Backend authenticated: CWMpz5sB6uP-15C8AAAD, backend_id: daemon:termman_
+2026-03-24 05:40:42,489 - termman-daemon - INFO - [Daemon] Backend认证成功，发送全量连接池数据: 0 Rooms
+2026-03-24 06:18:14,832 - termman-daemon - INFO - [WebSocket] Terminal start: item=d2cde68f-b711-47fb-8864-939b4625af22, user=8af234c6-c373-4dd2-b734-0eec427a0a9d
+2026-03-24 06:18:14,833 - termman-daemon - INFO - [RoomManager] Created room: d2cde68f-b711-47fb-8864-939b4625af22
+2026-03-24 06:18:14,836 - termman-daemon - INFO - [Terminal] PTY started (pid=8), waiting for Backend connection: d2cde68f-b711-47fb-8864-939b4625af22
+2026-03-24 06:18:14,850 - termman-daemon - INFO - [WebSocket] Terminal started: d2cde68f-b711-47fb-8864-939b4625af22
+2026-03-24 06:18:14,858 - termman-daemon - INFO - [WebSocket] Backend connected: vrnhtccUY0aDQgHMAAAF, IP: 127.0.0.1
+2026-03-24 06:18:14,859 - termman-daemon - INFO - [Connect] 终端连接请求: item=d2cde68f-b711-47fb-8864-939b4625af22, user=backend, type=backend
+2026-03-24 06:18:14,860 - termman-daemon - INFO - [DaemonConnPool] Created BackendRoomListenConnection for item=d2cde68f-b711-47fb-8864-939b4625af22 (status=disconnected, waiting for set_connected)
+2026-03-24 06:18:14,860 - termman-daemon - INFO - [BackendRoomListenConnection] item=d2cde68f-b711-47fb-8864-939b4625af22 connected, conn_id=vrnhtccUY0aDQgHMAAAF
+2026-03-24 06:18:14,861 - termman-daemon - INFO - 
+============================================================
+2026-03-24 06:18:14,861 - termman-daemon - INFO - [DaemonConnPool] Backend Room监听连接已建立: item=d2cde68f-b711-47fb-8864-939b4625af22
+2026-03-24 06:18:14,861 - termman-daemon - INFO - ============================================================
+2026-03-24 06:18:14,861 - termman-daemon - INFO -   Backend主连接池: 1 个
+2026-03-24 06:18:14,861 - termman-daemon - INFO -     - termman_daemon_s... | status=connected
+2026-03-24 06:18:14,861 - termman-daemon - INFO -   浏览器终端连接池: 0 个Item
+2026-03-24 06:18:14,862 - termman-daemon - INFO -   Backend Room监听连接池: 1 个
+2026-03-24 06:18:14,862 - termman-daemon - INFO -     - d2cde68f-b711-47fb-8... | status=connected
+2026-03-24 06:18:14,862 - termman-daemon - INFO - ============================================================
+
+2026-03-24 06:18:14,862 - termman-daemon - INFO - [Room d2cde68f-b711-47fb-8864-939b4625af22] Added permanent subscriber: vrnhtccUY0aDQgHM...
+2026-03-24 06:18:14,862 - termman-daemon - INFO - [Room] SID vrnhtccUY0aDQgHM... joined room d2cde68f-b711-47fb-8864-939b4625af22 as backend
+2026-03-24 06:18:14,863 - termman-daemon - INFO - [Connect] 连接成功: type=backend, permanent=1, temporary=0
+2026-03-24 06:18:14,863 - termman-daemon - INFO - [Terminal] Backend connected for item=d2cde68f-b711-47fb-8864-939b4625af22
+2026-03-24 06:18:14,863 - termman-daemon - INFO - [Connect] Notified terminal that Backend connected: d2cde68f-b711-47fb-8864-939b4625af22
+2026-03-24 06:18:14,863 - termman-daemon - INFO - [Terminal] Backend connected, executing commands for item=d2cde68f-b711-47fb-8864-939b4625af22
+2026-03-24 06:18:14,869 - termman-daemon - INFO - [SocketService] Broadcasting to room 'd2cde68f-b711-47fb-8864-939b4625af22': event=stream
+2026-03-24 06:18:14,870 - termman-daemon - INFO - [SocketService] Room info: permanent=1, temporary=0
+2026-03-24 06:18:14,870 - termman-daemon - INFO - [SocketService] Permanent subscribers: [{'sid': 'vrnhtccUY0aDQgHM...', 'type': 'backend', 'user_uuid': 'backend', 'ip': 'unknown'}]
+2026-03-24 06:18:14,870 - termman-daemon - INFO - [SocketService] Broadcast to room 'd2cde68f-b711-47fb-8864-939b4625af22' completed
+2026-03-24 06:18:14,913 - termman-daemon - INFO - [SocketService] Broadcasting to room 'd2cde68f-b711-47fb-8864-939b4625af22': event=stream
+2026-03-24 06:18:14,913 - termman-daemon - INFO - [SocketService] Room info: permanent=1, temporary=0
+2026-03-24 06:18:14,914 - termman-daemon - INFO - [SocketService] Permanent subscribers: [{'sid': 'vrnhtccUY0aDQgHM...', 'type': 'backend', 'user_uuid': 'backend', 'ip': 'unknown'}]
+2026-03-24 06:18:14,914 - termman-daemon - INFO - [SocketService] Broadcast to room 'd2cde68f-b711-47fb-8864-939b4625af22' completed
+2026-03-24 06:18:15,041 - termman-daemon - INFO - 
+============================================================
+2026-03-24 06:18:15,042 - termman-daemon - INFO - [DaemonConnPool] Created BrowserTerminalConnection for item=pending, sid=lxdWYyZsOP1mDkkg...
+2026-03-24 06:18:15,042 - termman-daemon - INFO - ============================================================
+2026-03-24 06:18:15,042 - termman-daemon - INFO -   Backend主连接池: 1 个
+2026-03-24 06:18:15,043 - termman-daemon - INFO -     - termman_daemon_s... | status=connected
+2026-03-24 06:18:15,043 - termman-daemon - INFO -   浏览器终端连接池: 1 个Item
+2026-03-24 06:18:15,043 - termman-daemon - INFO -     - pending... | 1 个连接
+2026-03-24 06:18:15,043 - termman-daemon - INFO -   Backend Room监听连接池: 1 个
+2026-03-24 06:18:15,044 - termman-daemon - INFO -     - d2cde68f-b711-47fb-8... | status=connected
+2026-03-24 06:18:15,044 - termman-daemon - INFO - ============================================================
+
+2026-03-24 06:18:15,044 - termman-daemon - INFO - [WebSocket] Browser connected (pending temp token auth): lxdWYyZsOP1mDkkgAAAH, IP: 127.0.0.1, item=d2cde68f-b711-47fb-8864-939b4625af22
+2026-03-24 06:18:15,061 - termman-daemon - INFO - [Auth] Temp token verified: item=d2cde68f-b711-47fb-8864-939b4625af22, user=8af234c6-c373-4dd2-b734-0eec427a0a9d
+2026-03-24 06:18:15,061 - termman-daemon - INFO - 
+============================================================
+2026-03-24 06:18:15,062 - termman-daemon - INFO - [DaemonConnPool] Removed BrowserTerminalConnection for item=pending, sid=lxdWYyZsOP1mDkkg...
+2026-03-24 06:18:15,062 - termman-daemon - INFO - ============================================================
+2026-03-24 06:18:15,062 - termman-daemon - INFO -   Backend主连接池: 1 个
+2026-03-24 06:18:15,062 - termman-daemon - INFO -     - termman_daemon_s... | status=connected
+2026-03-24 06:18:15,062 - termman-daemon - INFO -   浏览器终端连接池: 0 个Item
+2026-03-24 06:18:15,063 - termman-daemon - INFO -   Backend Room监听连接池: 1 个
+2026-03-24 06:18:15,063 - termman-daemon - INFO -     - d2cde68f-b711-47fb-8... | status=connected
+2026-03-24 06:18:15,063 - termman-daemon - INFO - ============================================================
+
+2026-03-24 06:18:15,063 - termman-daemon - INFO - 
+============================================================
+2026-03-24 06:18:15,063 - termman-daemon - INFO - [DaemonConnPool] Created BrowserTerminalConnection for item=d2cde68f-b711-47fb-8864-939b4625af22, sid=lxdWYyZsOP1mDkkg...
+2026-03-24 06:18:15,064 - termman-daemon - INFO - ============================================================
+2026-03-24 06:18:15,064 - termman-daemon - INFO -   Backend主连接池: 1 个
+2026-03-24 06:18:15,064 - termman-daemon - INFO -     - termman_daemon_s... | status=connected
+2026-03-24 06:18:15,064 - termman-daemon - INFO -   浏览器终端连接池: 1 个Item
+2026-03-24 06:18:15,065 - termman-daemon - INFO -     - d2cde68f-b711-47fb-8... | 1 个连接
+2026-03-24 06:18:15,065 - termman-daemon - INFO -   Backend Room监听连接池: 1 个
+2026-03-24 06:18:15,065 - termman-daemon - INFO -     - d2cde68f-b711-47fb-8... | status=connected
+2026-03-24 06:18:15,065 - termman-daemon - INFO - ============================================================
+
+2026-03-24 06:18:15,066 - termman-daemon - INFO - [Room d2cde68f-b711-47fb-8864-939b4625af22] Added temporary subscriber: lxdWYyZsOP1mDkkg... (user=8af234c6-c373-4dd2-b734-0eec427a0a9d)
+2026-03-24 06:18:15,066 - termman-daemon - INFO - [Room] SID lxdWYyZsOP1mDkkg... joined room d2cde68f-b711-47fb-8864-939b4625af22 as browser
+2026-03-24 06:18:15,066 - termman-daemon - INFO - [WebSocket] Browser authenticated via temp token: lxdWYyZsOP1mDkkgAAAH, user=8af234c6-c373-4dd2-b734-0eec427a0a9d, item=d2cde68f-b711-47fb-8864-939b4625af22
+2026-03-24 06:18:17,375 - termman-daemon - INFO - 
+============================================================
+2026-03-24 06:18:17,375 - termman-daemon - INFO - [Disconnect] Socket断开处理: lxdWYyZsOP1mDkkg...
+2026-03-24 06:18:17,376 - termman-daemon - INFO - ============================================================
+2026-03-24 06:18:17,376 - termman-daemon - INFO - 
+============================================================
+2026-03-24 06:18:17,377 - termman-daemon - INFO - [DaemonConnPool] Removed BrowserTerminalConnection for item=d2cde68f-b711-47fb-8864-939b4625af22, sid=lxdWYyZsOP1mDkkg...
+2026-03-24 06:18:17,377 - termman-daemon - INFO - ============================================================
+2026-03-24 06:18:17,377 - termman-daemon - INFO -   Backend主连接池: 1 个
+2026-03-24 06:18:17,377 - termman-daemon - INFO -     - termman_daemon_s... | status=connected
+2026-03-24 06:18:17,378 - termman-daemon - INFO -   浏览器终端连接池: 0 个Item
+2026-03-24 06:18:17,378 - termman-daemon - INFO -   Backend Room监听连接池: 1 个
+2026-03-24 06:18:17,378 - termman-daemon - INFO -     - d2cde68f-b711-47fb-8... | status=connected
+2026-03-24 06:18:17,378 - termman-daemon - INFO - ============================================================
+
+2026-03-24 06:18:17,378 - termman-daemon - INFO -   类型: Browser终端连接, Item: d2cde68f-b711-47fb-8864-939b4625af22, User: 8af234c6-c373-4dd2-b734-0eec427a0a9d
+2026-03-24 06:18:17,379 - termman-daemon - INFO - [Room d2cde68f-b711-47fb-8864-939b4625af22] Removed temporary subscriber: lxdWYyZsOP1mDkkg... (user=8af234c6-c373-4dd2-b734-0eec427a0a9d)
+2026-03-24 06:18:17,379 - termman-daemon - INFO - [Room] SID lxdWYyZsOP1mDkkg... left room d2cde68f-b711-47fb-8864-939b4625af22
+2026-03-24 06:18:17,379 - termman-daemon - INFO - ============================================================
+
+2026-03-24 06:18:26,608 - termman-daemon - INFO - 
+============================================================
+2026-03-24 06:18:26,608 - termman-daemon - INFO - [DaemonConnPool] Created BrowserTerminalConnection for item=pending, sid=SdYaLvkVJq19AhVN...
+2026-03-24 06:18:26,609 - termman-daemon - INFO - ============================================================
+2026-03-24 06:18:26,609 - termman-daemon - INFO -   Backend主连接池: 1 个
+2026-03-24 06:18:26,609 - termman-daemon - INFO -     - termman_daemon_s... | status=connected
+2026-03-24 06:18:26,609 - termman-daemon - INFO -   浏览器终端连接池: 1 个Item
+2026-03-24 06:18:26,610 - termman-daemon - INFO -     - pending... | 1 个连接
+2026-03-24 06:18:26,610 - termman-daemon - INFO -   Backend Room监听连接池: 1 个
+2026-03-24 06:18:26,610 - termman-daemon - INFO -     - d2cde68f-b711-47fb-8... | status=connected
+2026-03-24 06:18:26,610 - termman-daemon - INFO - ============================================================
+
+2026-03-24 06:18:26,610 - termman-daemon - INFO - [WebSocket] Browser connected (pending temp token auth): SdYaLvkVJq19AhVNAAAJ, IP: 127.0.0.1, item=d2cde68f-b711-47fb-8864-939b4625af22
+2026-03-24 06:18:26,617 - termman-daemon - INFO - [Auth] Temp token verified: item=d2cde68f-b711-47fb-8864-939b4625af22, user=8af234c6-c373-4dd2-b734-0eec427a0a9d
+2026-03-24 06:18:26,617 - termman-daemon - INFO - 
+============================================================
+2026-03-24 06:18:26,618 - termman-daemon - INFO - [DaemonConnPool] Removed BrowserTerminalConnection for item=pending, sid=SdYaLvkVJq19AhVN...
+2026-03-24 06:18:26,618 - termman-daemon - INFO - ============================================================
+2026-03-24 06:18:26,618 - termman-daemon - INFO -   Backend主连接池: 1 个
+2026-03-24 06:18:26,618 - termman-daemon - INFO -     - termman_daemon_s... | status=connected
+2026-03-24 06:18:26,618 - termman-daemon - INFO -   浏览器终端连接池: 0 个Item
+2026-03-24 06:18:26,619 - termman-daemon - INFO -   Backend Room监听连接池: 1 个
+2026-03-24 06:18:26,619 - termman-daemon - INFO -     - d2cde68f-b711-47fb-8... | status=connected
+2026-03-24 06:18:26,619 - termman-daemon - INFO - ============================================================
+
+2026-03-24 06:18:26,619 - termman-daemon - INFO - 
+============================================================
+2026-03-24 06:18:26,619 - termman-daemon - INFO - [DaemonConnPool] Created BrowserTerminalConnection for item=d2cde68f-b711-47fb-8864-939b4625af22, sid=SdYaLvkVJq19AhVN...
+2026-03-24 06:18:26,620 - termman-daemon - INFO - ============================================================
+2026-03-24 06:18:26,620 - termman-daemon - INFO -   Backend主连接池: 1 个
+2026-03-24 06:18:26,620 - termman-daemon - INFO -     - termman_daemon_s... | status=connected
+2026-03-24 06:18:26,620 - termman-daemon - INFO -   浏览器终端连接池: 1 个Item
+2026-03-24 06:18:26,621 - termman-daemon - INFO -     - d2cde68f-b711-47fb-8... | 1 个连接
+2026-03-24 06:18:26,621 - termman-daemon - INFO -   Backend Room监听连接池: 1 个
+2026-03-24 06:18:26,621 - termman-daemon - INFO -     - d2cde68f-b711-47fb-8... | status=connected
+2026-03-24 06:18:26,621 - termman-daemon - INFO - ============================================================
+
+2026-03-24 06:18:26,622 - termman-daemon - INFO - [Room d2cde68f-b711-47fb-8864-939b4625af22] Added temporary subscriber: SdYaLvkVJq19AhVN... (user=8af234c6-c373-4dd2-b734-0eec427a0a9d)
+2026-03-24 06:18:26,622 - termman-daemon - INFO - [Room] SID SdYaLvkVJq19AhVN... joined room d2cde68f-b711-47fb-8864-939b4625af22 as browser
+2026-03-24 06:18:26,622 - termman-daemon - INFO - [WebSocket] Browser authenticated via temp token: SdYaLvkVJq19AhVNAAAJ, user=8af234c6-c373-4dd2-b734-0eec427a0a9d, item=d2cde68f-b711-47fb-8864-939b4625af22
+2026-03-24 06:18:38,269 - termman-daemon - INFO - [Room d2cde68f-b711-47fb-8864-939b4625af22] Removed temporary subscriber: SdYaLvkVJq19AhVN... (user=8af234c6-c373-4dd2-b734-0eec427a0a9d)
+2026-03-24 06:18:38,269 - termman-daemon - INFO - [Room] SID SdYaLvkVJq19AhVN... left room d2cde68f-b711-47fb-8864-939b4625af22
+2026-03-24 06:18:38,270 - termman-daemon - INFO - 
+============================================================
+2026-03-24 06:18:38,270 - termman-daemon - INFO - [Disconnect] Socket断开处理: SdYaLvkVJq19AhVN...
+2026-03-24 06:18:38,270 - termman-daemon - INFO - ============================================================
+2026-03-24 06:18:38,270 - termman-daemon - INFO - 
+============================================================
+2026-03-24 06:18:38,270 - termman-daemon - INFO - [DaemonConnPool] Removed BrowserTerminalConnection for item=d2cde68f-b711-47fb-8864-939b4625af22, sid=SdYaLvkVJq19AhVN...
+2026-03-24 06:18:38,271 - termman-daemon - INFO - ============================================================
+2026-03-24 06:18:38,271 - termman-daemon - INFO -   Backend主连接池: 1 个
+2026-03-24 06:18:38,271 - termman-daemon - INFO -     - termman_daemon_s... | status=connected
+2026-03-24 06:18:38,271 - termman-daemon - INFO -   浏览器终端连接池: 0 个Item
+2026-03-24 06:18:38,271 - termman-daemon - INFO -   Backend Room监听连接池: 1 个
+2026-03-24 06:18:38,272 - termman-daemon - INFO -     - d2cde68f-b711-47fb-8... | status=connected
+2026-03-24 06:18:38,272 - termman-daemon - INFO - ============================================================
+
+2026-03-24 06:18:38,272 - termman-daemon - INFO -   类型: Browser终端连接, Item: d2cde68f-b711-47fb-8864-939b4625af22, User: 8af234c6-c373-4dd2-b734-0eec427a0a9d
+2026-03-24 06:18:38,272 - termman-daemon - INFO - [Room] SID SdYaLvkVJq19AhVN... left room d2cde68f-b711-47fb-8864-939b4625af22
+2026-03-24 06:18:38,272 - termman-daemon - INFO - ============================================================
+

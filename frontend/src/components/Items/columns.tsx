@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils"
 import { ItemActionsMenu } from "./ItemActionsMenu"
 
 type ItemWithExtras = ItemPublic & {
-  connected_users?: Record<string, { user_uuid: string; ip: string }>;
+  connected_users?: Record<string, { user_uuid: string; ip: string }>
 }
 
 function CopyId({ id }: { id: string }) {
@@ -50,14 +50,18 @@ function ItemTitleLink({ item }: { item: ItemWithExtras }) {
 function ConnectedUsers({ item }: { item: ItemWithExtras }) {
   const connectedUsers = item.connected_users || {}
   const userCount = Object.keys(connectedUsers).length
-  
+
   return (
     <div className="flex items-center gap-1.5">
       <Users className="size-4 text-muted-foreground" />
-      <span className={cn(
-        "text-sm",
-        userCount > 0 ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
-      )}>
+      <span
+        className={cn(
+          "text-sm",
+          userCount > 0
+            ? "text-green-600 dark:text-green-400"
+            : "text-muted-foreground",
+        )}
+      >
         {userCount}
       </span>
     </div>
@@ -85,9 +89,7 @@ function StatusBadge({ status }: { status?: string }) {
         </Badge>
       )
     case "stopped":
-      return (
-        <Badge variant="secondary">Stopped</Badge>
-      )
+      return <Badge variant="secondary">Stopped</Badge>
     case "error":
       return (
         <Badge className="border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400">

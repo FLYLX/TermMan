@@ -3,12 +3,12 @@ import type { ItemPublic } from "@/client"
 const ITEM_SNAPSHOT_STORAGE_KEY = "termman:item-detail-snapshots"
 
 type ItemWithExtras = ItemPublic & {
-  daemon_url?: string;
-  daemon_id?: string;
-  daemon_online?: boolean;
-  daemon_status?: string;
-  connected_users?: Record<string, { user_uuid: string; ip: string }>;
-  token?: string;
+  daemon_url?: string
+  daemon_id?: string
+  daemon_online?: boolean
+  daemon_status?: string
+  connected_users?: Record<string, { user_uuid: string; ip: string }>
+  token?: string
 }
 
 type ItemSnapshotMap = Record<string, ItemWithExtras>

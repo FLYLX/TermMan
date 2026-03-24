@@ -6,19 +6,15 @@ import {
   Check,
   ChevronRight,
   Copy,
+  Loader2,
   Plug,
   Send,
   Terminal,
+  Users,
   WifiOff,
-  Loader2,
 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
-
-import {
-  ApiError,
-  type ItemPublic,
-  ItemsService,
-} from "@/client"
+import { ApiError, type ItemPublic, ItemsService } from "@/client"
 import {
   createFallbackItem,
   getStoredItemSnapshot,
@@ -30,20 +26,19 @@ import { Input } from "@/components/ui/input"
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
 import { useTerminalConnection } from "@/hooks/useTerminalConnection"
-import { Users } from "lucide-react"
 
 type ItemWithExtras = ItemPublic & {
-  daemon_url?: string;
-  daemon_id?: string;
-  daemon_online?: boolean;
-  daemon_status?: string;
-  connected_users?: Record<string, { user_uuid: string; ip: string }>;
-  token?: string;
+  daemon_url?: string
+  daemon_id?: string
+  daemon_online?: boolean
+  daemon_status?: string
+  connected_users?: Record<string, { user_uuid: string; ip: string }>
+  token?: string
 }
 
 type ItemsResponse = {
-  data: ItemWithExtras[];
-  count: number;
+  data: ItemWithExtras[]
+  count: number
 }
 
 function getItemQueryOptions(itemId: string) {
@@ -142,9 +137,7 @@ function getStatusBadge(status?: string) {
         </Badge>
       )
     case "stopped":
-      return (
-        <Badge variant="secondary">Stopped</Badge>
-      )
+      return <Badge variant="secondary">Stopped</Badge>
     case "error":
       return (
         <Badge className="border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400">
@@ -201,7 +194,7 @@ function ItemDetailPage({
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight
     }
-  }, [output])
+  }, [])
 
   const handleStartItem = async () => {
     try {
@@ -305,13 +298,28 @@ function ItemDetailPage({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" className="h-10 px-4" onClick={handleStartItem}>
+              <Button
+                type="button"
+                size="sm"
+                className="h-10 px-4"
+                onClick={handleStartItem}
+              >
                 Start
               </Button>
-              <Button type="button" size="sm" className="h-10 px-4" onClick={handleStopItem}>
+              <Button
+                type="button"
+                size="sm"
+                className="h-10 px-4"
+                onClick={handleStopItem}
+              >
                 Stop
               </Button>
-              <Button type="button" size="sm" className="h-10 px-4" onClick={handleRestartItem}>
+              <Button
+                type="button"
+                size="sm"
+                className="h-10 px-4"
+                onClick={handleRestartItem}
+              >
                 Restart
               </Button>
             </div>
@@ -341,7 +349,10 @@ function ItemDetailPage({
             </div>
             <div className="flex flex-wrap gap-2">
               {isConnecting ? (
-                <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                <Badge
+                  variant="outline"
+                  className="border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                >
                   <Loader2 className="size-3 mr-1 animate-spin" />
                   Connecting...
                 </Badge>
@@ -358,7 +369,10 @@ function ItemDetailPage({
                   Error
                 </Badge>
               ) : (
-                <Badge variant="outline" className="border-yellow-500/40 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
+                <Badge
+                  variant="outline"
+                  className="border-yellow-500/40 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"
+                >
                   <WifiOff className="size-3 mr-1" />
                   Disconnected
                 </Badge>
@@ -380,7 +394,9 @@ function ItemDetailPage({
               <div className="max-h-[38rem] min-h-[30rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] flex flex-col items-center justify-center gap-6 px-4 py-8">
                 <Loader2 className="size-12 text-blue-400 animate-spin" />
                 <div className="text-center space-y-2">
-                  <h3 className="text-lg font-semibold text-slate-200">Connecting...</h3>
+                  <h3 className="text-lg font-semibold text-slate-200">
+                    Connecting...
+                  </h3>
                   <p className="text-sm text-slate-400">
                     Establishing connection to terminal...
                   </p>
@@ -388,18 +404,26 @@ function ItemDetailPage({
               </div>
             ) : isConnected ? (
               <>
-                <div 
+                <div
                   ref={outputRef}
                   className="max-h-[38rem] min-h-[30rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] px-4 py-3 font-mono text-[15px] leading-[1.45] tracking-[0.01em]"
                 >
                   {output.length === 0 ? (
-                    <div className="text-lime-400">[System] Terminal connected. Waiting for output...</div>
+                    <div className="text-lime-400">
+                      [System] Terminal connected. Waiting for output...
+                    </div>
                   ) : (
                     output.map((out, idx) => {
-                      const text = out.stdout || ''
-                      const isInput = /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] #/.test(text)
+                      const text = out.stdout || ""
+                      const isInput =
+                        /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] #/.test(text)
                       return (
-                        <span key={idx} className={`whitespace-pre ${isInput ? 'text-green-400' : 'text-blue-300'}`}>{text}</span>
+                        <span
+                          key={idx}
+                          className={`whitespace-pre ${isInput ? "text-green-400" : "text-blue-300"}`}
+                        >
+                          {text}
+                        </span>
                       )
                     })
                   )}
@@ -414,9 +438,9 @@ function ItemDetailPage({
                     className="h-10 border-zinc-700 bg-zinc-900/80 font-mono text-sm text-slate-100 placeholder:text-slate-500"
                   />
                   <div className="flex gap-2">
-                    <Button 
-                      type="button" 
-                      size="sm" 
+                    <Button
+                      type="button"
+                      size="sm"
                       className="h-10 px-4 lg:min-w-24"
                       onClick={handleSendCommand}
                       disabled={!command.trim()}
@@ -424,9 +448,9 @@ function ItemDetailPage({
                       <Send className="size-4" />
                       Send
                     </Button>
-                    <Button 
-                      type="button" 
-                      size="sm" 
+                    <Button
+                      type="button"
+                      size="sm"
                       variant="destructive"
                       className="h-10 px-4"
                       onClick={sendCtrlC}
@@ -443,12 +467,19 @@ function ItemDetailPage({
                   <AlertCircle className="size-12 text-red-400" />
                 </div>
                 <div className="text-center space-y-2">
-                  <h3 className="text-lg font-semibold text-slate-200">Connection Error</h3>
+                  <h3 className="text-lg font-semibold text-slate-200">
+                    Connection Error
+                  </h3>
                   <p className="text-sm text-red-400 max-w-md">
                     {connectionError}
                   </p>
                 </div>
-                <Button variant="outline" size="sm" className="mt-2" onClick={reconnect}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={reconnect}
+                >
                   <Plug className="size-4 mr-2" />
                   Retry Connection
                 </Button>
@@ -459,9 +490,11 @@ function ItemDetailPage({
                   <Plug className="size-12 text-muted-foreground" />
                 </div>
                 <div className="text-center space-y-2">
-                  <h3 className="text-lg font-semibold text-slate-200">Terminal Not Available</h3>
+                  <h3 className="text-lg font-semibold text-slate-200">
+                    Terminal Not Available
+                  </h3>
                   <p className="text-sm text-slate-400 max-w-md">
-                    {item.status !== "running" 
+                    {item.status !== "running"
                       ? "Start the item to connect to its terminal."
                       : "The daemon is offline. Please check the connection."}
                   </p>
@@ -473,21 +506,32 @@ function ItemDetailPage({
                   </div>
                   <div className="flex justify-between">
                     <span>Daemon:</span>
-                    <span className={`font-mono ${item.daemon_online ? 'text-green-400' : 'text-red-400'}`}>
-                      {item.daemon_online ? 'Online' : 'Offline'}
+                    <span
+                      className={`font-mono ${item.daemon_online ? "text-green-400" : "text-red-400"}`}
+                    >
+                      {item.daemon_online ? "Online" : "Offline"}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Host:</span>
-                    <span className="font-mono">{item.socket_host || "localhost"}</span>
+                    <span className="font-mono">
+                      {item.socket_host || "localhost"}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Port:</span>
-                    <span className="font-mono">{item.socket_port || 9000}</span>
+                    <span className="font-mono">
+                      {item.socket_port || 9000}
+                    </span>
                   </div>
                 </div>
                 {item.status === "running" && !item.daemon_online && (
-                  <Button variant="outline" size="sm" className="mt-2" onClick={reconnect}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    onClick={reconnect}
+                  >
                     <Plug className="size-4 mr-2" />
                     Retry Connection
                   </Button>
@@ -506,10 +550,16 @@ function ItemDetailPage({
           <KeyValue label="Owner ID" value={item.owner_id} />
           <KeyValue label="Socket Host" value={item.socket_host} />
           <KeyValue label="Socket Port" value={item.socket_port?.toString()} />
-          <KeyValue label="Socket Connected" value={item.socket_connected ? "Yes" : "No"} />
+          <KeyValue
+            label="Socket Connected"
+            value={item.socket_connected ? "Yes" : "No"}
+          />
           <KeyValue label="Command" value={item.command} />
           <KeyValue label="Working Directory" value={item.working_directory} />
-          <KeyValue label="Log Max Size (MB)" value={item.log_max_size_mb?.toString()} />
+          <KeyValue
+            label="Log Max Size (MB)"
+            value={item.log_max_size_mb?.toString()}
+          />
           <KeyValue label="Daemon URL" value={item.daemon_url} />
           <KeyValue label="Created At" value={formatDate(item.created_at)} />
           <KeyValue label="Updated At" value={formatDate(item.updated_at)} />
@@ -519,35 +569,80 @@ function ItemDetailPage({
       <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
         <h2 className="text-xl font-semibold mb-4">Input Filter Settings</h2>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <KeyValue label="Enabled" value={item.input_filter_enabled ? "Yes" : "No"} />
+          <KeyValue
+            label="Enabled"
+            value={item.input_filter_enabled ? "Yes" : "No"}
+          />
           <KeyValue label="Mode" value={item.input_filter_mode} />
-          <KeyValue label="Noise Patterns" value={item.input_noise_patterns ? JSON.stringify(item.input_noise_patterns) : "-"} />
-          <KeyValue label="Event Patterns" value={item.input_event_patterns ? JSON.stringify(item.input_event_patterns) : "-"} />
+          <KeyValue
+            label="Noise Patterns"
+            value={
+              item.input_noise_patterns
+                ? JSON.stringify(item.input_noise_patterns)
+                : "-"
+            }
+          />
+          <KeyValue
+            label="Event Patterns"
+            value={
+              item.input_event_patterns
+                ? JSON.stringify(item.input_event_patterns)
+                : "-"
+            }
+          />
         </div>
       </section>
 
       <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
         <h2 className="text-xl font-semibold mb-4">Output Filter Settings</h2>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <KeyValue label="Enabled" value={item.output_filter_enabled ? "Yes" : "No"} />
+          <KeyValue
+            label="Enabled"
+            value={item.output_filter_enabled ? "Yes" : "No"}
+          />
           <KeyValue label="Mode" value={item.output_filter_mode} />
-          <KeyValue label="Command List" value={item.output_command_list ? JSON.stringify(item.output_command_list) : "-"} />
-          <KeyValue label="Sensitive Patterns" value={item.output_sensitive_patterns ? JSON.stringify(item.output_sensitive_patterns) : "-"} />
-          <KeyValue label="Rate Limit" value={item.output_rate_limit?.toString()} />
+          <KeyValue
+            label="Command List"
+            value={
+              item.output_command_list
+                ? JSON.stringify(item.output_command_list)
+                : "-"
+            }
+          />
+          <KeyValue
+            label="Sensitive Patterns"
+            value={
+              item.output_sensitive_patterns
+                ? JSON.stringify(item.output_sensitive_patterns)
+                : "-"
+            }
+          />
+          <KeyValue
+            label="Rate Limit"
+            value={item.output_rate_limit?.toString()}
+          />
         </div>
       </section>
 
       <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
         <h2 className="text-xl font-semibold mb-4">Connected Users</h2>
-        {item.connected_users && Object.keys(item.connected_users).length > 0 ? (
+        {item.connected_users &&
+        Object.keys(item.connected_users).length > 0 ? (
           <div className="space-y-2">
             {Object.entries(item.connected_users).map(([sid, userInfo]) => (
-              <div key={sid} className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
+              <div
+                key={sid}
+                className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2"
+              >
                 <div className="flex items-center gap-2">
                   <div className="size-2 rounded-full bg-green-500" />
-                  <span className="font-mono text-sm">{userInfo.user_uuid}</span>
+                  <span className="font-mono text-sm">
+                    {userInfo.user_uuid}
+                  </span>
                 </div>
-                <span className="text-sm text-muted-foreground">{userInfo.ip}</span>
+                <span className="text-sm text-muted-foreground">
+                  {userInfo.ip}
+                </span>
               </div>
             ))}
           </div>

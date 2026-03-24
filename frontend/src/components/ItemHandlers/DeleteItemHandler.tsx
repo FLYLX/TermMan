@@ -55,7 +55,8 @@ const DeleteItemHandler = ({ id, onSuccess }: DeleteItemHandlerProps) => {
         <DialogHeader>
           <DialogTitle>Are you sure?</DialogTitle>
           <DialogDescription>
-            This action cannot be undone. This will permanently delete the item handler.
+            This action cannot be undone. This will permanently delete the item
+            handler.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-3">

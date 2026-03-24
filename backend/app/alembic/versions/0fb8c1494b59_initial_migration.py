@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: ae6929e60dba
+Revision ID: 0fb8c1494b59
 Revises: 
-Create Date: 2026-03-22 20:27:29.508658
+Create Date: 2026-03-24 13:39:01.957129
 
 """
 from alembic import op
@@ -12,7 +12,7 @@ from app.models import SQLiteUUID
 
 
 # revision identifiers, used by Alembic.
-revision = 'ae6929e60dba'
+revision = '0fb8c1494b59'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -65,6 +65,7 @@ def upgrade():
     sa.Column('model', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('api_key', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('api_url', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
+    sa.Column('enabled_skills', sa.JSON(), nullable=True),
     sa.Column('id', SQLiteUUID(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),

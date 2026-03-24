@@ -5,7 +5,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { type ItemPublic, type ItemUpdate, ItemsService } from "@/client"
+import { type ItemPublic, ItemsService, type ItemUpdate } from "@/client"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -64,8 +64,12 @@ const EditOutputFilter = ({ item, onSuccess }: EditOutputFilterProps) => {
     defaultValues: {
       output_filter_enabled: item.output_filter_enabled ?? false,
       output_filter_mode: item.output_filter_mode ?? "blacklist",
-      output_command_list: item.output_command_list ? JSON.stringify(item.output_command_list) : "",
-      output_sensitive_patterns: item.output_sensitive_patterns ? JSON.stringify(item.output_sensitive_patterns) : "",
+      output_command_list: item.output_command_list
+        ? JSON.stringify(item.output_command_list)
+        : "",
+      output_sensitive_patterns: item.output_sensitive_patterns
+        ? JSON.stringify(item.output_sensitive_patterns)
+        : "",
       output_rate_limit: item.output_rate_limit?.toString() ?? "10",
     },
   })
@@ -88,9 +92,15 @@ const EditOutputFilter = ({ item, onSuccess }: EditOutputFilterProps) => {
     const formattedData: ItemUpdate = {
       output_filter_enabled: data.output_filter_enabled,
       output_filter_mode: data.output_filter_mode,
-      output_command_list: data.output_command_list ? JSON.parse(data.output_command_list) : null,
-      output_sensitive_patterns: data.output_sensitive_patterns ? JSON.parse(data.output_sensitive_patterns) : null,
-      output_rate_limit: data.output_rate_limit ? parseInt(data.output_rate_limit, 10) : null,
+      output_command_list: data.output_command_list
+        ? JSON.parse(data.output_command_list)
+        : null,
+      output_sensitive_patterns: data.output_sensitive_patterns
+        ? JSON.parse(data.output_sensitive_patterns)
+        : null,
+      output_rate_limit: data.output_rate_limit
+        ? parseInt(data.output_rate_limit, 10)
+        : null,
     }
     mutation.mutate(formattedData)
   }
@@ -121,7 +131,9 @@ const EditOutputFilter = ({ item, onSuccess }: EditOutputFilterProps) => {
                   <FormItem>
                     <FormLabel>Enable Output Filter</FormLabel>
                     <Select
-                      onValueChange={(value) => field.onChange(value === "true")}
+                      onValueChange={(value) =>
+                        field.onChange(value === "true")
+                      }
                       value={field.value?.toString()}
                     >
                       <FormControl>
@@ -168,7 +180,11 @@ const EditOutputFilter = ({ item, onSuccess }: EditOutputFilterProps) => {
                   <FormItem>
                     <FormLabel>Command Filter List (JSON array)</FormLabel>
                     <FormControl>
-                      <Input placeholder='["rm -rf", "chmod 777", "shutdown"]' type="text" {...field} />
+                      <Input
+                        placeholder='["rm -rf", "chmod 777", "shutdown"]'
+                        type="text"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -182,7 +198,11 @@ const EditOutputFilter = ({ item, onSuccess }: EditOutputFilterProps) => {
                   <FormItem>
                     <FormLabel>Sensitive Patterns (JSON array)</FormLabel>
                     <FormControl>
-                      <Input placeholder='["password", "api_key", "secret"]' type="text" {...field} />
+                      <Input
+                        placeholder='["password", "api_key", "secret"]'
+                        type="text"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

@@ -1,47 +1,59 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Trash2 } from "lucide-react"
 
-import { ItemHandlerAssociationsService, type ItemHandler } from "@/client";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import useCustomToast from "@/hooks/useCustomToast";
-import { handleError } from "@/utils";
+import { type ItemHandler, ItemHandlerAssociationsService } from "@/client"
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import useCustomToast from "@/hooks/useCustomToast"
+import { handleError } from "@/utils"
 
 interface ItemHandlersListProps {
-  itemId: string;
+  itemId: string
 }
 
 const ItemHandlersList = ({ itemId }: ItemHandlersListProps) => {
-  const queryClient = useQueryClient();
-  const { showSuccessToast, showErrorToast } = useCustomToast();
+  const queryClient = useQueryClient()
+  const { showSuccessToast, showErrorToast } = useCustomToast()
 
   const { data: handlers, isLoading: isHandlersLoading } = useQuery({
-    queryFn: () => ItemHandlerAssociationsService.getHandlersForItem({ itemId }),
+    queryFn: () =>
+      ItemHandlerAssociationsService.getHandlersForItem({ itemId }),
     queryKey: [`item-${itemId}-handlers`],
-  });
+  })
 
   const mutation = useMutation({
-    mutationFn: (itemHandlerId: string) => 
-      ItemHandlerAssociationsService.removeItemFromHandler({ itemHandlerId, itemId }),
+    mutationFn: (itemHandlerId: string) =>
+      ItemHandlerAssociationsService.removeItemFromHandler({
+        itemHandlerId,
+        itemId,
+      }),
     onSuccess: () => {
-      showSuccessToast("Item removed from item handler successfully");
+      showSuccessToast("Item removed from item handler successfully")
     },
     onError: handleError.bind(showErrorToast),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: [`item-${itemId}-handlers`] });
-      queryClient.invalidateQueries({ queryKey: ["itemHandlers"] });
-      queryClient.invalidateQueries({ queryKey: ["items"] });
+      queryClient.invalidateQueries({ queryKey: [`item-${itemId}-handlers`] })
+      queryClient.invalidateQueries({ queryKey: ["itemHandlers"] })
+      queryClient.invalidateQueries({ queryKey: ["items"] })
     },
-  });
+  })
 
   const handleRemoveHandler = (itemHandlerId: string) => {
-    if (confirm("Are you sure you want to remove this handler from the item?")) {
-      mutation.mutate(itemHandlerId);
+    if (
+      confirm("Are you sure you want to remove this handler from the item?")
+    ) {
+      mutation.mutate(itemHandlerId)
     }
-  };
+  }
 
   if (isHandlersLoading) {
-    return <div className="p-4 text-muted-foreground">Loading handlers...</div>;
+    return <div className="p-4 text-muted-foreground">Loading handlers...</div>
   }
 
   return (
@@ -52,14 +64,21 @@ const ItemHandlersList = ({ itemId }: ItemHandlersListProps) => {
       </CardHeader>
       <CardContent>
         {handlers?.length === 0 ? (
-          <div className="p-4 text-muted-foreground">No item handlers associated with this item.</div>
+          <div className="p-4 text-muted-foreground">
+            No item handlers associated with this item.
+          </div>
         ) : (
           <div className="space-y-4">
             {handlers?.map((handler: ItemHandler, index) => (
-              <div key={handler.id ?? index} className="flex items-center justify-between p-2 rounded-md hover:bg-muted transition-colors">
+              <div
+                key={handler.id ?? index}
+                className="flex items-center justify-between p-2 rounded-md hover:bg-muted transition-colors"
+              >
                 <div>
                   <div className="font-medium">{handler.name}</div>
-                  <div className="text-sm text-muted-foreground">{handler.model || "No model"}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {handler.model || "No model"}
+                  </div>
                 </div>
                 <Button
                   variant="ghost"
@@ -77,7 +96,7 @@ const ItemHandlersList = ({ itemId }: ItemHandlersListProps) => {
         )}
       </CardContent>
     </Card>
-  );
-};
+  )
+}
 
-export default ItemHandlersList;
+export default ItemHandlersList

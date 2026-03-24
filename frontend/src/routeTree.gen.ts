@@ -15,6 +15,7 @@ import { Route as RecoverPasswordRouteImport } from './routes/recover-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
+import { Route as LayoutSkillsRouteImport } from './routes/_layout/skills'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
 import { Route as LayoutItemHandlersRouteImport } from './routes/_layout/item-handlers'
@@ -49,6 +50,11 @@ const LayoutRoute = LayoutRouteImport.update({
 const LayoutIndexRoute = LayoutIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutSkillsRoute = LayoutSkillsRouteImport.update({
+  id: '/skills',
+  path: '/skills',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
@@ -92,6 +98,7 @@ export interface FileRoutesByFullPath {
   '/item-handlers': typeof LayoutItemHandlersRoute
   '/items': typeof LayoutItemsRouteWithChildren
   '/settings': typeof LayoutSettingsRoute
+  '/skills': typeof LayoutSkillsRoute
   '/items/$itemId': typeof LayoutItemsItemIdRoute
   '/items/': typeof LayoutItemsIndexRoute
 }
@@ -103,6 +110,7 @@ export interface FileRoutesByTo {
   '/admin': typeof LayoutAdminRoute
   '/item-handlers': typeof LayoutItemHandlersRoute
   '/settings': typeof LayoutSettingsRoute
+  '/skills': typeof LayoutSkillsRoute
   '/': typeof LayoutIndexRoute
   '/items/$itemId': typeof LayoutItemsItemIdRoute
   '/items': typeof LayoutItemsIndexRoute
@@ -118,6 +126,7 @@ export interface FileRoutesById {
   '/_layout/item-handlers': typeof LayoutItemHandlersRoute
   '/_layout/items': typeof LayoutItemsRouteWithChildren
   '/_layout/settings': typeof LayoutSettingsRoute
+  '/_layout/skills': typeof LayoutSkillsRoute
   '/_layout/': typeof LayoutIndexRoute
   '/_layout/items/$itemId': typeof LayoutItemsItemIdRoute
   '/_layout/items/': typeof LayoutItemsIndexRoute
@@ -134,6 +143,7 @@ export interface FileRouteTypes {
     | '/item-handlers'
     | '/items'
     | '/settings'
+    | '/skills'
     | '/items/$itemId'
     | '/items/'
   fileRoutesByTo: FileRoutesByTo
@@ -145,6 +155,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/item-handlers'
     | '/settings'
+    | '/skills'
     | '/'
     | '/items/$itemId'
     | '/items'
@@ -159,6 +170,7 @@ export interface FileRouteTypes {
     | '/_layout/item-handlers'
     | '/_layout/items'
     | '/_layout/settings'
+    | '/_layout/skills'
     | '/_layout/'
     | '/_layout/items/$itemId'
     | '/_layout/items/'
@@ -214,6 +226,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof LayoutIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/skills': {
+      id: '/_layout/skills'
+      path: '/skills'
+      fullPath: '/skills'
+      preLoaderRoute: typeof LayoutSkillsRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/settings': {
@@ -280,6 +299,7 @@ interface LayoutRouteChildren {
   LayoutItemHandlersRoute: typeof LayoutItemHandlersRoute
   LayoutItemsRoute: typeof LayoutItemsRouteWithChildren
   LayoutSettingsRoute: typeof LayoutSettingsRoute
+  LayoutSkillsRoute: typeof LayoutSkillsRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
 }
 
@@ -288,6 +308,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutItemHandlersRoute: LayoutItemHandlersRoute,
   LayoutItemsRoute: LayoutItemsRouteWithChildren,
   LayoutSettingsRoute: LayoutSettingsRoute,
+  LayoutSkillsRoute: LayoutSkillsRoute,
   LayoutIndexRoute: LayoutIndexRoute,
 }
 

@@ -5,7 +5,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { type ItemPublic, type ItemUpdate, ItemsService } from "@/client"
+import { type ItemPublic, ItemsService, type ItemUpdate } from "@/client"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -63,8 +63,12 @@ const EditInputFilter = ({ item, onSuccess }: EditInputFilterProps) => {
     defaultValues: {
       input_filter_enabled: item.input_filter_enabled ?? false,
       input_filter_mode: item.input_filter_mode ?? "blacklist",
-      input_noise_patterns: item.input_noise_patterns ? JSON.stringify(item.input_noise_patterns) : "",
-      input_event_patterns: item.input_event_patterns ? JSON.stringify(item.input_event_patterns) : "",
+      input_noise_patterns: item.input_noise_patterns
+        ? JSON.stringify(item.input_noise_patterns)
+        : "",
+      input_event_patterns: item.input_event_patterns
+        ? JSON.stringify(item.input_event_patterns)
+        : "",
     },
   })
 
@@ -86,8 +90,12 @@ const EditInputFilter = ({ item, onSuccess }: EditInputFilterProps) => {
     const formattedData: ItemUpdate = {
       input_filter_enabled: data.input_filter_enabled,
       input_filter_mode: data.input_filter_mode,
-      input_noise_patterns: data.input_noise_patterns ? JSON.parse(data.input_noise_patterns) : null,
-      input_event_patterns: data.input_event_patterns ? JSON.parse(data.input_event_patterns) : null,
+      input_noise_patterns: data.input_noise_patterns
+        ? JSON.parse(data.input_noise_patterns)
+        : null,
+      input_event_patterns: data.input_event_patterns
+        ? JSON.parse(data.input_event_patterns)
+        : null,
     }
     mutation.mutate(formattedData)
   }
@@ -118,7 +126,9 @@ const EditInputFilter = ({ item, onSuccess }: EditInputFilterProps) => {
                   <FormItem>
                     <FormLabel>Enable Input Filter</FormLabel>
                     <Select
-                      onValueChange={(value) => field.onChange(value === "true")}
+                      onValueChange={(value) =>
+                        field.onChange(value === "true")
+                      }
                       value={field.value?.toString()}
                     >
                       <FormControl>
@@ -165,7 +175,11 @@ const EditInputFilter = ({ item, onSuccess }: EditInputFilterProps) => {
                   <FormItem>
                     <FormLabel>Noise Patterns (JSON array)</FormLabel>
                     <FormControl>
-                      <Input placeholder='["^\\s*$", "^\\d+%$"]' type="text" {...field} />
+                      <Input
+                        placeholder='["^\\s*$", "^\\d+%$"]'
+                        type="text"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -179,7 +193,11 @@ const EditInputFilter = ({ item, onSuccess }: EditInputFilterProps) => {
                   <FormItem>
                     <FormLabel>Event Patterns (JSON)</FormLabel>
                     <FormControl>
-                      <Input placeholder='{"error": ["error:"], "warning": ["warning:"]}' type="text" {...field} />
+                      <Input
+                        placeholder='{"error": ["error:"], "warning": ["warning:"]}'
+                        type="text"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

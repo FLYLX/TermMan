@@ -1,12 +1,12 @@
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link2 } from "lucide-react";
-import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Link2 } from "lucide-react"
+import { useState } from "react"
+import { useForm } from "react-hook-form"
+import { z } from "zod"
 
-import { ItemHandlersService, ItemHandlerAssociationsService } from "@/client";
-import { Button } from "@/components/ui/button";
+import { ItemHandlerAssociationsService, ItemHandlersService } from "@/client"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogClose,
@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
+} from "@/components/ui/dialog"
 import {
   Form,
   FormControl,
@@ -24,31 +24,38 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LoadingButton } from "@/components/ui/loading-button";
-import useCustomToast from "@/hooks/useCustomToast";
-import { handleError } from "@/utils";
+} from "@/components/ui/form"
+import { LoadingButton } from "@/components/ui/loading-button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import useCustomToast from "@/hooks/useCustomToast"
+import { handleError } from "@/utils"
 
 interface AddItemToHandlerProps {
-  itemId: string;
+  itemId: string
 }
 
 const formSchema = z.object({
   itemHandlerId: z.string().min(1, { message: "Item Handler is required" }),
-});
+})
 
-type FormData = z.infer<typeof formSchema>;
+type FormData = z.infer<typeof formSchema>
 
 const AddItemToHandler = ({ itemId }: AddItemToHandlerProps) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const queryClient = useQueryClient();
-  const { showSuccessToast, showErrorToast } = useCustomToast();
+  const [isOpen, setIsOpen] = useState(false)
+  const queryClient = useQueryClient()
+  const { showSuccessToast, showErrorToast } = useCustomToast()
 
   const { data: itemHandlers } = useQuery({
-    queryFn: () => ItemHandlersService.readItemHandlers({ skip: 0, limit: 100 }),
+    queryFn: () =>
+      ItemHandlersService.readItemHandlers({ skip: 0, limit: 100 }),
     queryKey: ["itemHandlers"],
-  });
+  })
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -57,7 +64,7 @@ const AddItemToHandler = ({ itemId }: AddItemToHandlerProps) => {
     defaultValues: {
       itemHandlerId: "",
     },
-  });
+  })
 
   const mutation = useMutation({
     mutationFn: (data: FormData) =>
@@ -65,20 +72,20 @@ const AddItemToHandler = ({ itemId }: AddItemToHandlerProps) => {
         requestBody: { item_handler_id: data.itemHandlerId, item_id: itemId },
       }),
     onSuccess: () => {
-      showSuccessToast("Item added to item handler successfully");
-      form.reset();
-      setIsOpen(false);
+      showSuccessToast("Item added to item handler successfully")
+      form.reset()
+      setIsOpen(false)
     },
     onError: handleError.bind(showErrorToast),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["itemHandlers"] });
-      queryClient.invalidateQueries({ queryKey: ["items"] });
+      queryClient.invalidateQueries({ queryKey: ["itemHandlers"] })
+      queryClient.invalidateQueries({ queryKey: ["items"] })
     },
-  });
+  })
 
   const onSubmit = (data: FormData) => {
-    mutation.mutate(data);
-  };
+    mutation.mutate(data)
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -144,7 +151,7 @@ const AddItemToHandler = ({ itemId }: AddItemToHandlerProps) => {
         </Form>
       </DialogContent>
     </Dialog>
-  );
-};
+  )
+}
 
-export default AddItemToHandler;
+export default AddItemToHandler

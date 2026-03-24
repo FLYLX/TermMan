@@ -185,14 +185,11 @@ def init_test_data() -> None:
 def main() -> None:
     logger.info("Starting database initialization")
     
-    # Create tables first
     create_tables()
     
-    # Initialize core data
     logger.info("Creating initial data")
     init()
     
-    # Initialize test data
     logger.info("Creating test data")
     init_test_data()
     
