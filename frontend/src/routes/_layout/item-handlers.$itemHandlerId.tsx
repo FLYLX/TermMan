@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { ArrowLeft, ChevronRight, Settings, Terminal } from "lucide-react"
-import { useState } from "react"
-import { ItemHandlersService, ItemHandlerAssociationsService, SkillsService } from "@/client"
+import { ArrowLeft, ChevronRight, Plug, Settings, Terminal, Zap } from "lucide-react"
+import { useEffect, useMemo, useRef, useState, useCallback } from "react"
+import { ItemHandlersService, ItemHandlerAssociationsService, SkillsService, ItemsService } from "@/client"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,6 +11,17 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import useCustomToast from "@/hooks/useCustomToast"
 
+export const Route = createFileRoute("/_layout/item-handlers/$itemHandlerId")({
+  component: ItemHandlerDetail,
+  head: () => ({
+    meta: [
+      {
+        title: "ItemHandler Detail - TermMan",
+      },
+    ],
+  }),
+})
+
 function getItemHandlerQueryOptions(itemHandlerId: string) {
   return {
     queryFn: () => ItemHandlersService.readItemHandler({ id: itemHandlerId }),
@@ -18,23 +29,9 @@ function getItemHandlerQueryOptions(itemHandlerId: string) {
   }
 }
 
-export const Route = createFileRoute("/_layout/item-handlers/$itemHandlerId")({
-  component: ItemHandlerDetail,
-  head: () => ({
-    meta: [
-      {
-        title: "ItemHandler - TermMan",
-      },
-    ],
-  }),
-})
-
-function formatDate(value?: string | null) {
-  if (!value) return "N/A"
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value))
+function formatDate(dateString: string | undefined | null) {
+  if (!dateString) return "N/A"
+  return new Date(dateString).toLocaleString()
 }
 
 function KeyValue({ label, value }: { label: string; value?: string | null }) {
@@ -46,25 +43,518 @@ function KeyValue({ label, value }: { label: string; value?: string | null }) {
   )
 }
 
+type ItemWithStatus = {
+  id: string
+  title: string
+  description?: string | null
+  status?: string
+}
+
+type NodePosition = {
+  x: number
+  y: number
+}
+
+function ConnectionDiagram({
+  itemHandler,
+  connectedItems,
+  availableItems,
+  onConnect,
+  onDisconnect,
+}: {
+  itemHandler: { id: string; name: string }
+  connectedItems: ItemWithStatus[]
+  availableItems: ItemWithStatus[]
+  onConnect: (itemId: string) => void
+  onDisconnect: (itemId: string) => void
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [dimensions, setDimensions] = useState({ width: 800, height: 500 })
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null)
+  const [pendingLine, setPendingLine] = useState<{ startX: number; startY: number; endX: number; endY: number; sourceId: string | null } | null>(null)
+  const [isDrawingLine, setIsDrawingLine] = useState(false)
+  const [draggingNode, setDraggingNode] = useState<string | null>(null)
+  const [nodePositions, setNodePositions] = useState<Record<string, NodePosition>>({})
+  const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null)
+  const [hasDragged, setHasDragged] = useState(false)
+
+  const connected = useMemo(() => connectedItems || [], [connectedItems])
+  const available = useMemo(() => availableItems || [], [availableItems])
+  const allItems = useMemo(() => [...connected, ...available], [connected, available])
+  const connectedIds = useMemo(() => new Set(connected.map((item) => item.id)), [connected])
+
+  const itemNodeHeight = 40
+  const handlerRadius = 45
+  const padding = 50
+  const calculatedHeight = Math.max(400, allItems.length * 70 + padding * 2 + itemNodeHeight)
+  
+  const getHandlerDefaultY = useCallback(() => {
+    const connectedCount = connected.length
+    if (connectedCount === 0) {
+      return calculatedHeight / 2
+    }
+    const availableHeight = calculatedHeight - padding * 2
+    const spacing = Math.min(70, availableHeight / Math.max(connectedCount, 1))
+    const totalHeight = (connectedCount - 1) * spacing
+    const startY = padding - 20 + (availableHeight - totalHeight) / 2
+    
+    if (connectedCount % 2 === 1) {
+      const middleIndex = Math.floor(connectedCount / 2)
+      return startY + middleIndex * spacing
+    } else {
+      const middleTop = startY + (connectedCount / 2 - 1) * spacing
+      const middleBottom = startY + (connectedCount / 2) * spacing
+      return (middleTop + middleBottom) / 2
+    }
+  }, [connected.length, calculatedHeight, padding])
+  
+  const defaultHandlerPos = useMemo(() => ({ 
+    x: 80, 
+    y: getHandlerDefaultY()
+  }), [getHandlerDefaultY])
+
+  useEffect(() => {
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect()
+        setDimensions({
+          width: Math.max(600, rect.width),
+          height: calculatedHeight,
+        })
+      }
+    }
+    updateDimensions()
+    window.addEventListener("resize", updateDimensions)
+    const timer = setTimeout(updateDimensions, 100)
+    return () => {
+      window.removeEventListener("resize", updateDimensions)
+      clearTimeout(timer)
+    }
+  }, [allItems.length, calculatedHeight])
+
+  useEffect(() => {
+    const itemIds = allItems.map(i => i.id).sort().join(",")
+    const nodeHalfHeight = itemNodeHeight / 2
+    
+    setNodePositions(prev => {
+      const newPositions: Record<string, NodePosition> = {}
+      const availableHeight = calculatedHeight - padding * 2
+      const spacing = Math.min(70, availableHeight / Math.max(allItems.length, 1))
+      const totalHeight = (allItems.length - 1) * spacing
+      const startY = padding - 20 + (availableHeight - totalHeight) / 2
+      
+      allItems.forEach((item, index) => {
+        if (prev[item.id]) {
+          newPositions[item.id] = prev[item.id]
+        } else {
+          const y = Math.max(padding + nodeHalfHeight, Math.min(calculatedHeight - padding - nodeHalfHeight, startY + index * spacing))
+          newPositions[item.id] = { x: 450, y }
+        }
+      })
+      
+      return newPositions
+    })
+  }, [allItems.map(i => i.id).sort().join(","), calculatedHeight])
+
+  const handlerPos = nodePositions["__handler__"] || defaultHandlerPos
+
+  const getItemPos = (itemId: string): NodePosition => {
+    return nodePositions[itemId] || { x: 450, y: Math.max(padding + itemNodeHeight / 2, Math.min(calculatedHeight - padding - itemNodeHeight / 2, calculatedHeight / 2)) }
+  }
+
+  const startDrawingLine = (e: React.MouseEvent, sourceId: string | null, startX: number, startY: number) => {
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (rect) {
+      setIsDrawingLine(true)
+      setPendingLine({
+        startX,
+        startY,
+        endX: e.clientX - rect.left,
+        endY: e.clientY - rect.top,
+        sourceId,
+      })
+    }
+  }
+
+  const handleHandlerClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    if (hasDragged) {
+      return
+    }
+    
+    if (isDrawingLine && pendingLine) {
+      if (pendingLine.sourceId) {
+        if (!connectedIds.has(pendingLine.sourceId)) {
+          onConnect(pendingLine.sourceId)
+        }
+      }
+      setIsDrawingLine(false)
+      setPendingLine(null)
+    } else {
+      startDrawingLine(e, null, handlerPos.x, handlerPos.y)
+    }
+  }
+
+  const handleItemClick = (e: React.MouseEvent, itemId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    if (hasDragged) {
+      return
+    }
+    
+    if (isDrawingLine && pendingLine) {
+      if (pendingLine.sourceId !== itemId) {
+        if (pendingLine.sourceId === null && !connectedIds.has(itemId)) {
+          onConnect(itemId)
+        }
+      }
+      setIsDrawingLine(false)
+      setPendingLine(null)
+    } else {
+      const itemPos = getItemPos(itemId)
+      startDrawingLine(e, itemId, itemPos.x, itemPos.y)
+    }
+  }
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return
+
+    if (dragStartPos && !hasDragged) {
+      const dx = e.clientX - dragStartPos.x
+      const dy = e.clientY - dragStartPos.y
+      if (Math.sqrt(dx * dx + dy * dy) > 5) {
+        setHasDragged(true)
+      }
+    }
+
+    if (isDrawingLine && pendingLine) {
+      setPendingLine({
+        ...pendingLine,
+        endX: e.clientX - rect.left,
+        endY: e.clientY - rect.top,
+      })
+    }
+
+    if (draggingNode && containerRef.current) {
+      const nodeBound = draggingNode === "__handler__" ? handlerRadius : itemNodeHeight / 2
+      const newX = Math.max(nodeBound, Math.min(dimensions.width - nodeBound, e.clientX - rect.left))
+      const newY = Math.max(nodeBound, Math.min(calculatedHeight - nodeBound, e.clientY - rect.top))
+      setNodePositions(prev => ({
+        ...prev,
+        [draggingNode]: { x: newX, y: newY },
+      }))
+    }
+  }
+
+  const handleBackgroundClick = () => {
+    if (isDrawingLine) {
+      setIsDrawingLine(false)
+      setPendingLine(null)
+    }
+  }
+
+  const handleNodeDragStart = (e: React.MouseEvent, nodeId: string) => {
+    if (isDrawingLine) return
+    e.preventDefault()
+    e.stopPropagation()
+    setDraggingNode(nodeId)
+    setDragStartPos({ x: e.clientX, y: e.clientY })
+    setHasDragged(false)
+  }
+
+  const handleMouseUp = () => {
+    setDraggingNode(null)
+    setDragStartPos(null)
+    setTimeout(() => setHasDragged(false), 0)
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative w-full overflow-hidden rounded-xl border bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 select-none"
+      style={{ height: calculatedHeight, minHeight: 400 }}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onClick={handleBackgroundClick}
+    >
+      <svg
+        width="100%"
+        height={calculatedHeight}
+        className="absolute inset-0"
+      >
+        <defs>
+          <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.8">
+              <animate attributeName="stop-color" values="#3b82f6;#8b5cf6;#3b82f6" dur="2s" repeatCount="indefinite" />
+            </stop>
+            <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.8">
+              <animate attributeName="stop-color" values="#8b5cf6;#3b82f6;#8b5cf6" dur="2s" repeatCount="indefinite" />
+            </stop>
+          </linearGradient>
+          <linearGradient id="pendingLineGradient" x1="0%" y1="0%" x2="100%" y2="0%" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#22c55e" stopOpacity="0.8" />
+            <stop offset="100%" stopColor="#10b981" stopOpacity="0.8" />
+          </linearGradient>
+          <radialGradient id="handlerGradient" cx="30%" cy="30%">
+            <stop offset="0%" stopColor="#3b82f6" />
+            <stop offset="100%" stopColor="#1d4ed8" />
+          </radialGradient>
+          <radialGradient id="handlerActiveGradient" cx="30%" cy="30%">
+            <stop offset="0%" stopColor="#22c55e" />
+            <stop offset="100%" stopColor="#16a34a" />
+          </radialGradient>
+          <radialGradient id="itemConnectedGradient" cx="30%" cy="30%">
+            <stop offset="0%" stopColor="#1e40af" />
+            <stop offset="100%" stopColor="#1e3a8a" />
+          </radialGradient>
+          <radialGradient id="itemAvailableGradient" cx="30%" cy="30%">
+            <stop offset="0%" stopColor="#166534" />
+            <stop offset="100%" stopColor="#14532d" />
+          </radialGradient>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+            <feMerge>
+              <feMergeNode in="coloredBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="glowStrong">
+            <feGaussianBlur stdDeviation="5" result="coloredBlur" />
+            <feMerge>
+              <feMergeNode in="coloredBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        <g className="connections">
+          {connected.map((item, index) => {
+            const itemPos = getItemPos(item.id)
+            const isHovered = hoveredItem === item.id
+            const startX = handlerPos.x + handlerRadius
+            const endX = itemPos.x
+            const startY = handlerPos.y
+            const endY = itemPos.y
+            const offset = (index - (connected.length - 1) / 2) * 15
+            const midX = startX + 50 + Math.abs(offset)
+            const pathD = `M ${startX} ${startY} C ${startX + 40} ${startY}, ${midX} ${startY}, ${midX} ${(startY + endY) / 2} S ${midX} ${endY}, ${endX} ${endY}`
+            return (
+              <g key={`line-${item.id}`}>
+                <path
+                  d={pathD}
+                  fill="none"
+                  stroke="transparent"
+                  strokeWidth={10}
+                  className="cursor-pointer"
+                  onDoubleClick={() => onDisconnect(item.id)}
+                  onMouseEnter={() => setHoveredItem(item.id)}
+                  onMouseLeave={() => setHoveredItem(null)}
+                />
+                <path
+                  d={pathD}
+                  fill="none"
+                  stroke={isHovered ? "#ef4444" : "url(#lineGradient)"}
+                  strokeWidth={isHovered ? 3 : 2}
+                  filter="url(#glow)"
+                  pointerEvents="none"
+                />
+                {isHovered && (
+                  <text
+                    x={midX}
+                    y={(startY + endY) / 2 - 10}
+                    textAnchor="middle"
+                    fill="#ef4444"
+                    fontSize="10"
+                    fontWeight="500"
+                    pointerEvents="none"
+                  >
+                    Double-click to disconnect
+                  </text>
+                )}
+                <circle r={3} fill="#8b5cf6" filter="url(#glow)">
+                  <animateMotion
+                    dur="1.5s"
+                    repeatCount="indefinite"
+                    path={pathD}
+                  />
+                </circle>
+              </g>
+            )
+          })}
+        </g>
+
+        {isDrawingLine && pendingLine && (
+          <line
+            x1={pendingLine.startX}
+            y1={pendingLine.startY}
+            x2={pendingLine.endX}
+            y2={pendingLine.endY}
+            stroke="url(#pendingLineGradient)"
+            strokeWidth={3}
+            strokeDasharray="8,4"
+            filter="url(#glow)"
+          />
+        )}
+
+        <g className={isDrawingLine ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}>
+          <circle
+            cx={handlerPos.x}
+            cy={handlerPos.y}
+            r={45}
+            fill={isDrawingLine ? "url(#handlerActiveGradient)" : "url(#handlerGradient)"}
+            stroke={isDrawingLine ? "#22c55e" : "#60a5fa"}
+            strokeWidth={3}
+            filter="url(#glowStrong)"
+            onClick={handleHandlerClick}
+            onMouseDown={(e) => !isDrawingLine && handleNodeDragStart(e, "__handler__")}
+          />
+          <text
+            x={handlerPos.x}
+            y={handlerPos.y - 8}
+            textAnchor="middle"
+            fill="white"
+            fontSize="11"
+            fontWeight="bold"
+            pointerEvents="none"
+          >
+            {itemHandler.name.length > 10 ? itemHandler.name.slice(0, 10) + "..." : itemHandler.name}
+          </text>
+          <text
+            x={handlerPos.x}
+            y={handlerPos.y + 8}
+            textAnchor="middle"
+            fill="#bfdbfe"
+            fontSize="9"
+            pointerEvents="none"
+          >
+            Handler
+          </text>
+          <text
+            x={handlerPos.x}
+            y={handlerPos.y + 22}
+            textAnchor="middle"
+            fill={isDrawingLine ? "#86efac" : "#93c5fd"}
+            fontSize="8"
+            pointerEvents="none"
+          >
+            {isDrawingLine ? "Click item to connect" : `${connected.length} connected`}
+          </text>
+        </g>
+
+        <g className="item-nodes">
+          {allItems.map((item) => {
+            const itemPos = getItemPos(item.id)
+            const isConnected = connectedIds.has(item.id)
+            const isHovered = hoveredItem === item.id
+
+            return (
+              <g
+                key={item.id}
+                className={isDrawingLine && !isConnected ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}
+                onMouseEnter={() => setHoveredItem(item.id)}
+                onMouseLeave={() => setHoveredItem(null)}
+              >
+                <rect
+                  x={itemPos.x - 70}
+                  y={itemPos.y - 20}
+                  width={140}
+                  height={40}
+                  rx={8}
+                  fill={isConnected ? "url(#itemConnectedGradient)" : "url(#itemAvailableGradient)"}
+                  stroke={isConnected ? "#3b82f6" : isDrawingLine ? "#22c55e" : "#365314"}
+                  strokeWidth={isHovered ? 2 : 1}
+                  filter={isHovered ? "url(#glowStrong)" : "url(#glow)"}
+                  onClick={(e) => handleItemClick(e, item.id)}
+                  onMouseDown={(e) => !isDrawingLine && handleNodeDragStart(e, item.id)}
+                />
+                <circle
+                  cx={itemPos.x - 55}
+                  cy={itemPos.y}
+                  r={5}
+                  fill={item.status === "running" ? "#22c55e" : "#64748b"}
+                  pointerEvents="none"
+                />
+                <text
+                  x={itemPos.x - 45}
+                  y={itemPos.y - 4}
+                  fill="white"
+                  fontSize="10"
+                  fontWeight="500"
+                  pointerEvents="none"
+                >
+                  {item.title.length > 12 ? item.title.slice(0, 12) + "..." : item.title}
+                </text>
+                <text
+                  x={itemPos.x - 45}
+                  y={itemPos.y + 8}
+                  fill={isConnected ? "#93c5fd" : "#86efac"}
+                  fontSize="8"
+                  pointerEvents="none"
+                >
+                  {isConnected ? "Connected" : isDrawingLine ? "Click to connect" : "Click to draw line"}
+                </text>
+              </g>
+            )
+          })}
+        </g>
+      </svg>
+
+      <div className="absolute top-4 left-4 flex items-center gap-2">
+        <Badge variant="outline" className="bg-blue-500/20 border-blue-500/50 text-blue-300">
+          {connected.length} Connected
+        </Badge>
+        <Badge variant="outline" className="bg-green-500/20 border-green-500/50 text-green-300">
+          {available.length} Available
+        </Badge>
+      </div>
+
+      <div className="absolute bottom-4 left-4 text-xs text-slate-500">
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> Running
+        </span>
+        <span className="flex items-center gap-1 mt-1">
+          <span className="inline-block w-2 h-2 rounded-full bg-slate-500" /> Stopped
+        </span>
+      </div>
+    </div>
+  )
+}
+
 function ItemHandlerDetail() {
   const { itemHandlerId } = Route.useParams()
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const [isSaving, setIsSaving] = useState(false)
+  const [connectingItemId, setConnectingItemId] = useState<string | null>(null)
 
   const { data: itemHandler, isLoading } = useQuery({
     ...getItemHandlerQueryOptions(itemHandlerId),
   })
 
-  const { data: items } = useQuery({
+  const { data: connectedItems } = useQuery({
     queryFn: () => ItemHandlerAssociationsService.getItemsForHandler({ itemHandlerId }),
     queryKey: ["itemHandler-items", itemHandlerId],
+  })
+
+  const { data: allItemsData } = useQuery({
+    queryFn: () => ItemsService.readItems(),
+    queryKey: ["items"],
   })
 
   const { data: skillsData } = useQuery({
     queryKey: ["skills"],
     queryFn: () => SkillsService.listSkills({}),
   })
+
+  const allItems = (allItemsData as any)?.data || []
+  const connectedItemsList = (connectedItems as any[]) || []
+  const connectedItemIds = new Set(connectedItemsList.map((item: any) => item.id))
+  const availableItems = allItems.filter((item: any) => !connectedItemIds.has(item.id))
 
   const skills = skillsData?.data || []
   const enabledSkills = (itemHandler as any)?.enabled_skills ?? []
@@ -120,6 +610,39 @@ function ItemHandlerDetail() {
       setEditForm({ ...editForm, enabled_skills: current.filter((s) => s !== skillId) })
     } else {
       setEditForm({ ...editForm, enabled_skills: [...current, skillId] })
+    }
+  }
+
+  const handleConnect = async (itemId: string) => {
+    setConnectingItemId(itemId)
+    try {
+      await ItemHandlerAssociationsService.addItemToHandler({
+        requestBody: {
+          item_handler_id: itemHandlerId,
+          item_id: itemId,
+        },
+      })
+      showSuccessToast("Item connected successfully")
+      queryClient.invalidateQueries({ queryKey: ["itemHandler-items", itemHandlerId] })
+      queryClient.invalidateQueries({ queryKey: ["items"] })
+    } catch (error) {
+      showErrorToast("Failed to connect item")
+    } finally {
+      setConnectingItemId(null)
+    }
+  }
+
+  const handleDisconnect = async (itemId: string) => {
+    try {
+      await ItemHandlerAssociationsService.removeItemFromHandler({
+        itemHandlerId: itemHandlerId,
+        itemId: itemId,
+      })
+      showSuccessToast("Item disconnected")
+      queryClient.invalidateQueries({ queryKey: ["itemHandler-items", itemHandlerId] })
+      queryClient.invalidateQueries({ queryKey: ["items"] })
+    } catch (error) {
+      showErrorToast("Failed to disconnect item")
     }
   }
 
@@ -199,6 +722,27 @@ function ItemHandlerDetail() {
         </div>
       </section>
 
+      <Card className="overflow-hidden">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="size-5 text-yellow-500" />
+            Connection Diagram
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Visual representation of items managed by this handler
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ConnectionDiagram
+            itemHandler={itemHandler}
+            connectedItems={connectedItemsList}
+            availableItems={availableItems}
+            onConnect={handleConnect}
+            onDisconnect={handleDisconnect}
+          />
+        </CardContent>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -256,45 +800,37 @@ function ItemHandlerDetail() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Enabled Skills ({enabledSkills.length})</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Terminal className="size-5" />
+              Enabled Skills
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {isEditing ? (
-              <ScrollArea className="h-64 border rounded p-2">
-                {skills.length === 0 ? (
-                  <p className="text-sm text-muted-foreground p-2">
-                    No skills available
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {skills.map((skill) => (
-                      <div
-                        key={skill.skill_id}
-                        className="flex flex-row items-start space-x-3 space-y-0 p-2 rounded hover:bg-muted"
-                      >
+              <ScrollArea className="h-64">
+                <div className="space-y-3">
+                  {skills.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No skills available</p>
+                  ) : (
+                    skills.map((skill: any) => (
+                      <div key={skill.skill_id} className="flex items-center space-x-2">
                         <Checkbox
+                          id={skill.skill_id}
                           checked={editForm.enabled_skills.includes(skill.skill_id)}
                           onCheckedChange={() => toggleSkill(skill.skill_id)}
                         />
-                        <div className="flex-1">
-                          <label className="text-sm font-medium cursor-pointer">
-                            {skill.name}
-                          </label>
-                          <p className="text-xs text-muted-foreground">
-                            {skill.skill_id} - {skill.description || "No description"}
-                          </p>
-                        </div>
+                        <label htmlFor={skill.skill_id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                          {skill.name}
+                        </label>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    ))
+                  )}
+                </div>
               </ScrollArea>
             ) : (
               <ScrollArea className="h-64">
                 {enabledSkills.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No skills enabled
-                  </p>
+                  <p className="text-sm text-muted-foreground">No skills enabled</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {enabledSkills.map((skillId: string) => {
@@ -312,47 +848,6 @@ function ItemHandlerDetail() {
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Associated Items ({items?.length || 0})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!items || items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No items associated with this handler
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {items.map((item: any) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between p-3 border rounded-lg"
-                >
-                  <div className="flex items-center gap-3">
-                    <Terminal className="size-4 text-muted-foreground" />
-                    <div>
-                      <Link
-                        to="/items/$itemId"
-                        params={{ itemId: item.id }}
-                        className="font-medium hover:underline"
-                      >
-                        {item.title}
-                      </Link>
-                      <p className="text-xs text-muted-foreground">
-                        {item.description || "No description"}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge variant={item.status === "running" ? "default" : "secondary"}>
-                    {item.status}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   )
 }

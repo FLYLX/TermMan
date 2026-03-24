@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   ChevronDown,
   ChevronRight,
+  Plug,
   RefreshCw,
   Shield,
   Trash2,
@@ -9,8 +10,9 @@ import {
 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
-import { ItemsService } from "@/client/sdk.gen"
+import { ItemsService, ItemHandlerAssociationsService } from "@/client/sdk.gen"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -394,6 +396,25 @@ function ItemCard({
   showOwner?: boolean
 }) {
   const subscribers = item.subscribers ?? []
+  const [handlers, setHandlers] = useState<any[]>([])
+  const [loadingHandlers, setLoadingHandlers] = useState(false)
+
+  useEffect(() => {
+    const fetchHandlers = async () => {
+      if (expanded && item.id) {
+        setLoadingHandlers(true)
+        try {
+          const result = await ItemHandlerAssociationsService.getHandlersForItem({ itemId: item.id })
+          setHandlers(result || [])
+        } catch (error) {
+          console.error("Failed to fetch handlers:", error)
+        } finally {
+          setLoadingHandlers(false)
+        }
+      }
+    }
+    fetchHandlers()
+  }, [expanded, item.id])
 
   return (
     <div className="border-b last:border-b-0 ml-4">
@@ -408,14 +429,28 @@ function ItemCard({
             <ChevronRight className="h-5 w-5 mr-2" />
           )}
           <div>
-            <Link
-              to="/items/$itemId"
-              params={{ itemId: item.id }}
-              className="font-medium hover:text-blue-600 hover:underline"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {item.title}
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                to="/items/$itemId"
+                params={{ itemId: item.id }}
+                className="font-medium hover:text-blue-600 hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {item.title}
+              </Link>
+              {handlers.length > 0 && (
+                <Link
+                  to="/item-handlers/$itemHandlerId"
+                  params={{ itemHandlerId: handlers[0].id }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Badge variant="outline" className="text-xs gap-1 cursor-pointer hover:bg-primary/10">
+                    <Plug className="size-3" />
+                    {handlers[0].name}
+                  </Badge>
+                </Link>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground">
               {item.description || "No description"}
             </p>
@@ -443,7 +478,33 @@ function ItemCard({
       </div>
 
       {expanded && (
-        <div className="p-4 bg-muted/50">
+        <div className="p-4 bg-muted/50 space-y-4">
+          {handlers.length > 0 && (
+            <div>
+              <h5 className="font-medium text-sm mb-2 flex items-center gap-1">
+                <Plug className="size-4" />
+                Managed by:
+              </h5>
+              <div className="flex flex-wrap gap-2">
+                {handlers.map((handler) => (
+                  <Link
+                    key={handler.id}
+                    to="/item-handlers/$itemHandlerId"
+                    params={{ itemHandlerId: handler.id }}
+                  >
+                    <Badge variant="secondary" className="cursor-pointer hover:bg-primary/20">
+                      {handler.name}
+                    </Badge>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {loadingHandlers ? (
+            <p className="text-sm text-muted-foreground">Loading handlers...</p>
+          ) : null}
+
           {subscribers.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No users connected to this item
