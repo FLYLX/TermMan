@@ -73,6 +73,7 @@ services:
     # TODO: remove once coverage is done locally
     volumes:
       - ./backend/htmlcov:/app/backend/htmlcov
+      - ./backend/skills:/app/backend/skills
     environment:
       SMTP_HOST: "mailcatcher"
       SMTP_PORT: "1025"

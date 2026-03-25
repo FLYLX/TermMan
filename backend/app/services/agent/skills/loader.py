@@ -42,12 +42,16 @@ class SkillLoader:
             content = skill_file.read_text(encoding="utf-8")
             metadata = self._parse_frontmatter(content)
 
-            skill_id = metadata.get("skill_id", skill_path.name)
+            skill_id = str(metadata.get("skill_id", skill_path.name))
+            name = metadata.get("name", skill_id)
+            description = metadata.get("description", "")
+            category = metadata.get("category", "general")
+            
             skill = SkillDefinition(
                 skill_id=skill_id,
-                name=metadata.get("name", skill_id),
-                description=metadata.get("description", ""),
-                category=metadata.get("category", "general"),
+                name=str(name) if name is not None else skill_id,
+                description=str(description) if description is not None else "",
+                category=str(category) if category is not None else "general",
                 content=content,
             )
 

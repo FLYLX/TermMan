@@ -28,6 +28,7 @@ services:
     volumes:
       - backend-db:/app/backend
       - ./backend/app/services/log:/app/backend/app/services/log
+      - ./backend/skills:/app/backend/skills
     depends_on:
       daemon:
         condition: service_started
@@ -59,6 +60,7 @@ services:
     volumes:
       - backend-db:/app/backend
       - ./backend/app/services/log:/app/backend/app/services/log
+      - ./backend/skills:/app/backend/skills
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/utils/health-check/"]

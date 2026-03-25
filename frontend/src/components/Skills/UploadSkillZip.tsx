@@ -55,9 +55,8 @@ export function UploadSkillZip() {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline">
-          <Upload className="h-4 w-4 mr-2" />
-          Upload Zip
+        <Button variant="ghost" size="icon" title="Upload Zip">
+          <Upload className="h-4 w-4" />
         </Button>
       </DialogTrigger>
       <DialogContent>
