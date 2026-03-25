@@ -1,12 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { ArrowLeft, ChevronRight, Plug, Settings, Terminal, Zap } from "lucide-react"
+import { ArrowLeft, ChevronRight, GripVertical, Loader2, Search, Settings, Terminal, X, Zap } from "lucide-react"
 import { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import { ItemHandlersService, ItemHandlerAssociationsService, SkillsService, ItemsService } from "@/client"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import useCustomToast from "@/hooks/useCustomToast"
@@ -135,6 +134,217 @@ function ItemWithHandlers({
   )
 }
 
+function SkillSelector({
+  allSkills,
+  enabledSkills,
+  onSkillToggle,
+}: {
+  allSkills: any[]
+  enabledSkills: string[]
+  onSkillToggle: (skillId: string, enable: boolean) => Promise<void>
+}) {
+  const [searchQuery, setSearchQuery] = useState("")
+  const [draggedSkill, setDraggedSkill] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<"enabled" | "available" | null>(null)
+  const [pendingSkill, setPendingSkill] = useState<string | null>(null)
+
+  const enabledSkillsList = useMemo(() => {
+    return allSkills.filter((s) => enabledSkills.includes(s.skill_id))
+  }, [allSkills, enabledSkills])
+
+  const availableSkillsList = useMemo(() => {
+    return allSkills.filter((s) => !enabledSkills.includes(s.skill_id))
+  }, [allSkills, enabledSkills])
+
+  const filteredAvailableSkills = useMemo(() => {
+    if (!searchQuery) return availableSkillsList
+    return availableSkillsList.filter(
+      (s) =>
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  }, [availableSkillsList, searchQuery])
+
+  const handleDragStart = (e: React.DragEvent, skillId: string) => {
+    setDraggedSkill(skillId)
+    e.dataTransfer.effectAllowed = "move"
+  }
+
+  const handleDragOver = (e: React.DragEvent, target: "enabled" | "available") => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    setDropTarget(target)
+  }
+
+  const handleDragLeave = () => {
+    setDropTarget(null)
+  }
+
+  const handleDrop = async (e: React.DragEvent, target: "enabled" | "available") => {
+    e.preventDefault()
+    setDropTarget(null)
+    
+    if (!draggedSkill) return
+
+    const isCurrentlyEnabled = enabledSkills.includes(draggedSkill)
+    
+    if (target === "enabled" && !isCurrentlyEnabled) {
+      setPendingSkill(draggedSkill)
+      await onSkillToggle(draggedSkill, true)
+      setPendingSkill(null)
+    } else if (target === "available" && isCurrentlyEnabled) {
+      setPendingSkill(draggedSkill)
+      await onSkillToggle(draggedSkill, false)
+      setPendingSkill(null)
+    }
+    
+    setDraggedSkill(null)
+  }
+
+  const handleDragEnd = () => {
+    setDraggedSkill(null)
+    setDropTarget(null)
+  }
+
+  const removeSkill = async (skillId: string) => {
+    setPendingSkill(skillId)
+    await onSkillToggle(skillId, false)
+    setPendingSkill(null)
+  }
+
+  const addSkill = async (skillId: string) => {
+    if (!enabledSkills.includes(skillId)) {
+      setPendingSkill(skillId)
+      await onSkillToggle(skillId, true)
+      setPendingSkill(null)
+    }
+  }
+
+  return (
+    <div className="flex gap-4 h-80">
+      <div
+        className={`flex-1 flex flex-col border rounded-lg overflow-hidden transition-colors ${
+          dropTarget === "enabled" ? "border-green-500 bg-green-50/50 dark:bg-green-950/50" : "border-border"
+        }`}
+        onDragOver={(e) => handleDragOver(e, "enabled")}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, "enabled")}
+      >
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+          <div className="flex items-center gap-2">
+            <Zap className="size-4 text-green-500" />
+            <span className="text-sm font-medium">已启用 ({enabledSkillsList.length})</span>
+          </div>
+        </div>
+        <ScrollArea className="flex-1">
+          {enabledSkillsList.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
+              <GripVertical className="size-8 mb-2 opacity-30" />
+              <p className="text-sm text-center">拖拽技能到此处启用</p>
+            </div>
+          ) : (
+            <div className="p-2 space-y-1">
+              {enabledSkillsList.map((skill) => (
+                <div
+                  key={skill.skill_id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, skill.skill_id)}
+                  onDragEnd={handleDragEnd}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md bg-green-100 dark:bg-green-900/30 border border-green-200 dark:border-green-800 cursor-grab active:cursor-grabbing transition-all ${
+                    draggedSkill === skill.skill_id ? "opacity-50 scale-95" : ""
+                  } ${pendingSkill === skill.skill_id ? "opacity-60" : ""}`}
+                >
+                  <GripVertical className="size-4 text-green-600 dark:text-green-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-green-700 dark:text-green-300 truncate">{skill.name}</div>
+                    {skill.description && (
+                      <div className="text-xs text-green-600/70 dark:text-green-400/70 truncate">{skill.description}</div>
+                    )}
+                  </div>
+                  {pendingSkill === skill.skill_id ? (
+                    <Loader2 className="size-4 text-green-600 dark:text-green-400 animate-spin" />
+                  ) : (
+                    <button
+                      onClick={() => removeSkill(skill.skill_id)}
+                      className="p-1 hover:bg-green-200 dark:hover:bg-green-800 rounded transition-colors"
+                    >
+                      <X className="size-3 text-green-600 dark:text-green-400" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </ScrollArea>
+      </div>
+
+      <div
+        className={`flex-1 flex flex-col border rounded-lg overflow-hidden transition-colors ${
+          dropTarget === "available" ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/50" : "border-border"
+        }`}
+        onDragOver={(e) => handleDragOver(e, "available")}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, "available")}
+      >
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+          <div className="flex items-center gap-2">
+            <Terminal className="size-4 text-blue-500" />
+            <span className="text-sm font-medium">可用技能 ({availableSkillsList.length})</span>
+          </div>
+        </div>
+        <div className="px-3 py-2 border-b">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <Input
+              placeholder="搜索技能..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 h-8"
+            />
+          </div>
+        </div>
+        <ScrollArea className="flex-1">
+          {filteredAvailableSkills.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
+              <Search className="size-8 mb-2 opacity-30" />
+              <p className="text-sm text-center">
+                {searchQuery ? "未找到匹配的技能" : "所有技能已启用"}
+              </p>
+            </div>
+          ) : (
+            <div className="p-2 space-y-1">
+              {filteredAvailableSkills.map((skill) => (
+                <div
+                  key={skill.skill_id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, skill.skill_id)}
+                  onDragEnd={handleDragEnd}
+                  onClick={() => addSkill(skill.skill_id)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md bg-muted/50 border border-border cursor-grab active:cursor-grabbing hover:bg-muted transition-all ${
+                    draggedSkill === skill.skill_id ? "opacity-50 scale-95" : ""
+                  } ${pendingSkill === skill.skill_id ? "opacity-60" : ""}`}
+                >
+                  {pendingSkill === skill.skill_id ? (
+                    <Loader2 className="size-4 text-muted-foreground shrink-0 animate-spin" />
+                  ) : (
+                    <GripVertical className="size-4 text-muted-foreground shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">{skill.name}</div>
+                    {skill.description && (
+                      <div className="text-xs text-muted-foreground truncate">{skill.description}</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </ScrollArea>
+      </div>
+    </div>
+  )
+}
+
 function ConnectionDiagram({
   itemHandler,
   connectedItems,
@@ -213,7 +423,6 @@ function ConnectionDiagram({
   }, [allItems.length, calculatedHeight])
 
   useEffect(() => {
-    const itemIds = allItems.map(i => i.id).sort().join(",")
     const nodeHalfHeight = itemNodeHeight / 2
     
     setNodePositions(prev => {
@@ -606,7 +815,6 @@ function ItemHandlerDetail() {
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const [isSaving, setIsSaving] = useState(false)
-  const [connectingItemId, setConnectingItemId] = useState<string | null>(null)
 
   const { data: itemHandler, isLoading } = useQuery({
     ...getItemHandlerQueryOptions(itemHandlerId),
@@ -642,8 +850,19 @@ function ItemHandlerDetail() {
     api_url: "",
     enabled_skills: [] as string[],
   })
-
   const [isEditing, setIsEditing] = useState(false)
+
+  useEffect(() => {
+    if (itemHandler) {
+      setEditForm({
+        name: itemHandler.name,
+        model: itemHandler.model ?? "",
+        api_key: itemHandler.api_key ?? "",
+        api_url: itemHandler.api_url ?? "",
+        enabled_skills: (itemHandler as any).enabled_skills ?? [],
+      })
+    }
+  }, [itemHandler])
 
   const startEditing = () => {
     if (itemHandler) {
@@ -680,17 +899,23 @@ function ItemHandlerDetail() {
     }
   }
 
-  const toggleSkill = (skillId: string) => {
-    const current = editForm.enabled_skills
-    if (current.includes(skillId)) {
-      setEditForm({ ...editForm, enabled_skills: current.filter((s) => s !== skillId) })
-    } else {
-      setEditForm({ ...editForm, enabled_skills: [...current, skillId] })
+  const handleSkillToggle = async (skillId: string, enable: boolean) => {
+    try {
+      const newSkills = enable
+        ? [...enabledSkills, skillId]
+        : enabledSkills.filter((id: string) => id !== skillId)
+      await ItemHandlersService.updateItemHandler({
+        id: itemHandlerId,
+        requestBody: { enabled_skills: newSkills },
+      })
+      showSuccessToast(enable ? "Skill enabled" : "Skill disabled")
+      queryClient.invalidateQueries({ queryKey: ["itemHandler", itemHandlerId] })
+    } catch (error) {
+      showErrorToast("Failed to update skill")
     }
   }
 
   const handleConnect = async (itemId: string) => {
-    setConnectingItemId(itemId)
     try {
       await ItemHandlerAssociationsService.addItemToHandler({
         requestBody: {
@@ -703,8 +928,6 @@ function ItemHandlerDetail() {
       queryClient.invalidateQueries({ queryKey: ["items"] })
     } catch (error) {
       showErrorToast("Failed to connect item")
-    } finally {
-      setConnectingItemId(null)
     }
   }
 
@@ -779,21 +1002,6 @@ function ItemHandlerDetail() {
                 </div>
               </div>
             </div>
-
-            <div className="flex flex-wrap gap-2">
-              {!isEditing ? (
-                <Button onClick={startEditing}>Edit</Button>
-              ) : (
-                <>
-                  <Button variant="outline" onClick={cancelEditing}>
-                    Cancel
-                  </Button>
-                  <Button onClick={saveChanges} disabled={isSaving}>
-                    {isSaving ? "Saving..." : "Save"}
-                  </Button>
-                </>
-              )}
-            </div>
           </div>
         </div>
       </section>
@@ -848,14 +1056,57 @@ function ItemHandlerDetail() {
         </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Basic Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {isEditing ? (
-              <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="size-5 text-yellow-500" />
+            Skills Configuration
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            从右侧拖拽技能到左侧启用，或点击技能快速添加
+          </p>
+        </CardHeader>
+        <CardContent>
+          <SkillSelector
+            allSkills={skills}
+            enabledSkills={enabledSkills}
+            onSkillToggle={handleSkillToggle}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="size-5" />
+                Model Settings
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Configure model and API settings
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {!isEditing ? (
+                <Button size="sm" onClick={startEditing}>Edit</Button>
+              ) : (
+                <>
+                  <Button size="sm" variant="outline" onClick={cancelEditing}>
+                    Cancel
+                  </Button>
+                  <Button size="sm" onClick={saveChanges} disabled={isSaving}>
+                    {isSaving ? "Saving..." : "Save"}
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isEditing ? (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Name</label>
                   <Input
@@ -871,6 +1122,8 @@ function ItemHandlerDetail() {
                     placeholder="e.g., gpt-4"
                   />
                 </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">API Key</label>
                   <Input
@@ -887,72 +1140,26 @@ function ItemHandlerDetail() {
                     placeholder="https://api.example.com"
                   />
                 </div>
-              </>
-            ) : (
-              <div className="grid gap-3">
-                <KeyValue label="ID" value={itemHandler.id} />
-                <KeyValue label="Name" value={itemHandler.name} />
-                <KeyValue label="Model" value={itemHandler.model} />
-                <KeyValue label="API Key" value={itemHandler.api_key ? `****${itemHandler.api_key.slice(-4)}` : null} />
-                <KeyValue label="API URL" value={itemHandler.api_url} />
-                <KeyValue label="Owner ID" value={itemHandler.owner_id} />
-                <KeyValue label="Created At" value={formatDate(itemHandler.created_at)} />
-                <KeyValue label="Updated At" value={formatDate(itemHandler.updated_at)} />
               </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Terminal className="size-5" />
-              Enabled Skills
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isEditing ? (
-              <ScrollArea className="h-64">
-                <div className="space-y-3">
-                  {skills.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No skills available</p>
-                  ) : (
-                    skills.map((skill: any) => (
-                      <div key={skill.skill_id} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={skill.skill_id}
-                          checked={editForm.enabled_skills.includes(skill.skill_id)}
-                          onCheckedChange={() => toggleSkill(skill.skill_id)}
-                        />
-                        <label htmlFor={skill.skill_id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                          {skill.name}
-                        </label>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </ScrollArea>
-            ) : (
-              <ScrollArea className="h-64">
-                {enabledSkills.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No skills enabled</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {enabledSkills.map((skillId: string) => {
-                      const skill = skills.find((s) => s.skill_id === skillId)
-                      return (
-                        <Badge key={skillId} variant="secondary">
-                          {skill?.name || skillId}
-                        </Badge>
-                      )
-                    })}
-                  </div>
-                )}
-              </ScrollArea>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            </>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <KeyValue label="Name" value={itemHandler.name} />
+              <KeyValue label="Model" value={itemHandler.model} />
+              <KeyValue label="API Key" value={itemHandler.api_key ? `****${itemHandler.api_key.slice(-4)}` : null} />
+              <KeyValue label="API URL" value={itemHandler.api_url} />
+            </div>
+          )}
+          <div className="border-t pt-4 mt-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <KeyValue label="ID" value={itemHandler.id} />
+              <KeyValue label="Owner ID" value={itemHandler.owner_id} />
+              <KeyValue label="Created At" value={formatDate(itemHandler.created_at)} />
+              <KeyValue label="Updated At" value={formatDate(itemHandler.updated_at)} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -35,7 +35,7 @@ export function UploadSkillZip() {
       )
 
       await SkillsService.uploadSkillZip({
-        requestBody: {
+        formData: {
           file: `data:application/zip;base64,${base64}`,
         },
       })

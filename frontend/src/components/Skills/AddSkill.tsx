@@ -46,7 +46,7 @@ export function AddSkill() {
   const queryClient = useQueryClient()
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(formSchema) as any,
     defaultValues: {
       skill_id: "",
       name: "",

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { FileCode, FilePlus, FolderOpen, RefreshCw, Trash2 } from "lucide-react"
+import { FileCode, FilePlus, RefreshCw, Trash2 } from "lucide-react"
 import { useState } from "react"
 import { type SkillListItem, SkillsService } from "@/client"
 import { Badge } from "@/components/ui/badge"
