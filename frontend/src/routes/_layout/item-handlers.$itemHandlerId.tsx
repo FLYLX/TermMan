@@ -55,6 +55,86 @@ type NodePosition = {
   y: number
 }
 
+function ItemWithHandlers({ 
+  item, 
+  currentHandlerId,
+  isConnected 
+}: { 
+  item: any
+  currentHandlerId: string
+  isConnected: boolean
+}) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [handlers, setHandlers] = useState<any[]>([])
+
+  const { refetch } = useQuery({
+    queryFn: () => ItemHandlerAssociationsService.getHandlersForItem({ itemId: item.id }),
+    queryKey: ["item-handlers", item.id],
+    enabled: false,
+  })
+
+  const toggleExpand = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!isExpanded) {
+      const result = await refetch()
+      setHandlers((result.data as any[]) || [])
+    }
+    setIsExpanded(!isExpanded)
+  }
+
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <div 
+        className={`flex items-center gap-2 p-2 transition-colors ${isConnected ? "bg-green-50 dark:bg-green-950" : "hover:bg-slate-100 dark:hover:bg-slate-800"}`}
+      >
+        <button onClick={toggleExpand} className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded">
+          <ChevronRight className={`size-4 text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+        </button>
+        <Link
+          to="/items/$itemId"
+          params={{ itemId: item.id }}
+          className="flex items-center gap-2 flex-1 min-w-0"
+        >
+          <Terminal className="size-4 text-slate-500 shrink-0" />
+          <span className="text-sm font-medium truncate">{item.title || item.id}</span>
+        </Link>
+        {isConnected && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
+            Connected
+          </span>
+        )}
+        <span className={`text-xs px-2 py-0.5 rounded-full ${item.status === "running" ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"}`}>
+          {item.status === "running" ? "Online" : "Offline"}
+        </span>
+      </div>
+      {isExpanded && (
+        <div className="border-t bg-slate-50 dark:bg-slate-900 p-2">
+          {handlers.length === 0 ? (
+            <p className="text-xs text-muted-foreground px-2">No handlers connected</p>
+          ) : (
+            <div className="space-y-1">
+              {handlers.map((handler: any) => (
+                <Link
+                  key={handler.id}
+                  to="/item-handlers/$itemHandlerId"
+                  params={{ itemHandlerId: handler.id }}
+                  className={`flex items-center gap-2 px-2 py-1 rounded text-sm hover:bg-slate-200 dark:hover:bg-slate-800 ${handler.id === currentHandlerId ? "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300" : "text-slate-600 dark:text-slate-400"}`}
+                >
+                  <Zap className="size-3" />
+                  <span>{handler.name}</span>
+                  {handler.id === currentHandlerId && (
+                    <span className="text-xs ml-auto">(current)</span>
+                  )}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ConnectionDiagram({
   itemHandler,
   connectedItems,
@@ -289,11 +369,11 @@ function ConnectionDiagram({
       >
         <defs>
           <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.8">
-              <animate attributeName="stop-color" values="#3b82f6;#8b5cf6;#3b82f6" dur="2s" repeatCount="indefinite" />
+            <stop offset="0%" stopColor="#60a5fa" stopOpacity="0.8">
+              <animate attributeName="stop-color" values="#60a5fa;#a78bfa;#60a5fa" dur="2s" repeatCount="indefinite" />
             </stop>
-            <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.8">
-              <animate attributeName="stop-color" values="#8b5cf6;#3b82f6;#8b5cf6" dur="2s" repeatCount="indefinite" />
+            <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.8">
+              <animate attributeName="stop-color" values="#a78bfa;#60a5fa;#a78bfa" dur="2s" repeatCount="indefinite" />
             </stop>
           </linearGradient>
           <linearGradient id="pendingLineGradient" x1="0%" y1="0%" x2="100%" y2="0%" gradientUnits="userSpaceOnUse">
@@ -301,30 +381,30 @@ function ConnectionDiagram({
             <stop offset="100%" stopColor="#10b981" stopOpacity="0.8" />
           </linearGradient>
           <radialGradient id="handlerGradient" cx="30%" cy="30%">
-            <stop offset="0%" stopColor="#3b82f6" />
-            <stop offset="100%" stopColor="#1d4ed8" />
+            <stop offset="0%" stopColor="#60a5fa" />
+            <stop offset="100%" stopColor="#3b82f6" />
           </radialGradient>
           <radialGradient id="handlerActiveGradient" cx="30%" cy="30%">
+            <stop offset="0%" stopColor="#93c5fd" />
+            <stop offset="100%" stopColor="#60a5fa" />
+          </radialGradient>
+          <radialGradient id="itemConnectedGradient" cx="30%" cy="30%">
             <stop offset="0%" stopColor="#22c55e" />
             <stop offset="100%" stopColor="#16a34a" />
           </radialGradient>
-          <radialGradient id="itemConnectedGradient" cx="30%" cy="30%">
-            <stop offset="0%" stopColor="#1e40af" />
-            <stop offset="100%" stopColor="#1e3a8a" />
-          </radialGradient>
           <radialGradient id="itemAvailableGradient" cx="30%" cy="30%">
-            <stop offset="0%" stopColor="#166534" />
-            <stop offset="100%" stopColor="#14532d" />
+            <stop offset="0%" stopColor="#64748b" />
+            <stop offset="100%" stopColor="#475569" />
           </radialGradient>
           <filter id="glow">
-            <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+            <feGaussianBlur stdDeviation="1" result="coloredBlur" />
             <feMerge>
               <feMergeNode in="coloredBlur" />
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
           <filter id="glowStrong">
-            <feGaussianBlur stdDeviation="5" result="coloredBlur" />
+            <feGaussianBlur stdDeviation="2" result="coloredBlur" />
             <feMerge>
               <feMergeNode in="coloredBlur" />
               <feMergeNode in="SourceGraphic" />
@@ -360,7 +440,6 @@ function ConnectionDiagram({
                   fill="none"
                   stroke={isHovered ? "#ef4444" : "url(#lineGradient)"}
                   strokeWidth={isHovered ? 3 : 2}
-                  filter="url(#glow)"
                   pointerEvents="none"
                 />
                 {isHovered && (
@@ -376,7 +455,7 @@ function ConnectionDiagram({
                     Double-click to disconnect
                   </text>
                 )}
-                <circle r={3} fill="#8b5cf6" filter="url(#glow)">
+                <circle r={3} fill="#a78bfa" filter="url(#glow)">
                   <animateMotion
                     dur="1.5s"
                     repeatCount="indefinite"
@@ -395,9 +474,8 @@ function ConnectionDiagram({
             x2={pendingLine.endX}
             y2={pendingLine.endY}
             stroke="url(#pendingLineGradient)"
-            strokeWidth={3}
+            strokeWidth={2}
             strokeDasharray="8,4"
-            filter="url(#glow)"
           />
         )}
 
@@ -407,9 +485,8 @@ function ConnectionDiagram({
             cy={handlerPos.y}
             r={45}
             fill={isDrawingLine ? "url(#handlerActiveGradient)" : "url(#handlerGradient)"}
-            stroke={isDrawingLine ? "#22c55e" : "#60a5fa"}
-            strokeWidth={3}
-            filter="url(#glowStrong)"
+            stroke={isDrawingLine ? "#22c55e" : "#93c5fd"}
+            strokeWidth={2}
             onClick={handleHandlerClick}
             onMouseDown={(e) => !isDrawingLine && handleNodeDragStart(e, "__handler__")}
           />
@@ -466,9 +543,8 @@ function ConnectionDiagram({
                   height={40}
                   rx={8}
                   fill={isConnected ? "url(#itemConnectedGradient)" : "url(#itemAvailableGradient)"}
-                  stroke={isConnected ? "#3b82f6" : isDrawingLine ? "#22c55e" : "#365314"}
+                  stroke={isConnected ? "#22c55e" : isDrawingLine ? "#22c55e" : "#64748b"}
                   strokeWidth={isHovered ? 2 : 1}
-                  filter={isHovered ? "url(#glowStrong)" : "url(#glow)"}
                   onClick={(e) => handleItemClick(e, item.id)}
                   onMouseDown={(e) => !isDrawingLine && handleNodeDragStart(e, item.id)}
                 />
@@ -492,7 +568,7 @@ function ConnectionDiagram({
                 <text
                   x={itemPos.x - 45}
                   y={itemPos.y + 8}
-                  fill={isConnected ? "#93c5fd" : "#86efac"}
+                  fill={isConnected ? "#93c5fd" : isDrawingLine ? "#22c55e" : "#94a3b8"}
                   fontSize="8"
                   pointerEvents="none"
                 >
@@ -505,7 +581,7 @@ function ConnectionDiagram({
       </svg>
 
       <div className="absolute top-4 left-4 flex items-center gap-2">
-        <Badge variant="outline" className="bg-blue-500/20 border-blue-500/50 text-blue-300">
+        <Badge variant="outline" className="bg-sky-500/20 border-sky-500/50 text-sky-300">
           {connected.length} Connected
         </Badge>
         <Badge variant="outline" className="bg-green-500/20 border-green-500/50 text-green-300">
@@ -722,26 +798,55 @@ function ItemHandlerDetail() {
         </div>
       </section>
 
-      <Card className="overflow-hidden">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2">
-            <Zap className="size-5 text-yellow-500" />
-            Connection Diagram
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Visual representation of items managed by this handler
-          </p>
-        </CardHeader>
-        <CardContent className="p-0">
-          <ConnectionDiagram
-            itemHandler={itemHandler}
-            connectedItems={connectedItemsList}
-            availableItems={availableItems}
-            onConnect={handleConnect}
-            onDisconnect={handleDisconnect}
-          />
-        </CardContent>
-      </Card>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="overflow-hidden lg:col-span-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2">
+              <Zap className="size-5 text-yellow-500" />
+              Connection Diagram
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Visual representation of items managed by this handler
+            </p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <ConnectionDiagram
+              itemHandler={itemHandler}
+              connectedItems={connectedItemsList}
+              availableItems={availableItems}
+              onConnect={handleConnect}
+              onDisconnect={handleDisconnect}
+            />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2">
+              <Terminal className="size-5 text-blue-500" />
+              All Items
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Click to expand and view connected handlers
+            </p>
+          </CardHeader>
+          <CardContent>
+            {allItems.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No items available</p>
+            ) : (
+              <div className="space-y-1">
+                {allItems.map((item: any) => (
+                  <ItemWithHandlers 
+                    key={item.id} 
+                    item={item} 
+                    currentHandlerId={itemHandlerId}
+                    isConnected={connectedItemIds.has(item.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
