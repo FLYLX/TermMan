@@ -1,0 +1,45 @@
+2026-03-26 12:19:41,598 - termman-daemon - INFO - Starting TermMan Daemon on 0.0.0.0:9000
+2026-03-26 12:19:41,599 - termman-daemon - INFO - API Key: ***2024
+2026-03-26 12:19:57,858 - termman-daemon - INFO - [WebSocket] Backend connected: butSRfmXT71tK7MOAAAB, IP: 127.0.0.1
+2026-03-26 12:19:57,862 - termman-daemon - INFO - 
+============================================================
+2026-03-26 12:19:57,863 - termman-daemon - INFO - [DaemonConnPool] Created BackendMainConnection for daemon=termman_daemon_s...
+2026-03-26 12:19:57,863 - termman-daemon - INFO - ============================================================
+2026-03-26 12:19:57,864 - termman-daemon - INFO -   Backend主连接池: 1 个
+2026-03-26 12:19:57,865 - termman-daemon - INFO -     - termman_daemon_s... | status=disconnected
+2026-03-26 12:19:57,865 - termman-daemon - INFO -   浏览器终端连接池: 0 个Item
+2026-03-26 12:19:57,866 - termman-daemon - INFO -   Backend Room监听连接池: 0 个
+2026-03-26 12:19:57,866 - termman-daemon - INFO - ============================================================
+
+2026-03-26 12:19:57,867 - termman-daemon - INFO - [WebSocket] Backend authenticated: butSRfmXT71tK7MOAAAB, backend_id: daemon:termman_
+2026-03-26 12:19:57,867 - termman-daemon - INFO - [Daemon] Backend认证成功，发送全量连接池数据: 0 Rooms
+2026-03-26 12:20:08,127 - termman-daemon - INFO - [WebSocket] Backend connected: ww_IZyzJ52edR-dNAAAD, IP: 127.0.0.1
+2026-03-26 12:20:08,132 - termman-daemon - INFO - [WebSocket] Backend daemon:termman_ already connected, disconnecting old connection
+2026-03-26 12:20:08,132 - termman-daemon - INFO - 
+============================================================
+2026-03-26 12:20:08,133 - termman-daemon - INFO - [Disconnect] Socket断开处理: butSRfmXT71tK7MO...
+2026-03-26 12:20:08,134 - termman-daemon - INFO - ============================================================
+2026-03-26 12:20:08,134 - termman-daemon - INFO - 
+============================================================
+2026-03-26 12:20:08,135 - termman-daemon - INFO - [DaemonConnPool] Removed BackendMainConnection for daemon=termman_daemon_s...
+2026-03-26 12:20:08,135 - termman-daemon - INFO - ============================================================
+2026-03-26 12:20:08,135 - termman-daemon - INFO -   Backend主连接池: 0 个
+2026-03-26 12:20:08,136 - termman-daemon - INFO -   浏览器终端连接池: 0 个Item
+2026-03-26 12:20:08,136 - termman-daemon - INFO -   Backend Room监听连接池: 0 个
+2026-03-26 12:20:08,136 - termman-daemon - INFO - ============================================================
+
+2026-03-26 12:20:08,136 - termman-daemon - INFO -   类型: Backend主连接
+2026-03-26 12:20:08,137 - termman-daemon - INFO - ============================================================
+
+2026-03-26 12:20:08,137 - termman-daemon - INFO - 
+============================================================
+2026-03-26 12:20:08,137 - termman-daemon - INFO - [DaemonConnPool] Created BackendMainConnection for daemon=termman_daemon_s...
+2026-03-26 12:20:08,138 - termman-daemon - INFO - ============================================================
+2026-03-26 12:20:08,138 - termman-daemon - INFO -   Backend主连接池: 1 个
+2026-03-26 12:20:08,138 - termman-daemon - INFO -     - termman_daemon_s... | status=disconnected
+2026-03-26 12:20:08,139 - termman-daemon - INFO -   浏览器终端连接池: 0 个Item
+2026-03-26 12:20:08,139 - termman-daemon - INFO -   Backend Room监听连接池: 0 个
+2026-03-26 12:20:08,139 - termman-daemon - INFO - ============================================================
+
+2026-03-26 12:20:08,140 - termman-daemon - INFO - [WebSocket] Backend authenticated: ww_IZyzJ52edR-dNAAAD, backend_id: daemon:termman_
+2026-03-26 12:20:08,141 - termman-daemon - INFO - [Daemon] Backend认证成功，发送全量连接池数据: 0 Rooms

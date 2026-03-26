@@ -6,9 +6,7 @@ import {
   Check,
   ChevronRight,
   Copy,
-  EyeOff,
   Filter,
-  Gauge,
   Loader2,
   Play,
   Plug,
@@ -17,9 +15,7 @@ import {
   Shield,
   Terminal,
   Users,
-  VolumeX,
   WifiOff,
-  Zap,
 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { ApiError, type ItemPublic, type ItemUpdate, ItemsService } from "@/client"

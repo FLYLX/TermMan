@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/collapsible"
 
 export interface FilterRule {
-  name: string
+  name?: string
   regex_patterns: string[]
   action_type: "block" | "ignore" | "log" | "replace"
   action?: {
@@ -68,7 +68,9 @@ export function FilterRuleEditor({ value, onChange, defaultRules }: FilterRuleEd
     const result: Record<string, FilterRule> = {}
     newFilters.forEach(f => {
       const { name, ...rule } = f
-      result[name] = rule
+      if (name) {
+        result[name] = rule
+      }
     })
     onChange(result)
   }
