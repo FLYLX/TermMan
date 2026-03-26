@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: 0fb8c1494b59
+Revision ID: a2d5ef82bd0b
 Revises: 
-Create Date: 2026-03-24 13:39:01.957129
+Create Date: 2026-03-26 14:40:37.222850
 
 """
 from alembic import op
@@ -12,7 +12,7 @@ from app.models import SQLiteUUID
 
 
 # revision identifiers, used by Alembic.
-revision = '0fb8c1494b59'
+revision = 'a2d5ef82bd0b'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -25,7 +25,7 @@ def upgrade():
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('is_superuser', sa.Boolean(), nullable=False),
     sa.Column('full_name', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
-    sa.Column('id', SQLiteUUID(), nullable=False),
+    sa.Column('id', SQLiteUUID, nullable=False),
     sa.Column('hashed_password', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.PrimaryKeyConstraint('id')
@@ -44,18 +44,13 @@ def upgrade():
     sa.Column('command', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
     sa.Column('working_directory', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('input_filter_enabled', sa.Boolean(), nullable=False),
-    sa.Column('input_filter_mode', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('input_noise_patterns', sa.JSON(), nullable=True),
-    sa.Column('input_event_patterns', sa.JSON(), nullable=True),
+    sa.Column('input_filter_rules', sa.JSON(), nullable=False),
     sa.Column('output_filter_enabled', sa.Boolean(), nullable=False),
-    sa.Column('output_filter_mode', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('output_command_list', sa.JSON(), nullable=True),
-    sa.Column('output_sensitive_patterns', sa.JSON(), nullable=True),
-    sa.Column('output_rate_limit', sa.Integer(), nullable=False),
-    sa.Column('id', SQLiteUUID(), nullable=False),
+    sa.Column('output_filter_rules', sa.JSON(), nullable=False),
+    sa.Column('id', SQLiteUUID, nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('owner_id', SQLiteUUID(), nullable=False),
+    sa.Column('owner_id', SQLiteUUID, nullable=False),
     sa.ForeignKeyConstraint(['owner_id'], ['user.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -66,17 +61,17 @@ def upgrade():
     sa.Column('api_key', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('api_url', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('enabled_skills', sa.JSON(), nullable=True),
-    sa.Column('id', SQLiteUUID(), nullable=False),
+    sa.Column('id', SQLiteUUID, nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('owner_id', SQLiteUUID(), nullable=False),
+    sa.Column('owner_id', SQLiteUUID, nullable=False),
     sa.ForeignKeyConstraint(['owner_id'], ['user.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_itemhandler_owner_id'), 'itemhandler', ['owner_id'], unique=False)
     op.create_table('itemhandleritem',
-    sa.Column('item_handler_id', SQLiteUUID(), nullable=False),
-    sa.Column('item_id', SQLiteUUID(), nullable=False),
+    sa.Column('item_handler_id', SQLiteUUID, nullable=False),
+    sa.Column('item_id', SQLiteUUID, nullable=False),
     sa.ForeignKeyConstraint(['item_handler_id'], ['itemhandler.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['item_id'], ['item.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('item_handler_id', 'item_id')
@@ -84,8 +79,8 @@ def upgrade():
     op.create_index(op.f('ix_itemhandleritem_item_handler_id'), 'itemhandleritem', ['item_handler_id'], unique=False)
     op.create_index(op.f('ix_itemhandleritem_item_id'), 'itemhandleritem', ['item_id'], unique=False)
     op.create_table('itemhandleruser',
-    sa.Column('item_handler_id', SQLiteUUID(), nullable=False),
-    sa.Column('user_id', SQLiteUUID(), nullable=False),
+    sa.Column('item_handler_id', SQLiteUUID, nullable=False),
+    sa.Column('user_id', SQLiteUUID, nullable=False),
     sa.ForeignKeyConstraint(['item_handler_id'], ['itemhandler.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['user.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('item_handler_id', 'user_id')

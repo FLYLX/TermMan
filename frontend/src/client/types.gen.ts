@@ -15,6 +15,14 @@ export type Body_items_disconnect_item_subscriber = {
     ip_address?: string;
 };
 
+export type Body_items_test_input_filter = {
+    test_text: string;
+};
+
+export type Body_items_test_output_filter = {
+    command: string;
+};
+
 export type Body_items_verify_terminal_token = {
     temp_token: string;
     item_uuid: string;
@@ -58,16 +66,13 @@ export type Item = {
     command?: (string | null);
     working_directory?: (string | null);
     input_filter_enabled?: boolean;
-    input_filter_mode?: string;
-    input_noise_patterns?: (Array<(string)> | null);
-    input_event_patterns?: ({
-    [key: string]: unknown;
-} | null);
+    input_filter_rules?: {
+        [key: string]: unknown;
+    };
     output_filter_enabled?: boolean;
-    output_filter_mode?: string;
-    output_command_list?: (Array<(string)> | null);
-    output_sensitive_patterns?: (Array<(string)> | null);
-    output_rate_limit?: number;
+    output_filter_rules?: {
+        [key: string]: unknown;
+    };
     id?: string;
     created_at?: string;
     updated_at?: string;
@@ -87,16 +92,13 @@ export type ItemCreate = {
     command?: (string | null);
     working_directory?: (string | null);
     input_filter_enabled?: boolean;
-    input_filter_mode?: string;
-    input_noise_patterns?: (Array<(string)> | null);
-    input_event_patterns?: ({
-    [key: string]: unknown;
-} | null);
+    input_filter_rules?: {
+        [key: string]: unknown;
+    };
     output_filter_enabled?: boolean;
-    output_filter_mode?: string;
-    output_command_list?: (Array<(string)> | null);
-    output_sensitive_patterns?: (Array<(string)> | null);
-    output_rate_limit?: number;
+    output_filter_rules?: {
+        [key: string]: unknown;
+    };
 };
 
 export type ItemHandler = {
@@ -152,16 +154,13 @@ export type ItemPublic = {
     command?: (string | null);
     working_directory?: (string | null);
     input_filter_enabled?: boolean;
-    input_filter_mode?: string;
-    input_noise_patterns?: (Array<(string)> | null);
-    input_event_patterns?: ({
-    [key: string]: unknown;
-} | null);
+    input_filter_rules?: {
+        [key: string]: unknown;
+    };
     output_filter_enabled?: boolean;
-    output_filter_mode?: string;
-    output_command_list?: (Array<(string)> | null);
-    output_sensitive_patterns?: (Array<(string)> | null);
-    output_rate_limit?: number;
+    output_filter_rules?: {
+        [key: string]: unknown;
+    };
     id: string;
     owner_id: string;
     created_at?: (string | null);
@@ -183,16 +182,13 @@ export type ItemUpdate = {
     command?: (string | null);
     working_directory?: (string | null);
     input_filter_enabled?: (boolean | null);
-    input_filter_mode?: (string | null);
-    input_noise_patterns?: (Array<(string)> | null);
-    input_event_patterns?: ({
+    input_filter_rules?: ({
     [key: string]: unknown;
 } | null);
     output_filter_enabled?: (boolean | null);
-    output_filter_mode?: (string | null);
-    output_command_list?: (Array<(string)> | null);
-    output_sensitive_patterns?: (Array<(string)> | null);
-    output_rate_limit?: (number | null);
+    output_filter_rules?: ({
+    [key: string]: unknown;
+} | null);
 };
 
 export type Message = {
@@ -529,6 +525,24 @@ export type ItemsGetItemOutputData = {
 };
 
 export type ItemsGetItemOutputResponse = ({
+    [key: string]: unknown;
+});
+
+export type ItemsTestInputFilterData = {
+    id: string;
+    requestBody: Body_items_test_input_filter;
+};
+
+export type ItemsTestInputFilterResponse = ({
+    [key: string]: unknown;
+});
+
+export type ItemsTestOutputFilterData = {
+    id: string;
+    requestBody: Body_items_test_output_filter;
+};
+
+export type ItemsTestOutputFilterResponse = ({
     [key: string]: unknown;
 });
 

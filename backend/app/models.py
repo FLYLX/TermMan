@@ -131,15 +131,10 @@ class ItemBase(SQLModel):
     working_directory: Optional[str] = Field(default=None, max_length=255)
     
     input_filter_enabled: bool = Field(default=False)
-    input_filter_mode: str = Field(default="blacklist")
-    input_noise_patterns: Optional[List[str]] = Field(default=None, sa_type=JSON)
-    input_event_patterns: Optional[dict] = Field(default=None, sa_type=JSON)
+    input_filter_rules: dict = Field(default_factory=dict, sa_type=JSON)
     
     output_filter_enabled: bool = Field(default=False)
-    output_filter_mode: str = Field(default="blacklist")
-    output_command_list: Optional[List[str]] = Field(default=None, sa_type=JSON)
-    output_sensitive_patterns: Optional[List[str]] = Field(default=None, sa_type=JSON)
-    output_rate_limit: int = Field(default=10)
+    output_filter_rules: dict = Field(default_factory=dict, sa_type=JSON)
 
 
 # Properties to receive on item creation
@@ -161,15 +156,10 @@ class ItemUpdate(ItemBase):
     working_directory: Optional[str] = Field(default=None, max_length=255)
     
     input_filter_enabled: Optional[bool] = None
-    input_filter_mode: Optional[str] = None
-    input_noise_patterns: Optional[List[str]] = Field(default=None, sa_type=JSON)
-    input_event_patterns: Optional[dict] = Field(default=None, sa_type=JSON)
+    input_filter_rules: Optional[dict] = Field(default=None, sa_type=JSON)
     
     output_filter_enabled: Optional[bool] = None
-    output_filter_mode: Optional[str] = None
-    output_command_list: Optional[List[str]] = Field(default=None, sa_type=JSON)
-    output_sensitive_patterns: Optional[List[str]] = Field(default=None, sa_type=JSON)
-    output_rate_limit: Optional[int] = None
+    output_filter_rules: Optional[dict] = Field(default=None, sa_type=JSON)
 
 
 # Database model, database table inferred from class name

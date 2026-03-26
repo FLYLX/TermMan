@@ -2,34 +2,77 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
-from datetime import datetime
-from collections import defaultdict
-import time
 
 
 class FilterAction(Enum):
     ALLOWED = "allowed"
     BLOCKED = "blocked"
     MODIFIED = "modified"
-    NEEDS_APPROVAL = "needs_approval"
+
+
+class ActionType(Enum):
+    BLOCK = "block"
+    IGNORE = "ignore"
+    LOG = "log"
+    REPLACE = "replace"
+
+
+@dataclass
+class FilterRule:
+    name: str
+    regex_patterns: list[str] = field(default_factory=list)
+    action_type: str = "ignore"
+    replace_rules: dict[str, str] = field(default_factory=dict)
+    _compiled_patterns: list[re.Pattern] = field(default_factory=list, repr=False)
+
+    def __post_init__(self):
+        self._compiled_patterns = self._compile_patterns(self.regex_patterns)
+
+    def _compile_patterns(self, patterns: list[str]) -> list[re.Pattern]:
+        return [re.compile(p, re.IGNORECASE) for p in patterns]
+
+    def matches(self, content: str) -> list[re.Match]:
+        matches = []
+        for pattern in self._compiled_patterns:
+            matches.extend(pattern.finditer(content))
+        return matches
+
+    def apply_replace(self, content: str) -> str:
+        if self.action_type != "replace":
+            return content
+        result = content
+        for match_str, replace_str in self.replace_rules.items():
+            try:
+                result = re.sub(match_str, replace_str, result, flags=re.IGNORECASE)
+            except re.error:
+                pass
+        return result
 
 
 @dataclass
 class OutputFilterConfig:
     enabled: bool = False
-    mode: str = "blacklist"
-    command_list: list[str] = field(default_factory=list)
-    sensitive_patterns: list[str] = field(default_factory=list)
-    rate_limit: int = 10
+    filters: list[FilterRule] = field(default_factory=list)
 
     @classmethod
     def from_item(cls, item: Any) -> "OutputFilterConfig":
+        rules = item.output_filter_rules or {}
+        filters = []
+        
+        for filter_name, filter_config in rules.items():
+            if isinstance(filter_config, dict):
+                action = filter_config.get("action", {})
+                filter_rule = FilterRule(
+                    name=filter_name,
+                    regex_patterns=filter_config.get("regex_patterns", []),
+                    action_type=filter_config.get("action_type", "ignore"),
+                    replace_rules=action.get("replace_rules", {}),
+                )
+                filters.append(filter_rule)
+        
         return cls(
             enabled=item.output_filter_enabled,
-            mode=item.output_filter_mode,
-            command_list=item.output_command_list or [],
-            sensitive_patterns=item.output_sensitive_patterns or [],
-            rate_limit=item.output_rate_limit,
+            filters=filters,
         )
 
 
@@ -39,6 +82,8 @@ class FilterResult:
     command: str
     reason: str = ""
     original_command: str = ""
+    matched_filters: list[str] = field(default_factory=list)
+    matches: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def is_allowed(self) -> bool:
@@ -48,93 +93,21 @@ class FilterResult:
     def is_blocked(self) -> bool:
         return self.action == FilterAction.BLOCKED
 
-    @property
-    def needs_approval(self) -> bool:
-        return self.action == FilterAction.NEEDS_APPROVAL
-
-
-class RiskLevel(Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
-
-
-DEFAULT_BLACKLIST = [
-    r"rm\s+-rf\s+/",
-    r"rm\s+-rf\s+~",
-    r"mkfs",
-    r"dd\s+if=",
-    r">\s*/dev/sd",
-    r":\(\)\s*\{\s*:\|\:&\s*\}\s*;:",
-    r"chmod\s+777\s+/",
-    r"chown\s+.*:.*\s+/",
-    r"shutdown",
-    r"reboot",
-    r"init\s+0",
-    r"init\s+6",
-    r"halt",
-    r"poweroff",
-]
-
-DEFAULT_WHITELIST = [
-    r"^ls\b",
-    r"^cat\b",
-    r"^grep\b",
-    r"^find\b",
-    r"^ps\b",
-    r"^top\b",
-    r"^pwd\b",
-    r"^echo\b",
-    r"^whoami\b",
-    r"^date\b",
-    r"^git\s+status\b",
-    r"^git\s+log\b",
-    r"^git\s+diff\b",
-    r"^git\s+branch\b",
-]
-
-DEFAULT_SENSITIVE_PATTERNS = [
-    r"password\s*=\s*\S+",
-    r"api[_-]?key\s*=\s*\S+",
-    r"secret\s*=\s*\S+",
-    r"token\s*=\s*\S+",
-    r"--password\s+\S+",
-    r"-p\s+\S+",
-]
-
 
 class OutputFilter:
     """
-    输出过滤器 - 安全检查Agent生成的命令
+    Output Filter - Security check for agent-generated commands
 
-    过滤策略:
-    1. RateLimiter: 频率限制 (防止命令风暴)
-    2. SensitiveDataFilter: 敏感数据过滤
-    3. CommandFilter: 命令过滤 (黑名单/白名单)
-    4. SafetyChecker: 安全检查 (危险操作检测)
+    Supports multiple independent filters, each with:
+    - regex_patterns: list of patterns to match
+    - action_type: "block" | "ignore" | "log" | "replace"
+    - action.replace_rules: {match_pattern: replacement} (for replace type)
     """
 
     def __init__(self, config: OutputFilterConfig):
         self.config = config
-        self._blacklist = self._compile_patterns(DEFAULT_BLACKLIST)
-        self._whitelist = self._compile_patterns(DEFAULT_WHITELIST)
-        self._sensitive_patterns = self._compile_sensitive_patterns()
-        self._rate_tracker: dict[str, list[float]] = defaultdict(list)
 
-    def _compile_patterns(self, patterns: list[str]) -> list[re.Pattern]:
-        compiled = [re.compile(p, re.IGNORECASE) for p in patterns]
-        if self.config.mode == "blacklist" and self.config.command_list:
-            compiled.extend(re.compile(p, re.IGNORECASE) for p in self.config.command_list)
-        return compiled
-
-    def _compile_sensitive_patterns(self) -> list[re.Pattern]:
-        patterns = list(DEFAULT_SENSITIVE_PATTERNS)
-        if self.config.sensitive_patterns:
-            patterns.extend(self.config.sensitive_patterns)
-        return [re.compile(p, re.IGNORECASE) for p in patterns]
-
-    def filter(self, command: str, item_uuid: str = "default") -> FilterResult:
+    def filter(self, command: str) -> FilterResult:
         if not self.config.enabled:
             return FilterResult(
                 action=FilterAction.ALLOWED,
@@ -142,161 +115,68 @@ class OutputFilter:
                 original_command=command,
             )
 
-        if not self._check_rate_limit(item_uuid):
+        result = self._apply_filters(command)
+        return result
+
+    def _apply_filters(self, command: str) -> FilterResult:
+        modified_command = command
+        matched_filters: list[str] = []
+        all_matches: list[dict[str, Any]] = []
+        has_block = False
+        block_reason = ""
+
+        for filter_rule in self.config.filters:
+            matches = filter_rule.matches(modified_command)
+            
+            if not matches:
+                continue
+
+            matched_filters.append(filter_rule.name)
+            
+            for match in matches:
+                all_matches.append({
+                    "filter": filter_rule.name,
+                    "pattern": match.re.pattern,
+                    "matched": match.group(),
+                    "action_type": filter_rule.action_type,
+                })
+
+            if filter_rule.action_type == "block":
+                has_block = True
+                block_reason = f"Blocked by filter '{filter_rule.name}': {matches[0].re.pattern}"
+                break
+                
+            elif filter_rule.action_type == "ignore":
+                for pattern in filter_rule._compiled_patterns:
+                    modified_command = pattern.sub("", modified_command)
+                
+            elif filter_rule.action_type == "replace":
+                modified_command = filter_rule.apply_replace(modified_command)
+
+        if has_block:
             return FilterResult(
                 action=FilterAction.BLOCKED,
-                command=command,
-                reason=f"Rate limit exceeded ({self.config.rate_limit}/min)",
+                command="",
+                reason=block_reason,
                 original_command=command,
+                matched_filters=matched_filters,
+                matches=all_matches,
             )
 
-        if self._contains_sensitive_data(command):
-            return FilterResult(
-                action=FilterAction.BLOCKED,
-                command=command,
-                reason="Command contains sensitive data patterns",
-                original_command=command,
-            )
-
-        if self.config.mode == "blacklist":
-            result = self._check_blacklist(command)
-            if result:
-                return result
-        else:
-            result = self._check_whitelist(command)
-            if result:
-                return result
-
-        risk = self._assess_risk(command)
-        if risk == RiskLevel.HIGH:
-            return FilterResult(
-                action=FilterAction.NEEDS_APPROVAL,
-                command=command,
-                reason="High risk command requires approval",
-                original_command=command,
-            )
-
-        if risk == RiskLevel.CRITICAL:
-            return FilterResult(
-                action=FilterAction.BLOCKED,
-                command=command,
-                reason="Critical risk command is blocked",
-                original_command=command,
-            )
-
-        modified = self._modify_if_needed(command)
-        if modified != command:
+        if modified_command != command:
             return FilterResult(
                 action=FilterAction.MODIFIED,
-                command=modified,
-                reason="Command modified for safety",
+                command=modified_command,
+                reason="Command modified by filter rules",
                 original_command=command,
+                matched_filters=matched_filters,
+                matches=all_matches,
             )
 
         return FilterResult(
             action=FilterAction.ALLOWED,
             command=command,
             original_command=command,
+            matched_filters=matched_filters,
+            matches=all_matches,
         )
-
-    def _check_rate_limit(self, item_uuid: str) -> bool:
-        now = time.time()
-        minute_ago = now - 60
-
-        self._rate_tracker[item_uuid] = [
-            t for t in self._rate_tracker[item_uuid] if t > minute_ago
-        ]
-
-        if len(self._rate_tracker[item_uuid]) >= self.config.rate_limit:
-            return False
-
-        self._rate_tracker[item_uuid].append(now)
-        return True
-
-    def _contains_sensitive_data(self, command: str) -> bool:
-        for pattern in self._sensitive_patterns:
-            if pattern.search(command):
-                return True
-        return False
-
-    def _check_blacklist(self, command: str) -> FilterResult | None:
-        for pattern in self._blacklist:
-            if pattern.search(command):
-                return FilterResult(
-                    action=FilterAction.BLOCKED,
-                    command=command,
-                    reason=f"Command matches blacklist pattern: {pattern.pattern}",
-                    original_command=command,
-                )
-        return None
-
-    def _check_whitelist(self, command: str) -> FilterResult | None:
-        for pattern in self._whitelist:
-            if pattern.search(command):
-                return None
-
-        if self.config.command_list:
-            for custom_pattern in self.config.command_list:
-                if re.search(custom_pattern, command, re.IGNORECASE):
-                    return None
-
-        return FilterResult(
-            action=FilterAction.BLOCKED,
-            command=command,
-            reason="Command not in whitelist",
-            original_command=command,
-        )
-
-    def _assess_risk(self, command: str) -> RiskLevel:
-        critical_patterns = [
-            r"rm\s+-rf",
-            r"format",
-            r"del\s+/",
-            r"drop\s+table",
-            r"truncate",
-        ]
-
-        high_risk_patterns = [
-            r"sudo\s+",
-            r"su\s+",
-            r"chmod\s+",
-            r"chown\s+",
-            r"kill\s+-9",
-            r"pkill",
-            r"iptables",
-            r"ufw",
-        ]
-
-        medium_risk_patterns = [
-            r"apt\s+",
-            r"yum\s+",
-            r"pip\s+install",
-            r"npm\s+install",
-            r"curl\s+",
-            r"wget\s+",
-            r"git\s+push",
-            r"git\s+reset",
-        ]
-
-        for pattern in critical_patterns:
-            if re.search(pattern, command, re.IGNORECASE):
-                return RiskLevel.CRITICAL
-
-        for pattern in high_risk_patterns:
-            if re.search(pattern, command, re.IGNORECASE):
-                return RiskLevel.HIGH
-
-        for pattern in medium_risk_patterns:
-            if re.search(pattern, command, re.IGNORECASE):
-                return RiskLevel.MEDIUM
-
-        return RiskLevel.LOW
-
-    def _modify_if_needed(self, command: str) -> str:
-        if command.strip().endswith("\n"):
-            return command
-
-        if not command.strip().endswith("\n"):
-            return command.rstrip() + "\n"
-
-        return command

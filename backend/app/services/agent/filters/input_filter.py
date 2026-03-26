@@ -11,20 +11,69 @@ class EventType(Enum):
     NOISE = "noise"
 
 
+class ActionType(Enum):
+    BLOCK = "block"
+    IGNORE = "ignore"
+    LOG = "log"
+    REPLACE = "replace"
+
+
+@dataclass
+class FilterRule:
+    name: str
+    regex_patterns: list[str] = field(default_factory=list)
+    action_type: str = "ignore"
+    replace_rules: dict[str, str] = field(default_factory=dict)
+    _compiled_patterns: list[re.Pattern] = field(default_factory=list, repr=False)
+
+    def __post_init__(self):
+        self._compiled_patterns = self._compile_patterns(self.regex_patterns)
+
+    def _compile_patterns(self, patterns: list[str]) -> list[re.Pattern]:
+        return [re.compile(p, re.IGNORECASE) for p in patterns]
+
+    def matches(self, content: str) -> list[re.Match]:
+        matches = []
+        for pattern in self._compiled_patterns:
+            matches.extend(pattern.finditer(content))
+        return matches
+
+    def apply_replace(self, content: str) -> str:
+        if self.action_type != "replace":
+            return content
+        result = content
+        for match_str, replace_str in self.replace_rules.items():
+            try:
+                result = re.sub(match_str, replace_str, result, flags=re.IGNORECASE)
+            except re.error:
+                pass
+        return result
+
+
 @dataclass
 class InputFilterConfig:
     enabled: bool = False
-    mode: str = "blacklist"
-    noise_patterns: list[str] = field(default_factory=list)
-    event_patterns: dict[str, Any] = field(default_factory=dict)
+    filters: list[FilterRule] = field(default_factory=list)
 
     @classmethod
     def from_item(cls, item: Any) -> "InputFilterConfig":
+        rules = item.input_filter_rules or {}
+        filters = []
+        
+        for filter_name, filter_config in rules.items():
+            if isinstance(filter_config, dict):
+                action = filter_config.get("action", {})
+                filter_rule = FilterRule(
+                    name=filter_name,
+                    regex_patterns=filter_config.get("regex_patterns", []),
+                    action_type=filter_config.get("action_type", "ignore"),
+                    replace_rules=action.get("replace_rules", {}),
+                )
+                filters.append(filter_rule)
+        
         return cls(
             enabled=item.input_filter_enabled,
-            mode=item.input_filter_mode,
-            noise_patterns=item.input_noise_patterns or [],
-            event_patterns=item.input_event_patterns or {},
+            filters=filters,
         )
 
 
@@ -32,57 +81,26 @@ class InputFilterConfig:
 class FilteredEvent:
     raw_content: str
     event_type: EventType
-    matches: list[re.Match]
+    matches: list[dict[str, Any]]
     timestamp: datetime = field(default_factory=datetime.now)
     stdout: str = ""
     stderr: str = ""
+    matched_filters: list[str] = field(default_factory=list)
 
 
 class InputFilter:
     """
-    输入过滤器 - 从终端输出中提取有价值信息
+    Input Filter - Extract valuable information from terminal output
 
-    过滤策略:
-    1. NoiseReducer: 降低噪音 (重复行、进度条等)
-    2. PatternMatcher: 匹配关键模式 (错误、警告、提示符等)
-    3. EventClassifier: 分类事件类型 (需要Action/仅记录/忽略)
+    Supports multiple independent filters, each with:
+    - regex_patterns: list of patterns to match
+    - action_type: "block" | "ignore" | "log" | "replace"
+    - action.replace_rules: {match_pattern: replacement} (for replace type)
     """
-
-    DEFAULT_EVENT_PATTERNS = {
-        "error": [r"error:", r"failed:", r"exception:", r"Error:", r"FAILED", r"EXCEPTION"],
-        "warning": [r"warning:", r"warn:", r"Warning:", r"WARN"],
-        "prompt": [r"\$\s*$", r"#\s*$", r">>>\s*$", r">\s*$"],
-        "progress": [r"\d+%", r"\[\s*=+\s*\]", r"\.\.\.+"],
-        "input_required": [r"\(y/n\)", r"\[Y/n\]", r"enter.*:", r"password:", r"confirm"],
-    }
-
-    DEFAULT_NOISE_PATTERNS = [
-        r"^\s*$",
-        r"^\x1b\[[0-9;]*[a-zA-Z]$",
-        r"^\r$",
-    ]
 
     def __init__(self, config: InputFilterConfig):
         self.config = config
-        self._noise_patterns = self._compile_noise_patterns()
-        self._event_patterns = self._compile_event_patterns()
         self._last_content_hash: dict[str, int] = {}
-
-    def _compile_noise_patterns(self) -> list[re.Pattern]:
-        patterns = list(self.DEFAULT_NOISE_PATTERNS)
-        if self.config.noise_patterns:
-            patterns.extend(self.config.noise_patterns)
-        return [re.compile(p) for p in patterns]
-
-    def _compile_event_patterns(self) -> dict[str, list[re.Pattern]]:
-        event_patterns = dict(self.DEFAULT_EVENT_PATTERNS)
-        if self.config.event_patterns:
-            event_patterns.update(self.config.event_patterns)
-
-        compiled = {}
-        for event_type, patterns in event_patterns.items():
-            compiled[event_type] = [re.compile(p, re.IGNORECASE) for p in patterns]
-        return compiled
 
     def filter(self, stream_data: dict[str, Any]) -> FilteredEvent | None:
         if not self.config.enabled:
@@ -95,37 +113,69 @@ class InputFilter:
         if not content.strip():
             return None
 
-        cleaned = self._reduce_noise(content)
-        if not cleaned:
+        if self._is_duplicate(content):
             return None
 
-        if self._is_duplicate(cleaned):
+        result = self._apply_filters(content)
+        if result is None:
             return None
 
-        matches = self._match_patterns(cleaned)
-        event_type = self._classify_event(cleaned, matches)
+        event_type, cleaned_content, matched_filters, matches = result
 
         event = self._create_event(stream_data, event_type)
-        event.raw_content = cleaned
+        event.raw_content = cleaned_content
+        event.matched_filters = matched_filters
         event.matches = matches
 
         return event
 
-    def _reduce_noise(self, content: str) -> str:
-        lines = content.split("\n")
-        cleaned_lines = []
+    def _apply_filters(
+        self, content: str
+    ) -> tuple[EventType, str, list[str], list[dict[str, Any]]] | None:
+        cleaned_content = content
+        matched_filters: list[str] = []
+        all_matches: list[dict[str, Any]] = []
+        has_block = False
+        has_log = False
 
-        for line in lines:
-            is_noise = False
-            for pattern in self._noise_patterns:
-                if pattern.match(line):
-                    is_noise = True
-                    break
+        for filter_rule in self.config.filters:
+            matches = filter_rule.matches(cleaned_content)
+            
+            if not matches:
+                continue
 
-            if not is_noise and line.strip():
-                cleaned_lines.append(line)
+            matched_filters.append(filter_rule.name)
+            
+            for match in matches:
+                all_matches.append({
+                    "filter": filter_rule.name,
+                    "pattern": match.re.pattern,
+                    "matched": match.group(),
+                    "action_type": filter_rule.action_type,
+                })
 
-        return "\n".join(cleaned_lines)
+            if filter_rule.action_type == "block":
+                has_block = True
+                
+            elif filter_rule.action_type == "ignore":
+                for pattern in filter_rule._compiled_patterns:
+                    cleaned_content = pattern.sub("", cleaned_content)
+                
+            elif filter_rule.action_type == "log":
+                has_log = True
+                
+            elif filter_rule.action_type == "replace":
+                cleaned_content = filter_rule.apply_replace(cleaned_content)
+
+        if has_block:
+            return None
+
+        if has_log:
+            event_type = EventType.NEEDS_ACTION
+        else:
+            event_type = EventType.INFORMATIONAL
+
+        return event_type, cleaned_content, matched_filters, all_matches
 
     def _is_duplicate(self, content: str) -> bool:
         content_hash = hash(content.strip())
@@ -137,37 +187,6 @@ class InputFilter:
 
         self._last_content_hash[item_key] = content_hash
         return False
-
-    def _match_patterns(self, content: str) -> list[re.Match]:
-        matches = []
-        for event_type, patterns in self._event_patterns.items():
-            for pattern in patterns:
-                for match in pattern.finditer(content):
-                    matches.append(match)
-        return matches
-
-    def _classify_event(self, content: str, matches: list[re.Match]) -> EventType:
-        if not matches:
-            return EventType.INFORMATIONAL
-
-        match_types = set()
-        for match in matches:
-            for event_type, patterns in self._event_patterns.items():
-                for pattern in patterns:
-                    if pattern.search(content):
-                        match_types.add(event_type)
-                        break
-
-        if "input_required" in match_types:
-            return EventType.NEEDS_ACTION
-        if "error" in match_types:
-            return EventType.NEEDS_ACTION
-        if "warning" in match_types:
-            return EventType.INFORMATIONAL
-        if "progress" in match_types:
-            return EventType.NOISE
-
-        return EventType.INFORMATIONAL
 
     def _create_event(
         self, stream_data: dict[str, Any], event_type: EventType

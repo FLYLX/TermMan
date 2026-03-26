@@ -51,6 +51,30 @@ export const Body_items_disconnect_item_subscriberSchema = {
     title: 'Body_items-disconnect_item_subscriber'
 } as const;
 
+export const Body_items_test_input_filterSchema = {
+    properties: {
+        test_text: {
+            type: 'string',
+            title: 'Test Text'
+        }
+    },
+    type: 'object',
+    required: ['test_text'],
+    title: 'Body_items-test_input_filter'
+} as const;
+
+export const Body_items_test_output_filterSchema = {
+    properties: {
+        command: {
+            type: 'string',
+            title: 'Command'
+        }
+    },
+    type: 'object',
+    required: ['command'],
+    title: 'Body_items-test_output_filter'
+} as const;
+
 export const Body_items_verify_terminal_tokenSchema = {
     properties: {
         temp_token: {
@@ -305,79 +329,20 @@ export const ItemSchema = {
             title: 'Input Filter Enabled',
             default: false
         },
-        input_filter_mode: {
-            type: 'string',
-            title: 'Input Filter Mode',
-            default: 'blacklist'
-        },
-        input_noise_patterns: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Input Noise Patterns'
-        },
-        input_event_patterns: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Input Event Patterns'
+        input_filter_rules: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Input Filter Rules'
         },
         output_filter_enabled: {
             type: 'boolean',
             title: 'Output Filter Enabled',
             default: false
         },
-        output_filter_mode: {
-            type: 'string',
-            title: 'Output Filter Mode',
-            default: 'blacklist'
-        },
-        output_command_list: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Output Command List'
-        },
-        output_sensitive_patterns: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Output Sensitive Patterns'
-        },
-        output_rate_limit: {
-            type: 'integer',
-            title: 'Output Rate Limit',
-            default: 10
+        output_filter_rules: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Output Filter Rules'
         },
         id: {
             type: 'string',
@@ -535,79 +500,20 @@ export const ItemCreateSchema = {
             title: 'Input Filter Enabled',
             default: false
         },
-        input_filter_mode: {
-            type: 'string',
-            title: 'Input Filter Mode',
-            default: 'blacklist'
-        },
-        input_noise_patterns: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Input Noise Patterns'
-        },
-        input_event_patterns: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Input Event Patterns'
+        input_filter_rules: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Input Filter Rules'
         },
         output_filter_enabled: {
             type: 'boolean',
             title: 'Output Filter Enabled',
             default: false
         },
-        output_filter_mode: {
-            type: 'string',
-            title: 'Output Filter Mode',
-            default: 'blacklist'
-        },
-        output_command_list: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Output Command List'
-        },
-        output_sensitive_patterns: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Output Sensitive Patterns'
-        },
-        output_rate_limit: {
-            type: 'integer',
-            title: 'Output Rate Limit',
-            default: 10
+        output_filter_rules: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Output Filter Rules'
         }
     },
     type: 'object',
@@ -1061,79 +967,20 @@ export const ItemPublicSchema = {
             title: 'Input Filter Enabled',
             default: false
         },
-        input_filter_mode: {
-            type: 'string',
-            title: 'Input Filter Mode',
-            default: 'blacklist'
-        },
-        input_noise_patterns: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Input Noise Patterns'
-        },
-        input_event_patterns: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Input Event Patterns'
+        input_filter_rules: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Input Filter Rules'
         },
         output_filter_enabled: {
             type: 'boolean',
             title: 'Output Filter Enabled',
             default: false
         },
-        output_filter_mode: {
-            type: 'string',
-            title: 'Output Filter Mode',
-            default: 'blacklist'
-        },
-        output_command_list: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Output Command List'
-        },
-        output_sensitive_patterns: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Output Sensitive Patterns'
-        },
-        output_rate_limit: {
-            type: 'integer',
-            title: 'Output Rate Limit',
-            default: 10
+        output_filter_rules: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Output Filter Rules'
         },
         id: {
             type: 'string',
@@ -1326,32 +1173,7 @@ export const ItemUpdateSchema = {
             ],
             title: 'Input Filter Enabled'
         },
-        input_filter_mode: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Input Filter Mode'
-        },
-        input_noise_patterns: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Input Noise Patterns'
-        },
-        input_event_patterns: {
+        input_filter_rules: {
             anyOf: [
                 {
                     additionalProperties: true,
@@ -1361,7 +1183,7 @@ export const ItemUpdateSchema = {
                     type: 'null'
                 }
             ],
-            title: 'Input Event Patterns'
+            title: 'Input Filter Rules'
         },
         output_filter_enabled: {
             anyOf: [
@@ -1374,55 +1196,17 @@ export const ItemUpdateSchema = {
             ],
             title: 'Output Filter Enabled'
         },
-        output_filter_mode: {
+        output_filter_rules: {
             anyOf: [
                 {
-                    type: 'string'
+                    additionalProperties: true,
+                    type: 'object'
                 },
                 {
                     type: 'null'
                 }
             ],
-            title: 'Output Filter Mode'
-        },
-        output_command_list: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Output Command List'
-        },
-        output_sensitive_patterns: {
-            anyOf: [
-                {
-                    items: {
-                        type: 'string'
-                    },
-                    type: 'array'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Output Sensitive Patterns'
-        },
-        output_rate_limit: {
-            anyOf: [
-                {
-                    type: 'integer'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Output Rate Limit'
+            title: 'Output Filter Rules'
         }
     },
     type: 'object',

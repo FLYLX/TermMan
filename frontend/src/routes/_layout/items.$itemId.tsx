@@ -6,23 +6,34 @@ import {
   Check,
   ChevronRight,
   Copy,
+  EyeOff,
+  Filter,
+  Gauge,
   Loader2,
+  Play,
   Plug,
+  Save,
   Send,
+  Shield,
   Terminal,
   Users,
+  VolumeX,
   WifiOff,
+  Zap,
 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ApiError, type ItemPublic, ItemsService } from "@/client"
+import { ApiError, type ItemPublic, type ItemUpdate, ItemsService } from "@/client"
 import {
   createFallbackItem,
   getStoredItemSnapshot,
   saveItemSnapshot,
 } from "@/components/Items/itemDetailSnapshots"
+import { FilterRuleEditor, type FilterRule } from "@/components/Items/FilterRuleEditor"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
 import { useTerminalConnection } from "@/hooks/useTerminalConnection"
@@ -163,6 +174,160 @@ function ItemDetailPage({
   const [command, setCommand] = useState("")
   const outputRef = useRef<HTMLDivElement>(null)
 
+  const [isSavingInputFilter, setIsSavingInputFilter] = useState(false)
+  const [isSavingOutputFilter, setIsSavingOutputFilter] = useState(false)
+  
+  const defaultInputRules = {
+    block_filter: {
+      regex_patterns: [
+        "violence|porn|gambling",
+        "http://.*\\.exe",
+      ],
+      action_type: "block"
+    },
+    ignore_filter: {
+      regex_patterns: [
+        "^\\s*$",
+        "^\\x1b\\[[0-9;]*[a-zA-Z]$",
+        "^\\r$",
+        "\\d+%",
+        "\\[\\s*=+\\s*\\]",
+        "\\.\\.\\.+",
+        "DEBUG\\s*:",
+        "INFO\\s*:",
+      ],
+      action_type: "ignore"
+    },
+    log_filter: {
+      regex_patterns: [
+        "error:",
+        "failed:",
+        "exception:",
+        "Error:",
+        "FAILED",
+        "EXCEPTION",
+        "warning:",
+        "warn:",
+        "Warning:",
+        "WARN",
+        "\\(y/n\\)",
+        "\\[Y/n\\]",
+        "enter.*:",
+        "password:",
+        "confirm",
+      ],
+      action_type: "log"
+    },
+    replace_filter: {
+      regex_patterns: [
+        "^\\d{11}$",
+        "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}",
+      ],
+      action_type: "replace",
+      action: {
+        replace_rules: {
+          "^\\d{11}$": "***phone***",
+          "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}": "***email***"
+        }
+      }
+    }
+  }
+
+  const defaultOutputRules = {
+    block_filter: {
+      regex_patterns: [
+        "rm\\s+-rf\\s+/",
+        "rm\\s+-rf\\s+~",
+        "mkfs",
+        "dd\\s+if=",
+        ">\\s*/dev/sd",
+        ":\\(\\)\\s*\\{\\s*:\\|\\:&\\s*\\}\\s*;:",
+        "chmod\\s+777\\s+/",
+        "chown\\s+.*:.*\\s+/",
+        "shutdown",
+        "reboot",
+        "init\\s+0",
+        "init\\s+6",
+        "halt",
+        "poweroff",
+      ],
+      action_type: "block"
+    },
+    ignore_filter: {
+      regex_patterns: [
+        "DEBUG\\s*:",
+        "INFO\\s*:",
+      ],
+      action_type: "ignore"
+    },
+    log_filter: {
+      regex_patterns: [
+        "sudo\\s+",
+        "chmod\\s+",
+        "chown\\s+",
+      ],
+      action_type: "log"
+    },
+    replace_filter: {
+      regex_patterns: [
+        "password\\s*=\\s*\\S+",
+        "api[_-]?key\\s*=\\s*\\S+",
+        "secret\\s*=\\s*\\S+",
+        "token\\s*=\\s*\\S+",
+        "--password\\s+\\S+",
+        "-p\\s+\\S+",
+      ],
+      action_type: "replace",
+      action: {
+        replace_rules: {
+          "password\\s*=\\s*\\S+": "password=***",
+          "api[_-]?key\\s*=\\s*\\S+": "api_key=***",
+          "secret\\s*=\\s*\\S+": "secret=***",
+          "token\\s*=\\s*\\S+": "token=***",
+          "--password\\s+\\S+": "--password ***",
+          "-p\\s+\\S+": "-p ***"
+        }
+      }
+    }
+  }
+
+  const [inputFilterEnabled, setInputFilterEnabled] = useState(item.input_filter_enabled || false)
+  const [inputFilterRules, setInputFilterRules] = useState<Record<string, FilterRule>>(
+    item.input_filter_rules && Object.keys(item.input_filter_rules).length > 0
+      ? item.input_filter_rules as Record<string, FilterRule>
+      : defaultInputRules as Record<string, FilterRule>
+  )
+
+  const [outputFilterEnabled, setOutputFilterEnabled] = useState(item.output_filter_enabled || false)
+  const [outputFilterRules, setOutputFilterRules] = useState<Record<string, FilterRule>>(
+    item.output_filter_rules && Object.keys(item.output_filter_rules).length > 0
+      ? item.output_filter_rules as Record<string, FilterRule>
+      : defaultOutputRules as Record<string, FilterRule>
+  )
+
+  const [inputTestText, setInputTestText] = useState("")
+  const [inputTestResult, setInputTestResult] = useState<Record<string, unknown> | null>(null)
+  const [isTestingInputFilter, setIsTestingInputFilter] = useState(false)
+
+  const [outputTestCommand, setOutputTestCommand] = useState("")
+  const [outputTestResult, setOutputTestResult] = useState<Record<string, unknown> | null>(null)
+  const [isTestingOutputFilter, setIsTestingOutputFilter] = useState(false)
+
+  useEffect(() => {
+    setInputFilterEnabled(item.input_filter_enabled || false)
+    setInputFilterRules(
+      item.input_filter_rules && Object.keys(item.input_filter_rules).length > 0
+        ? item.input_filter_rules as Record<string, FilterRule>
+        : defaultInputRules as Record<string, FilterRule>
+    )
+    setOutputFilterEnabled(item.output_filter_enabled || false)
+    setOutputFilterRules(
+      item.output_filter_rules && Object.keys(item.output_filter_rules).length > 0
+        ? item.output_filter_rules as Record<string, FilterRule>
+        : defaultOutputRules as Record<string, FilterRule>
+    )
+  }, [item])
+
   const shouldConnect = item.status === "running" && item.daemon_online
 
   const {
@@ -248,6 +413,87 @@ function ItemDetailPage({
       handleSendCommand()
     }
   }
+
+  const handleSaveInputFilter = async () => {
+    setIsSavingInputFilter(true)
+    try {
+      const updateData: ItemUpdate = {
+        input_filter_enabled: inputFilterEnabled,
+        input_filter_rules: inputFilterRules,
+      }
+
+      await ItemsService.updateItem({ id: item.id, requestBody: updateData })
+      queryClient.invalidateQueries({ queryKey: ["items", "detail", item.id] })
+      queryClient.invalidateQueries({ queryKey: ["items"] })
+      showSuccessToast("Input filter saved successfully")
+    } catch (error) {
+      console.error("Failed to save input filter:", error)
+      showErrorToast("Failed to save input filter")
+    } finally {
+      setIsSavingInputFilter(false)
+    }
+  }
+
+  const handleSaveOutputFilter = async () => {
+    setIsSavingOutputFilter(true)
+    try {
+      const updateData: ItemUpdate = {
+        output_filter_enabled: outputFilterEnabled,
+        output_filter_rules: outputFilterRules,
+      }
+
+      await ItemsService.updateItem({ id: item.id, requestBody: updateData })
+      queryClient.invalidateQueries({ queryKey: ["items", "detail", item.id] })
+      queryClient.invalidateQueries({ queryKey: ["items"] })
+      showSuccessToast("Output filter saved successfully")
+    } catch (error) {
+      console.error("Failed to save output filter:", error)
+      showErrorToast("Failed to save output filter")
+    } finally {
+      setIsSavingOutputFilter(false)
+    }
+  }
+
+  const handleTestInputFilter = async () => {
+    if (!inputTestText.trim()) {
+      showErrorToast("Please enter test text")
+      return
+    }
+    setIsTestingInputFilter(true)
+    try {
+      const result = await ItemsService.testInputFilter({
+        id: item.id,
+        requestBody: { test_text: inputTestText }
+      })
+      setInputTestResult(result)
+    } catch (error) {
+      console.error("Failed to test input filter:", error)
+      showErrorToast("Failed to test input filter")
+    } finally {
+      setIsTestingInputFilter(false)
+    }
+  }
+
+  const handleTestOutputFilter = async () => {
+    if (!outputTestCommand.trim()) {
+      showErrorToast("Please enter a command to test")
+      return
+    }
+    setIsTestingOutputFilter(true)
+    try {
+      const result = await ItemsService.testOutputFilter({
+        id: item.id,
+        requestBody: { command: outputTestCommand }
+      })
+      setOutputTestResult(result)
+    } catch (error) {
+      console.error("Failed to test output filter:", error)
+      showErrorToast("Failed to test output filter")
+    } finally {
+      setIsTestingOutputFilter(false)
+    }
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-6">
       <section className="space-y-4">
@@ -567,60 +813,180 @@ function ItemDetailPage({
       </section>
 
       <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-        <h2 className="text-xl font-semibold mb-4">Input Filter Settings</h2>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <KeyValue
-            label="Enabled"
-            value={item.input_filter_enabled ? "Yes" : "No"}
-          />
-          <KeyValue label="Mode" value={item.input_filter_mode} />
-          <KeyValue
-            label="Noise Patterns"
-            value={
-              item.input_noise_patterns
-                ? JSON.stringify(item.input_noise_patterns)
-                : "-"
-            }
-          />
-          <KeyValue
-            label="Event Patterns"
-            value={
-              item.input_event_patterns
-                ? JSON.stringify(item.input_event_patterns)
-                : "-"
-            }
-          />
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Filter className="size-5 text-blue-500" />
+            <h2 className="text-xl font-semibold">Input Filter Settings</h2>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleSaveInputFilter}
+            disabled={isSavingInputFilter}
+          >
+            {isSavingInputFilter ? (
+              <Loader2 className="size-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="size-4 mr-2" />
+            )}
+            Save
+          </Button>
+        </div>
+        
+        <div className="flex flex-wrap items-center gap-4 mb-4 p-3 rounded-lg border bg-muted/30">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">Enabled</span>
+            <button
+              type="button"
+              onClick={() => setInputFilterEnabled(!inputFilterEnabled)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                inputFilterEnabled ? 'bg-blue-500' : 'bg-muted'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  inputFilterEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+        
+        <FilterRuleEditor
+          value={inputFilterRules}
+          onChange={setInputFilterRules}
+          defaultRules={defaultInputRules as Record<string, FilterRule>}
+        />
+        
+        <div className="mt-4 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Terminal className="size-4 text-blue-500" />
+            <span className="text-sm font-medium">Test Input Filter</span>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Input Text</Label>
+              <Textarea
+                placeholder="Paste terminal output here to test..."
+                className="font-mono text-xs h-40"
+                value={inputTestText}
+                onChange={(e) => setInputTestText(e.target.value)}
+              />
+              <Button
+                size="sm"
+                onClick={handleTestInputFilter}
+                disabled={isTestingInputFilter}
+                className="w-full"
+              >
+                {isTestingInputFilter ? (
+                  <Loader2 className="size-4 mr-2 animate-spin" />
+                ) : (
+                  <Play className="size-4 mr-2" />
+                )}
+                Test Filter
+              </Button>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Filter Result</Label>
+              <div className="rounded-md border bg-muted/30 p-3 h-40 overflow-auto">
+                {inputTestResult ? (
+                  <pre className="text-xs font-mono whitespace-pre-wrap">
+                    {String(inputTestResult.result || "")}
+                  </pre>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Click "Test Filter" to see results</p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
       <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-        <h2 className="text-xl font-semibold mb-4">Output Filter Settings</h2>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <KeyValue
-            label="Enabled"
-            value={item.output_filter_enabled ? "Yes" : "No"}
-          />
-          <KeyValue label="Mode" value={item.output_filter_mode} />
-          <KeyValue
-            label="Command List"
-            value={
-              item.output_command_list
-                ? JSON.stringify(item.output_command_list)
-                : "-"
-            }
-          />
-          <KeyValue
-            label="Sensitive Patterns"
-            value={
-              item.output_sensitive_patterns
-                ? JSON.stringify(item.output_sensitive_patterns)
-                : "-"
-            }
-          />
-          <KeyValue
-            label="Rate Limit"
-            value={item.output_rate_limit?.toString()}
-          />
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Shield className="size-5 text-orange-500" />
+            <h2 className="text-xl font-semibold">Output Filter Settings</h2>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleSaveOutputFilter}
+            disabled={isSavingOutputFilter}
+          >
+            {isSavingOutputFilter ? (
+              <Loader2 className="size-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="size-4 mr-2" />
+            )}
+            Save
+          </Button>
+        </div>
+        
+        <div className="flex flex-wrap items-center gap-4 mb-4 p-3 rounded-lg border bg-muted/30">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">Enabled</span>
+            <button
+              type="button"
+              onClick={() => setOutputFilterEnabled(!outputFilterEnabled)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                outputFilterEnabled ? 'bg-orange-500' : 'bg-muted'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  outputFilterEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+        
+        <FilterRuleEditor
+          value={outputFilterRules}
+          onChange={setOutputFilterRules}
+          defaultRules={defaultOutputRules as Record<string, FilterRule>}
+        />
+        
+        <div className="mt-4 rounded-lg border border-orange-500/30 bg-orange-500/5 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Shield className="size-4 text-orange-500" />
+            <span className="text-sm font-medium">Test Output Filter</span>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Command to Test</Label>
+              <Textarea
+                placeholder="Enter a command to test filtering..."
+                className="font-mono text-xs h-32"
+                value={outputTestCommand}
+                onChange={(e) => setOutputTestCommand(e.target.value)}
+              />
+              <Button
+                size="sm"
+                onClick={handleTestOutputFilter}
+                disabled={isTestingOutputFilter}
+                className="w-full"
+              >
+                {isTestingOutputFilter ? (
+                  <Loader2 className="size-4 mr-2 animate-spin" />
+                ) : (
+                  <Play className="size-4 mr-2" />
+                )}
+                Test Command
+              </Button>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Filter Result</Label>
+              <div className="rounded-md border bg-muted/30 p-3 h-32 overflow-auto">
+                {outputTestResult ? (
+                  <pre className="text-xs font-mono whitespace-pre-wrap">
+                    {String(outputTestResult.result || "")}
+                  </pre>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Click "Test Command" to see results</p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

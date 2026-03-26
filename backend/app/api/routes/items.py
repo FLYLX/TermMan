@@ -1,14 +1,17 @@
 import logging
 import uuid
+import re
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, Query
 from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Item, ItemCreate, ItemPublic, ItemUpdate, Message, ItemStatus, User
 from app.services import DaemonConfig, connection_manager, socket_manager, backend_conn_pool, log_manager
 from app.services.terminal_service import TerminalService
+from app.services.agent.filters.input_filter import InputFilter, InputFilterConfig, EventType
+from app.services.agent.filters.output_filter import OutputFilter, OutputFilterConfig, FilterAction
 
 logger = logging.getLogger(__name__)
 
@@ -476,4 +479,70 @@ def get_item_output(
         "item_uuid": str(id),
         "lines": lines,
         "output": output
+    }
+
+
+@router.post("/{id}/test-input-filter")
+def test_input_filter(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    test_text: str = Body(..., embed=True),
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+    
+    config = InputFilterConfig.from_item(item)
+    input_filter = InputFilter(config)
+    
+    stream_data = {"stdout": test_text, "stderr": ""}
+    result = input_filter.filter(stream_data)
+    
+    if result is None:
+        return {
+            "success": True,
+            "result": "",
+            "event_type": "blocked",
+            "matched_filters": [],
+            "matches": [],
+        }
+    
+    return {
+        "success": True,
+        "result": result.raw_content,
+        "event_type": result.event_type.value,
+        "matched_filters": result.matched_filters,
+        "matches": result.matches[:20],
+    }
+
+
+@router.post("/{id}/test-output-filter")
+def test_output_filter(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    command: str = Body(..., embed=True),
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+    
+    config = OutputFilterConfig.from_item(item)
+    output_filter = OutputFilter(config)
+    
+    result = output_filter.filter(command)
+    
+    return {
+        "success": True,
+        "original_command": command,
+        "result": "" if result.is_blocked else result.command,
+        "action": result.action.value,
+        "reason": result.reason,
+        "is_allowed": result.is_allowed,
+        "is_blocked": result.is_blocked,
+        "matched_filters": result.matched_filters,
+        "matches": result.matches[:20],
     }
