@@ -4,6 +4,8 @@ from typing import Any
 
 from .item_socket import ItemSocket
 from .socket_models import TerminalStatus
+from .subscription_center import subscription_center
+from .input_center import input_center
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +62,18 @@ class SocketManager:
         if existing_socket:
             if existing_socket.is_connected():
                 logger.info(f"[SocketManager] Backend socket already exists and connected for item={item_uuid}, reusing")
+                if not hasattr(existing_socket, '_input_handler_id') or not existing_socket._input_handler_id:
+                    self._register_input_handler(existing_socket)
                 return existing_socket
             else:
                 logger.info(f"[SocketManager] Backend socket exists but disconnected for item={item_uuid}, reconnecting")
                 existing_socket.connect(api_key)
+                if existing_socket.is_connected():
+                    if not hasattr(existing_socket, '_input_handler_id') or not existing_socket._input_handler_id:
+                        self._register_input_handler(existing_socket)
                 return existing_socket
         
-        return self.create_socket(
+        socket = self.create_socket(
             item_uuid=item_uuid,
             token=token,
             daemon_url=daemon_url,
@@ -74,6 +81,34 @@ class SocketManager:
             api_key=api_key,
             subscriber_type="backend"
         )
+        
+        if socket.is_connected():
+            self._register_input_handler(socket)
+        else:
+            logger.warning(f"[SocketManager] Backend socket NOT connected for item={item_uuid}")
+        
+        return socket
+    
+    def _register_input_handler(self, socket: ItemSocket):
+        from .input_center import InputCommand
+        
+        def handle_input(cmd: InputCommand) -> bool:
+            if socket.is_connected():
+                return socket.write(cmd.command)
+            return False
+        
+        handler_id = input_center.register(
+            item_uuid=socket.item_uuid,
+            callback=handle_input,
+            handler_type="backend_socket"
+        )
+        socket._input_handler_id = handler_id
+        logger.info(f"[SocketManager] Registered input handler {handler_id} for item={socket.item_uuid}")
+    
+    def _unregister_input_handler(self, socket: ItemSocket):
+        if hasattr(socket, '_input_handler_id'):
+            input_center.unregister(socket._input_handler_id)
+            logger.info(f"[SocketManager] Unregistered input handler {socket._input_handler_id} for item={socket.item_uuid}")
 
     def get_or_create_socket(
         self, 
@@ -94,6 +129,7 @@ class SocketManager:
             key = (user_uuid, item_uuid, subscriber_type)
             if key in self.sockets:
                 socket = self.sockets.pop(key)
+                self._unregister_input_handler(socket)
                 socket.disconnect()
 
     def remove_all_sockets_by_item(self, item_uuid: str):
@@ -101,13 +137,15 @@ class SocketManager:
             keys_to_remove = [(u, iid, s) for (u, iid, s) in self.sockets if iid == item_uuid]
             for key in keys_to_remove:
                 socket = self.sockets.pop(key)
+                self._unregister_input_handler(socket)
                 socket.disconnect()
 
     def clear_sockets_by_item(self, item_uuid: str):
         with self.lock:
             keys_to_remove = [(u, iid, s) for (u, iid, s) in self.sockets if iid == item_uuid]
             for key in keys_to_remove:
-                self.sockets.pop(key)
+                socket = self.sockets.pop(key)
+                self._unregister_input_handler(socket)
 
     def add_token(self, daemon_id: str, item_uuid: str, token: str) -> dict[str, str]:
         with self.lock:

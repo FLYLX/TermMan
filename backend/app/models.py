@@ -196,6 +196,7 @@ class ItemHandlerBase(SQLModel):
     api_key: Optional[str] = Field(default=None, max_length=255)
     api_url: Optional[str] = Field(default=None, max_length=255)
     enabled_skills: Optional[List[str]] = Field(default=None, sa_type=JSON)
+    enabled_mcp_servers: Optional[List[str]] = Field(default=None, sa_type=JSON)
 
 
 class ItemHandlerCreate(ItemHandlerBase):
@@ -208,6 +209,7 @@ class ItemHandlerUpdate(ItemHandlerBase):
     api_key: Optional[str] = Field(default=None, max_length=255)
     api_url: Optional[str] = Field(default=None, max_length=255)
     enabled_skills: Optional[List[str]] = Field(default=None, sa_type=JSON)
+    enabled_mcp_servers: Optional[List[str]] = Field(default=None, sa_type=JSON)
 
 
 class ItemHandler(ItemHandlerBase, table=True):
@@ -232,6 +234,24 @@ class ItemHandler(ItemHandlerBase, table=True):
 class ItemHandlerPublic(ItemHandlerBase):
     id: uuid.UUID
     owner_id: uuid.UUID
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class ItemChatSessionBase(SQLModel):
+    messages: List[dict] = Field(default_factory=list, sa_type=JSON)
+
+
+class ItemChatSession(ItemChatSessionBase, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True, sa_type=SQLiteUUID)
+    item_id: uuid.UUID = Field(foreign_key="item.id", nullable=False, ondelete="CASCADE", sa_type=SQLiteUUID, index=True)
+    created_at: datetime = Field(default_factory=get_datetime_utc, sa_type=DateTime(timezone=True))
+    updated_at: datetime = Field(default_factory=get_datetime_utc, sa_type=DateTime(timezone=True), sa_column_kwargs={"onupdate": get_datetime_utc})
+
+
+class ItemChatSessionPublic(ItemChatSessionBase):
+    id: uuid.UUID
+    item_id: uuid.UUID
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

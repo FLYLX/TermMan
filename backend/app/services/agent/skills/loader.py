@@ -9,11 +9,11 @@ logger = logging.getLogger(__name__)
 
 
 class SkillLoader:
-    SKILL_FILE = "SKILL.md"
+    SKILL_FILES = ["SKILL.md", "SYSTEM_PROMPT.md"]
 
     def __init__(self, skills_dir: Path | None = None):
         if skills_dir is None:
-            skills_dir = Path(__file__).parent.parent.parent.parent.parent / "skills"
+            skills_dir: Path = Path(__file__).parent.parent.parent.parent.parent / "skills"
         self.skills_dir = Path(skills_dir)
         self._skills: dict[str, SkillDefinition] = {}
         self._load_all()
@@ -33,9 +33,15 @@ class SkillLoader:
         logger.info(f"[SkillLoader] Loaded {len(self._skills)} skills")
 
     def _load_skill(self, skill_path: Path) -> SkillDefinition | None:
-        skill_file = skill_path / self.SKILL_FILE
-        if not skill_file.exists():
-            logger.warning(f"[SkillLoader] SKILL.md not found in {skill_path}")
+        skill_file = None
+        for filename in self.SKILL_FILES:
+            candidate = skill_path / filename
+            if candidate.exists():
+                skill_file = candidate
+                break
+        
+        if not skill_file:
+            logger.warning(f"[SkillLoader] No skill file found in {skill_path}")
             return None
 
         try:
@@ -53,6 +59,7 @@ class SkillLoader:
                 description=str(description) if description is not None else "",
                 category=str(category) if category is not None else "general",
                 content=content,
+                skill_dir=str(skill_path.name),
             )
 
             if "trigger" in metadata:
@@ -63,6 +70,11 @@ class SkillLoader:
 
             if "safety" in metadata:
                 skill.safety = SafetyConfig.from_dict(metadata["safety"])
+
+            if "mcp_servers" in metadata:
+                mcp_data = metadata["mcp_servers"]
+                if isinstance(mcp_data, list):
+                    skill.mcp_servers = [str(m) for m in mcp_data]
 
             scripts_dir = skill_path / "scripts"
             if scripts_dir.exists():

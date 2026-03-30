@@ -10,8 +10,8 @@ from app.api.deps import CurrentUser, SessionDep
 from app.models import Item, ItemCreate, ItemPublic, ItemUpdate, Message, ItemStatus, User
 from app.services import DaemonConfig, connection_manager, socket_manager, backend_conn_pool, log_manager
 from app.services.terminal_service import TerminalService
-from app.services.agent.filters.input_filter import InputFilter, InputFilterConfig, EventType
-from app.services.agent.filters.output_filter import OutputFilter, OutputFilterConfig, FilterAction
+from app.services.filters import InputFilter, InputFilterConfig, EventType
+from app.services.filters import OutputFilter, OutputFilterConfig, FilterAction
 
 logger = logging.getLogger(__name__)
 

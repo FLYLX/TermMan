@@ -1,0 +1,133 @@
+[2026-03-30 02:34:54] # python cron_job.py
+[2026-03-30 02:34:54] python: can't open file '/app/items/5/cron_job.py': [Errno 2] No such file or directory
+[2026-03-30 02:35:43] # echo "helloworld"
+[2026-03-30 02:35:43] helloworld
+[2026-03-30 02:36:23] # pwd
+[2026-03-30 02:36:23] /app/items/5
+[2026-03-30 03:40:30] # pwd
+[2026-03-30 03:40:30] /app/items/5
+[2026-03-30 03:41:02] # pwd
+[2026-03-30 03:41:02] /app/items/5
+[2026-03-30 03:50:39] # pwd
+[2026-03-30 03:50:39] /app/items/5
+[2026-03-30 03:59:02] # pwd
+[2026-03-30 03:59:02] /app/items/5
+[2026-03-30 03:59:06] # pwd && echo "=== 上级目录 ===" && cd .. && pwd && echo "=== 上级的上级目录 ===" && cd .. && pwd && echo "=== 上级的上级目录内容 ===" && ls -la
+[2026-03-30 03:59:06] /app/items/5
+[2026-03-30 03:59:06] === 上级目录 ===
+[2026-03-30 03:59:06] /app/items
+[2026-03-30 03:59:06] === 上级的上级目录 ===
+[2026-03-30 03:59:06] /app
+[2026-03-30 03:59:06] === 上级的上级目录内容 ===
+[2026-03-30 03:59:07] total 148
+[2026-03-30 03:59:07] drwxr-xr-x 1 root root   4096 Mar 30 02:34 .
+[2026-03-30 03:59:07] drwxr-xr-x 1 root root   4096 Mar 30 02:26 ..
+[2026-03-30 03:59:07] drwxr-xr-x 1 root root   4096 Mar 17 10:42 .venv
+[2026-03-30 03:59:07] drwxr-xr-x 3 root root   4096 Mar 30 02:34 items
+[2026-03-30 03:59:07] drwxrwxrwx 1 root root   4096 Mar 30 02:34 log
+[2026-03-30 03:59:07] drwxr-xr-x 1 root root   4096 Mar 21 16:00 src
+[2026-03-30 03:59:07] -rw-r--r-- 1 root root 117471 Mar 17 10:42 uv.lock
+[2026-03-30 03:59:10] # ls -la ../../
+[2026-03-30 03:59:10] total 72
+[2026-03-30 03:59:10] drwxr-xr-x   1 root root 4096 Mar 30 02:26 .
+[2026-03-30 03:59:10] drwxr-xr-x   1 root root 4096 Mar 30 02:26 ..
+[2026-03-30 03:59:10] -rwxr-xr-x   1 root root    0 Mar 30 02:26 .dockerenv
+[2026-03-30 03:59:10] drwxr-xr-x   1 root root 4096 Mar 30 02:34 app
+[2026-03-30 03:59:10] lrwxrwxrwx   1 root root    7 Mar  2 21:50 bin -> usr/bin
+[2026-03-30 03:59:10] drwxr-xr-x   2 root root 4096 Mar  2 21:50 boot
+[2026-03-30 03:59:10] drwxr-xr-x   5 root root  340 Mar 30 02:26 dev
+[2026-03-30 03:59:10] drwxr-xr-x   1 root root 4096 Mar 30 02:26 etc
+[2026-03-30 03:59:10] drwxr-xr-x   2 root root 4096 Mar  2 21:50 home
+[2026-03-30 03:59:10] lrwxrwxrwx   1 root root    7 Mar  2 21:50 lib -> usr/lib
+[2026-03-30 03:59:10] lrwxrwxrwx   1 root root    9 Mar  2 21:50 lib64 -> usr/lib64
+[2026-03-30 03:59:10] drwxr-xr-x   2 root root 4096 Mar 16 00:00 media
+[2026-03-30 03:59:10] drwxr-xr-x   2 root root 4096 Mar 16 00:00 mnt
+[2026-03-30 03:59:10] drwxr-xr-x   2 root root 4096 Mar 16 00:00 opt
+[2026-03-30 03:59:10] dr-xr-xr-x 277 root root    0 Mar 30 02:26 proc
+[2026-03-30 03:59:10] drwx------   1 root root 4096 Mar 23 12:24 root
+[2026-03-30 03:59:10] drwxr-xr-x   1 root root 4096 Mar 16 23:25 run
+[2026-03-30 03:59:10] lrwxrwxrwx   1 root root    8 Mar  2 21:50 sbin -> usr/sbin
+[2026-03-30 03:59:10] drwxr-xr-x   2 root root 4096 Mar 16 00:00 srv
+[2026-03-30 03:59:10] dr-xr-xr-x  11 root root    0 Mar 30 02:26 sys
+[2026-03-30 03:59:10] drwxrwxrwt   1 root root 4096 Mar 23 12:25 tmp
+[2026-03-30 03:59:10] drwxr-xr-x   1 root root 4096 Mar 16 00:00 usr
+[2026-03-30 03:59:10] drwxr-xr-x   1 root root 4096 Mar 16 00:00 var
+[2026-03-30 03:59:14] # pwd
+[2026-03-30 03:59:14] /app
+[2026-03-30 03:59:17] # find ../../ -maxdepth 1 -type d | sort
+[2026-03-30 03:59:17] ../../
+[2026-03-30 03:59:17] ../../app
+[2026-03-30 03:59:17] ../../boot
+[2026-03-30 03:59:17] ../../dev
+[2026-03-30 03:59:17] ../../etc
+[2026-03-30 03:59:17] ../../home
+[2026-03-30 03:59:17] ../../media
+[2026-03-30 03:59:17] ../../mnt
+[2026-03-30 03:59:17] ../../opt
+[2026-03-30 03:59:17] ../../proc
+[2026-03-30 03:59:17] ../../root
+[2026-03-30 03:59:17] ../../run
+[2026-03-30 03:59:17] ../../srv
+[2026-03-30 03:59:17] ../../sys
+[2026-03-30 03:59:17] ../../tmp
+[2026-03-30 03:59:17] ../../usr
+[2026-03-30 03:59:17] ../../var
+[2026-03-30 03:59:20] # echo "当前目录的上级的上级目录的子目录：" && ls -d ../../*/ 2>/dev/null || echo "没有子目录或无法访问"
+[2026-03-30 03:59:20] 当前目录的上级的上级目录的子目录：
+[2026-03-30 03:59:20] ../../app/   ../../etc/    ../../media/  ../../root/  ../../sys/
+[2026-03-30 03:59:20] ../../bin/   ../../home/   ../../mnt/	 ../../run/   ../../tmp/
+[2026-03-30 03:59:20] ../../boot/  ../../lib/    ../../opt/	 ../../sbin/  ../../usr/
+[2026-03-30 03:59:20] ../../dev/   ../../lib64/  ../../proc/	 ../../srv/   ../../var/
+[2026-03-30 04:29:28] # pwd
+[2026-03-30 04:29:28] /app
+[2026-03-30 04:29:30] # ls -la ../../
+[2026-03-30 04:29:30] total 68
+[2026-03-30 04:29:30] drwxr-xr-x   1 root root 4096 Mar 30 02:26 .
+[2026-03-30 04:29:30] drwxr-xr-x   1 root root 4096 Mar 30 02:26 ..
+[2026-03-30 04:29:30] -rwxr-xr-x   1 root root    0 Mar 30 02:26 .dockerenv
+[2026-03-30 04:29:30] drwxr-xr-x   1 root root 4096 Mar 30 02:34 app
+[2026-03-30 04:29:30] lrwxrwxrwx   1 root root    7 Mar  2 21:50 bin -> usr/bin
+[2026-03-30 04:29:30] drwxr-xr-x   2 root root 4096 Mar  2 21:50 boot
+[2026-03-30 04:29:30] drwxr-xr-x   5 root root  340 Mar 30 02:26 dev
+[2026-03-30 04:29:30] drwxr-xr-x   1 root root 4096 Mar 30 02:26 etc
+[2026-03-30 04:29:30] drwxr-xr-x   2 root root 4096 Mar  2 21:50 home
+[2026-03-30 04:29:30] lrwxrwxrwx   1 root root    7 Mar  2 21:50 lib -> usr/lib
+[2026-03-30 04:29:30] lrwxrwxrwx   1 root root    9 Mar  2 21:50 lib64 -> usr/lib64
+[2026-03-30 04:29:30] drwxr-xr-x   2 root root 4096 Mar 16 00:00 media
+[2026-03-30 04:29:30] drwxr-xr-x   2 root root 4096 Mar 16 00:00 mnt
+[2026-03-30 04:29:30] drwxr-xr-x   2 root root 4096 Mar 16 00:00 opt
+[2026-03-30 04:29:30] dr-xr-xr-x 278 root root    0 Mar 30 02:26 proc
+[2026-03-30 04:29:30] drwx------   1 root root 4096 Mar 23 12:24 root
+[2026-03-30 04:29:30] drwxr-xr-x   1 root root 4096 Mar 16 23:25 run
+[2026-03-30 04:29:30] lrwxrwxrwx   1 root root    8 Mar  2 21:50 sbin -> usr/sbin
+[2026-03-30 04:29:30] drwxr-xr-x   2 root root 4096 Mar 16 00:00 srv
+[2026-03-30 04:29:30] dr-xr-xr-x  11 root root    0 Mar 30 03:59 sys
+[2026-03-30 04:29:30] drwxrwxrwt   1 root root 4096 Mar 30 04:09 tmp
+[2026-03-30 04:29:30] drwxr-xr-x   1 root root 4096 Mar 16 00:00 usr
+[2026-03-30 04:29:30] drwxr-xr-x   1 root root 4096 Mar 16 00:00 var
+[2026-03-30 04:29:31] # ls -d ../../*/
+[2026-03-30 04:29:31] ../../app/   ../../etc/    ../../media/  ../../root/  ../../sys/
+[2026-03-30 04:29:31] ../../bin/   ../../home/   ../../mnt/	 ../../run/   ../../tmp/
+[2026-03-30 04:29:31] ../../boot/  ../../lib/    ../../opt/	 ../../sbin/  ../../usr/
+[2026-03-30 04:29:31] ../../dev/   ../../lib64/  ../../proc/	 ../../srv/   ../../var/
+[2026-03-30 05:06:56] # python3 helloworld.py
+[2026-03-30 05:06:56] python3: can't open file '/app/helloworld.py': [Errno 2] No such file or directory
+[2026-03-30 05:07:02] # pwd
+[2026-03-30 05:07:02] /app
+[2026-03-30 05:07:13] # python3 /app/helloworld.py
+[2026-03-30 05:07:13] python3: can't open file '/app/helloworld.py': [Errno 2] No such file or directory
+[2026-03-30 05:07:20] # ls -la /app/helloworld.py
+[2026-03-30 05:07:20] ls: cannot access '/app/helloworld.py': No such file or directory
+[2026-03-30 05:07:30] # cd /app && echo '#!/usr/bin/env python3
+[2026-03-30 05:07:30] for i in range(10):
+[2026-03-30 05:07:30]     print("helloworld")' > helloworld.py && python3 helloworld.py
+[2026-03-30 05:07:30] > > helloworld
+[2026-03-30 05:07:30] helloworld
+[2026-03-30 05:07:30] helloworld
+[2026-03-30 05:07:30] helloworld
+[2026-03-30 05:07:30] helloworld
+[2026-03-30 05:07:30] helloworld
+[2026-03-30 05:07:30] helloworld
+[2026-03-30 05:07:30] helloworld
+[2026-03-30 05:07:30] helloworld
+[2026-03-30 05:07:30] helloworld

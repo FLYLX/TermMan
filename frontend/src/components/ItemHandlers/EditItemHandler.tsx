@@ -5,7 +5,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { type ItemHandlerPublic, ItemHandlersService, SkillsService } from "@/client"
+import { type ItemHandlerPublic, ItemHandlersService, SkillsService, McpService } from "@/client"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -41,6 +41,7 @@ const formSchema = z.object({
   api_key: z.string().optional(),
   api_url: z.string().optional(),
   enabled_skills: z.array(z.string()).optional(),
+  enabled_mcp_servers: z.array(z.string()).optional(),
 })
 
 type FormData = z.infer<typeof formSchema>
@@ -61,7 +62,14 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
     enabled: isOpen,
   })
 
+  const { data: mcpData } = useQuery({
+    queryKey: ["mcp-servers"],
+    queryFn: () => McpService.listMcpServers({}),
+    enabled: isOpen,
+  })
+
   const skills = skillsData?.data || []
+  const mcpServers = mcpData?.data || []
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -73,6 +81,7 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
       api_key: itemHandler.api_key ?? "",
       api_url: itemHandler.api_url ?? "",
       enabled_skills: itemHandler.enabled_skills ?? [],
+      enabled_mcp_servers: (itemHandler as any).enabled_mcp_servers ?? [],
     },
   })
 
@@ -215,6 +224,60 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
                                 <span className="text-muted-foreground ml-1">
                                   ({skill.skill_id})
                                 </span>
+                              </FormLabel>
+                            </FormItem>
+                          ))}
+                        </div>
+                      )}
+                    </ScrollArea>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="enabled_mcp_servers"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>MCP Servers</FormLabel>
+                    <FormDescription>
+                      Select MCP servers to enable for this handler
+                    </FormDescription>
+                    <ScrollArea className="h-32 border rounded p-2">
+                      {mcpServers.length === 0 ? (
+                        <p className="text-sm text-muted-foreground p-2">
+                          No MCP servers available
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {mcpServers.map((server: any) => (
+                            <FormItem
+                              key={server.name}
+                              className="flex flex-row items-start space-x-3 space-y-0"
+                            >
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value?.includes(server.name)}
+                                  onCheckedChange={(checked) => {
+                                    const currentValue = field.value || []
+                                    if (checked) {
+                                      field.onChange([...currentValue, server.name])
+                                    } else {
+                                      field.onChange(
+                                        currentValue.filter((v: string) => v !== server.name)
+                                      )
+                                    }
+                                  }}
+                                />
+                              </FormControl>
+                              <FormLabel className="text-sm font-normal cursor-pointer">
+                                {server.name}
+                                {server.description && (
+                                  <span className="text-muted-foreground ml-1">
+                                    - {server.description}
+                                  </span>
+                                )}
                               </FormLabel>
                             </FormItem>
                           ))}

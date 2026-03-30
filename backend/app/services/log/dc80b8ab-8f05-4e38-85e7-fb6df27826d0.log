@@ -1,0 +1,8 @@
+[2026-03-29 02:58:05] # python api_server.py
+[2026-03-29 02:58:05] python: can't open file '/app/items/4/api_server.py': [Errno 2] No such file or directory
+[2026-03-29 09:49:51] # python api_server.py
+[2026-03-29 09:49:51] python: can't open file '/app/items/4/api_server.py': [Errno 2] No such file or directory
+[2026-03-29 09:50:19] # ps aux | grep -i minecraft | grep -v grep
+[2026-03-29 09:55:46] # whoami && pwd
+[2026-03-29 09:55:46] root
+[2026-03-29 09:55:46] /app/items/4

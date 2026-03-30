@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     EMAIL_TEST_USER: EmailStr = "test@example.com"
     FIRST_SUPERUSER: EmailStr
     FIRST_SUPERUSER_PASSWORD: str
+    
+    CHROMA_PERSIST_DIR: str = "./chroma_data"
 
     # Security checks commented out as requested
     # def _check_default_secret(self, var_name: str, value: str | None) -> None:

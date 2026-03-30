@@ -35,15 +35,6 @@ class Subscriber:
 
 
 class ItemSubscriptionCenter:
-    """
-    Item 订阅中心 - 发布/订阅模式
-    
-    核心设计：
-    1. ItemSocket 接收到事件后发布到订阅中心
-    2. 订阅者通过 SDK 订阅特定 item 的事件
-    3. 支持多种事件类型：stream、connected、disconnected、auth_error
-    4. 线程安全
-    """
     _instance = None
     _lock = threading.Lock()
     
@@ -170,7 +161,52 @@ class ItemSubscriptionCenter:
             item_uuid=item_uuid,
             data=data
         )
+        
+        self._trigger_agent_handler(item_uuid, data)
+        
         return self.publish(event)
+    
+    def _trigger_agent_handler(self, item_uuid: str, data: dict[str, Any]):
+        try:
+            from app.services.agent.stream_manager import stream_manager
+            from app.services.agent.item_handler_context import item_handler_context
+            from app.services.filters.input_filter import InputFilter, InputFilterConfig
+            from app.api.deps import get_session
+            from app.models import Item
+            from sqlmodel import select
+            
+            handler_id = item_handler_context.get_handler(item_uuid)
+            if not handler_id:
+                return
+            
+            stdout = data.get("stdout", "")
+            stderr = data.get("stderr", "")
+            raw_output = stdout + stderr
+            
+            if not raw_output.strip():
+                return
+            
+            filtered_output = raw_output
+            
+            try:
+                with next(get_session()) as session:
+                    item = session.exec(
+                        select(Item).where(Item.id == item_uuid)
+                    ).first()
+                    
+                    if item and item.input_filter_enabled:
+                        config = InputFilterConfig.from_item(item)
+                        input_filter = InputFilter(config)
+                        event = input_filter.filter(data)
+                        if event:
+                            filtered_output = event.raw_content
+            except Exception as e:
+                logger.debug(f"[SubscriptionCenter] Filter error: {e}")
+            
+            stream_manager.process_stream(item_uuid, raw_output, filtered_output, handler_id)
+            
+        except Exception as e:
+            logger.debug(f"[SubscriptionCenter] Agent handler not triggered: {e}")
     
     def publish_connected(self, item_uuid: str, data: dict[str, Any]) -> int:
         event = SubscriptionEvent(

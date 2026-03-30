@@ -185,6 +185,62 @@ export const Body_skills_upload_skill_zipSchema = {
     title: 'Body_skills-upload_skill_zip'
 } as const;
 
+export const ChatMessageSchema = {
+    properties: {
+        role: {
+            type: 'string',
+            title: 'Role'
+        },
+        content: {
+            type: 'string',
+            title: 'Content'
+        }
+    },
+    type: 'object',
+    required: ['role', 'content'],
+    title: 'ChatMessage'
+} as const;
+
+export const ChatRequestSchema = {
+    properties: {
+        message: {
+            type: 'string',
+            title: 'Message'
+        },
+        history: {
+            items: {
+                '$ref': '#/components/schemas/ChatMessage'
+            },
+            type: 'array',
+            title: 'History',
+            default: []
+        }
+    },
+    type: 'object',
+    required: ['message'],
+    title: 'ChatRequest'
+} as const;
+
+export const ChatStreamRequestSchema = {
+    properties: {
+        message: {
+            type: 'string',
+            title: 'Message'
+        },
+        history: {
+            items: {
+                '$ref': '#/components/schemas/ChatMessage'
+            },
+            type: 'array',
+            title: 'History',
+            default: []
+        }
+    },
+    type: 'object',
+    required: ['message'],
+    title: 'ChatStreamRequest'
+} as const;
+
 export const HTTPValidationErrorSchema = {
     properties: {
         detail: {
@@ -368,6 +424,56 @@ export const ItemSchema = {
     type: 'object',
     required: ['title', 'owner_id'],
     title: 'Item'
+} as const;
+
+export const ItemChatSessionPublicSchema = {
+    properties: {
+        messages: {
+            items: {
+                additionalProperties: true,
+                type: 'object'
+            },
+            type: 'array',
+            title: 'Messages'
+        },
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        item_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Item Id'
+        },
+        created_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created At'
+        },
+        updated_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: ['id', 'item_id'],
+    title: 'ItemChatSessionPublic'
 } as const;
 
 export const ItemCreateSchema = {
@@ -579,6 +685,20 @@ export const ItemHandlerSchema = {
             ],
             title: 'Enabled Skills'
         },
+        enabled_mcp_servers: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled Mcp Servers'
+        },
         id: {
             type: 'string',
             format: 'uuid',
@@ -662,6 +782,20 @@ export const ItemHandlerCreateSchema = {
                 }
             ],
             title: 'Enabled Skills'
+        },
+        enabled_mcp_servers: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled Mcp Servers'
         }
     },
     type: 'object',
@@ -726,6 +860,20 @@ export const ItemHandlerPublicSchema = {
                 }
             ],
             title: 'Enabled Skills'
+        },
+        enabled_mcp_servers: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled Mcp Servers'
         },
         id: {
             type: 'string',
@@ -831,6 +979,20 @@ export const ItemHandlerUpdateSchema = {
                 }
             ],
             title: 'Enabled Skills'
+        },
+        enabled_mcp_servers: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled Mcp Servers'
         }
     },
     type: 'object',
@@ -1211,6 +1373,173 @@ export const ItemUpdateSchema = {
     },
     type: 'object',
     title: 'ItemUpdate'
+} as const;
+
+export const MCPServerCreateBodySchema = {
+    properties: {
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        command: {
+            type: 'string',
+            title: 'Command'
+        },
+        args: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Args',
+            default: []
+        },
+        env: {
+            additionalProperties: {
+                type: 'string'
+            },
+            type: 'object',
+            title: 'Env',
+            default: {}
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled',
+            default: true
+        },
+        description: {
+            type: 'string',
+            title: 'Description',
+            default: ''
+        }
+    },
+    type: 'object',
+    required: ['name', 'command'],
+    title: 'MCPServerCreateBody'
+} as const;
+
+export const MCPServerItemSchema = {
+    properties: {
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        command: {
+            type: 'string',
+            title: 'Command'
+        },
+        args: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Args'
+        },
+        env: {
+            additionalProperties: {
+                type: 'string'
+            },
+            type: 'object',
+            title: 'Env'
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        }
+    },
+    type: 'object',
+    required: ['name', 'command', 'args', 'env', 'enabled', 'description'],
+    title: 'MCPServerItem'
+} as const;
+
+export const MCPServerListResponseSchema = {
+    properties: {
+        data: {
+            items: {
+                '$ref': '#/components/schemas/MCPServerItem'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: ['data', 'count'],
+    title: 'MCPServerListResponse'
+} as const;
+
+export const MCPServerUpdateBodySchema = {
+    properties: {
+        command: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Command'
+        },
+        args: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Args'
+        },
+        env: {
+            anyOf: [
+                {
+                    additionalProperties: {
+                        type: 'string'
+                    },
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Env'
+        },
+        enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        }
+    },
+    type: 'object',
+    title: 'MCPServerUpdateBody'
 } as const;
 
 export const MessageSchema = {

@@ -91,6 +91,8 @@ class SkillDefinition:
     templates: dict[str, str] = field(default_factory=dict)
     resources: dict[str, bytes] = field(default_factory=dict)
     examples: list[dict[str, Any]] = field(default_factory=list)
+    mcp_servers: list[str] = field(default_factory=list)
+    skill_dir: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -102,4 +104,5 @@ class SkillDefinition:
             "action": self.action.to_dict(),
             "safety": self.safety.to_dict(),
             "content": self.content,
+            "mcp_servers": self.mcp_servers,
         }

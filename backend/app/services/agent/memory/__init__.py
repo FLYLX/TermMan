@@ -1,9 +1,6 @@
-from .memory_manager import MemoryManager
-from .short_term_memory import ShortTermMemory
-from .item_context import ItemContext
+from .vector_store import VectorStoreService, vector_store
 
 __all__ = [
-    "MemoryManager",
-    "ShortTermMemory",
-    "ItemContext",
+    "VectorStoreService",
+    "vector_store",
 ]

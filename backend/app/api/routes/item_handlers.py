@@ -12,6 +12,7 @@ from app.models import (
     ItemHandlerUpdate, 
     Message
 )
+from app.services.agent.agent import agent_manager
 
 router = APIRouter(prefix="/item-handlers", tags=["item-handlers"])
 
@@ -140,6 +141,15 @@ def update_item_handler(
     session.add(item_handler)
     session.commit()
     session.refresh(item_handler)
+    
+    if "enabled_mcp_servers" in update_dict or "enabled_skills" in update_dict:
+        handler_id = str(item_handler.id)
+        if handler_id in agent_manager._agents:
+            agent = agent_manager._agents[handler_id]
+            if "enabled_skills" in update_dict:
+                agent.update_skills(item_handler.enabled_skills or [])
+            if "enabled_mcp_servers" in update_dict:
+                agent.update_mcp_servers(item_handler.enabled_mcp_servers or [])
     
     return item_handler
 

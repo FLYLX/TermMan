@@ -49,6 +49,21 @@ export type Body_skills_upload_skill_zip = {
     file: string;
 };
 
+export type ChatMessage = {
+    role: string;
+    content: string;
+};
+
+export type ChatRequest = {
+    message: string;
+    history?: Array<ChatMessage>;
+};
+
+export type ChatStreamRequest = {
+    message: string;
+    history?: Array<ChatMessage>;
+};
+
 export type HTTPValidationError = {
     detail?: Array<ValidationError>;
 };
@@ -79,6 +94,16 @@ export type Item = {
     owner_id: string;
 };
 
+export type ItemChatSessionPublic = {
+    messages?: Array<{
+        [key: string]: unknown;
+    }>;
+    id: string;
+    item_id: string;
+    created_at?: (string | null);
+    updated_at?: (string | null);
+};
+
 export type ItemCreate = {
     title: string;
     description?: (string | null);
@@ -107,6 +132,7 @@ export type ItemHandler = {
     api_key?: (string | null);
     api_url?: (string | null);
     enabled_skills?: (Array<(string)> | null);
+    enabled_mcp_servers?: (Array<(string)> | null);
     id?: string;
     created_at?: string;
     updated_at?: string;
@@ -119,6 +145,7 @@ export type ItemHandlerCreate = {
     api_key?: (string | null);
     api_url?: (string | null);
     enabled_skills?: (Array<(string)> | null);
+    enabled_mcp_servers?: (Array<(string)> | null);
 };
 
 export type ItemHandlerPublic = {
@@ -127,6 +154,7 @@ export type ItemHandlerPublic = {
     api_key?: (string | null);
     api_url?: (string | null);
     enabled_skills?: (Array<(string)> | null);
+    enabled_mcp_servers?: (Array<(string)> | null);
     id: string;
     owner_id: string;
     created_at?: (string | null);
@@ -139,6 +167,7 @@ export type ItemHandlerUpdate = {
     api_key?: (string | null);
     api_url?: (string | null);
     enabled_skills?: (Array<(string)> | null);
+    enabled_mcp_servers?: (Array<(string)> | null);
 };
 
 export type ItemPublic = {
@@ -189,6 +218,43 @@ export type ItemUpdate = {
     output_filter_rules?: ({
     [key: string]: unknown;
 } | null);
+};
+
+export type MCPServerCreateBody = {
+    name: string;
+    command: string;
+    args?: Array<(string)>;
+    env?: {
+        [key: string]: (string);
+    };
+    enabled?: boolean;
+    description?: string;
+};
+
+export type MCPServerItem = {
+    name: string;
+    command: string;
+    args: Array<(string)>;
+    env: {
+        [key: string]: (string);
+    };
+    enabled: boolean;
+    description: string;
+};
+
+export type MCPServerListResponse = {
+    data: Array<MCPServerItem>;
+    count: number;
+};
+
+export type MCPServerUpdateBody = {
+    command?: (string | null);
+    args?: (Array<(string)> | null);
+    env?: ({
+    [key: string]: (string);
+} | null);
+    enabled?: (boolean | null);
+    description?: (string | null);
 };
 
 export type Message = {
@@ -334,6 +400,29 @@ export type ValidationError = {
         [key: string]: unknown;
     };
 };
+
+export type ChatChatData = {
+    itemId: string;
+    requestBody: ChatRequest;
+};
+
+export type ChatChatResponse = ({
+    [key: string]: unknown;
+});
+
+export type ChatChatStreamData = {
+    itemId: string;
+    requestBody: ChatStreamRequest;
+};
+
+export type ChatChatStreamResponse = (unknown);
+
+export type ChatGetMatchedSkillsData = {
+    itemId: string;
+    query: string;
+};
+
+export type ChatGetMatchedSkillsResponse = (unknown);
 
 export type ItemHandlerAssociationsAddItemToHandlerData = {
     requestBody: AddItemToHandlerRequest;
@@ -571,6 +660,93 @@ export type LoginRecoverPasswordHtmlContentData = {
 };
 
 export type LoginRecoverPasswordHtmlContentResponse = (string);
+
+export type McpListMcpServersResponse = (MCPServerListResponse);
+
+export type McpCreateMcpServerData = {
+    requestBody: MCPServerCreateBody;
+};
+
+export type McpCreateMcpServerResponse = (MCPServerItem);
+
+export type McpGetMcpServerData = {
+    serverName: string;
+};
+
+export type McpGetMcpServerResponse = (MCPServerItem);
+
+export type McpUpdateMcpServerData = {
+    requestBody: MCPServerUpdateBody;
+    serverName: string;
+};
+
+export type McpUpdateMcpServerResponse = (MCPServerItem);
+
+export type McpDeleteMcpServerData = {
+    serverName: string;
+};
+
+export type McpDeleteMcpServerResponse = (unknown);
+
+export type McpReloadMcpServersResponse = (unknown);
+
+export type MemoryGetChatSessionData = {
+    itemId: string;
+};
+
+export type MemoryGetChatSessionResponse = (ItemChatSessionPublic);
+
+export type MemorySaveChatSessionData = {
+    itemId: string;
+    requestBody: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+export type MemorySaveChatSessionResponse = (ItemChatSessionPublic);
+
+export type MemoryClearChatSessionData = {
+    itemId: string;
+};
+
+export type MemoryClearChatSessionResponse = (unknown);
+
+export type MemoryGetAllMemoriesData = {
+    itemId: string;
+};
+
+export type MemoryGetAllMemoriesResponse = (unknown);
+
+export type MemoryAddMemoryData = {
+    content: string;
+    itemId: string;
+    requestBody?: ({
+    [key: string]: unknown;
+} | null);
+};
+
+export type MemoryAddMemoryResponse = (unknown);
+
+export type MemoryClearMemoriesData = {
+    itemId: string;
+};
+
+export type MemoryClearMemoriesResponse = (unknown);
+
+export type MemorySearchMemoriesData = {
+    itemId: string;
+    nResults?: number;
+    query: string;
+};
+
+export type MemorySearchMemoriesResponse = (unknown);
+
+export type MemoryDeleteMemoryData = {
+    itemId: string;
+    memoryId: string;
+};
+
+export type MemoryDeleteMemoryResponse = (unknown);
 
 export type PrivateCreateUserData = {
     requestBody: PrivateUserCreate;

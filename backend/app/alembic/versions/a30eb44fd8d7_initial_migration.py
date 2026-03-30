@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: a2d5ef82bd0b
+Revision ID: a30eb44fd8d7
 Revises: 
-Create Date: 2026-03-26 14:40:37.222850
+Create Date: 2026-03-29 03:20:59.332726
 
 """
 from alembic import op
@@ -10,9 +10,8 @@ import sqlalchemy as sa
 import sqlmodel.sql.sqltypes
 from app.models import SQLiteUUID
 
-
 # revision identifiers, used by Alembic.
-revision = 'a2d5ef82bd0b'
+revision = 'a30eb44fd8d7'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -25,7 +24,7 @@ def upgrade():
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('is_superuser', sa.Boolean(), nullable=False),
     sa.Column('full_name', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
-    sa.Column('id', SQLiteUUID, nullable=False),
+    sa.Column('id', SQLiteUUID(), nullable=False),
     sa.Column('hashed_password', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.PrimaryKeyConstraint('id')
@@ -47,10 +46,10 @@ def upgrade():
     sa.Column('input_filter_rules', sa.JSON(), nullable=False),
     sa.Column('output_filter_enabled', sa.Boolean(), nullable=False),
     sa.Column('output_filter_rules', sa.JSON(), nullable=False),
-    sa.Column('id', SQLiteUUID, nullable=False),
+    sa.Column('id', SQLiteUUID(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('owner_id', SQLiteUUID, nullable=False),
+    sa.Column('owner_id', SQLiteUUID(), nullable=False),
     sa.ForeignKeyConstraint(['owner_id'], ['user.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -61,17 +60,28 @@ def upgrade():
     sa.Column('api_key', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('api_url', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
     sa.Column('enabled_skills', sa.JSON(), nullable=True),
-    sa.Column('id', SQLiteUUID, nullable=False),
+    sa.Column('enabled_mcp_servers', sa.JSON(), nullable=True),
+    sa.Column('id', SQLiteUUID(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('owner_id', SQLiteUUID, nullable=False),
+    sa.Column('owner_id', SQLiteUUID(), nullable=False),
     sa.ForeignKeyConstraint(['owner_id'], ['user.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_itemhandler_owner_id'), 'itemhandler', ['owner_id'], unique=False)
+    op.create_table('itemchatsession',
+    sa.Column('messages', sa.JSON(), nullable=False),
+    sa.Column('id', SQLiteUUID(), nullable=False),
+    sa.Column('item_id', SQLiteUUID(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.ForeignKeyConstraint(['item_id'], ['item.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_itemchatsession_item_id'), 'itemchatsession', ['item_id'], unique=False)
     op.create_table('itemhandleritem',
-    sa.Column('item_handler_id', SQLiteUUID, nullable=False),
-    sa.Column('item_id', SQLiteUUID, nullable=False),
+    sa.Column('item_handler_id', SQLiteUUID(), nullable=False),
+    sa.Column('item_id', SQLiteUUID(), nullable=False),
     sa.ForeignKeyConstraint(['item_handler_id'], ['itemhandler.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['item_id'], ['item.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('item_handler_id', 'item_id')
@@ -79,8 +89,8 @@ def upgrade():
     op.create_index(op.f('ix_itemhandleritem_item_handler_id'), 'itemhandleritem', ['item_handler_id'], unique=False)
     op.create_index(op.f('ix_itemhandleritem_item_id'), 'itemhandleritem', ['item_id'], unique=False)
     op.create_table('itemhandleruser',
-    sa.Column('item_handler_id', SQLiteUUID, nullable=False),
-    sa.Column('user_id', SQLiteUUID, nullable=False),
+    sa.Column('item_handler_id', SQLiteUUID(), nullable=False),
+    sa.Column('user_id', SQLiteUUID(), nullable=False),
     sa.ForeignKeyConstraint(['item_handler_id'], ['itemhandler.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['user.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('item_handler_id', 'user_id')
@@ -98,6 +108,8 @@ def downgrade():
     op.drop_index(op.f('ix_itemhandleritem_item_id'), table_name='itemhandleritem')
     op.drop_index(op.f('ix_itemhandleritem_item_handler_id'), table_name='itemhandleritem')
     op.drop_table('itemhandleritem')
+    op.drop_index(op.f('ix_itemchatsession_item_id'), table_name='itemchatsession')
+    op.drop_table('itemchatsession')
     op.drop_index(op.f('ix_itemhandler_owner_id'), table_name='itemhandler')
     op.drop_table('itemhandler')
     op.drop_index(op.f('ix_item_owner_id'), table_name='item')

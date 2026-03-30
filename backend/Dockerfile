@@ -1,4 +1,4 @@
-FROM python:3.10
+FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1
 
@@ -33,6 +33,10 @@ COPY ./backend/pyproject.toml ./backend/alembic.ini /app/backend/
 
 COPY ./backend/app /app/backend/app
 
+COPY ./backend/skills /app/backend/skills
+
+COPY ./backend/mcp_servers.json /app/mcp_servers.json
+
 # Sync the project
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#intermediate-layers
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -40,7 +44,13 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --package app
 
+# Use HuggingFace mirror for China (if needed, uncomment the line below)
+ENV HF_ENDPOINT=https://hf-mirror.com
+
+# Pre-download sentence-transformers model during build
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" || \
+    echo "Warning: Failed to download model, will download at runtime"
+
 WORKDIR /app/backend/
 
 CMD ["fastapi", "run", "--workers", "4", "app/main.py"]
-# CMD ["tail", "-f", "/dev/null"]

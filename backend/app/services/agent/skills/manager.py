@@ -11,11 +11,20 @@ logger = logging.getLogger(__name__)
 
 
 class SkillManager:
-    SKILL_FILE = "SKILL.md"
 
     def __init__(self, loader: SkillLoader | None = None):
         self._loader = loader or __import__("app.services.agent.skills", fromlist=["skill_loader"]).skill_loader
         self.skills_dir = self._loader.skills_dir
+
+    def _get_skill_dir_name(self, skill_id: str) -> str:
+        skill = self._loader.get(skill_id)
+        return skill.skill_dir if skill and skill.skill_dir else skill_id
+
+    def _find_skill_file(self, skill_dir: Path) -> Path | None:
+        for f in skill_dir.iterdir():
+            if f.is_file() and f.suffix.lower() == ".md":
+                return f
+        return None
 
     def create_skill(
         self,
@@ -45,7 +54,7 @@ class SkillManager:
         )
 
         skill_content = f"---\n{frontmatter}\n---\n\n{content}"
-        skill_file = skill_dir / self.SKILL_FILE
+        skill_file = skill_dir / "SKILL.md"
         skill_file.write_text(skill_content, encoding="utf-8")
 
         (skill_dir / "scripts").mkdir(exist_ok=True)
@@ -77,8 +86,12 @@ class SkillManager:
         if not skill:
             raise ValueError(f"Skill '{skill_id}' not found")
 
-        skill_dir = self.skills_dir / skill_id
-        skill_file = skill_dir / self.SKILL_FILE
+        skill_dir_name = self._get_skill_dir_name(skill_id)
+        skill_dir = self.skills_dir / skill_dir_name
+        skill_file = self._find_skill_file(skill_dir)
+        
+        if not skill_file:
+            raise ValueError(f"No skill file found in '{skill_id}'")
 
         current_content = skill_file.read_text(encoding="utf-8")
         current_metadata = self._loader._parse_frontmatter(current_content)
@@ -125,7 +138,8 @@ class SkillManager:
         if not skill:
             raise ValueError(f"Skill '{skill_id}' not found")
 
-        skill_dir = self.skills_dir / skill_id
+        skill_dir_name = self._get_skill_dir_name(skill_id)
+        skill_dir = self.skills_dir / skill_dir_name
         if not skill_dir.exists():
             return False
 
@@ -140,7 +154,8 @@ class SkillManager:
         if not skill:
             return None
 
-        skill_dir = self.skills_dir / skill_id
+        skill_dir_name = self._get_skill_dir_name(skill_id)
+        skill_dir = self.skills_dir / skill_dir_name
         target_file = skill_dir / file_path
 
         if not target_file.exists() or not target_file.is_file():
@@ -155,7 +170,8 @@ class SkillManager:
         if not skill:
             raise ValueError(f"Skill '{skill_id}' not found")
 
-        skill_dir = self.skills_dir / skill_id
+        skill_dir_name = self._get_skill_dir_name(skill_id)
+        skill_dir = self.skills_dir / skill_dir_name
         target_file = skill_dir / file_path
 
         target_file.parent.mkdir(parents=True, exist_ok=True)
@@ -174,7 +190,8 @@ class SkillManager:
         if not skill:
             raise ValueError(f"Skill '{skill_id}' not found")
 
-        skill_dir = self.skills_dir / skill_id
+        skill_dir_name = self._get_skill_dir_name(skill_id)
+        skill_dir = self.skills_dir / skill_dir_name
         target_file = skill_dir / file_path
 
         if target_file.exists():
@@ -196,14 +213,15 @@ class SkillManager:
         if not skill:
             raise ValueError(f"Skill '{skill_id}' not found")
 
-        skill_dir = self.skills_dir / skill_id
+        skill_dir_name = self._get_skill_dir_name(skill_id)
+        skill_dir = self.skills_dir / skill_dir_name
         target_file = skill_dir / file_path
 
         if not target_file.exists():
             return False
 
-        if file_path == self.SKILL_FILE:
-            raise ValueError(f"Cannot delete SKILL.md file")
+        if target_file.suffix.lower() == ".md" and target_file.parent == skill_dir:
+            raise ValueError(f"Cannot delete skill definition file")
 
         target_file.unlink()
         self._loader.reload()
@@ -216,7 +234,8 @@ class SkillManager:
         if not skill:
             return []
 
-        skill_dir = self.skills_dir / skill_id
+        skill_dir_name = self._get_skill_dir_name(skill_id)
+        skill_dir = self.skills_dir / skill_dir_name
         files = []
 
         for path in skill_dir.rglob("*"):

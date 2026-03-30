@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "local": {
+      "command": "python",
+      "args": ["-m", "app.services.agent.mcp.local_server"],
+      "enabled": true,
+      "description": "本地工具 - execute_command, read_file, write_file"
+    }
+  }
+}

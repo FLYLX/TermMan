@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { ArrowLeft, ChevronRight, GripVertical, Loader2, Search, Settings, Terminal, X, Zap } from "lucide-react"
+import { ArrowLeft, ChevronRight, GripVertical, Loader2, Search, Server, Settings, Terminal, X, Zap } from "lucide-react"
 import { useEffect, useMemo, useRef, useState, useCallback } from "react"
-import { ItemHandlersService, ItemHandlerAssociationsService, SkillsService, ItemsService } from "@/client"
+import { ItemHandlersService, ItemHandlerAssociationsService, SkillsService, ItemsService, McpService } from "@/client"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -333,6 +333,217 @@ function SkillSelector({
                     <div className="text-sm font-medium truncate">{skill.name}</div>
                     {skill.description && (
                       <div className="text-xs text-muted-foreground truncate">{skill.description}</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </ScrollArea>
+      </div>
+    </div>
+  )
+}
+
+function MCPSelector({
+  allServers,
+  enabledServers,
+  onServerToggle,
+}: {
+  allServers: any[]
+  enabledServers: string[]
+  onServerToggle: (serverName: string, enable: boolean) => Promise<void>
+}) {
+  const [searchQuery, setSearchQuery] = useState("")
+  const [draggedServer, setDraggedServer] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<"enabled" | "available" | null>(null)
+  const [pendingServer, setPendingServer] = useState<string | null>(null)
+
+  const enabledServersList = useMemo(() => {
+    return allServers.filter((s) => enabledServers.includes(s.name))
+  }, [allServers, enabledServers])
+
+  const availableServersList = useMemo(() => {
+    return allServers.filter((s) => !enabledServers.includes(s.name))
+  }, [allServers, enabledServers])
+
+  const filteredAvailableServers = useMemo(() => {
+    if (!searchQuery) return availableServersList
+    return availableServersList.filter(
+      (s) =>
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  }, [availableServersList, searchQuery])
+
+  const handleDragStart = (e: React.DragEvent, serverName: string) => {
+    setDraggedServer(serverName)
+    e.dataTransfer.effectAllowed = "move"
+  }
+
+  const handleDragOver = (e: React.DragEvent, target: "enabled" | "available") => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    setDropTarget(target)
+  }
+
+  const handleDragLeave = () => {
+    setDropTarget(null)
+  }
+
+  const handleDrop = async (e: React.DragEvent, target: "enabled" | "available") => {
+    e.preventDefault()
+    setDropTarget(null)
+    
+    if (!draggedServer) return
+
+    const isCurrentlyEnabled = enabledServers.includes(draggedServer)
+    
+    if (target === "enabled" && !isCurrentlyEnabled) {
+      setPendingServer(draggedServer)
+      await onServerToggle(draggedServer, true)
+      setPendingServer(null)
+    } else if (target === "available" && isCurrentlyEnabled) {
+      setPendingServer(draggedServer)
+      await onServerToggle(draggedServer, false)
+      setPendingServer(null)
+    }
+    
+    setDraggedServer(null)
+  }
+
+  const handleDragEnd = () => {
+    setDraggedServer(null)
+    setDropTarget(null)
+  }
+
+  const removeServer = async (serverName: string) => {
+    setPendingServer(serverName)
+    await onServerToggle(serverName, false)
+    setPendingServer(null)
+  }
+
+  const addServer = async (serverName: string) => {
+    if (!enabledServers.includes(serverName)) {
+      setPendingServer(serverName)
+      await onServerToggle(serverName, true)
+      setPendingServer(null)
+    }
+  }
+
+  return (
+    <div className="flex gap-4 h-80">
+      <div
+        className={`flex-1 flex flex-col border rounded-lg overflow-hidden transition-colors ${
+          dropTarget === "enabled" ? "border-purple-500 bg-purple-50/50 dark:bg-purple-950/50" : "border-border"
+        }`}
+        onDragOver={(e) => handleDragOver(e, "enabled")}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, "enabled")}
+      >
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+          <div className="flex items-center gap-2">
+            <Server className="size-4 text-purple-500" />
+            <span className="text-sm font-medium">已启用 ({enabledServersList.length})</span>
+          </div>
+        </div>
+        <ScrollArea className="flex-1">
+          {enabledServersList.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
+              <GripVertical className="size-8 mb-2 opacity-30" />
+              <p className="text-sm text-center">拖拽 MCP Server 到此处启用</p>
+            </div>
+          ) : (
+            <div className="p-2 space-y-1">
+              {enabledServersList.map((server) => (
+                <div
+                  key={server.name}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, server.name)}
+                  onDragEnd={handleDragEnd}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md bg-purple-100 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 cursor-grab active:cursor-grabbing transition-all ${
+                    draggedServer === server.name ? "opacity-50 scale-95" : ""
+                  } ${pendingServer === server.name ? "opacity-60" : ""}`}
+                >
+                  <GripVertical className="size-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-purple-700 dark:text-purple-300 truncate">{server.name}</div>
+                    {server.description && (
+                      <div className="text-xs text-purple-600/70 dark:text-purple-400/70 truncate">{server.description}</div>
+                    )}
+                  </div>
+                  {pendingServer === server.name ? (
+                    <Loader2 className="size-4 text-purple-600 dark:text-purple-400 animate-spin" />
+                  ) : (
+                    <button
+                      onClick={() => removeServer(server.name)}
+                      className="p-1 hover:bg-purple-200 dark:hover:bg-purple-800 rounded transition-colors"
+                    >
+                      <X className="size-3 text-purple-600 dark:text-purple-400" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </ScrollArea>
+      </div>
+
+      <div
+        className={`flex-1 flex flex-col border rounded-lg overflow-hidden transition-colors ${
+          dropTarget === "available" ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/50" : "border-border"
+        }`}
+        onDragOver={(e) => handleDragOver(e, "available")}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, "available")}
+      >
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+          <div className="flex items-center gap-2">
+            <Server className="size-4 text-blue-500" />
+            <span className="text-sm font-medium">可用服务器 ({availableServersList.length})</span>
+          </div>
+        </div>
+        <div className="px-3 py-2 border-b">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <Input
+              placeholder="搜索 MCP Server..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 h-8"
+            />
+          </div>
+        </div>
+        <ScrollArea className="flex-1">
+          {filteredAvailableServers.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
+              <Search className="size-8 mb-2 opacity-30" />
+              <p className="text-sm text-center">
+                {searchQuery ? "未找到匹配的服务器" : "所有服务器已启用"}
+              </p>
+            </div>
+          ) : (
+            <div className="p-2 space-y-1">
+              {filteredAvailableServers.map((server) => (
+                <div
+                  key={server.name}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, server.name)}
+                  onDragEnd={handleDragEnd}
+                  onClick={() => addServer(server.name)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md bg-muted/50 border border-border cursor-grab active:cursor-grabbing hover:bg-muted transition-all ${
+                    draggedServer === server.name ? "opacity-50 scale-95" : ""
+                  } ${pendingServer === server.name ? "opacity-60" : ""}`}
+                >
+                  {pendingServer === server.name ? (
+                    <Loader2 className="size-4 text-muted-foreground shrink-0 animate-spin" />
+                  ) : (
+                    <GripVertical className="size-4 text-muted-foreground shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">{server.name}</div>
+                    {server.description && (
+                      <div className="text-xs text-muted-foreground truncate">{server.description}</div>
                     )}
                   </div>
                 </div>
@@ -835,6 +1046,11 @@ function ItemHandlerDetail() {
     queryFn: () => SkillsService.listSkills({}),
   })
 
+  const { data: mcpData } = useQuery({
+    queryKey: ["mcp-servers"],
+    queryFn: () => McpService.listMcpServers(),
+  })
+
   const allItems = (allItemsData as any)?.data || []
   const connectedItemsList = (connectedItems as any[]) || []
   const connectedItemIds = new Set(connectedItemsList.map((item: any) => item.id))
@@ -842,6 +1058,9 @@ function ItemHandlerDetail() {
 
   const skills = skillsData?.data || []
   const enabledSkills = (itemHandler as any)?.enabled_skills ?? []
+
+  const mcpServers = mcpData?.data || []
+  const enabledMcpServers = (itemHandler as any)?.enabled_mcp_servers ?? []
 
   const [editForm, setEditForm] = useState({
     name: "",
@@ -912,6 +1131,22 @@ function ItemHandlerDetail() {
       queryClient.invalidateQueries({ queryKey: ["itemHandler", itemHandlerId] })
     } catch (error) {
       showErrorToast("Failed to update skill")
+    }
+  }
+
+  const handleMcpServerToggle = async (serverName: string, enable: boolean) => {
+    try {
+      const newServers = enable
+        ? [...enabledMcpServers, serverName]
+        : enabledMcpServers.filter((name: string) => name !== serverName)
+      await ItemHandlersService.updateItemHandler({
+        id: itemHandlerId,
+        requestBody: { enabled_mcp_servers: newServers },
+      })
+      showSuccessToast(enable ? "MCP Server enabled" : "MCP Server disabled")
+      queryClient.invalidateQueries({ queryKey: ["itemHandler", itemHandlerId] })
+    } catch (error) {
+      showErrorToast("Failed to update MCP server")
     }
   }
 
@@ -1071,6 +1306,25 @@ function ItemHandlerDetail() {
             allSkills={skills}
             enabledSkills={enabledSkills}
             onSkillToggle={handleSkillToggle}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Server className="size-5 text-purple-500" />
+            MCP Servers Configuration
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            从右侧拖拽 MCP Server 到左侧启用，或点击服务器快速添加
+          </p>
+        </CardHeader>
+        <CardContent>
+          <MCPSelector
+            allServers={mcpServers}
+            enabledServers={enabledMcpServers}
+            onServerToggle={handleMcpServerToggle}
           />
         </CardContent>
       </Card>

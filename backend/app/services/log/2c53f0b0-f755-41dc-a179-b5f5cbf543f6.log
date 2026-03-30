@@ -1,0 +1,2 @@
+[2026-03-30 09:06:31] # python cron_job.py
+[2026-03-30 09:06:31] python: can't open file '/app/items/5/cron_job.py': [Errno 2] No such file or directory
