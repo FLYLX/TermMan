@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { ChatChatData, ChatChatResponse, ChatChatStreamData, ChatChatStreamResponse, ChatGetMatchedSkillsData, ChatGetMatchedSkillsResponse, ItemHandlerAssociationsAddItemToHandlerData, ItemHandlerAssociationsAddItemToHandlerResponse, ItemHandlerAssociationsRemoveItemFromHandlerData, ItemHandlerAssociationsRemoveItemFromHandlerResponse, ItemHandlerAssociationsGetItemsForHandlerData, ItemHandlerAssociationsGetItemsForHandlerResponse, ItemHandlerAssociationsGetHandlersForItemData, ItemHandlerAssociationsGetHandlersForItemResponse, ItemHandlerAssociationsAddUserToHandlerData, ItemHandlerAssociationsAddUserToHandlerResponse, ItemHandlerAssociationsRemoveUserFromHandlerData, ItemHandlerAssociationsRemoveUserFromHandlerResponse, ItemHandlerAssociationsGetUsersForHandlerData, ItemHandlerAssociationsGetUsersForHandlerResponse, ItemHandlerAssociationsGetHandlersForUserData, ItemHandlerAssociationsGetHandlersForUserResponse, ItemHandlersReadItemHandlersData, ItemHandlersReadItemHandlersResponse, ItemHandlersCreateItemHandlerData, ItemHandlersCreateItemHandlerResponse, ItemHandlersReadItemHandlerData, ItemHandlersReadItemHandlerResponse, ItemHandlersUpdateItemHandlerData, ItemHandlersUpdateItemHandlerResponse, ItemHandlersDeleteItemHandlerData, ItemHandlersDeleteItemHandlerResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, ItemsReconnectDaemonData, ItemsReconnectDaemonResponse, ItemsStartItemData, ItemsStartItemResponse, ItemsStopItemData, ItemsStopItemResponse, ItemsRestartItemData, ItemsRestartItemResponse, ItemsGetTerminalTokenData, ItemsGetTerminalTokenResponse, ItemsVerifyTerminalTokenData, ItemsVerifyTerminalTokenResponse, ItemsGetItemSubscribersData, ItemsGetItemSubscribersResponse, ItemsDisconnectItemSubscriberData, ItemsDisconnectItemSubscriberResponse, ItemsGetItemOutputData, ItemsGetItemOutputResponse, ItemsTestInputFilterData, ItemsTestInputFilterResponse, ItemsTestOutputFilterData, ItemsTestOutputFilterResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, McpListMcpServersResponse, McpCreateMcpServerData, McpCreateMcpServerResponse, McpGetMcpServerData, McpGetMcpServerResponse, McpUpdateMcpServerData, McpUpdateMcpServerResponse, McpDeleteMcpServerData, McpDeleteMcpServerResponse, McpReloadMcpServersResponse, MemoryGetChatSessionData, MemoryGetChatSessionResponse, MemorySaveChatSessionData, MemorySaveChatSessionResponse, MemoryClearChatSessionData, MemoryClearChatSessionResponse, MemoryGetAllMemoriesData, MemoryGetAllMemoriesResponse, MemoryAddMemoryData, MemoryAddMemoryResponse, MemoryClearMemoriesData, MemoryClearMemoriesResponse, MemorySearchMemoriesData, MemorySearchMemoriesResponse, MemoryDeleteMemoryData, MemoryDeleteMemoryResponse, PrivateCreateUserData, PrivateCreateUserResponse, SkillsListSkillsData, SkillsListSkillsResponse, SkillsCreateSkillData, SkillsCreateSkillResponse, SkillsGetSkillData, SkillsGetSkillResponse, SkillsUpdateSkillData, SkillsUpdateSkillResponse, SkillsDeleteSkillData, SkillsDeleteSkillResponse, SkillsListSkillFilesData, SkillsListSkillFilesResponse, SkillsGetSkillFileData, SkillsGetSkillFileResponse, SkillsUpdateSkillFileData, SkillsUpdateSkillFileResponse, SkillsCreateSkillFileData, SkillsCreateSkillFileResponse, SkillsDeleteSkillFileData, SkillsDeleteSkillFileResponse, SkillsUploadSkillZipData, SkillsUploadSkillZipResponse, SkillsReloadSkillsResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { ChatChatData, ChatChatResponse, ChatChatStreamData, ChatChatStreamResponse, ChatGetMatchedSkillsData, ChatGetMatchedSkillsResponse, ChatAgentEventsData, ChatAgentEventsResponse, ChatAbortChatData, ChatAbortChatResponse, ItemHandlerAssociationsAddItemToHandlerData, ItemHandlerAssociationsAddItemToHandlerResponse, ItemHandlerAssociationsRemoveItemFromHandlerData, ItemHandlerAssociationsRemoveItemFromHandlerResponse, ItemHandlerAssociationsGetItemsForHandlerData, ItemHandlerAssociationsGetItemsForHandlerResponse, ItemHandlerAssociationsGetHandlersForItemData, ItemHandlerAssociationsGetHandlersForItemResponse, ItemHandlerAssociationsAddUserToHandlerData, ItemHandlerAssociationsAddUserToHandlerResponse, ItemHandlerAssociationsRemoveUserFromHandlerData, ItemHandlerAssociationsRemoveUserFromHandlerResponse, ItemHandlerAssociationsGetUsersForHandlerData, ItemHandlerAssociationsGetUsersForHandlerResponse, ItemHandlerAssociationsGetHandlersForUserData, ItemHandlerAssociationsGetHandlersForUserResponse, ItemHandlersReadItemHandlersData, ItemHandlersReadItemHandlersResponse, ItemHandlersCreateItemHandlerData, ItemHandlersCreateItemHandlerResponse, ItemHandlersReadItemHandlerData, ItemHandlersReadItemHandlerResponse, ItemHandlersUpdateItemHandlerData, ItemHandlersUpdateItemHandlerResponse, ItemHandlersDeleteItemHandlerData, ItemHandlersDeleteItemHandlerResponse, ItemsReadItemsData, ItemsReadItemsResponse, ItemsCreateItemData, ItemsCreateItemResponse, ItemsReadItemData, ItemsReadItemResponse, ItemsUpdateItemData, ItemsUpdateItemResponse, ItemsDeleteItemData, ItemsDeleteItemResponse, ItemsReconnectDaemonData, ItemsReconnectDaemonResponse, ItemsStartItemData, ItemsStartItemResponse, ItemsStopItemData, ItemsStopItemResponse, ItemsRestartItemData, ItemsRestartItemResponse, ItemsGetTerminalTokenData, ItemsGetTerminalTokenResponse, ItemsVerifyTerminalTokenData, ItemsVerifyTerminalTokenResponse, ItemsGetItemSubscribersData, ItemsGetItemSubscribersResponse, ItemsDisconnectItemSubscriberData, ItemsDisconnectItemSubscriberResponse, ItemsGetItemOutputData, ItemsGetItemOutputResponse, ItemsTestInputFilterData, ItemsTestInputFilterResponse, ItemsTestOutputFilterData, ItemsTestOutputFilterResponse, LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, McpListMcpServersResponse, McpCreateMcpServerData, McpCreateMcpServerResponse, McpGetMcpServerData, McpGetMcpServerResponse, McpUpdateMcpServerData, McpUpdateMcpServerResponse, McpDeleteMcpServerData, McpDeleteMcpServerResponse, McpReloadMcpServersResponse, MemoryGetChatSessionData, MemoryGetChatSessionResponse, MemorySaveChatSessionData, MemorySaveChatSessionResponse, MemoryClearChatSessionData, MemoryClearChatSessionResponse, MemoryClearAllSessionDataData, MemoryClearAllSessionDataResponse, MemoryGetAllMemoriesData, MemoryGetAllMemoriesResponse, MemoryAddMemoryData, MemoryAddMemoryResponse, MemoryClearMemoriesData, MemoryClearMemoriesResponse, MemoryGetMemoryStatsData, MemoryGetMemoryStatsResponse, MemoryGetMemoryTypesResponse, MemorySearchMemoriesData, MemorySearchMemoriesResponse, MemoryUpdateMemoryData, MemoryUpdateMemoryResponse, MemoryDeleteMemoryData, MemoryDeleteMemoryResponse, MemoryExpireMemoriesData, MemoryExpireMemoriesResponse, MemoryDeduplicateMemoriesData, MemoryDeduplicateMemoriesResponse, MemorySummarizeMemoriesData, MemorySummarizeMemoriesResponse, PrivateCreateUserData, PrivateCreateUserResponse, SkillsListSkillsData, SkillsListSkillsResponse, SkillsCreateSkillData, SkillsCreateSkillResponse, SkillsGetSkillData, SkillsGetSkillResponse, SkillsUpdateSkillData, SkillsUpdateSkillResponse, SkillsDeleteSkillData, SkillsDeleteSkillResponse, SkillsListSkillFilesData, SkillsListSkillFilesResponse, SkillsGetSkillFileData, SkillsGetSkillFileResponse, SkillsUpdateSkillFileData, SkillsUpdateSkillFileResponse, SkillsCreateSkillFileData, SkillsCreateSkillFileResponse, SkillsDeleteSkillFileData, SkillsDeleteSkillFileResponse, SkillsUploadSkillZipData, SkillsUploadSkillZipResponse, SkillsReloadSkillsResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
 
 export class ChatService {
     /**
@@ -69,6 +69,46 @@ export class ChatService {
             },
             query: {
                 query: data.query
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Agent Events
+     * @param data The data for the request.
+     * @param data.itemId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static agentEvents(data: ChatAgentEventsData): CancelablePromise<ChatAgentEventsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/chat/{item_id}/agent-events',
+            path: {
+                item_id: data.itemId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Abort Chat
+     * @param data The data for the request.
+     * @param data.itemId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static abortChat(data: ChatAbortChatData): CancelablePromise<ChatAbortChatResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/chat/{item_id}/abort',
+            path: {
+                item_id: data.itemId
             },
             errors: {
                 422: 'Validation Error'
@@ -972,9 +1012,30 @@ export class MemoryService {
     }
     
     /**
+     * Clear All Session Data
+     * @param data The data for the request.
+     * @param data.itemId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static clearAllSessionData(data: MemoryClearAllSessionDataData): CancelablePromise<MemoryClearAllSessionDataResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/memory/{item_id}/all',
+            path: {
+                item_id: data.itemId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
      * Get All Memories
      * @param data The data for the request.
      * @param data.itemId
+     * @param data.memoryType
      * @returns unknown Successful Response
      * @throws ApiError
      */
@@ -984,6 +1045,9 @@ export class MemoryService {
             url: '/api/v1/memory/{item_id}/memories',
             path: {
                 item_id: data.itemId
+            },
+            query: {
+                memory_type: data.memoryType
             },
             errors: {
                 422: 'Validation Error'
@@ -995,7 +1059,6 @@ export class MemoryService {
      * Add Memory
      * @param data The data for the request.
      * @param data.itemId
-     * @param data.content
      * @param data.requestBody
      * @returns unknown Successful Response
      * @throws ApiError
@@ -1006,9 +1069,6 @@ export class MemoryService {
             url: '/api/v1/memory/{item_id}/memories',
             path: {
                 item_id: data.itemId
-            },
-            query: {
-                content: data.content
             },
             body: data.requestBody,
             mediaType: 'application/json',
@@ -1039,25 +1099,79 @@ export class MemoryService {
     }
     
     /**
+     * Get Memory Stats
+     * @param data The data for the request.
+     * @param data.itemId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static getMemoryStats(data: MemoryGetMemoryStatsData): CancelablePromise<MemoryGetMemoryStatsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/memory/{item_id}/memories/stats',
+            path: {
+                item_id: data.itemId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Memory Types
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static getMemoryTypes(): CancelablePromise<MemoryGetMemoryTypesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/memory/{item_id}/memories/types'
+        });
+    }
+    
+    /**
      * Search Memories
      * @param data The data for the request.
      * @param data.itemId
-     * @param data.query
-     * @param data.nResults
+     * @param data.requestBody
      * @returns unknown Successful Response
      * @throws ApiError
      */
     public static searchMemories(data: MemorySearchMemoriesData): CancelablePromise<MemorySearchMemoriesResponse> {
         return __request(OpenAPI, {
-            method: 'GET',
+            method: 'POST',
             url: '/api/v1/memory/{item_id}/memories/search',
             path: {
                 item_id: data.itemId
             },
-            query: {
-                query: data.query,
-                n_results: data.nResults
+            body: data.requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Update Memory
+     * @param data The data for the request.
+     * @param data.itemId
+     * @param data.memoryId
+     * @param data.requestBody
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static updateMemory(data: MemoryUpdateMemoryData): CancelablePromise<MemoryUpdateMemoryResponse> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/memory/{item_id}/memories/{memory_id}',
+            path: {
+                item_id: data.itemId,
+                memory_id: data.memoryId
             },
+            body: data.requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: 'Validation Error'
             }
@@ -1079,6 +1193,70 @@ export class MemoryService {
             path: {
                 item_id: data.itemId,
                 memory_id: data.memoryId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Expire Memories
+     * @param data The data for the request.
+     * @param data.itemId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static expireMemories(data: MemoryExpireMemoriesData): CancelablePromise<MemoryExpireMemoriesResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/memory/{item_id}/memories/expire',
+            path: {
+                item_id: data.itemId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Deduplicate Memories
+     * @param data The data for the request.
+     * @param data.itemId
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static deduplicateMemories(data: MemoryDeduplicateMemoriesData): CancelablePromise<MemoryDeduplicateMemoriesResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/memory/{item_id}/memories/deduplicate',
+            path: {
+                item_id: data.itemId
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Summarize Memories
+     * @param data The data for the request.
+     * @param data.itemId
+     * @param data.threshold
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static summarizeMemories(data: MemorySummarizeMemoriesData): CancelablePromise<MemorySummarizeMemoriesResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/memory/{item_id}/memories/summarize',
+            path: {
+                item_id: data.itemId
+            },
+            query: {
+                threshold: data.threshold
             },
             errors: {
                 422: 'Validation Error'

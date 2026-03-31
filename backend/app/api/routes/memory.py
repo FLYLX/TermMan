@@ -117,6 +117,48 @@ def clear_chat_session(
     return {"message": "Chat session cleared"}
 
 
+@router.delete("/{item_id}/all")
+def clear_all_session_data(
+    item_id: uuid.UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    item = session.get(Item, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    if not current_user.is_superuser and item.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    
+    results = {}
+    
+    chat_session = session.exec(
+        select(ItemChatSession).where(ItemChatSession.item_id == item_id)
+    ).first()
+    if chat_session:
+        chat_session.messages = []
+        session.commit()
+        results["chat_session"] = "cleared"
+    
+    try:
+        vector_store.delete_item_memories(str(item_id))
+        results["memories"] = "cleared"
+    except Exception as e:
+        logger.error(f"Failed to clear memories: {e}")
+        results["memories"] = f"error: {e}"
+    
+    try:
+        from app.services.log_manager import LogManager
+        LogManager().delete_log(str(item.owner_id), str(item_id))
+        results["terminal_log"] = "cleared"
+    except Exception as e:
+        logger.error(f"Failed to clear terminal log: {e}")
+        results["terminal_log"] = f"error: {e}"
+    
+    logger.info(f"[Memory] Cleared all session data for item {item_id}: {results}")
+    return {"message": "All session data cleared", "details": results}
+
+
 @router.get("/{item_id}/memories")
 def get_all_memories(
     item_id: uuid.UUID,
@@ -269,13 +311,20 @@ def summarize_memories(
 ) -> Any:
     from app.services.agent.agent import agent_manager
     from sqlmodel import select
-    from app.models import Item, ItemHandler
+    from app.models import Item, ItemHandler, ItemHandlerItem
     
     item = session.get(Item, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     
-    handler = session.get(ItemHandler, item.handler_id)
+    handler_item = session.exec(
+        select(ItemHandlerItem).where(ItemHandlerItem.item_id == item_id)
+    ).first()
+    
+    if not handler_item:
+        raise HTTPException(status_code=404, detail="No handler associated with this item")
+    
+    handler = session.get(ItemHandler, handler_item.item_handler_id)
     if not handler:
         raise HTTPException(status_code=404, detail="Handler not found")
     

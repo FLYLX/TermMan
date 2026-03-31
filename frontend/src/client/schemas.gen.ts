@@ -1542,6 +1542,106 @@ export const MCPServerUpdateBodySchema = {
     title: 'MCPServerUpdateBody'
 } as const;
 
+export const MemoryCreateSchema = {
+    properties: {
+        content: {
+            type: 'string',
+            title: 'Content'
+        },
+        memory_type: {
+            type: 'string',
+            enum: ['fact', 'preference', 'task', 'error', 'context'],
+            title: 'Memory Type',
+            default: 'fact'
+        },
+        metadata: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Metadata'
+        },
+        ttl_days: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Ttl Days'
+        }
+    },
+    type: 'object',
+    required: ['content'],
+    title: 'MemoryCreate'
+} as const;
+
+export const MemorySearchSchema = {
+    properties: {
+        query: {
+            type: 'string',
+            title: 'Query'
+        },
+        n_results: {
+            type: 'integer',
+            title: 'N Results',
+            default: 5
+        },
+        memory_type: {
+            anyOf: [
+                {
+                    type: 'string',
+                    enum: ['fact', 'preference', 'task', 'error', 'context']
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Memory Type'
+        }
+    },
+    type: 'object',
+    required: ['query'],
+    title: 'MemorySearch'
+} as const;
+
+export const MemoryUpdateSchema = {
+    properties: {
+        content: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Content'
+        },
+        metadata: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Metadata'
+        }
+    },
+    type: 'object',
+    title: 'MemoryUpdate'
+} as const;
+
 export const MessageSchema = {
     properties: {
         message: {

@@ -1,17 +1,18 @@
-import asyncio
 import json
 import logging
 from pathlib import Path
 from typing import Any
 
 from .client import MCPClient
-from .types import MCPServer, MCPTool, MCPResource
+from .inprocess_client import InProcessMCPClient
+from .types import MCPServer, MCPTool
 
 logger = logging.getLogger(__name__)
 
 
 class MCPServerManager:
     CONFIG_FILE = "mcp_servers.json"
+    BUILTIN_SERVERS = {"local"}
     
     def __init__(self, config_dir: Path | None = None):
         if config_dir is None:
@@ -23,7 +24,7 @@ class MCPServerManager:
         
         self.config_dir = Path(config_dir)
         self._servers: dict[str, MCPServer] = {}
-        self._clients: dict[str, MCPClient] = {}
+        self._clients: dict[str, MCPClient | InProcessMCPClient] = {}
         self._load_config()
     
     def _load_config(self):
@@ -74,6 +75,9 @@ class MCPServerManager:
                 logger.info(f"[MCPServerManager] Server '{name}' already running")
                 return True
         
+        if name in self.BUILTIN_SERVERS:
+            return await self._start_builtin_server(name)
+        
         logger.info(f"[MCPServerManager] Starting server '{name}': {server.command} {' '.join(server.args)}")
         
         client = MCPClient(server)
@@ -87,11 +91,32 @@ class MCPServerManager:
             return False
         
         tools = await client.list_tools()
-        await client.list_resources()
         
         self._clients[name] = client
         logger.info(f"[MCPServerManager] Server '{name}' started with {len(tools)} tools")
         return True
+    
+    async def _start_builtin_server(self, name: str) -> bool:
+        if name == "local":
+            from .local_server import LocalMCPServer
+            instance = LocalMCPServer()
+            
+            async def handle_request(request: dict) -> dict:
+                return await instance._handle_request(request)
+            
+            client = InProcessMCPClient(name, handle_request)
+            
+            if not await client.initialize():
+                logger.error(f"[MCPServerManager] Failed to initialize builtin '{name}'")
+                return False
+            
+            tools = await client.list_tools()
+            self._clients[name] = client
+            
+            logger.info(f"[MCPServerManager] Builtin server '{name}' started with {len(tools)} tools (JSON-RPC)")
+            return True
+        
+        return False
     
     async def stop_server(self, name: str):
         if name in self._clients:
@@ -106,42 +131,31 @@ class MCPServerManager:
         for name in list(self._clients.keys()):
             await self.stop_server(name)
     
-    def get_client(self, name: str) -> MCPClient | None:
-        return self._clients.get(name)
-    
-    def get_all_tools(self) -> list[MCPTool]:
-        tools = []
-        for client in self._clients.values():
-            tools.extend(client.get_tools())
-        return tools
-    
     def get_tools_for_server(self, server_name: str) -> list[MCPTool]:
         client = self._clients.get(server_name)
         return client.get_tools() if client else []
     
-    def get_all_resources(self) -> list[MCPResource]:
-        resources = []
-        for client in self._clients.values():
-            resources.extend(client.get_resources())
-        return resources
-    
     async def call_tool(self, server_name: str, tool_name: str, arguments: dict) -> Any:
         client = self._clients.get(server_name)
         if not client:
-            return {"error": f"Server '{server_name}' not running"}
+            logger.warning(f"[MCPServerManager] Server '{server_name}' not running, available: {list(self._clients.keys())}")
+            return [{"type": "text", "text": f"Error: Server '{server_name}' not running"}]
         
-        return await client.call_tool(tool_name, arguments)
-    
-    async def read_resource(self, server_name: str, uri: str) -> Any:
-        client = self._clients.get(server_name)
-        if not client:
-            return {"error": f"Server '{server_name}' not running"}
-        
-        return await client.read_resource(uri)
+        logger.info(f"[MCPServerManager] Calling tool '{tool_name}' on server '{server_name}' with args: {arguments}")
+        result = await client.call_tool(tool_name, arguments)
+        logger.info(f"[MCPServerManager] Tool result: {result}")
+        return result
     
     def reload_config(self):
         self._servers.clear()
         self._load_config()
+    
+    async def reload_all(self):
+        logger.info("[MCPServerManager] Reloading all MCP servers...")
+        await self.stop_all()
+        self.reload_config()
+        await self.start_all()
+        logger.info("[MCPServerManager] MCP servers reloaded")
     
     def _save_config(self):
         config_file = self.config_dir / self.CONFIG_FILE

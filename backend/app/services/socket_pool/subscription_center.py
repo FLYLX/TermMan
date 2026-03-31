@@ -169,7 +169,7 @@ class ItemSubscriptionCenter:
     def _trigger_agent_handler(self, item_uuid: str, data: dict[str, Any]):
         try:
             from app.services.agent.stream_manager import stream_manager
-            from app.services.agent.item_handler_context import item_handler_context
+            from app.services.agent import item_handler_context
             from app.services.filters.input_filter import InputFilter, InputFilterConfig
             from app.api.deps import get_session
             from app.models import Item

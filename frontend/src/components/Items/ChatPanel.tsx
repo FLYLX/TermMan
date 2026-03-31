@@ -1,11 +1,22 @@
 import { useState, useRef, useEffect } from "react"
-import { Send, Loader2, ExternalLink, Square } from "lucide-react"
+import { Send, Loader2, ExternalLink, Square, Trash2 } from "lucide-react"
 import { Link } from "@tanstack/react-router"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { OpenAPI } from "@/client/core/OpenAPI"
 import { ItemHandlerAssociationsService } from "@/client"
 import type { ItemHandlerPublic } from "@/client"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 interface ChatMessage {
   role: "user" | "assistant"
@@ -34,6 +45,14 @@ async function saveChatSession(itemId: string, messages: ChatMessage[]): Promise
       "Authorization": `Bearer ${token}`,
     },
     body: JSON.stringify(messages),
+  })
+}
+
+async function clearChatSession(itemId: string): Promise<void> {
+  const token = localStorage.getItem("access_token") || ""
+  await fetch(`${OpenAPI.BASE}/api/v1/memory/${itemId}/session`, {
+    method: "DELETE",
+    headers: { "Authorization": `Bearer ${token}` },
   })
 }
 
@@ -287,6 +306,35 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
             <span className="text-sm text-muted-foreground">No Handler</span>
           )}
         </div>
+        
+        {messages.length > 0 && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="icon" title="清除聊天记录">
+                <Trash2 className="size-4" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>清除聊天记录</AlertDialogTitle>
+                <AlertDialogDescription>
+                  确定要清除所有聊天记录吗？此操作不可撤销。
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>取消</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={async () => {
+                    await clearChatSession(itemId)
+                    setMessages([])
+                  }}
+                >
+                  确认清除
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto" ref={scrollRef}>

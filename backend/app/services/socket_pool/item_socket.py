@@ -127,14 +127,18 @@ class ItemSocket:
 
     def emit(self, event: str, data: Any) -> bool:
         if self.status != TerminalStatus.RUNNING:
+            logger.warning(f"[ItemSocket] emit failed: status={self.status}, not RUNNING")
             return False
         try:
+            logger.info(f"[ItemSocket] emit event={event} to item={self.item_uuid}")
             self.sio.emit(event, data)
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"[ItemSocket] emit error: {e}")
             return False
 
     def write(self, command: str) -> bool:
+        logger.info(f"[ItemSocket] write() called: item={self.item_uuid}, command={command[:50]}...")
         return self.emit(ProtocolEvents.WRITE, {
             "command": command
         })

@@ -1,7 +1,9 @@
 import asyncio
 import logging
 import re
+import threading
 from dataclasses import dataclass, field
+from typing import Optional
 
 from app.models import ItemHandler
 from app.services.agent.skills.loader import skill_loader
@@ -99,16 +101,12 @@ class Agent:
     
     async def start_mcp_servers(self):
         for server_name in self._mcp_servers:
-            if not mcp_server_manager.is_server_running(server_name):
-                success = await mcp_server_manager.start_server(server_name)
-                if success:
-                    self._load_mcp_tools()
-                    tools_count = len([t for t in self._mcp_tools if t.get("function", {}).get("name", "").startswith(f"mcp_{server_name}_")])
-                    logger.info(f"[Agent] Started MCP server '{server_name}', loaded {tools_count} tools")
-                else:
-                    logger.error(f"[Agent] Failed to start MCP server '{server_name}'")
+            if mcp_server_manager.is_server_running(server_name):
+                self._load_mcp_tools()
+                tools_count = len([t for t in self._mcp_tools if t.get("function", {}).get("name", "").startswith(f"mcp_{server_name}_")])
+                logger.info(f"[Agent] MCP server '{server_name}' running, loaded {tools_count} tools")
             else:
-                logger.info(f"[Agent] MCP server '{server_name}' already running")
+                logger.warning(f"[Agent] MCP server '{server_name}' not running")
     
     def set_item_context(self, item_id: str, item: "Item" = None):
         if self._context:
@@ -229,12 +227,7 @@ class Agent:
                     args["command"] = filter_result.command
         
         try:
-            if server_name == "local":
-                from app.services.agent.mcp.local_server import LocalMCPServer
-                local_server = LocalMCPServer()
-                result = local_server.call_tool(actual_tool_name, args)
-            else:
-                result = await mcp_server_manager.call_tool(server_name, actual_tool_name, args)
+            result = await mcp_server_manager.call_tool(server_name, actual_tool_name, args)
             logger.info(f"[Agent] Executed MCP tool '{tool_name}' with args: {args}")
             return {"success": True, "result": result}
         except Exception as e:
@@ -269,4 +262,41 @@ class AgentManager:
         return agent
 
 
+class ItemHandlerContext:
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self):
+        if self._initialized:
+            return
+        self._initialized = True
+        self._item_handlers: dict[str, str] = {}
+        self._global_lock = threading.RLock()
+        logger.info("[ItemHandlerContext] Initialized")
+    
+    def set_handler(self, item_id: str, handler_id: str):
+        with self._global_lock:
+            self._item_handlers[item_id] = handler_id
+            logger.info(f"[ItemHandlerContext] Set handler={handler_id} for item={item_id}")
+    
+    def get_handler(self, item_id: str) -> Optional[str]:
+        with self._global_lock:
+            return self._item_handlers.get(item_id)
+    
+    def remove_handler(self, item_id: str):
+        with self._global_lock:
+            if item_id in self._item_handlers:
+                del self._item_handlers[item_id]
+                logger.info(f"[ItemHandlerContext] Removed handler for item={item_id}")
+
+
 agent_manager = AgentManager()
+item_handler_context = ItemHandlerContext()

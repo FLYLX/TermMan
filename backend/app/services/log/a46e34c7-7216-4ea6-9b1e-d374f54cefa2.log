@@ -1,6 +1,0 @@
-[2026-03-29 10:22:29] # python cron_job.py
-[2026-03-29 10:22:29] python: can't open file '/app/items/5/cron_job.py': [Errno 2] No such file or directory
-[2026-03-29 10:22:41] # echo "helloworld"
-[2026-03-29 10:22:41] helloworld
-[2026-03-29 10:31:39] # list
-[2026-03-29 10:31:39] /bin/sh: 3: list: not found

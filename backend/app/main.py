@@ -1,9 +1,9 @@
 import logging
 
-# 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 import sentry_sdk
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from starlette.middleware.cors import CORSMiddleware
@@ -13,6 +13,20 @@ from app.core.config import settings
 from app.services import initialize_daemon_connections
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from app.services.agent.mcp import mcp_server_manager
+    logger.info("[App] Starting MCP servers...")
+    await mcp_server_manager.start_all()
+    logger.info("[App] MCP servers started")
+    
+    yield
+    
+    logger.info("[App] Stopping MCP servers...")
+    await mcp_server_manager.stop_all()
+    logger.info("[App] MCP servers stopped")
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
@@ -26,6 +40,7 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     generate_unique_id_function=custom_generate_unique_id,
+    lifespan=lifespan,
 )
 
 # Set all CORS enabled origins

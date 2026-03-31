@@ -17,7 +17,7 @@ from app.models import Item, ItemHandler, ItemHandlerItem, ItemChatSession
 from app.services.agent.memory.vector_store import vector_store
 from app.services.agent.agent import agent_manager
 from app.services.agent.stream_manager import stream_manager
-from app.services.agent.item_handler_context import item_handler_context
+from app.services.agent import item_handler_context
 
 from litellm import completion
 

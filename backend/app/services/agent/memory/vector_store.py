@@ -212,9 +212,14 @@ class VectorStoreService:
         
         return stats
 
-    def delete_memory(self, memory_id: str):
-        self._collection.delete(ids=[memory_id])
-        logger.info(f"[VectorStore] Deleted memory {memory_id}")
+    def delete_memory(self, memory_id: str) -> bool:
+        try:
+            self._collection.delete(ids=[memory_id])
+            logger.info(f"[VectorStore] Deleted memory {memory_id}")
+            return True
+        except Exception as e:
+            logger.error(f"[VectorStore] Failed to delete memory {memory_id}: {e}")
+            return False
 
     def delete_item_memories(self, item_id: str):
         self._collection.delete(where={"item_id": item_id})

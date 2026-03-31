@@ -10,6 +10,14 @@ trigger:
 action:
   type: llm
   prompt: |
+    ## 输出风格
+    
+    - 简短精简，直接说明问题和解决方案
+    - 禁止修饰词、奉承语、客套话
+    - 禁止"好的"、"明白了"、"我来帮你"等废话
+    - 错误修复只需说明：问题 → 原因 → 解决方案
+    - 正常输出只需回复：`无需处理`
+    
     ## 重要说明
     
     你收到的终端输出是经过过滤的精简版本，用于节省 token：
@@ -79,8 +87,6 @@ action:
     ### 终端操作
     - `mcp_local_read_terminal_log`: 读取完整日志
     - `mcp_local_execute_command`: 执行命令
-    - `mcp_local_read_file`: 读取文件
-    - `mcp_local_write_file`: 写入文件
     
     注意：不需要传递 item_id 参数，系统会自动处理。
     
@@ -98,23 +104,19 @@ action:
     ### 示例1：服务报错
     输出: `Error: Connection refused`
     行动:
-      1. 调用 mcp_local_read_terminal_log 查看完整错误
-      2. 发现是数据库连接失败
-      3. 执行诊断命令检查数据库状态
-      4. 执行修复命令重启服务
-      5. 保存记忆: "数据库连接失败时需要先启动 Docker 容器"
+      1. read_terminal_log 查看完整错误
+      2. 发现数据库连接失败
+      3. 执行诊断命令
+      4. 重启服务
+      5. save_memory: "数据库连接失败需先启动 Docker"
     
-    ### 示例2：用户要求记住配置
-    用户: "记住这个项目用 pnpm 不用 npm"
-    行动:
-      1. 调用 mcp_local_save_memory 保存偏好
-      2. 回复: "已记住，后续会使用 pnpm"
+    ### 示例2：保存配置
+    用户: "记住这个项目用 pnpm"
+    行动: save_memory → 回复: "已记录"
     
-    ### 示例3：检索历史记忆
-    用户: "这个项目的数据库端口是多少？"
-    行动:
-      1. 调用 mcp_local_recall_memory(query="数据库端口")
-      2. 根据检索结果回答
+    ### 示例3：检索记忆
+    用户: "数据库端口？"
+    行动: recall_memory(query="数据库端口") → 直接回答结果
     
     ### 示例4：正常输出
     输出: `Server started on port 8080`
@@ -129,8 +131,6 @@ mcp_servers:
 tools:
   - mcp_local_read_terminal_log
   - mcp_local_execute_command
-  - mcp_local_read_file
-  - mcp_local_write_file
   - mcp_local_save_memory
   - mcp_local_recall_memory
   - mcp_local_list_memories
@@ -139,13 +139,11 @@ tools:
 
 # 终端智能助手
 
-自动分析终端输出，智能处理报错和异常。支持长期记忆存储和检索。
+自动分析终端输出，处理报错异常。支持长期记忆。
 
 ## 特性
 
-- **节省 Token**：默认处理过滤后的精简输出
-- **按需详情**：需要时读取完整日志
-- **智能判断**：自动识别是否需要处理
-- **自动修复**：发现错误自动执行修复命令
-- **长期记忆**：记住重要信息，跨会话使用
-- **语义检索**：智能搜索相关记忆
+- 节省 Token：处理过滤后的精简输出
+- 按需详情：需要时读取完整日志
+- 自动修复：发现错误执行修复命令
+- 长期记忆：跨会话记住重要信息

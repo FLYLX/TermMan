@@ -257,6 +257,30 @@ export type MCPServerUpdateBody = {
     description?: (string | null);
 };
 
+export type MemoryCreate = {
+    content: string;
+    memory_type?: 'fact' | 'preference' | 'task' | 'error' | 'context';
+    metadata?: ({
+    [key: string]: unknown;
+} | null);
+    ttl_days?: (number | null);
+};
+
+export type memory_type = 'fact' | 'preference' | 'task' | 'error' | 'context';
+
+export type MemorySearch = {
+    query: string;
+    n_results?: number;
+    memory_type?: ('fact' | 'preference' | 'task' | 'error' | 'context' | null);
+};
+
+export type MemoryUpdate = {
+    content?: (string | null);
+    metadata?: ({
+    [key: string]: unknown;
+} | null);
+};
+
 export type Message = {
     message: string;
 };
@@ -423,6 +447,18 @@ export type ChatGetMatchedSkillsData = {
 };
 
 export type ChatGetMatchedSkillsResponse = (unknown);
+
+export type ChatAgentEventsData = {
+    itemId: string;
+};
+
+export type ChatAgentEventsResponse = (unknown);
+
+export type ChatAbortChatData = {
+    itemId: string;
+};
+
+export type ChatAbortChatResponse = (unknown);
 
 export type ItemHandlerAssociationsAddItemToHandlerData = {
     requestBody: AddItemToHandlerRequest;
@@ -711,18 +747,22 @@ export type MemoryClearChatSessionData = {
 
 export type MemoryClearChatSessionResponse = (unknown);
 
+export type MemoryClearAllSessionDataData = {
+    itemId: string;
+};
+
+export type MemoryClearAllSessionDataResponse = (unknown);
+
 export type MemoryGetAllMemoriesData = {
     itemId: string;
+    memoryType?: ('fact' | 'preference' | 'task' | 'error' | 'context' | null);
 };
 
 export type MemoryGetAllMemoriesResponse = (unknown);
 
 export type MemoryAddMemoryData = {
-    content: string;
     itemId: string;
-    requestBody?: ({
-    [key: string]: unknown;
-} | null);
+    requestBody: MemoryCreate;
 };
 
 export type MemoryAddMemoryResponse = (unknown);
@@ -733,13 +773,28 @@ export type MemoryClearMemoriesData = {
 
 export type MemoryClearMemoriesResponse = (unknown);
 
+export type MemoryGetMemoryStatsData = {
+    itemId: string;
+};
+
+export type MemoryGetMemoryStatsResponse = (unknown);
+
+export type MemoryGetMemoryTypesResponse = (unknown);
+
 export type MemorySearchMemoriesData = {
     itemId: string;
-    nResults?: number;
-    query: string;
+    requestBody: MemorySearch;
 };
 
 export type MemorySearchMemoriesResponse = (unknown);
+
+export type MemoryUpdateMemoryData = {
+    itemId: string;
+    memoryId: string;
+    requestBody: MemoryUpdate;
+};
+
+export type MemoryUpdateMemoryResponse = (unknown);
 
 export type MemoryDeleteMemoryData = {
     itemId: string;
@@ -747,6 +802,25 @@ export type MemoryDeleteMemoryData = {
 };
 
 export type MemoryDeleteMemoryResponse = (unknown);
+
+export type MemoryExpireMemoriesData = {
+    itemId: string;
+};
+
+export type MemoryExpireMemoriesResponse = (unknown);
+
+export type MemoryDeduplicateMemoriesData = {
+    itemId: string;
+};
+
+export type MemoryDeduplicateMemoriesResponse = (unknown);
+
+export type MemorySummarizeMemoriesData = {
+    itemId: string;
+    threshold?: number;
+};
+
+export type MemorySummarizeMemoriesResponse = (unknown);
 
 export type PrivateCreateUserData = {
     requestBody: PrivateUserCreate;

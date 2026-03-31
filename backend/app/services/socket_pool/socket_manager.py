@@ -93,8 +93,10 @@ class SocketManager:
         from .input_center import InputCommand
         
         def handle_input(cmd: InputCommand) -> bool:
+            logger.info(f"[SocketManager] handle_input called: item={socket.item_uuid}, connected={socket.is_connected()}")
             if socket.is_connected():
                 return socket.write(cmd.command)
+            logger.warning(f"[SocketManager] handle_input: socket not connected for item={socket.item_uuid}")
             return False
         
         handler_id = input_center.register(

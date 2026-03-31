@@ -2,9 +2,12 @@ import asyncio
 import json
 import logging
 import sys
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def debug_log(msg: str):
+    print(msg, file=sys.stderr, flush=True)
 
 
 class LocalMCPServer:
@@ -19,10 +22,9 @@ class LocalMCPServer:
             input_schema={
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "要执行的命令"},
-                    "item_id": {"type": "string", "description": "目标终端 ID"}
+                    "command": {"type": "string", "description": "要执行的命令"}
                 },
-                "required": ["command", "item_id"]
+                "required": ["command"]
             },
             handler=self._execute_command
         )
@@ -33,37 +35,11 @@ class LocalMCPServer:
             input_schema={
                 "type": "object",
                 "properties": {
-                    "item_id": {"type": "string", "description": "目标终端 ID"},
                     "lines": {"type": "integer", "description": "读取最后 N 行，默认 64", "default": 64}
                 },
-                "required": ["item_id"]
+                "required": []
             },
             handler=self._read_terminal_log
-        )
-        
-        self.register_tool(
-            name="read_file",
-            description="读取文件内容",
-            input_schema={
-                "type": "object",
-                "properties": {"file_path": {"type": "string", "description": "文件路径"}},
-                "required": ["file_path"]
-            },
-            handler=self._read_file
-        )
-        
-        self.register_tool(
-            name="write_file",
-            description="写入文件内容",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "file_path": {"type": "string", "description": "文件路径"},
-                    "content": {"type": "string", "description": "文件内容"}
-                },
-                "required": ["file_path", "content"]
-            },
-            handler=self._write_file
         )
         
         self.register_tool(
@@ -74,10 +50,9 @@ class LocalMCPServer:
                 "properties": {
                     "content": {"type": "string", "description": "要保存的记忆内容"},
                     "memory_type": {"type": "string", "enum": ["fact", "preference", "task", "error", "context"], "description": "记忆类型: fact(事实), preference(偏好), task(任务), error(错误), context(上下文)"},
-                    "ttl_days": {"type": "integer", "description": "过期天数，默认 30 天", "default": 30},
-                    "item_id": {"type": "string", "description": "目标终端 ID"}
+                    "ttl_days": {"type": "integer", "description": "过期天数，默认 30 天", "default": 30}
                 },
-                "required": ["content", "item_id"]
+                "required": ["content"]
             },
             handler=self._save_memory
         )
@@ -90,10 +65,9 @@ class LocalMCPServer:
                 "properties": {
                     "query": {"type": "string", "description": "搜索关键词或问题"},
                     "n_results": {"type": "integer", "description": "返回结果数量，默认 5", "default": 5},
-                    "memory_type": {"type": "string", "enum": ["fact", "preference", "task", "error", "context"], "description": "可选：限定记忆类型"},
-                    "item_id": {"type": "string", "description": "目标终端 ID"}
+                    "memory_type": {"type": "string", "enum": ["fact", "preference", "task", "error", "context"], "description": "可选：限定记忆类型"}
                 },
-                "required": ["query", "item_id"]
+                "required": ["query"]
             },
             handler=self._recall_memory
         )
@@ -104,10 +78,9 @@ class LocalMCPServer:
             input_schema={
                 "type": "object",
                 "properties": {
-                    "memory_type": {"type": "string", "enum": ["fact", "preference", "task", "error", "context"], "description": "可选：限定记忆类型"},
-                    "item_id": {"type": "string", "description": "目标终端 ID"}
+                    "memory_type": {"type": "string", "enum": ["fact", "preference", "task", "error", "context"], "description": "可选：限定记忆类型"}
                 },
-                "required": ["item_id"]
+                "required": []
             },
             handler=self._list_memories
         )
@@ -118,10 +91,9 @@ class LocalMCPServer:
             input_schema={
                 "type": "object",
                 "properties": {
-                    "memory_id": {"type": "string", "description": "要删除的记忆 ID"},
-                    "item_id": {"type": "string", "description": "目标终端 ID"}
+                    "memory_id": {"type": "string", "description": "要删除的记忆 ID"}
                 },
-                "required": ["memory_id", "item_id"]
+                "required": ["memory_id"]
             },
             handler=self._delete_memory
         )
@@ -133,14 +105,27 @@ class LocalMCPServer:
         command = args.get("command", "")
         item_id = args.get("item_id", "")
         
+        debug_log(f"[LocalMCPServer] _execute_command: item={item_id}, command={command}")
+        
         if not command or not item_id:
             return [{"type": "text", "text": "Error: command and item_id required"}]
         
         try:
             from app.services.socket_pool import InputSDK
+            from app.services.socket_pool.input_center import input_center
+            
+            has_handler = input_center.has_handler(item_id)
+            debug_log(f"[LocalMCPServer] has_handler={has_handler}")
+            
+            if not command.endswith("\n"):
+                command = command + "\n"
+            
             success = InputSDK().send(item_id, command)
-            return [{"type": "text", "text": f"Command sent: {command}" if success else "Failed to send command"}]
+            debug_log(f"[LocalMCPServer] send result: success={success}")
+            
+            return [{"type": "text", "text": f"Command sent: {command.strip()}" if success else "Failed to send command"}]
         except Exception as e:
+            debug_log(f"[LocalMCPServer] execute_command error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
     
     def _read_terminal_log(self, args: dict) -> list:
@@ -158,33 +143,6 @@ class LocalMCPServer:
                 return [{"type": "text", "text": f"No log found for {item_id}"}]
             
             return [{"type": "text", "text": f"=== 终端日志 (最后 {lines} 行) ===\n{content}"}]
-        except Exception as e:
-            return [{"type": "text", "text": f"Error: {e}"}]
-    
-    def _read_file(self, args: dict) -> list:
-        file_path = args.get("file_path", "")
-        if not file_path:
-            return [{"type": "text", "text": "Error: file_path required"}]
-        
-        try:
-            path = Path(file_path)
-            if not path.exists():
-                return [{"type": "text", "text": f"File not found: {file_path}"}]
-            return [{"type": "text", "text": path.read_text(encoding="utf-8")}]
-        except Exception as e:
-            return [{"type": "text", "text": f"Error: {e}"}]
-    
-    def _write_file(self, args: dict) -> list:
-        file_path = args.get("file_path", "")
-        content = args.get("content", "")
-        if not file_path:
-            return [{"type": "text", "text": "Error: file_path required"}]
-        
-        try:
-            path = Path(file_path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
-            return [{"type": "text", "text": f"File written: {file_path}"}]
         except Exception as e:
             return [{"type": "text", "text": f"Error: {e}"}]
     
@@ -286,18 +244,24 @@ class LocalMCPServer:
         return [{"name": t["name"], "description": t["description"], "inputSchema": t["inputSchema"]} for t in self._tools.values()]
     
     def call_tool(self, name: str, args: dict) -> list:
+        debug_log(f"[LocalMCPServer] call_tool: name={name}, args={args}")
         if name not in self._tools:
+            debug_log(f"[LocalMCPServer] Tool '{name}' not found, available: {list(self._tools.keys())}")
             return [{"type": "text", "text": f"Tool '{name}' not found"}]
         try:
-            return self._tools[name]["handler"](args)
+            result = self._tools[name]["handler"](args)
+            debug_log(f"[LocalMCPServer] Tool '{name}' result: {result}")
+            return result
         except Exception as e:
+            debug_log(f"[LocalMCPServer] Tool '{name}' error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
     
     async def run(self):
         logger.info("[LocalMCPServer] Starting stdio server")
+        loop = asyncio.get_running_loop()
         while True:
             try:
-                line = await asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline)
+                line = await loop.run_in_executor(None, sys.stdin.readline)
                 if not line:
                     break
                 request = json.loads(line.strip())

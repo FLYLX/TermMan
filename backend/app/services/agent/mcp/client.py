@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Any
 
-from .types import MCPServer, MCPTool, MCPResource
+from .types import MCPServer, MCPTool
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,6 @@ class MCPClient:
         self._request_id = 0
         self._initialized = False
         self._tools: list[MCPTool] = []
-        self._resources: list[MCPResource] = []
     
     async def start(self) -> bool:
         try:
@@ -36,12 +35,26 @@ class MCPClient:
             self.reader = self.process.stdout
             self.writer = self.process.stdin
             
+            asyncio.create_task(self._read_stderr())
+            
             logger.info(f"[MCPClient] Started server '{self.server.name}' (PID: {self.process.pid})")
             return True
             
         except Exception as e:
             logger.error(f"[MCPClient] Failed to start server '{self.server.name}': {e}")
             return False
+    
+    async def _read_stderr(self):
+        if not self.process or not self.process.stderr:
+            return
+        try:
+            while True:
+                line = await self.process.stderr.readline()
+                if not line:
+                    break
+                logger.info(f"[MCPClient:{self.server.name}:stderr] {line.decode().strip()}")
+        except Exception as e:
+            logger.error(f"[MCPClient] Error reading stderr: {e}")
     
     async def stop(self):
         if self.process:
@@ -144,57 +157,26 @@ class MCPClient:
         logger.info(f"[MCPClient] Found {len(self._tools)} tools in server '{self.server.name}'")
         return self._tools
     
-    async def list_resources(self) -> list[MCPResource]:
-        if not self._initialized:
-            return []
-        
-        result = await self._send_request("resources/list")
-        
-        if not result or "resources" not in result:
-            return []
-        
-        self._resources = []
-        for res_data in result["resources"]:
-            resource = MCPResource(
-                uri=res_data.get("uri", ""),
-                name=res_data.get("name", ""),
-                description=res_data.get("description", ""),
-                mime_type=res_data.get("mimeType", ""),
-                server_name=self.server.name,
-            )
-            self._resources.append(resource)
-        
-        logger.info(f"[MCPClient] Found {len(self._resources)} resources in server '{self.server.name}'")
-        return self._resources
-    
     async def call_tool(self, tool_name: str, arguments: dict) -> Any:
         if not self._initialized:
+            logger.warning(f"[MCPClient] call_tool failed: server '{self.server.name}' not initialized")
             return {"error": "Server not initialized"}
+        
+        logger.info(f"[MCPClient] call_tool: server={self.server.name}, tool={tool_name}, args={arguments}")
         
         result = await self._send_request("tools/call", {
             "name": tool_name,
             "arguments": arguments,
         })
         
+        logger.info(f"[MCPClient] call_tool result: {result}")
+        
         if result:
             return result.get("content", [])
         return {"error": "Tool call failed"}
     
-    async def read_resource(self, uri: str) -> Any:
-        if not self._initialized:
-            return {"error": "Server not initialized"}
-        
-        result = await self._send_request("resources/read", {
-            "uri": uri,
-        })
-        
-        return result
-    
     def get_tools(self) -> list[MCPTool]:
         return self._tools
-    
-    def get_resources(self) -> list[MCPResource]:
-        return self._resources
     
     @property
     def is_running(self) -> bool:

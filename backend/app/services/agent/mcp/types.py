@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import Any
 
 
 @dataclass
@@ -28,12 +27,3 @@ class MCPTool:
                 "parameters": self.input_schema,
             }
         }
-
-
-@dataclass
-class MCPResource:
-    uri: str
-    name: str
-    description: str = ""
-    mime_type: str = ""
-    server_name: str = ""

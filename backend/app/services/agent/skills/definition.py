@@ -17,11 +17,7 @@ class TriggerConfig:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "type": self.type,
-            "patterns": self.patterns,
-            "interval": self.interval,
-        }
+        return {"type": self.type, "patterns": self.patterns, "interval": self.interval}
 
 
 @dataclass
@@ -93,16 +89,3 @@ class SkillDefinition:
     examples: list[dict[str, Any]] = field(default_factory=list)
     mcp_servers: list[str] = field(default_factory=list)
     skill_dir: str = ""
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "skill_id": self.skill_id,
-            "name": self.name,
-            "description": self.description,
-            "category": self.category,
-            "trigger": self.trigger.to_dict(),
-            "action": self.action.to_dict(),
-            "safety": self.safety.to_dict(),
-            "content": self.content,
-            "mcp_servers": self.mcp_servers,
-        }

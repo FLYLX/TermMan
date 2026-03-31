@@ -123,6 +123,8 @@ class InputCenter:
         return count
     
     def send(self, item_uuid: str, command: str, source: str = "sdk") -> bool:
+        logger.info(f"[InputCenter] send() called: item={item_uuid}, command={command[:50]}..., source={source}")
+        
         input_cmd = InputCommand(
             item_uuid=item_uuid,
             command=command,
@@ -131,10 +133,12 @@ class InputCenter:
         
         with self._global_lock:
             if item_uuid not in self._item_handlers:
-                logger.warning(f"[InputCenter] No handler for item={item_uuid}")
+                logger.warning(f"[InputCenter] No handler for item={item_uuid}, registered items: {list(self._item_handlers.keys())}")
                 return False
             
             h_ids = self._item_handlers[item_uuid].copy()
+        
+        logger.info(f"[InputCenter] Found {len(h_ids)} handlers for item={item_uuid}: {h_ids}")
         
         delivered = False
         for h_id in h_ids:
@@ -142,16 +146,22 @@ class InputCenter:
                 handler = self._handlers.get(h_id)
             
             if handler is None:
+                logger.warning(f"[InputCenter] Handler {h_id} not found in _handlers")
                 continue
             
             try:
-                if handler.callback(input_cmd):
+                logger.info(f"[InputCenter] Calling handler {h_id} (type={handler.handler_type})")
+                result = handler.callback(input_cmd)
+                logger.info(f"[InputCenter] Handler {h_id} returned: {result}")
+                if result:
                     delivered = True
             except Exception as e:
                 logger.error(f"[InputCenter] Error in handler {h_id}: {e}")
         
         if delivered:
-            logger.debug(f"[InputCenter] Command sent to item={item_uuid}: {command[:50]}...")
+            logger.info(f"[InputCenter] Command delivered to item={item_uuid}")
+        
+        return delivered
         
         return delivered
     
