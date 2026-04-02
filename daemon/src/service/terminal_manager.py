@@ -307,16 +307,19 @@ class TerminalProcess:
             self.master_fd = None
             return True
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self, include_stdout: bool = False, drain_stdout: bool = False) -> Dict[str, Any]:
         with self.lock:
-            stdout = "".join(self.stdout_buffer)
-            self.stdout_buffer = []
+            stdout = "".join(self.stdout_buffer) if include_stdout else ""
+            if include_stdout and drain_stdout:
+                self.stdout_buffer = []
 
         return {
             "item_uuid": self.item_uuid,
             "user_uuid": self.user_uuid,
+            "token": self.token,
             "status": self.status,
             "workdir": self.workdir,
+            "command": self.command,
             "stdout": stdout
         }
 

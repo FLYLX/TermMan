@@ -24,13 +24,17 @@ def test_create_item(
     assert "owner_id" in content
     # 测试新添加的字段
     assert "status" in content
-    assert "socket_connection_type" in content
     assert "socket_host" in content
     assert "socket_port" in content
+    assert "socket_connected" in content
+    assert "socket_last_connected" in content
     assert "api_key" in content
     assert "command" in content
-    assert "executable_path" in content
     assert "working_directory" in content
+    assert "input_filter_enabled" in content
+    assert "input_filter_rules" in content
+    assert "output_filter_enabled" in content
+    assert "output_filter_rules" in content
 
 
 def test_read_item(
@@ -49,13 +53,21 @@ def test_read_item(
     assert content["owner_id"] == str(item.owner_id)
     # 测试新添加的字段
     assert content["status"] == item.status
-    assert content["socket_connection_type"] == item.socket_connection_type
     assert content["socket_host"] == item.socket_host
     assert content["socket_port"] == item.socket_port
+    assert content["socket_connected"] == item.socket_connected
+    assert content["socket_last_connected"] == item.socket_last_connected
     assert content["api_key"] == item.api_key
     assert content["command"] == item.command
-    assert content["executable_path"] == item.executable_path
     assert content["working_directory"] == item.working_directory
+    assert content["input_filter_enabled"] == item.input_filter_enabled
+    assert content["input_filter_rules"] == item.input_filter_rules
+    assert content["output_filter_enabled"] == item.output_filter_enabled
+    assert content["output_filter_rules"] == item.output_filter_rules
+    assert "daemon_online" in content
+    assert "daemon_status" in content
+    assert "browser_count" in content
+    assert "backend_connected" in content
 
 
 def test_read_item_not_found(
@@ -105,7 +117,6 @@ def test_update_item(
             "status": "running", "socket_port": 9001,
             "api_key": "updated-api-key",
             "command": "test command",
-            "executable_path": "/path/to/executable",
             "working_directory": "/path/to/workdir"}
     response = client.put(
         f"{settings.API_V1_STR}/items/{item.id}",
@@ -123,7 +134,6 @@ def test_update_item(
     assert content["socket_port"] == data["socket_port"]
     assert content["api_key"] == data["api_key"]
     assert content["command"] == data["command"]
-    assert content["executable_path"] == data["executable_path"]
     assert content["working_directory"] == data["working_directory"]
 
 

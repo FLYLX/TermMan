@@ -1,5 +1,5 @@
-from typing import Any
 import logging
+from typing import Any
 
 from sqlmodel import Session
 
@@ -8,8 +8,7 @@ from app.models import Item
 
 from .connection_pool import ConnectionManager, DaemonConfig, backend_conn_pool
 from .log_manager import LogManager
-from .socket_pool import SocketManager
-from .socket_pool.subscriber_sdk import ItemSubscriberSDK
+from .socket_pool import SocketPoolFacade
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +34,10 @@ class TerminalService:
     - SocketManager: 管理 Backend → Daemon Room 的监听连接（日志）
     - backend_conn_pool: 全局连接池单例
     """
-    def __init__(self, connection_manager: ConnectionManager, socket_manager: SocketManager):
+    def __init__(self, connection_manager: ConnectionManager, socket_pool: SocketPoolFacade):
         self.connection_manager = connection_manager
-        self.socket_manager = socket_manager
+        self.socket_pool = socket_pool
         self.terminal_users: dict[str, list[str]] = {}
-        self._log_subscribers: dict[str, str] = {}
-        self._sdk = ItemSubscriberSDK()
 
     def start_terminal(self, item_uuid: str, user_uuid: str, daemon_config: DaemonConfig) -> dict[str, Any]:
         connection = self.connection_manager.get_or_create_connection(daemon_config)
@@ -65,7 +62,11 @@ class TerminalService:
         terminal_token = result.get("token")
         already_running = result.get("already_running", False)
         
-        self.socket_manager.add_token(daemon_config.daemon_id, actual_item_uuid, terminal_token)
+        self.socket_pool.register_item_token(
+            daemon_config.daemon_id,
+            actual_item_uuid,
+            terminal_token,
+        )
         
         self._create_backend_room_subscriber(
             actual_item_uuid,
@@ -96,29 +97,27 @@ class TerminalService:
         daemon_url: str, 
         api_key: str, 
         owner_uuid: str
-    ):
+    ) -> bool:
         logger.info(f"[TerminalService] Creating backend socket for item={item_uuid}, daemon_url={daemon_url}")
-        socket = self.socket_manager.create_backend_socket(
+        socket = self.socket_pool.ensure_backend_socket(
             item_uuid=item_uuid,
             token=token,
             daemon_url=daemon_url,
-            api_key=api_key
+            api_key=api_key,
         )
         
         if not socket.is_connected():
             logger.error(f"[TerminalService] Backend socket failed to connect for item={item_uuid}")
-            return
+            return False
         
         logger.info(f"[TerminalService] Backend socket connected for item={item_uuid}")
         
-        sub_id = self._sdk.subscribe_log(
+        self.socket_pool.ensure_log_subscription(
             item_uuid=item_uuid,
             owner_uuid=owner_uuid,
             log_manager=log_manager,
-            subscriber_type="backend_log"
+            subscriber_type="backend_log",
         )
-        self._log_subscribers[item_uuid] = sub_id
-        logger.info(f"[TerminalService] Log subscriber registered: {sub_id} for item={item_uuid}")
         
         room_listen_conn = backend_conn_pool.create_room_listen_conn(item_uuid, api_key)
         room_listen_conn.set_connected(socket, socket.sio.sid if hasattr(socket.sio, 'sid') else None)
@@ -130,6 +129,39 @@ class TerminalService:
         if owner_uuid not in self.terminal_users[item_uuid]:
             self.terminal_users[item_uuid].append(owner_uuid)
 
+        return True
+
+    def restore_terminal_session(
+        self,
+        *,
+        item_uuid: str,
+        owner_uuid: str,
+        daemon_config: DaemonConfig,
+        token: str,
+    ) -> bool:
+        self.socket_pool.register_item_token(daemon_config.daemon_id, item_uuid, token)
+
+        room_listen_conn = backend_conn_pool.get_room_listen_conn(item_uuid)
+        backend_socket = self.socket_pool.get_backend_socket(item_uuid)
+        if (
+            room_listen_conn
+            and room_listen_conn.is_connected()
+            and backend_socket
+            and backend_socket.is_connected()
+        ):
+            logger.info(
+                f"[TerminalService] Existing backend room subscriber is already healthy for item={item_uuid}"
+            )
+            return True
+
+        return self._create_backend_room_subscriber(
+            item_uuid=item_uuid,
+            token=token,
+            daemon_url=daemon_config.base_url,
+            api_key=daemon_config.api_key,
+            owner_uuid=owner_uuid,
+        )
+
     def stop_terminal(self, daemon_id: str, item_uuid: str) -> dict[str, Any]:
         connection = self.connection_manager.get_connection(daemon_id)
         if not connection or not connection.is_connected():
@@ -138,14 +170,7 @@ class TerminalService:
         result = connection.terminal_stop_http(item_uuid)
         
         if result.get("success"):
-            self.socket_manager.remove_all_tokens_by_item(item_uuid)
-            self.socket_manager.clear_sockets_by_item(item_uuid)
-            
-            if item_uuid in self._log_subscribers:
-                self._sdk.unsubscribe(self._log_subscribers[item_uuid])
-                del self._log_subscribers[item_uuid]
-            
-            self._sdk.unsubscribe_item(item_uuid)
+            self.socket_pool.cleanup_item_runtime(item_uuid)
             
             backend_conn_pool.remove_room_listen_conn(item_uuid)
             
@@ -171,16 +196,20 @@ class TerminalService:
         daemon_id: str | None = None
     ) -> dict[str, Any] | None:
         if daemon_id:
-            if not self.socket_manager.validate_token(daemon_id, item_uuid, token):
+            if not self.socket_pool.validate_item_token(daemon_id, item_uuid, token):
                 return None
         else:
-            found_daemon_id, found_token = self.socket_manager.get_token_by_item(item_uuid)
+            found_daemon_id, found_token = self.socket_pool.get_item_token(item_uuid)
             if not found_token or found_token != token:
                 return None
             daemon_id = found_daemon_id
 
-        socket = self.socket_manager.get_or_create_socket(
-            item_uuid, token, daemon_url, user_uuid, api_key, subscriber_type="browser"
+        socket = self.socket_pool.ensure_browser_socket(
+            item_uuid=item_uuid,
+            token=token,
+            daemon_url=daemon_url,
+            user_uuid=user_uuid or "browser",
+            api_key=api_key,
         )
         if not socket.is_connected():
             return None
@@ -194,14 +223,7 @@ class TerminalService:
         return {"success": True, "item_uuid": item_uuid}
 
     def write_to_terminal(self, item_uuid: str, command: str) -> bool:
-        sockets = self.socket_manager.get_sockets_by_item(item_uuid)
-        if not sockets:
-            return False
-
-        for socket in sockets:
-            if socket.is_connected():
-                return socket.write(command)
-        return False
+        return self.socket_pool.write_to_item(item_uuid, command)
 
     def get_terminal_log(self, user_uuid: str, item_uuid: str) -> str | None:
         return log_manager.get_log_content(user_uuid, item_uuid)
@@ -214,7 +236,7 @@ class TerminalService:
 
     def list_user_terminals(self, user_uuid: str) -> dict[str, Any]:
         terminals = []
-        for socket in self.socket_manager.get_running_sockets():
+        for socket in self.socket_pool.get_running_sockets():
             terminals.append({
                 "item_uuid": socket.item_uuid,
                 "status": socket.status.value,

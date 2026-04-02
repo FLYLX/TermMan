@@ -64,7 +64,7 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
 
   const { data: mcpData } = useQuery({
     queryKey: ["mcp-servers"],
-    queryFn: () => McpService.listMcpServers({}),
+    queryFn: () => McpService.listMcpServers(),
     enabled: isOpen,
   })
 

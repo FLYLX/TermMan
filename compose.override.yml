@@ -79,6 +79,7 @@ services:
       SMTP_PORT: "1025"
       SMTP_TLS: "false"
       EMAILS_FROM_EMAIL: "noreply@example.com"
+      BACKEND_LOG_DIR: "/app/backend/app/services/log"
 
   mailcatcher:
     image: schickling/mailcatcher

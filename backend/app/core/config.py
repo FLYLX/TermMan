@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str
     SENTRY_DSN: HttpUrl | None = None
     SQLITE_DATABASE_URL: Optional[str] = "sqlite:///./sql_app.db"
+    BACKEND_LOG_DIR: Optional[str] = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property

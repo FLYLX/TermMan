@@ -17,6 +17,7 @@ class MCPTool:
     description: str
     input_schema: dict
     server_name: str
+    skip_memory: bool = False
     
     def to_litellm_tool(self) -> dict:
         return {

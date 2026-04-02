@@ -1,36 +1,46 @@
-from .socket_manager import SocketManager
-from .item_socket import ItemSocket
-from .socket_models import TerminalStatus
-from .subscription_center import (
-    ItemSubscriptionCenter,
+from .agent_bridge import AgentInputBridge
+from .event_bus import (
+    ItemEventBus,
+    Subscriber,
     SubscriptionEvent,
     SubscriptionEventType,
-    Subscriber,
-    subscription_center
-)
-from .subscriber_sdk import (
-    ItemSubscriberSDK,
-    create_log_subscriber,
-    create_stream_subscriber
 )
 from .input_center import (
     InputCenter,
     InputCommand,
     InputHandler,
-    input_center
+    input_center,
 )
 from .input_sdk import (
     InputSDK,
     create_input_handler,
     send_command,
-    send_command_to_all
+    send_command_to_all,
 )
+from .item_socket import ItemSocket
+from .service_facade import SocketPoolFacade
+from .socket_manager import SocketManager
+from .socket_models import TerminalStatus
+from .subscriber_sdk import (
+    ItemSubscriberSDK,
+    create_log_subscriber,
+    create_stream_subscriber,
+)
+from .subscription_center import (
+    ItemSubscriptionCenter,
+    subscription_center,
+)
+from .terminal_stream_pipeline import TerminalStreamPipeline
 
 __all__ = [
     "SocketManager",
     "ItemSocket",
+    "SocketPoolFacade",
     "TerminalStatus",
+    "ItemEventBus",
     "ItemSubscriptionCenter",
+    "TerminalStreamPipeline",
+    "AgentInputBridge",
     "SubscriptionEvent",
     "SubscriptionEventType",
     "Subscriber",
@@ -45,5 +55,5 @@ __all__ = [
     "InputSDK",
     "create_input_handler",
     "send_command",
-    "send_command_to_all"
+    "send_command_to_all",
 ]

@@ -4,6 +4,7 @@ import { request as __request } from "@/client/core/request"
 import { OpenAPI } from "@/client/core/OpenAPI"
 
 export type MemoryType = "fact" | "preference" | "task" | "error" | "context"
+export type ManagedMemoryStatus = "active" | "completed" | "resolved"
 
 export interface Memory {
   id: string
@@ -13,6 +14,10 @@ export interface Memory {
     memory_type: MemoryType
     created_at: string
     expires_at: string
+    updated_at?: string
+    status?: ManagedMemoryStatus
+    memory_key?: string
+    verified?: boolean
     [key: string]: unknown
   }
   distance?: number
@@ -23,6 +28,16 @@ export interface MemoryStats {
   by_type: Record<MemoryType, number>
   expired_count: number
   memory_types: Record<MemoryType, string>
+  status_counts: {
+    task: {
+      active: number
+      completed: number
+    }
+    error: {
+      active: number
+      resolved: number
+    }
+  }
 }
 
 export interface MemoryCreateRequest {
@@ -35,6 +50,10 @@ export interface MemoryCreateRequest {
 export interface MemoryUpdateRequest {
   content?: string
   metadata?: Record<string, unknown>
+}
+
+export interface MemoryStatusUpdateRequest {
+  status: ManagedMemoryStatus
 }
 
 export interface MemorySearchRequest {
@@ -57,6 +76,18 @@ export const MEMORY_TYPE_COLORS: Record<MemoryType, string> = {
   task: "bg-green-500",
   error: "bg-red-500",
   context: "bg-yellow-500",
+}
+
+export const MEMORY_STATUS_LABELS: Record<ManagedMemoryStatus, string> = {
+  active: "进行中",
+  completed: "已完成",
+  resolved: "已解决",
+}
+
+export const MEMORY_STATUS_COLORS: Record<ManagedMemoryStatus, string> = {
+  active: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  completed: "bg-zinc-700/70 text-zinc-200 border-zinc-500/40",
+  resolved: "bg-sky-500/15 text-sky-300 border-sky-500/30",
 }
 
 export class MemoryService {
@@ -126,6 +157,20 @@ export class MemoryService {
     return __request(OpenAPI, {
       method: "PUT",
       url: "/api/v1/memory/{item_id}/memories/{memory_id}",
+      path: { item_id: itemId, memory_id: memoryId },
+      body: request,
+      mediaType: "application/json",
+    })
+  }
+
+  public static updateMemoryStatus(
+    itemId: string,
+    memoryId: string,
+    request: MemoryStatusUpdateRequest
+  ): CancelablePromise<{ message: string; memory: Memory }> {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/memory/{item_id}/memories/{memory_id}/status",
       path: { item_id: itemId, memory_id: memoryId },
       body: request,
       mediaType: "application/json",

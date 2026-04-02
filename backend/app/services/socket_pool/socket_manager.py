@@ -1,11 +1,8 @@
 import logging
 import threading
-from typing import Any
 
-from .item_socket import ItemSocket
-from .socket_models import TerminalStatus
-from .subscription_center import subscription_center
 from .input_center import input_center
+from .item_socket import ItemSocket
 
 logger = logging.getLogger(__name__)
 
@@ -131,23 +128,21 @@ class SocketManager:
             key = (user_uuid, item_uuid, subscriber_type)
             if key in self.sockets:
                 socket = self.sockets.pop(key)
-                self._unregister_input_handler(socket)
-                socket.disconnect()
+                self._dispose_socket(socket)
 
     def remove_all_sockets_by_item(self, item_uuid: str):
         with self.lock:
             keys_to_remove = [(u, iid, s) for (u, iid, s) in self.sockets if iid == item_uuid]
             for key in keys_to_remove:
                 socket = self.sockets.pop(key)
-                self._unregister_input_handler(socket)
-                socket.disconnect()
+                self._dispose_socket(socket)
 
     def clear_sockets_by_item(self, item_uuid: str):
         with self.lock:
             keys_to_remove = [(u, iid, s) for (u, iid, s) in self.sockets if iid == item_uuid]
             for key in keys_to_remove:
                 socket = self.sockets.pop(key)
-                self._unregister_input_handler(socket)
+                self._dispose_socket(socket)
 
     def add_token(self, daemon_id: str, item_uuid: str, token: str) -> dict[str, str]:
         with self.lock:
@@ -189,23 +184,12 @@ class SocketManager:
         stored_token = self.get_token(daemon_id, item_uuid)
         return stored_token is not None and stored_token == token
 
-    def get_all_sockets(self) -> list[ItemSocket]:
-        return list(self.sockets.values())
-
     def get_running_sockets(self) -> list[ItemSocket]:
         return [sock for sock in self.sockets.values() if sock.is_connected()]
 
-    def get_user_sockets(self, user_uuid: str) -> list[ItemSocket]:
-        return [sock for (u, _, _), sock in self.sockets.items() if u == user_uuid]
-
-    def cleanup_disconnected_sockets(self):
-        with self.lock:
-            disconnected_keys = [
-                (u, iid, s) for (u, iid, s), sock in self.sockets.items()
-                if sock.get_status() == TerminalStatus.STOPPED
-            ]
-            for key in disconnected_keys:
-                self.sockets.pop(key)
+    def _dispose_socket(self, socket: ItemSocket):
+        self._unregister_input_handler(socket)
+        socket.disconnect()
 
     def _print_socket_tables(self, message: str = "Socket Tables Updated"):
         logger.info(f"\n{'='*80}")

@@ -6,7 +6,7 @@ from .subscription_center import (
     ItemSubscriptionCenter,
     SubscriptionEvent,
     SubscriptionEventType,
-    subscription_center
+    subscription_center,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,7 @@ class ItemSubscriberSDK:
     ) -> str:
         def log_callback(event: SubscriptionEvent):
             data = event.data
-            output = data.get("stdout", "")
+            output = f"{data.get('stdout', '')}{data.get('stderr', '')}"
             
             if output:
                 log_manager.write_to_log(owner_uuid, item_uuid, output)

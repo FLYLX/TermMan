@@ -26,7 +26,20 @@ class LocalMCPServer:
                 },
                 "required": ["command"]
             },
-            handler=self._execute_command
+            handler=self._execute_command,
+            skip_memory=True
+        )
+        
+        self.register_tool(
+            name="interrupt_command",
+            description="发送 Ctrl+C 中断当前终端正在运行的命令",
+            input_schema={
+                "type": "object",
+                "properties": {},
+                "required": []
+            },
+            handler=self._interrupt_command,
+            skip_memory=True
         )
         
         self.register_tool(
@@ -39,12 +52,13 @@ class LocalMCPServer:
                 },
                 "required": []
             },
-            handler=self._read_terminal_log
+            handler=self._read_terminal_log,
+            skip_memory=True
         )
         
         self.register_tool(
             name="save_memory",
-            description="保存重要信息到长期记忆中，用于记住用户偏好、项目配置、重要事实等。支持设置过期时间。",
+            description="保存稳定、可复用、已验证的重要信息到长期记忆中。不要保存原生日志、命令回显、等待态消息或敏感信息。",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -98,8 +112,14 @@ class LocalMCPServer:
             handler=self._delete_memory
         )
     
-    def register_tool(self, name: str, description: str, input_schema: dict, handler: callable):
-        self._tools[name] = {"name": name, "description": description, "inputSchema": input_schema, "handler": handler}
+    def register_tool(self, name: str, description: str, input_schema: dict, handler: callable, skip_memory: bool = False):
+        self._tools[name] = {
+            "name": name,
+            "description": description,
+            "inputSchema": input_schema,
+            "handler": handler,
+            "skip_memory": skip_memory
+        }
     
     def _execute_command(self, args: dict) -> list:
         command = args.get("command", "")
@@ -123,9 +143,50 @@ class LocalMCPServer:
             success = InputSDK().send(item_id, command)
             debug_log(f"[LocalMCPServer] send result: success={success}")
             
-            return [{"type": "text", "text": f"Command sent: {command.strip()}" if success else "Failed to send command"}]
+            return [
+                {
+                    "type": "text",
+                    "text": (
+                        f"命令已发送到终端，尚未确认执行结果: {command.strip()}"
+                        if success
+                        else "命令发送失败，终端未收到命令"
+                    ),
+                }
+            ]
         except Exception as e:
             debug_log(f"[LocalMCPServer] execute_command error: {e}")
+            return [{"type": "text", "text": f"Error: {e}"}]
+    
+    def _interrupt_command(self, args: dict) -> list:
+        item_id = args.get("item_id", "")
+        
+        debug_log(f"[LocalMCPServer] _interrupt_command: item={item_id}")
+        
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id required"}]
+        
+        try:
+            from app.services.socket_pool import InputSDK
+            from app.services.socket_pool.input_center import input_center
+            
+            has_handler = input_center.has_handler(item_id)
+            debug_log(f"[LocalMCPServer] interrupt has_handler={has_handler}")
+            
+            success = InputSDK().send(item_id, "\x03")
+            debug_log(f"[LocalMCPServer] interrupt result: success={success}")
+            
+            return [
+                {
+                    "type": "text",
+                    "text": (
+                        "Ctrl+C 已发送到终端，是否已中断需等待后续输出确认"
+                        if success
+                        else "Ctrl+C 发送失败"
+                    ),
+                }
+            ]
+        except Exception as e:
+            debug_log(f"[LocalMCPServer] interrupt error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
     
     def _read_terminal_log(self, args: dict) -> list:
@@ -241,7 +302,15 @@ class LocalMCPServer:
             return [{"type": "text", "text": f"Error: {e}"}]
     
     def list_tools(self) -> list:
-        return [{"name": t["name"], "description": t["description"], "inputSchema": t["inputSchema"]} for t in self._tools.values()]
+        return [
+            {
+                "name": t["name"],
+                "description": t["description"],
+                "inputSchema": t["inputSchema"],
+                "skip_memory": t.get("skip_memory", False)
+            }
+            for t in self._tools.values()
+        ]
     
     def call_tool(self, name: str, args: dict) -> list:
         debug_log(f"[LocalMCPServer] call_tool: name={name}, args={args}")

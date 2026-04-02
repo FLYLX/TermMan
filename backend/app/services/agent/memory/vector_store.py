@@ -5,9 +5,7 @@ from datetime import datetime, timedelta
 from typing import Any, Literal
 
 from chromadb import Collection
-from chromadb.config import Settings
 import chromadb
-from sentence_transformers import SentenceTransformer
 
 from app.core.config import settings
 
@@ -30,7 +28,7 @@ SUMMARIZE_THRESHOLD = 10
 
 class EmbeddingService:
     _instance: "EmbeddingService | None" = None
-    _model: SentenceTransformer | None = None
+    _model: Any | None = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -38,12 +36,18 @@ class EmbeddingService:
         return cls._instance
 
     def __init__(self):
+        pass
+
+    def _ensure_model(self):
         if self._model is None:
             logger.info("[Embedding] Loading all-MiniLM-L6-v2 model...")
+            from sentence_transformers import SentenceTransformer
+
             self._model = SentenceTransformer("all-MiniLM-L6-v2")
             logger.info("[Embedding] Model loaded successfully")
 
     def encode(self, texts: str | list[str]) -> list[list[float]]:
+        self._ensure_model()
         if isinstance(texts, str):
             texts = [texts]
         embeddings = self._model.encode(texts, convert_to_numpy=True)
@@ -65,18 +69,23 @@ class VectorStoreService:
         return cls._instance
 
     def __init__(self):
-        if self._client is None:
-            persist_dir = settings.CHROMA_PERSIST_DIR
-            os.makedirs(persist_dir, exist_ok=True)
-            
-            logger.info(f"[VectorStore] Initializing ChromaDB with persistence at {persist_dir}")
-            self._client = chromadb.PersistentClient(path=persist_dir)
-            self._collection = self._client.get_or_create_collection(
-                name="item_memories",
-                metadata={"description": "Long-term memory for items"},
-            )
-            self._embedding_service = EmbeddingService()
-            logger.info("[VectorStore] ChromaDB initialized with persistence")
+        pass
+
+    def _ensure_initialized(self):
+        if self._client is not None:
+            return
+
+        persist_dir = settings.CHROMA_PERSIST_DIR
+        os.makedirs(persist_dir, exist_ok=True)
+
+        logger.info(f"[VectorStore] Initializing ChromaDB with persistence at {persist_dir}")
+        self._client = chromadb.PersistentClient(path=persist_dir)
+        self._collection = self._client.get_or_create_collection(
+            name="item_memories",
+            metadata={"description": "Long-term memory for items"},
+        )
+        self._embedding_service = EmbeddingService()
+        logger.info("[VectorStore] ChromaDB initialized with persistence")
 
     def add_memory(
         self,
@@ -87,6 +96,7 @@ class VectorStoreService:
         memory_id: str | None = None,
         ttl_days: int | None = None,
     ) -> str | None:
+        self._ensure_initialized()
         if memory_id is None:
             memory_id = str(uuid.uuid4())
 
@@ -117,6 +127,7 @@ class VectorStoreService:
         return memory_id
 
     def _check_duplicate(self, item_id: str, content: str) -> bool:
+        self._ensure_initialized()
         query_embedding = self._embedding_service.encode_single(content)
         
         results = self._collection.query(
@@ -139,6 +150,7 @@ class VectorStoreService:
         n_results: int = 5,
         memory_type: MemoryType | None = None,
     ) -> list[dict[str, Any]]:
+        self._ensure_initialized()
         query_embedding = self._embedding_service.encode_single(query)
 
         where_filter = {"item_id": item_id}
@@ -169,6 +181,7 @@ class VectorStoreService:
         item_id: str,
         memory_type: MemoryType | None = None,
     ) -> list[dict[str, Any]]:
+        self._ensure_initialized()
         where_filter = {"item_id": item_id}
         if memory_type:
             where_filter["memory_type"] = memory_type
@@ -185,6 +198,17 @@ class VectorStoreService:
                 })
         
         return memories
+
+    def get_memory(self, memory_id: str) -> dict[str, Any] | None:
+        self._ensure_initialized()
+        results = self._collection.get(ids=[memory_id])
+        if not results["ids"]:
+            return None
+        return {
+            "id": results["ids"][0],
+            "content": results["documents"][0] if results["documents"] else "",
+            "metadata": results["metadatas"][0] if results["metadatas"] else {},
+        }
 
     def get_memory_stats(self, item_id: str) -> dict[str, Any]:
         all_memories = self.get_all_memories(item_id)
@@ -213,6 +237,7 @@ class VectorStoreService:
         return stats
 
     def delete_memory(self, memory_id: str) -> bool:
+        self._ensure_initialized()
         try:
             self._collection.delete(ids=[memory_id])
             logger.info(f"[VectorStore] Deleted memory {memory_id}")
@@ -222,6 +247,7 @@ class VectorStoreService:
             return False
 
     def delete_item_memories(self, item_id: str):
+        self._ensure_initialized()
         self._collection.delete(where={"item_id": item_id})
         logger.info(f"[VectorStore] Deleted all memories for item {item_id}")
 
@@ -284,6 +310,7 @@ class VectorStoreService:
         return self.get_all_memories(item_id, memory_type=memory_type)
 
     def update_memory(self, memory_id: str, content: str | None = None, metadata: dict[str, Any] | None = None) -> bool:
+        self._ensure_initialized()
         try:
             existing = self._collection.get(ids=[memory_id])
             if not existing["ids"]:
@@ -312,6 +339,7 @@ class VectorStoreService:
             return False
 
     def get_item_memory_count(self, item_id: str) -> int:
+        self._ensure_initialized()
         results = self._collection.get(where={"item_id": item_id})
         return len(results["ids"]) if results["ids"] else 0
 

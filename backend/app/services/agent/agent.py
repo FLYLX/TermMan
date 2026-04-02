@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import re
 import threading
@@ -47,6 +46,7 @@ class Agent:
         self._skills: dict[str, SkillDefinition] = {}
         self._mcp_servers: list[str] = []
         self._mcp_tools: list[dict] = []
+        self._mcp_tools_raw: list["MCPTool"] = []
         logger.info(f"[Agent] Created agent for handler {handler_id}")
     
     @classmethod
@@ -67,6 +67,7 @@ class Agent:
         self._skills.clear()
         self._mcp_servers.clear()
         self._mcp_tools.clear()
+        self._mcp_tools_raw.clear()
         
         if self._context:
             if self._context.enabled_mcp_servers:
@@ -93,20 +94,42 @@ class Agent:
         logger.info(f"[Agent] Loaded {len(self._skills)} skills, {len(self._mcp_servers)} MCP servers ({self._mcp_servers}), {len(self._mcp_tools)} tools for handler {self.handler_id}")
     
     def _load_mcp_tools(self):
+        self._mcp_tools.clear()
+        self._mcp_tools_raw.clear()
+        seen_tool_names: set[str] = set()
+
         for server_name in self._mcp_servers:
             tools = mcp_server_manager.get_tools_for_server(server_name)
             logger.info(f"[Agent] Got {len(tools)} tools from server '{server_name}'")
             for tool in tools:
+                full_tool_name = f"mcp_{tool.server_name}_{tool.name}"
+                if full_tool_name in seen_tool_names:
+                    continue
+                seen_tool_names.add(full_tool_name)
+                self._mcp_tools_raw.append(tool)
                 self._mcp_tools.append(tool.to_litellm_tool())
     
     async def start_mcp_servers(self):
+        running_servers: list[str] = []
         for server_name in self._mcp_servers:
             if mcp_server_manager.is_server_running(server_name):
-                self._load_mcp_tools()
-                tools_count = len([t for t in self._mcp_tools if t.get("function", {}).get("name", "").startswith(f"mcp_{server_name}_")])
-                logger.info(f"[Agent] MCP server '{server_name}' running, loaded {tools_count} tools")
+                running_servers.append(server_name)
             else:
                 logger.warning(f"[Agent] MCP server '{server_name}' not running")
+
+        if not running_servers:
+            return
+
+        self._load_mcp_tools()
+        for server_name in running_servers:
+            tools_count = len(
+                [
+                    t
+                    for t in self._mcp_tools
+                    if t.get("function", {}).get("name", "").startswith(f"mcp_{server_name}_")
+                ]
+            )
+            logger.info(f"[Agent] MCP server '{server_name}' running, loaded {tools_count} tools")
     
     def set_item_context(self, item_id: str, item: "Item" = None):
         if self._context:
@@ -119,7 +142,6 @@ class Agent:
         if not self._context or not self._context.output_filter_enabled:
             return None
         
-        from dataclasses import dataclass
         from app.services.filters.output_filter import FilterRule
         
         filters = []
@@ -182,6 +204,13 @@ class Agent:
     def get_mcp_servers(self) -> list[str]:
         return self._mcp_servers.copy()
     
+    def get_skip_memory_tools(self) -> list[str]:
+        return [
+            f"mcp_{tool.server_name}_{tool.name}"
+            for tool in self._mcp_tools_raw
+            if tool.skip_memory
+        ]
+    
     def get_tools_for_litellm(self) -> list[dict]:
         return self._mcp_tools.copy()
     
@@ -211,7 +240,6 @@ class Agent:
         if "command" in args:
             output_filter = self._get_output_filter()
             if output_filter:
-                from app.services.filters.output_filter import FilterAction
                 filter_result = output_filter.filter(args["command"])
                 
                 if filter_result.is_blocked:

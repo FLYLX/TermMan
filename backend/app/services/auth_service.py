@@ -1,4 +1,3 @@
-import uuid
 import secrets
 import hashlib
 import hmac

@@ -1,5 +1,12 @@
 .vscode/*
 !.vscode/extensions.json
+__pycache__/
+.runtime/
+chroma_data/
+daemon/log/
+backend/app/services/log/
+backend/sql_app.db
+/sql_app.db
 node_modules/
 /test-results/
 /playwright-report/

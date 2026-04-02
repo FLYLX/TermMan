@@ -1,26 +1,26 @@
-import socketio
-import asyncio
-import uuid
-import time
+﻿import concurrent.futures
+import logging
 import threading
-import concurrent.futures
-from typing import Callable, Dict, Any, Optional
+import uuid
 from datetime import datetime
+from typing import Any, Callable, Dict
+
+import socketio
+
 from ..protocol import ProtocolEvents
 from .connection_models import ConnectionStatus, DaemonConfig
-import logging
 
 logger = logging.getLogger(__name__)
 
 
 class DaemonConnection:
     """
-    单个Daemon节点的WebSocket连接封装
+    鍗曚釜Daemon鑺傜偣鐨刉ebSocket杩炴帴灏佽
     
-    使用WebSocket进行所有通信：
-    - 发送请求并等待响应
-    - 接收事件（如stdout）
-    - 维护连接状态
+    浣跨敤WebSocket杩涜鎵€鏈夐€氫俊锛?
+    - 鍙戦€佽姹傚苟绛夊緟鍝嶅簲
+    - 鎺ユ敹浜嬩欢锛堝stdout锛?
+    - 缁存姢杩炴帴鐘舵€?
     """
     def __init__(self, config: DaemonConfig):
         self.config = config
@@ -146,7 +146,7 @@ class DaemonConnection:
         return str(uuid.uuid4())
 
     def _emit_and_wait_sync(self, event: str, data: Dict[str, Any], timeout: float = 30.0) -> Dict[str, Any]:
-        """同步发送请求并等待响应 - 使用线程安全的 Future"""
+        """鍚屾鍙戦€佽姹傚苟绛夊緟鍝嶅簲 - 浣跨敤绾跨▼瀹夊叏鐨?Future"""
         if self.status != ConnectionStatus.CONNECTED:
             return {"success": False, "error": "Not connected to daemon"}
         
@@ -213,13 +213,13 @@ class DaemonConnection:
 
     def terminal_start_http(self, user_uuid: str, item_uuid: str, working_directory: str = None, command: str = None) -> Dict[str, Any]:
         """
-        启动终端 - 同步方法
+        鍚姩缁堢 - 鍚屾鏂规硶
         
-        返回:
-            success: 是否成功
-            item_uuid: 终端UUID
-            token: 访问令牌
-            message: 消息
+        杩斿洖:
+            success: 鏄惁鎴愬姛
+            item_uuid: 缁堢UUID
+            token: 璁块棶浠ょ墝
+            message: 娑堟伅
         """
         if not self.is_connected():
             return {"success": False, "error": "Not connected to daemon"}
@@ -237,12 +237,12 @@ class DaemonConnection:
 
     def terminal_stop_http(self, item_uuid: str) -> Dict[str, Any]:
         """
-        停止终端 - 同步方法
+        鍋滄缁堢 - 鍚屾鏂规硶
         
-        返回:
-            success: 是否成功
-            item_uuid: 终端UUID
-            message: 消息
+        杩斿洖:
+            success: 鏄惁鎴愬姛
+            item_uuid: 缁堢UUID
+            message: 娑堟伅
         """
         if not self.is_connected():
             return {"success": False, "error": "Not connected to daemon"}
@@ -250,7 +250,7 @@ class DaemonConnection:
 
     def terminal_restart_http(self, item_uuid: str, user_uuid: str = None, working_directory: str = None, command: str = None) -> Dict[str, Any]:
         """
-        重启终端 - 同步方法
+        閲嶅惎缁堢 - 鍚屾鏂规硶
         """
         if not self.is_connected():
             return {"success": False, "error": "Not connected to daemon"}
@@ -267,7 +267,7 @@ class DaemonConnection:
 
     def terminal_status_http(self, item_uuid: str) -> Dict[str, Any]:
         """
-        查询终端状态 - 同步方法
+        鏌ヨ缁堢鐘舵€?- 鍚屾鏂规硶
         """
         if not self.is_connected():
             return {"success": False, "error": "Not connected to daemon"}
@@ -275,7 +275,7 @@ class DaemonConnection:
 
     def terminal_list_http(self) -> Dict[str, Any]:
         """
-        获取终端列表 - 同步方法
+        鑾峰彇缁堢鍒楄〃 - 鍚屾鏂规硶
         """
         if not self.is_connected():
             return {"success": False, "error": "Not connected to daemon"}
@@ -283,12 +283,12 @@ class DaemonConnection:
 
     def get_connections_http(self, item_uuid: str) -> Dict[str, Any]:
         """
-        获取指定item的连接池 - 同步方法
+        鑾峰彇鎸囧畾item鐨勮繛鎺ユ睜 - 鍚屾鏂规硶
         
-        返回:
-            success: 是否成功
-            item_uuid: 终端UUID
-            connections: 连接池表 {sid: {user_uuid, ip}}
+        杩斿洖:
+            success: 鏄惁鎴愬姛
+            item_uuid: 缁堢UUID
+            connections: 杩炴帴姹犺〃 {sid: {user_uuid, ip}}
         """
         if not self.is_connected():
             return {"success": False, "error": "Not connected to daemon"}
@@ -296,11 +296,11 @@ class DaemonConnection:
 
     def get_all_connections_http(self) -> Dict[str, Any]:
         """
-        获取所有连接池 - 同步方法
+        鑾峰彇鎵€鏈夎繛鎺ユ睜 - 鍚屾鏂规硶
         
-        返回:
-            success: 是否成功
-            connections: 所有连接池表
+        杩斿洖:
+            success: 鏄惁鎴愬姛
+            connections: 鎵€鏈夎繛鎺ユ睜琛?
         """
         if not self.is_connected():
             return {"success": False, "error": "Not connected to daemon"}
@@ -308,13 +308,13 @@ class DaemonConnection:
 
     def disconnect_connection_http(self, item_uuid: str, user_uuid: str = None, ip_address: str = None) -> Dict[str, Any]:
         """
-        断开指定连接 - 同步方法
+        鏂紑鎸囧畾杩炴帴 - 鍚屾鏂规硶
         
-        返回:
-            success: 是否成功
-            item_uuid: 终端UUID
-            message: 消息
-            connections: 更新后的连接池表
+        杩斿洖:
+            success: 鏄惁鎴愬姛
+            item_uuid: 缁堢UUID
+            message: 娑堟伅
+            connections: 鏇存柊鍚庣殑杩炴帴姹犺〃
         """
         if not self.is_connected():
             return {"success": False, "error": "Not connected to daemon"}
@@ -329,15 +329,15 @@ class DaemonConnection:
 
     def get_item_subscribers_http(self, item_uuid: str) -> Dict[str, Any]:
         """
-        获取item的订阅者信息 - 同步方法
+        鑾峰彇item鐨勮闃呰€呬俊鎭?- 鍚屾鏂规硶
         
-        返回:
-            success: 是否成功
-            item_uuid: 终端UUID
-            subscribers: 订阅者列表 [{sid, user_uuid, ip, type, join_time, last_active_time}]
-            browser_count: 浏览器连接数
-            backend_connected: Backend是否连接
-            room_info: Room信息
+        杩斿洖:
+            success: 鏄惁鎴愬姛
+            item_uuid: 缁堢UUID
+            subscribers: 璁㈤槄鑰呭垪琛?[{sid, user_uuid, ip, type, join_time, last_active_time}]
+            browser_count: 娴忚鍣ㄨ繛鎺ユ暟
+            backend_connected: Backend鏄惁杩炴帴
+            room_info: Room淇℃伅
         """
         if not self.is_connected():
             return {"success": False, "error": "Not connected to daemon"}
@@ -348,32 +348,37 @@ class DaemonConnection:
             try:
                 result = self._emit_and_wait_sync("connections/get_all", {}, timeout=10.0)
                 if result.get("success"):
-                    connections = result.get("connections", {})
+                    rooms = result.get("connections", {})
                     
-                    logger.info(f"\n{'@'*80}")
-                    logger.info(f"[DaemonConnection] 收到 Daemon 全量连接池数据")
-                    logger.info(f"{'@'*80}")
-                    logger.info(f"  来源: {self.config.base_url}")
-                    logger.info(f"  Items 数量: {len(connections)}")
-                    
-                    if connections:
-                        logger.info(f"  连接池详情:")
-                        for item_uuid, item_conns in connections.items():
-                            logger.info(f"    Item: {item_uuid}")
+                    logger.info("\n%s", "@" * 80)
+                    logger.info("[DaemonConnection] Received full connection snapshot from daemon")
+                    logger.info("%s", "@" * 80)
+                    logger.info("  Source: %s", self.config.base_url)
+                    logger.info("  Item count: %s", len(rooms))
+
+                    if rooms:
+                        logger.info("  Room details:")
+                        for item_uuid, item_conns in rooms.items():
+                            logger.info("    Item: %s", item_uuid)
                             if item_conns:
                                 for sid, conn_info in item_conns.items():
-                                    logger.info(f"      - SID: {sid[:16]}... | User: {conn_info.get('user_uuid', 'unknown')} | IP: {conn_info.get('ip', 'unknown')}")
+                                    logger.info(
+                                        "      - SID: %s... | User: %s | IP: %s",
+                                        sid[:16],
+                                        conn_info.get("user_uuid", "unknown"),
+                                        conn_info.get("ip", "unknown"),
+                                    )
                             else:
-                                logger.info(f"      - 无连接")
-                    
+                                logger.info("      - No active connections")
+
                     if "connection_update" in self.callbacks:
                         self.callbacks["connection_update"]({
                             "type": "full_sync",
-                            "connections": connections
+                            "rooms": rooms
                         })
-                        logger.info(f"  [OK] 已触发 connection_update 回调")
-                    
-                    logger.info(f"{'@'*80}\n")
+                        logger.info("  [OK] Triggered connection_update callback")
+
+                    logger.info("%s\n", "@" * 80)
             except Exception as e:
                 logger.error(f"[WebSocket] Failed to sync all connections: {str(e)}")
         
@@ -388,3 +393,4 @@ class DaemonConnection:
             return True
         except Exception:
             return False
+

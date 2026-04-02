@@ -17,6 +17,19 @@ from core import set_socket_service
 set_socket_service(socket_service)
 
 
+def _normalize_terminal_write_payload(command: str) -> str:
+    if not command:
+        return ""
+
+    if command == "\x03":
+        return command
+
+    if command.endswith(("\n", "\r")):
+        return command
+
+    return f"{command}\n"
+
+
 async def verify_temp_token_with_backend(temp_token: str, item_uuid: str) -> dict:
     """
     向Backend验证临时Token
@@ -526,12 +539,16 @@ async def on_terminal_connect(sid, data):
 
 @sio.on("terminal/write")
 async def on_terminal_write(sid, data):
+    command = _normalize_terminal_write_payload(data.get("command", ""))
+    if not command:
+        return
+
     for item_uuid, conns in daemon_conn_pool.get_all_browser_terminal_conns().items():
         for conn in conns:
             if conn.sid == sid:
                 terminal = terminal_manager.get_terminal(item_uuid)
                 if terminal:
-                    terminal.write(data.get("command", "") + "\n")
+                    terminal.write(command)
                 return
     
     room_listen_conns = daemon_conn_pool.get_all_backend_room_listen_conns()
@@ -539,7 +556,7 @@ async def on_terminal_write(sid, data):
         if conn.conn_id == sid:
             terminal = terminal_manager.get_terminal(conn.item_uuid)
             if terminal:
-                terminal.write(data.get("command", "") + "\n")
+                terminal.write(command)
             return
 
 

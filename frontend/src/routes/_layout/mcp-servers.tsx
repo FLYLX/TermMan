@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient, useSuspenseQuery, useMutation } from "@tanstack/react-query"
+import { useQueryClient, useSuspenseQuery, useMutation } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import {
   RefreshCw,
@@ -51,7 +51,7 @@ import { z } from "zod"
 
 function getMCPServersQueryOptions() {
   return {
-    queryFn: () => McpService.listMcpServers({}),
+    queryFn: () => McpService.listMcpServers(),
     queryKey: ["mcp-servers"],
   }
 }
@@ -61,7 +61,7 @@ const serverFormSchema = z.object({
   command: z.string().min(1, "Command is required"),
   args: z.string().optional(),
   env: z.string().optional(),
-  enabled: z.boolean().default(true),
+  enabled: z.boolean(),
   description: z.string().optional(),
 })
 
@@ -84,7 +84,7 @@ function MCPServersPage() {
 
   const handleReload = async () => {
     if (currentUser?.is_superuser) {
-      await McpService.reloadMcpServers({})
+      await McpService.reloadMcpServers()
       queryClient.invalidateQueries({ queryKey: ["mcp-servers"] })
     }
   }

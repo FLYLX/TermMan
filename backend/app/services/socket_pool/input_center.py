@@ -3,7 +3,6 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -160,8 +159,6 @@ class InputCenter:
         
         if delivered:
             logger.info(f"[InputCenter] Command delivered to item={item_uuid}")
-        
-        return delivered
         
         return delivered
     

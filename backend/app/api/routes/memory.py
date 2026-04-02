@@ -8,6 +8,11 @@ from sqlmodel import Session, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Item, ItemChatSession, ItemChatSessionPublic
+from app.services.agent.memory_policy import (
+    build_manual_status_update,
+    get_allowed_memory_statuses,
+    resolve_memory_status,
+)
 from app.services.agent.memory.vector_store import (
     vector_store,
     MemoryType,
@@ -17,6 +22,8 @@ from app.services.agent.memory.vector_store import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+STATUS_MEMORY_TYPES = {"task", "error"}
+INACTIVE_MEMORY_STATUSES = {"completed", "resolved"}
 
 
 class MemoryCreate(BaseModel):
@@ -37,18 +44,97 @@ class MemorySearch(BaseModel):
     memory_type: MemoryType | None = None
 
 
+class MemoryStatusUpdate(BaseModel):
+    status: Literal["active", "completed", "resolved"]
+
+
+def _get_accessible_item(
+    item_id: uuid.UUID,
+    session: Session,
+    current_user: CurrentUser,
+) -> Item:
+    item = session.get(Item, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    if not current_user.is_superuser and item.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    return item
+
+
+def _memory_status_bucket(memory: dict[str, Any]) -> int:
+    metadata = memory.get("metadata") or {}
+    memory_type = str(metadata.get("memory_type") or "")
+    status = str(resolve_memory_status(memory) or "").lower()
+    if memory_type in STATUS_MEMORY_TYPES:
+        if status and status not in INACTIVE_MEMORY_STATUSES:
+            return 0
+        if status in INACTIVE_MEMORY_STATUSES:
+            return 2
+    return 1
+
+
+def _memory_timestamp_sort_value(memory: dict[str, Any]) -> str:
+    metadata = memory.get("metadata") or {}
+    return str(metadata.get("updated_at") or metadata.get("created_at") or "")
+
+
+def _sort_memories(memories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    timestamp_sorted = sorted(
+        memories,
+        key=_memory_timestamp_sort_value,
+        reverse=True,
+    )
+    return sorted(
+        timestamp_sorted,
+        key=_memory_status_bucket,
+    )
+
+
+def _build_status_counts(memories: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    counts: dict[str, dict[str, int]] = {
+        "task": {"active": 0, "completed": 0},
+        "error": {"active": 0, "resolved": 0},
+    }
+
+    for memory in memories:
+        metadata = memory.get("metadata") or {}
+        memory_type = str(metadata.get("memory_type") or "")
+        status = str(resolve_memory_status(memory) or "").lower()
+        if memory_type == "task":
+            if status == "completed":
+                counts["task"]["completed"] += 1
+            else:
+                counts["task"]["active"] += 1
+        elif memory_type == "error":
+            if status == "resolved":
+                counts["error"]["resolved"] += 1
+            else:
+                counts["error"]["active"] += 1
+
+    return counts
+
+
+def _get_item_memory_or_404(item_id: uuid.UUID, memory_id: str) -> dict[str, Any]:
+    memory = vector_store.get_memory(memory_id)
+    if not memory:
+        raise HTTPException(status_code=404, detail="Memory not found")
+
+    memory_item_id = str((memory.get("metadata") or {}).get("item_id") or "")
+    if memory_item_id != str(item_id):
+        raise HTTPException(status_code=404, detail="Memory not found")
+
+    return memory
+
+
 @router.get("/{item_id}/session", response_model=ItemChatSessionPublic)
 def get_chat_session(
     item_id: uuid.UUID,
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    item = session.get(Item, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    
-    if not current_user.is_superuser and item.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
+    _get_accessible_item(item_id, session, current_user)
     
     chat_session = session.exec(
         select(ItemChatSession).where(ItemChatSession.item_id == item_id)
@@ -70,12 +156,7 @@ def save_chat_session(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    item = session.get(Item, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    
-    if not current_user.is_superuser and item.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
+    _get_accessible_item(item_id, session, current_user)
     
     chat_session = session.exec(
         select(ItemChatSession).where(ItemChatSession.item_id == item_id)
@@ -99,12 +180,7 @@ def clear_chat_session(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    item = session.get(Item, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    
-    if not current_user.is_superuser and item.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
+    _get_accessible_item(item_id, session, current_user)
     
     chat_session = session.exec(
         select(ItemChatSession).where(ItemChatSession.item_id == item_id)
@@ -123,12 +199,7 @@ def clear_all_session_data(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    item = session.get(Item, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    
-    if not current_user.is_superuser and item.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
+    item = _get_accessible_item(item_id, session, current_user)
     
     results = {}
     
@@ -166,11 +237,14 @@ def get_all_memories(
     session: SessionDep = None,
     current_user: CurrentUser = None,
 ) -> Any:
+    _get_accessible_item(item_id, session, current_user)
+
     memories = vector_store.get_all_memories(
         item_id=str(item_id),
         memory_type=memory_type,
     )
-    return {"memories": memories, "count": len(memories)}
+    sorted_memories = _sort_memories(memories)
+    return {"memories": sorted_memories, "count": len(sorted_memories)}
 
 
 @router.get("/{item_id}/memories/stats")
@@ -179,8 +253,12 @@ def get_memory_stats(
     session: SessionDep = None,
     current_user: CurrentUser = None,
 ) -> Any:
+    _get_accessible_item(item_id, session, current_user)
+
+    memories = vector_store.get_all_memories(str(item_id))
     stats = vector_store.get_memory_stats(str(item_id))
     stats["memory_types"] = MEMORY_TYPES
+    stats["status_counts"] = _build_status_counts(memories)
     return stats
 
 
@@ -196,14 +274,16 @@ def search_memories(
     session: SessionDep = None,
     current_user: CurrentUser = None,
 ) -> Any:
+    _get_accessible_item(item_id, session, current_user)
+
     memories = vector_store.search_memories(
         item_id=str(item_id),
         query=request.query,
         n_results=request.n_results,
         memory_type=request.memory_type,
     )
-    
-    return {"memories": memories}
+
+    return {"memories": _sort_memories(memories)}
 
 
 @router.post("/{item_id}/memories")
@@ -213,6 +293,8 @@ def add_memory(
     session: SessionDep = None,
     current_user: CurrentUser = None,
 ) -> Any:
+    _get_accessible_item(item_id, session, current_user)
+
     memory_id = vector_store.add_memory(
         item_id=str(item_id),
         content=request.content,
@@ -235,6 +317,8 @@ def update_memory(
     session: SessionDep = None,
     current_user: CurrentUser = None,
 ) -> Any:
+    _get_accessible_item(item_id, session, current_user)
+
     success = vector_store.update_memory(
         memory_id=memory_id,
         content=request.content,
@@ -247,6 +331,48 @@ def update_memory(
     return {"message": "Memory updated"}
 
 
+@router.post("/{item_id}/memories/{memory_id}/status")
+def update_memory_status(
+    item_id: uuid.UUID,
+    memory_id: str,
+    request: MemoryStatusUpdate,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    _get_accessible_item(item_id, session, current_user)
+    memory = _get_item_memory_or_404(item_id, memory_id)
+
+    memory_type = str((memory.get("metadata") or {}).get("memory_type") or "")
+    allowed_statuses = get_allowed_memory_statuses(memory_type)
+    if request.status not in allowed_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Status '{request.status}' is not valid for memory type '{memory_type}'",
+        )
+
+    update_payload = build_manual_status_update(memory, request.status)
+    if update_payload is None:
+        raise HTTPException(status_code=400, detail="Invalid memory status transition")
+
+    updated_content, updated_metadata = update_payload
+    success = vector_store.update_memory(
+        memory_id=memory_id,
+        content=updated_content,
+        metadata=updated_metadata,
+    )
+    if not success:
+        raise HTTPException(status_code=404, detail="Memory not found")
+
+    return {
+        "message": "Memory status updated",
+        "memory": {
+            "id": memory_id,
+            "content": updated_content,
+            "metadata": updated_metadata,
+        },
+    }
+
+
 @router.delete("/{item_id}/memories/{memory_id}")
 def delete_memory(
     item_id: uuid.UUID,
@@ -254,13 +380,9 @@ def delete_memory(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    item = session.get(Item, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    
-    if not current_user.is_superuser and item.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
+    _get_accessible_item(item_id, session, current_user)
+    _get_item_memory_or_404(item_id, memory_id)
+
     vector_store.delete_memory(memory_id)
     return {"message": "Memory deleted"}
 
@@ -271,13 +393,8 @@ def clear_memories(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    item = session.get(Item, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    
-    if not current_user.is_superuser and item.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
+    _get_accessible_item(item_id, session, current_user)
+
     vector_store.delete_item_memories(str(item_id))
     return {"message": "All memories cleared"}
 
@@ -288,6 +405,8 @@ def expire_memories(
     session: SessionDep = None,
     current_user: CurrentUser = None,
 ) -> Any:
+    _get_accessible_item(item_id, session, current_user)
+
     count = vector_store.expire_old_memories(str(item_id))
     return {"message": f"Expired {count} memories", "count": count}
 
@@ -298,6 +417,8 @@ def deduplicate_memories(
     session: SessionDep = None,
     current_user: CurrentUser = None,
 ) -> Any:
+    _get_accessible_item(item_id, session, current_user)
+
     count = vector_store.deduplicate_memories(str(item_id))
     return {"message": f"Deduplicated {count} memories", "count": count}
 
@@ -312,11 +433,9 @@ def summarize_memories(
     from app.services.agent.agent import agent_manager
     from sqlmodel import select
     from app.models import Item, ItemHandler, ItemHandlerItem
-    
-    item = session.get(Item, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    
+
+    item = _get_accessible_item(item_id, session, current_user)
+
     handler_item = session.exec(
         select(ItemHandlerItem).where(ItemHandlerItem.item_id == item_id)
     ).first()

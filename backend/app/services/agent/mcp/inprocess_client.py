@@ -1,4 +1,3 @@
-import json
 import logging
 from typing import Any
 
@@ -72,6 +71,7 @@ class InProcessMCPClient:
                 description=tool_data.get("description", ""),
                 input_schema=tool_data.get("inputSchema", {}),
                 server_name=self.server_name,
+                skip_memory=tool_data.get("skip_memory", False),
             )
             self._tools.append(tool)
         

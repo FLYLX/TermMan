@@ -1,17 +1,35 @@
 import logging
 import uuid
-import re
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Body, Query
+from fastapi import APIRouter, Body, HTTPException
 from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep
-from app.models import Item, ItemCreate, ItemPublic, ItemUpdate, Message, ItemStatus, User
-from app.services import DaemonConfig, connection_manager, socket_manager, backend_conn_pool, log_manager
+from app.models import (
+    Item,
+    ItemCreate,
+    ItemPublic,
+    ItemStatus,
+    ItemUpdate,
+    Message,
+    User,
+)
+from app.services import (
+    DaemonConfig,
+    backend_conn_pool,
+    connection_manager,
+    log_manager,
+    socket_pool_facade,
+    sync_daemon_connection_state,
+)
+from app.services.filters import (
+    InputFilter,
+    InputFilterConfig,
+    OutputFilter,
+    OutputFilterConfig,
+)
 from app.services.terminal_service import TerminalService
-from app.services.filters import InputFilter, InputFilterConfig, EventType
-from app.services.filters import OutputFilter, OutputFilterConfig, FilterAction
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +44,7 @@ def _get_daemon_status(item: Item) -> dict:
     daemon_id = f"{item.socket_host}:{item.socket_port}:{item.api_key}"
     daemon_state = backend_conn_pool.get_daemon_main_conn_state(item.api_key)
     
-    if daemon_state and daemon_state.is_connected:
+    if daemon_state and daemon_state.is_connected():
         return {"daemon_id": daemon_id, "daemon_online": True, "daemon_status": "connected"}
     return {"daemon_id": daemon_id, "daemon_online": False, "daemon_status": "disconnected"}
 
@@ -41,7 +59,7 @@ def _get_item_data(item: Item, session: SessionDep = None) -> dict:
     item_data["daemon_online"] = daemon_status["daemon_online"]
     item_data["daemon_status"] = daemon_status["daemon_status"]
     
-    daemon_id, token = socket_manager.get_token_by_item(str(item.id))
+    daemon_id, token = socket_pool_facade.get_item_token(str(item.id))
     if token:
         item_data['token'] = token
     
@@ -157,7 +175,10 @@ def reconnect_daemon(
     api_key = ":".join(parts[2:])
     
     config = DaemonConfig(ip=host, port=port, api_key=api_key)
-    return connection_manager.reconnect_connection(config)
+    result = connection_manager.reconnect_connection(config)
+    if result.get("success"):
+        sync_daemon_connection_state(config)
+    return result
 
 
 @router.post("/", response_model=ItemPublic)
@@ -207,7 +228,7 @@ async def start_item(
         api_key=item.api_key
     )
     
-    terminal_service = TerminalService(connection_manager, socket_manager)
+    terminal_service = TerminalService(connection_manager, socket_pool_facade)
     result = terminal_service.start_terminal(
         item_uuid=str(item.id),
         user_uuid=str(current_user.id),
@@ -235,7 +256,7 @@ async def stop_item(
         raise HTTPException(status_code=404, detail="Item not found")
     _check_item_permission(item, current_user)
     
-    terminal_service = TerminalService(connection_manager, socket_manager)
+    terminal_service = TerminalService(connection_manager, socket_pool_facade)
     result = terminal_service.stop_terminal(
         daemon_id=f"{item.socket_host}:{item.socket_port}:{item.api_key}",
         item_uuid=str(item.id)
@@ -270,7 +291,7 @@ async def restart_item(
         api_key=item.api_key
     )
     
-    terminal_service = TerminalService(connection_manager, socket_manager)
+    terminal_service = TerminalService(connection_manager, socket_pool_facade)
     
     stop_result = terminal_service.stop_terminal(
         daemon_id=f"{item.socket_host}:{item.socket_port}:{item.api_key}",
@@ -306,8 +327,7 @@ def delete_item(
         raise HTTPException(status_code=404, detail="Item not found")
     _check_item_permission(item, current_user)
     
-    socket_manager.remove_all_sockets_by_item(str(item.id))
-    socket_manager.remove_all_tokens_by_item(str(item.id))
+    socket_pool_facade.cleanup_item_runtime(str(item.id))
     backend_conn_pool.remove_room_listen_conn(str(item.id))
     
     session.delete(item)
@@ -326,7 +346,7 @@ def get_terminal_token(
         raise HTTPException(status_code=404, detail="Item not found")
     _check_item_permission(item, current_user)
     
-    daemon_id, daemon_token = socket_manager.get_token_by_item(str(item.id))
+    daemon_id, daemon_token = socket_pool_facade.get_item_token(str(item.id))
     
     if not daemon_token:
         raise HTTPException(status_code=400, detail="Item not running or token not available")
