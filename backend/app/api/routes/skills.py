@@ -1,15 +1,22 @@
 import logging
-import zipfile
-import tempfile
 import shutil
+import tempfile
+import zipfile
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Body, UploadFile, File
 from pydantic import BaseModel
+import yaml
 
-from app.api.deps import CurrentUser
+from app.api.deps import CurrentUser, SessionDep
+from app.services.agent.skills.definition import ActionConfig, SafetyConfig, TriggerConfig
 from app.services.agent.skills import skill_loader, skill_manager
+from app.services.llm_generation_service import (
+    LlmGenerationError,
+    generate_json_payload,
+    get_item_handler_by_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +66,71 @@ class SkillUpdateBody(BaseModel):
     safety: dict[str, Any] | None = None
 
 
+class SkillGenerateBody(BaseModel):
+    item_handler_id: str
+    skill_id: str
+    name: str
+    description: str = ""
+    category: str = "general"
+    instruction: str
+
+
+class SkillGenerateResponse(BaseModel):
+    skill_id: str
+    name: str
+    description: str
+    category: str
+    trigger: dict[str, Any]
+    action: dict[str, Any]
+    safety: dict[str, Any]
+    content: str
+    skill_markdown: str
+    item_handler_id: str
+    model: str
+
+
+def _render_skill_markdown(
+    *,
+    skill_id: str,
+    name: str,
+    description: str,
+    category: str,
+    trigger: dict[str, Any],
+    action: dict[str, Any],
+    safety: dict[str, Any],
+    content: str,
+) -> str:
+    metadata = {
+        "skill_id": skill_id,
+        "name": name,
+        "description": description,
+        "category": category,
+        "trigger": trigger,
+        "action": action,
+        "safety": safety,
+    }
+    return f"---\n{yaml.dump(metadata, allow_unicode=True, default_flow_style=False)}---\n\n{content.strip()}\n"
+
+
+def _normalize_generated_skill_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], str]:
+    trigger = TriggerConfig.from_dict(
+        payload.get("trigger") if isinstance(payload.get("trigger"), dict) else {}
+    ).to_dict()
+    action = ActionConfig.from_dict(
+        payload.get("action") if isinstance(payload.get("action"), dict) else {}
+    ).to_dict()
+    safety = SafetyConfig.from_dict(
+        payload.get("safety") if isinstance(payload.get("safety"), dict) else {}
+    ).to_dict()
+    content = str(payload.get("content", "")).strip()
+    if not content:
+        raise LlmGenerationError(
+            "LLM did not generate any skill content.",
+            status_code=502,
+        )
+    return trigger, action, safety, content
+
+
 @router.get("/", response_model=SkillsListResponse)
 def list_skills(
     current_user: CurrentUser,
@@ -80,6 +152,81 @@ def list_skills(
             for s in skills
         ],
         count=len(skills),
+    )
+
+
+@router.post("/generate", response_model=SkillGenerateResponse)
+def generate_skill(
+    session: SessionDep,
+    current_user: CurrentUser,
+    body: SkillGenerateBody,
+):
+    if skill_loader.get(body.skill_id):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Skill '{body.skill_id}' already exists",
+        )
+
+    try:
+        item_handler = get_item_handler_by_id(
+            session,
+            body.item_handler_id,
+            current_user,
+        )
+        payload = generate_json_payload(
+            item_handler,
+            system_prompt=(
+                "You generate TermMan SKILL.md definitions.\n"
+                "Return only a valid JSON object.\n"
+                "The response must contain exactly these top-level keys: "
+                "trigger, action, safety, content.\n"
+                "Use trigger.type values like manual, keyword, schedule.\n"
+                "Use action.type values like llm, command, script.\n"
+                "Content must be markdown body text only, without YAML frontmatter."
+            ),
+            user_prompt=(
+                f"Generate a TermMan skill for the following metadata.\n"
+                f"skill_id: {body.skill_id}\n"
+                f"name: {body.name}\n"
+                f"description: {body.description}\n"
+                f"category: {body.category}\n\n"
+                "User requirements:\n"
+                f"{body.instruction.strip()}\n\n"
+                "Return JSON only using this schema:\n"
+                "{\n"
+                '  "trigger": {"type": "manual", "patterns": [], "interval": null},\n'
+                '  "action": {"type": "llm", "prompt": "", "command": null, "script": null, "params": {}},\n'
+                '  "safety": {"requires_approval": false, "risk_level": "low", "max_retries": 3, "timeout": 60},\n'
+                '  "content": "# Overview\\n..."\n'
+                "}"
+            ),
+        )
+        trigger, action, safety, content = _normalize_generated_skill_payload(payload)
+        skill_markdown = _render_skill_markdown(
+            skill_id=body.skill_id,
+            name=body.name,
+            description=body.description,
+            category=body.category,
+            trigger=trigger,
+            action=action,
+            safety=safety,
+            content=content,
+        )
+    except LlmGenerationError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
+    return SkillGenerateResponse(
+        skill_id=body.skill_id,
+        name=body.name,
+        description=body.description,
+        category=body.category,
+        trigger=trigger,
+        action=action,
+        safety=safety,
+        content=content,
+        skill_markdown=skill_markdown,
+        item_handler_id=str(item_handler.id),
+        model=item_handler.model or "",
     )
 
 

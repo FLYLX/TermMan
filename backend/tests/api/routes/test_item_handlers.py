@@ -1,13 +1,14 @@
 import uuid
+from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
+from app.api.routes import item_handlers as item_handlers_route
 from app.core.config import settings
 from app.models import ItemHandlerCreate
 from tests.utils.item_handler import create_random_item_handler
 from tests.utils.user import create_random_user
-from tests.utils.utils import random_lower_string
 
 
 def test_create_item_handler(
@@ -125,6 +126,75 @@ def test_update_item_handler(
     # 确保其他字段保持不变
     assert content["api_key"] == item_handler.api_key
     assert content["api_url"] == item_handler.api_url
+
+
+def test_update_item_handler_normalizes_enabled_knowledge_files(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    item_handler = create_random_item_handler(db)
+
+    response = client.put(
+        f"{settings.API_V1_STR}/item-handlers/{item_handler.id}",
+        headers=superuser_token_headers,
+        json={
+            "enabled_knowledge_files": [
+                "guide.md",
+                "guide.md",
+                "notes.txt",
+                "bad.exe",
+                "../escape.md",
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["enabled_knowledge_files"] == ["guide.md", "notes.txt"]
+
+
+def test_read_item_handler_llm_statuses(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch,
+) -> None:
+    item_handler = create_random_item_handler(db)
+    checked_at = datetime.now(timezone.utc)
+
+    def fake_get_statuses(item_handlers, force: bool = False):
+        assert any(handler.id == item_handler.id for handler in item_handlers)
+        assert force is False
+        return [
+            {
+                "item_handler_id": item_handler.id,
+                "status": "connected",
+                "reachable": True,
+                "message": "LLM reachable",
+                "checked_at": checked_at,
+                "cached": False,
+            }
+        ]
+
+    monkeypatch.setattr(
+        item_handlers_route.llm_health_service,
+        "get_statuses",
+        fake_get_statuses,
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/item-handlers/llm/status",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["count"] == 1
+    assert len(content["data"]) == 1
+    assert content["data"][0]["item_handler_id"] == str(item_handler.id)
+    assert content["data"][0]["status"] == "connected"
+    assert content["data"][0]["reachable"] is True
 
 
 def test_delete_item_handler(

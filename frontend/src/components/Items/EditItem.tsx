@@ -96,15 +96,15 @@ const EditItem = ({ item, onSuccess }: EditItemProps) => {
         onClick={() => setIsOpen(true)}
       >
         <Pencil />
-        Edit Item
+        Edit Terminal
       </DropdownMenuItem>
       <DialogContent className="sm:max-w-md">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)}>
             <DialogHeader>
-              <DialogTitle>Edit Item</DialogTitle>
+              <DialogTitle>Edit Terminal</DialogTitle>
               <DialogDescription>
-                Update the item details below.
+                Update the terminal details below.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">

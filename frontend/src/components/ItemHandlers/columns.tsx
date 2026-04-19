@@ -1,12 +1,11 @@
 import { useQuery } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
 import type { ColumnDef } from "@tanstack/react-table"
+import { useMemo } from "react"
 import type { ItemHandlerPublic } from "@/client"
 import { ItemHandlerAssociationsService } from "@/client"
+import { useI18n } from "@/components/locale-provider"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import AddItemToHandler from "./AddItemToHandler"
 import { ItemHandlerActionsMenu } from "./ItemHandlerActionsMenu"
 
 function ItemCount({ itemHandlerId }: { itemHandlerId: string }) {
@@ -27,125 +26,135 @@ function ItemCount({ itemHandlerId }: { itemHandlerId: string }) {
   )
 }
 
-export const itemColumns: ColumnDef<any>[] = [
-  {
-    id: "title",
-    accessorKey: "title",
-    header: "Item Title",
-    cell: ({ row }) => (
-      <Button asChild variant="link" className="h-auto p-0 text-left">
-        <Link to="/items/$itemId" params={{ itemId: row.original.id }}>
-          {row.original.title || "Untitled"}
-        </Link>
-      </Button>
-    ),
-  },
-  {
-    id: "description",
-    accessorKey: "description",
-    header: "Description",
-    cell: ({ row }) => (
-      <span className="text-muted-foreground">
-        {row.original.description || "No description"}
-      </span>
-    ),
-  },
-  {
-    id: "status",
-    accessorKey: "status",
-    header: "Status",
-    cell: ({ row }) => (
-      <span className="text-muted-foreground">
-        {row.original.status || "Unknown"}
-      </span>
-    ),
-  },
-]
+export function useItemHandlerSubColumns() {
+  const { t } = useI18n()
 
-export const columns: ColumnDef<ItemHandlerPublic>[] = [
-  {
-    id: "name",
-    accessorKey: "name",
-    header: "Name",
-    cell: ({ row }) => (
-      <div className="flex items-center">
-        <Link
-          to="/item-handlers/$itemHandlerId"
-          params={{ itemHandlerId: row.original.id }}
-          className="font-medium hover:underline"
-        >
-          {row.original.name}
-        </Link>
-        <ItemCount itemHandlerId={row.original.id} />
-      </div>
-    ),
-  },
-  {
-    id: "model",
-    accessorKey: "model",
-    header: "Model",
-    cell: ({ row }) => {
-      const model = row.original.model
-      return (
-        <span
-          className={cn(
-            "max-w-xs truncate block text-muted-foreground",
-            !model && "italic",
-          )}
-        >
-          {model || "No model"}
-        </span>
-      )
-    },
-  },
-  {
-    id: "api_key",
-    accessorKey: "api_key",
-    header: "API Key",
-    cell: ({ row }) => {
-      const apiKey = row.original.api_key
-      return (
-        <span
-          className={cn(
-            "max-w-xs truncate block text-muted-foreground",
-            !apiKey && "italic",
-          )}
-        >
-          {apiKey ? `****${apiKey.slice(-4)}` : "No API key"}
-        </span>
-      )
-    },
-  },
-  {
-    id: "api_url",
-    accessorKey: "api_url",
-    header: "API URL",
-    cell: ({ row }) => {
-      const apiUrl = row.original.api_url
-      return (
-        <span
-          className={cn(
-            "max-w-xs truncate block text-muted-foreground",
-            !apiUrl && "italic",
-          )}
-        >
-          {apiUrl || "No API URL"}
-        </span>
-      )
-    },
-  },
-  {
-    id: "add-item",
-    header: () => <span className="sr-only">Add Item</span>,
-    cell: ({ row }) => <AddItemToHandler itemHandlerId={row.original.id} />,
-  },
-  {
-    id: "actions",
-    header: () => <span className="sr-only">Actions</span>,
-    cell: ({ row }) => (
-      <div className="flex justify-end">
-        <ItemHandlerActionsMenu itemHandler={row.original} />
-      </div>
-    ),
-  },
-]
+  return useMemo<ColumnDef<any>[]>(
+    () => [
+      {
+        id: "title",
+        accessorKey: "title",
+        header: t("itemHandlers.itemTitle"),
+        cell: ({ row }) => (
+          <span className="font-medium">
+            {row.original.title || t("common.untitled")}
+          </span>
+        ),
+      },
+      {
+        id: "description",
+        accessorKey: "description",
+        header: t("common.description"),
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {row.original.description || t("common.noDescription")}
+          </span>
+        ),
+      },
+      {
+        id: "status",
+        accessorKey: "status",
+        header: t("common.status"),
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {row.original.status || t("common.unknown")}
+          </span>
+        ),
+      },
+    ],
+    [t],
+  )
+}
+
+export function useItemHandlerColumns() {
+  const { t } = useI18n()
+
+  return useMemo<ColumnDef<ItemHandlerPublic>[]>(
+    () => [
+      {
+        id: "name",
+        accessorKey: "name",
+        header: t("common.name"),
+        cell: ({ row }) => (
+          <div className="flex items-center">
+            <span className="font-medium">{row.original.name}</span>
+            <ItemCount itemHandlerId={row.original.id} />
+            <Badge variant="outline" className="ml-2">
+              {
+                (
+                  ((row.original as any).enabled_knowledge_files ??
+                    []) as string[]
+                ).length
+              }{" "}
+              {t("itemHandlers.detail.knowledge")}
+            </Badge>
+          </div>
+        ),
+      },
+      {
+        id: "model",
+        accessorKey: "model",
+        header: t("common.model"),
+        cell: ({ row }) => {
+          const model = row.original.model
+          return (
+            <span
+              className={cn(
+                "max-w-xs truncate block text-muted-foreground",
+                !model && "italic",
+              )}
+            >
+              {model || t("common.noModel")}
+            </span>
+          )
+        },
+      },
+      {
+        id: "api_key",
+        accessorKey: "api_key",
+        header: t("common.apiKey"),
+        cell: ({ row }) => {
+          const apiKey = row.original.api_key
+          return (
+            <span
+              className={cn(
+                "max-w-xs truncate block text-muted-foreground",
+                !apiKey && "italic",
+              )}
+            >
+              {apiKey ? `****${apiKey.slice(-4)}` : t("common.noApiKey")}
+            </span>
+          )
+        },
+      },
+      {
+        id: "api_url",
+        accessorKey: "api_url",
+        header: t("common.apiUrl"),
+        cell: ({ row }) => {
+          const apiUrl = row.original.api_url
+          return (
+            <span
+              className={cn(
+                "max-w-xs truncate block text-muted-foreground",
+                !apiUrl && "italic",
+              )}
+            >
+              {apiUrl || t("common.noApiUrl")}
+            </span>
+          )
+        },
+      },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">{t("common.actions")}</span>,
+        cell: ({ row }) => (
+          <div className="flex justify-end">
+            <ItemHandlerActionsMenu itemHandler={row.original} />
+          </div>
+        ),
+      },
+    ],
+    [t],
+  )
+}

@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Item, ItemChatSession, ItemChatSessionPublic
-from app.services.agent.memory_policy import (
+from app.services.agent.prompts.policy import (
     build_manual_status_update,
     get_allowed_memory_statuses,
     resolve_memory_status,

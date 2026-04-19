@@ -3,6 +3,10 @@ from pydantic.networks import EmailStr
 
 from app.api.deps import get_current_active_superuser
 from app.models import Message
+from app.services.runtime_monitor import (
+    BackendRuntimeStatsResponse,
+    collect_backend_runtime_stats,
+)
 from app.utils import generate_test_email, send_email
 
 router = APIRouter(prefix="/utils", tags=["utils"])
@@ -29,3 +33,12 @@ def test_email(email_to: EmailStr) -> Message:
 @router.get("/health-check/")
 async def health_check() -> bool:
     return True
+
+
+@router.get(
+    "/backend-runtime/",
+    response_model=BackendRuntimeStatsResponse,
+    dependencies=[Depends(get_current_active_superuser)],
+)
+def backend_runtime_stats() -> BackendRuntimeStatsResponse:
+    return collect_backend_runtime_stats()

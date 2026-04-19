@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form"
 import { z } from "zod"
 
 import { type ItemHandlerCreate, ItemHandlersService } from "@/client"
+import { useI18n } from "@/components/locale-provider"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -39,13 +40,28 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>
 
-const AddItemHandler = () => {
+type AddItemHandlerProps = {
+  triggerClassName?: string
+  triggerLabel?: string
+  triggerVariant?: "default" | "outline" | "secondary"
+}
+
+const AddItemHandler = ({
+  triggerClassName,
+  triggerLabel,
+  triggerVariant = "default",
+}: AddItemHandlerProps) => {
   const [isOpen, setIsOpen] = useState(false)
   const queryClient = useQueryClient()
+  const { t } = useI18n()
   const { showSuccessToast, showErrorToast } = useCustomToast()
 
   const form = useForm<FormData>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(
+      formSchema.extend({
+        name: z.string().min(1, { message: t("itemHandlers.nameRequired") }),
+      }),
+    ),
     mode: "onBlur",
     criteriaMode: "all",
     defaultValues: {
@@ -60,7 +76,7 @@ const AddItemHandler = () => {
     mutationFn: (data: ItemHandlerCreate) =>
       ItemHandlersService.createItemHandler({ requestBody: data }),
     onSuccess: () => {
-      showSuccessToast("ItemHandler created successfully")
+      showSuccessToast(t("itemHandlers.handlerCreated"))
       form.reset()
       setIsOpen(false)
     },
@@ -77,16 +93,16 @@ const AddItemHandler = () => {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button className="my-4">
+        <Button className={triggerClassName} variant={triggerVariant}>
           <Plus className="mr-2" />
-          Add ItemHandler
+          {triggerLabel || t("itemHandlers.add")}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add ItemHandler</DialogTitle>
+          <DialogTitle>{t("itemHandlers.addTitle")}</DialogTitle>
           <DialogDescription>
-            Fill in the details to add a new item handler.
+            {t("itemHandlers.addDescription")}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -98,11 +114,12 @@ const AddItemHandler = () => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      Name <span className="text-destructive">*</span>
+                      {t("common.name")}{" "}
+                      <span className="text-destructive">*</span>
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Name"
+                        placeholder={t("common.name")}
                         type="text"
                         {...field}
                         required
@@ -118,9 +135,13 @@ const AddItemHandler = () => {
                 name="model"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Model</FormLabel>
+                    <FormLabel>{t("common.model")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="Model" type="text" {...field} />
+                      <Input
+                        placeholder={t("common.model")}
+                        type="text"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -132,9 +153,13 @@ const AddItemHandler = () => {
                 name="api_key"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>API Key</FormLabel>
+                    <FormLabel>{t("common.apiKey")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="API Key" type="text" {...field} />
+                      <Input
+                        placeholder={t("common.apiKey")}
+                        type="text"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -146,9 +171,13 @@ const AddItemHandler = () => {
                 name="api_url"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>API URL</FormLabel>
+                    <FormLabel>{t("common.apiUrl")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="API URL" type="text" {...field} />
+                      <Input
+                        placeholder={t("common.apiUrl")}
+                        type="text"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -159,11 +188,11 @@ const AddItemHandler = () => {
             <DialogFooter>
               <DialogClose asChild>
                 <Button variant="outline" disabled={mutation.isPending}>
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
               </DialogClose>
               <LoadingButton type="submit" loading={mutation.isPending}>
-                Save
+                {t("common.save")}
               </LoadingButton>
             </DialogFooter>
           </form>

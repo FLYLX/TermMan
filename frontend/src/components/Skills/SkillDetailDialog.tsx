@@ -2,15 +2,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { FileCode, FilePlus, RefreshCw, Trash2 } from "lucide-react"
 import { useState } from "react"
 import { type SkillListItem, SkillsService } from "@/client"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +12,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -59,7 +59,9 @@ export function SkillDetailDialog({ skill, children }: SkillDetailDialogProps) {
   const { data: filesData, refetch: refetchFiles } = useQuery({
     queryKey: ["skill-files", skill.skill_id],
     queryFn: async () => {
-      const result = await SkillsService.listSkillFiles({ skillId: skill.skill_id })
+      const result = await SkillsService.listSkillFiles({
+        skillId: skill.skill_id,
+      })
       return result as { files: SkillFile[] }
     },
     enabled: isOpen,
@@ -73,7 +75,11 @@ export function SkillDetailDialog({ skill, children }: SkillDetailDialogProps) {
         skillId: skill.skill_id,
         filePath: filePath,
       })
-      if (typeof result === "object" && result !== null && "content" in result) {
+      if (
+        typeof result === "object" &&
+        result !== null &&
+        "content" in result
+      ) {
         setFileContent(result.content as string)
         setSelectedFile(filePath)
       }
@@ -228,7 +234,9 @@ export function SkillDetailDialog({ skill, children }: SkillDetailDialogProps) {
                         </Badge>
                       ))
                     ) : (
-                      <span className="text-sm text-muted-foreground">None</span>
+                      <span className="text-sm text-muted-foreground">
+                        None
+                      </span>
                     )}
                   </div>
                 </div>
@@ -242,7 +250,9 @@ export function SkillDetailDialog({ skill, children }: SkillDetailDialogProps) {
                         </Badge>
                       ))
                     ) : (
-                      <span className="text-sm text-muted-foreground">None</span>
+                      <span className="text-sm text-muted-foreground">
+                        None
+                      </span>
                     )}
                   </div>
                 </div>
@@ -294,11 +304,15 @@ export function SkillDetailDialog({ skill, children }: SkillDetailDialogProps) {
                         >
                           <div
                             className="flex items-center gap-2 flex-1 min-w-0"
-                            onClick={() => !file.is_binary && handleFileClick(file.path)}
+                            onClick={() =>
+                              !file.is_binary && handleFileClick(file.path)
+                            }
                           >
                             {getFileIcon(file)}
                             <div className="flex flex-col min-w-0">
-                              <span className="text-sm truncate">{file.path}</span>
+                              <span className="text-sm truncate">
+                                {file.path}
+                              </span>
                               <span className="text-xs text-muted-foreground">
                                 {formatFileSize(file.size)}
                                 {file.is_binary && " (binary)"}
@@ -327,8 +341,14 @@ export function SkillDetailDialog({ skill, children }: SkillDetailDialogProps) {
                   {selectedFile ? (
                     <div className="h-full flex flex-col">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium">{selectedFile}</span>
-                        <Button size="sm" onClick={handleSaveFile} disabled={isSaving}>
+                        <span className="text-sm font-medium">
+                          {selectedFile}
+                        </span>
+                        <Button
+                          size="sm"
+                          onClick={handleSaveFile}
+                          disabled={isSaving}
+                        >
                           {isSaving ? "Saving..." : "Save"}
                         </Button>
                       </div>
@@ -377,17 +397,24 @@ export function SkillDetailDialog({ skill, children }: SkillDetailDialogProps) {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!deleteFileDialog} onOpenChange={() => setDeleteFileDialog(null)}>
+      <AlertDialog
+        open={!!deleteFileDialog}
+        onOpenChange={() => setDeleteFileDialog(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete File</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{deleteFileDialog}"? This action cannot be undone.
+              Are you sure you want to delete "{deleteFileDialog}"? This action
+              cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteFile} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={handleDeleteFile}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

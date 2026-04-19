@@ -6,7 +6,7 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.core.db import engine
 from app.models import ItemChatSession, ItemHandlerItem
-from app.services.agent.chat_history import (
+from app.services.agent.history.chat import (
     SESSION_SUMMARY_TYPE,
     append_chat_message,
 )
@@ -171,7 +171,7 @@ def test_chat_prompt_uses_session_summary_and_clips_recent_history(
     db: Session,
     monkeypatch,
 ) -> None:
-    from app.services.agent import prompt_builder
+    from app.services.agent.prompts import builder as prompt_builder
 
     item, _ = _create_linked_item_and_handler(db)
     fake_agent = SimpleNamespace(
@@ -210,6 +210,47 @@ def test_chat_prompt_uses_session_summary_and_clips_recent_history(
     assert messages[-1] == {"role": "user", "content": "latest question"}
     assert len(messages) <= 13
     assert all("older user message 0" not in message["content"] for message in messages)
+
+
+def test_chat_prompt_includes_handler_knowledge(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.services.agent.prompts import builder as prompt_builder
+
+    item, handler = _create_linked_item_and_handler(db)
+    fake_agent = SimpleNamespace(
+        handler_id=str(handler.id),
+        match_skills=lambda query: [],
+        get_skills=lambda: [],
+        get_skip_memory_tools=lambda: [],
+    )
+
+    monkeypatch.setattr(prompt_builder, "get_system_prompt", lambda agent: "system prompt")
+    monkeypatch.setattr(
+        prompt_builder.knowledge_base_service,
+        "search",
+        lambda handler_id, query, n_results=4: [
+            {
+                "content": "Deploy with docker compose up -d",
+                "metadata": {"file_name": "ops.md"},
+            }
+        ],
+    )
+
+    messages = prompt_builder.build_chat_turn_messages(
+        fake_agent,
+        item_id=str(item.id),
+        message="How do I start the stack?",
+        query="How do I start the stack?",
+    )
+
+    assert any(
+        message["role"] == "system"
+        and "Relevant knowledge files" in message["content"]
+        and "ops.md" in message["content"]
+        for message in messages
+    )
 
 
 def test_terminal_output_broadcasts_to_all_subscribers_and_persists(
@@ -1188,7 +1229,7 @@ def test_terminal_prompt_matches_relevant_skills_instead_of_loading_all_skills(m
 
 
 def test_terminal_prompt_skips_long_term_memories_for_filtered_and_raw_feedback(monkeypatch) -> None:
-    from app.services.agent import prompt_builder
+    from app.services.agent.prompts import builder as prompt_builder
     from app.services.agent import session as session_module
 
     fake_agent = SimpleNamespace(

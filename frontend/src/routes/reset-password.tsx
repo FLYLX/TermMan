@@ -11,6 +11,7 @@ import { z } from "zod"
 
 import { LoginService } from "@/client"
 import { AuthLayout } from "@/components/Common/AuthLayout"
+import { useI18n } from "@/components/locale-provider"
 import {
   Form,
   FormControl,
@@ -60,7 +61,7 @@ export const Route = createFileRoute("/reset-password")({
   head: () => ({
     meta: [
       {
-        title: "Reset Password - FastAPI Template",
+        title: "Reset Password - TermMan",
       },
     ],
   }),
@@ -68,6 +69,7 @@ export const Route = createFileRoute("/reset-password")({
 
 function ResetPassword() {
   const { token } = Route.useSearch()
+  const { t } = useI18n()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const navigate = useNavigate()
 
@@ -104,7 +106,13 @@ function ResetPassword() {
           className="flex flex-col gap-6"
         >
           <div className="flex flex-col items-center gap-2 text-center">
-            <h1 className="text-2xl font-bold">Reset Password</h1>
+            <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.34em] text-primary">
+              {t("brand.resetBadge")}
+            </span>
+            <h1 className="text-2xl font-bold">{t("brand.resetTitle")}</h1>
+            <p className="text-sm text-muted-foreground">
+              {t("brand.resetDescription")}
+            </p>
           </div>
 
           <div className="grid gap-4">

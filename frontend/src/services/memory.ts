@@ -1,7 +1,7 @@
 import { MemoryService as GeneratedMemoryService } from "@/client"
 import type { CancelablePromise } from "@/client/core/CancelablePromise"
-import { request as __request } from "@/client/core/request"
 import { OpenAPI } from "@/client/core/OpenAPI"
+import { request as __request } from "@/client/core/request"
 
 export type MemoryType = "fact" | "preference" | "task" | "error" | "context"
 export type ManagedMemoryStatus = "active" | "completed" | "resolved"
@@ -93,7 +93,7 @@ export const MEMORY_STATUS_COLORS: Record<ManagedMemoryStatus, string> = {
 export class MemoryService {
   public static getAllMemories(
     itemId: string,
-    memoryType?: MemoryType
+    memoryType?: MemoryType,
   ): CancelablePromise<{ memories: Memory[]; count: number }> {
     const query: Record<string, unknown> = {}
     if (memoryType) {
@@ -115,7 +115,9 @@ export class MemoryService {
     })
   }
 
-  public static getMemoryTypes(): CancelablePromise<{ types: Record<MemoryType, string> }> {
+  public static getMemoryTypes(): CancelablePromise<{
+    types: Record<MemoryType, string>
+  }> {
     return __request(OpenAPI, {
       method: "GET",
       url: "/api/v1/memory/{item_id}/memories/types",
@@ -125,7 +127,7 @@ export class MemoryService {
 
   public static searchMemories(
     itemId: string,
-    request: MemorySearchRequest
+    request: MemorySearchRequest,
   ): CancelablePromise<{ memories: Memory[] }> {
     return __request(OpenAPI, {
       method: "POST",
@@ -138,7 +140,7 @@ export class MemoryService {
 
   public static addMemory(
     itemId: string,
-    request: MemoryCreateRequest
+    request: MemoryCreateRequest,
   ): CancelablePromise<{ memory_id: string | null; message: string }> {
     return __request(OpenAPI, {
       method: "POST",
@@ -152,7 +154,7 @@ export class MemoryService {
   public static updateMemory(
     itemId: string,
     memoryId: string,
-    request: MemoryUpdateRequest
+    request: MemoryUpdateRequest,
   ): CancelablePromise<{ message: string }> {
     return __request(OpenAPI, {
       method: "PUT",
@@ -166,7 +168,7 @@ export class MemoryService {
   public static updateMemoryStatus(
     itemId: string,
     memoryId: string,
-    request: MemoryStatusUpdateRequest
+    request: MemoryStatusUpdateRequest,
   ): CancelablePromise<{ message: string; memory: Memory }> {
     return __request(OpenAPI, {
       method: "POST",
@@ -179,7 +181,7 @@ export class MemoryService {
 
   public static deleteMemory(
     itemId: string,
-    memoryId: string
+    memoryId: string,
   ): CancelablePromise<{ message: string }> {
     return __request(OpenAPI, {
       method: "DELETE",
@@ -188,7 +190,9 @@ export class MemoryService {
     })
   }
 
-  public static clearMemories(itemId: string): CancelablePromise<{ message: string }> {
+  public static clearMemories(
+    itemId: string,
+  ): CancelablePromise<{ message: string }> {
     return __request(OpenAPI, {
       method: "DELETE",
       url: "/api/v1/memory/{item_id}/memories",
@@ -196,7 +200,9 @@ export class MemoryService {
     })
   }
 
-  public static expireMemories(itemId: string): CancelablePromise<{ message: string; count: number }> {
+  public static expireMemories(
+    itemId: string,
+  ): CancelablePromise<{ message: string; count: number }> {
     return __request(OpenAPI, {
       method: "POST",
       url: "/api/v1/memory/{item_id}/memories/expire",
@@ -204,7 +210,9 @@ export class MemoryService {
     })
   }
 
-  public static deduplicateMemories(itemId: string): CancelablePromise<{ message: string; count: number }> {
+  public static deduplicateMemories(
+    itemId: string,
+  ): CancelablePromise<{ message: string; count: number }> {
     return __request(OpenAPI, {
       method: "POST",
       url: "/api/v1/memory/{item_id}/memories/deduplicate",
@@ -214,8 +222,12 @@ export class MemoryService {
 
   public static summarizeMemories(
     itemId: string,
-    threshold: number = 10
-  ): CancelablePromise<{ summarized: number; summaries_created: number; message: string }> {
+    threshold: number = 10,
+  ): CancelablePromise<{
+    summarized: number
+    summaries_created: number
+    message: string
+  }> {
     return __request(OpenAPI, {
       method: "POST",
       url: "/api/v1/memory/{item_id}/memories/summarize",

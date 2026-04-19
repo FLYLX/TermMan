@@ -22,6 +22,7 @@ class AgentContext:
     api_url: str | None = None
     enabled_skills: list[str] = field(default_factory=list)
     enabled_mcp_servers: list[str] = field(default_factory=list)
+    enabled_knowledge_files: list[str] = field(default_factory=list)
     output_filter_enabled: bool = False
     output_filter_rules: dict = field(default_factory=dict)
 
@@ -59,6 +60,7 @@ class Agent:
             api_url=handler.api_url,
             enabled_skills=handler.enabled_skills or [],
             enabled_mcp_servers=handler.enabled_mcp_servers or [],
+            enabled_knowledge_files=handler.enabled_knowledge_files or [],
         )
         agent._load_skills()
         return agent
@@ -108,6 +110,12 @@ class Agent:
                 seen_tool_names.add(full_tool_name)
                 self._mcp_tools_raw.append(tool)
                 self._mcp_tools.append(tool.to_litellm_tool())
+
+    @property
+    def enabled_knowledge_files(self) -> list[str]:
+        if not self._context:
+            return []
+        return self._context.enabled_knowledge_files
     
     async def start_mcp_servers(self):
         running_servers: list[str] = []
@@ -162,6 +170,18 @@ class Agent:
         return list(self._skills.values())
     
     def reload_skills(self):
+        self._load_skills()
+
+    def refresh_from_handler(self, handler: ItemHandler):
+        if self._context is None:
+            self._context = AgentContext(handler_id=str(handler.id))
+
+        self._context.model = handler.model
+        self._context.api_key = handler.api_key
+        self._context.api_url = handler.api_url
+        self._context.enabled_skills = handler.enabled_skills or []
+        self._context.enabled_mcp_servers = handler.enabled_mcp_servers or []
+        self._context.enabled_knowledge_files = handler.enabled_knowledge_files or []
         self._load_skills()
     
     def update_skills(self, enabled_skills: list[str]):
@@ -277,16 +297,35 @@ class AgentManager:
         
         if handler_id in self._agents:
             agent = self._agents[handler_id]
-            if (agent._context.enabled_skills != (handler.enabled_skills or []) or
-                agent._context.enabled_mcp_servers != (handler.enabled_mcp_servers or [])):
+            context = agent._context
+            if context is None:
+                agent.refresh_from_handler(handler)
+                return agent
+
+            if (
+                context.model != handler.model
+                or context.api_key != handler.api_key
+                or context.api_url != handler.api_url
+                or context.enabled_skills != (handler.enabled_skills or [])
+                or context.enabled_mcp_servers != (handler.enabled_mcp_servers or [])
+                or context.enabled_knowledge_files != (handler.enabled_knowledge_files or [])
+            ):
                 skill_loader.reload()
-                agent._context.enabled_skills = handler.enabled_skills or []
-                agent._context.enabled_mcp_servers = handler.enabled_mcp_servers or []
-                agent._load_skills()
+                agent.refresh_from_handler(handler)
             return agent
         
         agent = Agent.from_handler(handler)
         self._agents[handler_id] = agent
+        return agent
+
+    def refresh_cached(self, handler: ItemHandler) -> Agent | None:
+        handler_id = str(handler.id)
+        agent = self._agents.get(handler_id)
+        if not agent:
+            return None
+
+        skill_loader.reload()
+        agent.refresh_from_handler(handler)
         return agent
 
 

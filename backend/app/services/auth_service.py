@@ -27,6 +27,7 @@ class AuthService:
     
     DEFAULT_TERMINAL_TOKEN_EXPIRE_MINUTES = 10
     DEFAULT_DAEMON_AUTH_TOKEN_EXPIRE_MINUTES = 30
+    DEFAULT_FILE_TICKET_EXPIRE_MINUTES = 5
     
     def __init__(self):
         self._lock = threading.RLock()
@@ -34,6 +35,8 @@ class AuthService:
         self.terminal_temp_tokens: Dict[str, Dict[str, Any]] = {}
         
         self.daemon_auth_tokens: Dict[str, Dict[str, Any]] = {}
+
+        self.file_tickets: Dict[str, Dict[str, Any]] = {}
         
         self.api_keys: Dict[str, Dict[str, Any]] = {}
         
@@ -66,6 +69,14 @@ class AuthService:
             for token in expired_daemon:
                 del self.daemon_auth_tokens[token]
                 logger.debug(f"Cleaned up expired daemon auth token")
+
+            expired_file_tickets = [
+                token for token, info in self.file_tickets.items()
+                if now > info.get("expire_at", now)
+            ]
+            for token in expired_file_tickets:
+                del self.file_tickets[token]
+                logger.debug("Cleaned up expired file ticket")
     
     def generate_terminal_temp_token(
         self, 
@@ -206,6 +217,97 @@ class AuthService:
             "expire_at": expire_at.isoformat(),
             "expires_in": expire_minutes * 60
         }
+
+    def generate_file_ticket(
+        self,
+        *,
+        item_uuid: str,
+        actor_user_id: str,
+        owner_user_id: str,
+        daemon_api_key: str,
+        op: str,
+        path: str,
+        working_directory: str | None = None,
+        allow_overwrite: bool = False,
+        expire_minutes: int | None = None,
+    ) -> Dict[str, Any]:
+        if expire_minutes is None:
+            expire_minutes = self.DEFAULT_FILE_TICKET_EXPIRE_MINUTES
+
+        token = secrets.token_urlsafe(24)
+        expire_at = datetime.now() + timedelta(minutes=expire_minutes)
+
+        with self._lock:
+            self.file_tickets[token] = {
+                "item_uuid": item_uuid,
+                "actor_user_id": actor_user_id,
+                "owner_user_id": owner_user_id,
+                "daemon_api_key": daemon_api_key,
+                "op": op,
+                "path": path,
+                "working_directory": working_directory,
+                "allow_overwrite": allow_overwrite,
+                "expire_at": expire_at,
+                "used": False,
+                "created_at": datetime.now(),
+            }
+
+        logger.info(
+            "Generated file ticket for item=%s, actor=%s, op=%s, expires_in=%smin",
+            item_uuid,
+            actor_user_id,
+            op,
+            expire_minutes,
+        )
+
+        return {
+            "ticket": token,
+            "item_uuid": item_uuid,
+            "path": path,
+            "op": op,
+            "expire_at": expire_at.isoformat(),
+            "expires_in": expire_minutes * 60,
+        }
+
+    def validate_file_ticket(
+        self,
+        *,
+        ticket: str,
+        op: str,
+        daemon_api_key: str,
+        mark_used: bool = True,
+    ) -> Dict[str, Any]:
+        with self._lock:
+            ticket_info = self.file_tickets.get(ticket)
+            if not ticket_info:
+                return {"success": False, "error": "Ticket not found"}
+
+            if datetime.now() > ticket_info["expire_at"]:
+                del self.file_tickets[ticket]
+                return {"success": False, "error": "Ticket expired"}
+
+            if ticket_info["used"]:
+                return {"success": False, "error": "Ticket already used"}
+
+            if ticket_info["op"] != op:
+                return {"success": False, "error": "Ticket operation mismatch"}
+
+            if ticket_info["daemon_api_key"] != daemon_api_key:
+                return {"success": False, "error": "Ticket daemon mismatch"}
+
+            if mark_used:
+                ticket_info["used"] = True
+
+            return {
+                "success": True,
+                "item_uuid": ticket_info["item_uuid"],
+                "actor_user_id": ticket_info["actor_user_id"],
+                "owner_user_id": ticket_info["owner_user_id"],
+                "path": ticket_info["path"],
+                "op": ticket_info["op"],
+                "working_directory": ticket_info["working_directory"],
+                "allow_overwrite": ticket_info["allow_overwrite"],
+            }
     
     def validate_daemon_auth_token(self, token: str) -> Dict[str, Any]:
         """

@@ -1,4 +1,8 @@
-import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
+import {
+  useQuery,
+  useQueryClient,
+  useSuspenseQuery,
+} from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import {
   Code2,
@@ -11,8 +15,12 @@ import {
 } from "lucide-react"
 import { Suspense, useState } from "react"
 import { type SkillListItem, SkillsService } from "@/client"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import PendingItems from "@/components/Pending/PendingItems"
+import AddSkill from "@/components/Skills/AddSkill"
+import DeleteSkill from "@/components/Skills/DeleteSkill"
+import EditSkill from "@/components/Skills/EditSkill"
+import GenerateSkillDialog from "@/components/Skills/GenerateSkillDialog"
+import UploadSkillZip from "@/components/Skills/UploadSkillZip"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +31,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -32,13 +42,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
-import useCustomToast from "@/hooks/useCustomToast"
 import useAuth from "@/hooks/useAuth"
-import AddSkill from "@/components/Skills/AddSkill"
-import UploadSkillZip from "@/components/Skills/UploadSkillZip"
-import PendingItems from "@/components/Pending/PendingItems"
-import DeleteSkill from "@/components/Skills/DeleteSkill"
-import EditSkill from "@/components/Skills/EditSkill"
+import useCustomToast from "@/hooks/useCustomToast"
 
 function getSkillsQueryOptions() {
   return {
@@ -67,7 +72,7 @@ function SkillsPage() {
     (s) =>
       s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.skill_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.category.toLowerCase().includes(searchQuery.toLowerCase())
+      s.category.toLowerCase().includes(searchQuery.toLowerCase()),
   )
 
   const handleReload = async () => {
@@ -85,10 +90,16 @@ function SkillsPage() {
             <h2 className="font-semibold">Skills</h2>
             <div className="flex items-center gap-1">
               {currentUser?.is_superuser && (
-                <Button variant="ghost" size="icon" onClick={handleReload} title="Reload Skills">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleReload}
+                  title="Reload Skills"
+                >
                   <RefreshCw className="h-4 w-4" />
                 </Button>
               )}
+              <GenerateSkillDialog onCreated={setSelectedSkillId} />
               <AddSkill />
               <UploadSkillZip />
             </div>
@@ -106,7 +117,9 @@ function SkillsPage() {
         <ScrollArea className="flex-1 min-h-0">
           {filteredSkills.length === 0 ? (
             <div className="p-4 text-center text-muted-foreground text-sm">
-              {skills.data.length === 0 ? "No skills found" : "No matching skills"}
+              {skills.data.length === 0
+                ? "No skills found"
+                : "No matching skills"}
             </div>
           ) : (
             <div className="p-1">
@@ -150,7 +163,9 @@ function SkillsPage() {
           <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
             <Code2 className="h-16 w-16 mb-4 opacity-20" />
             <p className="text-lg font-medium">No skill selected</p>
-            <p className="text-sm">Select a skill from the list to view and edit</p>
+            <p className="text-sm">
+              Select a skill from the list to view and edit
+            </p>
           </div>
         )}
       </div>
@@ -165,7 +180,9 @@ function SkillEditor({ skill }: { skill: SkillListItem }) {
   const [newFileDialog, setNewFileDialog] = useState(false)
   const [newFilePath, setNewFilePath] = useState("")
   const [deleteFileDialog, setDeleteFileDialog] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<"info" | "content" | "files">("files")
+  const [activeTab, setActiveTab] = useState<"info" | "content" | "files">(
+    "files",
+  )
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const queryClient = useQueryClient()
 
@@ -177,7 +194,9 @@ function SkillEditor({ skill }: { skill: SkillListItem }) {
   const { data: filesData, refetch: refetchFiles } = useQuery({
     queryKey: ["skill-files", skill.skill_id],
     queryFn: async () => {
-      const result = await SkillsService.listSkillFiles({ skillId: skill.skill_id })
+      const result = await SkillsService.listSkillFiles({
+        skillId: skill.skill_id,
+      })
       return result as { files: SkillFile[] }
     },
   })
@@ -190,7 +209,11 @@ function SkillEditor({ skill }: { skill: SkillListItem }) {
         skillId: skill.skill_id,
         filePath: filePath,
       })
-      if (typeof result === "object" && result !== null && "content" in result) {
+      if (
+        typeof result === "object" &&
+        result !== null &&
+        "content" in result
+      ) {
         setFileContent(result.content as string)
         setSelectedFile(filePath)
       }
@@ -293,7 +316,9 @@ function SkillEditor({ skill }: { skill: SkillListItem }) {
           <div>
             <h3 className="font-semibold">{skill.name}</h3>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <code className="bg-muted px-1.5 py-0.5 rounded">{skill.skill_id}</code>
+              <code className="bg-muted px-1.5 py-0.5 rounded">
+                {skill.skill_id}
+              </code>
               <Badge variant="secondary" className="text-xs">
                 {skill.category}
               </Badge>
@@ -373,7 +398,9 @@ function SkillEditor({ skill }: { skill: SkillListItem }) {
                             ? "bg-primary/10"
                             : "hover:bg-muted"
                         }`}
-                        onClick={() => !file.is_binary && handleFileClick(file.path)}
+                        onClick={() =>
+                          !file.is_binary && handleFileClick(file.path)
+                        }
                       >
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                           {getFileIcon(file)}
@@ -448,7 +475,9 @@ function SkillEditor({ skill }: { skill: SkillListItem }) {
                           </Badge>
                         ))
                       ) : (
-                        <span className="text-xs text-muted-foreground">None</span>
+                        <span className="text-xs text-muted-foreground">
+                          None
+                        </span>
                       )}
                     </div>
                   </div>
@@ -462,7 +491,9 @@ function SkillEditor({ skill }: { skill: SkillListItem }) {
                           </Badge>
                         ))
                       ) : (
-                        <span className="text-xs text-muted-foreground">None</span>
+                        <span className="text-xs text-muted-foreground">
+                          None
+                        </span>
                       )}
                     </div>
                   </div>
@@ -481,7 +512,11 @@ function SkillEditor({ skill }: { skill: SkillListItem }) {
                   <span className="text-sm font-medium">{selectedFile}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button size="sm" onClick={handleSaveFile} disabled={isSaving}>
+                  <Button
+                    size="sm"
+                    onClick={handleSaveFile}
+                    disabled={isSaving}
+                  >
                     {isSaving ? (
                       <>
                         <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
@@ -521,7 +556,9 @@ function SkillEditor({ skill }: { skill: SkillListItem }) {
                 </div>
               </div>
               <ScrollArea className="flex-1 min-h-0">
-                <pre className="p-4 text-sm whitespace-pre-wrap">{detail.content}</pre>
+                <pre className="p-4 text-sm whitespace-pre-wrap">
+                  {detail.content}
+                </pre>
               </ScrollArea>
             </div>
           ) : (
@@ -562,12 +599,16 @@ function SkillEditor({ skill }: { skill: SkillListItem }) {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!deleteFileDialog} onOpenChange={() => setDeleteFileDialog(null)}>
+      <AlertDialog
+        open={!!deleteFileDialog}
+        onOpenChange={() => setDeleteFileDialog(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete File</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{deleteFileDialog}"? This action cannot be undone.
+              Are you sure you want to delete "{deleteFileDialog}"? This action
+              cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

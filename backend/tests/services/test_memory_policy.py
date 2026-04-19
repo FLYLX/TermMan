@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app.services.agent.memory_policy import (
+from app.services.agent.prompts.policy import (
     MemoryCandidate,
     build_confirmation_memory_candidate,
     build_conversation_memory_candidate,

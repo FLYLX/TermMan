@@ -2,7 +2,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   AlertCircle,
-  ArrowLeft,
   Check,
   ChevronRight,
   Copy,
@@ -10,7 +9,6 @@ import {
   Loader2,
   Play,
   Plug,
-  Save,
   Send,
   Shield,
   Terminal,
@@ -18,23 +16,37 @@ import {
   WifiOff,
 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ApiError, type ItemPublic, type ItemUpdate, ItemsService } from "@/client"
+import {
+  ApiError,
+  type ItemPublic,
+  ItemsService,
+  type ItemUpdate,
+} from "@/client"
+import { ChatPanel } from "@/components/Items/ChatPanel"
+import { FilterGeneratorCard } from "@/components/Items/FilterGeneratorCard"
+import {
+  type FilterRule,
+  FilterRuleEditor,
+} from "@/components/Items/FilterRuleEditor"
+import { ItemFilesPanel } from "@/components/Items/ItemFilesPanel"
+import ItemHandlersList from "@/components/Items/ItemHandlersList"
 import {
   createFallbackItem,
   getStoredItemSnapshot,
   saveItemSnapshot,
 } from "@/components/Items/itemDetailSnapshots"
-import { FilterRuleEditor, type FilterRule } from "@/components/Items/FilterRuleEditor"
-import { ChatPanel } from "@/components/Items/ChatPanel"
+import { useI18n } from "@/components/locale-provider"
 import { MemoryManager } from "@/components/memory-manager"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
 import { useTerminalConnection } from "@/hooks/useTerminalConnection"
+import { getStatusLabel } from "@/lib/i18n"
 
 type ItemWithExtras = ItemPublic & {
   daemon_url?: string
@@ -50,6 +62,141 @@ type ItemsResponse = {
   count: number
 }
 
+type FilterAutoSaveState = "idle" | "saving" | "saved" | "error"
+
+function createDefaultInputRules(): Record<string, FilterRule> {
+  return {
+    block_filter: {
+      regex_patterns: ["violence|porn|gambling", "http://.*\\.exe"],
+      action_type: "block",
+    },
+    ignore_filter: {
+      regex_patterns: [
+        "^\\s*$",
+        "^\\x1b\\[[0-9;]*[a-zA-Z]$",
+        "^\\r$",
+        "\\d+%",
+        "\\[\\s*=+\\s*\\]",
+        "\\.\\.\\.+",
+        "DEBUG\\s*:",
+        "INFO\\s*:",
+      ],
+      action_type: "ignore",
+    },
+    log_filter: {
+      regex_patterns: [
+        "error:",
+        "failed:",
+        "exception:",
+        "Error:",
+        "FAILED",
+        "EXCEPTION",
+        "warning:",
+        "warn:",
+        "Warning:",
+        "WARN",
+        "\\(y/n\\)",
+        "\\[Y/n\\]",
+        "enter.*:",
+        "password:",
+        "confirm",
+      ],
+      action_type: "log",
+    },
+    replace_filter: {
+      regex_patterns: [
+        "^\\d{11}$",
+        "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}",
+      ],
+      action_type: "replace",
+      action: {
+        replace_rules: {
+          "^\\d{11}$": "***phone***",
+          "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}": "***email***",
+        },
+      },
+    },
+  }
+}
+
+function createDefaultOutputRules(): Record<string, FilterRule> {
+  return {
+    block_filter: {
+      regex_patterns: [
+        "rm\\s+-rf\\s+/",
+        "rm\\s+-rf\\s+~",
+        "mkfs",
+        "dd\\s+if=",
+        ">\\s*/dev/sd",
+        ":\\(\\)\\s*\\{\\s*:\\|\\:&\\s*\\}\\s*;:",
+        "chmod\\s+777\\s+/",
+        "chown\\s+.*:.*\\s+/",
+        "shutdown",
+        "reboot",
+        "init\\s+0",
+        "init\\s+6",
+        "halt",
+        "poweroff",
+      ],
+      action_type: "block",
+    },
+    ignore_filter: {
+      regex_patterns: ["DEBUG\\s*:", "INFO\\s*:"],
+      action_type: "ignore",
+    },
+    log_filter: {
+      regex_patterns: ["sudo\\s+", "chmod\\s+", "chown\\s+"],
+      action_type: "log",
+    },
+    replace_filter: {
+      regex_patterns: [
+        "password\\s*=\\s*\\S+",
+        "api[_-]?key\\s*=\\s*\\S+",
+        "secret\\s*=\\s*\\S+",
+        "token\\s*=\\s*\\S+",
+        "--password\\s+\\S+",
+        "-p\\s+\\S+",
+      ],
+      action_type: "replace",
+      action: {
+        replace_rules: {
+          "password\\s*=\\s*\\S+": "password=***",
+          "api[_-]?key\\s*=\\s*\\S+": "api_key=***",
+          "secret\\s*=\\s*\\S+": "secret=***",
+          "token\\s*=\\s*\\S+": "token=***",
+          "--password\\s+\\S+": "--password ***",
+          "-p\\s+\\S+": "-p ***",
+        },
+      },
+    },
+  }
+}
+
+function getInputFilterRules(item: ItemWithExtras): Record<string, FilterRule> {
+  return item.input_filter_rules && Object.keys(item.input_filter_rules).length > 0
+    ? (item.input_filter_rules as Record<string, FilterRule>)
+    : createDefaultInputRules()
+}
+
+function getOutputFilterRules(
+  item: ItemWithExtras,
+): Record<string, FilterRule> {
+  return item.output_filter_rules &&
+    Object.keys(item.output_filter_rules).length > 0
+    ? (item.output_filter_rules as Record<string, FilterRule>)
+    : createDefaultOutputRules()
+}
+
+function serializeFilterState(
+  enabled: boolean,
+  rules: Record<string, FilterRule>,
+) {
+  return JSON.stringify({
+    enabled,
+    rules,
+  })
+}
+
 function getItemQueryOptions(itemId: string) {
   return {
     queryFn: () => ItemsService.readItem({ id: itemId }),
@@ -63,18 +210,18 @@ function getCachedItem(items: ItemsResponse | undefined, itemId: string) {
   return items?.data.find((item: ItemWithExtras) => item.id === itemId)
 }
 
-function formatDate(value?: string | null) {
+function formatDate(value: string | null | undefined, localeTag: string) {
   if (!value) {
-    return "N/A"
+    return null
   }
 
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(localeTag, {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value))
 }
 
-function getErrorMessage(error: Error | null) {
+function getErrorMessage(error: Error | null, fallbackMessage: string) {
   if (error instanceof ApiError) {
     const detail = (error.body as { detail?: string })?.detail
     if (detail) {
@@ -82,12 +229,13 @@ function getErrorMessage(error: Error | null) {
     }
   }
 
-  return error?.message || "Unable to load item details right now."
+  return error?.message || fallbackMessage
 }
 
 function CopyValue({ label, value }: { label: string; value?: string | null }) {
   const [copiedText, copy] = useCopyToClipboard()
-  const displayValue = value || "N/A"
+  const { t } = useI18n()
+  const displayValue = value || t("common.notAvailable")
   const isCopied = copiedText === displayValue
 
   return (
@@ -108,7 +256,7 @@ function CopyValue({ label, value }: { label: string; value?: string | null }) {
             ) : (
               <Copy className="size-3" />
             )}
-            <span className="sr-only">Copy {label}</span>
+            <span className="sr-only">{t("common.copyLabel", { label })}</span>
           </Button>
         )}
       </div>
@@ -117,44 +265,93 @@ function CopyValue({ label, value }: { label: string; value?: string | null }) {
 }
 
 function KeyValue({ label, value }: { label: string; value?: string | null }) {
+  const { t } = useI18n()
+
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
       <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="font-mono text-sm">{value || "N/A"}</span>
+      <span className="font-mono text-sm">
+        {value || t("common.notAvailable")}
+      </span>
     </div>
   )
 }
 
-function getStatusBadge(status?: string) {
+function StatusBadge({
+  status,
+  className,
+}: {
+  status?: string
+  className?: string
+}) {
+  const { locale } = useI18n()
+  const label = getStatusLabel(locale, status)
+
   switch (status) {
     case "running":
       return (
-        <Badge className="border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400">
-          Running
+        <Badge
+          className={[
+            "border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400",
+            className,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {label}
         </Badge>
       )
     case "starting":
       return (
-        <Badge className="border-yellow-500/40 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
-          Starting
+        <Badge
+          className={[
+            "border-yellow-500/40 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
+            className,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {label}
         </Badge>
       )
     case "stopping":
       return (
-        <Badge className="border-orange-500/40 bg-orange-500/10 text-orange-600 dark:text-orange-400">
-          Stopping
+        <Badge
+          className={[
+            "border-orange-500/40 bg-orange-500/10 text-orange-600 dark:text-orange-400",
+            className,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {label}
         </Badge>
       )
     case "stopped":
-      return <Badge variant="secondary">Stopped</Badge>
+      return (
+        <Badge variant="secondary" className={className}>
+          {label}
+        </Badge>
+      )
     case "error":
       return (
-        <Badge className="border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400">
-          Error
+        <Badge
+          className={[
+            "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400",
+            className,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {label}
         </Badge>
       )
     default:
-      return <Badge variant="outline">Unknown</Badge>
+      return (
+        <Badge variant="outline" className={className}>
+          {label}
+        </Badge>
+      )
   }
 }
 
@@ -168,163 +365,156 @@ function ItemDetailPage({
   message?: string
 }) {
   const queryClient = useQueryClient()
+  const { t, locale, localeTag } = useI18n()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const [command, setCommand] = useState("")
   const outputRef = useRef<HTMLDivElement>(null)
+  const previousItemIdRef = useRef(item.id)
+  const itemUpdatedAtRef = useRef(item.updated_at || "")
+  const inputSyncedSignatureRef = useRef(
+    serializeFilterState(
+      item.input_filter_enabled || false,
+      getInputFilterRules(item),
+    ),
+  )
+  const outputSyncedSignatureRef = useRef(
+    serializeFilterState(
+      item.output_filter_enabled || false,
+      getOutputFilterRules(item),
+    ),
+  )
 
   const [isSavingInputFilter, setIsSavingInputFilter] = useState(false)
   const [isSavingOutputFilter, setIsSavingOutputFilter] = useState(false)
-  
-  const defaultInputRules = {
-    block_filter: {
-      regex_patterns: [
-        "violence|porn|gambling",
-        "http://.*\\.exe",
-      ],
-      action_type: "block"
-    },
-    ignore_filter: {
-      regex_patterns: [
-        "^\\s*$",
-        "^\\x1b\\[[0-9;]*[a-zA-Z]$",
-        "^\\r$",
-        "\\d+%",
-        "\\[\\s*=+\\s*\\]",
-        "\\.\\.\\.+",
-        "DEBUG\\s*:",
-        "INFO\\s*:",
-      ],
-      action_type: "ignore"
-    },
-    log_filter: {
-      regex_patterns: [
-        "error:",
-        "failed:",
-        "exception:",
-        "Error:",
-        "FAILED",
-        "EXCEPTION",
-        "warning:",
-        "warn:",
-        "Warning:",
-        "WARN",
-        "\\(y/n\\)",
-        "\\[Y/n\\]",
-        "enter.*:",
-        "password:",
-        "confirm",
-      ],
-      action_type: "log"
-    },
-    replace_filter: {
-      regex_patterns: [
-        "^\\d{11}$",
-        "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}",
-      ],
-      action_type: "replace",
-      action: {
-        replace_rules: {
-          "^\\d{11}$": "***phone***",
-          "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}": "***email***"
-        }
-      }
-    }
-  }
+  const [inputFilterSaveState, setInputFilterSaveState] =
+    useState<FilterAutoSaveState>("idle")
+  const [outputFilterSaveState, setOutputFilterSaveState] =
+    useState<FilterAutoSaveState>("idle")
 
-  const defaultOutputRules = {
-    block_filter: {
-      regex_patterns: [
-        "rm\\s+-rf\\s+/",
-        "rm\\s+-rf\\s+~",
-        "mkfs",
-        "dd\\s+if=",
-        ">\\s*/dev/sd",
-        ":\\(\\)\\s*\\{\\s*:\\|\\:&\\s*\\}\\s*;:",
-        "chmod\\s+777\\s+/",
-        "chown\\s+.*:.*\\s+/",
-        "shutdown",
-        "reboot",
-        "init\\s+0",
-        "init\\s+6",
-        "halt",
-        "poweroff",
-      ],
-      action_type: "block"
-    },
-    ignore_filter: {
-      regex_patterns: [
-        "DEBUG\\s*:",
-        "INFO\\s*:",
-      ],
-      action_type: "ignore"
-    },
-    log_filter: {
-      regex_patterns: [
-        "sudo\\s+",
-        "chmod\\s+",
-        "chown\\s+",
-      ],
-      action_type: "log"
-    },
-    replace_filter: {
-      regex_patterns: [
-        "password\\s*=\\s*\\S+",
-        "api[_-]?key\\s*=\\s*\\S+",
-        "secret\\s*=\\s*\\S+",
-        "token\\s*=\\s*\\S+",
-        "--password\\s+\\S+",
-        "-p\\s+\\S+",
-      ],
-      action_type: "replace",
-      action: {
-        replace_rules: {
-          "password\\s*=\\s*\\S+": "password=***",
-          "api[_-]?key\\s*=\\s*\\S+": "api_key=***",
-          "secret\\s*=\\s*\\S+": "secret=***",
-          "token\\s*=\\s*\\S+": "token=***",
-          "--password\\s+\\S+": "--password ***",
-          "-p\\s+\\S+": "-p ***"
-        }
-      }
-    }
-  }
-
-  const [inputFilterEnabled, setInputFilterEnabled] = useState(item.input_filter_enabled || false)
-  const [inputFilterRules, setInputFilterRules] = useState<Record<string, FilterRule>>(
-    item.input_filter_rules && Object.keys(item.input_filter_rules).length > 0
-      ? item.input_filter_rules as Record<string, FilterRule>
-      : defaultInputRules as Record<string, FilterRule>
+  const [inputFilterEnabled, setInputFilterEnabled] = useState(
+    item.input_filter_enabled || false,
   )
+  const [inputFilterRules, setInputFilterRules] = useState<
+    Record<string, FilterRule>
+  >(getInputFilterRules(item))
 
-  const [outputFilterEnabled, setOutputFilterEnabled] = useState(item.output_filter_enabled || false)
-  const [outputFilterRules, setOutputFilterRules] = useState<Record<string, FilterRule>>(
-    item.output_filter_rules && Object.keys(item.output_filter_rules).length > 0
-      ? item.output_filter_rules as Record<string, FilterRule>
-      : defaultOutputRules as Record<string, FilterRule>
+  const [outputFilterEnabled, setOutputFilterEnabled] = useState(
+    item.output_filter_enabled || false,
   )
+  const [outputFilterRules, setOutputFilterRules] = useState<
+    Record<string, FilterRule>
+  >(getOutputFilterRules(item))
+  const inputSignature = useMemo(
+    () => serializeFilterState(inputFilterEnabled, inputFilterRules),
+    [inputFilterEnabled, inputFilterRules],
+  )
+  const outputSignature = useMemo(
+    () => serializeFilterState(outputFilterEnabled, outputFilterRules),
+    [outputFilterEnabled, outputFilterRules],
+  )
+  const latestInputSignatureRef = useRef(inputSignature)
+  const latestOutputSignatureRef = useRef(outputSignature)
 
   const [inputTestText, setInputTestText] = useState("")
-  const [inputTestResult, setInputTestResult] = useState<Record<string, unknown> | null>(null)
+  const [inputTestResult, setInputTestResult] = useState<Record<
+    string,
+    unknown
+  > | null>(null)
   const [isTestingInputFilter, setIsTestingInputFilter] = useState(false)
 
   const [outputTestCommand, setOutputTestCommand] = useState("")
-  const [outputTestResult, setOutputTestResult] = useState<Record<string, unknown> | null>(null)
+  const [outputTestResult, setOutputTestResult] = useState<Record<
+    string,
+    unknown
+  > | null>(null)
   const [isTestingOutputFilter, setIsTestingOutputFilter] = useState(false)
 
   useEffect(() => {
-    setInputFilterEnabled(item.input_filter_enabled || false)
-    setInputFilterRules(
-      item.input_filter_rules && Object.keys(item.input_filter_rules).length > 0
-        ? item.input_filter_rules as Record<string, FilterRule>
-        : defaultInputRules as Record<string, FilterRule>
+    const isNewItem = previousItemIdRef.current !== item.id
+    const incomingUpdatedAt = item.updated_at || ""
+    const isStaleItem =
+      !isNewItem &&
+      Boolean(itemUpdatedAtRef.current) &&
+      Boolean(incomingUpdatedAt) &&
+      incomingUpdatedAt < itemUpdatedAtRef.current
+
+    if (isStaleItem) {
+      return
+    }
+
+    const incomingInputEnabled = item.input_filter_enabled || false
+    const incomingInputRules = getInputFilterRules(item)
+    const incomingInputSignature = serializeFilterState(
+      incomingInputEnabled,
+      incomingInputRules,
     )
-    setOutputFilterEnabled(item.output_filter_enabled || false)
-    setOutputFilterRules(
-      item.output_filter_rules && Object.keys(item.output_filter_rules).length > 0
-        ? item.output_filter_rules as Record<string, FilterRule>
-        : defaultOutputRules as Record<string, FilterRule>
+    const previousInputSignature = inputSyncedSignatureRef.current
+
+    inputSyncedSignatureRef.current = incomingInputSignature
+    if (
+      isNewItem ||
+      latestInputSignatureRef.current === previousInputSignature ||
+      latestInputSignatureRef.current === incomingInputSignature
+    ) {
+      latestInputSignatureRef.current = incomingInputSignature
+      setInputFilterEnabled(incomingInputEnabled)
+      setInputFilterRules(incomingInputRules)
+    }
+
+    const incomingOutputEnabled = item.output_filter_enabled || false
+    const incomingOutputRules = getOutputFilterRules(item)
+    const incomingOutputSignature = serializeFilterState(
+      incomingOutputEnabled,
+      incomingOutputRules,
     )
+    const previousOutputSignature = outputSyncedSignatureRef.current
+
+    outputSyncedSignatureRef.current = incomingOutputSignature
+    if (
+      isNewItem ||
+      latestOutputSignatureRef.current === previousOutputSignature ||
+      latestOutputSignatureRef.current === incomingOutputSignature
+    ) {
+      latestOutputSignatureRef.current = incomingOutputSignature
+      setOutputFilterEnabled(incomingOutputEnabled)
+      setOutputFilterRules(incomingOutputRules)
+    }
+
+    previousItemIdRef.current = item.id
+    itemUpdatedAtRef.current = incomingUpdatedAt
+    if (isNewItem) {
+      setIsSavingInputFilter(false)
+      setIsSavingOutputFilter(false)
+      setInputFilterSaveState("idle")
+      setOutputFilterSaveState("idle")
+    }
   }, [item])
+
+  useEffect(() => {
+    latestInputSignatureRef.current = inputSignature
+  }, [inputSignature])
+
+  useEffect(() => {
+    latestOutputSignatureRef.current = outputSignature
+  }, [outputSignature])
+
+  useEffect(() => {
+    if (
+      inputSignature !== inputSyncedSignatureRef.current &&
+      inputFilterSaveState === "saved"
+    ) {
+      setInputFilterSaveState("idle")
+    }
+  }, [inputFilterSaveState, inputSignature])
+
+  useEffect(() => {
+    if (
+      outputSignature !== outputSyncedSignatureRef.current &&
+      outputFilterSaveState === "saved"
+    ) {
+      setOutputFilterSaveState("idle")
+    }
+  }, [outputFilterSaveState, outputSignature])
 
   const shouldConnect = item.status === "running" && item.daemon_online
 
@@ -342,14 +532,14 @@ function ItemDetailPage({
     enabled: shouldConnect,
     onConnected: (data) => {
       console.log("[Terminal] Connected:", data)
-      showSuccessToast("Terminal connected")
+      showSuccessToast(t("items.detail.terminalConnected"))
     },
     onDisconnected: () => {
       console.log("[Terminal] Disconnected")
     },
     onError: (error) => {
       console.error("[Terminal] Error:", error)
-      showErrorToast(`Terminal error: ${error}`)
+      showErrorToast(t("items.detail.terminalError", { error }))
     },
   })
 
@@ -357,7 +547,7 @@ function ItemDetailPage({
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight
     }
-  }, [output])
+  }, [])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -373,10 +563,10 @@ function ItemDetailPage({
       const result = await ItemsService.startItem({ id: item.id })
       queryClient.invalidateQueries({ queryKey: ["item", item.id] })
       queryClient.invalidateQueries({ queryKey: ["items"] })
-      showSuccessToast(result.message || "Item started successfully")
+      showSuccessToast(result.message || t("items.detail.started"))
     } catch (error) {
       console.error("Failed to start item:", error)
-      showErrorToast("Failed to start item")
+      showErrorToast(t("items.detail.startFailed"))
     }
   }
 
@@ -386,10 +576,10 @@ function ItemDetailPage({
       const result = await ItemsService.stopItem({ id: item.id })
       queryClient.invalidateQueries({ queryKey: ["item", item.id] })
       queryClient.invalidateQueries({ queryKey: ["items"] })
-      showSuccessToast(result.message || "Item stopped successfully")
+      showSuccessToast(result.message || t("items.detail.stopped"))
     } catch (error) {
       console.error("Failed to stop item:", error)
-      showErrorToast("Failed to stop item")
+      showErrorToast(t("items.detail.stopFailed"))
     }
   }
 
@@ -399,11 +589,11 @@ function ItemDetailPage({
       const result = await ItemsService.restartItem({ id: item.id })
       await queryClient.invalidateQueries({ queryKey: ["item", item.id] })
       queryClient.invalidateQueries({ queryKey: ["items"] })
-      showSuccessToast(result.message || "Item restarted successfully")
+      showSuccessToast(result.message || t("items.detail.restarted"))
       reconnect()
     } catch (error) {
       console.error("Failed to restart item:", error)
-      showErrorToast("Failed to restart item")
+      showErrorToast(t("items.detail.restartFailed"))
     }
   }
 
@@ -421,61 +611,145 @@ function ItemDetailPage({
     }
   }
 
-  const handleSaveInputFilter = async () => {
-    setIsSavingInputFilter(true)
-    try {
+  const updateItemCaches = (updatedItem: ItemPublic) => {
+    const cachedItem = updatedItem as ItemWithExtras
+
+    queryClient.setQueryData<ItemWithExtras>(
+      ["items", "detail", updatedItem.id],
+      (current) => ({ ...(current || {}), ...cachedItem }),
+    )
+    queryClient.setQueryData<ItemsResponse | undefined>(["items"], (current) =>
+      current
+        ? {
+            ...current,
+            data: current.data.map((entry) =>
+              entry.id === updatedItem.id
+                ? ({ ...entry, ...cachedItem } as ItemWithExtras)
+                : entry,
+            ),
+          }
+        : current,
+    )
+    saveItemSnapshot(cachedItem)
+  }
+
+  useEffect(() => {
+    if (inputSignature === inputSyncedSignatureRef.current) {
+      return
+    }
+
+    const timer = window.setTimeout(async () => {
+      const payloadSignature = inputSignature
       const updateData: ItemUpdate = {
         input_filter_enabled: inputFilterEnabled,
         input_filter_rules: inputFilterRules,
       }
 
-      await ItemsService.updateItem({ id: item.id, requestBody: updateData })
-      queryClient.invalidateQueries({ queryKey: ["items", "detail", item.id] })
-      queryClient.invalidateQueries({ queryKey: ["items"] })
-      showSuccessToast("Input filter saved successfully")
-    } catch (error) {
-      console.error("Failed to save input filter:", error)
-      showErrorToast("Failed to save input filter")
-    } finally {
-      setIsSavingInputFilter(false)
-    }
-  }
+      setIsSavingInputFilter(true)
+      setInputFilterSaveState("saving")
+      try {
+        const updatedItem = await ItemsService.updateItem({
+          id: item.id,
+          requestBody: updateData,
+        })
+        const savedSignature = serializeFilterState(
+          updatedItem.input_filter_enabled || false,
+          getInputFilterRules(updatedItem as ItemWithExtras),
+        )
 
-  const handleSaveOutputFilter = async () => {
-    setIsSavingOutputFilter(true)
-    try {
+        inputSyncedSignatureRef.current = savedSignature
+        itemUpdatedAtRef.current = updatedItem.updated_at || itemUpdatedAtRef.current
+
+        if (latestInputSignatureRef.current === payloadSignature) {
+          setInputFilterSaveState("saved")
+          setIsSavingInputFilter(false)
+          updateItemCaches(updatedItem)
+        }
+      } catch (error) {
+        console.error("Failed to auto-save input filter:", error)
+        setInputFilterSaveState("error")
+        setIsSavingInputFilter(false)
+        showErrorToast(t("items.detail.inputFilterSaveFailed"))
+      }
+    }, 600)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    inputFilterEnabled,
+    inputFilterRules,
+    inputSignature,
+    item.id,
+    queryClient,
+    showErrorToast,
+    t,
+  ])
+
+  useEffect(() => {
+    if (outputSignature === outputSyncedSignatureRef.current) {
+      return
+    }
+
+    const timer = window.setTimeout(async () => {
+      const payloadSignature = outputSignature
       const updateData: ItemUpdate = {
         output_filter_enabled: outputFilterEnabled,
         output_filter_rules: outputFilterRules,
       }
 
-      await ItemsService.updateItem({ id: item.id, requestBody: updateData })
-      queryClient.invalidateQueries({ queryKey: ["items", "detail", item.id] })
-      queryClient.invalidateQueries({ queryKey: ["items"] })
-      showSuccessToast("Output filter saved successfully")
-    } catch (error) {
-      console.error("Failed to save output filter:", error)
-      showErrorToast("Failed to save output filter")
-    } finally {
-      setIsSavingOutputFilter(false)
-    }
-  }
+      setIsSavingOutputFilter(true)
+      setOutputFilterSaveState("saving")
+      try {
+        const updatedItem = await ItemsService.updateItem({
+          id: item.id,
+          requestBody: updateData,
+        })
+        const savedSignature = serializeFilterState(
+          updatedItem.output_filter_enabled || false,
+          getOutputFilterRules(updatedItem as ItemWithExtras),
+        )
+
+        outputSyncedSignatureRef.current = savedSignature
+        itemUpdatedAtRef.current = updatedItem.updated_at || itemUpdatedAtRef.current
+
+        if (latestOutputSignatureRef.current === payloadSignature) {
+          setOutputFilterSaveState("saved")
+          setIsSavingOutputFilter(false)
+          updateItemCaches(updatedItem)
+        }
+      } catch (error) {
+        console.error("Failed to auto-save output filter:", error)
+        setOutputFilterSaveState("error")
+        setIsSavingOutputFilter(false)
+        showErrorToast(t("items.detail.outputFilterSaveFailed"))
+      }
+    }, 600)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    item.id,
+    outputFilterEnabled,
+    outputFilterRules,
+    outputSignature,
+    queryClient,
+    showErrorToast,
+    t,
+  ])
 
   const handleTestInputFilter = async () => {
     if (!inputTestText.trim()) {
-      showErrorToast("Please enter test text")
+      showErrorToast(t("items.detail.enterTestText"))
       return
     }
     setIsTestingInputFilter(true)
     try {
       const result = await ItemsService.testInputFilter({
         id: item.id,
-        requestBody: { test_text: inputTestText }
+        requestBody: { test_text: inputTestText },
       })
       setInputTestResult(result)
     } catch (error) {
       console.error("Failed to test input filter:", error)
-      showErrorToast("Failed to test input filter")
+      showErrorToast(t("items.detail.inputFilterTestFailed"))
     } finally {
       setIsTestingInputFilter(false)
     }
@@ -483,19 +757,19 @@ function ItemDetailPage({
 
   const handleTestOutputFilter = async () => {
     if (!outputTestCommand.trim()) {
-      showErrorToast("Please enter a command to test")
+      showErrorToast(t("items.detail.enterTestCommand"))
       return
     }
     setIsTestingOutputFilter(true)
     try {
       const result = await ItemsService.testOutputFilter({
         id: item.id,
-        requestBody: { command: outputTestCommand }
+        requestBody: { command: outputTestCommand },
       })
       setOutputTestResult(result)
     } catch (error) {
       console.error("Failed to test output filter:", error)
-      showErrorToast("Failed to test output filter")
+      showErrorToast(t("items.detail.outputFilterTestFailed"))
     } finally {
       setIsTestingOutputFilter(false)
     }
@@ -504,545 +778,710 @@ function ItemDetailPage({
   return (
     <div className="flex gap-4 w-full">
       <div className="flex-1 min-w-0">
-        <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-6">
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <Link to="/items" className="hover:text-foreground">
-            Items
-          </Link>
-          <ChevronRight className="size-4" />
-          <span className="text-foreground">Terminal</span>
-        </div>
+        <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-2.5">
+          <section className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              <Link to="/items" className="hover:text-foreground">
+                {t("items.pageTitle")}
+              </Link>
+              <ChevronRight className="size-3.5" />
+              <span className="text-foreground">{item.title}</span>
+            </div>
 
-        <div className="rounded-2xl border bg-card/85 px-5 py-5 shadow-sm">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="flex flex-col gap-4">
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="h-8 w-fit px-3"
-              >
-                <Link to="/items">
-                  <ArrowLeft className="size-4" />
-                  Back to items
-                </Link>
-              </Button>
-
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                <div className="flex size-12 items-center justify-center rounded-xl border bg-muted/40">
-                  <Terminal className="size-6 text-muted-foreground" />
-                </div>
-
-                <div className="space-y-3">
+            <div className="rounded-xl border bg-card/90 px-3 py-2 shadow-sm">
+              <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+                <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="text-3xl font-bold tracking-tight">
+                    <h1 className="break-words text-base font-semibold leading-tight tracking-tight sm:text-lg">
                       {item.title}
                     </h1>
-                    {getStatusBadge(item.status)}
+                    <StatusBadge
+                      status={item.status}
+                      className="h-5 px-1.5 text-[10px]"
+                    />
+                    <Badge
+                      variant="outline"
+                      className={`h-5 px-1.5 text-[10px] ${
+                        item.daemon_online
+                          ? "border-green-500/30 text-green-600 dark:text-green-400"
+                          : "border-red-500/30 text-red-600 dark:text-red-400"
+                      }`}
+                    >
+                      {item.daemon_online
+                        ? t("items.detail.daemonOnline")
+                        : t("items.detail.daemonOffline")}
+                    </Badge>
                     {isUsingFallback && (
-                      <Badge variant="secondary">Fallback Mode</Badge>
-                    )}
-                  </div>
-
-                  <p className="max-w-3xl text-sm text-muted-foreground">
-                    {item.description || "No description"}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                className="h-10 px-4"
-                onClick={handleStartItem}
-              >
-                Start
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                className="h-10 px-4"
-                onClick={handleStopItem}
-              >
-                Stop
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                className="h-10 px-4"
-                onClick={handleRestartItem}
-              >
-                Restart
-              </Button>
-            </div>
-          </div>
-
-          {isUsingFallback && (
-            <div className="mt-5 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="size-4 text-yellow-600 dark:text-yellow-400" />
-                <span className="font-medium text-yellow-600 dark:text-yellow-400">
-                  {message || "Rendering with cached or placeholder data"}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-        <div className="flex gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="space-y-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold">Terminal</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Real-time console output and command input
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {isConnecting ? (
-                    <Badge
-                      variant="outline"
-                      className="border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                    >
-                      <Loader2 className="size-3 mr-1 animate-spin" />
-                      Connecting...
-                    </Badge>
-                  ) : isConnected ? (
-                    <>
-                      <Badge className="border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400">
-                        Connected
-                      </Badge>
-                      <Badge variant="secondary">Realtime Console</Badge>
-                    </>
-                  ) : connectionError ? (
-                    <Badge className="border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400">
-                      <AlertCircle className="size-3 mr-1" />
-                      Error
-                    </Badge>
-                  ) : (
-                    <Badge
-                      variant="outline"
-                      className="border-yellow-500/40 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"
-                    >
-                      <WifiOff className="size-3 mr-1" />
-                      Disconnected
-                    </Badge>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border bg-[#151515] p-4 shadow-inner">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="size-3 rounded-full bg-red-400" />
-                  <span className="size-3 rounded-full bg-yellow-400" />
-                  <span className="size-3 rounded-full bg-green-400" />
-                  <span className="ml-2 font-mono text-xs tracking-wide text-slate-400">
-                    terminal - {item.title}
-                  </span>
-                </div>
-
-                {isConnecting ? (
-                  <div className="h-[34rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] flex flex-col items-center justify-center gap-4 px-4 py-8">
-                    <Loader2 className="size-8 text-blue-400 animate-spin" />
-                    <div className="text-center space-y-1">
-                      <h3 className="text-base font-semibold text-slate-200">
-                        Connecting...
-                      </h3>
-                      <p className="text-xs text-slate-400">
-                        Establishing connection to terminal...
-                      </p>
-                    </div>
-                  </div>
-                ) : isConnected ? (
-                  <>
-                    <div
-                      ref={outputRef}
-                      className="h-[30rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] px-4 py-3 font-mono text-[15px] leading-[1.45] tracking-[0.01em]"
-                    >
-                      {output.length === 0 ? (
-                        <div className="text-lime-400">
-                          [System] Terminal connected. Waiting for output...
-                        </div>
-                      ) : (
-                        output.map((out, idx) => {
-                          const text = out.stdout || ""
-                          const isInput =
-                            /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] #/.test(text)
-                          return (
-                            <span
-                              key={idx}
-                              className={`whitespace-pre ${isInput ? "text-green-400" : "text-blue-300"}`}
-                            >
-                              {text}
-                            </span>
-                          )
-                        })
-                      )}
-                    </div>
-
-                    <div className="mt-4 flex flex-col gap-3 lg:flex-row">
-                      <Input
-                        value={command}
-                        onChange={(e) => setCommand(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder="Enter command and press enter to send"
-                        className="h-10 border-zinc-700 bg-zinc-900/80 font-mono text-sm text-slate-100 placeholder:text-slate-500"
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-10 px-4 lg:min-w-24"
-                          onClick={handleSendCommand}
-                          disabled={!command.trim()}
-                        >
-                          <Send className="size-4" />
-                          Send
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          className="h-10 px-4"
-                          onClick={sendCtrlC}
-                          title="Send Ctrl+C"
-                        >
-                          Ctrl+C
-                        </Button>
-                      </div>
-                    </div>
-                  </>
-                ) : connectionError ? (
-                  <div className="h-[34rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] flex flex-col items-center justify-center gap-4 px-4 py-8">
-                    <div className="rounded-full bg-red-500/20 p-4">
-                      <AlertCircle className="size-8 text-red-400" />
-                    </div>
-                    <div className="text-center space-y-1">
-                      <h3 className="text-base font-semibold text-slate-200">
-                        Connection Error
-                      </h3>
-                      <p className="text-xs text-red-400 max-w-md">
-                        {connectionError}
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-2"
-                      onClick={reconnect}
-                    >
-                      <Plug className="size-4 mr-2" />
-                      Retry Connection
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="h-[34rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] flex flex-col items-center justify-center gap-4 px-4 py-8">
-                    <div className="rounded-full bg-muted/20 p-4">
-                      <Plug className="size-8 text-muted-foreground" />
-                    </div>
-                    <div className="text-center space-y-1">
-                      <h3 className="text-base font-semibold text-slate-200">
-                        Terminal Not Available
-                      </h3>
-                      <p className="text-xs text-slate-400 max-w-md">
-                        {item.status !== "running"
-                          ? "Start the item to connect to its terminal."
-                          : "The daemon is offline. Please check the connection."}
-                      </p>
-                    </div>
-                    <div className="grid gap-2 text-xs text-slate-400 bg-muted/10 rounded-lg p-3 w-full max-w-sm">
-                      <div className="flex justify-between">
-                        <span>Status:</span>
-                        <span className="font-mono">{item.status}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Daemon:</span>
-                        <span
-                          className={`font-mono ${item.daemon_online ? "text-green-400" : "text-red-400"}`}
-                        >
-                          {item.daemon_online ? "Online" : "Offline"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Host:</span>
-                        <span className="font-mono">
-                          {item.socket_host || "localhost"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Port:</span>
-                        <span className="font-mono">
-                          {item.socket_port || 9000}
-                        </span>
-                      </div>
-                    </div>
-                    {item.status === "running" && !item.daemon_online && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-2"
-                        onClick={reconnect}
+                      <Badge
+                        variant="secondary"
+                        className="h-5 px-1.5 text-[10px]"
                       >
-                        <Plug className="size-4 mr-2" />
-                        Retry Connection
-                      </Button>
+                        {t("items.detail.fallbackMode")}
+                      </Badge>
                     )}
                   </div>
-                )}
-              </div>
-            </div>
-          </div>
 
-          <div className="w-80 shrink-0">
-            <div className="rounded-2xl border bg-card/85 shadow-sm h-[42rem] overflow-hidden">
-              <ChatPanel itemId={item.id} />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-        <h2 className="text-xl font-semibold mb-4">Key Information</h2>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <CopyValue label="ID" value={item.id} />
-          <KeyValue label="Status" value={item.status} />
-          <KeyValue label="Owner ID" value={item.owner_id} />
-          <KeyValue label="Socket Host" value={item.socket_host} />
-          <KeyValue label="Socket Port" value={item.socket_port?.toString()} />
-          <KeyValue
-            label="Socket Connected"
-            value={item.socket_connected ? "Yes" : "No"}
-          />
-          <KeyValue label="Command" value={item.command} />
-          <KeyValue label="Working Directory" value={item.working_directory} />
-          <KeyValue
-            label="Log Max Size (MB)"
-            value={item.log_max_size_mb?.toString()}
-          />
-          <KeyValue label="Daemon URL" value={item.daemon_url} />
-          <KeyValue label="Created At" value={formatDate(item.created_at)} />
-          <KeyValue label="Updated At" value={formatDate(item.updated_at)} />
-        </div>
-      </section>
-
-      <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Filter className="size-5 text-blue-500" />
-            <h2 className="text-xl font-semibold">Input Filter Settings</h2>
-          </div>
-          <Button
-            size="sm"
-            onClick={handleSaveInputFilter}
-            disabled={isSavingInputFilter}
-          >
-            {isSavingInputFilter ? (
-              <Loader2 className="size-4 mr-2 animate-spin" />
-            ) : (
-              <Save className="size-4 mr-2" />
-            )}
-            Save
-          </Button>
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-4 mb-4 p-3 rounded-lg border bg-muted/30">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">Enabled</span>
-            <button
-              type="button"
-              onClick={() => setInputFilterEnabled(!inputFilterEnabled)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                inputFilterEnabled ? 'bg-blue-500' : 'bg-muted'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  inputFilterEnabled ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-        
-        <FilterRuleEditor
-          value={inputFilterRules}
-          onChange={setInputFilterRules}
-          defaultRules={defaultInputRules as Record<string, FilterRule>}
-        />
-        
-        <div className="mt-4 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Terminal className="size-4 text-blue-500" />
-            <span className="text-sm font-medium">Test Input Filter</span>
-          </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Input Text</Label>
-              <Textarea
-                placeholder="Paste terminal output here to test..."
-                className="font-mono text-xs h-40"
-                value={inputTestText}
-                onChange={(e) => setInputTestText(e.target.value)}
-              />
-              <Button
-                size="sm"
-                onClick={handleTestInputFilter}
-                disabled={isTestingInputFilter}
-                className="w-full"
-              >
-                {isTestingInputFilter ? (
-                  <Loader2 className="size-4 mr-2 animate-spin" />
-                ) : (
-                  <Play className="size-4 mr-2" />
-                )}
-                Test Filter
-              </Button>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Filter Result</Label>
-              <div className="rounded-md border bg-muted/30 p-3 h-40 overflow-auto">
-                {inputTestResult ? (
-                  <pre className="text-xs font-mono whitespace-pre-wrap">
-                    {String(inputTestResult.result || "")}
-                  </pre>
-                ) : (
-                  <p className="text-xs text-muted-foreground">Click "Test Filter" to see results</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Shield className="size-5 text-orange-500" />
-            <h2 className="text-xl font-semibold">Output Filter Settings</h2>
-          </div>
-          <Button
-            size="sm"
-            onClick={handleSaveOutputFilter}
-            disabled={isSavingOutputFilter}
-          >
-            {isSavingOutputFilter ? (
-              <Loader2 className="size-4 mr-2 animate-spin" />
-            ) : (
-              <Save className="size-4 mr-2" />
-            )}
-            Save
-          </Button>
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-4 mb-4 p-3 rounded-lg border bg-muted/30">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">Enabled</span>
-            <button
-              type="button"
-              onClick={() => setOutputFilterEnabled(!outputFilterEnabled)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                outputFilterEnabled ? 'bg-orange-500' : 'bg-muted'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  outputFilterEnabled ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-        
-        <FilterRuleEditor
-          value={outputFilterRules}
-          onChange={setOutputFilterRules}
-          defaultRules={defaultOutputRules as Record<string, FilterRule>}
-        />
-        
-        <div className="mt-4 rounded-lg border border-orange-500/30 bg-orange-500/5 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Shield className="size-4 text-orange-500" />
-            <span className="text-sm font-medium">Test Output Filter</span>
-          </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Command to Test</Label>
-              <Textarea
-                placeholder="Enter a command to test filtering..."
-                className="font-mono text-xs h-32"
-                value={outputTestCommand}
-                onChange={(e) => setOutputTestCommand(e.target.value)}
-              />
-              <Button
-                size="sm"
-                onClick={handleTestOutputFilter}
-                disabled={isTestingOutputFilter}
-                className="w-full"
-              >
-                {isTestingOutputFilter ? (
-                  <Loader2 className="size-4 mr-2 animate-spin" />
-                ) : (
-                  <Play className="size-4 mr-2" />
-                )}
-                Test Command
-              </Button>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Filter Result</Label>
-              <div className="rounded-md border bg-muted/30 p-3 h-32 overflow-auto">
-                {outputTestResult ? (
-                  <pre className="text-xs font-mono whitespace-pre-wrap">
-                    {String(outputTestResult.result || "")}
-                  </pre>
-                ) : (
-                  <p className="text-xs text-muted-foreground">Click "Test Command" to see results</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-        <h2 className="text-xl font-semibold mb-4">Connected Users</h2>
-        {item.connected_users &&
-        Object.keys(item.connected_users).length > 0 ? (
-          <div className="space-y-2">
-            {Object.entries(item.connected_users).map(([sid, userInfo]) => (
-              <div
-                key={sid}
-                className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2"
-              >
-                <div className="flex items-center gap-2">
-                  <div className="size-2 rounded-full bg-green-500" />
-                  <span className="font-mono text-sm">
-                    {userInfo.user_uuid}
-                  </span>
+                  <p className="max-w-3xl text-[11px] leading-4 text-muted-foreground sm:text-xs">
+                    {item.description || t("items.detail.noDescriptionYet")}
+                  </p>
                 </div>
-                <span className="text-sm text-muted-foreground">
-                  {userInfo.ip}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-8 text-muted-foreground">
-            <Users className="size-8 mx-auto mb-2 opacity-50" />
-            <p>No connected users</p>
-          </div>
-        )}
-      </section>
 
-      <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-        <MemoryManager itemId={item.id} />
-      </section>
-    </div>
+                <div className="flex shrink-0 flex-wrap gap-2 xl:w-auto xl:justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 min-w-20 px-3.5 text-xs"
+                    onClick={handleStartItem}
+                  >
+                    {t("items.detail.start")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 min-w-20 px-3.5 text-xs"
+                    onClick={handleStopItem}
+                  >
+                    {t("items.detail.stop")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 min-w-20 px-3.5 text-xs"
+                    onClick={handleRestartItem}
+                  >
+                    {t("items.detail.restart")}
+                  </Button>
+                </div>
+              </div>
+
+              {isUsingFallback && (
+                <div className="mt-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="size-4 text-yellow-600 dark:text-yellow-400" />
+                    <span className="font-medium text-yellow-600 dark:text-yellow-400">
+                      {message || "Rendering with cached or placeholder data"}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <Tabs defaultValue="terminal" className="gap-2.5">
+            <div className="overflow-x-auto">
+              <TabsList className="h-auto min-w-max gap-1 bg-muted/70 p-1">
+                <TabsTrigger value="terminal">
+                  {t("items.detail.terminal")}
+                </TabsTrigger>
+                <TabsTrigger value="files">
+                  {t("items.detail.files")}
+                </TabsTrigger>
+                <TabsTrigger value="handlers">
+                  {t("items.detail.handlers")}
+                </TabsTrigger>
+                <TabsTrigger value="filters">
+                  {t("items.detail.filters")}
+                </TabsTrigger>
+                <TabsTrigger value="config">
+                  {t("items.detail.config")}
+                </TabsTrigger>
+                <TabsTrigger value="memory">
+                  {t("items.detail.memory")}
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            <TabsContent value="terminal">
+              <section className="rounded-2xl border bg-card/85 p-2.5 shadow-sm">
+                <div className="flex flex-col gap-4 xl:flex-row">
+                  <div className="flex-1 min-w-0">
+                    <div className="space-y-2.5">
+                      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <h2 className="text-base font-semibold">
+                            {t("items.detail.terminalTitle")}
+                          </h2>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {isConnecting ? (
+                            <Badge
+                              variant="outline"
+                              className="border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                            >
+                              <Loader2 className="size-3 mr-1 animate-spin" />
+                              {t("items.detail.connecting")}
+                            </Badge>
+                          ) : isConnected ? (
+                            <>
+                              <Badge className="border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400">
+                                {t("common.connected")}
+                              </Badge>
+                              <Badge variant="secondary">
+                                {t("items.detail.realtimeConsole")}
+                              </Badge>
+                            </>
+                          ) : connectionError ? (
+                            <Badge className="border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400">
+                              <AlertCircle className="size-3 mr-1" />
+                              {t("common.error")}
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="border-yellow-500/40 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"
+                            >
+                              <WifiOff className="size-3 mr-1" />
+                              {t("common.disconnected")}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border bg-[#151515] p-4 shadow-inner">
+                        <div className="mb-3 flex items-center gap-2">
+                          <span className="size-3 rounded-full bg-red-400" />
+                          <span className="size-3 rounded-full bg-yellow-400" />
+                          <span className="size-3 rounded-full bg-green-400" />
+                          <span className="ml-2 font-mono text-xs tracking-wide text-slate-400">
+                            {t("items.detail.terminal")} - {item.title}
+                          </span>
+                        </div>
+
+                        {isConnecting ? (
+                          <div className="h-[34rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] flex flex-col items-center justify-center gap-4 px-4 py-8">
+                            <Loader2 className="size-8 text-blue-400 animate-spin" />
+                            <div className="text-center space-y-1">
+                              <h3 className="text-base font-semibold text-slate-200">
+                                {t("items.detail.connecting")}
+                              </h3>
+                              <p className="text-xs text-slate-400">
+                                {t("items.detail.establishingConnection")}
+                              </p>
+                            </div>
+                          </div>
+                        ) : isConnected ? (
+                          <>
+                            <div
+                              ref={outputRef}
+                              className="h-[30rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] px-4 py-3 font-mono text-[15px] leading-[1.45] tracking-[0.01em]"
+                            >
+                              {output.length === 0 ? (
+                                <div className="text-lime-400">
+                                  {t("items.detail.terminalConnectedWaiting")}
+                                </div>
+                              ) : (
+                                output.map((out, idx) => {
+                                  const text = out.stdout || ""
+                                  const isInput =
+                                    /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] #/.test(
+                                      text,
+                                    )
+                                  return (
+                                    <span
+                                      key={idx}
+                                      className={`whitespace-pre ${isInput ? "text-green-400" : "text-blue-300"}`}
+                                    >
+                                      {text}
+                                    </span>
+                                  )
+                                })
+                              )}
+                            </div>
+
+                            <div className="mt-4 flex flex-col gap-3 lg:flex-row">
+                              <Input
+                                value={command}
+                                onChange={(e) => setCommand(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                placeholder={t("items.detail.enterCommand")}
+                                className="h-10 border-zinc-700 bg-zinc-900/80 font-mono text-sm text-slate-100 placeholder:text-slate-500"
+                              />
+                              <div className="flex gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="h-10 px-4 lg:min-w-24"
+                                  onClick={handleSendCommand}
+                                  disabled={!command.trim()}
+                                >
+                                  <Send className="size-4" />
+                                  {t("items.detail.send")}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="destructive"
+                                  className="h-10 px-4"
+                                  onClick={sendCtrlC}
+                                  title={t("items.detail.sendCtrlC")}
+                                >
+                                  Ctrl+C
+                                </Button>
+                              </div>
+                            </div>
+                          </>
+                        ) : connectionError ? (
+                          <div className="h-[34rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] flex flex-col items-center justify-center gap-4 px-4 py-8">
+                            <div className="rounded-full bg-red-500/20 p-4">
+                              <AlertCircle className="size-8 text-red-400" />
+                            </div>
+                            <div className="text-center space-y-1">
+                              <h3 className="text-base font-semibold text-slate-200">
+                                {t("items.detail.connectionErrorTitle")}
+                              </h3>
+                              <p className="text-xs text-red-400 max-w-md">
+                                {connectionError}
+                              </p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="mt-2"
+                              onClick={reconnect}
+                            >
+                              <Plug className="size-4 mr-2" />
+                              {t("items.detail.retryConnection")}
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="h-[34rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] flex flex-col items-center justify-center gap-4 px-4 py-8">
+                            <div className="rounded-full bg-muted/20 p-4">
+                              <Plug className="size-8 text-muted-foreground" />
+                            </div>
+                            <div className="text-center space-y-1">
+                              <h3 className="text-base font-semibold text-slate-200">
+                                {t("items.detail.terminalNotAvailable")}
+                              </h3>
+                              <p className="text-xs text-slate-400 max-w-md">
+                                {item.status !== "running"
+                                  ? t("items.detail.startItemToConnect")
+                                  : t("items.detail.daemonOfflineHint")}
+                              </p>
+                            </div>
+                            <div className="grid gap-2 text-xs text-slate-400 bg-muted/10 rounded-lg p-3 w-full max-w-sm">
+                              <div className="flex justify-between">
+                                <span>{t("common.status")}:</span>
+                                <span className="font-mono">
+                                  {getStatusLabel(locale, item.status)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>{t("items.detail.daemonLabel")}</span>
+                                <span
+                                  className={`font-mono ${item.daemon_online ? "text-green-400" : "text-red-400"}`}
+                                >
+                                  {item.daemon_online
+                                    ? t("common.online")
+                                    : t("common.offline")}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>{t("items.detail.hostLabel")}</span>
+                                <span className="font-mono">
+                                  {item.socket_host ||
+                                    t("items.detail.localhost")}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>{t("items.detail.portLabel")}</span>
+                                <span className="font-mono">
+                                  {item.socket_port || 9000}
+                                </span>
+                              </div>
+                            </div>
+                            {item.status === "running" &&
+                              !item.daemon_online && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-2"
+                                  onClick={reconnect}
+                                >
+                                  <Plug className="size-4 mr-2" />
+                                  {t("items.detail.retryConnection")}
+                                </Button>
+                              )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="grid gap-2 rounded-xl border border-border/50 bg-muted/10 px-3 py-2 text-[11px] text-muted-foreground sm:grid-cols-2 sm:gap-3">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="shrink-0 uppercase tracking-[0.14em]">
+                            {t("items.workingDirectory")}
+                          </div>
+                          <div className="truncate font-mono text-foreground/90">
+                            {item.working_directory || t("common.notSet")}
+                          </div>
+                        </div>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="shrink-0 uppercase tracking-[0.14em]">
+                            {t("items.detail.startupCommand")}
+                          </div>
+                          <div className="truncate font-mono text-foreground/90">
+                            {item.command || t("common.notSet")}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="w-full shrink-0 xl:w-[23rem]">
+                    <div className="rounded-2xl border bg-card/85 shadow-sm h-[42rem] overflow-hidden">
+                      <ChatPanel itemId={item.id} />
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </TabsContent>
+
+            <TabsContent value="files">
+              <ItemFilesPanel itemId={item.id} />
+            </TabsContent>
+
+            <TabsContent value="handlers">
+              <ItemHandlersList itemId={item.id} />
+            </TabsContent>
+
+            <TabsContent value="filters" className="space-y-4">
+              <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Filter className="size-5 text-blue-500" />
+                    <h2 className="text-xl font-semibold">
+                      {t("items.detail.inputFilterSettings")}
+                    </h2>
+                  </div>
+                  <div className="flex min-h-8 items-center gap-2 text-xs text-muted-foreground">
+                    {isSavingInputFilter ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        <span>{t("items.detail.autoSaving")}</span>
+                      </>
+                    ) : inputFilterSaveState === "saved" ? (
+                      <>
+                        <Check className="size-4 text-emerald-500" />
+                        <span>{t("items.detail.autoSaved")}</span>
+                      </>
+                    ) : inputFilterSaveState === "error" ? (
+                      <>
+                        <AlertCircle className="size-4 text-red-500" />
+                        <span className="text-red-500">
+                          {t("items.detail.autoSaveFailed")}
+                        </span>
+                      </>
+                    ) : (
+                      <span>{t("items.detail.autoSaveEnabled")}</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mb-4 flex flex-wrap items-center gap-4 rounded-lg border bg-muted/30 p-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">
+                      {t("common.enabled")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setInputFilterEnabled(!inputFilterEnabled)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        inputFilterEnabled ? "bg-blue-500" : "bg-muted"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          inputFilterEnabled ? "translate-x-6" : "translate-x-1"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                <FilterGeneratorCard
+                  itemId={item.id}
+                  target="input"
+                  currentRules={inputFilterRules}
+                  onApply={setInputFilterRules}
+                />
+
+                <FilterRuleEditor
+                  value={inputFilterRules}
+                  onChange={setInputFilterRules}
+                  defaultRules={createDefaultInputRules()}
+                />
+
+                <div className="mt-4 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <Terminal className="size-4 text-blue-500" />
+                    <span className="text-sm font-medium">
+                      {t("items.detail.testInputFilter")}
+                    </span>
+                  </div>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">
+                        {t("items.detail.inputText")}
+                      </Label>
+                      <Textarea
+                        placeholder={t("items.detail.pasteTerminalOutput")}
+                        className="h-40 font-mono text-xs"
+                        value={inputTestText}
+                        onChange={(e) => setInputTestText(e.target.value)}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={handleTestInputFilter}
+                        disabled={isTestingInputFilter}
+                        className="w-full"
+                      >
+                        {isTestingInputFilter ? (
+                          <Loader2 className="mr-2 size-4 animate-spin" />
+                        ) : (
+                          <Play className="mr-2 size-4" />
+                        )}
+                        {t("items.detail.testFilter")}
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">
+                        {t("items.detail.filterResult")}
+                      </Label>
+                      <div className="h-40 overflow-auto rounded-md border bg-muted/30 p-3">
+                        {inputTestResult ? (
+                          <pre className="whitespace-pre-wrap text-xs font-mono">
+                            {String(inputTestResult.result || "")}
+                          </pre>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">
+                            {t("items.detail.clickTestFilter")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Shield className="size-5 text-orange-500" />
+                    <h2 className="text-xl font-semibold">
+                      {t("items.detail.outputFilterSettings")}
+                    </h2>
+                  </div>
+                  <div className="flex min-h-8 items-center gap-2 text-xs text-muted-foreground">
+                    {isSavingOutputFilter ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        <span>{t("items.detail.autoSaving")}</span>
+                      </>
+                    ) : outputFilterSaveState === "saved" ? (
+                      <>
+                        <Check className="size-4 text-emerald-500" />
+                        <span>{t("items.detail.autoSaved")}</span>
+                      </>
+                    ) : outputFilterSaveState === "error" ? (
+                      <>
+                        <AlertCircle className="size-4 text-red-500" />
+                        <span className="text-red-500">
+                          {t("items.detail.autoSaveFailed")}
+                        </span>
+                      </>
+                    ) : (
+                      <span>{t("items.detail.autoSaveEnabled")}</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mb-4 flex flex-wrap items-center gap-4 rounded-lg border bg-muted/30 p-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">
+                      {t("common.enabled")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOutputFilterEnabled(!outputFilterEnabled)
+                      }
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        outputFilterEnabled ? "bg-orange-500" : "bg-muted"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          outputFilterEnabled
+                            ? "translate-x-6"
+                            : "translate-x-1"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                <FilterGeneratorCard
+                  itemId={item.id}
+                  target="output"
+                  currentRules={outputFilterRules}
+                  onApply={setOutputFilterRules}
+                />
+
+                <FilterRuleEditor
+                  value={outputFilterRules}
+                  onChange={setOutputFilterRules}
+                  defaultRules={createDefaultOutputRules()}
+                />
+
+                <div className="mt-4 rounded-lg border border-orange-500/30 bg-orange-500/5 p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <Shield className="size-4 text-orange-500" />
+                    <span className="text-sm font-medium">
+                      {t("items.detail.testOutputFilter")}
+                    </span>
+                  </div>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">
+                        {t("items.detail.commandToTest")}
+                      </Label>
+                      <Textarea
+                        placeholder={t("items.detail.enterCommandToTest")}
+                        className="h-32 font-mono text-xs"
+                        value={outputTestCommand}
+                        onChange={(e) => setOutputTestCommand(e.target.value)}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={handleTestOutputFilter}
+                        disabled={isTestingOutputFilter}
+                        className="w-full"
+                      >
+                        {isTestingOutputFilter ? (
+                          <Loader2 className="mr-2 size-4 animate-spin" />
+                        ) : (
+                          <Play className="mr-2 size-4" />
+                        )}
+                        {t("items.detail.testCommand")}
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">
+                        {t("items.detail.filterResult")}
+                      </Label>
+                      <div className="h-32 overflow-auto rounded-md border bg-muted/30 p-3">
+                        {outputTestResult ? (
+                          <pre className="whitespace-pre-wrap text-xs font-mono">
+                            {String(outputTestResult.result || "")}
+                          </pre>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">
+                            {t("items.detail.clickTestCommand")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </TabsContent>
+
+            <TabsContent value="config" className="space-y-4">
+              <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                <h2 className="mb-4 text-xl font-semibold">
+                  {t("items.detail.keyInformation")}
+                </h2>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <CopyValue label={t("common.id")} value={item.id} />
+                  <KeyValue
+                    label={t("common.status")}
+                    value={getStatusLabel(locale, item.status)}
+                  />
+                  <KeyValue label={t("common.ownerId")} value={item.owner_id} />
+                  <KeyValue
+                    label={t("items.detail.socketHost")}
+                    value={item.socket_host}
+                  />
+                  <KeyValue
+                    label={t("items.detail.socketPort")}
+                    value={item.socket_port?.toString()}
+                  />
+                  <KeyValue
+                    label={t("items.detail.socketConnected")}
+                    value={
+                      item.socket_connected ? t("common.yes") : t("common.no")
+                    }
+                  />
+                  <KeyValue
+                    label={t("items.detail.command")}
+                    value={item.command}
+                  />
+                  <KeyValue
+                    label={t("items.workingDirectory")}
+                    value={item.working_directory}
+                  />
+                  <KeyValue
+                    label={t("items.detail.logMaxSize")}
+                    value={item.log_max_size_mb?.toString()}
+                  />
+                  <KeyValue
+                    label={t("items.detail.daemonUrl")}
+                    value={item.daemon_url}
+                  />
+                  <KeyValue
+                    label={t("common.createdAt")}
+                    value={formatDate(item.created_at, localeTag) || undefined}
+                  />
+                  <KeyValue
+                    label={t("common.updatedAt")}
+                    value={formatDate(item.updated_at, localeTag) || undefined}
+                  />
+                </div>
+              </section>
+
+              <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                <h2 className="mb-4 text-xl font-semibold">
+                  {t("items.detail.connectedUsers")}
+                </h2>
+                {item.connected_users &&
+                Object.keys(item.connected_users).length > 0 ? (
+                  <div className="space-y-2">
+                    {Object.entries(item.connected_users).map(
+                      ([sid, userInfo]) => (
+                        <div
+                          key={sid}
+                          className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="size-2 rounded-full bg-green-500" />
+                            <span className="font-mono text-sm">
+                              {userInfo.user_uuid}
+                            </span>
+                          </div>
+                          <span className="text-sm text-muted-foreground">
+                            {userInfo.ip}
+                          </span>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-muted-foreground">
+                    <Users className="mx-auto mb-2 size-8 opacity-50" />
+                    <p>{t("items.detail.noConnectedUsers")}</p>
+                  </div>
+                )}
+              </section>
+            </TabsContent>
+
+            <TabsContent value="memory">
+              <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                <MemoryManager itemId={item.id} />
+              </section>
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
     </div>
   )
@@ -1053,7 +1492,7 @@ export const Route = createFileRoute("/_layout/items/$itemId")({
   head: () => ({
     meta: [
       {
-        title: "Item Detail - TermMan",
+        title: "Terminal Detail - TermMan",
       },
     ],
   }),
@@ -1062,6 +1501,7 @@ export const Route = createFileRoute("/_layout/items/$itemId")({
 function ItemDetailRoute() {
   const { itemId } = Route.useParams()
   const queryClient = useQueryClient()
+  const { t } = useI18n()
 
   const cachedDetailItem = queryClient.getQueryData<ItemWithExtras>([
     "items",
@@ -1093,9 +1533,9 @@ function ItemDetailRoute() {
 
   const displayItem = (data as ItemWithExtras) ?? seedItem
   const message = isError
-    ? getErrorMessage(error)
+    ? getErrorMessage(error, t("items.detail.unableToLoad"))
     : !data && (isPending || isFetching)
-      ? "Loading live detail data..."
+      ? t("items.detail.loadingLiveData")
       : undefined
 
   return (

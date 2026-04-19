@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 
 import { ItemsService } from "@/client"
+import { useI18n } from "@/components/locale-provider"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -27,6 +28,7 @@ interface DeleteItemProps {
 const DeleteItem = ({ id, onSuccess }: DeleteItemProps) => {
   const [isOpen, setIsOpen] = useState(false)
   const queryClient = useQueryClient()
+  const { t } = useI18n()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const { handleSubmit } = useForm()
 
@@ -37,7 +39,7 @@ const DeleteItem = ({ id, onSuccess }: DeleteItemProps) => {
   const mutation = useMutation({
     mutationFn: deleteItem,
     onSuccess: () => {
-      showSuccessToast("The item was deleted successfully")
+      showSuccessToast(t("items.itemDeleted"))
       setIsOpen(false)
       onSuccess()
     },
@@ -59,22 +61,21 @@ const DeleteItem = ({ id, onSuccess }: DeleteItemProps) => {
         onClick={() => setIsOpen(true)}
       >
         <Trash2 />
-        Delete Item
+        {t("items.delete")}
       </DropdownMenuItem>
       <DialogContent className="sm:max-w-md">
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
-            <DialogTitle>Delete Item</DialogTitle>
+            <DialogTitle>{t("items.deleteTitle")}</DialogTitle>
             <DialogDescription>
-              This item will be permanently deleted. Are you sure? You will not
-              be able to undo this action.
+              {t("items.deleteDescription")}
             </DialogDescription>
           </DialogHeader>
 
           <DialogFooter className="mt-4">
             <DialogClose asChild>
               <Button variant="outline" disabled={mutation.isPending}>
-                Cancel
+                {t("common.cancel")}
               </Button>
             </DialogClose>
             <LoadingButton
@@ -82,7 +83,7 @@ const DeleteItem = ({ id, onSuccess }: DeleteItemProps) => {
               type="submit"
               loading={mutation.isPending}
             >
-              Delete
+              {t("common.delete")}
             </LoadingButton>
           </DialogFooter>
         </form>

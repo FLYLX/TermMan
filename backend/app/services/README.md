@@ -1,329 +1,140 @@
-# TermMan Backend Services
-
-TermMan 后端服务模块，实现了终端管理的核心业务逻辑。
-
-## 真实架构
-
-```
-浏览器  <----直连 Socket.IO---->  Daemon
-   ↑                               ↑
-   │                               │
-   └-------- HTTP API ------------ Backend
-```
-
-**重点：**
-- 浏览器 ↔ Daemon = 直连 WebSocket（终端、日志、输出流）
-- 浏览器 ↔ Backend = HTTP（登录、获取实例列表、权限）
-- Backend ↔ Daemon = WebSocket（控制、状态同步）
-
-## 目录结构
-
-```
-services/
-├── connection_pool/             # Daemon连接池管理
-│   ├── connection_manager.py    # 连接管理器（单例）
-│   ├── daemon_connection.py     # Daemon连接类
-│   └── connection_models.py     # 连接数据模型
-├── socket_pool/                 # Item Socket池管理
-│   ├── socket_manager.py        # Socket管理器（单例）
-│   ├── item_socket.py           # Item Socket类
-│   └── socket_models.py         # Socket数据模型
-├── protocol/                    # 协议定义
-│   ├── events.py                # 事件枚举
-│   └── codec.py                 # 数据编解码
-├── daemon_initializer.py        # Daemon连接初始化
-└── terminal_service.py          # 终端核心业务逻辑
-```
-
-## 核心连接表结构
-
-### 1. Daemon连接池表
-
-**管理者**: `ConnectionManager`
-
-```python
-connections: Dict[str, DaemonConnection]
-# Key: daemon_id = "{ip}:{port}:{api_key}"
-# Value: DaemonConnection 对象
-```
-
-**说明**:
-- 管理与所有Daemon的主控制连接
-- 用于发送终端控制命令（start/stop/status）
-- 接收Daemon推送的连接池更新
-
-### 2. Item-Token映射表
-
-**管理者**: `SocketManager`
-
-```python
-item_tokens: dict[str, dict[str, str]]
-# Key: daemon_id
-# Value: {item_uuid: token}
-```
-
-**说明**:
-- 记录每个终端实例的访问令牌
-- 用于Backend创建socket连接
-
-### 3. Item-连接映射表
-
-**管理者**: `SocketManager`
-
-```python
-connections: dict[str, dict[str, dict[str, str]]]
-# Key: item_uuid
-# Value: {sid -> {user_uuid, ip}}
-```
-
-**说明**:
-- 记录每个终端实例的所有连接用户
-- 从Daemon同步获取，用于状态展示
-
-## 浏览器直连 Daemon 认证流程
-
-### 1. 浏览器先登录 Backend（HTTP）
-
-```
-POST /api/v1/login
-→ 获取用户 token
-```
-
-### 2. 浏览器请求打开终端
-
-```
-GET /api/v1/items/{id}/terminal-token
-→ Backend 检查权限
-→ Backend 签发临时 access_token（有效期 5 分钟）
-```
-
-返回：
-```json
-{
-  "success": true,
-  "access_token": "item_uuid:user_uuid:timestamp:expires_in:signature",
-  "token_type": "Bearer",
-  "expires_in": 300,
-  "item_uuid": "xxx",
-  "user_uuid": "xxx",
-  "daemon_url": "http://daemon:9000"
-}
-```
-
-### 3. 浏览器使用 access_token 直连 Daemon
-
-```javascript
-const socket = io(daemon_url, {
-  auth: {
-    access_token: access_token
-  }
-});
-
-socket.emit("terminal/connect", {
-  item_uuid: item_uuid,
-  access_token: access_token
-});
-```
-
-### 4. Daemon 验证 access_token
-
-Daemon 直接验证 access_token（无需向 Backend 询问）：
-- 解析 token 格式
-- 验证时间戳是否过期
-- 验证签名是否正确
-- 验证 item_uuid 是否匹配
-
-## 连接池同步流程
-
-### 1. Backend 认证成功时
-
-```
-Backend --auth--> Daemon
-Daemon --connection_update(full_sync)--> Backend
-Backend 更新所有 item 的连接池表
-```
-
-### 2. 浏览器连接终端时
-
-```
-Browser --terminal/connect--> Daemon
-Daemon 验证 access_token
-Daemon 更新连接池表
-Daemon --connection_update(item_update)--> Backend
-Backend 更新对应 item 的连接池表
-```
-
-### 3. 连接断开时
-
-```
-Browser/Backend --disconnect--> Daemon
-Daemon 更新连接池表
-Daemon --connection_update(item_update)--> Backend
-Backend 更新对应 item 的连接池表
-```
-
-### 4. Item 启动/停止时
-
-```
-Backend --terminal/start--> Daemon
-Daemon 创建终端进程
-Daemon 生成 token
-Daemon --response(token)--> Backend
-Backend 保存 token
-Backend 创建 backend socket 连接
-```
-
-## 核心类
-
-### ConnectionManager
-
-管理Daemon连接池，只维护一张表。
-
-```python
-class ConnectionManager:
-    connections: Dict[str, DaemonConnection]  # daemon连接池表
-
-    def get_connection(daemon_id: str) -> Optional[DaemonConnection]
-    def get_or_create_connection(config: DaemonConfig) -> DaemonConnection
-    def remove_connection(daemon_id: str)
-    def get_all_connections() -> List[DaemonConnection]
-```
-
-### DaemonConnection
-
-单个Daemon节点的WebSocket连接封装。
-
-```python
-class DaemonConnection:
-    config: DaemonConfig
-    status: ConnectionStatus
-    sio: socketio.Client
-
-    # 终端控制方法
-    async def terminal_start(user_uuid, item_uuid, working_directory, command) -> Dict
-    async def terminal_stop(item_uuid) -> Dict
-    async def terminal_restart(item_uuid, user_uuid, working_directory, command) -> Dict
-    async def terminal_status(item_uuid) -> Dict
-
-    # 连接管理方法
-    async def get_connections(item_uuid) -> Dict
-    async def get_all_connections() -> Dict
-    async def disconnect_connection(item_uuid, user_uuid, ip_address) -> Dict
-    
-    # 事件回调
-    def on(event: str, callback: Callable)
-```
-
-### SocketManager
-
-Item Socket池管理，维护两张表。
-
-```python
-class SocketManager:
-    sockets: dict[tuple, ItemSocket]           # (user_uuid, item_uuid) -> ItemSocket
-    item_tokens: dict[str, dict[str, str]]     # daemon_id -> {item_uuid: token}
-    connections: dict[str, dict[str, dict]]    # item_uuid -> {sid -> {user_uuid, ip}}
-
-    # Socket连接管理
-    def get_socket(item_uuid, user_uuid) -> ItemSocket | None
-    def create_socket(item_uuid, token, daemon_url, user_uuid, api_key, ip_address) -> ItemSocket
-    def remove_socket(item_uuid, user_uuid)
-
-    # Token管理
-    def add_token(daemon_id, item_uuid, token)
-    def get_token(daemon_id, item_uuid) -> str | None
-    def get_token_by_item(item_uuid) -> tuple[str | None, str | None]
-
-    # 连接表操作
-    def get_connection_tables() -> dict
-    def update_connections_from_daemon(item_uuid, connections) -> bool
-```
-
-## API 端点
-
-### Backend HTTP API
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/items/{id}/terminal-token` | GET | 获取临时 access_token |
-| `/items/{id}/start` | POST | 启动终端 |
-| `/items/{id}/stop` | POST | 停止终端 |
-| `/items/{id}/disconnect-user` | POST | 断开用户连接 |
-
-## 协议事件
-
-```python
-class ProtocolEvents(str, Enum):
-    # 数据流事件
-    STREAM = "stream"                    # 终端输出流
-    WRITE = "terminal/write"             # 写入命令
-
-    # 终端控制事件
-    TERMINAL_START = "terminal/start"    # 启动终端
-    TERMINAL_STOP = "terminal/stop"      # 停止终端
-    TERMINAL_STATUS = "terminal/status"  # 终端状态
-
-    # 终端Socket事件
-    TERMINAL_CONNECT = "terminal/connect"  # 终端连接
-```
-
-## 安全机制
-
-1. **API Key 认证**: Backend ↔ Daemon 使用 api_key 认证
-2. **临时 Token**: 浏览器获取的 access_token 有效期 5 分钟
-3. **签名验证**: access_token 使用 HMAC-SHA256 签名
-4. **权限检查**: Backend 签发 token 前检查用户权限
-5. **Backend 保护**: backend 连接不能被 disconnect 接口断开
-
-## 环境变量
-
-### Backend
-
-```
-SECRET_KEY=your-secret-key-for-jwt-and-access-token
-```
-
-### Daemon
-
-```
-API_KEY=your-api-key-for-backend-auth
-SECRET_KEY=your-secret-key-for-access-token-verification
-```
-
-**注意**: Backend 和 Daemon 必须使用相同的 SECRET_KEY 才能正确验证 access_token。
-
-## 使用示例
-
-### 启动终端
-
-```python
-from app.services import connection_manager, socket_manager
-
-# 获取或创建Daemon连接
-config = DaemonConfig(ip="192.168.1.100", port=9000, api_key="secret")
-connection = connection_manager.get_or_create_connection(config)
-
-# 启动终端
-result = connection.terminal_start_http(
-    user_uuid="user-123",
-    item_uuid="item-456",
-    working_directory="/home/user/project",
-    command="npm start"
-)
-
-token = result.get("token")
-
-# 保存token
-socket_manager.add_token(connection.config.daemon_id, "item-456", token)
-```
-
-### 获取终端连接token
-
-```python
-# 在API路由中
-@router.get("/{id}/terminal-token")
-def get_terminal_token(session: SessionDep, current_user: CurrentUser, id: uuid.UUID):
-    # 检查权限
-    # 签发临时access_token
-    # 返回给浏览器
-```
+# Services 总览
+
+`backend/app/services/` 是 TermMan 后端的业务层。
+
+这里不再按子目录散落很多说明文档，统一只保留这一份总览，后面看结构直接看这个文件。
+
+## 目录职责
+
+- `agent/`
+  Agent 运行时本体。负责会话、提示词组装、技能、MCP、知识检索、记忆访问和流式输出编排。
+- `robot/`
+  外部聊天平台接入层。负责机器人配置、`robot -> item` 绑定、消息路由、最近会话记忆，以及过滤后终端输出回推。
+- `socket_pool/`
+  终端流分发层。负责 item socket、订阅关系、输出过滤后的 fan-out，以及 daemon 输出到上层服务的桥接。
+- `connection_pool/`
+  Daemon 连接管理层。负责 daemon 连接模型、连接生命周期、认证和重连。
+- `filters/`
+  终端输入/输出过滤规则。
+- `protocol/`
+  终端通信里共用的事件/协议定义。
+- 顶层 service 模块
+  负责认证、终端调度、daemon 初始化、LLM 健康检查、文本生成、文件传输、日志等横切能力。
+
+## Robot 结构
+
+机器人接入现在拆成两层：
+
+### 1. Backend 路由与业务层
+
+文件：
+
+- `robot/service.py`
+- `robot/contracts.py`
+- `robot/bridge_client.py`
+- `api/routes/robots.py`
+
+职责：
+
+- 存机器人配置和绑定关系
+- 决定一条机器人消息该交给哪个 item
+- 复用现有 item agent 对话链路
+- 记住最近会话路由和输出受众
+- 把待发送文本交给 bridge
+
+### 2. NoneBot2 Bridge 进程
+
+文件：
+
+- `robot/bridge/__main__.py`
+
+职责：
+
+- 用 `nonebot2 + nonebot-adapter-qq` 连接 QQ 官方机器人
+- 接 QQ 消息
+- 把 QQ 事件转成内部统一结构
+- 调 backend 内部 dispatch 接口
+- 把 backend 返回的内容发回 QQ
+
+## Robot 消息链路
+
+### 入站
+
+1. QQ 官方机器人通过 NoneBot2 bridge 连入。
+2. Bridge 收到 QQ 消息事件。
+3. Bridge 转成 `RobotInboundMessage`。
+4. Bridge 调用 `POST /api/v1/robots/{robot_id}/dispatch`。
+5. Backend 根据绑定关系选中目标 item。
+6. Backend 复用现有 agent 对话流程生成回复。
+7. Backend 返回 reply chunks。
+8. Bridge 再把这些 chunks 发回 QQ。
+
+### 过滤后终端输出回推
+
+1. Daemon 输出进入 `socket_pool/agent_bridge.py`。
+2. 调用 `robot_service.dispatch_filtered_output(...)`。
+3. Backend 找出 `receive_filtered_output=true` 的 robot 绑定。
+4. Backend 找出这个 item 最近记住的受众。
+5. Backend 把文本发给 bridge。
+6. Bridge 用当前在线的 QQ bot 连接回推到目标会话。
+
+## Agent 结构
+
+`agent/` 目录现在按能力拆分：
+
+- `agent.py`
+  Agent 主运行时编排。
+- `session.py`
+  单个 item 的 agent 会话状态。
+- `stream_manager.py`
+  流式响应管理。
+- `knowledge/`
+  知识检索和启用知识文件装配。
+- `memory/`
+  向量记忆访问。
+- `mcp/`
+  MCP 客户端、服务端和管理逻辑。
+- `prompts/`
+  Prompt 构建和策略拼装。
+- `skills/`
+  Skill 定义、发现和加载。
+- `history/`
+  聊天历史辅助逻辑。
+
+## 终端与 Daemon
+
+- `terminal_service.py`
+  面向 item 的终端编排服务。
+- `daemon_initializer.py`
+  Daemon 初始化和配置同步。
+- `item_file_service.py`
+  item 文件和知识文件的上传、下载、删除。
+- `connection_pool/`
+  长连接 daemon 通道、重连、认证。
+
+## 流分发
+
+- `socket_pool/item_socket.py`
+  单个 item 的 socket 通道。
+- `socket_pool/socket_manager.py`
+  socket 生命周期管理。
+- `socket_pool/subscription_center.py`
+  订阅者注册和 fan-out。
+- `socket_pool/terminal_stream_pipeline.py`
+  daemon 输出处理流水线。
+- `socket_pool/agent_bridge.py`
+  从过滤后输出桥接到 agent/robot 等上层消费方。
+
+## Filters
+
+- `filters/input_filter.py`
+  终端输入过滤。
+- `filters/output_filter.py`
+  终端输出过滤。
+
+## 规则
+
+- 协议适配层尽量薄，不做业务决策。
+- item 路由逻辑放在 service，不放在 adapter。
+- 复用现有 item agent 流程，不额外复制一套聊天运行时。
+- `services/` 目录默认只保留这一份总览文档，避免再堆很多零散 md。

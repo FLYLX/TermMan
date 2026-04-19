@@ -9,6 +9,7 @@ import signal
 from typing import Dict, Any, Optional
 from datetime import datetime
 from core import config
+from service.item_path_service import ItemPathError, item_path_service
 from utils.logger import logger
 
 
@@ -102,18 +103,39 @@ class TerminalProcess:
         self._rows = 24
         self._cols = 80
         self._line_buffer = ""
+        self._decode_buffer = b""
+
+    def _decode_with_fallbacks(self, payload: bytes) -> str | None:
+        if not payload:
+            return ""
+
+        candidates: list[str] = []
+        for encoding in [self.encoding, "utf-8", "gb18030", "gbk", "cp936"]:
+            if not encoding:
+                continue
+            lowered = encoding.lower()
+            if lowered not in {candidate.lower() for candidate in candidates}:
+                candidates.append(encoding)
+
+        for encoding in candidates:
+            try:
+                return payload.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+
+        return None
 
     def _get_workdir(self) -> str:
-        if self.working_directory:
-            workdir = self.working_directory
-        else:
-            workdir = os.path.join(
-                config.get("WORKDIR"),
-                self.user_uuid,
-                self.item_uuid
+        try:
+            workdir = item_path_service.resolve_workdir(
+                user_uuid=self.user_uuid,
+                item_uuid=self.item_uuid,
+                working_directory=self.working_directory,
+                create=True,
             )
-        os.makedirs(workdir, exist_ok=True)
-        return workdir
+            return str(workdir)
+        except ItemPathError as e:
+            raise ValueError(f"Invalid working_directory for item {self.item_uuid}: {e}") from e
 
     def notify_backend_connected(self):
         logger.info(f"[Terminal] Backend connected for item={self.item_uuid}")
@@ -145,6 +167,11 @@ class TerminalProcess:
                 os.environ['TERM'] = 'xterm-256color'
                 os.environ['COLUMNS'] = str(self._cols)
                 os.environ['LINES'] = str(self._rows)
+                os.environ['LANG'] = os.environ.get('LANG', 'C.UTF-8')
+                os.environ['LC_ALL'] = os.environ.get('LC_ALL', 'C.UTF-8')
+                os.environ['LC_CTYPE'] = os.environ.get('LC_CTYPE', os.environ['LC_ALL'])
+                os.environ['PYTHONUTF8'] = os.environ.get('PYTHONUTF8', '1')
+                os.environ['PYTHONIOENCODING'] = os.environ.get('PYTHONIOENCODING', 'utf-8')
                 
                 os.execvp(shell, [shell])
             else:
@@ -205,6 +232,53 @@ class TerminalProcess:
         except Exception as e:
             logger.error(f"[TerminalProcess] Broadcast failed: {e}")
 
+    def _decode_output_chunk(self, data: bytes) -> str:
+        if not data:
+            return ""
+
+        self._decode_buffer += data
+
+        try:
+            decoded = self._decode_buffer.decode(self.encoding)
+            self._decode_buffer = b""
+            return decoded
+        except UnicodeDecodeError as exc:
+            # UTF-8 / multi-byte encodings can split a character across reads.
+            # Keep the trailing incomplete bytes and only emit the valid prefix.
+            if exc.reason == "unexpected end of data" and exc.end == len(self._decode_buffer):
+                if exc.start == 0:
+                    return ""
+                decoded = self._decode_buffer[:exc.start].decode(self.encoding, errors="strict")
+                self._decode_buffer = self._decode_buffer[exc.start:]
+                return decoded
+
+            payload = self._decode_buffer
+            self._decode_buffer = b""
+
+            if decoded := self._decode_with_fallbacks(payload):
+                return decoded
+
+            try:
+                detected = chardet.detect(payload) if payload else {}
+                detected_encoding = detected.get("encoding") or self.encoding
+                confidence = float(detected.get("confidence") or 0)
+                low_value_encodings = {"ascii", "iso-8859-1", "latin-1", "windows-1252"}
+
+                if confidence < 0.75:
+                    return payload.decode(self.encoding, errors="replace")
+
+                if (
+                    detected_encoding.lower() in low_value_encodings
+                    and any(byte >= 0x80 for byte in payload)
+                ):
+                    return payload.decode(self.encoding, errors="replace")
+
+                if detected_encoding.lower() == self.encoding.lower():
+                    return payload.decode(self.encoding, errors="replace")
+                return payload.decode(detected_encoding, errors="replace")
+            except Exception:
+                return payload.decode(self.encoding, errors="replace")
+
     def _read_output(self):
         while self._running and self.master_fd is not None:
             try:
@@ -212,16 +286,10 @@ class TerminalProcess:
                 if not data:
                     logger.info(f"[Terminal] PTY master closed for {self.item_uuid}")
                     break
-                
-                try:
-                    decoded = data.decode(self.encoding)
-                except UnicodeDecodeError:
-                    try:
-                        detected = chardet.detect(data)
-                        detected_encoding = detected.get('encoding', self.encoding)
-                        decoded = data.decode(detected_encoding, errors='replace')
-                    except Exception:
-                        decoded = data.decode(self.encoding, errors='replace')
+
+                decoded = self._decode_output_chunk(data)
+                if not decoded:
+                    continue
                 
                 with self.lock:
                     self.stdout_buffer.append(decoded)

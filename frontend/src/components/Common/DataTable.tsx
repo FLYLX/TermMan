@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import React, { useState } from "react"
 
+import { useI18n } from "@/components/locale-provider"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -37,6 +38,8 @@ interface DataTableProps<TData, TValue> {
   data: TData[]
   getSubRows?: (row: TData) => any[]
   subRowsColumns?: ColumnDef<any, any>[]
+  onRowClick?: (row: TData) => void
+  onSubRowClick?: (row: any) => void
 }
 
 export function DataTable<TData, TValue>({
@@ -44,8 +47,11 @@ export function DataTable<TData, TValue>({
   data,
   getSubRows,
   subRowsColumns,
+  onRowClick,
+  onSubRowClick,
 }: DataTableProps<TData, TValue>) {
   const [expanded, setExpanded] = useState<ExpandedState>({})
+  const { t } = useI18n()
 
   const table = useReactTable({
     data,
@@ -89,14 +95,21 @@ export function DataTable<TData, TValue>({
           {table.getRowModel().rows.length ? (
             table.getRowModel().rows.map((row) => (
               <React.Fragment key={row.id}>
-                <TableRow key={`${row.id}-main`}>
+                <TableRow
+                  key={`${row.id}-main`}
+                  className={onRowClick ? "cursor-pointer" : undefined}
+                  onClick={() => onRowClick?.(row.original)}
+                >
                   {getSubRows && (
                     <TableCell className="p-0">
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 p-0"
-                        onClick={() => row.toggleExpanded()}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          row.toggleExpanded()
+                        }}
                       >
                         {row.getIsExpanded() ? (
                           <ChevronDown className="h-4 w-4" />
@@ -104,7 +117,9 @@ export function DataTable<TData, TValue>({
                           <ChevronRight className="h-4 w-4" />
                         )}
                         <span className="sr-only">
-                          {row.getIsExpanded() ? "Collapse" : "Expand"}
+                          {row.getIsExpanded()
+                            ? t("table.collapse")
+                            : t("table.expand")}
                         </span>
                       </Button>
                     </TableCell>
@@ -132,7 +147,15 @@ export function DataTable<TData, TValue>({
                             <Table className="w-full">
                               <TableBody>
                                 {subRows.map((subRow, index) => (
-                                  <TableRow key={`${row.id}-sub-${index}`}>
+                                  <TableRow
+                                    key={`${row.id}-sub-${index}`}
+                                    className={
+                                      onSubRowClick
+                                        ? "cursor-pointer"
+                                        : undefined
+                                    }
+                                    onClick={() => onSubRowClick?.(subRow)}
+                                  >
                                     {subRowsColumns.map((column, colIndex) => (
                                       <TableCell
                                         key={`${row.id}-sub-${index}-${colIndex}`}
@@ -161,7 +184,7 @@ export function DataTable<TData, TValue>({
                 colSpan={columns.length + 1}
                 className="h-32 text-center text-muted-foreground"
               >
-                No results found.
+                {t("table.noResults")}
               </TableCell>
             </TableRow>
           )}
@@ -172,22 +195,23 @@ export function DataTable<TData, TValue>({
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 border-t bg-muted/20">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
             <div className="text-sm text-muted-foreground">
-              Showing{" "}
-              {table.getState().pagination.pageIndex *
-                table.getState().pagination.pageSize +
-                1}{" "}
-              to{" "}
-              {Math.min(
-                (table.getState().pagination.pageIndex + 1) *
-                  table.getState().pagination.pageSize,
-                data.length,
-              )}{" "}
-              of{" "}
-              <span className="font-medium text-foreground">{data.length}</span>{" "}
-              entries
+              {t("table.showing", {
+                from:
+                  table.getState().pagination.pageIndex *
+                    table.getState().pagination.pageSize +
+                  1,
+                to: Math.min(
+                  (table.getState().pagination.pageIndex + 1) *
+                    table.getState().pagination.pageSize,
+                  data.length,
+                ),
+                total: data.length,
+              })}
             </div>
             <div className="flex items-center gap-x-2">
-              <p className="text-sm text-muted-foreground">Rows per page</p>
+              <p className="text-sm text-muted-foreground">
+                {t("table.rowsPerPage")}
+              </p>
               <Select
                 value={`${table.getState().pagination.pageSize}`}
                 onValueChange={(value) => {
@@ -212,11 +236,11 @@ export function DataTable<TData, TValue>({
 
           <div className="flex items-center gap-x-6">
             <div className="flex items-center gap-x-1 text-sm text-muted-foreground">
-              <span>Page</span>
+              <span>{t("table.page")}</span>
               <span className="font-medium text-foreground">
                 {table.getState().pagination.pageIndex + 1}
               </span>
-              <span>of</span>
+              <span>{t("table.of")}</span>
               <span className="font-medium text-foreground">
                 {table.getPageCount()}
               </span>
@@ -230,7 +254,7 @@ export function DataTable<TData, TValue>({
                 onClick={() => table.setPageIndex(0)}
                 disabled={!table.getCanPreviousPage()}
               >
-                <span className="sr-only">Go to first page</span>
+                <span className="sr-only">{t("table.firstPage")}</span>
                 <ChevronsLeft className="h-4 w-4" />
               </Button>
               <Button
@@ -240,7 +264,7 @@ export function DataTable<TData, TValue>({
                 onClick={() => table.previousPage()}
                 disabled={!table.getCanPreviousPage()}
               >
-                <span className="sr-only">Go to previous page</span>
+                <span className="sr-only">{t("table.previousPage")}</span>
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <Button
@@ -250,7 +274,7 @@ export function DataTable<TData, TValue>({
                 onClick={() => table.nextPage()}
                 disabled={!table.getCanNextPage()}
               >
-                <span className="sr-only">Go to next page</span>
+                <span className="sr-only">{t("table.nextPage")}</span>
                 <ChevronRight className="h-4 w-4" />
               </Button>
               <Button
@@ -260,7 +284,7 @@ export function DataTable<TData, TValue>({
                 onClick={() => table.setPageIndex(table.getPageCount() - 1)}
                 disabled={!table.getCanNextPage()}
               >
-                <span className="sr-only">Go to last page</span>
+                <span className="sr-only">{t("table.lastPage")}</span>
                 <ChevronsRight className="h-4 w-4" />
               </Button>
             </div>

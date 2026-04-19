@@ -1,11 +1,6 @@
 import { Link } from "@tanstack/react-router"
 
-import { useTheme } from "@/components/theme-provider"
 import { cn } from "@/lib/utils"
-import icon from "/assets/images/fastapi-icon.svg"
-import iconLight from "/assets/images/fastapi-icon-light.svg"
-import logo from "/assets/images/fastapi-logo.svg"
-import logoLight from "/assets/images/fastapi-logo-light.svg"
 
 interface LogoProps {
   variant?: "full" | "icon" | "responsive"
@@ -13,48 +8,65 @@ interface LogoProps {
   asLink?: boolean
 }
 
+function LogoMark({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "flex size-10 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 shadow-lg shadow-primary/10",
+        className,
+      )}
+    >
+      <span className="font-mono text-xs font-semibold uppercase tracking-[0.24em] text-primary">
+        TM
+      </span>
+    </div>
+  )
+}
+
+function LogoWordmark({ className }: { className?: string }) {
+  return (
+    <div className={cn("flex items-center gap-3", className)}>
+      <LogoMark />
+      <div className="flex min-w-0 flex-col leading-none">
+        <span className="font-mono text-[10px] uppercase tracking-[0.34em] text-primary/75">
+          Terminal Ops
+        </span>
+        <span className="text-lg font-semibold tracking-tight text-foreground">
+          TermMan
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export function Logo({
   variant = "full",
   className,
   asLink = true,
 }: LogoProps) {
-  const { resolvedTheme } = useTheme()
-  const isDark = resolvedTheme === "dark"
-
-  const fullLogo = isDark ? logoLight : logo
-  const iconLogo = isDark ? iconLight : icon
-
   const content =
     variant === "responsive" ? (
       <>
-        <img
-          src={fullLogo}
-          alt="FastAPI"
-          className={cn(
-            "h-6 w-auto group-data-[collapsible=icon]:hidden",
-            className,
-          )}
-        />
-        <img
-          src={iconLogo}
-          alt="FastAPI"
-          className={cn(
-            "size-5 hidden group-data-[collapsible=icon]:block",
-            className,
-          )}
-        />
+        <div className="group-data-[collapsible=icon]:hidden">
+          <LogoWordmark className={className} />
+        </div>
+        <div className="hidden group-data-[collapsible=icon]:block">
+          <LogoMark className={className} />
+        </div>
       </>
+    ) : variant === "full" ? (
+      <LogoWordmark className={className} />
     ) : (
-      <img
-        src={variant === "full" ? fullLogo : iconLogo}
-        alt="FastAPI"
-        className={cn(variant === "full" ? "h-6 w-auto" : "size-5", className)}
-      />
+      <LogoMark className={className} />
     )
 
   if (!asLink) {
     return content
   }
 
-  return <Link to="/">{content}</Link>
+  return (
+    <Link to="/" className="inline-flex items-center">
+      {content}
+    </Link>
+  )
 }

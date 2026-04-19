@@ -53,4 +53,4 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 
 WORKDIR /app/backend/
 
-CMD ["fastapi", "run", "--workers", "4", "app/main.py"]
+CMD ["bash", "scripts/run_backend.sh"]

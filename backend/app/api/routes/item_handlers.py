@@ -1,32 +1,81 @@
 import uuid
-from typing import Any, List
+from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from sqlmodel import col, func, select
+from pydantic import BaseModel
+from sqlmodel import col, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.models import (
-    ItemHandler, 
-    ItemHandlerCreate, 
-    ItemHandlerPublic, 
-    ItemHandlerUpdate, 
-    Message
+    ItemHandler,
+    ItemHandlerCreate,
+    ItemHandlerPublic,
+    ItemHandlerUpdate,
+    Message,
 )
 from app.services.agent.agent import agent_manager
+from app.services.agent.knowledge import knowledge_base_service
+from app.services.llm_health_service import llm_health_service
 
 router = APIRouter(prefix="/item-handlers", tags=["item-handlers"])
 
 
-@router.get("/", response_model=List[ItemHandlerPublic])
+class KnowledgeFileItem(BaseModel):
+    path: str
+    name: str
+    size: int | None = None
+    modified_at: int | None = None
+    enabled: bool
+    indexed: bool
+    missing: bool
+    chunk_count: int
+
+
+class KnowledgeFileListResponse(BaseModel):
+    data: list[KnowledgeFileItem]
+    count: int
+    enabled_count: int
+
+
+class ItemHandlerLlmStatusItem(BaseModel):
+    item_handler_id: uuid.UUID
+    status: str
+    reachable: bool
+    message: str | None = None
+    checked_at: datetime
+    cached: bool = False
+
+
+class ItemHandlerLlmStatusListResponse(BaseModel):
+    data: list[ItemHandlerLlmStatusItem]
+    count: int
+
+
+def _get_item_handler_or_404(session: SessionDep, item_handler_id: uuid.UUID) -> ItemHandler:
+    item_handler = session.get(ItemHandler, item_handler_id)
+    if not item_handler:
+        raise HTTPException(status_code=404, detail="Item handler not found")
+    return item_handler
+
+
+def _assert_item_handler_permission(item_handler: ItemHandler, current_user: CurrentUser) -> None:
+    if not current_user.is_superuser and item_handler.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+
+@router.get("/", response_model=list[ItemHandlerPublic])
 def read_item_handlers(
-    session: SessionDep, current_user: CurrentUser, skip: int = 0, limit: int = 100
+    session: SessionDep,
+    current_user: CurrentUser,
+    skip: int = 0,
+    limit: int = 100,
 ) -> Any:
     """
     Retrieve item handlers.
     """
-    
+
     if current_user.is_superuser:
-        # 超级用户可以查看所有item handlers
         statement = (
             select(ItemHandler)
             .order_by(col(ItemHandler.created_at).desc())
@@ -34,7 +83,6 @@ def read_item_handlers(
             .limit(limit)
         )
     else:
-        # 普通用户只能查看自己的item handlers
         statement = (
             select(ItemHandler)
             .where(ItemHandler.owner_id == current_user.id)
@@ -42,134 +90,179 @@ def read_item_handlers(
             .offset(skip)
             .limit(limit)
         )
-    
+
+    return session.exec(statement).all()
+
+
+@router.get("/llm/status", response_model=ItemHandlerLlmStatusListResponse)
+def read_item_handler_llm_statuses(
+    session: SessionDep,
+    current_user: CurrentUser,
+    skip: int = 0,
+    limit: int = 100,
+    force: bool = False,
+) -> ItemHandlerLlmStatusListResponse:
+    if current_user.is_superuser:
+        statement = (
+            select(ItemHandler)
+            .order_by(col(ItemHandler.created_at).desc())
+            .offset(skip)
+            .limit(limit)
+        )
+    else:
+        statement = (
+            select(ItemHandler)
+            .where(ItemHandler.owner_id == current_user.id)
+            .order_by(col(ItemHandler.created_at).desc())
+            .offset(skip)
+            .limit(limit)
+        )
+
     item_handlers = session.exec(statement).all()
-    return item_handlers
+    statuses = [
+        ItemHandlerLlmStatusItem.model_validate(item)
+        for item in llm_health_service.get_statuses(item_handlers, force=force)
+    ]
+    return ItemHandlerLlmStatusListResponse(
+        data=statuses,
+        count=len(statuses),
+    )
 
 
 @router.get("/{id}", response_model=ItemHandlerPublic)
 def read_item_handler(
-    session: SessionDep, current_user: CurrentUser, id: uuid.UUID
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
 ) -> Any:
     """
     Get item handler by ID.
     """
-    item_handler = session.get(ItemHandler, id)
-    if not item_handler:
-        raise HTTPException(status_code=404, detail="Item handler not found")
-    
-    # 检查权限：超级用户或所有者可以查看
-    if not current_user.is_superuser and (item_handler.owner_id != current_user.id):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
+
+    item_handler = _get_item_handler_or_404(session, id)
+    _assert_item_handler_permission(item_handler, current_user)
     return item_handler
 
 
 @router.post("/", response_model=ItemHandlerPublic)
 def create_item_handler(
-    *, session: SessionDep, current_user: CurrentUser, item_handler_in: ItemHandlerCreate
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    item_handler_in: ItemHandlerCreate,
 ) -> Any:
     """
     Create new item handler.
     """
-    
-    # 检查名称是否已存在
+
     existing_item_handler = session.exec(
         select(ItemHandler).where(
             ItemHandler.name == item_handler_in.name,
-            ItemHandler.owner_id == current_user.id
+            ItemHandler.owner_id == current_user.id,
         )
     ).first()
-    
+
     if existing_item_handler:
         raise HTTPException(
             status_code=400,
             detail="An item handler with this name already exists for your account.",
         )
-    
-    # 创建新的item handler
+
     item_handler = ItemHandler.model_validate(
-        item_handler_in, update={"owner_id": current_user.id}
+        item_handler_in,
+        update={"owner_id": current_user.id},
     )
-    
+
     session.add(item_handler)
     session.commit()
     session.refresh(item_handler)
-    
+
     return item_handler
 
 
 @router.put("/{id}", response_model=ItemHandlerPublic)
 def update_item_handler(
-    *, 
-    session: SessionDep, 
-    current_user: CurrentUser, 
-    id: uuid.UUID, 
-    item_handler_in: ItemHandlerUpdate
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    item_handler_in: ItemHandlerUpdate,
 ) -> Any:
     """
     Update an item handler.
     """
-    item_handler = session.get(ItemHandler, id)
-    if not item_handler:
-        raise HTTPException(status_code=404, detail="Item handler not found")
-    
-    # 检查权限：超级用户或所有者可以更新
-    if not current_user.is_superuser and (item_handler.owner_id != current_user.id):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    # 如果更新了名称，检查新名称是否已存在
+
+    item_handler = _get_item_handler_or_404(session, id)
+    _assert_item_handler_permission(item_handler, current_user)
+
     if item_handler_in.name and item_handler_in.name != item_handler.name:
         existing_item_handler = session.exec(
             select(ItemHandler).where(
                 ItemHandler.name == item_handler_in.name,
                 ItemHandler.owner_id == current_user.id,
-                ItemHandler.id != id  # 排除当前item handler
+                ItemHandler.id != id,
             )
         ).first()
-        
+
         if existing_item_handler:
             raise HTTPException(
                 status_code=400,
                 detail="An item handler with this name already exists for your account.",
             )
-    
-    # 更新item handler
+
     update_dict = item_handler_in.model_dump(exclude_unset=True)
+    if "enabled_knowledge_files" in update_dict:
+        update_dict["enabled_knowledge_files"] = knowledge_base_service.normalize_enabled_files(
+            update_dict.get("enabled_knowledge_files")
+        )
     item_handler.sqlmodel_update(update_dict)
-    
+
     session.add(item_handler)
     session.commit()
     session.refresh(item_handler)
-    
-    if "enabled_mcp_servers" in update_dict or "enabled_skills" in update_dict:
-        handler_id = str(item_handler.id)
-        if handler_id in agent_manager._agents:
-            agent = agent_manager._agents[handler_id]
-            if "enabled_skills" in update_dict:
-                agent.update_skills(item_handler.enabled_skills or [])
-            if "enabled_mcp_servers" in update_dict:
-                agent.update_mcp_servers(item_handler.enabled_mcp_servers or [])
-    
+
+    if update_dict:
+        agent_manager.refresh_cached(item_handler)
+
     return item_handler
 
 
 @router.delete("/{id}")
 def delete_item_handler(
-    session: SessionDep, current_user: CurrentUser, id: uuid.UUID
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
 ) -> Message:
     """
     Delete an item handler.
     """
-    item_handler = session.get(ItemHandler, id)
-    if not item_handler:
-        raise HTTPException(status_code=404, detail="Item handler not found")
-    
-    # 检查权限：超级用户或所有者可以删除
-    if not current_user.is_superuser and (item_handler.owner_id != current_user.id):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
+
+    item_handler = _get_item_handler_or_404(session, id)
+    _assert_item_handler_permission(item_handler, current_user)
+
     session.delete(item_handler)
     session.commit()
-    
+
     return Message(message="Item handler deleted successfully")
+
+
+@router.get("/{id}/knowledge/files", response_model=KnowledgeFileListResponse)
+def list_item_handler_knowledge_files(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+) -> KnowledgeFileListResponse:
+    item_handler = _get_item_handler_or_404(session, id)
+    _assert_item_handler_permission(item_handler, current_user)
+
+    files = [
+        KnowledgeFileItem.model_validate(item)
+        for item in knowledge_base_service.list_files(
+            item_handler.enabled_knowledge_files or [],
+        )
+    ]
+    return KnowledgeFileListResponse(
+        data=files,
+        count=len(files),
+        enabled_count=len([item for item in files if item.enabled]),
+    )

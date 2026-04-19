@@ -1,5 +1,4 @@
 import secrets
-import warnings
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -10,7 +9,6 @@ from pydantic import (
     computed_field,
     model_validator,
 )
-from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import Self
 
@@ -50,8 +48,8 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str
     SENTRY_DSN: HttpUrl | None = None
-    SQLITE_DATABASE_URL: Optional[str] = "sqlite:///./sql_app.db"
-    BACKEND_LOG_DIR: Optional[str] = None
+    SQLITE_DATABASE_URL: str | None = "sqlite:///./sql_app.db"
+    BACKEND_LOG_DIR: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -83,8 +81,29 @@ class Settings(BaseSettings):
     EMAIL_TEST_USER: EmailStr = "test@example.com"
     FIRST_SUPERUSER: EmailStr
     FIRST_SUPERUSER_PASSWORD: str
-    
+
     CHROMA_PERSIST_DIR: str = "./chroma_data"
+    KNOWLEDGE_BASE_DIR: str = "./knowledge"
+    ROBOT_PLUGIN_ENABLED: bool = True
+    ROBOT_BRIDGE_EMBEDDED: bool = False
+    ROBOT_BRIDGE_URL: str = "http://robot-bridge:8090"
+    ROBOT_BACKEND_URL: str = "http://backend:8000"
+    ROBOT_BRIDGE_SHARED_SECRET: str | None = None
+    ROBOT_BRIDGE_AUTO_RELOAD: bool = True
+    ROBOT_BRIDGE_HOST: str = "0.0.0.0"
+    ROBOT_BRIDGE_PORT: int = 8090
+    ROBOT_QQ_IS_SANDBOX: bool = False
+
+    @model_validator(mode="after")
+    def _apply_robot_bridge_defaults(self) -> Self:
+        if self.ROBOT_BRIDGE_EMBEDDED:
+            if self.ROBOT_BRIDGE_URL == "http://robot-bridge:8090":
+                self.ROBOT_BRIDGE_URL = "http://127.0.0.1:8090"
+            if self.ROBOT_BACKEND_URL == "http://backend:8000":
+                self.ROBOT_BACKEND_URL = "http://127.0.0.1:8000"
+            if self.ROBOT_BRIDGE_HOST == "0.0.0.0":
+                self.ROBOT_BRIDGE_HOST = "127.0.0.1"
+        return self
 
     # Security checks commented out as requested
     # def _check_default_secret(self, var_name: str, value: str | None) -> None:

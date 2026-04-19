@@ -56,6 +56,8 @@ services:
       dockerfile: backend/Dockerfile
     # command: sleep infinity  # Infinite loop to keep container alive doing nothing
     command:
+      - bash
+      - scripts/run_backend.sh
       - fastapi
       - run
       - --reload
@@ -67,6 +69,7 @@ services:
           target: /app/backend
           ignore:
             - ./backend/.venv
+            - ./backend/sql_app.db
             - .venv
         - path: ./backend/pyproject.toml
           action: rebuild
@@ -74,12 +77,20 @@ services:
     volumes:
       - ./backend/htmlcov:/app/backend/htmlcov
       - ./backend/skills:/app/backend/skills
+      - ./backend/knowledge:/app/backend/knowledge
     environment:
       SMTP_HOST: "mailcatcher"
       SMTP_PORT: "1025"
       SMTP_TLS: "false"
       EMAILS_FROM_EMAIL: "noreply@example.com"
       BACKEND_LOG_DIR: "/app/backend/app/services/log"
+      ROBOT_PLUGIN_ENABLED: "${ROBOT_PLUGIN_ENABLED:-true}"
+      ROBOT_BRIDGE_EMBEDDED: "${ROBOT_BRIDGE_EMBEDDED:-true}"
+      ROBOT_BACKEND_URL: "http://127.0.0.1:8000"
+      ROBOT_BRIDGE_URL: "http://127.0.0.1:8090"
+      ROBOT_BRIDGE_HOST: "127.0.0.1"
+      ROBOT_BRIDGE_PORT: "8090"
+      ROBOT_BRIDGE_SHARED_SECRET: "${SECRET_KEY}"
 
   mailcatcher:
     image: schickling/mailcatcher

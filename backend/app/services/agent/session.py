@@ -15,12 +15,12 @@ from uuid import uuid4
 from litellm import completion
 
 from app.services.agent.agent import Agent, agent_manager
-from app.services.agent.chat_history import append_chat_message
-from app.services.agent.prompt_builder import (
+from app.services.agent.history.chat import append_chat_message
+from app.services.agent.prompts.builder import (
     build_chat_turn_messages,
     build_terminal_turn_messages,
 )
-from app.services.agent.prompting import get_system_prompt
+from app.services.agent.prompts.system import get_system_prompt
 
 logger = logging.getLogger(__name__)
 

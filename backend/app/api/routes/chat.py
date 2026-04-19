@@ -5,33 +5,42 @@ import queue
 import re
 import threading
 import time
-from typing import Any, Generator
+from collections.abc import Generator
+from dataclasses import dataclass
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from litellm import completion
 from pydantic import BaseModel
-from sqlmodel import Session, select
 
 from app.api.deps import CurrentUser, SessionDep
-from app.models import Item, ItemHandler, ItemHandlerItem
-from app.services.agent import item_handler_context
+from app.models import ItemHandler
 from app.services.agent.agent import agent_manager
-from app.services.agent.chat_history import (
+from app.services.agent.chat_runtime import (
+    get_item_handler_llm_config,
+    prepare_chat_agent,
+)
+from app.services.agent.history.chat import (
     append_chat_message,
     get_previous_assistant_response_before_latest_user_message,
 )
-from app.services.agent.memory_policy import (
+from app.services.agent.memory.vector_store import vector_store
+from app.services.agent.prompts.builder import build_chat_turn_messages
+from app.services.agent.prompts.policy import (
     build_confirmation_memory_candidate,
     build_conversation_memory_candidate,
     build_status_update_memory_candidate,
     persist_memory_candidate,
 )
-from app.services.agent.memory.vector_store import vector_store
-from app.services.agent.prompt_builder import build_chat_turn_messages
-from app.services.agent.prompting import get_system_prompt
+from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.session import agent_session_manager
 from app.services.agent.stream_manager import stream_manager
+
+if TYPE_CHECKING:
+    from app.services.agent.agent import Agent
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +51,9 @@ MAX_ITERATIONS = 10
 LOOP_DETECTION_WINDOW = 6
 LOOP_THRESHOLD = 3
 SILENT_TOOL_NAMES = {"mcp_local_read_terminal_log"}
+AUTO_TASK_SOURCE = "agent_plan"
+AUTO_TASK_TTL_DAYS = 7
+MAX_AUTO_TASKS = 5
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -61,26 +73,19 @@ class ChatStreamRequest(BaseModel):
     history: list[ChatMessage] = []
 
 
-def get_item_handler_llm_config(
-    session: Session, item_id: str, user: CurrentUser
-) -> tuple[ItemHandler, Item] | None:
-    item = session.get(Item, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    if not user.is_superuser and item.owner_id != user.id:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
+@dataclass
+class PlannedTask:
+    memory_id: str
+    order: int
 
-    handler_item = session.exec(
-        select(ItemHandlerItem).where(ItemHandlerItem.item_id == item_id)
-    ).first()
-    if not handler_item:
-        return None
 
-    handler = session.get(ItemHandler, handler_item.item_handler_id)
-    if not handler:
-        return None
-
-    return handler, item
+@dataclass
+class PlannedTaskRuntime:
+    request_id: str
+    tasks: list[PlannedTask]
+    current_index: int = 0
+    tool_started: bool = False
+    tool_finished: bool = False
 
 
 def get_relevant_memories(
@@ -272,6 +277,347 @@ def _build_completion_kwargs(
     return kwargs
 
 
+def _contains_cjk(text: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", text))
+
+
+def _extract_json_payload(raw_content: str) -> Any | None:
+    candidates: list[str] = []
+    normalized = (raw_content or "").strip()
+    if not normalized:
+        return None
+
+    candidates.append(normalized)
+    if normalized.startswith("```"):
+        fenced = re.sub(r"^```(?:json)?\s*", "", normalized, flags=re.IGNORECASE)
+        fenced = re.sub(r"\s*```$", "", fenced)
+        candidates.append(fenced.strip())
+
+    first_object = normalized.find("{")
+    last_object = normalized.rfind("}")
+    if first_object != -1 and last_object > first_object:
+        candidates.append(normalized[first_object : last_object + 1])
+
+    first_array = normalized.find("[")
+    last_array = normalized.rfind("]")
+    if first_array != -1 and last_array > first_array:
+        candidates.append(normalized[first_array : last_array + 1])
+
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+
+    return None
+
+
+def _normalize_task_title(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+
+    normalized = value.strip()
+    normalized = re.sub(
+        r"^\s*(?:task|任务)?\s*\d+\s*[:：.\-、)]\s*",
+        "",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(r"^\s*[-*]\s*", "", normalized)
+    return normalized.strip()[:120]
+
+
+def _parse_task_titles(raw_content: str) -> list[str]:
+    payload = _extract_json_payload(raw_content)
+    if payload is None:
+        return []
+
+    if isinstance(payload, dict):
+        entries = (
+            payload.get("tasks")
+            or payload.get("items")
+            or payload.get("plan")
+            or payload.get("steps")
+            or []
+        )
+    elif isinstance(payload, list):
+        entries = payload
+    else:
+        entries = []
+
+    titles: list[str] = []
+    seen: set[str] = set()
+
+    for entry in entries:
+        title = ""
+        if isinstance(entry, str):
+            title = _normalize_task_title(entry)
+        elif isinstance(entry, dict):
+            for key in ("title", "task", "name", "content", "summary", "step"):
+                candidate = _normalize_task_title(entry.get(key))
+                if candidate:
+                    title = candidate
+                    break
+
+        if not title:
+            continue
+
+        fingerprint = title.casefold()
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        titles.append(title)
+
+        if len(titles) >= MAX_AUTO_TASKS:
+            break
+
+    return titles
+
+
+def _build_fallback_task_titles(message: str) -> list[str]:
+    normalized = (message or "").lower()
+    prefers_chinese = _contains_cjk(message)
+
+    if "python" in normalized or ".py" in normalized:
+        return (
+            ["编写 Python 代码", "执行 Python 脚本", "检查输出是否正确"]
+            if prefers_chinese
+            else ["Write the Python code", "Run the Python script", "Verify the output"]
+        )
+
+    if any(token in normalized for token in ("file", "folder", "目录", "文件")):
+        return (
+            ["确认目标文件与路径", "执行文件操作", "检查文件结果是否正确"]
+            if prefers_chinese
+            else ["Confirm the target file and path", "Perform the file operation", "Verify the file result"]
+        )
+
+    return (
+        ["分析用户请求", "执行所需操作", "检查结果并反馈"]
+        if prefers_chinese
+        else ["Analyze the request", "Perform the required operation", "Verify the result and report back"]
+    )
+
+
+def _plan_agent_task_titles(
+    handler: ItemHandler,
+    message: str,
+    history: list[ChatMessage],
+) -> list[str]:
+    prefers_chinese = _contains_cjk(message)
+    context_lines = [
+        f"{entry.role}: {entry.content.strip()}"
+        for entry in history[-4:]
+        if entry.content and entry.content.strip()
+    ]
+    context_block = "\n".join(context_lines).strip()
+
+    prompt_messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a task planner for a coding and terminal agent. "
+                "Break the user's latest request into 2 to 5 concrete execution tasks. "
+                "Return only JSON in the format "
+                '{"tasks":[{"title":"..."}]}. '
+                "Requirements: each task title must be short, actionable, ordered, and reflect actual execution. "
+                "The final task should verify the result. "
+                "Match the user's language."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Recent context:\n{context_block or '(none)'}\n\n"
+                f"Latest request:\n{message.strip()}\n\n"
+                "Return JSON only."
+            ),
+        },
+    ]
+
+    try:
+        kwargs = _build_completion_kwargs(
+            handler,
+            messages=prompt_messages,
+            tools=[],
+            stream=False,
+        )
+        kwargs["max_tokens"] = 300
+        response = completion(**kwargs)
+        raw_content = (
+            response.choices[0].message.content
+            if response and getattr(response, "choices", None)
+            else ""
+        )
+        titles = _parse_task_titles(raw_content or "")
+        if titles:
+            return titles
+        logger.warning("[Chat] Auto task planner returned no valid tasks for item handler %s", handler.id)
+    except Exception as exc:
+        logger.warning("[Chat] Auto task planner failed for handler %s: %s", handler.id, exc)
+
+    fallback_titles = _build_fallback_task_titles(message)
+    if prefers_chinese and len(fallback_titles) < 2:
+        return ["分析用户请求", "执行所需操作", "检查结果并反馈"]
+    if not prefers_chinese and len(fallback_titles) < 2:
+        return ["Analyze the request", "Perform the required operation", "Verify the result and report back"]
+    return fallback_titles
+
+
+def _clear_existing_agent_plan_tasks(item_id: str) -> None:
+    try:
+        memories = vector_store.get_all_memories(item_id, memory_type="task")
+    except Exception as exc:
+        logger.warning("[Chat] Failed to load existing task plan memories for item %s: %s", item_id, exc)
+        return
+
+    for memory in memories:
+        metadata = memory.get("metadata") or {}
+        if metadata.get("source") != AUTO_TASK_SOURCE:
+            continue
+        try:
+            vector_store.delete_memory(memory["id"])
+        except Exception as exc:
+            logger.warning("[Chat] Failed to delete stale task plan memory %s: %s", memory.get("id"), exc)
+
+
+def _update_agent_plan_memory(
+    memory_id: str,
+    *,
+    status: str | None = None,
+    task_state: str | None = None,
+) -> None:
+    memory = vector_store.get_memory(memory_id)
+    if not memory:
+        return
+
+    metadata = dict(memory.get("metadata") or {})
+    changed = False
+
+    if status and metadata.get("status") != status:
+        metadata["status"] = status
+        metadata["status_updated_at"] = datetime.now().isoformat()
+        changed = True
+
+    if task_state and metadata.get("task_state") != task_state:
+        metadata["task_state"] = task_state
+        changed = True
+
+    if not changed:
+        return
+
+    metadata["source"] = AUTO_TASK_SOURCE
+    metadata["type"] = AUTO_TASK_SOURCE
+    metadata["verified"] = True
+    metadata["updated_at"] = datetime.now().isoformat()
+
+    try:
+        vector_store.update_memory(
+            memory_id=memory_id,
+            content=str(memory.get("content") or ""),
+            metadata=metadata,
+        )
+    except Exception as exc:
+        logger.warning("[Chat] Failed to update task plan memory %s: %s", memory_id, exc)
+
+
+def _advance_agent_task_plan(plan: PlannedTaskRuntime | None, target_index: int) -> None:
+    if not plan or not plan.tasks:
+        return
+
+    bounded_index = max(0, min(target_index, len(plan.tasks) - 1))
+    if bounded_index == plan.current_index:
+        return
+
+    for index, task in enumerate(plan.tasks):
+        if index < bounded_index:
+            _update_agent_plan_memory(task.memory_id, status="completed", task_state="completed")
+        elif index == bounded_index:
+            _update_agent_plan_memory(task.memory_id, status="active", task_state="running")
+        else:
+            _update_agent_plan_memory(task.memory_id, status="active", task_state="pending")
+
+    plan.current_index = bounded_index
+
+
+def _complete_agent_task_plan(plan: PlannedTaskRuntime | None) -> None:
+    if not plan:
+        return
+
+    for task in plan.tasks:
+        _update_agent_plan_memory(task.memory_id, status="completed", task_state="completed")
+
+
+def _mark_agent_task_plan_failed(plan: PlannedTaskRuntime | None) -> None:
+    if not plan or not plan.tasks:
+        return
+
+    current_index = max(0, min(plan.current_index, len(plan.tasks) - 1))
+    for index, task in enumerate(plan.tasks):
+        if index < current_index:
+            _update_agent_plan_memory(task.memory_id, status="completed", task_state="completed")
+        elif index == current_index:
+            _update_agent_plan_memory(task.memory_id, status="active", task_state="failed")
+        else:
+            _update_agent_plan_memory(task.memory_id, status="active", task_state="pending")
+
+
+def _create_agent_task_plan(
+    item_id: str,
+    *,
+    handler: ItemHandler,
+    message: str,
+    history: list[ChatMessage],
+    tools: list[dict[str, Any]],
+) -> PlannedTaskRuntime | None:
+    if not tools:
+        return None
+
+    if build_status_update_memory_candidate(item_id, message, store=vector_store) is not None:
+        return None
+
+    _clear_existing_agent_plan_tasks(item_id)
+
+    task_titles = _plan_agent_task_titles(handler, message, history)
+    if not task_titles:
+        return None
+
+    prefers_chinese = _contains_cjk(message)
+    request_id = str(uuid4())
+    planned_tasks: list[PlannedTask] = []
+
+    for index, title in enumerate(task_titles, start=1):
+        content = f"{'任务' if prefers_chinese else 'Task'} {index}{'：' if prefers_chinese else ': '} {title}"
+        memory_id = vector_store.add_memory(
+            item_id=item_id,
+            content=content,
+            memory_type="task",
+            metadata={
+                "source": AUTO_TASK_SOURCE,
+                "type": AUTO_TASK_SOURCE,
+                "verified": True,
+                "status": "active",
+                "task_state": "running" if index == 1 else "pending",
+                "task_order": index,
+                "task_title": title,
+                "task_total": len(task_titles),
+                "task_request_id": request_id,
+            },
+            ttl_days=AUTO_TASK_TTL_DAYS,
+        )
+        if memory_id:
+            planned_tasks.append(PlannedTask(memory_id=memory_id, order=index))
+
+    if not planned_tasks:
+        return None
+
+    return PlannedTaskRuntime(
+        request_id=request_id,
+        tasks=planned_tasks,
+        current_index=0,
+    )
+
+
 def _append_conversation_memory(
     item_id: str,
     *,
@@ -366,6 +712,14 @@ def generate_stream(
     )
     yield _to_sse(user_event)
 
+    planned_task_runtime = _create_agent_task_plan(
+        item_id,
+        handler=handler,
+        message=message,
+        history=history,
+        tools=tools,
+    )
+
     tool_call_history: list[tuple[str, str]] = []
     final_response = ""
     loop = asyncio.new_event_loop()
@@ -374,6 +728,7 @@ def generate_stream(
     try:
         for _ in range(MAX_ITERATIONS):
             if AgentMessageQueue.is_aborted(item_id):
+                _mark_agent_task_plan_failed(planned_task_runtime)
                 warning_event = _persist_and_broadcast_event(
                     item_id,
                     role="assistant",
@@ -417,6 +772,7 @@ def generate_stream(
                         time.sleep(RETRY_DELAY)
 
             if response is None:
+                _mark_agent_task_plan_failed(planned_task_runtime)
                 error_text = str(last_error or "Unknown stream error")
                 error_event = _persist_and_broadcast_event(
                     item_id,
@@ -439,6 +795,7 @@ def generate_stream(
 
             for chunk in response:
                 if AgentMessageQueue.is_aborted(item_id):
+                    _mark_agent_task_plan_failed(planned_task_runtime)
                     warning_event = _persist_and_broadcast_event(
                         item_id,
                         role="assistant",
@@ -504,6 +861,7 @@ def generate_stream(
             if not ordered_tool_calls:
                 final_response = iteration_content.strip()
                 if final_response:
+                    _complete_agent_task_plan(planned_task_runtime)
                     response_event = _persist_and_broadcast_event(
                         item_id,
                         role="assistant",
@@ -525,6 +883,9 @@ def generate_stream(
                 not _should_hide_tool_details(tool_call["function"]["name"])
                 for tool_call in ordered_tool_calls
             )
+            if planned_task_runtime and len(planned_task_runtime.tasks) > 1:
+                _advance_agent_task_plan(planned_task_runtime, 1)
+                planned_task_runtime.tool_started = True
             thinking_text = iteration_content.strip()
             if thinking_text and has_visible_tool:
                 thinking_event = _persist_and_broadcast_event(
@@ -551,6 +912,7 @@ def generate_stream(
                     tool_args_str,
                 )
                 if in_loop:
+                    _mark_agent_task_plan_failed(planned_task_runtime)
                     warning_event = _persist_and_broadcast_event(
                         item_id,
                         role="assistant",
@@ -565,6 +927,7 @@ def generate_stream(
                 try:
                     tool_args = json.loads(tool_args_str) if tool_args_str else {}
                 except json.JSONDecodeError:
+                    _mark_agent_task_plan_failed(planned_task_runtime)
                     error_event = _persist_and_broadcast_event(
                         item_id,
                         role="assistant",
@@ -599,6 +962,13 @@ def generate_stream(
                 result_text = _format_tool_result(result)
 
                 if result_text and not hide_tool_details:
+                    if (
+                        planned_task_runtime
+                        and not planned_task_runtime.tool_finished
+                        and len(planned_task_runtime.tasks) > 2
+                    ):
+                        _advance_agent_task_plan(planned_task_runtime, 2)
+                        planned_task_runtime.tool_finished = True
                     result_event = _persist_and_broadcast_event(
                         item_id,
                         role="assistant",
@@ -635,10 +1005,12 @@ def generate_stream(
             content=f"Stopped after reaching the max iteration limit ({MAX_ITERATIONS})",
             message_type="agent_warning",
         )
+        _mark_agent_task_plan_failed(planned_task_runtime)
         yield _to_sse(warning_event)
         yield _to_sse({"done": True})
     except Exception as exc:
         logger.exception("[Chat] Unexpected stream error for item %s", item_id)
+        _mark_agent_task_plan_failed(planned_task_runtime)
         error_event = _persist_and_broadcast_event(
             item_id,
             role="assistant",
@@ -657,32 +1029,6 @@ def generate_stream(
         loop.close()
 
 
-async def _prepare_chat_agent(
-    session: Session,
-    item_id: str,
-    current_user: CurrentUser,
-) -> tuple[ItemHandler, Item, "Agent"]:
-    result = get_item_handler_llm_config(session, item_id, current_user)
-    if not result:
-        raise HTTPException(
-            status_code=404,
-            detail="No ItemHandler associated with this item. Please associate an ItemHandler first.",
-        )
-
-    handler, item = result
-    if not handler.model:
-        raise HTTPException(
-            status_code=400,
-            detail=f"ItemHandler '{handler.name}' has no model configured.",
-        )
-
-    agent = agent_manager.get_or_create(handler)
-    agent.set_item_context(item_id, item)
-    item_handler_context.set_handler(item_id, str(handler.id))
-    await agent.start_mcp_servers()
-    return handler, item, agent
-
-
 @router.post("/{item_id}")
 async def chat(
     item_id: str,
@@ -690,7 +1036,7 @@ async def chat(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> dict:
-    handler, _, agent = await _prepare_chat_agent(session, item_id, current_user)
+    handler, _, agent = await prepare_chat_agent(session, item_id, current_user)
     matched_skills = agent.match_skills(request.message)
 
     content = ""
@@ -731,7 +1077,7 @@ async def chat_stream(
     session: SessionDep,
     current_user: CurrentUser,
 ):
-    handler, _, agent = await _prepare_chat_agent(session, item_id, current_user)
+    handler, _, agent = await prepare_chat_agent(session, item_id, current_user)
 
     return StreamingResponse(
         generate_stream(
@@ -757,7 +1103,7 @@ async def get_matched_skills(
     session: SessionDep,
     current_user: CurrentUser,
 ):
-    _, _, agent = await _prepare_chat_agent(session, item_id, current_user)
+    _, _, agent = await prepare_chat_agent(session, item_id, current_user)
     matched = agent.match_skills(query)
     return {
         "matched_skills": [

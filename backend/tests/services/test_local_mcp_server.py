@@ -1,5 +1,5 @@
 from app.services.agent.mcp.local_server import LocalMCPServer
-from app.services.agent.prompting import get_system_prompt
+from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.skills import skill_loader
 
 

@@ -1,7 +1,21 @@
 from fastapi import APIRouter
 
-from app.api.routes import items, item_handlers, item_handler_associations, login, private, users, utils, skills, chat, memory, mcp
+from app.api.routes import (
+    chat,
+    item_handler_associations,
+    item_handlers,
+    items,
+    knowledge,
+    login,
+    mcp,
+    memory,
+    private,
+    skills,
+    users,
+    utils,
+)
 from app.core.config import settings
+from app.plugins.robot import include_robot_plugin_router
 
 api_router = APIRouter()
 api_router.include_router(login.router)
@@ -10,10 +24,12 @@ api_router.include_router(utils.router)
 api_router.include_router(items.router)
 api_router.include_router(item_handlers.router)
 api_router.include_router(item_handler_associations.router)
+api_router.include_router(knowledge.router)
 api_router.include_router(skills.router)
 api_router.include_router(chat.router)
 api_router.include_router(memory.router, prefix="/memory", tags=["memory"])
 api_router.include_router(mcp.router)
+include_robot_plugin_router(api_router)
 
 
 if settings.ENVIRONMENT == "local":

@@ -87,6 +87,23 @@ class VectorStoreService:
         self._embedding_service = EmbeddingService()
         logger.info("[VectorStore] ChromaDB initialized with persistence")
 
+    @staticmethod
+    def _build_where_filter(
+        item_id: str | None = None,
+        memory_type: MemoryType | None = None,
+    ) -> dict[str, Any] | None:
+        filters: list[dict[str, Any]] = []
+        if item_id:
+            filters.append({"item_id": item_id})
+        if memory_type:
+            filters.append({"memory_type": memory_type})
+
+        if not filters:
+            return None
+        if len(filters) == 1:
+            return filters[0]
+        return {"$and": filters}
+
     def add_memory(
         self,
         item_id: str,
@@ -152,10 +169,7 @@ class VectorStoreService:
     ) -> list[dict[str, Any]]:
         self._ensure_initialized()
         query_embedding = self._embedding_service.encode_single(query)
-
-        where_filter = {"item_id": item_id}
-        if memory_type:
-            where_filter["memory_type"] = memory_type
+        where_filter = self._build_where_filter(item_id=item_id, memory_type=memory_type)
 
         results = self._collection.query(
             query_embeddings=[query_embedding],
@@ -182,9 +196,7 @@ class VectorStoreService:
         memory_type: MemoryType | None = None,
     ) -> list[dict[str, Any]]:
         self._ensure_initialized()
-        where_filter = {"item_id": item_id}
-        if memory_type:
-            where_filter["memory_type"] = memory_type
+        where_filter = self._build_where_filter(item_id=item_id, memory_type=memory_type)
         
         results = self._collection.get(where=where_filter)
         

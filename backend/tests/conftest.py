@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -7,7 +8,7 @@ from sqlmodel import Session, delete
 from app.core.config import settings
 from app.core.db import engine, init_db
 from app.main import app
-from app.models import Item, User, ItemHandler, ItemHandlerItem, ItemHandlerUser, ItemChatSession
+from app.models import Item, User, ItemHandler, ItemHandlerItem, ItemHandlerUser, ItemChatSession, Robot, RobotItem
 from tests.utils.user import authentication_token_from_email
 from tests.utils.utils import get_superuser_token_headers
 
@@ -16,15 +17,26 @@ from tests.utils.utils import get_superuser_token_headers
 def db() -> Generator[Session, None, None]:
     # Create all tables before running tests
     from sqlmodel import SQLModel
+    if str(settings.SQLALCHEMY_DATABASE_URI).startswith("sqlite:///"):
+        db_path = Path(str(settings.SQLALCHEMY_DATABASE_URI).replace("sqlite:///", ""))
+        engine.dispose()
+        if db_path.exists():
+            db_path.unlink()
     SQLModel.metadata.create_all(engine)
     
     with Session(engine) as session:
         init_db(session)
         yield session
         # Clean up after tests
+        session.rollback()
         statement = delete(ItemHandlerItem)
         session.execute(statement)
         statement = delete(ItemHandlerUser)
+        session.execute(statement)
+        statement = delete(RobotItem)
+        session.execute(statement)
+        statement = delete(Robot)
+        session.execute(statement)
         statement = delete(ItemHandler)
         session.execute(statement)
         statement = delete(ItemChatSession)

@@ -1,0 +1,1118 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+from app.models import Robot
+
+from .contracts import RobotInboundMessage, RobotReplyTarget
+
+
+class RobotPlatformFieldPublic(BaseModel):
+    key: str
+    label: str
+    required: bool = True
+    secret: bool = False
+
+
+class RobotPlatformPublic(BaseModel):
+    id: str
+    label: str
+    provider: str = "nonebot2"
+    description: str
+    fields: list[RobotPlatformFieldPublic] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RobotPlatformFieldSpec:
+    key: str
+    label: str
+    required: bool = True
+    secret: bool = False
+
+    def to_public(self) -> RobotPlatformFieldPublic:
+        return RobotPlatformFieldPublic(
+            key=self.key,
+            label=self.label,
+            required=self.required,
+            secret=self.secret,
+        )
+
+
+BuildInitCallback = Callable[[dict[str, Any], dict[str, Any]], None]
+IdentityFromRobotCallback = Callable[[dict[str, Any]], str]
+IdentityFromBotCallback = Callable[[Any], str]
+
+
+@dataclass(frozen=True)
+class RobotPlatformSpec:
+    id: str
+    label: str
+    description: str
+    fields: tuple[RobotPlatformFieldSpec, ...]
+    adapter_module: str
+    adapter_class: str
+    build_init: BuildInitCallback
+    robot_identity: IdentityFromRobotCallback
+    bot_identity: IdentityFromBotCallback
+
+    def to_public(self) -> RobotPlatformPublic:
+        return RobotPlatformPublic(
+            id=self.id,
+            label=self.label,
+            description=self.description,
+            fields=[field.to_public() for field in self.fields],
+        )
+
+
+def _normalize_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _normalize_bool(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _normalize_int(value: Any, *, default: int | None = None) -> int | None:
+    normalized = _normalize_string(value)
+    if normalized is None:
+        return default
+    try:
+        return int(normalized)
+    except ValueError as exc:
+        raise ValueError(f"Invalid integer value `{normalized}`") from exc
+
+
+def _ensure_required_fields(
+    platform: RobotPlatformSpec,
+    credentials: dict[str, Any],
+) -> None:
+    missing = [
+        field.label
+        for field in platform.fields
+        if field.required and _normalize_string(credentials.get(field.key)) is None
+    ]
+    if missing:
+        raise ValueError(
+            f"Platform `{platform.id}` requires: {', '.join(missing)}",
+        )
+
+
+def _append_config_item(
+    init_kwargs: dict[str, Any],
+    key: str,
+    value: Any,
+) -> None:
+    init_kwargs.setdefault(key, []).append(value)
+
+
+def _merge_unique_value(
+    init_kwargs: dict[str, Any],
+    key: str,
+    value: Any,
+) -> None:
+    if value is None:
+        return
+    existing = init_kwargs.get(key)
+    if existing is None:
+        init_kwargs[key] = value
+        return
+    if existing != value:
+        raise ValueError(f"Conflicting shared adapter config for `{key}`")
+
+
+def _merge_mapping_item(
+    init_kwargs: dict[str, Any],
+    key: str,
+    item_key: str,
+    item_value: Any,
+) -> None:
+    if item_value is None:
+        return
+    mapping = init_kwargs.setdefault(key, {})
+    existing = mapping.get(item_key)
+    if existing is not None and existing != item_value:
+        raise ValueError(f"Conflicting shared adapter config for `{key}.{item_key}`")
+    mapping[item_key] = item_value
+
+
+def _credential_identity(platform_id: str, value: Any) -> str:
+    normalized = _normalize_string(value)
+    if normalized is None:
+        raise ValueError(f"Platform `{platform_id}` identity is missing")
+    return f"{platform_id}:{normalized}"
+
+
+def _compound_identity(platform_id: str, *parts: Any) -> str:
+    normalized = [str(part).strip() for part in parts]
+    return f"{platform_id}:{'|'.join(normalized)}"
+
+
+def _normalize_endpoint(value: Any) -> str:
+    return str(value or "").strip().rstrip("/")
+
+
+def _build_qq_init(init_kwargs: dict[str, Any], runtime_config: dict[str, Any]) -> None:
+    from nonebot.adapters.qq.config import BotInfo
+
+    credentials = runtime_config["credentials"]
+    options = runtime_config["options"]
+    _append_config_item(
+        init_kwargs,
+        "qq_bots",
+        BotInfo(
+            id=str(credentials["app_id"]),
+            token=str(credentials["bot_token"]),
+            secret=str(credentials["app_secret"]),
+            use_websocket=_normalize_bool(options.get("use_websocket"), default=True),
+        ),
+    )
+
+
+def _build_telegram_init(
+    init_kwargs: dict[str, Any],
+    runtime_config: dict[str, Any],
+) -> None:
+    from nonebot.adapters.telegram.config import BotConfig
+
+    credentials = runtime_config["credentials"]
+    _append_config_item(
+        init_kwargs,
+        "telegram_bots",
+        BotConfig(
+            token=str(credentials["bot_token"]),
+        ),
+    )
+
+
+def _build_discord_init(
+    init_kwargs: dict[str, Any],
+    runtime_config: dict[str, Any],
+) -> None:
+    from nonebot.adapters.discord.config import BotInfo
+
+    credentials = runtime_config["credentials"]
+    _append_config_item(
+        init_kwargs,
+        "discord_bots",
+        BotInfo(
+            token=str(credentials["bot_token"]),
+        ),
+    )
+
+
+def _build_onebot_v11_init(
+    init_kwargs: dict[str, Any],
+    runtime_config: dict[str, Any],
+) -> None:
+    credentials = runtime_config["credentials"]
+    _merge_unique_value(
+        init_kwargs,
+        "onebot_access_token",
+        _normalize_string(credentials.get("access_token")),
+    )
+    _merge_unique_value(
+        init_kwargs,
+        "onebot_secret",
+        _normalize_string(credentials.get("secret")),
+    )
+    init_kwargs.setdefault("onebot_ws_urls", set()).add(str(credentials["ws_url"]))
+    _merge_mapping_item(
+        init_kwargs,
+        "onebot_api_roots",
+        str(credentials["self_id"]),
+        _normalize_string(credentials.get("api_root")),
+    )
+
+
+def _build_onebot_v12_init(
+    init_kwargs: dict[str, Any],
+    runtime_config: dict[str, Any],
+) -> None:
+    credentials = runtime_config["credentials"]
+    _merge_unique_value(
+        init_kwargs,
+        "onebot_access_token",
+        _normalize_string(credentials.get("access_token")),
+    )
+    init_kwargs.setdefault("onebot_ws_urls", set()).add(str(credentials["ws_url"]))
+    _merge_mapping_item(
+        init_kwargs,
+        "onebot_api_roots",
+        str(credentials["self_id"]),
+        _normalize_string(credentials.get("api_root")),
+    )
+
+
+def _build_satori_init(
+    init_kwargs: dict[str, Any],
+    runtime_config: dict[str, Any],
+) -> None:
+    from nonebot.adapters.satori.config import ClientInfo
+
+    credentials = runtime_config["credentials"]
+    _append_config_item(
+        init_kwargs,
+        "satori_clients",
+        ClientInfo(
+            host=str(credentials.get("host") or "localhost"),
+            port=int(credentials["port"]),
+            path=str(credentials.get("path") or ""),
+            token=_normalize_string(credentials.get("token")),
+        ),
+    )
+
+
+def _build_red_init(init_kwargs: dict[str, Any], runtime_config: dict[str, Any]) -> None:
+    from nonebot.adapters.red.config import BotInfo
+
+    credentials = runtime_config["credentials"]
+    _append_config_item(
+        init_kwargs,
+        "red_bots",
+        BotInfo(
+            host=str(credentials.get("host") or "localhost"),
+            port=int(credentials["port"]),
+            token=str(credentials["token"]),
+        ),
+    )
+
+
+def _build_dodo_init(init_kwargs: dict[str, Any], runtime_config: dict[str, Any]) -> None:
+    from nonebot.adapters.dodo.config import BotConfig
+
+    credentials = runtime_config["credentials"]
+    _append_config_item(
+        init_kwargs,
+        "bots",
+        BotConfig(
+            client_id=str(credentials["client_id"]),
+            token=str(credentials["token"]),
+        ),
+    )
+
+
+def _build_github_app_init(
+    init_kwargs: dict[str, Any],
+    runtime_config: dict[str, Any],
+) -> None:
+    from nonebot.adapters.github.config import GitHubApp
+
+    credentials = runtime_config["credentials"]
+    _append_config_item(
+        init_kwargs,
+        "github_apps",
+        GitHubApp(
+            app_id=str(credentials["app_id"]),
+            private_key=str(credentials["private_key"]),
+            client_id=_normalize_string(credentials.get("client_id")),
+            client_secret=_normalize_string(credentials.get("client_secret")),
+            webhook_secret=_normalize_string(credentials.get("webhook_secret")),
+        ),
+    )
+
+
+def _build_github_oauth_init(
+    init_kwargs: dict[str, Any],
+    runtime_config: dict[str, Any],
+) -> None:
+    from nonebot.adapters.github.config import OAuthApp
+
+    credentials = runtime_config["credentials"]
+    _append_config_item(
+        init_kwargs,
+        "github_apps",
+        OAuthApp(
+            client_id=str(credentials["client_id"]),
+            client_secret=str(credentials["client_secret"]),
+            webhook_secret=_normalize_string(credentials.get("webhook_secret")),
+        ),
+    )
+
+
+def _build_wxmp_init(init_kwargs: dict[str, Any], runtime_config: dict[str, Any]) -> None:
+    from nonebot.adapters.wxmp.config import BotInfo
+
+    credentials = runtime_config["credentials"]
+    _append_config_item(
+        init_kwargs,
+        "wxmp_bots",
+        BotInfo(
+            appid=str(credentials["appid"]),
+            token=str(credentials["token"]),
+            secret=str(credentials["secret"]),
+        ),
+    )
+
+
+def _build_minecraft_init(
+    init_kwargs: dict[str, Any],
+    runtime_config: dict[str, Any],
+) -> None:
+    credentials = runtime_config["credentials"]
+    _merge_unique_value(
+        init_kwargs,
+        "minecraft_access_token",
+        _normalize_string(credentials.get("access_token")),
+    )
+    mapping = init_kwargs.setdefault("minecraft_ws_urls", {})
+    mapping.setdefault(str(credentials["self_id"]), []).append(str(credentials["ws_url"]))
+
+
+def _build_vocechat_init(
+    init_kwargs: dict[str, Any],
+    runtime_config: dict[str, Any],
+) -> None:
+    from nonebot.adapters.vocechat.config import BotConfig
+
+    credentials = runtime_config["credentials"]
+    _append_config_item(
+        init_kwargs,
+        "vocechat_bots",
+        BotConfig(
+            name=_normalize_string(credentials.get("name")),
+            user_id=str(credentials["user_id"]),
+            server=str(credentials["server"]),
+            api_key=str(credentials["api_key"]),
+        ),
+    )
+
+
+def _build_yunhu_init(
+    init_kwargs: dict[str, Any],
+    runtime_config: dict[str, Any],
+) -> None:
+    from nonebot.adapters.yunhu.config import YunHuConfig
+
+    credentials = runtime_config["credentials"]
+    _append_config_item(
+        init_kwargs,
+        "yunhu_bots",
+        YunHuConfig(
+            app_id=str(credentials["app_id"]),
+            token=str(credentials["token"]),
+        ),
+    )
+
+
+def _build_mirai_init(
+    init_kwargs: dict[str, Any],
+    runtime_config: dict[str, Any],
+) -> None:
+    from nonebot.adapters.mirai.config import ClientInfo
+
+    credentials = runtime_config["credentials"]
+    _append_config_item(
+        init_kwargs,
+        "mirai_clients",
+        ClientInfo(
+            host=str(credentials.get("host") or "localhost"),
+            port=int(credentials.get("port") or 8080),
+            account=int(credentials["account"]),
+            verify_key=str(credentials["verify_key"]),
+        ),
+    )
+
+
+def _build_mail_init(init_kwargs: dict[str, Any], runtime_config: dict[str, Any]) -> None:
+    from nonebot.adapters.mail.config import BotInfo, HostInfo
+
+    credentials = runtime_config["credentials"]
+    _append_config_item(
+        init_kwargs,
+        "mail_bots",
+        BotInfo(
+            id=str(credentials["id"]),
+            name=str(credentials["name"]),
+            password=str(credentials["password"]),
+            subject=str(credentials["subject"]),
+            imap=HostInfo(
+                host=str(credentials["imap_host"]),
+                port=int(credentials.get("imap_port") or 993),
+                tls=_normalize_bool(credentials.get("imap_tls"), default=True),
+            ),
+            smtp=HostInfo(
+                host=str(credentials["smtp_host"]),
+                port=int(credentials.get("smtp_port") or 465),
+                tls=_normalize_bool(credentials.get("smtp_tls"), default=True),
+            ),
+        ),
+    )
+
+
+def _bot_self_id(bot: Any) -> str:
+    if hasattr(bot, "get_self_id"):
+        return str(bot.get_self_id())
+    return str(bot.self_id)
+
+
+def _token_prefix(token: str) -> str:
+    return token.split(":", 1)[0]
+
+
+_PLATFORMS: dict[str, RobotPlatformSpec] = {
+    "qq_official": RobotPlatformSpec(
+        id="qq_official",
+        label="QQ Official",
+        description="QQ official bot via NoneBot2.",
+        fields=(
+            RobotPlatformFieldSpec("app_id", "App ID"),
+            RobotPlatformFieldSpec("app_secret", "App Secret", secret=True),
+            RobotPlatformFieldSpec("bot_token", "Bot Token", secret=True),
+        ),
+        adapter_module="nonebot.adapters.qq",
+        adapter_class="Adapter",
+        build_init=_build_qq_init,
+        robot_identity=lambda credentials: _credential_identity(
+            "qq_official",
+            credentials.get("app_id"),
+        ),
+        bot_identity=lambda bot: _credential_identity(
+            "qq_official",
+            getattr(getattr(bot, "bot_info", None), "id", None) or _bot_self_id(bot),
+        ),
+    ),
+    "telegram": RobotPlatformSpec(
+        id="telegram",
+        label="Telegram",
+        description="Telegram bot with a Bot Token.",
+        fields=(RobotPlatformFieldSpec("bot_token", "Bot Token", secret=True),),
+        adapter_module="nonebot.adapters.telegram",
+        adapter_class="Adapter",
+        build_init=_build_telegram_init,
+        robot_identity=lambda credentials: _credential_identity(
+            "telegram",
+            _token_prefix(str(credentials["bot_token"])),
+        ),
+        bot_identity=lambda bot: _credential_identity(
+            "telegram",
+            _token_prefix(str(getattr(getattr(bot, "bot_config", None), "token", _bot_self_id(bot)))),
+        ),
+    ),
+    "discord": RobotPlatformSpec(
+        id="discord",
+        label="Discord",
+        description="Discord bot with a Bot Token.",
+        fields=(RobotPlatformFieldSpec("bot_token", "Bot Token", secret=True),),
+        adapter_module="nonebot.adapters.discord",
+        adapter_class="Adapter",
+        build_init=_build_discord_init,
+        robot_identity=lambda credentials: _credential_identity(
+            "discord",
+            credentials.get("bot_token"),
+        ),
+        bot_identity=lambda bot: _credential_identity(
+            "discord",
+            getattr(getattr(bot, "bot_info", None), "token", None)
+            or getattr(getattr(bot, "_bot_info", None), "token", None)
+            or _bot_self_id(bot),
+        ),
+    ),
+    "onebot_v11": RobotPlatformSpec(
+        id="onebot_v11",
+        label="OneBot V11",
+        description="OneBot V11 bridge. Requires the bot self_id.",
+        fields=(
+            RobotPlatformFieldSpec("self_id", "Self ID"),
+            RobotPlatformFieldSpec("ws_url", "WS URL"),
+            RobotPlatformFieldSpec("access_token", "Access Token", required=False, secret=True),
+            RobotPlatformFieldSpec("secret", "Secret", required=False, secret=True),
+            RobotPlatformFieldSpec("api_root", "API Root", required=False),
+        ),
+        adapter_module="nonebot.adapters.onebot.v11",
+        adapter_class="Adapter",
+        build_init=_build_onebot_v11_init,
+        robot_identity=lambda credentials: _credential_identity(
+            "onebot_v11",
+            credentials.get("self_id"),
+        ),
+        bot_identity=lambda bot: _credential_identity("onebot_v11", _bot_self_id(bot)),
+    ),
+    "onebot_v12": RobotPlatformSpec(
+        id="onebot_v12",
+        label="OneBot V12",
+        description="OneBot V12 bridge. Requires the bot self_id.",
+        fields=(
+            RobotPlatformFieldSpec("self_id", "Self ID"),
+            RobotPlatformFieldSpec("ws_url", "WS URL"),
+            RobotPlatformFieldSpec("access_token", "Access Token", required=False, secret=True),
+            RobotPlatformFieldSpec("api_root", "API Root", required=False),
+        ),
+        adapter_module="nonebot.adapters.onebot.v12",
+        adapter_class="Adapter",
+        build_init=_build_onebot_v12_init,
+        robot_identity=lambda credentials: _credential_identity(
+            "onebot_v12",
+            credentials.get("self_id"),
+        ),
+        bot_identity=lambda bot: _credential_identity("onebot_v12", _bot_self_id(bot)),
+    ),
+    "satori": RobotPlatformSpec(
+        id="satori",
+        label="Satori",
+        description="Satori gateway for multi-platform bridging.",
+        fields=(
+            RobotPlatformFieldSpec("host", "Host", required=False),
+            RobotPlatformFieldSpec("port", "Port"),
+            RobotPlatformFieldSpec("path", "Path", required=False),
+            RobotPlatformFieldSpec("token", "Token", required=False, secret=True),
+        ),
+        adapter_module="nonebot.adapters.satori",
+        adapter_class="Adapter",
+        build_init=_build_satori_init,
+        robot_identity=lambda credentials: _compound_identity(
+            "satori",
+            credentials.get("host") or "localhost",
+            credentials.get("port"),
+            credentials.get("path") or "",
+            credentials.get("token") or "",
+        ),
+        bot_identity=lambda bot: _compound_identity(
+            "satori",
+            getattr(getattr(bot, "info", None), "host", "localhost"),
+            getattr(getattr(bot, "info", None), "port", ""),
+            getattr(getattr(bot, "info", None), "path", ""),
+            getattr(getattr(bot, "info", None), "token", "") or "",
+        ),
+    ),
+    "red": RobotPlatformSpec(
+        id="red",
+        label="RedProtocol",
+        description="RedProtocol adapter for Red-based QQ bridges.",
+        fields=(
+            RobotPlatformFieldSpec("host", "Host", required=False),
+            RobotPlatformFieldSpec("port", "Port"),
+            RobotPlatformFieldSpec("token", "Token", secret=True),
+        ),
+        adapter_module="nonebot.adapters.red",
+        adapter_class="Adapter",
+        build_init=_build_red_init,
+        robot_identity=lambda credentials: _compound_identity(
+            "red",
+            credentials.get("host") or "localhost",
+            credentials.get("port"),
+            credentials.get("token"),
+        ),
+        bot_identity=lambda bot: _compound_identity(
+            "red",
+            getattr(getattr(bot, "info", None), "host", "localhost"),
+            getattr(getattr(bot, "info", None), "port", ""),
+            getattr(getattr(bot, "info", None), "token", ""),
+        ),
+    ),
+    "dodo": RobotPlatformSpec(
+        id="dodo",
+        label="DoDo",
+        description="DoDo bot with client_id and token.",
+        fields=(
+            RobotPlatformFieldSpec("client_id", "Client ID"),
+            RobotPlatformFieldSpec("token", "Token", secret=True),
+        ),
+        adapter_module="nonebot.adapters.dodo",
+        adapter_class="Adapter",
+        build_init=_build_dodo_init,
+        robot_identity=lambda credentials: _credential_identity(
+            "dodo",
+            credentials.get("client_id"),
+        ),
+        bot_identity=lambda bot: _credential_identity(
+            "dodo",
+            getattr(getattr(bot, "bot_config", None), "client_id", None) or _bot_self_id(bot),
+        ),
+    ),
+    "github_app": RobotPlatformSpec(
+        id="github_app",
+        label="GitHub App",
+        description="GitHub App for issue and webhook automation.",
+        fields=(
+            RobotPlatformFieldSpec("app_id", "App ID"),
+            RobotPlatformFieldSpec("private_key", "Private Key", secret=True),
+            RobotPlatformFieldSpec("client_id", "Client ID", required=False),
+            RobotPlatformFieldSpec("client_secret", "Client Secret", required=False, secret=True),
+            RobotPlatformFieldSpec("webhook_secret", "Webhook Secret", required=False, secret=True),
+        ),
+        adapter_module="nonebot.adapters.github",
+        adapter_class="Adapter",
+        build_init=_build_github_app_init,
+        robot_identity=lambda credentials: _credential_identity(
+            "github_app",
+            credentials.get("app_id"),
+        ),
+        bot_identity=lambda bot: _credential_identity(
+            "github_app",
+            getattr(getattr(bot, "app", None), "id", None) or _bot_self_id(bot),
+        ),
+    ),
+    "github_oauth": RobotPlatformSpec(
+        id="github_oauth",
+        label="GitHub OAuth",
+        description="GitHub OAuth app for webhook and callback flows.",
+        fields=(
+            RobotPlatformFieldSpec("client_id", "Client ID"),
+            RobotPlatformFieldSpec("client_secret", "Client Secret", secret=True),
+            RobotPlatformFieldSpec("webhook_secret", "Webhook Secret", required=False, secret=True),
+        ),
+        adapter_module="nonebot.adapters.github",
+        adapter_class="Adapter",
+        build_init=_build_github_oauth_init,
+        robot_identity=lambda credentials: _credential_identity(
+            "github_oauth",
+            credentials.get("client_id"),
+        ),
+        bot_identity=lambda bot: _credential_identity(
+            "github_oauth",
+            getattr(getattr(bot, "app", None), "id", None) or _bot_self_id(bot),
+        ),
+    ),
+    "wxmp": RobotPlatformSpec(
+        id="wxmp",
+        label="WXMP",
+        description="WeChat MP or mini-program adapter.",
+        fields=(
+            RobotPlatformFieldSpec("appid", "App ID"),
+            RobotPlatformFieldSpec("token", "Token", secret=True),
+            RobotPlatformFieldSpec("secret", "Secret", secret=True),
+        ),
+        adapter_module="nonebot.adapters.wxmp",
+        adapter_class="Adapter",
+        build_init=_build_wxmp_init,
+        robot_identity=lambda credentials: _credential_identity(
+            "wxmp",
+            credentials.get("appid"),
+        ),
+        bot_identity=lambda bot: _credential_identity(
+            "wxmp",
+            getattr(getattr(bot, "bot_info", None), "appid", None) or _bot_self_id(bot),
+        ),
+    ),
+    "minecraft": RobotPlatformSpec(
+        id="minecraft",
+        label="Minecraft",
+        description="Minecraft WebSocket adapter. Requires self_id.",
+        fields=(
+            RobotPlatformFieldSpec("self_id", "Self ID"),
+            RobotPlatformFieldSpec("ws_url", "WS URL"),
+            RobotPlatformFieldSpec("access_token", "Access Token", required=False, secret=True),
+        ),
+        adapter_module="nonebot.adapters.minecraft",
+        adapter_class="Adapter",
+        build_init=_build_minecraft_init,
+        robot_identity=lambda credentials: _credential_identity(
+            "minecraft",
+            credentials.get("self_id"),
+        ),
+        bot_identity=lambda bot: _credential_identity("minecraft", _bot_self_id(bot)),
+    ),
+    "vocechat": RobotPlatformSpec(
+        id="vocechat",
+        label="VoceChat",
+        description="VoceChat bot with user_id, server, and api_key.",
+        fields=(
+            RobotPlatformFieldSpec("user_id", "User ID"),
+            RobotPlatformFieldSpec("server", "Server"),
+            RobotPlatformFieldSpec("api_key", "API Key", secret=True),
+            RobotPlatformFieldSpec("name", "Name", required=False),
+        ),
+        adapter_module="nonebot.adapters.vocechat",
+        adapter_class="Adapter",
+        build_init=_build_vocechat_init,
+        robot_identity=lambda credentials: _compound_identity(
+            "vocechat",
+            _normalize_endpoint(credentials.get("server")),
+            credentials.get("user_id"),
+        ),
+        bot_identity=lambda bot: _compound_identity(
+            "vocechat",
+            _normalize_endpoint(getattr(bot, "server_base", "")),
+            getattr(bot, "user_id", None) or _bot_self_id(bot),
+        ),
+    ),
+    "yunhu": RobotPlatformSpec(
+        id="yunhu",
+        label="YunHu",
+        description="YunHu bot with app_id and token.",
+        fields=(
+            RobotPlatformFieldSpec("app_id", "App ID"),
+            RobotPlatformFieldSpec("token", "Token", secret=True),
+        ),
+        adapter_module="nonebot.adapters.yunhu",
+        adapter_class="Adapter",
+        build_init=_build_yunhu_init,
+        robot_identity=lambda credentials: _credential_identity(
+            "yunhu",
+            credentials.get("app_id"),
+        ),
+        bot_identity=lambda bot: _credential_identity(
+            "yunhu",
+            getattr(getattr(bot, "bot_config", None), "app_id", None) or _bot_self_id(bot),
+        ),
+    ),
+    "mirai": RobotPlatformSpec(
+        id="mirai",
+        label="Mirai",
+        description="Mirai bridge for QQ protocol bots.",
+        fields=(
+            RobotPlatformFieldSpec("account", "Account"),
+            RobotPlatformFieldSpec("verify_key", "Verify Key", secret=True),
+            RobotPlatformFieldSpec("host", "Host", required=False),
+            RobotPlatformFieldSpec("port", "Port", required=False),
+        ),
+        adapter_module="nonebot.adapters.mirai",
+        adapter_class="Adapter",
+        build_init=_build_mirai_init,
+        robot_identity=lambda credentials: _credential_identity(
+            "mirai",
+            credentials.get("account"),
+        ),
+        bot_identity=lambda bot: _credential_identity(
+            "mirai",
+            getattr(getattr(bot, "info", None), "account", None) or _bot_self_id(bot),
+        ),
+    ),
+    "mail": RobotPlatformSpec(
+        id="mail",
+        label="Mail",
+        description="Mail bot using inbox events as triggers.",
+        fields=(
+            RobotPlatformFieldSpec("id", "ID"),
+            RobotPlatformFieldSpec("name", "Name"),
+            RobotPlatformFieldSpec("password", "Password", secret=True),
+            RobotPlatformFieldSpec("subject", "Subject"),
+            RobotPlatformFieldSpec("imap_host", "IMAP Host"),
+            RobotPlatformFieldSpec("imap_port", "IMAP Port", required=False),
+            RobotPlatformFieldSpec("imap_tls", "IMAP TLS", required=False),
+            RobotPlatformFieldSpec("smtp_host", "SMTP Host"),
+            RobotPlatformFieldSpec("smtp_port", "SMTP Port", required=False),
+            RobotPlatformFieldSpec("smtp_tls", "SMTP TLS", required=False),
+        ),
+        adapter_module="nonebot.adapters.mail",
+        adapter_class="Adapter",
+        build_init=_build_mail_init,
+        robot_identity=lambda credentials: _credential_identity("mail", credentials.get("id")),
+        bot_identity=lambda bot: _credential_identity(
+            "mail",
+            getattr(getattr(bot, "bot_info", None), "id", None) or _bot_self_id(bot),
+        ),
+    ),
+}
+
+_PLATFORM_ALIASES = {
+    "qq": "qq_official",
+    "qqofficial": "qq_official",
+    "qq_official": "qq_official",
+    "telegram": "telegram",
+    "tg": "telegram",
+    "discord": "discord",
+    "onebot11": "onebot_v11",
+    "onebot_v11": "onebot_v11",
+    "onebot-v11": "onebot_v11",
+    "ob11": "onebot_v11",
+    "onebot12": "onebot_v12",
+    "onebot_v12": "onebot_v12",
+    "onebot-v12": "onebot_v12",
+    "ob12": "onebot_v12",
+    "satori": "satori",
+    "red": "red",
+    "redprotocol": "red",
+    "dodo": "dodo",
+    "githubapp": "github_app",
+    "github_app": "github_app",
+    "githuboauth": "github_oauth",
+    "github_oauth": "github_oauth",
+    "wxmp": "wxmp",
+    "minecraft": "minecraft",
+    "vocechat": "vocechat",
+    "yunhu": "yunhu",
+    "mirai": "mirai",
+    "mail": "mail",
+}
+
+_ADAPTER_NAME_TO_PLATFORM = {
+    "qq": "qq_official",
+    "telegram": "telegram",
+    "discord": "discord",
+    "onebot v11": "onebot_v11",
+    "onebot v12": "onebot_v12",
+    "satori": "satori",
+    "redprotocol": "red",
+    "dodo": "dodo",
+    "wxmp": "wxmp",
+    "minecraft": "minecraft",
+    "vocechat": "vocechat",
+    "yunhu": "yunhu",
+    "mirai": "mirai",
+    "mail": "mail",
+}
+
+
+def get_robot_platform(platform_id: str) -> RobotPlatformSpec:
+    normalized = normalize_robot_platform_id(platform_id)
+    try:
+        return _PLATFORMS[normalized]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported robot platform `{platform_id}`") from exc
+
+
+def list_supported_robot_platforms() -> list[RobotPlatformPublic]:
+    return [platform.to_public() for platform in _PLATFORMS.values()]
+
+
+def normalize_robot_platform_id(platform_id: str | None) -> str:
+    normalized = _normalize_string(platform_id)
+    if normalized is None:
+        raise ValueError("Robot platform is required")
+    key = normalized.lower().replace(" ", "").replace("-", "_")
+    try:
+        return _PLATFORM_ALIASES[key]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported robot platform `{platform_id}`") from exc
+
+
+def extract_robot_credentials(robot: Robot) -> dict[str, Any]:
+    config = robot.config if isinstance(robot.config, dict) else {}
+    raw_credentials = (
+        config.get("credentials") if isinstance(config.get("credentials"), dict) else {}
+    )
+    credentials = {
+        str(key): value
+        for key, value in raw_credentials.items()
+        if value is not None and value != ""
+    }
+
+    platform_id = normalize_robot_platform_id(robot.platform or robot.protocol)
+    if platform_id == "qq_official":
+        if robot.app_id:
+            credentials.setdefault("app_id", robot.app_id)
+        if robot.app_secret:
+            credentials.setdefault("app_secret", robot.app_secret)
+        if robot.bot_token:
+            credentials.setdefault("bot_token", robot.bot_token)
+    return credentials
+
+
+def normalize_robot_config(
+    platform_id: str,
+    config: dict[str, Any] | None,
+) -> dict[str, Any]:
+    platform = get_robot_platform(platform_id)
+    normalized_config = config if isinstance(config, dict) else {}
+    raw_credentials = (
+        normalized_config.get("credentials")
+        if isinstance(normalized_config.get("credentials"), dict)
+        else {}
+    )
+    raw_options = (
+        normalized_config.get("options")
+        if isinstance(normalized_config.get("options"), dict)
+        else {}
+    )
+
+    credentials = {
+        str(key): value
+        for key, value in raw_credentials.items()
+        if value is not None and value != ""
+    }
+    _ensure_required_fields(platform, credentials)
+
+    options = dict(raw_options)
+    if platform.id == "qq_official":
+        options["use_websocket"] = _normalize_bool(
+            options.get("use_websocket"),
+            default=True,
+        )
+
+    return {
+        "credentials": credentials,
+        "options": options,
+    }
+
+
+def validate_robot_platform_config(
+    platform_id: str,
+    config: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return normalize_robot_config(platform_id, config)
+
+
+def get_robot_runtime_config(robot: Robot) -> dict[str, Any]:
+    platform_id = normalize_robot_platform_id(robot.platform or robot.protocol)
+    config = robot.config if isinstance(robot.config, dict) else {}
+    options = config.get("options") if isinstance(config.get("options"), dict) else {}
+    runtime_config = {
+        "credentials": extract_robot_credentials(robot),
+        "options": dict(options),
+    }
+    if platform_id == "qq_official" and "use_websocket" not in runtime_config["options"]:
+        runtime_config["options"]["use_websocket"] = bool(robot.use_websocket)
+    return validate_robot_platform_config(platform_id, runtime_config)
+
+
+def build_nonebot_init_kwargs(robots: list[Robot]) -> dict[str, Any]:
+    init_kwargs: dict[str, Any] = {}
+    for robot in robots:
+        platform_id = normalize_robot_platform_id(robot.platform or robot.protocol)
+        platform = get_robot_platform(platform_id)
+        platform.build_init(init_kwargs, get_robot_runtime_config(robot))
+    return init_kwargs
+
+
+def register_nonebot_adapters(driver: Any, robots: list[Robot]) -> None:
+    adapter_imports: set[tuple[str, str]] = set()
+    for robot in robots:
+        platform = get_robot_platform(robot.platform or robot.protocol)
+        adapter_imports.add((platform.adapter_module, platform.adapter_class))
+
+    for module_name, class_name in adapter_imports:
+        module = __import__(module_name, fromlist=[class_name])
+        adapter_class = getattr(module, class_name)
+        driver.register_adapter(adapter_class)
+
+
+def resolve_robot_identity(platform_id: str, robot: Robot) -> str:
+    platform = get_robot_platform(platform_id)
+    return platform.robot_identity(get_robot_runtime_config(robot)["credentials"])
+
+
+def resolve_platform_from_bot(bot: Any) -> str | None:
+    module_name = bot.__class__.__module__.lower()
+    if "github" in module_name:
+        app = getattr(bot, "app", None)
+        if app is None:
+            return None
+        if app.__class__.__name__.lower() == "oauthapp":
+            return "github_oauth"
+        return "github_app"
+
+    adapter_name = str(bot.adapter.get_name()).strip().lower()
+    return _ADAPTER_NAME_TO_PLATFORM.get(adapter_name)
+
+
+def resolve_bot_identity(bot: Any) -> str:
+    platform_id = resolve_platform_from_bot(bot)
+    if platform_id is None:
+        raise ValueError("Unsupported bot adapter")
+    return get_robot_platform(platform_id).bot_identity(bot)
+
+
+def _extract_event_text(event: Any) -> str:
+    get_plaintext = getattr(event, "get_plaintext", None)
+    if callable(get_plaintext):
+        return str(get_plaintext() or "").strip()
+
+    get_message = getattr(event, "get_message", None)
+    if callable(get_message):
+        message = get_message()
+        extract_plain_text = getattr(message, "extract_plain_text", None)
+        if callable(extract_plain_text):
+            return str(extract_plain_text() or "").strip()
+        return str(message or "").strip()
+
+    return str(getattr(event, "message", "") or "").strip()
+
+
+def _extract_sender_key(
+    platform_id: str,
+    event: Any,
+    target_data: dict[str, Any],
+) -> str:
+    get_user_id = getattr(event, "get_user_id", None)
+    user_id = ""
+    if callable(get_user_id):
+        try:
+            user_id = str(get_user_id() or "")
+        except Exception:
+            user_id = ""
+
+    target_id = str(target_data.get("id") or "")
+    parent_id = str(target_data.get("parent_id") or "")
+    if bool(target_data.get("private")):
+        return f"{platform_id}:private:{user_id or target_id}"
+    scope = "channel" if bool(target_data.get("channel")) else "group"
+    return f"{platform_id}:{scope}:{parent_id or target_id}:{user_id or target_id}"
+
+
+def build_inbound_message(
+    platform_id: str,
+    bot: Any,
+    event: Any,
+) -> RobotInboundMessage | None:
+    text = _extract_event_text(event)
+    if not text:
+        return None
+
+    from nonebot_plugin_alconna import get_message_id, get_target
+
+    target = get_target(event, bot)
+    target_data = target.dump()
+    target_data["source"] = target.source or get_message_id(event, bot)
+
+    return RobotInboundMessage(
+        sender_key=_extract_sender_key(platform_id, event, target_data),
+        text=text,
+        reply_target=RobotReplyTarget(
+            target_type="universal",
+            target_id=str(target.id),
+            metadata={"target": target_data},
+        ),
+    )
+
+
+async def send_text_with_bot(
+    bot: Any,
+    target: RobotReplyTarget,
+    text: str,
+) -> None:
+    normalized_text = (text or "").strip()
+    if not normalized_text:
+        return
+
+    target_data = target.metadata.get("target")
+    if isinstance(target_data, dict):
+        from nonebot_plugin_alconna import UniMessage
+        from nonebot_plugin_alconna.uniseg import Target
+
+        loaded_target_data = dict(target_data)
+        source = str(loaded_target_data.pop("source", "") or "")
+        uni_target = Target.load(loaded_target_data)
+        if source:
+            uni_target.source = source
+        await UniMessage(normalized_text).send(target=uni_target, bot=bot)
+        return
+
+    platform_id = resolve_platform_from_bot(bot)
+    if platform_id == "qq_official":
+        msg_id = _normalize_string(target.metadata.get("msg_id"))
+        msg_seq = _normalize_int(target.metadata.get("msg_seq"), default=None)
+        if target.target_type == "c2c":
+            await bot.send_to_c2c(
+                target.target_id,
+                normalized_text,
+                msg_id=msg_id,
+                msg_seq=msg_seq,
+            )
+            return
+        if target.target_type == "group":
+            await bot.send_to_group(
+                target.target_id,
+                normalized_text,
+                msg_id=msg_id,
+                msg_seq=msg_seq,
+            )
+            return
+
+    raise ValueError("Unsupported reply target for current bot")

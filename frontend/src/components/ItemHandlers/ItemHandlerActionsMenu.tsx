@@ -9,7 +9,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import DeleteItemHandler from "./DeleteItemHandler"
-import EditItemHandler from "./EditItemHandler"
 
 interface ItemHandlerActionsMenuProps {
   itemHandler: ItemHandlerPublic
@@ -23,15 +22,15 @@ export const ItemHandlerActionsMenu = ({
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={(event) => event.stopPropagation()}
+        >
           <EllipsisVertical />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <EditItemHandler
-          itemHandler={itemHandler}
-          onSuccess={() => setOpen(false)}
-        />
         <DeleteItemHandler
           id={itemHandler.id}
           onSuccess={() => setOpen(false)}

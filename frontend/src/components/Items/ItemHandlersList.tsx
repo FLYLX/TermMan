@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Trash2 } from "lucide-react"
 
 import { type ItemHandler, ItemHandlerAssociationsService } from "@/client"
+import { useI18n } from "@/components/locale-provider"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -19,7 +20,31 @@ interface ItemHandlersListProps {
 
 const ItemHandlersList = ({ itemId }: ItemHandlersListProps) => {
   const queryClient = useQueryClient()
+  const { locale } = useI18n()
   const { showSuccessToast, showErrorToast } = useCustomToast()
+
+  const copy =
+    locale === "zh"
+      ? {
+          removed: "终端已从 TermHandler 中移除",
+          confirm: "确认将这个 TermHandler 从当前终端中移除吗？",
+          loading: "正在加载 TermHandler...",
+          title: "关联的 TermHandler",
+          description: "当前终端已连接的 TermHandler",
+          empty: "当前终端还没有关联任何 TermHandler。",
+          noModel: "未配置模型",
+          remove: "移除 TermHandler",
+        }
+      : {
+          removed: "Terminal removed from TermHandler successfully",
+          confirm: "Remove this TermHandler from the current terminal?",
+          loading: "Loading TermHandlers...",
+          title: "Attached TermHandlers",
+          description: "TermHandlers currently linked to this terminal",
+          empty: "No TermHandlers are linked to this terminal yet.",
+          noModel: "No model",
+          remove: "Remove TermHandler",
+        }
 
   const { data: handlers, isLoading: isHandlersLoading } = useQuery({
     queryFn: () =>
@@ -34,7 +59,7 @@ const ItemHandlersList = ({ itemId }: ItemHandlersListProps) => {
         itemId,
       }),
     onSuccess: () => {
-      showSuccessToast("Item removed from item handler successfully")
+      showSuccessToast(copy.removed)
     },
     onError: handleError.bind(showErrorToast),
     onSettled: () => {
@@ -45,28 +70,24 @@ const ItemHandlersList = ({ itemId }: ItemHandlersListProps) => {
   })
 
   const handleRemoveHandler = (itemHandlerId: string) => {
-    if (
-      confirm("Are you sure you want to remove this handler from the item?")
-    ) {
+    if (confirm(copy.confirm)) {
       mutation.mutate(itemHandlerId)
     }
   }
 
   if (isHandlersLoading) {
-    return <div className="p-4 text-muted-foreground">Loading handlers...</div>
+    return <div className="p-4 text-muted-foreground">{copy.loading}</div>
   }
 
   return (
     <Card className="mt-4">
       <CardHeader>
-        <CardTitle>Associated Item Handlers</CardTitle>
-        <CardDescription>Item handlers linked to this item</CardDescription>
+        <CardTitle>{copy.title}</CardTitle>
+        <CardDescription>{copy.description}</CardDescription>
       </CardHeader>
       <CardContent>
         {handlers?.length === 0 ? (
-          <div className="p-4 text-muted-foreground">
-            No item handlers associated with this item.
-          </div>
+          <div className="p-4 text-muted-foreground">{copy.empty}</div>
         ) : (
           <div className="space-y-4">
             {handlers?.map((handler: ItemHandler, index) => (
@@ -77,7 +98,7 @@ const ItemHandlersList = ({ itemId }: ItemHandlersListProps) => {
                 <div>
                   <div className="font-medium">{handler.name}</div>
                   <div className="text-sm text-muted-foreground">
-                    {handler.model || "No model"}
+                    {handler.model || copy.noModel}
                   </div>
                 </div>
                 <Button
@@ -88,7 +109,7 @@ const ItemHandlersList = ({ itemId }: ItemHandlersListProps) => {
                   disabled={mutation.isPending}
                 >
                   <Trash2 className="h-4 w-4" />
-                  <span className="sr-only">Remove handler</span>
+                  <span className="sr-only">{copy.remove}</span>
                 </Button>
               </div>
             ))}

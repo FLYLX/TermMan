@@ -1,8 +1,11 @@
+import json
 import logging
+import re
 import uuid
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Request
+from pydantic import BaseModel
 from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep
@@ -19,21 +22,67 @@ from app.services import (
     DaemonConfig,
     backend_conn_pool,
     connection_manager,
+    item_file_service,
     log_manager,
     socket_pool_facade,
     sync_daemon_connection_state,
 )
+from app.services.item_file_service import ItemFileServiceError
 from app.services.filters import (
     InputFilter,
     InputFilterConfig,
     OutputFilter,
     OutputFilterConfig,
 )
+from app.services.llm_generation_service import (
+    LlmGenerationError,
+    generate_json_payload,
+    get_item_handler_for_item,
+)
 from app.services.terminal_service import TerminalService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/items", tags=["items"])
+
+FILTER_ACTION_TYPES = {"block", "ignore", "log", "replace"}
+
+
+class FilePathRequest(BaseModel):
+    path: str
+
+
+class UploadTicketRequest(FilePathRequest):
+    allow_overwrite: bool = False
+
+
+class RenamePathRequest(FilePathRequest):
+    target_path: str
+
+
+class FileWriteRequest(FilePathRequest):
+    content: str
+    encoding: str = "utf-8"
+
+
+class FileTicketVerifyRequest(BaseModel):
+    ticket: str
+    op: str
+
+
+class GenerateFilterRequest(BaseModel):
+    target: Literal["input", "output"]
+    instruction: str
+    existing_rules: dict[str, Any] | None = None
+
+
+class GenerateFilterResponse(BaseModel):
+    success: bool = True
+    target: Literal["input", "output"]
+    rules: dict[str, Any]
+    explanation: str = ""
+    item_handler_id: str
+    model: str
 
 
 def _get_daemon_status(item: Item) -> dict:
@@ -118,6 +167,155 @@ def _check_item_permission(item: Item, current_user: CurrentUser):
     """检查用户对item的权限"""
     if not current_user.is_superuser and item.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
+
+
+def _sanitize_filter_name(name: str, index: int, existing: set[str]) -> str:
+    candidate = re.sub(r"[^a-zA-Z0-9_]+", "_", (name or "").strip().lower()).strip(
+        "_"
+    )
+    if not candidate:
+        candidate = f"rule_{index}"
+
+    if candidate not in existing:
+        return candidate
+
+    suffix = 2
+    while f"{candidate}_{suffix}" in existing:
+        suffix += 1
+    return f"{candidate}_{suffix}"
+
+
+def _normalize_generated_filter_rules(raw_rules: Any) -> dict[str, Any]:
+    if not isinstance(raw_rules, dict):
+        raise LlmGenerationError(
+            "Generated rules must be a JSON object.",
+            status_code=502,
+        )
+
+    normalized_rules: dict[str, Any] = {}
+    for index, (raw_name, raw_rule) in enumerate(raw_rules.items(), start=1):
+        if not isinstance(raw_rule, dict):
+            raise LlmGenerationError(
+                f"Generated filter '{raw_name}' is invalid.",
+                status_code=502,
+            )
+
+        action_type = str(raw_rule.get("action_type", "")).strip().lower()
+        if action_type not in FILTER_ACTION_TYPES:
+            raise LlmGenerationError(
+                f"Generated filter '{raw_name}' uses an unsupported action_type.",
+                status_code=502,
+            )
+
+        raw_patterns = raw_rule.get("regex_patterns", [])
+        if not isinstance(raw_patterns, list):
+            raise LlmGenerationError(
+                f"Generated filter '{raw_name}' must contain regex_patterns.",
+                status_code=502,
+            )
+
+        patterns: list[str] = []
+        for raw_pattern in raw_patterns:
+            if not isinstance(raw_pattern, str):
+                continue
+            pattern = raw_pattern.strip()
+            if not pattern:
+                continue
+            try:
+                re.compile(pattern, re.IGNORECASE)
+            except re.error as exc:
+                raise LlmGenerationError(
+                    f"Generated regex '{pattern}' is invalid: {exc}",
+                    status_code=502,
+                ) from exc
+            patterns.append(pattern)
+
+        if not patterns:
+            continue
+
+        filter_name = _sanitize_filter_name(
+            str(raw_name),
+            index,
+            set(normalized_rules),
+        )
+        rule_payload: dict[str, Any] = {
+            "regex_patterns": patterns,
+            "action_type": action_type,
+        }
+
+        if action_type == "replace":
+            replace_rules: dict[str, str] = {}
+            action = raw_rule.get("action", {})
+            if isinstance(action, dict):
+                raw_replace_rules = action.get("replace_rules", {})
+                if isinstance(raw_replace_rules, dict):
+                    for pattern, replacement in raw_replace_rules.items():
+                        if not isinstance(pattern, str) or not isinstance(
+                            replacement, str
+                        ):
+                            continue
+                        replace_rules[pattern] = replacement
+
+            if replace_rules:
+                rule_payload["action"] = {"replace_rules": replace_rules}
+
+        normalized_rules[filter_name] = rule_payload
+
+    if not normalized_rules:
+        raise LlmGenerationError(
+            "LLM did not generate any usable filter rules.",
+            status_code=502,
+        )
+
+    return normalized_rules
+
+
+def _build_filter_generation_prompts(
+    *,
+    target: Literal["input", "output"],
+    existing_rules: dict[str, Any],
+    instruction: str,
+) -> tuple[str, str]:
+    target_label = (
+        "terminal output" if target == "input" else "generated shell commands"
+    )
+    target_behavior = (
+        "Input filters process terminal output. "
+        "Use 'block' to drop dangerous or useless output, 'ignore' to strip noisy fragments, "
+        "'log' to keep the content but mark it as important, and 'replace' to redact secrets."
+        if target == "input"
+        else "Output filters process shell commands before execution. "
+        "Use 'block' to deny dangerous commands, 'ignore' to strip harmless noise fragments, "
+        "'log' to keep the command but flag it, and 'replace' to redact or rewrite sensitive values."
+    )
+    schema = {
+        "rules": {
+            "rule_name": {
+                "regex_patterns": ["regex pattern"],
+                "action_type": "block|ignore|log|replace",
+                "action": {"replace_rules": {"regex pattern": "replacement"}},
+            }
+        },
+        "explanation": "short explanation",
+    }
+    system_prompt = (
+        "You design TermMan filter rules.\n"
+        "Return only a valid JSON object with the exact schema described by the user.\n"
+        "Generate a small set of precise rules. Avoid duplicate or overly broad regex.\n"
+        "Prefer 'block' only for clearly dangerous matches. Use 'replace' for redaction.\n"
+        "Every regex must be valid for Python's re module."
+    )
+    user_prompt = (
+        f"Target: {target} filter for {target_label}.\n"
+        f"Behavior: {target_behavior}\n\n"
+        "Current rules JSON:\n"
+        f"{json.dumps(existing_rules or {}, ensure_ascii=False, indent=2)}\n\n"
+        "Requested changes:\n"
+        f"{instruction.strip()}\n\n"
+        "Return JSON only using this shape:\n"
+        f"{json.dumps(schema, ensure_ascii=False, indent=2)}"
+    )
+    return system_prompt, user_prompt
 
 
 @router.get("/", response_model=dict[str, Any])
@@ -400,6 +598,209 @@ def verify_terminal_token(
     return result
 
 
+@router.get("/{id}/files/tree")
+def get_item_file_tree(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    path: str = "/",
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    try:
+        return item_file_service.list_tree(item=item, path=path)
+    except ItemFileServiceError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
+
+@router.get("/{id}/files/default-path")
+def get_item_default_file_path(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    try:
+        return item_file_service.get_default_path(item=item)
+    except ItemFileServiceError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
+
+@router.get("/{id}/files/content")
+def get_item_file_content(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    path: str,
+    preview_bytes: int = 256 * 1024,
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    try:
+        return item_file_service.get_content(item=item, path=path, preview_bytes=preview_bytes)
+    except ItemFileServiceError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
+
+@router.post("/{id}/files/write")
+def write_item_file_content(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    body: FileWriteRequest,
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    try:
+        return item_file_service.write_content(
+            item=item,
+            path=body.path,
+            content=body.content,
+            encoding=body.encoding,
+        )
+    except ItemFileServiceError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
+
+@router.post("/{id}/files/download-ticket")
+def issue_item_download_ticket(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    body: FilePathRequest,
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    try:
+        return item_file_service.issue_download_ticket(
+            item=item,
+            actor_user_id=str(current_user.id),
+            path=body.path,
+        )
+    except ItemFileServiceError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
+
+@router.post("/{id}/files/upload-ticket")
+def issue_item_upload_ticket(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    body: UploadTicketRequest,
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    try:
+        return item_file_service.issue_upload_ticket(
+            item=item,
+            actor_user_id=str(current_user.id),
+            path=body.path,
+            allow_overwrite=body.allow_overwrite,
+        )
+    except ItemFileServiceError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
+
+@router.post("/{id}/files/mkdir")
+def create_item_directory(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    body: FilePathRequest,
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    try:
+        return item_file_service.create_directory(item=item, path=body.path)
+    except ItemFileServiceError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
+
+@router.post("/{id}/files/rename")
+def rename_item_path(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    body: RenamePathRequest,
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    try:
+        return item_file_service.rename_path(
+            item=item,
+            path=body.path,
+            target_path=body.target_path,
+        )
+    except ItemFileServiceError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
+
+@router.post("/{id}/files/delete")
+def delete_item_path(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    body: FilePathRequest,
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    try:
+        return item_file_service.delete_path(item=item, path=body.path)
+    except ItemFileServiceError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
+
+@router.post("/file-ticket/verify")
+def verify_file_ticket(
+    request: Request,
+    body: FileTicketVerifyRequest,
+) -> dict[str, Any]:
+    from app.services.auth_service import auth_service
+
+    daemon_api_key = request.headers.get("X-Daemon-Api-Key", "").strip()
+    if not daemon_api_key:
+        raise HTTPException(status_code=401, detail="Missing daemon api key")
+
+    result = auth_service.validate_file_ticket(
+        ticket=body.ticket,
+        op=body.op,
+        daemon_api_key=daemon_api_key,
+        mark_used=True,
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=401, detail=result["error"])
+
+    return result
+
+
 @router.get("/{id}/subscribers")
 def get_item_subscribers(
     session: SessionDep, current_user: CurrentUser, id: uuid.UUID
@@ -500,6 +901,47 @@ def get_item_output(
         "lines": lines,
         "output": output
     }
+
+
+@router.post("/{id}/generate-filter", response_model=GenerateFilterResponse)
+def generate_item_filter(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    body: GenerateFilterRequest,
+) -> GenerateFilterResponse:
+    try:
+        item_handler, item = get_item_handler_for_item(session, id, current_user)
+
+        existing_rules = body.existing_rules
+        if existing_rules is None:
+            existing_rules = (
+                item.input_filter_rules
+                if body.target == "input"
+                else item.output_filter_rules
+            )
+
+        system_prompt, user_prompt = _build_filter_generation_prompts(
+            target=body.target,
+            existing_rules=existing_rules or {},
+            instruction=body.instruction,
+        )
+        payload = generate_json_payload(
+            item_handler,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        )
+        rules = _normalize_generated_filter_rules(payload.get("rules", payload))
+    except LlmGenerationError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
+    return GenerateFilterResponse(
+        target=body.target,
+        rules=rules,
+        explanation=str(payload.get("explanation", "")).strip(),
+        item_handler_id=str(item_handler.id),
+        model=item_handler.model or "",
+    )
 
 
 @router.post("/{id}/test-input-filter")

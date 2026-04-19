@@ -93,6 +93,19 @@ class ItemHandlerUser(SQLModel, table=True):
     )
 
 
+class RobotItem(SQLModel, table=True):
+    robot_id: uuid.UUID = Field(
+        foreign_key="robot.id", primary_key=True, ondelete="CASCADE", sa_type=SQLiteUUID, index=True
+    )
+    item_id: uuid.UUID = Field(
+        foreign_key="item.id", primary_key=True, ondelete="CASCADE", sa_type=SQLiteUUID, index=True
+    )
+    allow_chat: bool = Field(default=True)
+    receive_filtered_output: bool = Field(default=False)
+    chat_alias: Optional[str] = Field(default=None, max_length=64)
+    is_default_target: bool = Field(default=False)
+
+
 class User(UserBase, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True, sa_type=SQLiteUUID)
     hashed_password: str
@@ -103,6 +116,7 @@ class User(UserBase, table=True):
     items: List["Item"] = Relationship(back_populates="owner", cascade_delete=True)
     handlers: List["ItemHandler"] = Relationship(back_populates="users", link_model=ItemHandlerUser)
     owned_handlers: List["ItemHandler"] = Relationship(back_populates="owner", cascade_delete=True)
+    robots: List["Robot"] = Relationship(back_populates="owner", cascade_delete=True)
 
 
 # Properties to return via API, id is always required
@@ -179,6 +193,7 @@ class Item(ItemBase, table=True):
     )
     owner: Optional[User] = Relationship(back_populates="items")
     handlers: List["ItemHandler"] = Relationship(back_populates="items", link_model=ItemHandlerItem)
+    robots: List["Robot"] = Relationship(back_populates="items", link_model=RobotItem)
 
 
 # Properties to return via API, id is always required
@@ -197,6 +212,7 @@ class ItemHandlerBase(SQLModel):
     api_url: Optional[str] = Field(default=None, max_length=255)
     enabled_skills: Optional[List[str]] = Field(default=None, sa_type=JSON)
     enabled_mcp_servers: Optional[List[str]] = Field(default=None, sa_type=JSON)
+    enabled_knowledge_files: Optional[List[str]] = Field(default=None, sa_type=JSON)
 
 
 class ItemHandlerCreate(ItemHandlerBase):
@@ -236,6 +252,66 @@ class ItemHandlerPublic(ItemHandlerBase):
     owner_id: uuid.UUID
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+class RobotBase(SQLModel):
+    name: str = Field(min_length=1, max_length=255)
+    platform: str = Field(default="qq_official", max_length=50)
+    protocol: str = Field(default="qq_official", max_length=50)
+    provider: str = Field(default="nonebot2", max_length=50)
+    app_id: Optional[str] = Field(default=None, max_length=64)
+    app_secret: Optional[str] = Field(default=None, max_length=255)
+    bot_token: Optional[str] = Field(default=None, max_length=255)
+    use_websocket: bool = True
+    is_enabled: bool = True
+    config: dict = Field(default_factory=dict, sa_type=JSON)
+
+
+class RobotCreate(RobotBase):
+    pass
+
+
+class RobotUpdate(SQLModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    platform: Optional[str] = Field(default=None, max_length=50)
+    protocol: Optional[str] = Field(default=None, max_length=50)
+    provider: Optional[str] = Field(default=None, max_length=50)
+    app_id: Optional[str] = Field(default=None, max_length=64)
+    app_secret: Optional[str] = Field(default=None, max_length=255)
+    bot_token: Optional[str] = Field(default=None, max_length=255)
+    use_websocket: Optional[bool] = None
+    is_enabled: Optional[bool] = None
+    config: Optional[dict] = Field(default=None, sa_type=JSON)
+
+
+class Robot(RobotBase, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True, sa_type=SQLiteUUID)
+    created_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True)
+    )
+    updated_at: datetime = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),
+        sa_column_kwargs={"onupdate": get_datetime_utc}
+    )
+    owner_id: uuid.UUID = Field(
+        foreign_key="user.id", nullable=False, ondelete="CASCADE", sa_type=SQLiteUUID, index=True
+    )
+    owner: Optional[User] = Relationship(back_populates="robots")
+    items: List[Item] = Relationship(back_populates="robots", link_model=RobotItem)
+
+
+class RobotPublic(RobotBase):
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class RobotsPublic(SQLModel):
+    data: list[RobotPublic]
+    count: int
 
 
 class ItemChatSessionBase(SQLModel):

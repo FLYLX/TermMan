@@ -1,12 +1,18 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil } from "lucide-react"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { type ItemHandlerPublic, ItemHandlersService, SkillsService, McpService } from "@/client"
+import {
+  type ItemHandlerPublic,
+  ItemHandlersService,
+  McpService,
+  SkillsService,
+} from "@/client"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogClose,
@@ -28,9 +34,8 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
-import { Separator } from "@/components/ui/separator"
-import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 import ItemHandlerItemsList from "./ItemHandlerItemsList"
@@ -92,7 +97,7 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
         requestBody: data,
       }),
     onSuccess: () => {
-      showSuccessToast("ItemHandler updated successfully")
+      showSuccessToast("TermHandler updated successfully")
       setIsOpen(false)
       onSuccess()
     },
@@ -113,15 +118,15 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
         onClick={() => setIsOpen(true)}
       >
         <Pencil />
-        Edit ItemHandler
+        Edit TermHandler
       </DropdownMenuItem>
       <DialogContent className="sm:max-w-md">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)}>
             <DialogHeader>
-              <DialogTitle>Edit ItemHandler</DialogTitle>
+              <DialogTitle>Edit TermHandler</DialogTitle>
               <DialogDescription>
-                Update the item handler details below.
+                Update the TermHandler details below.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
@@ -190,7 +195,7 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
                   <FormItem>
                     <FormLabel>Enabled Skills</FormLabel>
                     <FormDescription>
-                      Select skills to enable for this handler
+                      Select skills to enable for this TermHandler
                     </FormDescription>
                     <ScrollArea className="h-32 border rounded p-2">
                       {skills.length === 0 ? (
@@ -206,14 +211,21 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
                             >
                               <FormControl>
                                 <Checkbox
-                                  checked={field.value?.includes(skill.skill_id)}
+                                  checked={field.value?.includes(
+                                    skill.skill_id,
+                                  )}
                                   onCheckedChange={(checked) => {
                                     const currentValue = field.value || []
                                     if (checked) {
-                                      field.onChange([...currentValue, skill.skill_id])
+                                      field.onChange([
+                                        ...currentValue,
+                                        skill.skill_id,
+                                      ])
                                     } else {
                                       field.onChange(
-                                        currentValue.filter((v) => v !== skill.skill_id)
+                                        currentValue.filter(
+                                          (v) => v !== skill.skill_id,
+                                        ),
                                       )
                                     }
                                   }}
@@ -242,7 +254,7 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
                   <FormItem>
                     <FormLabel>MCP Servers</FormLabel>
                     <FormDescription>
-                      Select MCP servers to enable for this handler
+                      Select MCP servers to enable for this TermHandler
                     </FormDescription>
                     <ScrollArea className="h-32 border rounded p-2">
                       {mcpServers.length === 0 ? (
@@ -262,10 +274,15 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
                                   onCheckedChange={(checked) => {
                                     const currentValue = field.value || []
                                     if (checked) {
-                                      field.onChange([...currentValue, server.name])
+                                      field.onChange([
+                                        ...currentValue,
+                                        server.name,
+                                      ])
                                     } else {
                                       field.onChange(
-                                        currentValue.filter((v: string) => v !== server.name)
+                                        currentValue.filter(
+                                          (v: string) => v !== server.name,
+                                        ),
                                       )
                                     }
                                   }}

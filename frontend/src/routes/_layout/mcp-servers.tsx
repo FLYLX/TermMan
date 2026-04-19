@@ -1,17 +1,16 @@
-import { useQueryClient, useSuspenseQuery, useMutation } from "@tanstack/react-query"
-import { createFileRoute } from "@tanstack/react-router"
+import { zodResolver } from "@hookform/resolvers/zod"
 import {
-  RefreshCw,
-  Search,
-  Plus,
-  Trash2,
-  Pencil,
-  Server,
-} from "lucide-react"
+  useMutation,
+  useQueryClient,
+  useSuspenseQuery,
+} from "@tanstack/react-query"
+import { createFileRoute } from "@tanstack/react-router"
+import { Pencil, Plus, RefreshCw, Search, Server, Trash2 } from "lucide-react"
 import { Suspense, useState } from "react"
+import { useForm } from "react-hook-form"
+import { z } from "zod"
 import { McpService } from "@/client"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import PendingItems from "@/components/Pending/PendingItems"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,12 +21,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog"
 import {
   Form,
@@ -41,13 +43,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
-import { Checkbox } from "@/components/ui/checkbox"
-import useCustomToast from "@/hooks/useCustomToast"
 import useAuth from "@/hooks/useAuth"
-import PendingItems from "@/components/Pending/PendingItems"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
-import { z } from "zod"
+import useCustomToast from "@/hooks/useCustomToast"
 
 function getMCPServersQueryOptions() {
   return {
@@ -70,7 +67,9 @@ type ServerFormData = z.infer<typeof serverFormSchema>
 function MCPServersPage() {
   const { data: servers } = useSuspenseQuery(getMCPServersQueryOptions())
   const { user: currentUser } = useAuth()
-  const [selectedServerName, setSelectedServerName] = useState<string | null>(null)
+  const [selectedServerName, setSelectedServerName] = useState<string | null>(
+    null,
+  )
   const [searchQuery, setSearchQuery] = useState("")
   const queryClient = useQueryClient()
 
@@ -79,7 +78,7 @@ function MCPServersPage() {
   const filteredServers = servers.data.filter(
     (s) =>
       s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.description?.toLowerCase().includes(searchQuery.toLowerCase())
+      s.description?.toLowerCase().includes(searchQuery.toLowerCase()),
   )
 
   const handleReload = async () => {
@@ -98,7 +97,12 @@ function MCPServersPage() {
             <div className="flex items-center gap-1">
               {currentUser?.is_superuser && (
                 <>
-                  <Button variant="ghost" size="icon" onClick={handleReload} title="Reload">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleReload}
+                    title="Reload"
+                  >
                     <RefreshCw className="h-4 w-4" />
                   </Button>
                   <AddMCPServer />
@@ -119,7 +123,9 @@ function MCPServersPage() {
         <ScrollArea className="flex-1 min-h-0">
           {filteredServers.length === 0 ? (
             <div className="p-4 text-center text-muted-foreground text-sm">
-              {servers.data.length === 0 ? "No MCP servers found" : "No matching servers"}
+              {servers.data.length === 0
+                ? "No MCP servers found"
+                : "No matching servers"}
             </div>
           ) : (
             <div className="p-1">
@@ -137,7 +143,10 @@ function MCPServersPage() {
                     <div className="min-w-0 flex-1">
                       <div className="font-medium truncate">{server.name}</div>
                     </div>
-                    <Badge variant={server.enabled ? "default" : "secondary"} className="text-xs shrink-0">
+                    <Badge
+                      variant={server.enabled ? "default" : "secondary"}
+                      className="text-xs shrink-0"
+                    >
                       {server.enabled ? "Enabled" : "Disabled"}
                     </Badge>
                   </div>
@@ -160,7 +169,9 @@ function MCPServersPage() {
           <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
             <Server className="h-16 w-16 mb-4 opacity-20" />
             <p className="text-lg font-medium">No server selected</p>
-            <p className="text-sm">Select a server from the list to view and edit</p>
+            <p className="text-sm">
+              Select a server from the list to view and edit
+            </p>
           </div>
         )}
       </div>
@@ -168,7 +179,18 @@ function MCPServersPage() {
   )
 }
 
-function MCPServerEditor({ server }: { server: { name: string; command: string; args: string[]; env: Record<string, string>; enabled: boolean; description: string } }) {
+function MCPServerEditor({
+  server,
+}: {
+  server: {
+    name: string
+    command: string
+    args: string[]
+    env: Record<string, string>
+    enabled: boolean
+    description: string
+  }
+}) {
   const [editDialog, setEditDialog] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState(false)
   const { showSuccessToast, showErrorToast } = useCustomToast()
@@ -192,19 +214,32 @@ function MCPServerEditor({ server }: { server: { name: string; command: string; 
           <div>
             <h3 className="font-semibold">{server.name}</h3>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <code className="bg-muted px-1.5 py-0.5 rounded">{server.command}</code>
-              <Badge variant={server.enabled ? "default" : "secondary"} className="text-xs">
+              <code className="bg-muted px-1.5 py-0.5 rounded">
+                {server.command}
+              </code>
+              <Badge
+                variant={server.enabled ? "default" : "secondary"}
+                className="text-xs"
+              >
                 {server.enabled ? "Enabled" : "Disabled"}
               </Badge>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="outline" size="sm" onClick={() => setEditDialog(true)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEditDialog(true)}
+          >
             <Pencil className="h-4 w-4 mr-1" />
             Edit
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setDeleteDialog(true)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDeleteDialog(true)}
+          >
             <Trash2 className="h-4 w-4 mr-1" />
             Delete
           </Button>
@@ -222,7 +257,9 @@ function MCPServerEditor({ server }: { server: { name: string; command: string; 
 
           <div>
             <h4 className="text-sm font-semibold mb-1">Command</h4>
-            <code className="block text-sm bg-muted p-2 rounded">{server.command}</code>
+            <code className="block text-sm bg-muted p-2 rounded">
+              {server.command}
+            </code>
           </div>
 
           <div>
@@ -237,13 +274,17 @@ function MCPServerEditor({ server }: { server: { name: string; command: string; 
           </div>
 
           <div>
-            <h4 className="text-sm font-semibold mb-1">Environment Variables</h4>
+            <h4 className="text-sm font-semibold mb-1">
+              Environment Variables
+            </h4>
             {Object.keys(server.env).length > 0 ? (
               <pre className="text-sm bg-muted p-2 rounded overflow-auto">
                 {JSON.stringify(server.env, null, 2)}
               </pre>
             ) : (
-              <p className="text-sm text-muted-foreground">No environment variables</p>
+              <p className="text-sm text-muted-foreground">
+                No environment variables
+              </p>
             )}
           </div>
 
@@ -267,7 +308,8 @@ function MCPServerEditor({ server }: { server: { name: string; command: string; 
           <AlertDialogHeader>
             <AlertDialogTitle>Delete MCP Server</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{server.name}"? This action cannot be undone.
+              Are you sure you want to delete "{server.name}"? This action
+              cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -331,7 +373,12 @@ function AddMCPServer() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button variant="ghost" size="icon" onClick={() => setOpen(true)} title="Add Server">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setOpen(true)}
+        title="Add Server"
+      >
         <Plus className="h-4 w-4" />
       </Button>
       <DialogContent>
@@ -373,7 +420,10 @@ function AddMCPServer() {
                 <FormItem>
                   <FormLabel>Arguments</FormLabel>
                   <FormControl>
-                    <Input placeholder="-y @modelcontextprotocol/server-filesystem /path" {...field} />
+                    <Input
+                      placeholder="-y @modelcontextprotocol/server-filesystem /path"
+                      {...field}
+                    />
                   </FormControl>
                   <FormDescription>Space-separated arguments</FormDescription>
                   <FormMessage />
@@ -412,7 +462,10 @@ function AddMCPServer() {
               render={({ field }) => (
                 <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                   <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
                   </FormControl>
                   <div className="space-y-1 leading-none">
                     <FormLabel>Enabled</FormLabel>
@@ -437,7 +490,14 @@ function EditMCPServerDialog({
   open,
   onOpenChange,
 }: {
-  server: { name: string; command: string; args: string[]; env: Record<string, string>; enabled: boolean; description: string }
+  server: {
+    name: string
+    command: string
+    args: string[]
+    env: Record<string, string>
+    enabled: boolean
+    description: string
+  }
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -450,7 +510,10 @@ function EditMCPServerDialog({
       name: server.name,
       command: server.command,
       args: server.args.join(" "),
-      env: Object.keys(server.env).length > 0 ? JSON.stringify(server.env, null, 2) : "",
+      env:
+        Object.keys(server.env).length > 0
+          ? JSON.stringify(server.env, null, 2)
+          : "",
       enabled: server.enabled,
       description: server.description || "",
     },
@@ -523,7 +586,10 @@ function EditMCPServerDialog({
                 <FormItem>
                   <FormLabel>Arguments</FormLabel>
                   <FormControl>
-                    <Input placeholder="-y @modelcontextprotocol/server-filesystem /path" {...field} />
+                    <Input
+                      placeholder="-y @modelcontextprotocol/server-filesystem /path"
+                      {...field}
+                    />
                   </FormControl>
                   <FormDescription>Space-separated arguments</FormDescription>
                   <FormMessage />
@@ -562,7 +628,10 @@ function EditMCPServerDialog({
               render={({ field }) => (
                 <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                   <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
                   </FormControl>
                   <div className="space-y-1 leading-none">
                     <FormLabel>Enabled</FormLabel>

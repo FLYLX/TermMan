@@ -1,31 +1,32 @@
-import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Brain,
   CheckCircle2,
-  Plus,
-  RotateCcw,
-  Trash2,
-  Search,
-  RefreshCw,
-  Copy,
   Clock,
+  Copy,
   Filter,
-  X,
   Loader2,
   Minimize2,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Trash2,
+  X,
 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -34,16 +35,15 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
 import useCustomToast from "@/hooks/useCustomToast"
 import {
-  MemoryService,
+  type ManagedMemoryStatus,
   MEMORY_STATUS_COLORS,
   MEMORY_STATUS_LABELS,
-  MEMORY_TYPE_LABELS,
   MEMORY_TYPE_COLORS,
+  MEMORY_TYPE_LABELS,
   type Memory,
-  type ManagedMemoryStatus,
+  MemoryService,
   type MemoryType,
 } from "@/services/memory"
 
@@ -56,7 +56,9 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const [searchQuery, setSearchQuery] = useState("")
   const [filterType, setFilterType] = useState<MemoryType | "all">("all")
-  const [filterStatus, setFilterStatus] = useState<ManagedMemoryStatus | "all">("all")
+  const [filterStatus, setFilterStatus] = useState<ManagedMemoryStatus | "all">(
+    "all",
+  )
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingMemory, setEditingMemory] = useState<Memory | null>(null)
@@ -72,10 +74,17 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
   const { data: memoriesData, isLoading: memoriesLoading } = useQuery({
     queryKey: ["memories", itemId, filterType],
     queryFn: () =>
-      MemoryService.getAllMemories(itemId, filterType === "all" ? undefined : filterType),
+      MemoryService.getAllMemories(
+        itemId,
+        filterType === "all" ? undefined : filterType,
+      ),
   })
 
-  const { data: searchResults, refetch: performSearch, isLoading: searchLoading } = useQuery({
+  const {
+    data: searchResults,
+    refetch: performSearch,
+    isLoading: searchLoading,
+  } = useQuery({
     queryKey: ["memory-search", itemId, searchQuery],
     queryFn: () =>
       MemoryService.searchMemories(itemId, {
@@ -129,7 +138,8 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
   })
 
   const deleteMemoryMutation = useMutation({
-    mutationFn: (memoryId: string) => MemoryService.deleteMemory(itemId, memoryId),
+    mutationFn: (memoryId: string) =>
+      MemoryService.deleteMemory(itemId, memoryId),
     onSuccess: () => {
       showSuccessToast("记忆已删除")
       refreshMemoryViews()
@@ -138,11 +148,18 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
   })
 
   const updateMemoryStatusMutation = useMutation({
-    mutationFn: ({ memoryId, status }: { memoryId: string; status: ManagedMemoryStatus }) =>
-      MemoryService.updateMemoryStatus(itemId, memoryId, { status }),
+    mutationFn: ({
+      memoryId,
+      status,
+    }: {
+      memoryId: string
+      status: ManagedMemoryStatus
+    }) => MemoryService.updateMemoryStatus(itemId, memoryId, { status }),
     onSuccess: (_result, variables) => {
       showSuccessToast(
-        variables.status === "active" ? "记忆已恢复为活跃状态" : "记忆状态已更新"
+        variables.status === "active"
+          ? "记忆已恢复为活跃状态"
+          : "记忆状态已更新",
       )
       refreshMemoryViews()
     },
@@ -217,23 +234,41 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
   const getStatusAction = (memory: Memory) => {
     if (memory.metadata.memory_type === "task") {
       if (memory.metadata.status === "completed") {
-        return { label: "恢复", status: "active" as ManagedMemoryStatus, icon: RotateCcw }
+        return {
+          label: "恢复",
+          status: "active" as ManagedMemoryStatus,
+          icon: RotateCcw,
+        }
       }
-      return { label: "完成", status: "completed" as ManagedMemoryStatus, icon: CheckCircle2 }
+      return {
+        label: "完成",
+        status: "completed" as ManagedMemoryStatus,
+        icon: CheckCircle2,
+      }
     }
 
     if (memory.metadata.memory_type === "error") {
       if (memory.metadata.status === "resolved") {
-        return { label: "恢复", status: "active" as ManagedMemoryStatus, icon: RotateCcw }
+        return {
+          label: "恢复",
+          status: "active" as ManagedMemoryStatus,
+          icon: RotateCcw,
+        }
       }
-      return { label: "解决", status: "resolved" as ManagedMemoryStatus, icon: CheckCircle2 }
+      return {
+        label: "解决",
+        status: "resolved" as ManagedMemoryStatus,
+        icon: CheckCircle2,
+      }
     }
 
     return null
   }
 
   const baseMemories =
-    searchQuery.trim() && searchResults ? searchResults.memories : memoriesData?.memories || []
+    searchQuery.trim() && searchResults
+      ? searchResults.memories
+      : memoriesData?.memories || []
   const displayedMemories =
     filterStatus === "all"
       ? baseMemories
@@ -260,7 +295,9 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                 <div className="text-sm text-zinc-400">总记忆数</div>
               </div>
               <div className="rounded-lg bg-zinc-800 p-3">
-                <div className="text-2xl font-bold text-red-400">{stats.expired_count}</div>
+                <div className="text-2xl font-bold text-red-400">
+                  {stats.expired_count}
+                </div>
                 <div className="text-sm text-zinc-400">已过期</div>
               </div>
               <div className="rounded-lg bg-zinc-800 p-3">
@@ -343,7 +380,9 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  if (confirm("确定要压缩记忆吗？这将使用 LLM 合并相似记忆。")) {
+                  if (
+                    confirm("确定要压缩记忆吗？这将使用 LLM 合并相似记忆。")
+                  ) {
                     summarizeMutation.mutate()
                   }
                 }}
@@ -394,7 +433,9 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
             </Select>
             <Select
               value={filterStatus}
-              onValueChange={(v) => setFilterStatus(v as ManagedMemoryStatus | "all")}
+              onValueChange={(v) =>
+                setFilterStatus(v as ManagedMemoryStatus | "all")
+              }
             >
               <SelectTrigger className="w-36">
                 <SelectValue placeholder="状态" />
@@ -410,8 +451,14 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
               size="sm"
               variant={filterStatus === "active" ? "default" : "outline"}
               onClick={() => {
-                setFilterStatus((current) => (current === "active" ? "all" : "active"))
-                if (filterType !== "all" && filterType !== "task" && filterType !== "error") {
+                setFilterStatus((current) =>
+                  current === "active" ? "all" : "active",
+                )
+                if (
+                  filterType !== "all" &&
+                  filterType !== "task" &&
+                  filterType !== "error"
+                ) {
                   setFilterType("all")
                 }
               }}
@@ -424,7 +471,9 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                 variant="ghost"
                 onClick={() => {
                   setSearchQuery("")
-                  queryClient.invalidateQueries({ queryKey: ["memories", itemId] })
+                  queryClient.invalidateQueries({
+                    queryKey: ["memories", itemId],
+                  })
                 }}
               >
                 <X className="size-4" />
@@ -447,7 +496,8 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                 const statusTone =
                   memoryStatus === "active"
                     ? "border-emerald-500/30 bg-emerald-500/5"
-                    : memoryStatus === "completed" || memoryStatus === "resolved"
+                    : memoryStatus === "completed" ||
+                        memoryStatus === "resolved"
                       ? "border-zinc-700 bg-zinc-900/60"
                       : "border-zinc-700 bg-zinc-800/50"
 
@@ -473,30 +523,45 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                           </Badge>
                         )}
                         {memory.metadata.verified && (
-                          <Badge variant="outline" className="border-emerald-500/30 text-emerald-300">
+                          <Badge
+                            variant="outline"
+                            className="border-emerald-500/30 text-emerald-300"
+                          >
                             已验证
                           </Badge>
                         )}
                         <span className="text-xs text-zinc-400">
                           {memory.metadata.created_at &&
-                            new Date(memory.metadata.created_at).toLocaleString()}
+                            new Date(
+                              memory.metadata.created_at,
+                            ).toLocaleString()}
                         </span>
                         {memory.metadata.updated_at &&
-                          memory.metadata.updated_at !== memory.metadata.created_at && (
+                          memory.metadata.updated_at !==
+                            memory.metadata.created_at && (
                             <span className="text-xs text-zinc-500">
-                              更新: {new Date(memory.metadata.updated_at).toLocaleString()}
+                              更新:{" "}
+                              {new Date(
+                                memory.metadata.updated_at,
+                              ).toLocaleString()}
                             </span>
                           )}
                         {memory.metadata.expires_at && (
                           <span className="text-xs text-zinc-500">
-                            过期: {new Date(memory.metadata.expires_at).toLocaleDateString()}
+                            过期:{" "}
+                            {new Date(
+                              memory.metadata.expires_at,
+                            ).toLocaleDateString()}
                           </span>
                         )}
                       </div>
                       <p className="text-sm">{memory.content}</p>
                       {memory.metadata.memory_key && (
                         <p className="mt-2 text-xs text-zinc-500">
-                          key: <span className="font-mono">{memory.metadata.memory_key}</span>
+                          key:{" "}
+                          <span className="font-mono">
+                            {memory.metadata.memory_key}
+                          </span>
                         </p>
                       )}
                     </div>
@@ -514,7 +579,9 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                           }
                           disabled={updateMemoryStatusMutation.isPending}
                         >
-                          {StatusActionIcon && <StatusActionIcon className="size-3.5" />}
+                          {StatusActionIcon && (
+                            <StatusActionIcon className="size-3.5" />
+                          )}
                           {statusAction.label}
                         </Button>
                       )}
@@ -545,7 +612,8 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
           {memoriesData && memoriesData.count > 0 && (
             <div className="mt-4 flex justify-between border-t border-zinc-700 pt-4">
               <span className="text-sm text-zinc-400">
-                当前显示 {displayedMemories.length} / 总计 {memoriesData.count} 条记忆
+                当前显示 {displayedMemories.length} / 总计 {memoriesData.count}{" "}
+                条记忆
               </span>
               <Button
                 size="sm"
@@ -577,7 +645,10 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
           <div className="space-y-4">
             <div>
               <Label>记忆类型</Label>
-              <Select value={newMemoryType} onValueChange={(v) => setNewMemoryType(v as MemoryType)}>
+              <Select
+                value={newMemoryType}
+                onValueChange={(v) => setNewMemoryType(v as MemoryType)}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -619,8 +690,15 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
             <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
               取消
             </Button>
-            <Button onClick={handleAddMemory} disabled={addMemoryMutation.isPending}>
-              {addMemoryMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : "添加"}
+            <Button
+              onClick={handleAddMemory}
+              disabled={addMemoryMutation.isPending}
+            >
+              {addMemoryMutation.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                "添加"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -652,11 +730,21 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsEditDialogOpen(false)}
+            >
               取消
             </Button>
-            <Button onClick={handleUpdateMemory} disabled={updateMemoryMutation.isPending}>
-              {updateMemoryMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : "保存"}
+            <Button
+              onClick={handleUpdateMemory}
+              disabled={updateMemoryMutation.isPending}
+            >
+              {updateMemoryMutation.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                "保存"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

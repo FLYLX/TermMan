@@ -3,6 +3,7 @@ import { Trash2 } from "lucide-react"
 import { useState } from "react"
 
 import { ItemHandlersService } from "@/client"
+import { useI18n } from "@/components/locale-provider"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -26,12 +27,13 @@ interface DeleteItemHandlerProps {
 const DeleteItemHandler = ({ id, onSuccess }: DeleteItemHandlerProps) => {
   const [isOpen, setIsOpen] = useState(false)
   const queryClient = useQueryClient()
+  const { t } = useI18n()
   const { showSuccessToast, showErrorToast } = useCustomToast()
 
   const mutation = useMutation({
     mutationFn: () => ItemHandlersService.deleteItemHandler({ id }),
     onSuccess: () => {
-      showSuccessToast("ItemHandler deleted successfully")
+      showSuccessToast(t("itemHandlers.handlerDeleted"))
       setIsOpen(false)
       onSuccess()
     },
@@ -49,20 +51,19 @@ const DeleteItemHandler = ({ id, onSuccess }: DeleteItemHandlerProps) => {
         className="text-destructive"
       >
         <Trash2 />
-        Delete
+        {t("common.delete")}
       </DropdownMenuItem>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Are you sure?</DialogTitle>
+          <DialogTitle>{t("itemHandlers.deleteTitle")}</DialogTitle>
           <DialogDescription>
-            This action cannot be undone. This will permanently delete the item
-            handler.
+            {t("itemHandlers.deleteDescription")}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-3">
           <DialogClose asChild>
             <Button variant="outline" disabled={mutation.isPending}>
-              Cancel
+              {t("common.cancel")}
             </Button>
           </DialogClose>
           <LoadingButton
@@ -70,7 +71,7 @@ const DeleteItemHandler = ({ id, onSuccess }: DeleteItemHandlerProps) => {
             onClick={() => mutation.mutate()}
             loading={mutation.isPending}
           >
-            Delete
+            {t("common.delete")}
           </LoadingButton>
         </DialogFooter>
       </DialogContent>

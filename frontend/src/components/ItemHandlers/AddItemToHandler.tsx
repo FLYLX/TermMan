@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form"
 import { z } from "zod"
 
 import { ItemHandlerAssociationsService, ItemsService } from "@/client"
+import { useI18n } from "@/components/locale-provider"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -40,16 +41,42 @@ interface AddItemToHandlerProps {
   itemHandlerId: string
 }
 
-const formSchema = z.object({
-  itemId: z.string().min(1, { message: "Item is required" }),
-})
-
-type FormData = z.infer<typeof formSchema>
-
 const AddItemToHandler = ({ itemHandlerId }: AddItemToHandlerProps) => {
   const [isOpen, setIsOpen] = useState(false)
   const queryClient = useQueryClient()
+  const { locale } = useI18n()
   const { showSuccessToast, showErrorToast } = useCustomToast()
+
+  const copy =
+    locale === "zh"
+      ? {
+          required: "终端不能为空",
+          added: "终端已关联到 TermHandler",
+          trigger: "添加终端",
+          title: "将终端加入 TermHandler",
+          description: "选择一个终端与当前 TermHandler 关联。",
+          field: "终端",
+          placeholder: "选择一个终端",
+          cancel: "取消",
+          confirm: "添加",
+        }
+      : {
+          required: "Terminal is required",
+          added: "Terminal added to TermHandler successfully",
+          trigger: "Add Terminal",
+          title: "Add Terminal to TermHandler",
+          description: "Select a terminal to associate with this TermHandler.",
+          field: "Terminal",
+          placeholder: "Select a terminal",
+          cancel: "Cancel",
+          confirm: "Add",
+        }
+
+  const formSchema = z.object({
+    itemId: z.string().min(1, { message: copy.required }),
+  })
+
+  type FormData = z.infer<typeof formSchema>
 
   const { data: itemsResult } = useQuery({
     queryFn: () => ItemsService.readItems({ skip: 0, limit: 100 }),
@@ -73,7 +100,7 @@ const AddItemToHandler = ({ itemHandlerId }: AddItemToHandlerProps) => {
         requestBody: { item_handler_id: itemHandlerId, item_id: data.itemId },
       }),
     onSuccess: () => {
-      showSuccessToast("Item added to item handler successfully")
+      showSuccessToast(copy.added)
       form.reset()
       setIsOpen(false)
     },
@@ -93,15 +120,13 @@ const AddItemToHandler = ({ itemHandlerId }: AddItemToHandlerProps) => {
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="flex items-center gap-1">
           <PlusCircle className="h-4 w-4" />
-          Add Item
+          {copy.trigger}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Item to Handler</DialogTitle>
-          <DialogDescription>
-            Select an item to associate with this item handler.
-          </DialogDescription>
+          <DialogTitle>{copy.title}</DialogTitle>
+          <DialogDescription>{copy.description}</DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)}>
@@ -112,7 +137,7 @@ const AddItemToHandler = ({ itemHandlerId }: AddItemToHandlerProps) => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      Item <span className="text-destructive">*</span>
+                      {copy.field} <span className="text-destructive">*</span>
                     </FormLabel>
                     <Select
                       onValueChange={field.onChange}
@@ -121,7 +146,7 @@ const AddItemToHandler = ({ itemHandlerId }: AddItemToHandlerProps) => {
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select an item" />
+                          <SelectValue placeholder={copy.placeholder} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -141,11 +166,11 @@ const AddItemToHandler = ({ itemHandlerId }: AddItemToHandlerProps) => {
             <DialogFooter>
               <DialogClose asChild>
                 <Button variant="outline" disabled={mutation.isPending}>
-                  Cancel
+                  {copy.cancel}
                 </Button>
               </DialogClose>
               <LoadingButton type="submit" loading={mutation.isPending}>
-                Add
+                {copy.confirm}
               </LoadingButton>
             </DialogFooter>
           </form>

@@ -1,11 +1,10 @@
 import logging
-import uuid
 
 from sqlmodel import Session, SQLModel
 
 from app.core.db import engine, init_db
-from app.models import User, Item, ItemHandler, ItemStatus
 from app.core.security import get_password_hash
+from app.models import Item, ItemHandler, ItemStatus, User
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,18 +25,18 @@ def init() -> None:
 def init_test_data() -> None:
     """Initialize test data including superuser, items, and item handlers"""
     logger.info("Initializing test data")
-    
+
     with Session(engine) as session:
         # Check if the specified superuser already exists
         admin_email = "administer@outlook.com"
         existing_superuser = session.exec(
             session.query(User).where(User.email == admin_email)
         ).first()
-        
+
         if existing_superuser:
             logger.info(f"Superuser {admin_email} already exists. Skipping test data initialization.")
             return
-        
+
         # Create the superuser
         superuser = User(
             email=admin_email,
@@ -49,9 +48,9 @@ def init_test_data() -> None:
         session.add(superuser)
         session.commit()
         session.refresh(superuser)
-        
+
         logger.info(f"Created superuser: {superuser.email} with id: {superuser.id}")
-        
+
         # Create 3 ItemHandlers
         item_handlers = [
             ItemHandler(
@@ -76,20 +75,20 @@ def init_test_data() -> None:
                 owner_id=superuser.id
             )
         ]
-        
+
         session.add_all(item_handlers)
         session.commit()
-        
+
         for handler in item_handlers:
             session.refresh(handler)
             logger.info(f"Created ItemHandler: {handler.name} with id: {handler.id}")
-        
+
         # Create 5 Items with daemon configuration
         # Using the same API key as the daemon for testing
         daemon_api_key = "termman_daemon_secret_key_2024"
         daemon_host = "daemon"  # 使用容器名称而不是localhost，确保Docker容器内可以正确连接
         daemon_port = 9000
-        
+
         items = [
             Item(
                 title="测试项目 1",
@@ -156,43 +155,42 @@ def init_test_data() -> None:
                 owner_id=superuser.id
             )
         ]
-        
+
         session.add_all(items)
         session.commit()
-        
+
         for item in items:
             session.refresh(item)
             logger.info(f"Created Item: {item.title} with id: {item.id}")
-        
+
         # Verify all records were created correctly
         logger.info("Verifying database contents:")
-        
+
         # Count users
         user_count = session.exec(session.query(User)).all()
         logger.info(f"Total users: {len(user_count)}")
-        
+
         # Count items
         item_count = session.exec(session.query(Item)).all()
         logger.info(f"Total items: {len(item_count)}")
-        
+
         # Count handlers
         handler_count = session.exec(session.query(ItemHandler)).all()
         logger.info(f"Total handlers: {len(handler_count)}")
-        
+
         logger.info("Test data initialization completed successfully!")
 
 
 def main() -> None:
-    logger.info("Starting database initialization")
-    
-    create_tables()
-    
+    logger.info("Starting initial data bootstrap")
+    logger.info("Skipping create_all(); schema is managed by Alembic migrations")
+
     logger.info("Creating initial data")
     init()
-    
+
     logger.info("Creating test data")
     init_test_data()
-    
+
     logger.info("All initial data created successfully")
 
 

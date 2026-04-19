@@ -17,6 +17,7 @@ from .daemon_initializer import (
     sync_daemon_connection_state,
 )
 from .log_manager import LogManager
+from .item_file_service import ItemFileService, item_file_service
 from .protocol import ProtocolEvents
 from .socket_pool import ItemSocket, SocketManager, SocketPoolFacade
 from .terminal_service import TerminalService
@@ -41,6 +42,8 @@ __all__ = [
     "ProtocolEvents",
     "LogManager",
     "log_manager",
+    "ItemFileService",
+    "item_file_service",
     "connection_manager",
     "socket_manager",
     "socket_pool_facade",

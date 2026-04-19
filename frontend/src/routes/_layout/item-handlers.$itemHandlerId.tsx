@@ -1,14 +1,35 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { ArrowLeft, ChevronRight, GripVertical, Loader2, Search, Server, Settings, Terminal, X, Zap } from "lucide-react"
-import { useEffect, useMemo, useRef, useState, useCallback } from "react"
-import { ItemHandlersService, ItemHandlerAssociationsService, SkillsService, ItemsService, McpService } from "@/client"
+import {
+  ChevronRight,
+  GripVertical,
+  Loader2,
+  Search,
+  Server,
+  Settings,
+  Terminal,
+  X,
+  Zap,
+} from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  ApiError,
+  ItemHandlerAssociationsService,
+  ItemHandlersService,
+  ItemsService,
+  McpService,
+  SkillsService,
+} from "@/client"
+import { KnowledgeBindingSelector } from "@/components/Knowledge/KnowledgeBindingSelector"
+import { useI18n } from "@/components/locale-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
+import { extractErrorMessage } from "@/utils"
 
 export const Route = createFileRoute("/_layout/item-handlers/$itemHandlerId")({
   component: ItemHandlerDetail,
@@ -28,16 +49,25 @@ function getItemHandlerQueryOptions(itemHandlerId: string) {
   }
 }
 
-function formatDate(dateString: string | undefined | null) {
-  if (!dateString) return "N/A"
-  return new Date(dateString).toLocaleString()
+function formatDate(dateString: string | undefined | null, localeTag: string) {
+  if (!dateString) return null
+  return new Date(dateString).toLocaleString(localeTag)
+}
+
+function normalizeOptionalText(value: string) {
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
 }
 
 function KeyValue({ label, value }: { label: string; value?: string | null }) {
+  const { t } = useI18n()
+
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
       <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="font-mono text-sm">{value || "N/A"}</span>
+      <span className="font-mono text-sm">
+        {value || t("common.notAvailable")}
+      </span>
     </div>
   )
 }
@@ -54,20 +84,22 @@ type NodePosition = {
   y: number
 }
 
-function ItemWithHandlers({ 
-  item, 
+function ItemWithHandlers({
+  item,
   currentHandlerId,
-  isConnected 
-}: { 
+  isConnected,
+}: {
   item: any
   currentHandlerId: string
   isConnected: boolean
 }) {
+  const { t } = useI18n()
   const [isExpanded, setIsExpanded] = useState(false)
   const [handlers, setHandlers] = useState<any[]>([])
 
   const { refetch } = useQuery({
-    queryFn: () => ItemHandlerAssociationsService.getHandlersForItem({ itemId: item.id }),
+    queryFn: () =>
+      ItemHandlerAssociationsService.getHandlersForItem({ itemId: item.id }),
     queryKey: ["item-handlers", item.id],
     enabled: false,
   })
@@ -83,11 +115,16 @@ function ItemWithHandlers({
 
   return (
     <div className="rounded-lg border overflow-hidden">
-      <div 
+      <div
         className={`flex items-center gap-2 p-2 transition-colors ${isConnected ? "bg-green-50 dark:bg-green-950" : "hover:bg-slate-100 dark:hover:bg-slate-800"}`}
       >
-        <button onClick={toggleExpand} className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded">
-          <ChevronRight className={`size-4 text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+        <button
+          onClick={toggleExpand}
+          className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded"
+        >
+          <ChevronRight
+            className={`size-4 text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+          />
         </button>
         <Link
           to="/items/$itemId"
@@ -95,21 +132,27 @@ function ItemWithHandlers({
           className="flex items-center gap-2 flex-1 min-w-0"
         >
           <Terminal className="size-4 text-slate-500 shrink-0" />
-          <span className="text-sm font-medium truncate">{item.title || item.id}</span>
+          <span className="text-sm font-medium truncate">
+            {item.title || item.id}
+          </span>
         </Link>
         {isConnected && (
           <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
-            Connected
+            {t("common.connected")}
           </span>
         )}
-        <span className={`text-xs px-2 py-0.5 rounded-full ${item.status === "running" ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"}`}>
-          {item.status === "running" ? "Online" : "Offline"}
+        <span
+          className={`text-xs px-2 py-0.5 rounded-full ${item.status === "running" ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"}`}
+        >
+          {item.status === "running" ? t("common.online") : t("common.offline")}
         </span>
       </div>
       {isExpanded && (
         <div className="border-t bg-slate-50 dark:bg-slate-900 p-2">
           {handlers.length === 0 ? (
-            <p className="text-xs text-muted-foreground px-2">No handlers connected</p>
+            <p className="text-xs text-muted-foreground px-2">
+              {t("itemHandlers.detail.noHandlersConnected")}
+            </p>
           ) : (
             <div className="space-y-1">
               {handlers.map((handler: any) => (
@@ -122,7 +165,9 @@ function ItemWithHandlers({
                   <Zap className="size-3" />
                   <span>{handler.name}</span>
                   {handler.id === currentHandlerId && (
-                    <span className="text-xs ml-auto">(current)</span>
+                    <span className="text-xs ml-auto">
+                      ({t("common.current")})
+                    </span>
                   )}
                 </Link>
               ))}
@@ -145,7 +190,9 @@ function SkillSelector({
 }) {
   const [searchQuery, setSearchQuery] = useState("")
   const [draggedSkill, setDraggedSkill] = useState<string | null>(null)
-  const [dropTarget, setDropTarget] = useState<"enabled" | "available" | null>(null)
+  const [dropTarget, setDropTarget] = useState<"enabled" | "available" | null>(
+    null,
+  )
   const [pendingSkill, setPendingSkill] = useState<string | null>(null)
 
   const enabledSkillsList = useMemo(() => {
@@ -161,7 +208,7 @@ function SkillSelector({
     return availableSkillsList.filter(
       (s) =>
         s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.description?.toLowerCase().includes(searchQuery.toLowerCase())
+        s.description?.toLowerCase().includes(searchQuery.toLowerCase()),
     )
   }, [availableSkillsList, searchQuery])
 
@@ -170,7 +217,10 @@ function SkillSelector({
     e.dataTransfer.effectAllowed = "move"
   }
 
-  const handleDragOver = (e: React.DragEvent, target: "enabled" | "available") => {
+  const handleDragOver = (
+    e: React.DragEvent,
+    target: "enabled" | "available",
+  ) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = "move"
     setDropTarget(target)
@@ -180,14 +230,17 @@ function SkillSelector({
     setDropTarget(null)
   }
 
-  const handleDrop = async (e: React.DragEvent, target: "enabled" | "available") => {
+  const handleDrop = async (
+    e: React.DragEvent,
+    target: "enabled" | "available",
+  ) => {
     e.preventDefault()
     setDropTarget(null)
-    
+
     if (!draggedSkill) return
 
     const isCurrentlyEnabled = enabledSkills.includes(draggedSkill)
-    
+
     if (target === "enabled" && !isCurrentlyEnabled) {
       setPendingSkill(draggedSkill)
       await onSkillToggle(draggedSkill, true)
@@ -197,7 +250,7 @@ function SkillSelector({
       await onSkillToggle(draggedSkill, false)
       setPendingSkill(null)
     }
-    
+
     setDraggedSkill(null)
   }
 
@@ -224,7 +277,9 @@ function SkillSelector({
     <div className="flex gap-4 h-80">
       <div
         className={`flex-1 flex flex-col border rounded-lg overflow-hidden transition-colors ${
-          dropTarget === "enabled" ? "border-green-500 bg-green-50/50 dark:bg-green-950/50" : "border-border"
+          dropTarget === "enabled"
+            ? "border-green-500 bg-green-50/50 dark:bg-green-950/50"
+            : "border-border"
         }`}
         onDragOver={(e) => handleDragOver(e, "enabled")}
         onDragLeave={handleDragLeave}
@@ -233,7 +288,9 @@ function SkillSelector({
         <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
           <div className="flex items-center gap-2">
             <Zap className="size-4 text-green-500" />
-            <span className="text-sm font-medium">已启用 ({enabledSkillsList.length})</span>
+            <span className="text-sm font-medium">
+              已启用 ({enabledSkillsList.length})
+            </span>
           </div>
         </div>
         <ScrollArea className="flex-1">
@@ -256,9 +313,13 @@ function SkillSelector({
                 >
                   <GripVertical className="size-4 text-green-600 dark:text-green-400 shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-green-700 dark:text-green-300 truncate">{skill.name}</div>
+                    <div className="text-sm font-medium text-green-700 dark:text-green-300 truncate">
+                      {skill.name}
+                    </div>
                     {skill.description && (
-                      <div className="text-xs text-green-600/70 dark:text-green-400/70 truncate">{skill.description}</div>
+                      <div className="text-xs text-green-600/70 dark:text-green-400/70 truncate">
+                        {skill.description}
+                      </div>
                     )}
                   </div>
                   {pendingSkill === skill.skill_id ? (
@@ -280,7 +341,9 @@ function SkillSelector({
 
       <div
         className={`flex-1 flex flex-col border rounded-lg overflow-hidden transition-colors ${
-          dropTarget === "available" ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/50" : "border-border"
+          dropTarget === "available"
+            ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/50"
+            : "border-border"
         }`}
         onDragOver={(e) => handleDragOver(e, "available")}
         onDragLeave={handleDragLeave}
@@ -289,7 +352,9 @@ function SkillSelector({
         <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
           <div className="flex items-center gap-2">
             <Terminal className="size-4 text-blue-500" />
-            <span className="text-sm font-medium">可用技能 ({availableSkillsList.length})</span>
+            <span className="text-sm font-medium">
+              可用技能 ({availableSkillsList.length})
+            </span>
           </div>
         </div>
         <div className="px-3 py-2 border-b">
@@ -330,9 +395,13 @@ function SkillSelector({
                     <GripVertical className="size-4 text-muted-foreground shrink-0" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{skill.name}</div>
+                    <div className="text-sm font-medium truncate">
+                      {skill.name}
+                    </div>
                     {skill.description && (
-                      <div className="text-xs text-muted-foreground truncate">{skill.description}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {skill.description}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -356,7 +425,9 @@ function MCPSelector({
 }) {
   const [searchQuery, setSearchQuery] = useState("")
   const [draggedServer, setDraggedServer] = useState<string | null>(null)
-  const [dropTarget, setDropTarget] = useState<"enabled" | "available" | null>(null)
+  const [dropTarget, setDropTarget] = useState<"enabled" | "available" | null>(
+    null,
+  )
   const [pendingServer, setPendingServer] = useState<string | null>(null)
 
   const enabledServersList = useMemo(() => {
@@ -372,7 +443,7 @@ function MCPSelector({
     return availableServersList.filter(
       (s) =>
         s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.description?.toLowerCase().includes(searchQuery.toLowerCase())
+        s.description?.toLowerCase().includes(searchQuery.toLowerCase()),
     )
   }, [availableServersList, searchQuery])
 
@@ -381,7 +452,10 @@ function MCPSelector({
     e.dataTransfer.effectAllowed = "move"
   }
 
-  const handleDragOver = (e: React.DragEvent, target: "enabled" | "available") => {
+  const handleDragOver = (
+    e: React.DragEvent,
+    target: "enabled" | "available",
+  ) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = "move"
     setDropTarget(target)
@@ -391,14 +465,17 @@ function MCPSelector({
     setDropTarget(null)
   }
 
-  const handleDrop = async (e: React.DragEvent, target: "enabled" | "available") => {
+  const handleDrop = async (
+    e: React.DragEvent,
+    target: "enabled" | "available",
+  ) => {
     e.preventDefault()
     setDropTarget(null)
-    
+
     if (!draggedServer) return
 
     const isCurrentlyEnabled = enabledServers.includes(draggedServer)
-    
+
     if (target === "enabled" && !isCurrentlyEnabled) {
       setPendingServer(draggedServer)
       await onServerToggle(draggedServer, true)
@@ -408,7 +485,7 @@ function MCPSelector({
       await onServerToggle(draggedServer, false)
       setPendingServer(null)
     }
-    
+
     setDraggedServer(null)
   }
 
@@ -435,7 +512,9 @@ function MCPSelector({
     <div className="flex gap-4 h-80">
       <div
         className={`flex-1 flex flex-col border rounded-lg overflow-hidden transition-colors ${
-          dropTarget === "enabled" ? "border-purple-500 bg-purple-50/50 dark:bg-purple-950/50" : "border-border"
+          dropTarget === "enabled"
+            ? "border-purple-500 bg-purple-50/50 dark:bg-purple-950/50"
+            : "border-border"
         }`}
         onDragOver={(e) => handleDragOver(e, "enabled")}
         onDragLeave={handleDragLeave}
@@ -444,7 +523,9 @@ function MCPSelector({
         <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
           <div className="flex items-center gap-2">
             <Server className="size-4 text-purple-500" />
-            <span className="text-sm font-medium">已启用 ({enabledServersList.length})</span>
+            <span className="text-sm font-medium">
+              已启用 ({enabledServersList.length})
+            </span>
           </div>
         </div>
         <ScrollArea className="flex-1">
@@ -467,9 +548,13 @@ function MCPSelector({
                 >
                   <GripVertical className="size-4 text-purple-600 dark:text-purple-400 shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-purple-700 dark:text-purple-300 truncate">{server.name}</div>
+                    <div className="text-sm font-medium text-purple-700 dark:text-purple-300 truncate">
+                      {server.name}
+                    </div>
                     {server.description && (
-                      <div className="text-xs text-purple-600/70 dark:text-purple-400/70 truncate">{server.description}</div>
+                      <div className="text-xs text-purple-600/70 dark:text-purple-400/70 truncate">
+                        {server.description}
+                      </div>
                     )}
                   </div>
                   {pendingServer === server.name ? (
@@ -491,7 +576,9 @@ function MCPSelector({
 
       <div
         className={`flex-1 flex flex-col border rounded-lg overflow-hidden transition-colors ${
-          dropTarget === "available" ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/50" : "border-border"
+          dropTarget === "available"
+            ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/50"
+            : "border-border"
         }`}
         onDragOver={(e) => handleDragOver(e, "available")}
         onDragLeave={handleDragLeave}
@@ -500,7 +587,9 @@ function MCPSelector({
         <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
           <div className="flex items-center gap-2">
             <Server className="size-4 text-blue-500" />
-            <span className="text-sm font-medium">可用服务器 ({availableServersList.length})</span>
+            <span className="text-sm font-medium">
+              可用服务器 ({availableServersList.length})
+            </span>
           </div>
         </div>
         <div className="px-3 py-2 border-b">
@@ -541,9 +630,13 @@ function MCPSelector({
                     <GripVertical className="size-4 text-muted-foreground shrink-0" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{server.name}</div>
+                    <div className="text-sm font-medium truncate">
+                      {server.name}
+                    </div>
                     {server.description && (
-                      <div className="text-xs text-muted-foreground truncate">{server.description}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {server.description}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -572,23 +665,43 @@ function ConnectionDiagram({
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 500 })
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
-  const [pendingLine, setPendingLine] = useState<{ startX: number; startY: number; endX: number; endY: number; sourceId: string | null } | null>(null)
+  const [pendingLine, setPendingLine] = useState<{
+    startX: number
+    startY: number
+    endX: number
+    endY: number
+    sourceId: string | null
+  } | null>(null)
   const [isDrawingLine, setIsDrawingLine] = useState(false)
   const [draggingNode, setDraggingNode] = useState<string | null>(null)
-  const [nodePositions, setNodePositions] = useState<Record<string, NodePosition>>({})
-  const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null)
+  const [nodePositions, setNodePositions] = useState<
+    Record<string, NodePosition>
+  >({})
+  const [dragStartPos, setDragStartPos] = useState<{
+    x: number
+    y: number
+  } | null>(null)
   const [hasDragged, setHasDragged] = useState(false)
 
   const connected = useMemo(() => connectedItems || [], [connectedItems])
   const available = useMemo(() => availableItems || [], [availableItems])
-  const allItems = useMemo(() => [...connected, ...available], [connected, available])
-  const connectedIds = useMemo(() => new Set(connected.map((item) => item.id)), [connected])
+  const allItems = useMemo(
+    () => [...connected, ...available],
+    [connected, available],
+  )
+  const connectedIds = useMemo(
+    () => new Set(connected.map((item) => item.id)),
+    [connected],
+  )
 
   const itemNodeHeight = 40
   const handlerRadius = 45
   const padding = 50
-  const calculatedHeight = Math.max(400, allItems.length * 70 + padding * 2 + itemNodeHeight)
-  
+  const calculatedHeight = Math.max(
+    400,
+    allItems.length * 70 + padding * 2 + itemNodeHeight,
+  )
+
   const getHandlerDefaultY = useCallback(() => {
     const connectedCount = connected.length
     if (connectedCount === 0) {
@@ -598,21 +711,23 @@ function ConnectionDiagram({
     const spacing = Math.min(70, availableHeight / Math.max(connectedCount, 1))
     const totalHeight = (connectedCount - 1) * spacing
     const startY = padding - 20 + (availableHeight - totalHeight) / 2
-    
+
     if (connectedCount % 2 === 1) {
       const middleIndex = Math.floor(connectedCount / 2)
       return startY + middleIndex * spacing
-    } else {
-      const middleTop = startY + (connectedCount / 2 - 1) * spacing
-      const middleBottom = startY + (connectedCount / 2) * spacing
-      return (middleTop + middleBottom) / 2
     }
-  }, [connected.length, calculatedHeight, padding])
-  
-  const defaultHandlerPos = useMemo(() => ({ 
-    x: 80, 
-    y: getHandlerDefaultY()
-  }), [getHandlerDefaultY])
+    const middleTop = startY + (connectedCount / 2 - 1) * spacing
+    const middleBottom = startY + (connectedCount / 2) * spacing
+    return (middleTop + middleBottom) / 2
+  }, [connected.length, calculatedHeight])
+
+  const defaultHandlerPos = useMemo(
+    () => ({
+      x: 80,
+      y: getHandlerDefaultY(),
+    }),
+    [getHandlerDefaultY],
+  )
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -631,38 +746,63 @@ function ConnectionDiagram({
       window.removeEventListener("resize", updateDimensions)
       clearTimeout(timer)
     }
-  }, [allItems.length, calculatedHeight])
+  }, [calculatedHeight])
 
   useEffect(() => {
     const nodeHalfHeight = itemNodeHeight / 2
-    
-    setNodePositions(prev => {
+
+    setNodePositions((prev) => {
       const newPositions: Record<string, NodePosition> = {}
       const availableHeight = calculatedHeight - padding * 2
-      const spacing = Math.min(70, availableHeight / Math.max(allItems.length, 1))
+      const spacing = Math.min(
+        70,
+        availableHeight / Math.max(allItems.length, 1),
+      )
       const totalHeight = (allItems.length - 1) * spacing
       const startY = padding - 20 + (availableHeight - totalHeight) / 2
-      
+
       allItems.forEach((item, index) => {
         if (prev[item.id]) {
           newPositions[item.id] = prev[item.id]
         } else {
-          const y = Math.max(padding + nodeHalfHeight, Math.min(calculatedHeight - padding - nodeHalfHeight, startY + index * spacing))
+          const y = Math.max(
+            padding + nodeHalfHeight,
+            Math.min(
+              calculatedHeight - padding - nodeHalfHeight,
+              startY + index * spacing,
+            ),
+          )
           newPositions[item.id] = { x: 450, y }
         }
       })
-      
+
       return newPositions
     })
-  }, [allItems.map(i => i.id).sort().join(","), calculatedHeight])
+  }, [calculatedHeight, allItems.forEach, allItems.length])
 
-  const handlerPos = nodePositions["__handler__"] || defaultHandlerPos
+  const handlerPos = nodePositions.__handler__ || defaultHandlerPos
 
   const getItemPos = (itemId: string): NodePosition => {
-    return nodePositions[itemId] || { x: 450, y: Math.max(padding + itemNodeHeight / 2, Math.min(calculatedHeight - padding - itemNodeHeight / 2, calculatedHeight / 2)) }
+    return (
+      nodePositions[itemId] || {
+        x: 450,
+        y: Math.max(
+          padding + itemNodeHeight / 2,
+          Math.min(
+            calculatedHeight - padding - itemNodeHeight / 2,
+            calculatedHeight / 2,
+          ),
+        ),
+      }
+    )
   }
 
-  const startDrawingLine = (e: React.MouseEvent, sourceId: string | null, startX: number, startY: number) => {
+  const startDrawingLine = (
+    e: React.MouseEvent,
+    sourceId: string | null,
+    startX: number,
+    startY: number,
+  ) => {
     const rect = containerRef.current?.getBoundingClientRect()
     if (rect) {
       setIsDrawingLine(true)
@@ -679,11 +819,11 @@ function ConnectionDiagram({
   const handleHandlerClick = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    
+
     if (hasDragged) {
       return
     }
-    
+
     if (isDrawingLine && pendingLine) {
       if (pendingLine.sourceId) {
         if (!connectedIds.has(pendingLine.sourceId)) {
@@ -700,11 +840,11 @@ function ConnectionDiagram({
   const handleItemClick = (e: React.MouseEvent, itemId: string) => {
     e.preventDefault()
     e.stopPropagation()
-    
+
     if (hasDragged) {
       return
     }
-    
+
     if (isDrawingLine && pendingLine) {
       if (pendingLine.sourceId !== itemId) {
         if (pendingLine.sourceId === null && !connectedIds.has(itemId)) {
@@ -740,10 +880,17 @@ function ConnectionDiagram({
     }
 
     if (draggingNode && containerRef.current) {
-      const nodeBound = draggingNode === "__handler__" ? handlerRadius : itemNodeHeight / 2
-      const newX = Math.max(nodeBound, Math.min(dimensions.width - nodeBound, e.clientX - rect.left))
-      const newY = Math.max(nodeBound, Math.min(calculatedHeight - nodeBound, e.clientY - rect.top))
-      setNodePositions(prev => ({
+      const nodeBound =
+        draggingNode === "__handler__" ? handlerRadius : itemNodeHeight / 2
+      const newX = Math.max(
+        nodeBound,
+        Math.min(dimensions.width - nodeBound, e.clientX - rect.left),
+      )
+      const newY = Math.max(
+        nodeBound,
+        Math.min(calculatedHeight - nodeBound, e.clientY - rect.top),
+      )
+      setNodePositions((prev) => ({
         ...prev,
         [draggingNode]: { x: newX, y: newY },
       }))
@@ -782,21 +929,41 @@ function ConnectionDiagram({
       onMouseLeave={handleMouseUp}
       onClick={handleBackgroundClick}
     >
-      <svg
-        width="100%"
-        height={calculatedHeight}
-        className="absolute inset-0"
-      >
+      <svg width="100%" height={calculatedHeight} className="absolute inset-0">
         <defs>
-          <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%" gradientUnits="userSpaceOnUse">
+          <linearGradient
+            id="lineGradient"
+            x1="0%"
+            y1="0%"
+            x2="100%"
+            y2="0%"
+            gradientUnits="userSpaceOnUse"
+          >
             <stop offset="0%" stopColor="#60a5fa" stopOpacity="0.8">
-              <animate attributeName="stop-color" values="#60a5fa;#a78bfa;#60a5fa" dur="2s" repeatCount="indefinite" />
+              <animate
+                attributeName="stop-color"
+                values="#60a5fa;#a78bfa;#60a5fa"
+                dur="2s"
+                repeatCount="indefinite"
+              />
             </stop>
             <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.8">
-              <animate attributeName="stop-color" values="#a78bfa;#60a5fa;#a78bfa" dur="2s" repeatCount="indefinite" />
+              <animate
+                attributeName="stop-color"
+                values="#a78bfa;#60a5fa;#a78bfa"
+                dur="2s"
+                repeatCount="indefinite"
+              />
             </stop>
           </linearGradient>
-          <linearGradient id="pendingLineGradient" x1="0%" y1="0%" x2="100%" y2="0%" gradientUnits="userSpaceOnUse">
+          <linearGradient
+            id="pendingLineGradient"
+            x1="0%"
+            y1="0%"
+            x2="100%"
+            y2="0%"
+            gradientUnits="userSpaceOnUse"
+          >
             <stop offset="0%" stopColor="#22c55e" stopOpacity="0.8" />
             <stop offset="100%" stopColor="#10b981" stopOpacity="0.8" />
           </linearGradient>
@@ -899,16 +1066,28 @@ function ConnectionDiagram({
           />
         )}
 
-        <g className={isDrawingLine ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}>
+        <g
+          className={
+            isDrawingLine
+              ? "cursor-pointer"
+              : "cursor-grab active:cursor-grabbing"
+          }
+        >
           <circle
             cx={handlerPos.x}
             cy={handlerPos.y}
             r={45}
-            fill={isDrawingLine ? "url(#handlerActiveGradient)" : "url(#handlerGradient)"}
+            fill={
+              isDrawingLine
+                ? "url(#handlerActiveGradient)"
+                : "url(#handlerGradient)"
+            }
             stroke={isDrawingLine ? "#22c55e" : "#93c5fd"}
             strokeWidth={2}
             onClick={handleHandlerClick}
-            onMouseDown={(e) => !isDrawingLine && handleNodeDragStart(e, "__handler__")}
+            onMouseDown={(e) =>
+              !isDrawingLine && handleNodeDragStart(e, "__handler__")
+            }
           />
           <text
             x={handlerPos.x}
@@ -919,7 +1098,9 @@ function ConnectionDiagram({
             fontWeight="bold"
             pointerEvents="none"
           >
-            {itemHandler.name.length > 10 ? itemHandler.name.slice(0, 10) + "..." : itemHandler.name}
+            {itemHandler.name.length > 10
+              ? `${itemHandler.name.slice(0, 10)}...`
+              : itemHandler.name}
           </text>
           <text
             x={handlerPos.x}
@@ -939,7 +1120,9 @@ function ConnectionDiagram({
             fontSize="8"
             pointerEvents="none"
           >
-            {isDrawingLine ? "Click item to connect" : `${connected.length} connected`}
+            {isDrawingLine
+              ? "Click item to connect"
+              : `${connected.length} connected`}
           </text>
         </g>
 
@@ -952,7 +1135,11 @@ function ConnectionDiagram({
             return (
               <g
                 key={item.id}
-                className={isDrawingLine && !isConnected ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}
+                className={
+                  isDrawingLine && !isConnected
+                    ? "cursor-pointer"
+                    : "cursor-grab active:cursor-grabbing"
+                }
                 onMouseEnter={() => setHoveredItem(item.id)}
                 onMouseLeave={() => setHoveredItem(null)}
               >
@@ -962,11 +1149,23 @@ function ConnectionDiagram({
                   width={140}
                   height={40}
                   rx={8}
-                  fill={isConnected ? "url(#itemConnectedGradient)" : "url(#itemAvailableGradient)"}
-                  stroke={isConnected ? "#22c55e" : isDrawingLine ? "#22c55e" : "#64748b"}
+                  fill={
+                    isConnected
+                      ? "url(#itemConnectedGradient)"
+                      : "url(#itemAvailableGradient)"
+                  }
+                  stroke={
+                    isConnected
+                      ? "#22c55e"
+                      : isDrawingLine
+                        ? "#22c55e"
+                        : "#64748b"
+                  }
                   strokeWidth={isHovered ? 2 : 1}
                   onClick={(e) => handleItemClick(e, item.id)}
-                  onMouseDown={(e) => !isDrawingLine && handleNodeDragStart(e, item.id)}
+                  onMouseDown={(e) =>
+                    !isDrawingLine && handleNodeDragStart(e, item.id)
+                  }
                 />
                 <circle
                   cx={itemPos.x - 55}
@@ -983,16 +1182,28 @@ function ConnectionDiagram({
                   fontWeight="500"
                   pointerEvents="none"
                 >
-                  {item.title.length > 12 ? item.title.slice(0, 12) + "..." : item.title}
+                  {item.title.length > 12
+                    ? `${item.title.slice(0, 12)}...`
+                    : item.title}
                 </text>
                 <text
                   x={itemPos.x - 45}
                   y={itemPos.y + 8}
-                  fill={isConnected ? "#93c5fd" : isDrawingLine ? "#22c55e" : "#94a3b8"}
+                  fill={
+                    isConnected
+                      ? "#93c5fd"
+                      : isDrawingLine
+                        ? "#22c55e"
+                        : "#94a3b8"
+                  }
                   fontSize="8"
                   pointerEvents="none"
                 >
-                  {isConnected ? "Connected" : isDrawingLine ? "Click to connect" : "Click to draw line"}
+                  {isConnected
+                    ? "Connected"
+                    : isDrawingLine
+                      ? "Click to connect"
+                      : "Click to draw line"}
                 </text>
               </g>
             )
@@ -1001,20 +1212,28 @@ function ConnectionDiagram({
       </svg>
 
       <div className="absolute top-4 left-4 flex items-center gap-2">
-        <Badge variant="outline" className="bg-sky-500/20 border-sky-500/50 text-sky-300">
+        <Badge
+          variant="outline"
+          className="bg-sky-500/20 border-sky-500/50 text-sky-300"
+        >
           {connected.length} Connected
         </Badge>
-        <Badge variant="outline" className="bg-green-500/20 border-green-500/50 text-green-300">
+        <Badge
+          variant="outline"
+          className="bg-green-500/20 border-green-500/50 text-green-300"
+        >
           {available.length} Available
         </Badge>
       </div>
 
       <div className="absolute bottom-4 left-4 text-xs text-slate-500">
         <span className="flex items-center gap-1">
-          <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> Running
+          <span className="inline-block w-2 h-2 rounded-full bg-green-500" />{" "}
+          Running
         </span>
         <span className="flex items-center gap-1 mt-1">
-          <span className="inline-block w-2 h-2 rounded-full bg-slate-500" /> Stopped
+          <span className="inline-block w-2 h-2 rounded-full bg-slate-500" />{" "}
+          Stopped
         </span>
       </div>
     </div>
@@ -1024,6 +1243,7 @@ function ConnectionDiagram({
 function ItemHandlerDetail() {
   const { itemHandlerId } = Route.useParams()
   const queryClient = useQueryClient()
+  const { t, localeTag } = useI18n()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const [isSaving, setIsSaving] = useState(false)
 
@@ -1032,7 +1252,8 @@ function ItemHandlerDetail() {
   })
 
   const { data: connectedItems } = useQuery({
-    queryFn: () => ItemHandlerAssociationsService.getItemsForHandler({ itemHandlerId }),
+    queryFn: () =>
+      ItemHandlerAssociationsService.getItemsForHandler({ itemHandlerId }),
     queryKey: ["itemHandler-items", itemHandlerId],
   })
 
@@ -1053,11 +1274,17 @@ function ItemHandlerDetail() {
 
   const allItems = (allItemsData as any)?.data || []
   const connectedItemsList = (connectedItems as any[]) || []
-  const connectedItemIds = new Set(connectedItemsList.map((item: any) => item.id))
-  const availableItems = allItems.filter((item: any) => !connectedItemIds.has(item.id))
+  const connectedItemIds = new Set(
+    connectedItemsList.map((item: any) => item.id),
+  )
+  const availableItems = allItems.filter(
+    (item: any) => !connectedItemIds.has(item.id),
+  )
 
   const skills = skillsData?.data || []
   const enabledSkills = (itemHandler as any)?.enabled_skills ?? []
+  const enabledKnowledgeFiles =
+    (itemHandler as any)?.enabled_knowledge_files ?? []
 
   const mcpServers = mcpData?.data || []
   const enabledMcpServers = (itemHandler as any)?.enabled_mcp_servers ?? []
@@ -1101,18 +1328,45 @@ function ItemHandlerDetail() {
   }
 
   const saveChanges = async () => {
+    const name = editForm.name.trim()
+    if (!name) {
+      showErrorToast(t("itemHandlers.nameRequired"))
+      return
+    }
+
+    const requestBody = {
+      name,
+      model: normalizeOptionalText(editForm.model),
+      api_key: normalizeOptionalText(editForm.api_key),
+      api_url: normalizeOptionalText(editForm.api_url),
+      enabled_skills: editForm.enabled_skills,
+    }
+
     setIsSaving(true)
     try {
       await ItemHandlersService.updateItemHandler({
         id: itemHandlerId,
-        requestBody: editForm,
+        requestBody,
       })
-      showSuccessToast("ItemHandler updated successfully")
+      setEditForm((current) => ({
+        ...current,
+        name,
+        model: requestBody.model ?? "",
+        api_key: requestBody.api_key ?? "",
+        api_url: requestBody.api_url ?? "",
+      }))
+      showSuccessToast(t("itemHandlers.detail.itemHandlerUpdated"))
       setIsEditing(false)
-      queryClient.invalidateQueries({ queryKey: ["itemHandler", itemHandlerId] })
+      queryClient.invalidateQueries({
+        queryKey: ["itemHandler", itemHandlerId],
+      })
       queryClient.invalidateQueries({ queryKey: ["itemHandlers"] })
     } catch (error) {
-      showErrorToast("Failed to update ItemHandler")
+      if (error instanceof ApiError) {
+        showErrorToast(extractErrorMessage(error))
+      } else {
+        showErrorToast(t("itemHandlers.detail.itemHandlerUpdateFailed"))
+      }
     } finally {
       setIsSaving(false)
     }
@@ -1127,10 +1381,20 @@ function ItemHandlerDetail() {
         id: itemHandlerId,
         requestBody: { enabled_skills: newSkills },
       })
-      showSuccessToast(enable ? "Skill enabled" : "Skill disabled")
-      queryClient.invalidateQueries({ queryKey: ["itemHandler", itemHandlerId] })
+      showSuccessToast(
+        enable
+          ? t("itemHandlers.detail.skillEnabled")
+          : t("itemHandlers.detail.skillDisabled"),
+      )
+      queryClient.invalidateQueries({
+        queryKey: ["itemHandler", itemHandlerId],
+      })
     } catch (error) {
-      showErrorToast("Failed to update skill")
+      if (error instanceof ApiError) {
+        showErrorToast(extractErrorMessage(error))
+      } else {
+        showErrorToast(t("itemHandlers.detail.skillUpdateFailed"))
+      }
     }
   }
 
@@ -1143,10 +1407,49 @@ function ItemHandlerDetail() {
         id: itemHandlerId,
         requestBody: { enabled_mcp_servers: newServers },
       })
-      showSuccessToast(enable ? "MCP Server enabled" : "MCP Server disabled")
-      queryClient.invalidateQueries({ queryKey: ["itemHandler", itemHandlerId] })
+      showSuccessToast(
+        enable
+          ? t("itemHandlers.detail.mcpEnabled")
+          : t("itemHandlers.detail.mcpDisabled"),
+      )
+      queryClient.invalidateQueries({
+        queryKey: ["itemHandler", itemHandlerId],
+      })
     } catch (error) {
-      showErrorToast("Failed to update MCP server")
+      if (error instanceof ApiError) {
+        showErrorToast(extractErrorMessage(error))
+      } else {
+        showErrorToast(t("itemHandlers.detail.mcpUpdateFailed"))
+      }
+    }
+  }
+
+  const handleKnowledgeToggle = async (filePath: string, enable: boolean) => {
+    try {
+      const newFiles = enable
+        ? [...enabledKnowledgeFiles, filePath]
+        : enabledKnowledgeFiles.filter((path: string) => path !== filePath)
+      await ItemHandlersService.updateItemHandler({
+        id: itemHandlerId,
+        requestBody: { enabled_knowledge_files: newFiles } as any,
+      })
+      showSuccessToast(
+        enable
+          ? t("itemHandlers.detail.knowledgeEnabled")
+          : t("itemHandlers.detail.knowledgeDisabled"),
+      )
+      queryClient.invalidateQueries({
+        queryKey: ["itemHandler", itemHandlerId],
+      })
+      queryClient.invalidateQueries({
+        queryKey: ["itemHandler-knowledge", itemHandlerId],
+      })
+    } catch (error) {
+      if (error instanceof ApiError) {
+        showErrorToast(extractErrorMessage(error))
+      } else {
+        showErrorToast(t("itemHandlers.detail.knowledgeUpdateFailed"))
+      }
     }
   }
 
@@ -1158,11 +1461,13 @@ function ItemHandlerDetail() {
           item_id: itemId,
         },
       })
-      showSuccessToast("Item connected successfully")
-      queryClient.invalidateQueries({ queryKey: ["itemHandler-items", itemHandlerId] })
+      showSuccessToast(t("itemHandlers.detail.itemConnected"))
+      queryClient.invalidateQueries({
+        queryKey: ["itemHandler-items", itemHandlerId],
+      })
       queryClient.invalidateQueries({ queryKey: ["items"] })
-    } catch (error) {
-      showErrorToast("Failed to connect item")
+    } catch (_error) {
+      showErrorToast(t("itemHandlers.detail.itemConnectFailed"))
     }
   }
 
@@ -1172,18 +1477,20 @@ function ItemHandlerDetail() {
         itemHandlerId: itemHandlerId,
         itemId: itemId,
       })
-      showSuccessToast("Item disconnected")
-      queryClient.invalidateQueries({ queryKey: ["itemHandler-items", itemHandlerId] })
+      showSuccessToast(t("itemHandlers.detail.itemDisconnected"))
+      queryClient.invalidateQueries({
+        queryKey: ["itemHandler-items", itemHandlerId],
+      })
       queryClient.invalidateQueries({ queryKey: ["items"] })
-    } catch (error) {
-      showErrorToast("Failed to disconnect item")
+    } catch (_error) {
+      showErrorToast(t("itemHandlers.detail.itemDisconnectFailed"))
     }
   }
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="text-muted-foreground">Loading...</div>
+        <div className="text-muted-foreground">{t("common.loading")}</div>
       </div>
     )
   }
@@ -1191,229 +1498,329 @@ function ItemHandlerDetail() {
   if (!itemHandler) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="text-muted-foreground">ItemHandler not found</div>
+        <div className="text-muted-foreground">
+          {t("itemHandlers.detail.notFound")}
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-6">
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+    <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-4">
+      <section className="space-y-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           <Link to="/item-handlers" className="hover:text-foreground">
-            Item Handlers
+            {t("itemHandlers.pageTitle")}
           </Link>
-          <ChevronRight className="size-4" />
+          <ChevronRight className="size-3.5" />
           <span className="text-foreground">{itemHandler.name}</span>
         </div>
 
-        <div className="rounded-2xl border bg-card/85 px-5 py-5 shadow-sm">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="flex flex-col gap-4">
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="h-8 w-fit px-3"
-              >
-                <Link to="/item-handlers">
-                  <ArrowLeft className="size-4" />
-                  Back to item handlers
-                </Link>
-              </Button>
-
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                <div className="flex size-12 items-center justify-center rounded-xl border bg-muted/40">
-                  <Settings className="size-6 text-muted-foreground" />
-                </div>
-
-                <div className="space-y-3">
-                  <h1 className="text-3xl font-bold tracking-tight">
-                    {itemHandler.name}
-                  </h1>
-                  <p className="max-w-3xl text-sm text-muted-foreground">
-                    Manage item handler configuration and associated items
-                  </p>
-                </div>
+        <div className="rounded-xl border bg-card/90 px-3 py-2 shadow-sm">
+          <div className="min-w-0 space-y-1.5">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="break-words text-base font-semibold leading-tight tracking-tight sm:text-lg">
+                  {itemHandler.name}
+                </h1>
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                  {connectedItemsList.length}{" "}
+                  {t("itemHandlers.detail.connections")}
+                </Badge>
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                  {enabledSkills.length} {t("itemHandlers.detail.skills")}
+                </Badge>
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                  {enabledMcpServers.length} MCP
+                </Badge>
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                  {enabledKnowledgeFiles.length}{" "}
+                  {t("itemHandlers.detail.knowledge")}
+                </Badge>
               </div>
+              <p className="max-w-3xl text-[11px] leading-4 text-muted-foreground sm:text-xs">
+                {t("itemHandlers.detail.description")}
+              </p>
             </div>
           </div>
         </div>
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="overflow-hidden lg:col-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2">
-              <Zap className="size-5 text-yellow-500" />
-              Connection Diagram
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Visual representation of items managed by this handler
-            </p>
-          </CardHeader>
-          <CardContent className="p-0">
-            <ConnectionDiagram
-              itemHandler={itemHandler}
-              connectedItems={connectedItemsList}
-              availableItems={availableItems}
-              onConnect={handleConnect}
-              onDisconnect={handleDisconnect}
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2">
-              <Terminal className="size-5 text-blue-500" />
-              All Items
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Click to expand and view connected handlers
-            </p>
-          </CardHeader>
-          <CardContent>
-            {allItems.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No items available</p>
-            ) : (
-              <div className="space-y-1">
-                {allItems.map((item: any) => (
-                  <ItemWithHandlers 
-                    key={item.id} 
-                    item={item} 
-                    currentHandlerId={itemHandlerId}
-                    isConnected={connectedItemIds.has(item.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      <Tabs defaultValue="connections" className="gap-3">
+        <div className="overflow-x-auto">
+          <TabsList className="h-auto min-w-max gap-1 bg-muted/70 p-1">
+            <TabsTrigger value="connections">
+              {t("itemHandlers.detail.connections")}
+            </TabsTrigger>
+            <TabsTrigger value="skills">
+              {t("itemHandlers.detail.skills")}
+            </TabsTrigger>
+            <TabsTrigger value="knowledge">
+              {t("itemHandlers.detail.knowledge")}
+            </TabsTrigger>
+            <TabsTrigger value="mcp">MCP</TabsTrigger>
+            <TabsTrigger value="config">
+              {t("itemHandlers.detail.config")}
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Zap className="size-5 text-yellow-500" />
-            Skills Configuration
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            从右侧拖拽技能到左侧启用，或点击技能快速添加
-          </p>
-        </CardHeader>
-        <CardContent>
-          <SkillSelector
-            allSkills={skills}
-            enabledSkills={enabledSkills}
-            onSkillToggle={handleSkillToggle}
-          />
-        </CardContent>
-      </Card>
+        <TabsContent value="connections">
+          <div className="grid gap-6 lg:grid-cols-3">
+            <Card className="overflow-hidden lg:col-span-2">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="size-5 text-yellow-500" />
+                  {t("itemHandlers.detail.connectionDiagram")}
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  {t("itemHandlers.detail.connectionDiagramDescription")}
+                </p>
+              </CardHeader>
+              <CardContent className="p-0">
+                <ConnectionDiagram
+                  itemHandler={itemHandler}
+                  connectedItems={connectedItemsList}
+                  availableItems={availableItems}
+                  onConnect={handleConnect}
+                  onDisconnect={handleDisconnect}
+                />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2">
+                  <Terminal className="size-5 text-blue-500" />
+                  {t("itemHandlers.detail.allItems")}
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  {t("itemHandlers.detail.allItemsDescription")}
+                </p>
+              </CardHeader>
+              <CardContent>
+                {allItems.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {t("itemHandlers.detail.noItems")}
+                  </p>
+                ) : (
+                  <div className="space-y-1">
+                    {allItems.map((item: any) => (
+                      <ItemWithHandlers
+                        key={item.id}
+                        item={item}
+                        currentHandlerId={itemHandlerId}
+                        isConnected={connectedItemIds.has(item.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Server className="size-5 text-purple-500" />
-            MCP Servers Configuration
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            从右侧拖拽 MCP Server 到左侧启用，或点击服务器快速添加
-          </p>
-        </CardHeader>
-        <CardContent>
-          <MCPSelector
-            allServers={mcpServers}
-            enabledServers={enabledMcpServers}
-            onServerToggle={handleMcpServerToggle}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
+        <TabsContent value="skills">
+          <Card>
+            <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Settings className="size-5" />
-                Model Settings
+                <Zap className="size-5 text-yellow-500" />
+                {t("itemHandlers.detail.skillsConfiguration")}
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                Configure model and API settings
+                {t("itemHandlers.detail.skillsConfigurationDescription")}
               </p>
-            </div>
-            <div className="flex gap-2">
-              {!isEditing ? (
-                <Button size="sm" onClick={startEditing}>Edit</Button>
-              ) : (
+            </CardHeader>
+            <CardContent>
+              <SkillSelector
+                allSkills={skills}
+                enabledSkills={enabledSkills}
+                onSkillToggle={handleSkillToggle}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="mcp">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Server className="size-5 text-purple-500" />
+                {t("itemHandlers.detail.mcpConfiguration")}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                {t("itemHandlers.detail.mcpConfigurationDescription")}
+              </p>
+            </CardHeader>
+            <CardContent>
+              <MCPSelector
+                allServers={mcpServers}
+                enabledServers={enabledMcpServers}
+                onServerToggle={handleMcpServerToggle}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="knowledge">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Terminal className="size-5 text-emerald-500" />
+                {t("itemHandlers.detail.knowledgeConfiguration")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <KnowledgeBindingSelector
+                itemHandlerId={itemHandlerId}
+                enabledKnowledgeFiles={enabledKnowledgeFiles}
+                onKnowledgeToggle={handleKnowledgeToggle}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="config">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Settings className="size-5" />
+                    {t("itemHandlers.detail.modelSettings")}
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    {t("itemHandlers.detail.modelSettingsDescription")}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  {!isEditing ? (
+                    <Button size="sm" onClick={startEditing}>
+                      {t("itemHandlers.detail.edit")}
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={cancelEditing}
+                      >
+                        {t("common.cancel")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={saveChanges}
+                        disabled={isSaving || !editForm.name.trim()}
+                      >
+                        {isSaving ? t("common.loading") : t("common.save")}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isEditing ? (
                 <>
-                  <Button size="sm" variant="outline" onClick={cancelEditing}>
-                    Cancel
-                  </Button>
-                  <Button size="sm" onClick={saveChanges} disabled={isSaving}>
-                    {isSaving ? "Saving..." : "Save"}
-                  </Button>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        {t("common.name")}
+                      </label>
+                      <Input
+                        value={editForm.name}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, name: e.target.value })
+                        }
+                        aria-invalid={!editForm.name.trim()}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        {t("common.model")}
+                      </label>
+                      <Input
+                        value={editForm.model}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, model: e.target.value })
+                        }
+                        placeholder="e.g., gpt-4"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        {t("common.apiKey")}
+                      </label>
+                      <Input
+                        value={editForm.api_key}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, api_key: e.target.value })
+                        }
+                        placeholder={t("common.apiKey")}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        {t("common.apiUrl")}
+                      </label>
+                      <Input
+                        value={editForm.api_url}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, api_url: e.target.value })
+                        }
+                        placeholder={t("common.apiUrl")}
+                      />
+                    </div>
+                  </div>
                 </>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <KeyValue label={t("common.name")} value={itemHandler.name} />
+                  <KeyValue
+                    label={t("common.model")}
+                    value={itemHandler.model}
+                  />
+                  <KeyValue
+                    label={t("common.apiKey")}
+                    value={
+                      itemHandler.api_key
+                        ? `****${itemHandler.api_key.slice(-4)}`
+                        : null
+                    }
+                  />
+                  <KeyValue
+                    label={t("common.apiUrl")}
+                    value={itemHandler.api_url}
+                  />
+                </div>
               )}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {isEditing ? (
-            <>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Name</label>
-                  <Input
-                    value={editForm.name}
-                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+              <div className="border-t pt-4 mt-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <KeyValue label={t("common.id")} value={itemHandler.id} />
+                  <KeyValue
+                    label={t("common.ownerId")}
+                    value={itemHandler.owner_id}
                   />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Model</label>
-                  <Input
-                    value={editForm.model}
-                    onChange={(e) => setEditForm({ ...editForm, model: e.target.value })}
-                    placeholder="e.g., gpt-4"
+                  <KeyValue
+                    label={t("common.createdAt")}
+                    value={
+                      formatDate(itemHandler.created_at, localeTag) || undefined
+                    }
                   />
-                </div>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">API Key</label>
-                  <Input
-                    value={editForm.api_key}
-                    onChange={(e) => setEditForm({ ...editForm, api_key: e.target.value })}
-                    placeholder="API key for the model"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">API URL</label>
-                  <Input
-                    value={editForm.api_url}
-                    onChange={(e) => setEditForm({ ...editForm, api_url: e.target.value })}
-                    placeholder="https://api.example.com"
+                  <KeyValue
+                    label={t("common.updatedAt")}
+                    value={
+                      formatDate(itemHandler.updated_at, localeTag) || undefined
+                    }
                   />
                 </div>
               </div>
-            </>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <KeyValue label="Name" value={itemHandler.name} />
-              <KeyValue label="Model" value={itemHandler.model} />
-              <KeyValue label="API Key" value={itemHandler.api_key ? `****${itemHandler.api_key.slice(-4)}` : null} />
-              <KeyValue label="API URL" value={itemHandler.api_url} />
-            </div>
-          )}
-          <div className="border-t pt-4 mt-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <KeyValue label="ID" value={itemHandler.id} />
-              <KeyValue label="Owner ID" value={itemHandler.owner_id} />
-              <KeyValue label="Created At" value={formatDate(itemHandler.created_at)} />
-              <KeyValue label="Updated At" value={formatDate(itemHandler.updated_at)} />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

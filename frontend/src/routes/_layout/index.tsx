@@ -8,9 +8,9 @@ import {
   Trash2,
   User,
 } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
-import { ItemsService, ItemHandlerAssociationsService } from "@/client/sdk.gen"
+import { ItemHandlerAssociationsService, ItemsService } from "@/client/sdk.gen"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -92,7 +92,7 @@ function Dashboard() {
 
   const isAdmin = currentUser?.is_superuser ?? false
 
-  const fetchItems = async () => {
+  const fetchItems = useCallback(async () => {
     try {
       setLoading(true)
       const response = await ItemsService.readItems()
@@ -103,11 +103,11 @@ function Dashboard() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchItems()
-  }, [])
+  }, [fetchItems])
 
   const handleDisconnectUser = async () => {
     if (!disconnectDialog) return
@@ -404,7 +404,10 @@ function ItemCard({
       if (expanded && item.id) {
         setLoadingHandlers(true)
         try {
-          const result = await ItemHandlerAssociationsService.getHandlersForItem({ itemId: item.id })
+          const result =
+            await ItemHandlerAssociationsService.getHandlersForItem({
+              itemId: item.id,
+            })
           setHandlers(result || [])
         } catch (error) {
           console.error("Failed to fetch handlers:", error)
@@ -444,7 +447,10 @@ function ItemCard({
                   params={{ itemHandlerId: handlers[0].id }}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <Badge variant="outline" className="text-xs gap-1 cursor-pointer hover:bg-primary/10">
+                  <Badge
+                    variant="outline"
+                    className="text-xs gap-1 cursor-pointer hover:bg-primary/10"
+                  >
                     <Plug className="size-3" />
                     {handlers[0].name}
                   </Badge>
@@ -492,7 +498,10 @@ function ItemCard({
                     to="/item-handlers/$itemHandlerId"
                     params={{ itemHandlerId: handler.id }}
                   >
-                    <Badge variant="secondary" className="cursor-pointer hover:bg-primary/20">
+                    <Badge
+                      variant="secondary"
+                      className="cursor-pointer hover:bg-primary/20"
+                    >
                       {handler.name}
                     </Badge>
                   </Link>
