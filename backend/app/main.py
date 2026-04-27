@@ -14,6 +14,15 @@ from app.services import initialize_daemon_connections
 
 logger = logging.getLogger(__name__)
 
+_bridge_router = None
+if settings.ROBOT_PLUGIN_ENABLED and settings.ROBOT_BRIDGE_EMBEDDED:
+    from app.plugins.robot.bridge.embedded import init_embedded_bridge, get_bridge_router
+    logger.info("[App] Initializing embedded robot bridge...")
+    init_embedded_bridge()
+    _bridge_router = get_bridge_router()
+    if _bridge_router:
+        logger.info("[App] Robot bridge initialized")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -63,8 +72,11 @@ elif settings.all_cors_origins:
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+if _bridge_router:
+    app.include_router(_bridge_router)
+    logger.info("[App] Robot bridge router included")
 
-# 初始化daemon连接
+
 initialize_daemon_connections()
 
 

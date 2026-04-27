@@ -1,121 +1,105 @@
-# FastAPI Project - Frontend
+# TermMan Frontend
 
-The frontend is built with [Vite](https://vitejs.dev/), [React](https://reactjs.org/), [TypeScript](https://www.typescriptlang.org/), [TanStack Query](https://tanstack.com/query), [TanStack Router](https://tanstack.com/router) and [Tailwind CSS](https://tailwindcss.com/).
+TermMan 的前端应用，基于 React + TypeScript + Vite 构建。
 
-## Requirements
+## 技术栈
 
-- [Bun](https://bun.sh/) (recommended) or [Node.js](https://nodejs.org/)
+- **React 18** - UI 框架
+- **TypeScript** - 类型安全
+- **Vite** - 构建工具
+- **Tailwind CSS** - 样式框架
+- **shadcn/ui** - UI 组件库
+- **TanStack Query** - 数据请求
+- **TanStack Router** - 路由管理
+- **xterm.js** - 终端模拟
 
-## Quick Start
+## 快速开始
+
+### 环境要求
+
+- Bun (推荐) 或 Node.js 18+
+
+### 安装依赖
 
 ```bash
 bun install
+```
+
+### 开发模式
+
+```bash
 bun run dev
 ```
 
-* Then open your browser at http://localhost:5173/.
+访问 http://localhost:5173
 
-Notice that this live server is not running inside Docker, it's for local development, and that is the recommended workflow. Once you are happy with your frontend, you can build the frontend Docker image and start it, to test it in a production-like environment. But building the image at every change will not be as productive as running the local development server with live reload.
-
-Check the file `package.json` to see other available options.
-
-### Removing the frontend
-
-If you are developing an API-only app and want to remove the frontend, you can do it easily:
-
-* Remove the `./frontend` directory.
-
-* In the `compose.yml` file, remove the whole service / section `frontend`.
-
-* In the `compose.override.yml` file, remove the whole service / section `frontend` and `playwright`.
-
-Done, you have a frontend-less (api-only) app. 🤓
-
----
-
-If you want, you can also remove the `FRONTEND` environment variables from:
-
-* `.env`
-* `./scripts/*.sh`
-
-But it would be only to clean them up, leaving them won't really have any effect either way.
-
-## Generate Client
-
-### Automatically
-
-* Activate the backend virtual environment.
-* From the top level project directory, run the script:
+### 构建生产版本
 
 ```bash
-bash ./scripts/generate-client.sh
+bun run build
 ```
 
-* Commit the changes.
+## 目录结构
 
-### Manually
+```
+frontend/
+├── src/
+│   ├── components/       # UI 组件
+│   │   ├── ui/           # shadcn/ui 基础组件
+│   │   └── ...           # 业务组件
+│   ├── routes/           # 路由页面
+│   ├── hooks/            # 自定义 Hooks
+│   ├── lib/              # 工具函数
+│   ├── client/           # API 客户端 (自动生成)
+│   └── main.tsx          # 入口文件
+├── public/               # 静态资源
+├── index.html            # HTML 模板
+├── vite.config.ts        # Vite 配置
+├── tailwind.config.js    # Tailwind 配置
+└── package.json          # 项目配置
+```
 
-* Start the Docker Compose stack.
+## 主要功能页面
 
-* Download the OpenAPI JSON file from `http://localhost/api/v1/openapi.json` and copy it to a new file `openapi.json` at the root of the `frontend` directory.
+| 路由 | 页面 | 说明 |
+|------|------|------|
+| `/` | Dashboard | 仪表盘 |
+| `/login` | Login | 登录页 |
+| `/items` | Items | 终端列表 |
+| `/items/:id` | ItemDetail | 终端详情/终端界面 |
+| `/handlers` | Handlers | Agent 配置列表 |
+| `/handlers/:id` | HandlerDetail | Agent 配置详情 |
+| `/knowledge` | Knowledge | 知识库管理 |
+| `/settings` | Settings | 系统设置 |
 
-* To generate the frontend client, run:
+## API 客户端
+
+前端 API 客户端通过 OpenAPI 自动生成：
 
 ```bash
+# 从后端 OpenAPI 规范生成客户端
 bun run generate-client
 ```
 
-* Commit the changes.
+生成的客户端代码位于 `src/client/` 目录。
 
-Notice that everytime the backend changes (changing the OpenAPI schema), you should follow these steps again to update the frontend client.
+## 终端组件
 
-## Using a Remote API
+使用 xterm.js 实现终端模拟：
 
-If you want to use a remote API, you can set the environment variable `VITE_API_URL` to the URL of the remote API. For example, you can set it in the `frontend/.env` file:
+- 支持 WebSocket 实时连接
+- 支持终端输入/输出
+- 支持终端大小调整
+- 支持复制/粘贴
 
-```env
-VITE_API_URL=https://api.my-domain.example.com
-```
+## 样式规范
 
-Then, when you run the frontend, it will use that URL as the base URL for the API.
+- 使用 Tailwind CSS 原子类
+- 组件使用 shadcn/ui
+- 支持深色模式
 
-## Code Structure
+## 代码规范
 
-The frontend code is structured as follows:
-
-* `frontend/src` - The main frontend code.
-* `frontend/src/assets` - Static assets.
-* `frontend/src/client` - The generated OpenAPI client.
-* `frontend/src/components` -  The different components of the frontend.
-* `frontend/src/hooks` - Custom hooks.
-* `frontend/src/routes` - The different routes of the frontend which include the pages.
-
-## End-to-End Testing with Playwright
-
-The frontend includes initial end-to-end tests using Playwright. To run the tests, you need to have the Docker Compose stack running. Start the stack with the following command:
-
-```bash
-docker compose up -d --wait backend
-```
-
-Then, you can run the tests with the following command:
-
-```bash
-bunx playwright test
-```
-
-You can also run your tests in UI mode to see the browser and interact with it running:
-
-```bash
-bunx playwright test --ui
-```
-
-To stop and remove the Docker Compose stack and clean the data created in tests, use the following command:
-
-```bash
-docker compose down -v
-```
-
-To update the tests, navigate to the tests directory and modify the existing test files or add new ones as needed.
-
-For more information on writing and running Playwright tests, refer to the official [Playwright documentation](https://playwright.dev/docs/intro).
+- 使用 Biome 进行代码格式化
+- 使用 TypeScript 严格模式
+- 组件使用函数式写法

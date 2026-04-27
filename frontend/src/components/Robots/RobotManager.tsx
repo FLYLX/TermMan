@@ -4,11 +4,12 @@ import {
   Bot,
   Cable,
   CirclePlus,
-  KeyRound,
   Loader2,
   Search,
-  Shield,
+  Stethoscope,
   Trash2,
+  Wifi,
+  WifiOff,
 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 
@@ -39,13 +40,17 @@ import useCustomToast from "@/hooks/useCustomToast"
 import {
   createRobot,
   deleteRobot,
+  diagnoseRobotChain,
+  getBridgeHealth,
+  getBridgeHealthQueryKey,
+  getRobotDiagnoseQueryKey,
   getRobotPlatformsQueryKey,
   getRobotsQueryKey,
   listRobotBindings,
   listRobotPlatforms,
   listRobots,
+  type BridgeHealthResponse,
   type RobotBindingRecord,
-  type RobotPlatformField,
   type RobotPlatformRecord,
   type RobotRecord,
 } from "./api"
@@ -63,16 +68,6 @@ function normalizePlatformId(platform: string | null | undefined) {
     return "qq_official"
   }
   return platform ?? ""
-}
-
-function maskValue(value: string | null | undefined) {
-  if (!value) {
-    return "-"
-  }
-  if (value.length <= 8) {
-    return value
-  }
-  return `${value.slice(0, 4)}...${value.slice(-4)}`
 }
 
 function buildFormForPlatform(
@@ -111,24 +106,6 @@ function getRobotCredentials(robot: RobotRecord): Record<string, string> {
   }
 
   return {}
-}
-
-function buildCredentialFields(
-  platform: RobotPlatformRecord | null,
-  credentials: Record<string, string>,
-) {
-  if (platform?.fields.length) {
-    return platform.fields
-  }
-
-  return Object.keys(credentials).map(
-    (key): RobotPlatformField => ({
-      key,
-      label: key,
-      required: false,
-      secret: key.includes("secret") || key.includes("token"),
-    }),
-  )
 }
 
 function RobotStatusBadge({ enabled }: { enabled: boolean }) {
@@ -407,21 +384,29 @@ function RobotCard({
   platformMap,
   onDelete,
   deletingRobotId,
+  connectionStatus,
 }: {
   robot: RobotRecord
   bindingCount: number
   platformMap: Map<string, RobotPlatformRecord>
   onDelete: (robot: RobotRecord) => void
   deletingRobotId: string | null
+  connectionStatus?: { identity: string; connected: boolean }
 }) {
   const { locale, t } = useI18n()
+  const [showDiagnose, setShowDiagnose] = useState(false)
   const platform = platformMap.get(normalizePlatformId(robot.platform)) ?? null
-  const credentials = getRobotCredentials(robot)
-  const credentialFields = buildCredentialFields(platform, credentials).slice(
-    0,
-    3,
-  )
   const manageLabel = locale === "zh" ? "管理绑定" : "Manage"
+  const connectedLabel = locale === "zh" ? "已连接" : "Connected"
+  const disconnectedLabel = locale === "zh" ? "未连接" : "Disconnected"
+  const diagnoseLabel = locale === "zh" ? "诊断" : "Diagnose"
+
+  const { data: diagnoseResult, isLoading: isDiagnosing, isError, error } = useQuery({
+    queryKey: getRobotDiagnoseQueryKey(robot.id),
+    queryFn: () => diagnoseRobotChain(robot.id),
+    enabled: showDiagnose,
+    retry: false,
+  })
 
   return (
     <div className="rounded-[22px] border bg-card p-4 shadow-sm transition-transform hover:-translate-y-0.5 hover:border-primary/25">
@@ -431,7 +416,22 @@ function RobotCard({
             <Bot className="size-4.5" />
           </div>
           <div className="min-w-0 space-y-1">
-            <div className="truncate text-sm font-semibold">{robot.name}</div>
+            <div className="flex items-center gap-2">
+              <span className="truncate text-sm font-semibold">{robot.name}</span>
+              {connectionStatus ? (
+                connectionStatus.connected ? (
+                  <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 gap-1 px-1.5">
+                    <Wifi className="size-3" />
+                    {connectedLabel}
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="gap-1 px-1.5">
+                    <WifiOff className="size-3" />
+                    {disconnectedLabel}
+                  </Badge>
+                )
+              ) : null}
+            </div>
             <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
               <span>{platform?.label ?? robot.platform}</span>
               <span>/</span>
@@ -447,6 +447,20 @@ function RobotCard({
 
         <div className="flex shrink-0 items-center gap-2">
           <RobotStatusBadge enabled={robot.is_enabled} />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 rounded-lg px-2.5"
+            onClick={() => setShowDiagnose(!showDiagnose)}
+          >
+            {isDiagnosing ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Stethoscope className="size-3.5" />
+            )}
+            <span className="ml-1">{diagnoseLabel}</span>
+          </Button>
           <Button
             asChild
             type="button"
@@ -475,7 +489,7 @@ function RobotCard({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
         <div className="rounded-xl border bg-muted/20 px-3 py-2">
           <div className="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]">
             <Cable className="size-3.5" />
@@ -486,27 +500,6 @@ function RobotCard({
           </div>
         </div>
 
-        {credentialFields.map((field, index) => (
-          <div
-            key={field.key}
-            className="rounded-xl border bg-muted/20 px-3 py-2"
-          >
-            <div className="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]">
-              {index % 2 === 0 ? (
-                <Shield className="size-3.5" />
-              ) : (
-                <KeyRound className="size-3.5" />
-              )}
-              {field.label}
-            </div>
-            <div className="truncate text-foreground">
-              {field.secret
-                ? maskValue(credentials[field.key])
-                : credentials[field.key] || t("common.notSet")}
-            </div>
-          </div>
-        ))}
-
         <div className="rounded-xl border bg-muted/20 px-3 py-2">
           <div className="mb-1 text-[11px] uppercase tracking-[0.18em]">
             {t("robots.bindings")}
@@ -516,6 +509,73 @@ function RobotCard({
           </div>
         </div>
       </div>
+
+      {showDiagnose && diagnoseResult ? (
+        <div className="mt-4 rounded-xl border bg-muted/10 p-3">
+          <div className="mb-2 text-xs font-medium uppercase tracking-[0.15em] text-muted-foreground">
+            {locale === "zh" ? "链路诊断" : "Chain Diagnosis"}
+          </div>
+          <div className="space-y-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className={diagnoseResult.chain.robot_config.status === "ok" ? "text-emerald-600" : "text-red-500"}>
+                {diagnoseResult.chain.robot_config.status === "ok" ? "✓" : "✗"}
+              </span>
+              <span>{locale === "zh" ? "机器人配置" : "Robot Config"}</span>
+              <span className="text-muted-foreground">
+                {diagnoseResult.chain.robot_config.app_id || "-"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={diagnoseResult.chain.qq_to_bridge.connected ? "text-emerald-600" : "text-red-500"}>
+                {diagnoseResult.chain.qq_to_bridge.connected ? "✓" : "✗"}
+              </span>
+              <span>{locale === "zh" ? "QQ → Bridge" : "QQ → Bridge"}</span>
+              {diagnoseResult.chain.qq_to_bridge.error ? (
+                <span className="text-red-500 text-[10px]">
+                  {diagnoseResult.chain.qq_to_bridge.error}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  {diagnoseResult.chain.qq_to_bridge.identity || "-"}
+                </span>
+              )}
+            </div>
+            {diagnoseResult.chain.items.map((item) => (
+              <div key={item.item_id} className="flex items-center gap-2">
+                <span className={item.daemon.online ? "text-emerald-600" : "text-red-500"}>
+                  {item.daemon.online ? "✓" : "✗"}
+                </span>
+                <span>{locale === "zh" ? "Item → Daemon" : "Item → Daemon"}</span>
+                <span className="text-muted-foreground truncate max-w-32">
+                  {item.item_title}
+                </span>
+                <span className={item.daemon.online ? "text-emerald-600" : "text-red-500"}>
+                  {item.daemon.status}
+                </span>
+              </div>
+            ))}
+            {diagnoseResult.chain.items.length === 0 && (
+              <div className="text-muted-foreground">
+                {locale === "zh" ? "没有绑定任何 Item" : "No items bound"}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : showDiagnose && isDiagnosing ? (
+        <div className="mt-4 rounded-xl border bg-muted/10 p-3">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" />
+            {locale === "zh" ? "正在诊断..." : "Diagnosing..."}
+          </div>
+        </div>
+      ) : showDiagnose && isError ? (
+        <div className="mt-4 rounded-xl border bg-muted/10 p-3">
+          <div className="text-xs text-red-500">
+            {locale === "zh" ? "诊断失败: " : "Diagnosis failed: "}
+            {error instanceof Error ? error.message : String(error)}
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -564,6 +624,25 @@ export function RobotManager() {
       return Object.fromEntries(entries)
     },
   })
+
+  const { data: bridgeHealth } = useQuery<BridgeHealthResponse>({
+    queryKey: getBridgeHealthQueryKey(),
+    queryFn: () => getBridgeHealth(),
+    refetchInterval: 30000,
+    retry: false,
+  })
+
+  const connectionStatusMap = useMemo(() => {
+    if (!bridgeHealth?.robots) {
+      return new Map<string, { identity: string; connected: boolean }>()
+    }
+    return new Map(
+      Object.entries(bridgeHealth.robots).map(([robotId, status]) => [
+        robotId,
+        status,
+      ]),
+    )
+  }, [bridgeHealth])
 
   const filteredRobots = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase()
@@ -692,6 +771,7 @@ export function RobotManager() {
                   platformMap={platformMap}
                   onDelete={handleDelete}
                   deletingRobotId={deletingRobotId}
+                  connectionStatus={connectionStatusMap.get(robot.id)}
                 />
               ))}
             </div>

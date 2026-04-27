@@ -4,7 +4,6 @@ import {
   Link as RouterLink,
   redirect,
 } from "@tanstack/react-router"
-import { Shield } from "lucide-react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
@@ -66,9 +65,6 @@ function Login() {
           submit: "登录",
           noAccount: "还没有账户？",
           signUp: "注册",
-          boundaryTitle: "这里展示的是 daemon -> agent 接入原理",
-          boundaryDescription:
-            "实际链路是 daemon 子进程输出先被 publish_stream 广播，再由 AgentInputBridge 和 stream_manager 送进 agent/xagent。登录页本身不会触发这条链路。",
         }
       : {
           email: "Email",
@@ -79,9 +75,6 @@ function Login() {
           submit: "Log In",
           noAccount: "Don't have an account yet?",
           signUp: "Sign up",
-          boundaryTitle: "This page explains the daemon -> agent integration path",
-          boundaryDescription:
-            "The real path is daemon subprocess output -> publish_stream -> AgentInputBridge -> stream_manager -> agent/xagent. The login page itself does not trigger that runtime flow.",
         }
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -115,20 +108,6 @@ function Login() {
             <p className="text-sm text-muted-foreground">
               {t("brand.loginDescription")}
             </p>
-          </div>
-
-          <div className="rounded-[24px] border border-emerald-500/20 bg-emerald-500/5 p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-2xl border border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-                <Shield className="size-4" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm font-medium">{copy.boundaryTitle}</p>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  {copy.boundaryDescription}
-                </p>
-              </div>
-            </div>
           </div>
 
           <div className="grid gap-4">

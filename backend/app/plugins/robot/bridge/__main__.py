@@ -213,6 +213,34 @@ async def internal_reload(
 
 @app.get("/internal/health")
 async def internal_health() -> dict[str, Any]:
+    connected_identities: list[str] = []
+    for bot in get_bots().values():
+        try:
+            identity = resolve_bot_identity(bot)
+            connected_identities.append(identity)
+        except Exception:
+            continue
+
+    robot_status: dict[str, dict[str, Any]] = {}
+    for robot_id, identity in IDENTITY_BY_ROBOT_ID.items():
+        robot_status[robot_id] = {
+            "identity": identity,
+            "connected": identity in connected_identities,
+        }
+
+    backend_status: dict[str, Any] = {"reachable": False}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"{settings.ROBOT_BACKEND_URL.rstrip('/')}{settings.API_V1_STR}/utils/health",
+            )
+            backend_status = {
+                "reachable": resp.status_code == 200,
+                "status_code": resp.status_code,
+            }
+    except Exception as exc:
+        backend_status["error"] = str(exc)
+
     return {
         "loaded_robot_count": len(IDENTITY_BY_ROBOT_ID),
         "connected_bot_count": len(get_bots()),
@@ -222,6 +250,9 @@ async def internal_health() -> dict[str, Any]:
                 for robot in LOADED_ROBOTS
             }
         ),
+        "connected_identities": connected_identities,
+        "robots": robot_status,
+        "backend": backend_status,
     }
 
 

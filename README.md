@@ -1,233 +1,212 @@
-# Full Stack FastAPI Template
+# TermMan - 终端管理系统
 
-<a href="https://github.com/fastapi/full-stack-fastapi-template/actions?query=workflow%3A%22Test+Docker+Compose%22" target="_blank"><img src="https://github.com/fastapi/full-stack-fastapi-template/workflows/Test%20Docker%20Compose/badge.svg" alt="Test Docker Compose"></a>
-<a href="https://github.com/fastapi/full-stack-fastapi-template/actions?query=workflow%3A%22Test+Backend%22" target="_blank"><img src="https://github.com/fastapi/full-stack-fastapi-template/workflows/Test%20Backend/badge.svg" alt="Test Backend"></a>
-<a href="https://coverage-badge.samuelcolvin.workers.dev/redirect/fastapi/full-stack-fastapi-template" target="_blank"><img src="https://coverage-badge.samuelcolvin.workers.dev/fastapi/full-stack-fastapi-template.svg" alt="Coverage"></a>
+一个基于 FastAPI + React 的智能终端管理系统，支持 AI Agent 辅助操作、知识库管理、多终端进程监控。
 
-## Technology Stack and Features
+## 项目结构
 
-- ⚡ [**FastAPI**](https://fastapi.tiangolo.com) for the Python backend API.
-  - 🧰 [SQLModel](https://sqlmodel.tiangolo.com) for the Python SQL database interactions (ORM).
-  - 🔍 [Pydantic](https://docs.pydantic.dev), used by FastAPI, for the data validation and settings management.
-  - 💾 [PostgreSQL](https://www.postgresql.org) as the SQL database.
-- 🚀 [React](https://react.dev) for the frontend.
-  - 💃 Using TypeScript, hooks, [Vite](https://vitejs.dev), and other parts of a modern frontend stack.
-  - 🎨 [Tailwind CSS](https://tailwindcss.com) and [shadcn/ui](https://ui.shadcn.com) for the frontend components.
-  - 🤖 An automatically generated frontend client.
-  - 🧪 [Playwright](https://playwright.dev) for End-to-End testing.
-  - 🦇 Dark mode support.
-- 🐋 [Docker Compose](https://www.docker.com) for development and production.
-- 🔒 Secure password hashing by default.
-- 🔑 JWT (JSON Web Token) authentication.
-- 📫 Email based password recovery.
-- 📬 [Mailcatcher](https://mailcatcher.me) for local email testing during development.
-- ✅ Tests with [Pytest](https://pytest.org).
-- 📞 [Traefik](https://traefik.io) as a reverse proxy / load balancer.
-- 🚢 Deployment instructions using Docker Compose, including how to set up a frontend Traefik proxy to handle automatic HTTPS certificates.
-- 🏭 CI (continuous integration) and CD (continuous deployment) based on GitHub Actions.
-
-### Dashboard Login
-
-[![API docs](img/login.png)](https://github.com/fastapi/full-stack-fastapi-template)
-
-### Dashboard - Admin
-
-[![API docs](img/dashboard.png)](https://github.com/fastapi/full-stack-fastapi-template)
-
-### Dashboard - Items
-
-[![API docs](img/dashboard-items.png)](https://github.com/fastapi/full-stack-fastapi-template)
-
-### Dashboard - Dark Mode
-
-[![API docs](img/dashboard-dark.png)](https://github.com/fastapi/full-stack-fastapi-template)
-
-### Interactive API Documentation
-
-[![API docs](img/docs.png)](https://github.com/fastapi/full-stack-fastapi-template)
-
-## How To Use It
-
-You can **just fork or clone** this repository and use it as is.
-
-✨ It just works. ✨
-
-### How to Use a Private Repository
-
-If you want to have a private repository, GitHub won't allow you to simply fork it as it doesn't allow changing the visibility of forks.
-
-But you can do the following:
-
-- Create a new GitHub repo, for example `my-full-stack`.
-- Clone this repository manually, set the name with the name of the project you want to use, for example `my-full-stack`:
-
-```bash
-git clone git@github.com:fastapi/full-stack-fastapi-template.git my-full-stack
+```
+TermMan/
+├── backend/           # FastAPI 后端服务
+├── frontend/          # React 前端应用
+├── daemon/            # 终端守护进程
+└── hooks/             # 项目脚手架钩子
 ```
 
-- Enter into the new directory:
+## 核心架构
 
-```bash
-cd my-full-stack
+```
+┌─────────────┐      HTTP/WS       ┌─────────────┐      WS        ┌─────────────┐
+│   Browser   │ ◄───────────────► │   Backend   │ ◄────────────► │   Daemon    │
+└─────────────┘                    └─────────────┘                └─────────────┘
+       │                                  │                              │
+       │                                  │                              │
+       │     ┌────────────────────────────┼────────────────────────────┐│
+       │     │  通信分层隔离：             │                            ││
+       │     │  • Browser ↔ Backend: HTTP │                            ││
+       │     │  • Browser ↔ Daemon:  WS   │                            ││
+       │     │  • Daemon ↔ Backend:  WS   │                            ││
+       │     └────────────────────────────┼────────────────────────────┘│
 ```
 
-- Set the new origin to your new repository, copy it from the GitHub interface, for example:
+### 三大组件
+
+| 组件 | 技术栈 | 职责 |
+|------|--------|------|
+| **Backend** | FastAPI + SQLite + ChromaDB | 凭证签发中心、用户管理、Agent 运行时、知识库 |
+| **Daemon** | Python + WebSocket | 终端进程管理、输出流分发、日志收集 |
+| **Frontend** | React + Vite + Tailwind | 用户界面、终端 Web UI、管理面板 |
+
+## 快速开始
+
+### 环境要求
+
+- Python 3.10+
+- Node.js 18+ / Bun
+- uv (Python 包管理器)
+
+### 启动后端
 
 ```bash
-git remote set-url origin git@github.com:octocat/my-full-stack.git
+cd backend
+uv sync
+uv run fastapi dev app/main.py
 ```
 
-- Add this repo as another "remote" to allow you to get updates later:
+后端服务运行在 http://localhost:8000
+
+### 启动前端
 
 ```bash
-git remote add upstream git@github.com:fastapi/full-stack-fastapi-template.git
+cd frontend
+bun install
+bun run dev
 ```
 
-- Push the code to your new repository:
+前端服务运行在 http://localhost:5173
+
+### 启动 Daemon
 
 ```bash
-git push -u origin master
+cd daemon
+uv sync
+uv run python -m src.main
 ```
 
-### Update From the Original Template
+Daemon 服务运行在 ws://localhost:9000
 
-After cloning the repository, and after doing changes, you might want to get the latest changes from this original template.
+## 核心功能
 
-- Make sure you added the original repository as a remote, you can check it with:
+### 1. 终端管理 (Item)
 
-```bash
-git remote -v
+- 创建、启动、停止终端进程
+- 实时输出流监控
+- 日志收集与管理
+- 输入/输出过滤器配置
 
-origin    git@github.com:octocat/my-full-stack.git (fetch)
-origin    git@github.com:octocat/my-full-stack.git (push)
-upstream    git@github.com:fastapi/full-stack-fastapi-template.git (fetch)
-upstream    git@github.com:fastapi/full-stack-fastapi-template.git (push)
+### 2. AI Agent (ItemHandler)
+
+- 每个 ItemHandler 对应一个 AI Agent 实例
+- 支持 OpenAI、Anthropic 等多种 LLM
+- 技能系统 (Skills) 扩展
+- 长期记忆 (ChromaDB 向量存储)
+- 短期记忆 (SQLite 会话历史)
+
+### 3. 知识库 (Knowledge)
+
+- 共享知识文件管理
+- 自动切块与向量化
+- 按需启用到 ItemHandler
+- RAG 检索增强生成
+
+### 4. 机器人接入 (Robot)
+
+- QQ 官方机器人接入 (NoneBot2)
+- 消息路由到指定终端
+- 过滤后输出回推
+
+## API 概览
+
+### 认证
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/login/access-token` | 登录获取 Token |
+| POST | `/api/v1/login/test-token` | 验证 Token |
+| POST | `/api/v1/users/` | 注册用户 |
+
+### 终端管理 (Items)
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/items/` | 列出终端 |
+| POST | `/api/v1/items/` | 创建终端 |
+| GET | `/api/v1/items/{id}` | 获取终端详情 |
+| PUT | `/api/v1/items/{id}` | 更新终端配置 |
+| DELETE | `/api/v1/items/{id}` | 删除终端 |
+| POST | `/api/v1/items/{id}/start` | 启动终端 |
+| POST | `/api/v1/items/{id}/stop` | 停止终端 |
+
+### Agent 配置 (ItemHandlers)
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/item-handlers/` | 列出 Agent 配置 |
+| POST | `/api/v1/item-handlers/` | 创建 Agent 配置 |
+| PUT | `/api/v1/item-handlers/{id}` | 更新 Agent 配置 |
+| GET | `/api/v1/item-handlers/{id}/knowledge/files` | 获取知识文件列表 |
+
+### 对话 (Chat)
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/chat/{item_handler_id}` | 发送消息 (流式响应) |
+
+### 知识库 (Knowledge)
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/knowledge/files` | 列出知识文件 |
+| POST | `/api/v1/knowledge/files` | 上传知识文件 |
+| DELETE | `/api/v1/knowledge/files` | 删除知识文件 |
+
+### 技能 (Skills)
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/skills/` | 列出技能 |
+| GET | `/api/v1/skills/{skill_id}` | 获取技能详情 |
+
+### 记忆 (Memory)
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/memory/{item_handler_id}` | 获取记忆列表 |
+| DELETE | `/api/v1/memory/{item_handler_id}/{memory_id}` | 删除记忆 |
+
+## 配置
+
+主要环境变量 (`.env`):
+
+```env
+PROJECT_NAME=TermMan
+ENVIRONMENT=local
+
+SQLITE_DATABASE_URL=sqlite:///./sql_app.db
+CHROMA_PERSIST_DIR=./chroma_data
+KNOWLEDGE_BASE_DIR=./knowledge
+
+ROBOT_PLUGIN_ENABLED=true
+ROBOT_BRIDGE_EMBEDDED=false
 ```
 
-- Pull the latest changes without merging:
+## 文档
 
-```bash
-git pull --no-commit upstream master
-```
+- [Backend 架构](backend/README.md)
+- [Backend Services](backend/app/services/README.md)
+- [Daemon 文档](daemon/README.md)
+- [测试指南](backend/tests/TESTING_GUIDE.md)
 
-This will download the latest changes from this template without committing them, that way you can check everything is right before committing.
+## 技术栈
 
-- If there are conflicts, solve them in your editor.
+### Backend
 
-- Once you are done, commit the changes:
+- **FastAPI** - Web 框架
+- **SQLModel** - ORM
+- **ChromaDB** - 向量数据库
+- **LiteLLM** - LLM 统一接口
+- **sentence-transformers** - 文本嵌入
 
-```bash
-git merge --continue
-```
+### Frontend
 
-### Configure
+- **React** - UI 框架
+- **TypeScript** - 类型安全
+- **Vite** - 构建工具
+- **Tailwind CSS** - 样式
+- **TanStack Query** - 数据请求
+- **xterm.js** - 终端模拟
 
-You can then update configs in the `.env` files to customize your configurations.
+### Daemon
 
-Before deploying it, make sure you change at least the values for:
-
-- `SECRET_KEY`
-- `FIRST_SUPERUSER_PASSWORD`
-- `POSTGRES_PASSWORD`
-
-You can (and should) pass these as environment variables from secrets.
-
-Read the [deployment.md](./deployment.md) docs for more details.
-
-### Generate Secret Keys
-
-Some environment variables in the `.env` file have a default value of `changethis`.
-
-You have to change them with a secret key, to generate secret keys you can run the following command:
-
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-Copy the content and use that as password / secret key. And run that again to generate another secure key.
-
-## How To Use It - Alternative With Copier
-
-This repository also supports generating a new project using [Copier](https://copier.readthedocs.io).
-
-It will copy all the files, ask you configuration questions, and update the `.env` files with your answers.
-
-### Install Copier
-
-You can install Copier with:
-
-```bash
-pip install copier
-```
-
-Or better, if you have [`pipx`](https://pipx.pypa.io/), you can run it with:
-
-```bash
-pipx install copier
-```
-
-**Note**: If you have `pipx`, installing copier is optional, you could run it directly.
-
-### Generate a Project With Copier
-
-Decide a name for your new project's directory, you will use it below. For example, `my-awesome-project`.
-
-Go to the directory that will be the parent of your project, and run the command with your project's name:
-
-```bash
-copier copy https://github.com/fastapi/full-stack-fastapi-template my-awesome-project --trust
-```
-
-If you have `pipx` and you didn't install `copier`, you can run it directly:
-
-```bash
-pipx run copier copy https://github.com/fastapi/full-stack-fastapi-template my-awesome-project --trust
-```
-
-**Note** the `--trust` option is necessary to be able to execute a [post-creation script](https://github.com/fastapi/full-stack-fastapi-template/blob/master/.copier/update_dotenv.py) that updates your `.env` files.
-
-### Input Variables
-
-Copier will ask you for some data, you might want to have at hand before generating the project.
-
-But don't worry, you can just update any of that in the `.env` files afterwards.
-
-The input variables, with their default values (some auto generated) are:
-
-- `project_name`: (default: `"FastAPI Project"`) The name of the project, shown to API users (in .env).
-- `stack_name`: (default: `"fastapi-project"`) The name of the stack used for Docker Compose labels and project name (no spaces, no periods) (in .env).
-- `secret_key`: (default: `"changethis"`) The secret key for the project, used for security, stored in .env, you can generate one with the method above.
-- `first_superuser`: (default: `"admin@example.com"`) The email of the first superuser (in .env).
-- `first_superuser_password`: (default: `"changethis"`) The password of the first superuser (in .env).
-- `smtp_host`: (default: "") The SMTP server host to send emails, you can set it later in .env.
-- `smtp_user`: (default: "") The SMTP server user to send emails, you can set it later in .env.
-- `smtp_password`: (default: "") The SMTP server password to send emails, you can set it later in .env.
-- `emails_from_email`: (default: `"info@example.com"`) The email account to send emails from, you can set it later in .env.
-- `postgres_password`: (default: `"changethis"`) The password for the PostgreSQL database, stored in .env, you can generate one with the method above.
-- `sentry_dsn`: (default: "") The DSN for Sentry, if you are using it, you can set it later in .env.
-
-## Backend Development
-
-Backend docs: [backend/README.md](./backend/README.md).
-
-## Frontend Development
-
-Frontend docs: [frontend/README.md](./frontend/README.md).
-
-## Deployment
-
-Deployment docs: [deployment.md](./deployment.md).
-
-## Development
-
-General development docs: [development.md](./development.md).
-
-This includes using Docker Compose, custom local domains, `.env` configurations, etc.
-
-## Release Notes
-
-Check the file [release-notes.md](./release-notes.md).
-
-## License
-
-The Full Stack FastAPI Template is licensed under the terms of the MIT license.
+- **Python** - 运行时
+- **WebSocket** - 通信协议
+- **asyncio** - 异步 IO

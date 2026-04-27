@@ -1,4 +1,5 @@
 import secrets
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -11,6 +12,8 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import Self
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 def parse_cors(v: Any) -> list[str] | str:
@@ -82,10 +85,10 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER: EmailStr
     FIRST_SUPERUSER_PASSWORD: str
 
-    CHROMA_PERSIST_DIR: str = "./chroma_data"
-    KNOWLEDGE_BASE_DIR: str = "./knowledge"
+    CHROMA_PERSIST_DIR: str = str(BACKEND_DIR / "chroma_data")
+    KNOWLEDGE_BASE_DIR: str = str(BACKEND_DIR / "knowledge")
     ROBOT_PLUGIN_ENABLED: bool = True
-    ROBOT_BRIDGE_EMBEDDED: bool = False
+    ROBOT_BRIDGE_EMBEDDED: bool = True
     ROBOT_BRIDGE_URL: str = "http://robot-bridge:8090"
     ROBOT_BACKEND_URL: str = "http://backend:8000"
     ROBOT_BRIDGE_SHARED_SECRET: str | None = None
@@ -97,8 +100,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _apply_robot_bridge_defaults(self) -> Self:
         if self.ROBOT_BRIDGE_EMBEDDED:
-            if self.ROBOT_BRIDGE_URL == "http://robot-bridge:8090":
-                self.ROBOT_BRIDGE_URL = "http://127.0.0.1:8090"
+            self.ROBOT_BRIDGE_URL = "http://127.0.0.1:8000/robot-bridge"
             if self.ROBOT_BACKEND_URL == "http://backend:8000":
                 self.ROBOT_BACKEND_URL = "http://127.0.0.1:8000"
             if self.ROBOT_BRIDGE_HOST == "0.0.0.0":

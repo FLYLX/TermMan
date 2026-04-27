@@ -5,6 +5,7 @@ from sqlmodel import col, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.models import (
+    Item,
     Message,
     Robot,
     RobotCreate,
@@ -50,6 +51,23 @@ router = APIRouter(prefix="/robots", tags=["robots"])
 @router.get("/platforms", response_model=list[RobotPlatformPublic])
 def list_robot_platform_metadata() -> list[RobotPlatformPublic]:
     return list_supported_robot_platforms()
+
+
+@router.get("/bridge/health")
+def get_bridge_health(current_user: CurrentUser) -> dict:
+    import httpx
+    from app.core.config import settings
+
+    try:
+        response = httpx.get(
+            f"{settings.ROBOT_BRIDGE_URL}/internal/health",
+            headers={"X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY},
+            timeout=5.0,
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        return {"error": str(e), "connected": False}
 
 
 @router.get("/", response_model=RobotsPublic)
@@ -338,3 +356,133 @@ async def dispatch_robot_message(
     assert_bridge_permission(x_termman_bridge_token)
     robot = get_robot_or_404(session, id)
     return await robot_service.handle_inbound_message(session, robot, body)
+
+
+@router.get("/{id}/connection")
+def get_robot_connection_status(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+) -> dict:
+    import httpx
+    from app.core.config import settings
+
+    robot = get_robot_or_404(session, id)
+    assert_robot_permission(robot, current_user)
+
+    if not robot.is_enabled:
+        return {"robot_id": str(id), "connected": False, "reason": "robot_disabled"}
+
+    try:
+        response = httpx.get(
+            f"{settings.ROBOT_BRIDGE_URL}/internal/health",
+            headers={"X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY},
+            timeout=5.0,
+        )
+        response.raise_for_status()
+        health_data = response.json()
+
+        robots_status = health_data.get("robots", {})
+        robot_status = robots_status.get(str(id), {})
+
+        return {
+            "robot_id": str(id),
+            "identity": robot_status.get("identity"),
+            "connected": robot_status.get("connected", False),
+            "platform": robot.platform,
+        }
+    except Exception as e:
+        return {"robot_id": str(id), "connected": False, "error": str(e)}
+
+
+@router.get("/{id}/diagnose")
+def diagnose_robot_chain(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+) -> dict:
+    import httpx
+    from app.core.config import settings
+    from app.services import backend_conn_pool
+
+    robot = get_robot_or_404(session, id)
+    assert_robot_permission(robot, current_user)
+
+    result: dict = {
+        "robot_id": str(id),
+        "robot_name": robot.name,
+        "robot_enabled": robot.is_enabled,
+        "platform": robot.platform,
+        "chain": {},
+    }
+
+    result["chain"]["robot_config"] = {
+        "status": "ok" if robot.is_enabled else "disabled",
+        "app_id": robot.app_id,
+        "provider": robot.provider,
+    }
+
+    bridge_status: dict = {"status": "unknown", "connected": False}
+    try:
+        response = httpx.get(
+            f"{settings.ROBOT_BRIDGE_URL}/internal/health",
+            headers={"X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY},
+            timeout=5.0,
+        )
+        response.raise_for_status()
+        health_data = response.json()
+
+        robots_status = health_data.get("robots", {})
+        robot_status = robots_status.get(str(id), {})
+        backend_status = health_data.get("backend", {})
+        connection_errors = health_data.get("connection_errors", {})
+
+        bridge_status = {
+            "status": "ok",
+            "connected": robot_status.get("connected", False),
+            "identity": robot_status.get("identity"),
+            "backend_reachable": backend_status.get("reachable", False),
+            "error": robot_status.get("error") or connection_errors.get(str(id)),
+        }
+    except Exception as e:
+        bridge_status = {"status": "error", "error": str(e), "connected": False}
+
+    result["chain"]["qq_to_bridge"] = bridge_status
+
+    bindings = session.exec(select(RobotItem).where(RobotItem.robot_id == id)).all()
+    items_status: list[dict] = []
+
+    for binding in bindings:
+        item = session.get(Item, binding.item_id)
+        if not item:
+            continue
+
+        item_status: dict = {
+            "item_id": str(item.id),
+            "item_title": item.title,
+            "allow_chat": binding.allow_chat,
+        }
+
+        daemon_status: dict = {"status": "unknown", "online": False}
+        if item.api_key:
+            daemon_state = backend_conn_pool.get_daemon_main_conn_state(item.api_key)
+            if daemon_state and daemon_state.is_connected():
+                daemon_status = {"status": "online", "online": True}
+            else:
+                daemon_status = {"status": "offline", "online": False}
+        else:
+            daemon_status = {"status": "not_configured", "online": False}
+
+        item_status["daemon"] = daemon_status
+        items_status.append(item_status)
+
+    result["chain"]["items"] = items_status
+
+    all_ok = (
+        robot.is_enabled
+        and bridge_status.get("connected", False)
+        and any(item.get("daemon", {}).get("online", False) for item in items_status)
+    )
+    result["overall_status"] = "ok" if all_ok else "degraded"
+
+    return result

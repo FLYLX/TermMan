@@ -6,3 +6,5 @@ app.egg-info
 htmlcov
 .cache
 .venv
+chroma_data/
+knowledge/

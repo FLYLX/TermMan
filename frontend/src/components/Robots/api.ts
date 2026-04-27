@@ -158,3 +158,81 @@ export async function deleteRobotBinding(robotId: string, itemId: string) {
     },
   )
 }
+
+export type BridgeHealthResponse = {
+  loaded_robot_count: number
+  connected_bot_count: number
+  platforms: string[]
+  connected_identities: string[]
+  robots: Record<string, { identity: string; connected: boolean }>
+  error?: string
+  connected?: boolean
+}
+
+export type RobotConnectionStatus = {
+  robot_id: string
+  identity?: string
+  connected: boolean
+  platform?: string
+  reason?: string
+  error?: string
+}
+
+export function getBridgeHealthQueryKey() {
+  return ["robot-bridge-health"] as const
+}
+
+export function getRobotConnectionQueryKey(robotId: string) {
+  return ["robot-connection", robotId] as const
+}
+
+export async function getBridgeHealth() {
+  return apiRequest<BridgeHealthResponse>("/api/v1/robots/bridge/health")
+}
+
+export async function getRobotConnectionStatus(robotId: string) {
+  return apiRequest<RobotConnectionStatus>(
+    `/api/v1/robots/${robotId}/connection`,
+  )
+}
+
+export type RobotDiagnoseResult = {
+  robot_id: string
+  robot_name: string
+  robot_enabled: boolean
+  platform: string
+  overall_status: "ok" | "degraded"
+  chain: {
+    robot_config: {
+      status: string
+      app_id: string | null
+      provider: string
+    }
+    qq_to_bridge: {
+      status: string
+      connected: boolean
+      identity?: string
+      backend_reachable?: boolean
+      error?: string
+    }
+    items: Array<{
+      item_id: string
+      item_title: string
+      allow_chat: boolean
+      daemon: {
+        status: string
+        online: boolean
+      }
+    }>
+  }
+}
+
+export function getRobotDiagnoseQueryKey(robotId: string) {
+  return ["robot-diagnose", robotId] as const
+}
+
+export async function diagnoseRobotChain(robotId: string) {
+  return apiRequest<RobotDiagnoseResult>(
+    `/api/v1/robots/${robotId}/diagnose`,
+  )
+}
