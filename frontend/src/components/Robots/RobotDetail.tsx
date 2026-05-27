@@ -8,6 +8,7 @@ import {
   Loader2,
   MessageSquare,
   RadioTower,
+  RefreshCw,
   Save,
   Trash2,
 } from "lucide-react"
@@ -49,15 +50,20 @@ import {
   createRobotBinding,
   deleteRobotBinding,
   getRobotBindingsQueryKey,
+  getRobotDebug,
+  getRobotDebugQueryKey,
   getRobotPlatformsQueryKey,
   getRobotQueryKey,
   getRobotsQueryKey,
   listRobotBindings,
   listRobotPlatforms,
   type RobotBindingRecord,
+  type RobotDebugInfo,
   type RobotPlatformRecord,
   type RobotRecord,
   readRobot,
+  reloadRobotBridge,
+  updateRobot,
   updateRobotBinding,
 } from "./api"
 
@@ -68,91 +74,135 @@ function normalizePlatformId(platform: string | null | undefined) {
   return platform ?? ""
 }
 
+function getRobotCredentials(robot: RobotRecord): Record<string, string> {
+  const credentials = robot.config?.credentials
+  if (credentials && typeof credentials === "object") {
+    return Object.fromEntries(
+      Object.entries(credentials)
+        .filter(
+          ([, value]) => value !== null && value !== undefined && value !== "",
+        )
+        .map(([key, value]) => [key, String(value)]),
+    )
+  }
+
+  if (normalizePlatformId(robot.platform) === "qq_official") {
+    return Object.fromEntries(
+      [
+        ["app_id", robot.app_id],
+        ["app_secret", robot.app_secret],
+        ["bot_token", robot.bot_token],
+      ].filter(([, value]) => Boolean(value)) as [string, string][],
+    )
+  }
+
+  return {}
+}
+
 function useRobotDetailCopy() {
   const { locale } = useI18n()
 
-  return locale === "zh"
-    ? {
-        enabled: "已启用",
-        disabled: "未启用",
-        back: "返回机器人列表",
-        notFound: "没有找到这个机器人",
-        loading: "加载机器人中...",
-        loadFailed: "机器人详情加载失败",
-        bindingTitle: "终端绑定",
-        bindingDescription:
-          "把终端绑定到当前机器人，并控制聊天入口和过滤输出分发。",
-        bindingEmpty: "这个机器人还没有绑定任何终端。",
-        platform: "平台",
-        provider: "提供方",
-        totalBindings: "绑定数",
-        availableTerminals: "可绑定终端",
-        manageItem: "终端",
-        routeKey: "当前路由",
-        alias: "路由别名",
-        aliasPlaceholder: "留空则自动使用终端标题",
-        allowChat: "允许聊天输入",
-        receiveOutput: "接收过滤输出",
-        defaultTarget: "默认聊天目标",
-        save: "保存",
-        remove: "解绑",
-        updated: "绑定配置已更新",
-        removed: "绑定已删除",
-        updateFailed: "更新绑定失败",
-        removeFailed: "删除绑定失败",
-        removeConfirm: (title: string) => `确认解除与“${title}”的绑定吗？`,
-        addTrigger: "绑定终端",
-        addTitle: "给机器人绑定终端",
-        addDescription: "选择一个终端，并设置这个机器人如何把消息路由给它。",
-        itemPlaceholder: "选择一个终端",
-        addEmpty: "当前没有可绑定的终端",
-        addSuccess: "机器人绑定终端成功",
-        addFailed: "绑定终端失败",
-        itemRequired: "请选择一个终端",
-        cancel: "取消",
-        bind: "绑定",
-      }
-    : {
-        enabled: "Enabled",
-        disabled: "Disabled",
-        back: "Back to robots",
-        notFound: "Robot not found",
-        loading: "Loading robot...",
-        loadFailed: "Failed to load robot detail",
-        bindingTitle: "Terminal bindings",
-        bindingDescription:
-          "Bind terminals to this robot and control chat routing and filtered output dispatch.",
-        bindingEmpty: "This robot does not have any terminal bindings yet.",
-        platform: "Platform",
-        provider: "Provider",
-        totalBindings: "Bindings",
-        availableTerminals: "Available terminals",
-        manageItem: "Terminal",
-        routeKey: "Route key",
-        alias: "Route alias",
-        aliasPlaceholder: "Leave blank to use the terminal title",
-        allowChat: "Allow chat input",
-        receiveOutput: "Receive filtered output",
-        defaultTarget: "Default chat target",
-        save: "Save",
-        remove: "Unbind",
-        updated: "Binding updated",
-        removed: "Binding removed",
-        updateFailed: "Failed to update binding",
-        removeFailed: "Failed to delete binding",
-        removeConfirm: (title: string) => `Remove binding for "${title}"?`,
-        addTrigger: "Bind terminal",
-        addTitle: "Bind terminal to robot",
-        addDescription:
-          "Choose a terminal and define how this robot routes messages to it.",
-        itemPlaceholder: "Select a terminal",
-        addEmpty: "No available terminals to bind",
-        addSuccess: "Robot binding created",
-        addFailed: "Failed to bind terminal",
-        itemRequired: "Please select a terminal",
-        cancel: "Cancel",
-        bind: "Bind",
-      }
+  const copy =
+    locale === "zh"
+      ? {
+          enabled: "已启用",
+          disabled: "未启用",
+          back: "返回机器人列表",
+          notFound: "没有找到这个机器人",
+          loading: "加载机器人中...",
+          loadFailed: "机器人详情加载失败",
+          bindingTitle: "终端绑定",
+          bindingDescription:
+            "把终端绑定到当前机器人，并控制聊天入口和过滤输出分发。",
+          bindingEmpty: "这个机器人还没有绑定任何终端。",
+          platform: "平台",
+          provider: "提供方",
+          totalBindings: "绑定数",
+          availableTerminals: "可绑定终端",
+          manageItem: "终端",
+          routeKey: "当前路由",
+          alias: "路由别名",
+          aliasPlaceholder: "留空则自动使用终端标题",
+          allowChat: "允许聊天输入",
+          receiveOutput: "接收过滤输出",
+          defaultTarget: "默认聊天目标",
+          save: "保存",
+          remove: "解绑",
+          updated: "绑定配置已更新",
+          removed: "绑定已删除",
+          updateFailed: "更新绑定失败",
+          removeFailed: "删除绑定失败",
+          removeConfirm: (title: string) => `确认解除与“${title}”的绑定吗？`,
+          addTrigger: "绑定终端",
+          addTitle: "给机器人绑定终端",
+          addDescription: "选择一个终端，并设置这个机器人如何把消息路由给它。",
+          itemPlaceholder: "选择一个终端",
+          addEmpty: "当前没有可绑定的终端",
+          addSuccess: "机器人绑定终端成功",
+          addFailed: "绑定终端失败",
+          itemRequired: "请选择一个终端",
+          cancel: "取消",
+          bind: "绑定",
+        }
+      : {
+          enabled: "Enabled",
+          disabled: "Disabled",
+          back: "Back to robots",
+          notFound: "Robot not found",
+          loading: "Loading robot...",
+          loadFailed: "Failed to load robot detail",
+          bindingTitle: "Terminal bindings",
+          bindingDescription:
+            "Bind terminals to this robot and control chat routing and filtered output dispatch.",
+          bindingEmpty: "This robot does not have any terminal bindings yet.",
+          platform: "Platform",
+          provider: "Provider",
+          totalBindings: "Bindings",
+          availableTerminals: "Available terminals",
+          manageItem: "Terminal",
+          routeKey: "Route key",
+          alias: "Route alias",
+          aliasPlaceholder: "Leave blank to use the terminal title",
+          allowChat: "Allow chat input",
+          receiveOutput: "Receive filtered output",
+          defaultTarget: "Default chat target",
+          save: "Save",
+          remove: "Unbind",
+          updated: "Binding updated",
+          removed: "Binding removed",
+          updateFailed: "Failed to update binding",
+          removeFailed: "Failed to delete binding",
+          removeConfirm: (title: string) => `Remove binding for "${title}"?`,
+          addTrigger: "Bind terminal",
+          addTitle: "Bind terminal to robot",
+          addDescription:
+            "Choose a terminal and define how this robot routes messages to it.",
+          itemPlaceholder: "Select a terminal",
+          addEmpty: "No available terminals to bind",
+          addSuccess: "Robot binding created",
+          addFailed: "Failed to bind terminal",
+          itemRequired: "Please select a terminal",
+          cancel: "Cancel",
+          bind: "Bind",
+        }
+
+  return {
+    ...copy,
+    debugTitle: locale === "zh" ? "调试" : "Debug",
+    debugDescription:
+      locale === "zh"
+        ? "查看 Bridge 连接、最近收发和错误。"
+        : "Inspect bridge connectivity, recent traffic, and errors.",
+    reload: locale === "zh" ? "重载 Bridge" : "Reload bridge",
+    reloadRequested:
+      locale === "zh" ? "Bridge 重载已请求" : "Bridge reload requested",
+    reloadFailed:
+      locale === "zh" ? "Bridge 重载失败" : "Failed to reload bridge",
+    connected: locale === "zh" ? "已连接" : "Connected",
+    disconnected: locale === "zh" ? "未连接" : "Disconnected",
+    recentEvents: locale === "zh" ? "最近事件" : "Recent events",
+    noEvents: locale === "zh" ? "暂无调试事件" : "No debug events yet",
+  }
 }
 
 function RobotEnabledBadge({ enabled }: { enabled: boolean }) {
@@ -564,6 +614,322 @@ function getErrorText(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
 
+function RobotKeyValue({
+  label,
+  value,
+}: {
+  label: string
+  value?: string | null
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border bg-muted/10 px-3 py-2">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="truncate font-mono text-sm">{value || "-"}</span>
+    </div>
+  )
+}
+
+function RobotBasicConfigPanel({
+  robot,
+  platform,
+}: {
+  robot: RobotRecord
+  platform: RobotPlatformRecord | null
+}) {
+  const queryClient = useQueryClient()
+  const { showErrorToast, showSuccessToast } = useCustomToast()
+  const [isEditing, setIsEditing] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [form, setForm] = useState(() => ({
+    name: robot.name,
+    is_enabled: robot.is_enabled,
+    credentials: getRobotCredentials(robot),
+  }))
+
+  useEffect(() => {
+    if (!isEditing) {
+      setForm({
+        name: robot.name,
+        is_enabled: robot.is_enabled,
+        credentials: getRobotCredentials(robot),
+      })
+    }
+  }, [isEditing, robot])
+
+  const handleSave = async () => {
+    if (!form.name.trim()) {
+      showErrorToast("Name is required")
+      return
+    }
+
+    const credentials = Object.fromEntries(
+      (platform?.fields ?? [])
+        .map((field) => [
+          field.key,
+          form.credentials[field.key]?.trim() ?? "",
+        ] as const)
+        .filter(([, value]) => value !== ""),
+    )
+
+    setIsSaving(true)
+    try {
+      await updateRobot(robot.id, {
+        name: form.name.trim(),
+        platform: normalizePlatformId(robot.platform),
+        protocol: normalizePlatformId(robot.protocol),
+        provider: robot.provider,
+        is_enabled: form.is_enabled,
+        use_websocket: robot.use_websocket,
+        config: {
+          ...(robot.config ?? {}),
+          credentials,
+        },
+      })
+      await reloadRobotBridge(robot.id)
+      await queryClient.invalidateQueries({ queryKey: getRobotQueryKey(robot.id) })
+      await queryClient.invalidateQueries({ queryKey: getRobotsQueryKey() })
+      await queryClient.invalidateQueries({
+        queryKey: getRobotDebugQueryKey(robot.id),
+      })
+      showSuccessToast("Robot updated")
+      setIsEditing(false)
+    } catch (error) {
+      showErrorToast(error instanceof Error ? error.message : "Failed to update robot")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <Card className="rounded-3xl border bg-card shadow-sm">
+      <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle>Basic config</CardTitle>
+          <CardDescription>{platform?.description ?? robot.platform}</CardDescription>
+        </div>
+        <div className="flex gap-2">
+          {isEditing ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsEditing(false)}
+                disabled={isSaving}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={isSaving}
+              >
+                {isSaving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                Save
+              </Button>
+            </>
+          ) : (
+            <Button type="button" variant="outline" onClick={() => setIsEditing(true)}>
+              Edit
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {isEditing ? (
+          <>
+            <div className="grid gap-2">
+              <Label htmlFor="robot-edit-name">Name</Label>
+              <Input
+                id="robot-edit-name"
+                value={form.name}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, name: event.target.value }))
+                }
+              />
+            </div>
+            <label className="flex items-center gap-3 rounded-xl border bg-muted/10 p-3">
+              <Checkbox
+                checked={form.is_enabled}
+                onCheckedChange={(checked) =>
+                  setForm((current) => ({
+                    ...current,
+                    is_enabled: Boolean(checked),
+                  }))
+                }
+              />
+              <span className="text-sm">Enabled</span>
+            </label>
+            <div className="grid gap-3">
+              <div className="text-sm font-medium">Credentials</div>
+              {(platform?.fields ?? []).map((field) => (
+                <div key={field.key} className="grid gap-2">
+                  <Label htmlFor={`robot-edit-${field.key}`}>
+                    {field.label}
+                    {field.required ? " *" : ""}
+                  </Label>
+                  <Input
+                    id={`robot-edit-${field.key}`}
+                    type={field.secret ? "password" : "text"}
+                    value={form.credentials[field.key] ?? ""}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        credentials: {
+                          ...current.credentials,
+                          [field.key]: event.target.value,
+                        },
+                      }))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            <RobotKeyValue label="Name" value={robot.name} />
+            <RobotKeyValue label="Platform" value={platform?.label ?? robot.platform} />
+            <RobotKeyValue label="Provider" value={robot.provider} />
+            <RobotKeyValue label="App ID" value={robot.app_id} />
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function RobotDebugPanel({
+  robotId,
+  debug,
+}: {
+  robotId: string
+  debug?: RobotDebugInfo
+}) {
+  const copy = useRobotDetailCopy()
+  const queryClient = useQueryClient()
+  const { showErrorToast, showSuccessToast } = useCustomToast()
+  const [isReloading, setIsReloading] = useState(false)
+  const bridge = debug?.bridge
+
+  const handleReload = async () => {
+    setIsReloading(true)
+    try {
+      const result = await reloadRobotBridge(robotId)
+      if (!result.success) {
+        throw new Error(result.error || copy.reloadFailed)
+      }
+      showSuccessToast(copy.reloadRequested)
+      await queryClient.invalidateQueries({
+        queryKey: getRobotDebugQueryKey(robotId),
+      })
+    } catch (error) {
+      showErrorToast(error instanceof Error ? error.message : copy.reloadFailed)
+    } finally {
+      setIsReloading(false)
+    }
+  }
+
+  return (
+    <Card className="rounded-3xl border bg-card shadow-sm">
+      <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle>{copy.debugTitle}</CardTitle>
+          <CardDescription>{copy.debugDescription}</CardDescription>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-9 rounded-xl px-3.5"
+          onClick={() => void handleReload()}
+          disabled={isReloading}
+        >
+          {isReloading ? (
+            <Loader2 className="mr-2 size-4 animate-spin" />
+          ) : (
+            <RefreshCw className="mr-2 size-4" />
+          )}
+          {copy.reload}
+        </Button>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <div className="grid gap-2 text-sm md:grid-cols-4">
+          <div className="rounded-xl border bg-muted/10 p-3">
+            <div className="text-xs text-muted-foreground">Bridge</div>
+            <div className="mt-1 font-medium">
+              {bridge?.status ?? "unknown"}
+            </div>
+          </div>
+          <div className="rounded-xl border bg-muted/10 p-3">
+            <div className="text-xs text-muted-foreground">Bot</div>
+            <div className="mt-1 font-medium">
+              {bridge?.connected ? copy.connected : copy.disconnected}
+            </div>
+          </div>
+          <div className="rounded-xl border bg-muted/10 p-3">
+            <div className="text-xs text-muted-foreground">Identity</div>
+            <div className="mt-1 truncate font-medium">
+              {bridge?.identity ?? "-"}
+            </div>
+          </div>
+          <div className="rounded-xl border bg-muted/10 p-3">
+            <div className="text-xs text-muted-foreground">URL</div>
+            <div className="mt-1 truncate font-medium">
+              {bridge?.url ?? "-"}
+            </div>
+          </div>
+        </div>
+
+        {bridge?.error ? (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            {bridge.error}
+          </div>
+        ) : null}
+
+        <div className="space-y-2">
+          <div className="text-sm font-medium">{copy.recentEvents}</div>
+          {!debug || debug.events.length === 0 ? (
+            <div className="rounded-xl border border-dashed bg-muted/10 px-4 py-6 text-sm text-muted-foreground">
+              {copy.noEvents}
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {debug.events.map((event, index) => (
+                <div
+                  key={`${event.timestamp}-${index}`}
+                  className="rounded-xl border bg-muted/10 p-3 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant={
+                        event.status === "error" ? "destructive" : "outline"
+                      }
+                      className="h-6"
+                    >
+                      {event.status}
+                    </Badge>
+                    <code className="rounded bg-background px-1.5 py-0.5">
+                      {event.direction}
+                    </code>
+                    <span className="font-medium">{event.event}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(event.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+                  {event.message ? (
+                    <div className="mt-2 whitespace-pre-wrap break-words text-muted-foreground">
+                      {event.message}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function RobotDetail({ robotId }: { robotId: string }) {
   const copy = useRobotDetailCopy()
 
@@ -587,6 +953,13 @@ export function RobotDetail({ robotId }: { robotId: string }) {
   const platformsQuery = useQuery({
     queryKey: getRobotPlatformsQueryKey(),
     queryFn: () => listRobotPlatforms(),
+  })
+
+  const debugQuery = useQuery({
+    queryKey: getRobotDebugQueryKey(robotId),
+    queryFn: () => getRobotDebug(robotId),
+    enabled: Boolean(robotId),
+    refetchInterval: 5000,
   })
 
   const robot = robotQuery.data as RobotRecord | undefined
@@ -739,6 +1112,13 @@ export function RobotDetail({ robotId }: { robotId: string }) {
           )}
         </CardContent>
       </Card>
+
+      <RobotBasicConfigPanel robot={robot} platform={platform} />
+
+      <RobotDebugPanel
+        robotId={robotId}
+        debug={debugQuery.data as RobotDebugInfo | undefined}
+      />
     </div>
   )
 }

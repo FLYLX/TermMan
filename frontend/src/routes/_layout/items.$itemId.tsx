@@ -173,7 +173,8 @@ function createDefaultOutputRules(): Record<string, FilterRule> {
 }
 
 function getInputFilterRules(item: ItemWithExtras): Record<string, FilterRule> {
-  return item.input_filter_rules && Object.keys(item.input_filter_rules).length > 0
+  return item.input_filter_rules &&
+    Object.keys(item.input_filter_rules).length > 0
     ? (item.input_filter_rules as Record<string, FilterRule>)
     : createDefaultInputRules()
 }
@@ -428,6 +429,18 @@ function ItemDetailPage({
     unknown
   > | null>(null)
   const [isTestingOutputFilter, setIsTestingOutputFilter] = useState(false)
+  const [isEditingConfig, setIsEditingConfig] = useState(false)
+  const [isSavingConfig, setIsSavingConfig] = useState(false)
+  const [configForm, setConfigForm] = useState({
+    title: item.title,
+    description: item.description ?? "",
+    socket_host: item.socket_host ?? "",
+    socket_port: item.socket_port?.toString() ?? "",
+    api_key: item.api_key ?? "",
+    command: item.command ?? "",
+    working_directory: item.working_directory ?? "",
+    log_max_size_mb: item.log_max_size_mb?.toString() ?? "100",
+  })
 
   useEffect(() => {
     const isNewItem = previousItemIdRef.current !== item.id
@@ -487,6 +500,16 @@ function ItemDetailPage({
       setIsSavingOutputFilter(false)
       setInputFilterSaveState("idle")
       setOutputFilterSaveState("idle")
+      setConfigForm({
+        title: item.title,
+        description: item.description ?? "",
+        socket_host: item.socket_host ?? "",
+        socket_port: item.socket_port?.toString() ?? "",
+        api_key: item.api_key ?? "",
+        command: item.command ?? "",
+        working_directory: item.working_directory ?? "",
+        log_max_size_mb: item.log_max_size_mb?.toString() ?? "100",
+      })
     }
   }, [item])
 
@@ -604,6 +627,69 @@ function ItemDetailPage({
     }
   }
 
+  const resetConfigForm = () => {
+    setConfigForm({
+      title: item.title,
+      description: item.description ?? "",
+      socket_host: item.socket_host ?? "",
+      socket_port: item.socket_port?.toString() ?? "",
+      api_key: item.api_key ?? "",
+      command: item.command ?? "",
+      working_directory: item.working_directory ?? "",
+      log_max_size_mb: item.log_max_size_mb?.toString() ?? "100",
+    })
+  }
+
+  const handleSaveConfig = async () => {
+    const title = configForm.title.trim()
+    if (!title) {
+      showErrorToast("Title is required")
+      return
+    }
+
+    const socketPort = configForm.socket_port.trim()
+      ? Number(configForm.socket_port)
+      : null
+    const logMaxSize = configForm.log_max_size_mb.trim()
+      ? Number(configForm.log_max_size_mb)
+      : null
+
+    setIsSavingConfig(true)
+    try {
+      const updatedItem = await ItemsService.updateItem({
+        id: item.id,
+        requestBody: {
+          title,
+          description: configForm.description.trim() || null,
+          socket_host: configForm.socket_host.trim() || null,
+          socket_port: socketPort,
+          api_key: configForm.api_key.trim() || null,
+          command: configForm.command.trim() || null,
+          working_directory: configForm.working_directory.trim() || null,
+          log_max_size_mb: logMaxSize,
+        },
+      })
+      updateItemCaches(updatedItem)
+      await queryClient.invalidateQueries({ queryKey: ["items", "detail", item.id] })
+      await queryClient.invalidateQueries({ queryKey: ["items"] })
+
+      const daemonId =
+        updatedItem.socket_host && updatedItem.socket_port && updatedItem.api_key
+          ? `${updatedItem.socket_host}:${updatedItem.socket_port}:${updatedItem.api_key}`
+          : null
+      if (daemonId) {
+        await ItemsService.reconnectDaemon({ daemonId }).catch(() => undefined)
+      }
+
+      showSuccessToast("Terminal configuration updated")
+      setIsEditingConfig(false)
+    } catch (error) {
+      showErrorToast(error instanceof Error ? error.message : "Failed to update terminal")
+    } finally {
+      setIsSavingConfig(false)
+    }
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
@@ -658,7 +744,8 @@ function ItemDetailPage({
         )
 
         inputSyncedSignatureRef.current = savedSignature
-        itemUpdatedAtRef.current = updatedItem.updated_at || itemUpdatedAtRef.current
+        itemUpdatedAtRef.current =
+          updatedItem.updated_at || itemUpdatedAtRef.current
 
         if (latestInputSignatureRef.current === payloadSignature) {
           setInputFilterSaveState("saved")
@@ -679,9 +766,9 @@ function ItemDetailPage({
     inputFilterRules,
     inputSignature,
     item.id,
-    queryClient,
     showErrorToast,
     t,
+    updateItemCaches,
   ])
 
   useEffect(() => {
@@ -709,7 +796,8 @@ function ItemDetailPage({
         )
 
         outputSyncedSignatureRef.current = savedSignature
-        itemUpdatedAtRef.current = updatedItem.updated_at || itemUpdatedAtRef.current
+        itemUpdatedAtRef.current =
+          updatedItem.updated_at || itemUpdatedAtRef.current
 
         if (latestOutputSignatureRef.current === payloadSignature) {
           setOutputFilterSaveState("saved")
@@ -730,9 +818,9 @@ function ItemDetailPage({
     outputFilterEnabled,
     outputFilterRules,
     outputSignature,
-    queryClient,
     showErrorToast,
     t,
+    updateItemCaches,
   ])
 
   const handleTestInputFilter = async () => {
@@ -1389,55 +1477,196 @@ function ItemDetailPage({
 
             <TabsContent value="config" className="space-y-4">
               <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-                <h2 className="mb-4 text-xl font-semibold">
-                  {t("items.detail.keyInformation")}
-                </h2>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <CopyValue label={t("common.id")} value={item.id} />
-                  <KeyValue
-                    label={t("common.status")}
-                    value={getStatusLabel(locale, item.status)}
-                  />
-                  <KeyValue label={t("common.ownerId")} value={item.owner_id} />
-                  <KeyValue
-                    label={t("items.detail.socketHost")}
-                    value={item.socket_host}
-                  />
-                  <KeyValue
-                    label={t("items.detail.socketPort")}
-                    value={item.socket_port?.toString()}
-                  />
-                  <KeyValue
-                    label={t("items.detail.socketConnected")}
-                    value={
-                      item.socket_connected ? t("common.yes") : t("common.no")
-                    }
-                  />
-                  <KeyValue
-                    label={t("items.detail.command")}
-                    value={item.command}
-                  />
-                  <KeyValue
-                    label={t("items.workingDirectory")}
-                    value={item.working_directory}
-                  />
-                  <KeyValue
-                    label={t("items.detail.logMaxSize")}
-                    value={item.log_max_size_mb?.toString()}
-                  />
-                  <KeyValue
-                    label={t("items.detail.daemonUrl")}
-                    value={item.daemon_url}
-                  />
-                  <KeyValue
-                    label={t("common.createdAt")}
-                    value={formatDate(item.created_at, localeTag) || undefined}
-                  />
-                  <KeyValue
-                    label={t("common.updatedAt")}
-                    value={formatDate(item.updated_at, localeTag) || undefined}
-                  />
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h2 className="text-xl font-semibold">
+                    {t("items.detail.keyInformation")}
+                  </h2>
+                  <div className="flex gap-2">
+                    {isEditingConfig ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            resetConfigForm()
+                            setIsEditingConfig(false)
+                          }}
+                          disabled={isSavingConfig}
+                        >
+                          {t("common.cancel")}
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={() => void handleSaveConfig()}
+                          disabled={isSavingConfig}
+                        >
+                          {isSavingConfig ? (
+                            <Loader2 className="mr-2 size-4 animate-spin" />
+                          ) : null}
+                          {t("common.save")}
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setIsEditingConfig(true)}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                  </div>
                 </div>
+                {isEditingConfig ? (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-2">
+                      <Label>Title</Label>
+                      <Input
+                        value={configForm.title}
+                        onChange={(event) =>
+                          setConfigForm((current) => ({
+                            ...current,
+                            title: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Description</Label>
+                      <Input
+                        value={configForm.description}
+                        onChange={(event) =>
+                          setConfigForm((current) => ({
+                            ...current,
+                            description: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>{t("items.detail.socketHost")}</Label>
+                      <Input
+                        value={configForm.socket_host}
+                        onChange={(event) =>
+                          setConfigForm((current) => ({
+                            ...current,
+                            socket_host: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>{t("items.detail.socketPort")}</Label>
+                      <Input
+                        type="number"
+                        value={configForm.socket_port}
+                        onChange={(event) =>
+                          setConfigForm((current) => ({
+                            ...current,
+                            socket_port: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Daemon API Key</Label>
+                      <Input
+                        type="password"
+                        value={configForm.api_key}
+                        onChange={(event) =>
+                          setConfigForm((current) => ({
+                            ...current,
+                            api_key: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>{t("items.detail.logMaxSize")}</Label>
+                      <Input
+                        type="number"
+                        value={configForm.log_max_size_mb}
+                        onChange={(event) =>
+                          setConfigForm((current) => ({
+                            ...current,
+                            log_max_size_mb: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>{t("items.detail.command")}</Label>
+                      <Input
+                        value={configForm.command}
+                        onChange={(event) =>
+                          setConfigForm((current) => ({
+                            ...current,
+                            command: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>{t("items.workingDirectory")}</Label>
+                      <Input
+                        value={configForm.working_directory}
+                        onChange={(event) =>
+                          setConfigForm((current) => ({
+                            ...current,
+                            working_directory: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <CopyValue label={t("common.id")} value={item.id} />
+                    <KeyValue
+                      label={t("common.status")}
+                      value={getStatusLabel(locale, item.status)}
+                    />
+                    <KeyValue label={t("common.ownerId")} value={item.owner_id} />
+                    <KeyValue
+                      label={t("items.detail.socketHost")}
+                      value={item.socket_host}
+                    />
+                    <KeyValue
+                      label={t("items.detail.socketPort")}
+                      value={item.socket_port?.toString()}
+                    />
+                    <KeyValue
+                      label={t("items.detail.socketConnected")}
+                      value={
+                        item.socket_connected ? t("common.yes") : t("common.no")
+                      }
+                    />
+                    <KeyValue
+                      label={t("items.detail.command")}
+                      value={item.command}
+                    />
+                    <KeyValue
+                      label={t("items.workingDirectory")}
+                      value={item.working_directory}
+                    />
+                    <KeyValue
+                      label={t("items.detail.logMaxSize")}
+                      value={item.log_max_size_mb?.toString()}
+                    />
+                    <KeyValue
+                      label={t("items.detail.daemonUrl")}
+                      value={item.daemon_url}
+                    />
+                    <KeyValue
+                      label={t("common.createdAt")}
+                      value={formatDate(item.created_at, localeTag) || undefined}
+                    />
+                    <KeyValue
+                      label={t("common.updatedAt")}
+                      value={formatDate(item.updated_at, localeTag) || undefined}
+                    />
+                  </div>
+                )}
               </section>
 
               <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">

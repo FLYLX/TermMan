@@ -29,6 +29,7 @@ SUMMARIZE_THRESHOLD = 10
 class EmbeddingService:
     _instance: "EmbeddingService | None" = None
     _model: Any | None = None
+    _load_error: str | None = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -39,12 +40,23 @@ class EmbeddingService:
         pass
 
     def _ensure_model(self):
+        if self._load_error is not None:
+            raise RuntimeError(self._load_error)
+
         if self._model is None:
             logger.info("[Embedding] Loading all-MiniLM-L6-v2 model...")
             from sentence_transformers import SentenceTransformer
 
-            self._model = SentenceTransformer("all-MiniLM-L6-v2")
-            logger.info("[Embedding] Model loaded successfully")
+            try:
+                self._model = SentenceTransformer("all-MiniLM-L6-v2")
+                logger.info("[Embedding] Model loaded successfully")
+            except Exception as e:
+                self._load_error = str(e)
+                logger.warning(
+                    "[Embedding] Model unavailable; long-term memory search/write will be skipped: %s",
+                    e,
+                )
+                raise
 
     def encode(self, texts: str | list[str]) -> list[list[float]]:
         self._ensure_model()
@@ -87,6 +99,20 @@ class VectorStoreService:
         self._embedding_service = EmbeddingService()
         logger.info("[VectorStore] ChromaDB initialized with persistence")
 
+    def _try_encode_single(self, text: str) -> list[float] | None:
+        try:
+            return self._embedding_service.encode_single(text)
+        except Exception as e:
+            logger.warning("[VectorStore] Skipping memory embedding: %s", e)
+            return None
+
+    def _try_encode(self, texts: list[str]) -> list[list[float]] | None:
+        try:
+            return self._embedding_service.encode(texts)
+        except Exception as e:
+            logger.warning("[VectorStore] Skipping memory embeddings: %s", e)
+            return None
+
     @staticmethod
     def _build_where_filter(
         item_id: str | None = None,
@@ -122,7 +148,9 @@ class VectorStoreService:
             logger.info(f"[VectorStore] Skipping duplicate memory for item {item_id}")
             return None
 
-        embedding = self._embedding_service.encode_single(content)
+        embedding = self._try_encode_single(content)
+        if embedding is None:
+            return None
 
         ttl = ttl_days or DEFAULT_MEMORY_TTL_DAYS
         expires_at = (datetime.now() + timedelta(days=ttl)).isoformat()
@@ -145,7 +173,9 @@ class VectorStoreService:
 
     def _check_duplicate(self, item_id: str, content: str) -> bool:
         self._ensure_initialized()
-        query_embedding = self._embedding_service.encode_single(content)
+        query_embedding = self._try_encode_single(content)
+        if query_embedding is None:
+            return False
         
         results = self._collection.query(
             query_embeddings=[query_embedding],
@@ -168,7 +198,9 @@ class VectorStoreService:
         memory_type: MemoryType | None = None,
     ) -> list[dict[str, Any]]:
         self._ensure_initialized()
-        query_embedding = self._embedding_service.encode_single(query)
+        query_embedding = self._try_encode_single(query)
+        if query_embedding is None:
+            return []
         where_filter = self._build_where_filter(item_id=item_id, memory_type=memory_type)
 
         results = self._collection.query(
@@ -291,7 +323,9 @@ class VectorStoreService:
             return 0
         
         contents = [m["content"] for m in all_memories]
-        embeddings = self._embedding_service.encode(contents)
+        embeddings = self._try_encode(contents)
+        if embeddings is None:
+            return 0
         
         ids_to_delete = set()
         
@@ -334,7 +368,9 @@ class VectorStoreService:
             new_content = content or current_doc
             new_meta = {**current_meta, **(metadata or {})}
             
-            embedding = self._embedding_service.encode_single(new_content)
+            embedding = self._try_encode_single(new_content)
+            if embedding is None:
+                return False
             
             self._collection.delete(ids=[memory_id])
             self._collection.add(

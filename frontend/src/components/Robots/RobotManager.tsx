@@ -38,6 +38,7 @@ import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
 
 import {
+  type BridgeHealthResponse,
   createRobot,
   deleteRobot,
   diagnoseRobotChain,
@@ -49,7 +50,6 @@ import {
   listRobotBindings,
   listRobotPlatforms,
   listRobots,
-  type BridgeHealthResponse,
   type RobotBindingRecord,
   type RobotPlatformRecord,
   type RobotRecord,
@@ -401,7 +401,12 @@ function RobotCard({
   const disconnectedLabel = locale === "zh" ? "未连接" : "Disconnected"
   const diagnoseLabel = locale === "zh" ? "诊断" : "Diagnose"
 
-  const { data: diagnoseResult, isLoading: isDiagnosing, isError, error } = useQuery({
+  const {
+    data: diagnoseResult,
+    isLoading: isDiagnosing,
+    isError,
+    error,
+  } = useQuery({
     queryKey: getRobotDiagnoseQueryKey(robot.id),
     queryFn: () => diagnoseRobotChain(robot.id),
     enabled: showDiagnose,
@@ -417,7 +422,9 @@ function RobotCard({
           </div>
           <div className="min-w-0 space-y-1">
             <div className="flex items-center gap-2">
-              <span className="truncate text-sm font-semibold">{robot.name}</span>
+              <span className="truncate text-sm font-semibold">
+                {robot.name}
+              </span>
               {connectionStatus ? (
                 connectionStatus.connected ? (
                   <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 gap-1 px-1.5">
@@ -517,7 +524,13 @@ function RobotCard({
           </div>
           <div className="space-y-2 text-xs">
             <div className="flex items-center gap-2">
-              <span className={diagnoseResult.chain.robot_config.status === "ok" ? "text-emerald-600" : "text-red-500"}>
+              <span
+                className={
+                  diagnoseResult.chain.robot_config.status === "ok"
+                    ? "text-emerald-600"
+                    : "text-red-500"
+                }
+              >
                 {diagnoseResult.chain.robot_config.status === "ok" ? "✓" : "✗"}
               </span>
               <span>{locale === "zh" ? "机器人配置" : "Robot Config"}</span>
@@ -526,7 +539,13 @@ function RobotCard({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className={diagnoseResult.chain.qq_to_bridge.connected ? "text-emerald-600" : "text-red-500"}>
+              <span
+                className={
+                  diagnoseResult.chain.qq_to_bridge.connected
+                    ? "text-emerald-600"
+                    : "text-red-500"
+                }
+              >
                 {diagnoseResult.chain.qq_to_bridge.connected ? "✓" : "✗"}
               </span>
               <span>{locale === "zh" ? "QQ → Bridge" : "QQ → Bridge"}</span>
@@ -542,14 +561,24 @@ function RobotCard({
             </div>
             {diagnoseResult.chain.items.map((item) => (
               <div key={item.item_id} className="flex items-center gap-2">
-                <span className={item.daemon.online ? "text-emerald-600" : "text-red-500"}>
+                <span
+                  className={
+                    item.daemon.online ? "text-emerald-600" : "text-red-500"
+                  }
+                >
                   {item.daemon.online ? "✓" : "✗"}
                 </span>
-                <span>{locale === "zh" ? "Item → Daemon" : "Item → Daemon"}</span>
+                <span>
+                  {locale === "zh" ? "Item → Daemon" : "Item → Daemon"}
+                </span>
                 <span className="text-muted-foreground truncate max-w-32">
                   {item.item_title}
                 </span>
-                <span className={item.daemon.online ? "text-emerald-600" : "text-red-500"}>
+                <span
+                  className={
+                    item.daemon.online ? "text-emerald-600" : "text-red-500"
+                  }
+                >
                   {item.daemon.status}
                 </span>
               </div>

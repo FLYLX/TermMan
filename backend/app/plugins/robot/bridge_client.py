@@ -12,6 +12,7 @@ from .contracts import (
     RobotBridgeSendRequest,
     RobotReplyTarget,
 )
+from .debug_log import record_robot_event
 
 logger = logging.getLogger(__name__)
 
@@ -31,22 +32,43 @@ class RobotBridgeClient:
         if not text.strip():
             return
 
+        robot_id_str = str(robot_id)
         payload = RobotBridgeSendRequest(
             robot_id=robot_id,
             target=target,
             text=text,
         )
-        with httpx.Client(timeout=10.0) as client:
-            response = client.post(
-                f"{self._base_url}/internal/send",
-                headers=self._headers(),
-                content=payload.model_dump_json(),
+        record_robot_event(
+            robot_id_str,
+            direction="backend_to_bridge",
+            event="send_message",
+            message=text,
+            payload={
+                "target_type": target.target_type,
+                "target_id": target.target_id,
+            },
+        )
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                response = client.post(
+                    f"{self._base_url}/internal/send",
+                    headers=self._headers(),
+                    content=payload.model_dump_json(),
+                )
+                response.raise_for_status()
+        except Exception as exc:
+            record_robot_event(
+                robot_id_str,
+                direction="backend_to_bridge",
+                event="send_message",
+                status="error",
+                message=str(exc),
             )
-            response.raise_for_status()
+            raise
 
-    def notify_reload(self) -> None:
+    def notify_reload(self) -> tuple[bool, str]:
         if not settings.ROBOT_BRIDGE_AUTO_RELOAD:
-            return
+            return False, "Bridge auto reload is disabled"
 
         try:
             with httpx.Client(timeout=5.0) as client:
@@ -55,9 +77,11 @@ class RobotBridgeClient:
                     headers=self._headers(),
                 )
                 response.raise_for_status()
-                RobotBridgeReloadResponse.model_validate(response.json())
+                result = RobotBridgeReloadResponse.model_validate(response.json())
+                return result.success, result.detail
         except Exception as exc:
             logger.info("[RobotBridge] reload notification skipped: %s", exc)
+            return False, str(exc)
 
 
 robot_bridge_client = RobotBridgeClient()

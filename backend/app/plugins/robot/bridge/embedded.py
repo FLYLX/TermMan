@@ -16,6 +16,7 @@ from app.plugins.robot.contracts import (
     RobotDispatchResponse,
     RobotInboundMessage,
 )
+from app.plugins.robot.debug_log import record_robot_event
 from app.plugins.robot.platforms import (
     build_inbound_message,
     normalize_robot_platform_id,
@@ -129,6 +130,39 @@ def get_loaded_robots() -> tuple[list, dict[str, str], dict[str, str]]:
     return _loaded_robots, _robot_id_by_identity, _identity_by_robot_id
 
 
+def _build_idle_bridge_router(reason: str) -> APIRouter:
+    router = APIRouter(prefix="/robot-bridge", tags=["robot-bridge"])
+
+    @router.post("/internal/reload", response_model=RobotBridgeReloadResponse)
+    async def internal_reload(
+        x_termman_bridge_token: str | None = Header(default=None),
+    ) -> RobotBridgeReloadResponse:
+        _assert_bridge_permission(x_termman_bridge_token)
+
+        def _restart() -> None:
+            time.sleep(0.2)
+            os._exit(0)
+
+        threading.Thread(target=_restart, daemon=True).start()
+        return RobotBridgeReloadResponse(success=True, detail="Bridge restart scheduled")
+
+    @router.get("/internal/health")
+    async def internal_health() -> dict[str, Any]:
+        return {
+            "status": "idle",
+            "reason": reason,
+            "loaded_robot_count": 0,
+            "connected_bot_count": 0,
+            "platforms": [],
+            "connected_identities": [],
+            "robots": {},
+            "backend": {"reachable": True},
+            "connection_errors": _load_connection_errors(),
+        }
+
+    return router
+
+
 def init_embedded_bridge() -> APIRouter | None:
     global _bridge_router, _loaded_robots, _robot_id_by_identity, _identity_by_robot_id, _initialized
 
@@ -145,7 +179,8 @@ def init_embedded_bridge() -> APIRouter | None:
         import nonebot
     except ImportError:
         logger.info("[Bridge] nonebot not installed, skip bridge initialization")
-        return None
+        _bridge_router = _build_idle_bridge_router("nonebot_not_installed")
+        return _bridge_router
 
     try:
         from nonebot import get_asgi, get_bots, on_message
@@ -206,7 +241,8 @@ def init_embedded_bridge() -> APIRouter | None:
 
         if not _loaded_robots:
             logger.info("[Bridge] No enabled robots found, skip bridge initialization")
-            return None
+            _bridge_router = _build_idle_bridge_router("no_enabled_robots")
+            return _bridge_router
 
         init_kwargs = build_nonebot_init_kwargs(_loaded_robots)
         init_kwargs.setdefault("driver", "~fastapi+~httpx+~websockets")
@@ -261,10 +297,29 @@ def init_embedded_bridge() -> APIRouter | None:
             inbound = build_inbound_message(platform_id, bot, event)
             if inbound is None:
                 return
+            record_robot_event(
+                robot_id,
+                direction="platform_to_bridge",
+                event="platform_message",
+                message=inbound.text,
+                payload={
+                    "platform": platform_id,
+                    "sender_key": inbound.sender_key,
+                    "target_type": inbound.reply_target.target_type,
+                    "target_id": inbound.reply_target.target_id,
+                },
+            )
 
             try:
                 dispatch = await _dispatch_to_backend(robot_id, inbound)
             except Exception as exc:
+                record_robot_event(
+                    robot_id,
+                    direction="bridge_to_backend",
+                    event="dispatch_failed",
+                    status="error",
+                    message=str(exc),
+                )
                 logger.exception("[Bridge] Failed to dispatch message for robot %s", robot_id)
                 try:
                     await send_text_with_bot(bot, inbound.reply_target, f"Robot bridge failed: {exc}")
@@ -279,6 +334,16 @@ def init_embedded_bridge() -> APIRouter | None:
                 return
 
             for chunk in dispatch.reply_chunks:
+                record_robot_event(
+                    robot_id,
+                    direction="bridge_to_platform",
+                    event="platform_send",
+                    message=chunk,
+                    payload={
+                        "target_type": inbound.reply_target.target_type,
+                        "target_id": inbound.reply_target.target_id,
+                    },
+                )
                 await send_text_with_bot(bot, inbound.reply_target, chunk)
 
         nonebot_app = get_asgi()
@@ -357,6 +422,16 @@ def init_embedded_bridge() -> APIRouter | None:
             if bot is None:
                 raise HTTPException(status_code=404, detail="Robot is not loaded in bridge")
 
+            record_robot_event(
+                robot_id,
+                direction="bridge_to_platform",
+                event="internal_send",
+                message=body.text,
+                payload={
+                    "target_type": body.target.target_type,
+                    "target_id": body.target.target_id,
+                },
+            )
             await send_text_with_bot(bot, body.target, body.text)
             return {"success": True}
 

@@ -1297,6 +1297,7 @@ function ItemHandlerDetail() {
     enabled_skills: [] as string[],
   })
   const [isEditing, setIsEditing] = useState(false)
+  const [activeTab, setActiveTab] = useState("connections")
 
   useEffect(() => {
     if (itemHandler) {
@@ -1320,6 +1321,7 @@ function ItemHandlerDetail() {
         enabled_skills: enabledSkills,
       })
       setIsEditing(true)
+      setActiveTab("config")
     }
   }
 
@@ -1546,9 +1548,10 @@ function ItemHandlerDetail() {
         </div>
       </section>
 
-      <Tabs defaultValue="connections" className="gap-3">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-3">
         <div className="overflow-x-auto">
-          <TabsList className="h-auto min-w-max gap-1 bg-muted/70 p-1">
+          <div className="flex min-w-max items-center justify-between gap-3">
+            <TabsList className="h-auto gap-1 bg-muted/70 p-1">
             <TabsTrigger value="connections">
               {t("itemHandlers.detail.connections")}
             </TabsTrigger>
@@ -1562,7 +1565,16 @@ function ItemHandlerDetail() {
             <TabsTrigger value="config">
               {t("itemHandlers.detail.config")}
             </TabsTrigger>
-          </TabsList>
+            </TabsList>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={startEditing}
+            >
+              {t("itemHandlers.detail.edit")}
+            </Button>
+          </div>
         </div>
 
         <TabsContent value="connections">

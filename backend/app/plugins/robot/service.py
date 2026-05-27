@@ -16,6 +16,7 @@ from app.services.agent.chat_runtime import collect_chat_response
 
 from .bridge_client import robot_bridge_client
 from .contracts import RobotDispatchResponse, RobotInboundMessage, RobotReplyTarget
+from .debug_log import record_robot_event
 from .platforms import (
     get_robot_platform,
     get_robot_runtime_config,
@@ -66,6 +67,17 @@ class RobotService:
         robot: Robot,
         message: RobotInboundMessage,
     ) -> RobotDispatchResponse:
+        record_robot_event(
+            str(robot.id),
+            direction="bridge_to_backend",
+            event="inbound_message",
+            message=message.text,
+            payload={
+                "sender_key": message.sender_key,
+                "target_type": message.reply_target.target_type,
+                "target_id": message.reply_target.target_id,
+            },
+        )
         self._assert_robot_supported(robot)
         if not robot.is_enabled:
             return RobotDispatchResponse(success=True, ignored=True, reason="robot_disabled")
@@ -94,14 +106,33 @@ class RobotService:
                 item=resolved_binding.item,
                 message=message_text,
             )
-            return RobotDispatchResponse(
+            response = RobotDispatchResponse(
                 success=True,
                 ignored=False,
                 item_id=str(resolved_binding.item.id),
                 route_key=resolved_binding.route_key,
                 reply_chunks=self._chunk_text(robot, response_text),
             )
+            record_robot_event(
+                str(robot.id),
+                direction="backend_to_bridge",
+                event="dispatch_response",
+                message=response_text,
+                payload={
+                    "item_id": str(resolved_binding.item.id),
+                    "route_key": resolved_binding.route_key,
+                    "chunk_count": len(response.reply_chunks),
+                },
+            )
+            return response
         except RobotServiceError as exc:
+            record_robot_event(
+                str(robot.id),
+                direction="backend",
+                event="dispatch_error",
+                status="error",
+                message=exc.message,
+            )
             return RobotDispatchResponse(
                 success=False,
                 ignored=False,
@@ -110,6 +141,13 @@ class RobotService:
             )
         except HTTPException as exc:
             detail = exc.detail if isinstance(exc.detail, str) else "Robot dispatch failed"
+            record_robot_event(
+                str(robot.id),
+                direction="backend",
+                event="dispatch_error",
+                status="error",
+                message=detail,
+            )
             return RobotDispatchResponse(
                 success=False,
                 ignored=False,
@@ -120,6 +158,13 @@ class RobotService:
             logger.exception(
                 "[RobotService] Unexpected inbound message error for robot %s",
                 robot.id,
+            )
+            record_robot_event(
+                str(robot.id),
+                direction="backend",
+                event="dispatch_error",
+                status="error",
+                message=str(exc),
             )
             fallback = "机器人处理失败"
             return RobotDispatchResponse(
@@ -175,6 +220,13 @@ class RobotService:
 
                 output_text = f"[{title}]\n{text}"
                 for target in targets:
+                    record_robot_event(
+                        str(robot.id),
+                        direction="backend_to_bridge",
+                        event="filtered_output",
+                        message=output_text,
+                        payload={"item_id": str(item.id), "item_title": title},
+                    )
                     self._safe_send_via_bridge(robot, target, output_text)
 
     def normalize_chat_alias(self, value: str | None) -> str | None:

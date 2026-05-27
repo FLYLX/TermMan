@@ -81,6 +81,8 @@ export type CreateRobotPayload = {
   config?: RobotConfig
 }
 
+export type UpdateRobotPayload = Partial<CreateRobotPayload>
+
 export function getRobotsQueryKey() {
   return ["robots"] as const
 }
@@ -119,6 +121,16 @@ export async function createRobot(payload: CreateRobotPayload) {
 export async function deleteRobot(robotId: string) {
   return apiRequest<{ message: string }>(`/api/v1/robots/${robotId}`, {
     method: "DELETE",
+  })
+}
+
+export async function updateRobot(
+  robotId: string,
+  payload: UpdateRobotPayload,
+) {
+  return apiRequest<RobotRecord>(`/api/v1/robots/${robotId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
   })
 }
 
@@ -232,7 +244,50 @@ export function getRobotDiagnoseQueryKey(robotId: string) {
 }
 
 export async function diagnoseRobotChain(robotId: string) {
-  return apiRequest<RobotDiagnoseResult>(
-    `/api/v1/robots/${robotId}/diagnose`,
+  return apiRequest<RobotDiagnoseResult>(`/api/v1/robots/${robotId}/diagnose`)
+}
+
+export type RobotDebugEvent = {
+  timestamp: string
+  direction: string
+  event: string
+  status: string
+  message?: string | null
+  payload: Record<string, unknown>
+}
+
+export type RobotDebugInfo = {
+  robot: {
+    id: string
+    name: string
+    platform: string
+    provider: string
+    is_enabled: boolean
+    app_id: string | null
+  }
+  bridge: {
+    url: string
+    status: string
+    loaded_robot_count: number
+    connected_bot_count: number
+    connected: boolean
+    identity?: string | null
+    error?: string | null
+  }
+  events: RobotDebugEvent[]
+}
+
+export function getRobotDebugQueryKey(robotId: string) {
+  return ["robot-debug", robotId] as const
+}
+
+export async function getRobotDebug(robotId: string) {
+  return apiRequest<RobotDebugInfo>(`/api/v1/robots/${robotId}/debug`)
+}
+
+export async function reloadRobotBridge(robotId: string) {
+  return apiRequest<{ success: boolean; message?: string; error?: string }>(
+    `/api/v1/robots/${robotId}/reload`,
+    { method: "POST" },
   )
 }

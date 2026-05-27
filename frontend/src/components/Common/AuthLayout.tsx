@@ -14,14 +14,26 @@ export function AuthLayout({ children }: AuthLayoutProps) {
     locale === "zh"
       ? {
           tagline: "终端智能体编排平台",
-          description: "TermMan 是一个终端智能体编排平台，通过 Daemon 托管子进程，Agent 消费终端流，实现智能化的终端交互与决策闭环。",
-          features: ["实时终端流监控与过滤", "LLM 驱动的智能决策", "QQ 机器人消息路由", "向量记忆与知识检索"],
+          description:
+            "TermMan 是一个终端智能体编排平台，通过 Daemon 托管子进程，Agent 消费终端流，实现智能化的终端交互与决策闭环。",
+          features: [
+            "实时终端流监控与过滤",
+            "LLM 驱动的智能决策",
+            "QQ 机器人消息路由",
+            "向量记忆与知识检索",
+          ],
           footer: "daemon → stream → bridge → agent",
         }
       : {
           tagline: "Terminal Agent Orchestration",
-          description: "TermMan is a terminal agent orchestration platform. Daemon hosts subprocesses, Agent consumes terminal streams, enabling intelligent terminal interaction and decision loops.",
-          features: ["Real-time stream monitoring & filtering", "LLM-powered intelligent decisions", "QQ bot message routing", "Vector memory & knowledge retrieval"],
+          description:
+            "TermMan is a terminal agent orchestration platform. Daemon hosts subprocesses, Agent consumes terminal streams, enabling intelligent terminal interaction and decision loops.",
+          features: [
+            "Real-time stream monitoring & filtering",
+            "LLM-powered intelligent decisions",
+            "QQ bot message routing",
+            "Vector memory & knowledge retrieval",
+          ],
           footer: "daemon → stream → bridge → agent",
         }
 

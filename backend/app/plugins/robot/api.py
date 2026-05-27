@@ -32,6 +32,7 @@ from .api_support import (
 )
 from .bridge_client import robot_bridge_client
 from .contracts import RobotDispatchResponse, RobotInboundMessage
+from .debug_log import get_robot_events, record_robot_event
 from .platforms import (
     RobotPlatformPublic,
     list_supported_robot_platforms,
@@ -486,3 +487,82 @@ def diagnose_robot_chain(
     result["overall_status"] = "ok" if all_ok else "degraded"
 
     return result
+
+
+@router.post("/{id}/reload")
+def reload_robot_bridge(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+) -> dict:
+    robot = get_robot_or_404(session, id)
+    assert_robot_permission(robot, current_user)
+
+    success, detail = robot_bridge_client.notify_reload()
+    if success:
+        record_robot_event(
+            str(id),
+            direction="backend_to_bridge",
+            event="manual_reload",
+            message=detail,
+        )
+        return {"success": True, "message": detail}
+
+    record_robot_event(
+        str(id),
+        direction="backend_to_bridge",
+        event="manual_reload",
+        status="error",
+        message=detail,
+    )
+    return {"success": False, "error": detail}
+
+
+@router.get("/{id}/debug")
+def get_robot_debug(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    limit: int = 100,
+) -> dict:
+    import httpx
+    from app.core.config import settings
+
+    robot = get_robot_or_404(session, id)
+    assert_robot_permission(robot, current_user)
+
+    bridge_health: dict = {"status": "unknown"}
+    try:
+        response = httpx.get(
+            f"{settings.ROBOT_BRIDGE_URL}/internal/health",
+            headers={"X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY},
+            timeout=5.0,
+        )
+        response.raise_for_status()
+        bridge_health = response.json()
+    except Exception as e:
+        bridge_health = {"status": "error", "error": str(e)}
+
+    robot_health = bridge_health.get("robots", {}).get(str(id), {})
+    return {
+        "robot": {
+            "id": str(robot.id),
+            "name": robot.name,
+            "platform": robot.platform,
+            "provider": robot.provider,
+            "is_enabled": robot.is_enabled,
+            "app_id": robot.app_id,
+        },
+        "bridge": {
+            "url": settings.ROBOT_BRIDGE_URL,
+            "status": bridge_health.get("status", "ok" if "error" not in bridge_health else "error"),
+            "loaded_robot_count": bridge_health.get("loaded_robot_count", 0),
+            "connected_bot_count": bridge_health.get("connected_bot_count", 0),
+            "connected": robot_health.get("connected", False),
+            "identity": robot_health.get("identity"),
+            "error": robot_health.get("error")
+            or bridge_health.get("connection_errors", {}).get(str(id))
+            or bridge_health.get("error"),
+        },
+        "events": get_robot_events(str(id), limit=limit),
+    }
