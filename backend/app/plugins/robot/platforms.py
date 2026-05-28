@@ -175,17 +175,43 @@ def _normalize_endpoint(value: Any) -> str:
 def _build_qq_init(init_kwargs: dict[str, Any], runtime_config: dict[str, Any]) -> None:
     from nonebot.adapters.qq.config import BotInfo
 
+    try:
+        from nonebot.adapters.qq.config import Intents
+    except ImportError:
+        Intents = None
+
     credentials = runtime_config["credentials"]
     options = runtime_config["options"]
+    bot_kwargs: dict[str, Any] = {
+        "id": str(credentials["app_id"]),
+        "token": str(credentials["bot_token"]),
+        "secret": str(credentials["app_secret"]),
+        "use_websocket": _normalize_bool(options.get("use_websocket"), default=True),
+    }
+
+    bot_fields = getattr(BotInfo, "model_fields", None) or getattr(BotInfo, "__fields__", {})
+    if Intents is not None and "intents" in bot_fields:
+        intent_kwargs = {
+            "guild_messages": _normalize_bool(options.get("guild_messages"), default=True),
+            "direct_message": _normalize_bool(options.get("direct_message"), default=True),
+            "c2c_group_at_messages": _normalize_bool(
+                options.get("c2c_group_at_messages"),
+                default=True,
+            ),
+        }
+        intent_fields = getattr(Intents, "model_fields", None) or getattr(Intents, "__fields__", {})
+        bot_kwargs["intents"] = Intents(
+            **{
+                key: value
+                for key, value in intent_kwargs.items()
+                if key in intent_fields
+            }
+        )
+
     _append_config_item(
         init_kwargs,
         "qq_bots",
-        BotInfo(
-            id=str(credentials["app_id"]),
-            token=str(credentials["bot_token"]),
-            secret=str(credentials["app_secret"]),
-            use_websocket=_normalize_bool(options.get("use_websocket"), default=True),
-        ),
+        BotInfo(**bot_kwargs),
     )
 
 
@@ -940,6 +966,18 @@ def normalize_robot_config(
             options.get("use_websocket"),
             default=True,
         )
+        options["guild_messages"] = _normalize_bool(
+            options.get("guild_messages"),
+            default=True,
+        )
+        options["direct_message"] = _normalize_bool(
+            options.get("direct_message"),
+            default=True,
+        )
+        options["c2c_group_at_messages"] = _normalize_bool(
+            options.get("c2c_group_at_messages"),
+            default=True,
+        )
 
     return {
         "credentials": credentials,
@@ -964,6 +1002,10 @@ def get_robot_runtime_config(robot: Robot) -> dict[str, Any]:
     }
     if platform_id == "qq_official" and "use_websocket" not in runtime_config["options"]:
         runtime_config["options"]["use_websocket"] = bool(robot.use_websocket)
+    if platform_id == "qq_official":
+        runtime_config["options"].setdefault("guild_messages", True)
+        runtime_config["options"].setdefault("direct_message", True)
+        runtime_config["options"].setdefault("c2c_group_at_messages", True)
     return validate_robot_platform_config(platform_id, runtime_config)
 
 
