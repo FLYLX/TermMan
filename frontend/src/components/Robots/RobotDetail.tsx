@@ -983,6 +983,37 @@ function RobotDebugPanel({
           </div>
         </div>
 
+        <div className="grid gap-2 text-sm md:grid-cols-3">
+          <div className="rounded-xl border bg-muted/10 p-3">
+            <div className="text-xs text-muted-foreground">QQ Bot ID</div>
+            <div className="mt-1 truncate font-medium">
+              {bridge?.bot?.bot_info?.id
+                ? String(bridge.bot.bot_info.id)
+                : bridge?.bot?.self_id || "-"}
+            </div>
+          </div>
+          <div className="rounded-xl border bg-muted/10 p-3">
+            <div className="text-xs text-muted-foreground">Adapter</div>
+            <div className="mt-1 truncate font-medium">
+              {bridge?.bot?.adapter ?? "-"}
+            </div>
+          </div>
+          <div className="rounded-xl border bg-muted/10 p-3">
+            <div className="text-xs text-muted-foreground">Checked</div>
+            <div className="mt-1 truncate font-medium">
+              {bridge?.checked_at
+                ? new Date(bridge.checked_at).toLocaleString()
+                : "-"}
+            </div>
+          </div>
+        </div>
+
+        {bridge?.cooldown_remaining_seconds ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+            QQ gateway cooldown: {bridge.cooldown_remaining_seconds}s
+          </div>
+        ) : null}
+
         {bridge?.error ? (
           <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
             {bridge.error}

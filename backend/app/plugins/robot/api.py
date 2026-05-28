@@ -642,6 +642,10 @@ def get_robot_debug(
             "connected_bot_count": bridge_health.get("connected_bot_count", 0),
             "connected": robot_health.get("connected", False),
             "identity": robot_health.get("identity"),
+            "bot": robot_health.get("bot"),
+            "bots": bridge_health.get("bots", []),
+            "checked_at": bridge_health.get("checked_at"),
+            "cooldown_remaining_seconds": robot_health.get("cooldown_remaining_seconds", 0),
             "error": None
             if connected
             else robot_health.get("error") or historical_error or bridge_health.get("error"),

@@ -277,6 +277,20 @@ export type RobotDebugInfo = {
     connected_bot_count: number
     connected: boolean
     identity?: string | null
+    checked_at?: string | null
+    cooldown_remaining_seconds?: number
+    bot?: {
+      self_id?: string | null
+      adapter?: string | null
+      class?: string | null
+      bot_info?: Record<string, unknown>
+    } | null
+    bots?: Array<{
+      self_id?: string | null
+      adapter?: string | null
+      class?: string | null
+      bot_info?: Record<string, unknown>
+    }>
     error?: string | null
   }
   diagnostics?: {

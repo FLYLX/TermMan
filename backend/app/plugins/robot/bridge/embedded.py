@@ -129,6 +129,31 @@ def _get_gateway_cooldown_remaining(robot_id: str) -> int:
     return max(0, remaining)
 
 
+def _serialize_bot_snapshot(bot: Any) -> dict[str, Any]:
+    snapshot: dict[str, Any] = {
+        "self_id": str(getattr(bot, "self_id", "") or ""),
+        "adapter": None,
+        "class": bot.__class__.__name__,
+    }
+    try:
+        snapshot["adapter"] = str(bot.adapter.get_name())
+    except Exception:
+        snapshot["adapter"] = None
+
+    bot_info = getattr(bot, "bot_info", None)
+    if bot_info is not None:
+        snapshot["bot_info"] = {
+            key: value
+            for key, value in {
+                "id": getattr(bot_info, "id", None),
+                "username": getattr(bot_info, "username", None),
+                "name": getattr(bot_info, "name", None),
+            }.items()
+            if value is not None
+        }
+    return snapshot
+
+
 def _save_identities() -> None:
     try:
         import json
@@ -697,6 +722,15 @@ def init_embedded_bridge() -> APIRouter | None:
             checked_at = datetime.now(timezone.utc).isoformat()
             _load_connection_errors()
             connected_bot_count = len(get_bots())
+            bot_snapshots: list[dict[str, Any]] = []
+            bot_snapshot_by_identity: dict[str, dict[str, Any]] = {}
+            for bot in get_bots().values():
+                snapshot = _serialize_bot_snapshot(bot)
+                bot_snapshots.append(snapshot)
+                try:
+                    bot_snapshot_by_identity[resolve_bot_identity(bot)] = snapshot
+                except Exception:
+                    continue
             connected_identities = [
                 identity
                 for robot_id, identity in _identity_by_robot_id.items()
@@ -710,6 +744,7 @@ def init_embedded_bridge() -> APIRouter | None:
                 robot_status[robot_id] = {
                     "identity": identity,
                     "connected": identity in connected_identities,
+                    "bot": bot_snapshot_by_identity.get(identity),
                     "error": (
                         f"QQ gateway rate limited; retry after {cooldown_remaining}s"
                         if cooldown_remaining > 0
@@ -746,6 +781,7 @@ def init_embedded_bridge() -> APIRouter | None:
                     }
                 ),
                 "connected_identities": connected_identities,
+                "bots": bot_snapshots,
                 "robots": robot_status,
                 "backend": backend_status,
                 "connection_errors": _connection_errors,
