@@ -4,6 +4,7 @@ import logging
 import os
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -220,6 +221,7 @@ async def internal_reload(
 
 @app.get("/internal/health")
 async def internal_health() -> dict[str, Any]:
+    checked_at = datetime.now(timezone.utc).isoformat()
     connected_bot_count = len(get_bots())
     connected_identities = [
         identity
@@ -248,6 +250,8 @@ async def internal_health() -> dict[str, Any]:
         backend_status["error"] = str(exc)
 
     return {
+        "checked_at": checked_at,
+        "live": True,
         "loaded_robot_count": len(IDENTITY_BY_ROBOT_ID),
         "connected_bot_count": connected_bot_count,
         "platforms": sorted(

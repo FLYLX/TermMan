@@ -213,6 +213,7 @@ export type RobotDiagnoseResult = {
   robot_name: string
   robot_enabled: boolean
   platform: string
+  checked_at?: string
   overall_status: "ok" | "degraded"
   chain: {
     robot_config: {
@@ -226,6 +227,10 @@ export type RobotDiagnoseResult = {
       identity?: string
       backend_reachable?: boolean
       error?: string
+      stale_error?: string | null
+      stale_error_at?: string | null
+      bridge_checked_at?: string | null
+      live?: boolean
     }
     items: Array<{
       item_id: string

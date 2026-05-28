@@ -4,6 +4,7 @@ import logging
 import os
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -33,17 +34,36 @@ _robot_id_by_identity: dict[str, str] = {}
 _identity_by_robot_id: dict[str, str] = {}
 _seen_connected_robot_ids: set[str] = set()
 _initialized = False
-_connection_errors: dict[str, str] = {}
+_connection_errors: dict[str, dict[str, str]] = {}
 _error_file_path: str = "/tmp/robot_bridge_errors.json"
 _identity_file_path: str = "/tmp/robot_bridge_identities.json"
 
 
-def _load_connection_errors() -> dict[str, str]:
+def _normalize_connection_errors(raw: Any) -> dict[str, dict[str, str]]:
+    if not isinstance(raw, dict):
+        return {}
+    normalized: dict[str, dict[str, str]] = {}
+    for robot_id, value in raw.items():
+        if isinstance(value, dict):
+            message = str(value.get("message") or value.get("error") or "")
+            timestamp = str(value.get("timestamp") or "")
+        else:
+            message = str(value)
+            timestamp = ""
+        if message:
+            normalized[str(robot_id)] = {
+                "message": message,
+                "timestamp": timestamp,
+            }
+    return normalized
+
+
+def _load_connection_errors() -> dict[str, dict[str, str]]:
     global _connection_errors
     try:
         import json
         with open(_error_file_path, "r") as f:
-            _connection_errors = json.load(f)
+            _connection_errors = _normalize_connection_errors(json.load(f))
     except Exception:
         _connection_errors = {}
     return _connection_errors
@@ -51,7 +71,10 @@ def _load_connection_errors() -> dict[str, str]:
 
 def _save_connection_error(robot_id: str, error: str) -> None:
     global _connection_errors
-    _connection_errors[robot_id] = error
+    _connection_errors[robot_id] = {
+        "message": error,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
     try:
         import json
         with open(_error_file_path, "w") as f:
@@ -147,10 +170,13 @@ def _build_idle_bridge_router(reason: str) -> APIRouter:
         threading.Thread(target=_restart, daemon=True).start()
         return RobotBridgeReloadResponse(success=True, detail="Bridge restart scheduled")
 
-    @router.get("/internal/health")
-    async def internal_health() -> dict[str, Any]:
-        return {
-            "status": "idle",
+        @router.get("/internal/health")
+        async def internal_health() -> dict[str, Any]:
+            checked_at = datetime.now(timezone.utc).isoformat()
+            return {
+                "checked_at": checked_at,
+                "live": True,
+                "status": "idle",
             "reason": reason,
             "loaded_robot_count": 0,
             "connected_bot_count": 0,
@@ -433,7 +459,7 @@ def init_embedded_bridge() -> APIRouter | None:
                     logger.error(f"[Bridge] Failed to start adapter {adapter_name}: {error_msg}")
                     robot_id = _get_robot_id_for_adapter(adapter_name)
                     if robot_id:
-                        _connection_errors[robot_id] = error_msg
+                        _save_connection_error(robot_id, error_msg)
         
         from nonebot.internal.adapter.adapter import Adapter
         
@@ -452,7 +478,7 @@ def init_embedded_bridge() -> APIRouter | None:
                             except Exception as e:
                                 error_msg = f"{type(e).__name__}: {str(e)}"
                                 logger.error(f"[Bridge] WebSocket connection failed for {_adapter_name}: {error_msg}")
-                                _connection_errors[_robot_id] = error_msg
+                                _save_connection_error(_robot_id, error_msg)
                                 raise
                         return wrapped_run_bot_websocket
                     adapter.run_bot_websocket = make_wrapper(original_run_bot_websocket, robot_id, adapter_name)
@@ -512,13 +538,14 @@ def init_embedded_bridge() -> APIRouter | None:
 
         @_bridge_router.get("/internal/health")
         async def internal_health() -> dict[str, Any]:
+            checked_at = datetime.now(timezone.utc).isoformat()
             _load_connection_errors()
             connected_bot_count = len(get_bots())
             connected_identities = [
                 identity
                 for robot_id, identity in _identity_by_robot_id.items()
                 if robot_id in _seen_connected_robot_ids
-                or (connected_bot_count > 0 and robot_id not in _connection_errors)
+                or connected_bot_count > 0
             ]
 
             robot_status: dict[str, dict[str, Any]] = {}
@@ -526,7 +553,10 @@ def init_embedded_bridge() -> APIRouter | None:
                 robot_status[robot_id] = {
                     "identity": identity,
                     "connected": identity in connected_identities,
-                    "error": _connection_errors.get(robot_id),
+                    "error": None
+                    if identity in connected_identities
+                    else (_connection_errors.get(robot_id) or {}).get("message"),
+                    "last_error": _connection_errors.get(robot_id),
                 }
 
             backend_status: dict[str, Any] = {"reachable": False}
@@ -543,6 +573,8 @@ def init_embedded_bridge() -> APIRouter | None:
                 backend_status["error"] = str(exc)
 
             return {
+                "checked_at": checked_at,
+                "live": True,
                 "loaded_robot_count": len(_identity_by_robot_id),
                 "connected_bot_count": connected_bot_count,
                 "platforms": sorted(

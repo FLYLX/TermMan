@@ -404,14 +404,26 @@ function RobotCard({
   const {
     data: diagnoseResult,
     isLoading: isDiagnosing,
+    isFetching: isDiagnosisFetching,
     isError,
     error,
+    refetch: refetchDiagnose,
   } = useQuery({
     queryKey: getRobotDiagnoseQueryKey(robot.id),
     queryFn: () => diagnoseRobotChain(robot.id),
     enabled: showDiagnose,
     retry: false,
+    staleTime: 0,
+    gcTime: 0,
   })
+
+  const handleDiagnose = async () => {
+    if (!showDiagnose) {
+      setShowDiagnose(true)
+      return
+    }
+    await refetchDiagnose()
+  }
 
   return (
     <div className="rounded-[22px] border bg-card p-4 shadow-sm transition-transform hover:-translate-y-0.5 hover:border-primary/25">
@@ -459,9 +471,9 @@ function RobotCard({
             variant="outline"
             size="sm"
             className="h-8 rounded-lg px-2.5"
-            onClick={() => setShowDiagnose(!showDiagnose)}
+            onClick={() => void handleDiagnose()}
           >
-            {isDiagnosing ? (
+            {isDiagnosing || isDiagnosisFetching ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
               <Stethoscope className="size-3.5" />
@@ -522,6 +534,12 @@ function RobotCard({
           <div className="mb-2 text-xs font-medium uppercase tracking-[0.15em] text-muted-foreground">
             {locale === "zh" ? "链路诊断" : "Chain Diagnosis"}
           </div>
+          {diagnoseResult.checked_at ? (
+            <div className="mb-2 text-[10px] text-muted-foreground">
+              {locale === "zh" ? "本次诊断: " : "Checked: "}
+              {new Date(diagnoseResult.checked_at).toLocaleString()}
+            </div>
+          ) : null}
           <div className="space-y-2 text-xs">
             <div className="flex items-center gap-2">
               <span
@@ -554,9 +572,17 @@ function RobotCard({
                   {diagnoseResult.chain.qq_to_bridge.error}
                 </span>
               ) : (
-                <span className="text-muted-foreground">
-                  {diagnoseResult.chain.qq_to_bridge.identity || "-"}
-                </span>
+                <div className="flex min-w-0 flex-col">
+                  <span className="text-muted-foreground">
+                    {diagnoseResult.chain.qq_to_bridge.identity || "-"}
+                  </span>
+                  {diagnoseResult.chain.qq_to_bridge.stale_error ? (
+                    <span className="truncate text-[10px] text-muted-foreground">
+                      {locale === "zh" ? "历史错误: " : "Previous error: "}
+                      {diagnoseResult.chain.qq_to_bridge.stale_error}
+                    </span>
+                  ) : null}
+                </div>
               )}
             </div>
             {diagnoseResult.chain.items.map((item) => (

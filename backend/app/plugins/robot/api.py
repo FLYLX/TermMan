@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Header, HTTPException
 from sqlmodel import col, select
@@ -430,6 +431,7 @@ def diagnose_robot_chain(
         "robot_name": robot.name,
         "robot_enabled": robot.is_enabled,
         "platform": robot.platform,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
         "chain": {},
     }
 
@@ -453,13 +455,30 @@ def diagnose_robot_chain(
         robot_status = robots_status.get(str(id), {})
         backend_status = health_data.get("backend", {})
         connection_errors = health_data.get("connection_errors", {})
+        raw_connection_error = connection_errors.get(str(id))
+        historical_error = (
+            raw_connection_error.get("message")
+            if isinstance(raw_connection_error, dict)
+            else raw_connection_error
+        )
+        historical_error_at = (
+            raw_connection_error.get("timestamp")
+            if isinstance(raw_connection_error, dict)
+            else None
+        )
+        current_error = robot_status.get("error")
+        connected = robot_status.get("connected", False)
 
         bridge_status = {
             "status": "ok",
-            "connected": robot_status.get("connected", False),
+            "connected": connected,
             "identity": robot_status.get("identity"),
             "backend_reachable": backend_status.get("reachable", False),
-            "error": robot_status.get("error") or connection_errors.get(str(id)),
+            "error": None if connected else current_error or historical_error,
+            "stale_error": historical_error if connected else None,
+            "stale_error_at": historical_error_at if connected else None,
+            "bridge_checked_at": health_data.get("checked_at"),
+            "live": bool(health_data.get("live", False)),
         }
     except Exception as e:
         bridge_status = {"status": "error", "error": str(e), "connected": False}
@@ -560,6 +579,14 @@ def get_robot_debug(
         bridge_health = {"status": "error", "error": str(e)}
 
     robot_health = bridge_health.get("robots", {}).get(str(id), {})
+    connection_errors = bridge_health.get("connection_errors", {})
+    raw_connection_error = connection_errors.get(str(id))
+    historical_error = (
+        raw_connection_error.get("message")
+        if isinstance(raw_connection_error, dict)
+        else raw_connection_error
+    )
+    connected = robot_health.get("connected", False)
     return {
         "robot": {
             "id": str(robot.id),
@@ -576,9 +603,10 @@ def get_robot_debug(
             "connected_bot_count": bridge_health.get("connected_bot_count", 0),
             "connected": robot_health.get("connected", False),
             "identity": robot_health.get("identity"),
-            "error": robot_health.get("error")
-            or bridge_health.get("connection_errors", {}).get(str(id))
-            or bridge_health.get("error"),
+            "error": None
+            if connected
+            else robot_health.get("error") or historical_error or bridge_health.get("error"),
+            "stale_error": historical_error if connected else None,
         },
         "events": get_robot_events(str(id), limit=limit),
     }
