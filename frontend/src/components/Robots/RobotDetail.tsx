@@ -665,6 +665,10 @@ function getErrorText(error: unknown, fallback: string) {
 function formatDebugPayload(payload: Record<string, unknown>) {
   const entries = [
     ["platform", payload.platform],
+    ["username", payload.username],
+    ["user_id", payload.user_id],
+    ["session", payload.session_id],
+    ["shard", payload.shard],
     ["sender", payload.sender_key],
     ["target", payload.target_id],
     ["target_type", payload.target_type],
@@ -1003,6 +1007,25 @@ function RobotDebugPanel({
             <div className="mt-1 truncate font-medium">
               {bridge?.checked_at
                 ? new Date(bridge.checked_at).toLocaleString()
+                : "-"}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-2 text-sm md:grid-cols-2">
+          <div className="rounded-xl border bg-muted/10 p-3">
+            <div className="text-xs text-muted-foreground">Last Platform Event</div>
+            <div className="mt-1 truncate font-medium">
+              {bridge?.last_platform_event_at
+                ? new Date(bridge.last_platform_event_at).toLocaleString()
+                : "-"}
+            </div>
+          </div>
+          <div className="rounded-xl border bg-muted/10 p-3">
+            <div className="text-xs text-muted-foreground">Last Message Event</div>
+            <div className="mt-1 truncate font-medium">
+              {bridge?.last_message_event_at
+                ? new Date(bridge.last_message_event_at).toLocaleString()
                 : "-"}
             </div>
           </div>

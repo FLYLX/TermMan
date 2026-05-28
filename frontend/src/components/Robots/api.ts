@@ -291,6 +291,8 @@ export type RobotDebugInfo = {
       class?: string | null
       bot_info?: Record<string, unknown>
     }>
+    last_platform_event_at?: string | null
+    last_message_event_at?: string | null
     error?: string | null
   }
   diagnostics?: {

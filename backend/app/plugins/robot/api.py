@@ -645,6 +645,8 @@ def get_robot_debug(
             "bot": robot_health.get("bot"),
             "bots": bridge_health.get("bots", []),
             "checked_at": bridge_health.get("checked_at"),
+            "last_platform_event_at": robot_health.get("last_platform_event_at"),
+            "last_message_event_at": robot_health.get("last_message_event_at"),
             "cooldown_remaining_seconds": robot_health.get("cooldown_remaining_seconds", 0),
             "error": None
             if connected
@@ -655,9 +657,9 @@ def get_robot_debug(
             "event_count": len(events),
             "last_event_at": events[0].get("timestamp") if events else None,
             "qq_event_hint": (
-                "Bridge is connected but no QQ events have reached TermMan yet. "
+                "Bridge is connected and READY was received, but no QQ message event has reached TermMan yet. "
                 "Check QQ bot message event subscriptions, scene permissions, and whether the bot is in the chat."
-                if connected and not events
+                if connected and not robot_health.get("last_message_event_at")
                 else None
             ),
         },

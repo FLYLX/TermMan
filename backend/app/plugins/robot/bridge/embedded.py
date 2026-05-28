@@ -37,6 +37,8 @@ _loaded_robots: list = []
 _robot_id_by_identity: dict[str, str] = {}
 _identity_by_robot_id: dict[str, str] = {}
 _seen_connected_robot_ids: set[str] = set()
+_last_platform_event_at_by_robot_id: dict[str, str] = {}
+_last_message_event_at_by_robot_id: dict[str, str] = {}
 _initialized = False
 _connection_errors: dict[str, dict[str, str]] = {}
 _error_file_path: str = "/tmp/robot_bridge_errors.json"
@@ -154,6 +156,49 @@ def _serialize_bot_snapshot(bot: Any) -> dict[str, Any]:
     return snapshot
 
 
+def _serialize_event_payload(event: Any) -> dict[str, Any]:
+    if hasattr(event, "model_dump"):
+        try:
+            data = event.model_dump()
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    if hasattr(event, "dict"):
+        try:
+            data = event.dict()
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return {}
+
+
+def _build_ready_event_payload(
+    platform_id: str,
+    bot_identity: str,
+    event: Any,
+) -> tuple[str, dict[str, Any]]:
+    event_payload = _serialize_event_payload(event)
+    user = event_payload.get("user") if isinstance(event_payload.get("user"), dict) else {}
+    payload = {
+        "platform": platform_id,
+        "bot_identity": bot_identity,
+        "event_type": event.__class__.__name__,
+        "session_id": event_payload.get("session_id"),
+        "version": event_payload.get("version"),
+        "shard": event_payload.get("shard"),
+        "user_id": user.get("id"),
+        "username": user.get("username"),
+        "bot": user.get("bot"),
+    }
+    message = (
+        f"QQ bot ready: {payload.get('username') or payload.get('user_id') or bot_identity}"
+        f" session={payload.get('session_id') or '-'}"
+    )
+    return message, {key: value for key, value in payload.items() if value is not None}
+
+
 def _save_identities() -> None:
     try:
         import json
@@ -209,6 +254,10 @@ def _record_bridge_event(
     message: str | None = None,
     payload: dict[str, Any] | None = None,
 ) -> None:
+    timestamp = datetime.now(timezone.utc).isoformat()
+    _last_platform_event_at_by_robot_id[robot_id] = timestamp
+    if event == "platform_message":
+        _last_message_event_at_by_robot_id[robot_id] = timestamp
     record_robot_event(
         robot_id,
         direction=direction,
@@ -428,14 +477,30 @@ def init_embedded_bridge() -> APIRouter | None:
             robot_id = _robot_id_by_identity.get(bot_identity)
             if robot_id:
                 _seen_connected_robot_ids.add(robot_id)
+                event_name = event.__class__.__name__
+                if "ready" in event_name.lower():
+                    message, payload = _build_ready_event_payload(
+                        platform_id,
+                        bot_identity,
+                        event,
+                    )
+                    _record_bridge_event(
+                        robot_id,
+                        direction="platform_to_bridge",
+                        event="bot_ready",
+                        message=message,
+                        payload=payload,
+                    )
+                    return
                 _record_bridge_event(
                     robot_id,
                     direction="platform_to_bridge",
                     event="platform_event",
-                    message=event.__class__.__name__,
+                    message=event_name,
                     payload={
                         "platform": platform_id,
                         "bot_identity": bot_identity,
+                        "event_type": event_name,
                         "event": str(event),
                     },
                 )
@@ -745,6 +810,8 @@ def init_embedded_bridge() -> APIRouter | None:
                     "identity": identity,
                     "connected": identity in connected_identities,
                     "bot": bot_snapshot_by_identity.get(identity),
+                    "last_platform_event_at": _last_platform_event_at_by_robot_id.get(robot_id),
+                    "last_message_event_at": _last_message_event_at_by_robot_id.get(robot_id),
                     "error": (
                         f"QQ gateway rate limited; retry after {cooldown_remaining}s"
                         if cooldown_remaining > 0
