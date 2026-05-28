@@ -376,6 +376,26 @@ async def dispatch_robot_message(
     return await robot_service.handle_inbound_message(session, robot, body)
 
 
+@router.post("/{id}/debug-events")
+def ingest_robot_debug_event(
+    session: SessionDep,
+    id: uuid.UUID,
+    body: dict,
+    x_termman_bridge_token: str | None = Header(default=None),
+) -> dict:
+    assert_bridge_permission(x_termman_bridge_token)
+    get_robot_or_404(session, id)
+    record_robot_event(
+        str(id),
+        direction=str(body.get("direction") or "bridge"),
+        event=str(body.get("event") or "debug_event"),
+        status=str(body.get("status") or "ok"),
+        message=body.get("message"),
+        payload=body.get("payload") if isinstance(body.get("payload"), dict) else {},
+    )
+    return {"success": True}
+
+
 @router.get("/{id}/connection")
 def get_robot_connection_status(
     session: SessionDep,

@@ -620,12 +620,6 @@ class RobotService:
             if target.target_type in {"c2c", "group"}:
                 current_seq = max(int(target.metadata.get("msg_seq") or 0), 1)
                 target.metadata["msg_seq"] = current_seq + 1
-            used_count = target.metadata.get("reply_used_replies")
-            if used_count is not None:
-                try:
-                    target.metadata["reply_used_replies"] = int(used_count) + 1
-                except (TypeError, ValueError):
-                    pass
 
     def _safe_send_via_bridge(self, robot: Robot, target: RobotReplyTarget, text: str) -> None:
         try:

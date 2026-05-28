@@ -129,6 +129,45 @@ def _assert_bridge_permission(header_value: str | None) -> None:
         raise HTTPException(status_code=403, detail="Invalid robot bridge token")
 
 
+def _record_bridge_event(
+    robot_id: str,
+    *,
+    direction: str,
+    event: str,
+    status: str = "ok",
+    message: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    record_robot_event(
+        robot_id,
+        direction=direction,
+        event=event,
+        status=status,
+        message=message,
+        payload=payload,
+    )
+    try:
+        shared_secret = settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY
+        with httpx.Client(timeout=1.5) as client:
+            client.post(
+                f"{settings.ROBOT_BACKEND_URL.rstrip('/')}"
+                f"{settings.API_V1_STR}/robots/{robot_id}/debug-events",
+                headers={
+                    "Content-Type": "application/json",
+                    "X-TermMan-Bridge-Token": shared_secret,
+                },
+                json={
+                    "direction": direction,
+                    "event": event,
+                    "status": status,
+                    "message": message,
+                    "payload": payload or {},
+                },
+            )
+    except Exception:
+        pass
+
+
 async def _dispatch_to_backend(
     robot_id: str,
     payload: RobotInboundMessage,
@@ -210,7 +249,7 @@ def init_embedded_bridge() -> APIRouter | None:
         return _bridge_router
 
     try:
-        from nonebot import get_asgi, get_bots, on_message
+        from nonebot import get_asgi, get_bots, on, on_message
         from nonebot.adapters import Bot, Event
         from sqlmodel import Session, select
 
@@ -286,6 +325,7 @@ def init_embedded_bridge() -> APIRouter | None:
         from nonebot.log import logger as nonebot_logger
         nonebot_logger.add(_loguru_sink, level="ERROR")
 
+        event_probe = on(priority=1, block=False)
         bridge_handler = on_message(priority=10, block=False)
 
         def _resolve_bot_for_robot(robot_id: str) -> Bot | None:
@@ -300,6 +340,43 @@ def init_embedded_bridge() -> APIRouter | None:
                 except Exception:
                     continue
             return None
+
+        @event_probe.handle()
+        async def probe_robot_event(bot: Bot, event: Event) -> None:
+            loaded_robot_ids = list(_identity_by_robot_id.keys())
+            platform_id = resolve_platform_from_bot(bot)
+            if not platform_id:
+                return
+            try:
+                bot_identity = resolve_bot_identity(bot)
+            except Exception:
+                return
+            robot_id = _robot_id_by_identity.get(bot_identity)
+            if robot_id:
+                _seen_connected_robot_ids.add(robot_id)
+                _record_bridge_event(
+                    robot_id,
+                    direction="platform_to_bridge",
+                    event="platform_event",
+                    message=event.__class__.__name__,
+                    payload={
+                        "platform": platform_id,
+                        "bot_identity": bot_identity,
+                        "event": str(event),
+                    },
+                )
+            elif loaded_robot_ids:
+                record_loaded_robot_event(
+                    loaded_robot_ids,
+                    direction="platform_to_bridge",
+                    event="platform_event_unmapped",
+                    status="error",
+                    message=event.__class__.__name__,
+                    payload={
+                        "platform": platform_id,
+                        "bot_identity": bot_identity,
+                    },
+                )
 
         @bridge_handler.handle()
         async def handle_robot_message(bot: Bot, event: Event) -> None:
@@ -370,7 +447,7 @@ def init_embedded_bridge() -> APIRouter | None:
                     },
                 )
                 return
-            record_robot_event(
+            _record_bridge_event(
                 robot_id,
                 direction="platform_to_bridge",
                 event="platform_message",

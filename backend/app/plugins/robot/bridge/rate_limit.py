@@ -155,6 +155,19 @@ async def send_text_with_rate_limit(
         for attempt in range(attempts):
             try:
                 await send_text_with_bot(bot, target, normalized_text)
+                if robot_id:
+                    record_robot_event(
+                        robot_id,
+                        direction="bridge_to_platform",
+                        event="platform_send_success",
+                        message=normalized_text,
+                        payload={
+                            "target_type": target.target_type,
+                            "target_id": target.target_id,
+                            "reply_used_replies": target.metadata.get("reply_used_replies"),
+                            "reply_max_replies": target.metadata.get("reply_max_replies"),
+                        },
+                    )
                 bucket.next_at = time.monotonic() + interval
                 return
             except Exception as exc:

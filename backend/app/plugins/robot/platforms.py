@@ -1069,6 +1069,7 @@ def build_inbound_message(
     if platform_id == "qq_official":
         now = datetime.now(timezone.utc)
         window = QQ_PRIVATE_REPLY_WINDOW if bool(target_data.get("private")) else QQ_GROUP_REPLY_WINDOW
+        source = target_data.get("source")
         metadata.update(
             {
                 "reply_created_at": now.isoformat(),
@@ -1076,6 +1077,8 @@ def build_inbound_message(
                 "reply_max_replies": QQ_REPLY_MAX_REPLIES,
                 "reply_used_replies": 0,
                 "reply_platform": "qq_official",
+                "msg_id": str(source or ""),
+                "msg_seq": 1,
             }
         )
 
@@ -1099,23 +1102,28 @@ async def send_text_with_bot(
     if not normalized_text:
         return
 
-    target_data = target.metadata.get("target")
-    if isinstance(target_data, dict):
-        from nonebot_plugin_alconna import UniMessage
-        from nonebot_plugin_alconna.uniseg import Target
-
-        loaded_target_data = dict(target_data)
-        source = str(loaded_target_data.pop("source", "") or "")
-        uni_target = Target.load(loaded_target_data)
-        if source:
-            uni_target.source = source
-        await UniMessage(normalized_text).send(target=uni_target, bot=bot)
-        return
-
     platform_id = resolve_platform_from_bot(bot)
     if platform_id == "qq_official":
+        target_data = target.metadata.get("target")
         msg_id = _normalize_string(target.metadata.get("msg_id"))
         msg_seq = _normalize_int(target.metadata.get("msg_seq"), default=None)
+        if isinstance(target_data, dict):
+            target_id = str(target_data.get("id") or target.target_id)
+            if bool(target_data.get("private")):
+                await bot.send_to_c2c(
+                    target_id,
+                    normalized_text,
+                    msg_id=msg_id,
+                    msg_seq=msg_seq,
+                )
+                return
+            await bot.send_to_group(
+                target_id,
+                normalized_text,
+                msg_id=msg_id,
+                msg_seq=msg_seq,
+            )
+            return
         if target.target_type == "c2c":
             await bot.send_to_c2c(
                 target.target_id,
@@ -1132,5 +1140,18 @@ async def send_text_with_bot(
                 msg_seq=msg_seq,
             )
             return
+
+    target_data = target.metadata.get("target")
+    if isinstance(target_data, dict):
+        from nonebot_plugin_alconna import UniMessage
+        from nonebot_plugin_alconna.uniseg import Target
+
+        loaded_target_data = dict(target_data)
+        source = str(loaded_target_data.pop("source", "") or "")
+        uni_target = Target.load(loaded_target_data)
+        if source:
+            uni_target.source = source
+        await UniMessage(normalized_text).send(target=uni_target, bot=bot)
+        return
 
     raise ValueError("Unsupported reply target for current bot")
