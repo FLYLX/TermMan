@@ -16,7 +16,7 @@ from app.services.agent.chat_runtime import collect_chat_response
 
 from .bridge_client import robot_bridge_client
 from .contracts import RobotDispatchResponse, RobotInboundMessage, RobotReplyTarget
-from .debug_log import record_robot_event
+from .debug_log import preview_text, record_robot_event
 from .platforms import (
     get_robot_platform,
     get_robot_runtime_config,
@@ -75,6 +75,13 @@ class RobotService:
         robot: Robot,
         message: RobotInboundMessage,
     ) -> RobotDispatchResponse:
+        logger.info(
+            "[RobotService] Inbound robot=%s sender=%s target=%s text=%s",
+            robot.id,
+            message.sender_key,
+            message.reply_target.target_id,
+            preview_text(message.text),
+        )
         record_robot_event(
             str(robot.id),
             direction="bridge_to_backend",
@@ -178,6 +185,14 @@ class RobotService:
                     "route_key": resolved_binding.route_key,
                     "chunk_count": len(response.reply_chunks),
                 },
+            )
+            logger.info(
+                "[RobotService] Agent response robot=%s item=%s route=%s chunks=%d text=%s",
+                robot.id,
+                resolved_binding.item.id,
+                resolved_binding.route_key,
+                len(response.reply_chunks),
+                preview_text(response_text),
             )
             return response
         except RobotServiceError as exc:

@@ -573,6 +573,24 @@ def reload_robot_bridge(
     return {"success": False, "error": detail}
 
 
+@router.post("/{id}/debug/test-event")
+def create_robot_debug_test_event(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+) -> dict:
+    robot = get_robot_or_404(session, id)
+    assert_robot_permission(robot, current_user)
+    record_robot_event(
+        str(id),
+        direction="backend",
+        event="debug_test_event",
+        message="Debug event pipeline is working",
+        payload={"robot_name": robot.name},
+    )
+    return {"success": True}
+
+
 @router.get("/{id}/debug")
 def get_robot_debug(
     session: SessionDep,
@@ -607,6 +625,7 @@ def get_robot_debug(
         else raw_connection_error
     )
     connected = robot_health.get("connected", False)
+    events = get_robot_events(str(id), limit=limit)
     return {
         "robot": {
             "id": str(robot.id),
@@ -628,5 +647,15 @@ def get_robot_debug(
             else robot_health.get("error") or historical_error or bridge_health.get("error"),
             "stale_error": historical_error if connected else None,
         },
-        "events": get_robot_events(str(id), limit=limit),
+        "diagnostics": {
+            "event_count": len(events),
+            "last_event_at": events[0].get("timestamp") if events else None,
+            "qq_event_hint": (
+                "Bridge is connected but no QQ events have reached TermMan yet. "
+                "Check QQ bot message event subscriptions, scene permissions, and whether the bot is in the chat."
+                if connected and not events
+                else None
+            ),
+        },
+        "events": events,
     }

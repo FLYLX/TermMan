@@ -6,11 +6,19 @@ from datetime import datetime, timezone
 from typing import Any
 
 MAX_EVENTS_PER_ROBOT = 200
+LOG_TEXT_PREVIEW_LIMIT = 300
 
 _lock = threading.RLock()
 _events: dict[str, deque[dict[str, Any]]] = defaultdict(
     lambda: deque(maxlen=MAX_EVENTS_PER_ROBOT)
 )
+
+
+def preview_text(value: Any, limit: int = LOG_TEXT_PREVIEW_LIMIT) -> str:
+    text = str(value or "").replace("\r", "\\r").replace("\n", "\\n")
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...<truncated {len(text) - limit} chars>"
 
 
 def record_robot_event(

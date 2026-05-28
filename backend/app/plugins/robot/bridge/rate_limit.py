@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.plugins.robot.contracts import RobotReplyTarget
-from app.plugins.robot.debug_log import record_robot_event
+from app.plugins.robot.debug_log import preview_text, record_robot_event
 from app.plugins.robot.platforms import (
     resolve_bot_identity,
     resolve_platform_from_bot,
@@ -155,6 +155,12 @@ async def send_text_with_rate_limit(
         for attempt in range(attempts):
             try:
                 await send_text_with_bot(bot, target, normalized_text)
+                logger.info(
+                    "[Bridge] Platform send success target=%s:%s text=%s",
+                    target.target_type,
+                    target.target_id,
+                    preview_text(normalized_text),
+                )
                 if robot_id:
                     record_robot_event(
                         robot_id,

@@ -279,6 +279,11 @@ export type RobotDebugInfo = {
     identity?: string | null
     error?: string | null
   }
+  diagnostics?: {
+    event_count: number
+    last_event_at?: string | null
+    qq_event_hint?: string | null
+  }
   events: RobotDebugEvent[]
 }
 
@@ -293,6 +298,13 @@ export async function getRobotDebug(robotId: string) {
 export async function reloadRobotBridge(robotId: string) {
   return apiRequest<{ success: boolean; message?: string; error?: string }>(
     `/api/v1/robots/${robotId}/reload`,
+    { method: "POST" },
+  )
+}
+
+export async function createRobotDebugTestEvent(robotId: string) {
+  return apiRequest<{ success: boolean }>(
+    `/api/v1/robots/${robotId}/debug/test-event`,
     { method: "POST" },
   )
 }

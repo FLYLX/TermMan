@@ -17,7 +17,11 @@ from app.plugins.robot.contracts import (
     RobotDispatchResponse,
     RobotInboundMessage,
 )
-from app.plugins.robot.debug_log import record_loaded_robot_event, record_robot_event
+from app.plugins.robot.debug_log import (
+    preview_text,
+    record_loaded_robot_event,
+    record_robot_event,
+)
 from app.plugins.robot.bridge.rate_limit import send_text_with_rate_limit
 from app.plugins.robot.platforms import (
     build_inbound_message,
@@ -382,9 +386,10 @@ def init_embedded_bridge() -> APIRouter | None:
         async def handle_robot_message(bot: Bot, event: Event) -> None:
             loaded_robot_ids = list(_identity_by_robot_id.keys())
             logger.info(
-                "[Bridge] Received platform event: bot=%s event=%s",
+                "[Bridge] Received platform event: bot=%s event=%s raw=%s",
                 getattr(bot, "self_id", None),
                 event.__class__.__name__,
+                preview_text(event),
             )
             platform_id = resolve_platform_from_bot(bot)
             if not platform_id:
@@ -459,6 +464,13 @@ def init_embedded_bridge() -> APIRouter | None:
                     "target_id": inbound.reply_target.target_id,
                 },
             )
+            logger.info(
+                "[Bridge] Platform message robot=%s sender=%s target=%s text=%s",
+                robot_id,
+                inbound.sender_key,
+                inbound.reply_target.target_id,
+                preview_text(inbound.text),
+            )
 
             try:
                 dispatch = await _dispatch_to_backend(robot_id, inbound)
@@ -489,6 +501,12 @@ def init_embedded_bridge() -> APIRouter | None:
                 return
 
             for chunk in dispatch.reply_chunks:
+                logger.info(
+                    "[Bridge] Sending platform reply robot=%s target=%s text=%s",
+                    robot_id,
+                    inbound.reply_target.target_id,
+                    preview_text(chunk),
+                )
                 record_robot_event(
                     robot_id,
                     direction="bridge_to_platform",

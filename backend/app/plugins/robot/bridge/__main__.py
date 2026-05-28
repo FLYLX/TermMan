@@ -23,7 +23,7 @@ from app.plugins.robot.contracts import (
     RobotDispatchResponse,
     RobotInboundMessage,
 )
-from app.plugins.robot.debug_log import record_robot_event
+from app.plugins.robot.debug_log import preview_text, record_robot_event
 from app.plugins.robot.bridge.rate_limit import send_text_with_rate_limit
 from app.plugins.robot.platforms import (
     build_inbound_message,
@@ -228,6 +228,13 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
     inbound = build_inbound_message(platform_id, bot, event)
     if inbound is None:
         return
+    logger.info(
+        "[RobotBridge] Platform message robot=%s sender=%s target=%s text=%s",
+        robot_id,
+        inbound.sender_key,
+        inbound.reply_target.target_id,
+        preview_text(inbound.text),
+    )
     _record_bridge_event(
         robot_id,
         direction="platform_to_bridge",
@@ -263,6 +270,12 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
         return
 
     for chunk in dispatch.reply_chunks:
+        logger.info(
+            "[RobotBridge] Sending platform reply robot=%s target=%s text=%s",
+            robot_id,
+            inbound.reply_target.target_id,
+            preview_text(chunk),
+        )
         await send_text_with_rate_limit(bot, inbound.reply_target, chunk, robot_id=robot_id)
 
 

@@ -47,6 +47,7 @@ import {
 import useCustomToast from "@/hooks/useCustomToast"
 
 import {
+  createRobotDebugTestEvent,
   createRobotBinding,
   deleteRobotBinding,
   getRobotBindingsQueryKey,
@@ -883,6 +884,7 @@ function RobotDebugPanel({
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [isReloading, setIsReloading] = useState(false)
+  const [isTestingDebug, setIsTestingDebug] = useState(false)
   const bridge = debug?.bridge
 
   const handleReload = async () => {
@@ -903,6 +905,20 @@ function RobotDebugPanel({
     }
   }
 
+  const handleCreateTestEvent = async () => {
+    setIsTestingDebug(true)
+    try {
+      await createRobotDebugTestEvent(robotId)
+      await queryClient.invalidateQueries({
+        queryKey: getRobotDebugQueryKey(robotId),
+      })
+    } catch (error) {
+      showErrorToast(error instanceof Error ? error.message : "Failed to create test event")
+    } finally {
+      setIsTestingDebug(false)
+    }
+  }
+
   return (
     <Card className="rounded-3xl border bg-card shadow-sm">
       <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-start sm:justify-between">
@@ -910,20 +926,34 @@ function RobotDebugPanel({
           <CardTitle>{copy.debugTitle}</CardTitle>
           <CardDescription>{copy.debugDescription}</CardDescription>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          className="h-9 rounded-xl px-3.5"
-          onClick={() => void handleReload()}
-          disabled={isReloading}
-        >
-          {isReloading ? (
-            <Loader2 className="mr-2 size-4 animate-spin" />
-          ) : (
-            <RefreshCw className="mr-2 size-4" />
-          )}
-          {copy.reload}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 rounded-xl px-3.5"
+            onClick={() => void handleCreateTestEvent()}
+            disabled={isTestingDebug}
+          >
+            {isTestingDebug ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : null}
+            Test event
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 rounded-xl px-3.5"
+            onClick={() => void handleReload()}
+            disabled={isReloading}
+          >
+            {isReloading ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 size-4" />
+            )}
+            {copy.reload}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="grid gap-4">
         <div className="grid gap-2 text-sm md:grid-cols-4">
@@ -956,6 +986,12 @@ function RobotDebugPanel({
         {bridge?.error ? (
           <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
             {bridge.error}
+          </div>
+        ) : null}
+
+        {debug?.diagnostics?.qq_event_hint ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+            {debug.diagnostics.qq_event_hint}
           </div>
         ) : null}
 
