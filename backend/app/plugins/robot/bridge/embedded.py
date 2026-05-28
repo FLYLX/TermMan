@@ -41,6 +41,8 @@ _initialized = False
 _connection_errors: dict[str, dict[str, str]] = {}
 _error_file_path: str = "/tmp/robot_bridge_errors.json"
 _identity_file_path: str = "/tmp/robot_bridge_identities.json"
+_cooldown_file_path: str = "/tmp/robot_bridge_cooldowns.json"
+QQ_GATEWAY_RATE_LIMIT_COOLDOWN_SECONDS = 600
 
 
 def _normalize_connection_errors(raw: Any) -> dict[str, dict[str, str]]:
@@ -85,6 +87,46 @@ def _save_connection_error(robot_id: str, error: str) -> None:
             json.dump(_connection_errors, f)
     except Exception:
         pass
+
+
+def _is_rate_limit_error(error: str) -> bool:
+    return "100017" in error or "频率限制" in error or "rate limit" in error.lower()
+
+
+def _load_cooldowns() -> dict[str, float]:
+    try:
+        import json
+        with open(_cooldown_file_path, "r") as f:
+            raw = json.load(f)
+        return {str(key): float(value) for key, value in raw.items()}
+    except Exception:
+        return {}
+
+
+def _save_cooldowns(cooldowns: dict[str, float]) -> None:
+    try:
+        import json
+        with open(_cooldown_file_path, "w") as f:
+            json.dump(cooldowns, f)
+    except Exception:
+        pass
+
+
+def _set_gateway_cooldown(robot_id: str) -> float:
+    until = time.time() + QQ_GATEWAY_RATE_LIMIT_COOLDOWN_SECONDS
+    cooldowns = _load_cooldowns()
+    cooldowns[robot_id] = until
+    _save_cooldowns(cooldowns)
+    return until
+
+
+def _get_gateway_cooldown_remaining(robot_id: str) -> int:
+    cooldowns = _load_cooldowns()
+    remaining = int(cooldowns.get(robot_id, 0) - time.time())
+    if remaining <= 0 and robot_id in cooldowns:
+        cooldowns.pop(robot_id, None)
+        _save_cooldowns(cooldowns)
+    return max(0, remaining)
 
 
 def _save_identities() -> None:
@@ -567,6 +609,15 @@ def init_embedded_bridge() -> APIRouter | None:
                     def make_wrapper(_original, _robot_id, _adapter_name):
                         async def wrapped_run_bot_websocket(bot, *args, **kwargs):
                             global _connection_errors
+                            remaining = _get_gateway_cooldown_remaining(_robot_id)
+                            if remaining > 0:
+                                error_msg = (
+                                    "QQ gateway info is rate limited; "
+                                    f"websocket start is cooling down for {remaining}s"
+                                )
+                                logger.warning("[Bridge] %s", error_msg)
+                                _save_connection_error(_robot_id, error_msg)
+                                return None
                             try:
                                 result = await _original(bot, *args, **kwargs)
                                 return result
@@ -574,6 +625,13 @@ def init_embedded_bridge() -> APIRouter | None:
                                 error_msg = f"{type(e).__name__}: {str(e)}"
                                 logger.error(f"[Bridge] WebSocket connection failed for {_adapter_name}: {error_msg}")
                                 _save_connection_error(_robot_id, error_msg)
+                                if _is_rate_limit_error(error_msg):
+                                    until = _set_gateway_cooldown(_robot_id)
+                                    logger.warning(
+                                        "[Bridge] QQ gateway rate limited; cooldown until %s",
+                                        datetime.fromtimestamp(until, timezone.utc).isoformat(),
+                                    )
+                                    return None
                                 raise
                         return wrapped_run_bot_websocket
                     adapter.run_bot_websocket = make_wrapper(original_run_bot_websocket, robot_id, adapter_name)
@@ -645,13 +703,19 @@ def init_embedded_bridge() -> APIRouter | None:
 
             robot_status: dict[str, dict[str, Any]] = {}
             for robot_id, identity in _identity_by_robot_id.items():
+                cooldown_remaining = _get_gateway_cooldown_remaining(robot_id)
                 robot_status[robot_id] = {
                     "identity": identity,
                     "connected": identity in connected_identities,
-                    "error": None
-                    if identity in connected_identities
-                    else (_connection_errors.get(robot_id) or {}).get("message"),
+                    "error": (
+                        f"QQ gateway rate limited; retry after {cooldown_remaining}s"
+                        if cooldown_remaining > 0
+                        else None
+                        if identity in connected_identities
+                        else (_connection_errors.get(robot_id) or {}).get("message")
+                    ),
                     "last_error": _connection_errors.get(robot_id),
+                    "cooldown_remaining_seconds": cooldown_remaining,
                 }
 
             backend_status: dict[str, Any] = {"reachable": False}
