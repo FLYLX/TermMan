@@ -35,6 +35,7 @@ from .contracts import RobotDispatchResponse, RobotInboundMessage
 from .debug_log import get_robot_events, record_robot_event
 from .platforms import (
     RobotPlatformPublic,
+    get_robot_platform,
     list_supported_robot_platforms,
     normalize_robot_config,
     normalize_robot_platform_id,
@@ -163,9 +164,24 @@ def update_robot(
         str(update_dict.get("platform") or robot.platform or robot.protocol or "")
     )
     if "config" in update_dict:
+        incoming_config = update_dict.get("config")
+        if isinstance(incoming_config, dict):
+            existing_config = current_robot_config(robot)
+            incoming_credentials = incoming_config.get("credentials")
+            if isinstance(incoming_credentials, dict):
+                merged_credentials = dict(existing_config.get("credentials") or {})
+                platform = get_robot_platform(merged_platform)
+                secret_keys = {field.key for field in platform.fields if field.secret}
+                for key, value in incoming_credentials.items():
+                    if value not in (None, "") or key not in secret_keys:
+                        merged_credentials[str(key)] = value
+                incoming_config = {
+                    **incoming_config,
+                    "credentials": merged_credentials,
+                }
         merged_config = normalize_robot_config(
             merged_platform,
-            update_dict.get("config"),
+            incoming_config,
         )
     else:
         merged_config = current_robot_config(robot)

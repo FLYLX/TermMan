@@ -11,6 +11,16 @@ class RobotReplyTarget(BaseModel):
     target_id: str
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    def remaining_reply_budget(self) -> int | None:
+        max_replies = self.metadata.get("reply_max_replies")
+        used_replies = self.metadata.get("reply_used_replies")
+        if max_replies is None:
+            return None
+        try:
+            return max(0, int(max_replies) - int(used_replies or 0))
+        except (TypeError, ValueError):
+            return None
+
 
 class RobotInboundMessage(BaseModel):
     sender_key: str

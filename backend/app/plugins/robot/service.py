@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 CONVERSATION_TTL = timedelta(hours=6)
 DEFAULT_MAX_MESSAGE_LENGTH = 1200
+DEFAULT_QQ_REPLY_MAX_MESSAGE_LENGTH = 1800
 
 
 @dataclass
@@ -102,7 +103,11 @@ class RobotService:
             return RobotDispatchResponse(
                 success=True,
                 ignored=False,
-                reply_chunks=self._chunk_text(robot, response_text),
+                reply_chunks=self._reply_chunks_for_target(
+                    robot,
+                    message.reply_target,
+                    response_text,
+                ),
             )
 
         try:
@@ -139,7 +144,11 @@ class RobotService:
                     ignored=False,
                     item_id=str(resolved_binding.item.id),
                     route_key=resolved_binding.route_key,
-                    reply_chunks=self._chunk_text(robot, response_text),
+                    reply_chunks=self._reply_chunks_for_target(
+                        robot,
+                        message.reply_target,
+                        response_text,
+                    ),
                 )
 
             response_text = await self._chat_with_item(
@@ -153,7 +162,11 @@ class RobotService:
                 ignored=False,
                 item_id=str(resolved_binding.item.id),
                 route_key=resolved_binding.route_key,
-                reply_chunks=self._chunk_text(robot, response_text),
+                reply_chunks=self._reply_chunks_for_target(
+                    robot,
+                    message.reply_target,
+                    response_text,
+                ),
             )
             record_robot_event(
                 str(robot.id),
@@ -179,7 +192,11 @@ class RobotService:
                 success=False,
                 ignored=False,
                 error=exc.message,
-                reply_chunks=self._chunk_text(robot, exc.message),
+                reply_chunks=self._reply_chunks_for_target(
+                    robot,
+                    message.reply_target,
+                    exc.message,
+                ),
             )
         except HTTPException as exc:
             detail = exc.detail if isinstance(exc.detail, str) else "Robot dispatch failed"
@@ -194,7 +211,11 @@ class RobotService:
                 success=False,
                 ignored=False,
                 error=detail,
-                reply_chunks=self._chunk_text(robot, detail),
+                reply_chunks=self._reply_chunks_for_target(
+                    robot,
+                    message.reply_target,
+                    detail,
+                ),
             )
         except Exception as exc:
             logger.exception(
@@ -213,7 +234,11 @@ class RobotService:
                 success=False,
                 ignored=False,
                 error=str(exc),
-                reply_chunks=self._chunk_text(robot, fallback),
+                reply_chunks=self._reply_chunks_for_target(
+                    robot,
+                    message.reply_target,
+                    fallback,
+                ),
             )
 
     def dispatch_filtered_output(
@@ -262,6 +287,16 @@ class RobotService:
 
                 output_text = f"[{title}]\n{text}"
                 for target in targets:
+                    if target.remaining_reply_budget() == 0:
+                        record_robot_event(
+                            str(robot.id),
+                            direction="backend_to_bridge",
+                            event="filtered_output_dropped",
+                            status="error",
+                            message="QQ reply budget exhausted before filtered output dispatch",
+                            payload={"item_id": str(item.id), "item_title": title},
+                        )
+                        continue
                     record_robot_event(
                         str(robot.id),
                         direction="backend_to_bridge",
@@ -580,11 +615,17 @@ class RobotService:
             self._audiences.pop(key, None)
 
     def _send_via_bridge(self, robot: Robot, target: RobotReplyTarget, text: str) -> None:
-        for chunk in self._chunk_text(robot, text):
+        for chunk in self._reply_chunks_for_target(robot, target, text):
             robot_bridge_client.send_message(str(robot.id), target, chunk)
             if target.target_type in {"c2c", "group"}:
                 current_seq = max(int(target.metadata.get("msg_seq") or 0), 1)
                 target.metadata["msg_seq"] = current_seq + 1
+            used_count = target.metadata.get("reply_used_replies")
+            if used_count is not None:
+                try:
+                    target.metadata["reply_used_replies"] = int(used_count) + 1
+                except (TypeError, ValueError):
+                    pass
 
     def _safe_send_via_bridge(self, robot: Robot, target: RobotReplyTarget, text: str) -> None:
         try:
@@ -601,9 +642,7 @@ class RobotService:
         if not normalized:
             return []
 
-        config = robot.config if isinstance(robot.config, dict) else {}
-        options = config.get("options") if isinstance(config.get("options"), dict) else {}
-        limit = int(options.get("max_message_length") or DEFAULT_MAX_MESSAGE_LENGTH)
+        limit = self._max_message_length(robot, default=DEFAULT_MAX_MESSAGE_LENGTH)
         if len(normalized) <= limit:
             return [normalized]
 
@@ -620,6 +659,34 @@ class RobotService:
             chunks.append(remaining[:split_at].rstrip())
             remaining = remaining[split_at:].lstrip()
         return [chunk for chunk in chunks if chunk]
+
+    def _reply_chunks_for_target(
+        self,
+        robot: Robot,
+        target: RobotReplyTarget,
+        text: str,
+    ) -> list[str]:
+        if target.metadata.get("reply_platform") != "qq_official":
+            return self._chunk_text(robot, text)
+
+        normalized = (text or "").strip()
+        if not normalized:
+            return []
+
+        limit = self._max_message_length(robot, default=DEFAULT_QQ_REPLY_MAX_MESSAGE_LENGTH)
+        if len(normalized) <= limit:
+            return [normalized]
+
+        suffix = "\n\n[content truncated]"
+        return [normalized[: max(1, limit - len(suffix))].rstrip() + suffix]
+
+    def _max_message_length(self, robot: Robot, *, default: int) -> int:
+        config = robot.config if isinstance(robot.config, dict) else {}
+        options = config.get("options") if isinstance(config.get("options"), dict) else {}
+        try:
+            return max(200, int(options.get("max_message_length") or default))
+        except (TypeError, ValueError):
+            return default
 
     @staticmethod
     def _now() -> datetime:

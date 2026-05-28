@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -45,6 +46,10 @@ class RobotPlatformFieldSpec:
 BuildInitCallback = Callable[[dict[str, Any], dict[str, Any]], None]
 IdentityFromRobotCallback = Callable[[dict[str, Any]], str]
 IdentityFromBotCallback = Callable[[Any], str]
+
+QQ_REPLY_MAX_REPLIES = 5
+QQ_GROUP_REPLY_WINDOW = timedelta(minutes=5)
+QQ_PRIVATE_REPLY_WINDOW = timedelta(minutes=60)
 
 
 @dataclass(frozen=True)
@@ -1060,6 +1065,19 @@ def build_inbound_message(
     target = get_target(event, bot)
     target_data = target.dump()
     target_data["source"] = target.source or get_message_id(event, bot)
+    metadata: dict[str, Any] = {"target": target_data}
+    if platform_id == "qq_official":
+        now = datetime.now(timezone.utc)
+        window = QQ_PRIVATE_REPLY_WINDOW if bool(target_data.get("private")) else QQ_GROUP_REPLY_WINDOW
+        metadata.update(
+            {
+                "reply_created_at": now.isoformat(),
+                "reply_expires_at": (now + window).isoformat(),
+                "reply_max_replies": QQ_REPLY_MAX_REPLIES,
+                "reply_used_replies": 0,
+                "reply_platform": "qq_official",
+            }
+        )
 
     return RobotInboundMessage(
         sender_key=_extract_sender_key(platform_id, event, target_data),
@@ -1067,7 +1085,7 @@ def build_inbound_message(
         reply_target=RobotReplyTarget(
             target_type="universal",
             target_id=str(target.id),
-            metadata={"target": target_data},
+            metadata=metadata,
         ),
     )
 

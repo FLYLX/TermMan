@@ -73,6 +73,22 @@ def _message(text: str) -> RobotInboundMessage:
     )
 
 
+def _qq_message(text: str) -> RobotInboundMessage:
+    return RobotInboundMessage(
+        sender_key="qq_official:group:g1:u1",
+        text=text,
+        reply_target=RobotReplyTarget(
+            target_type="universal",
+            target_id="g1",
+            metadata={
+                "reply_platform": "qq_official",
+                "reply_max_replies": 5,
+                "reply_used_replies": 0,
+            },
+        ),
+    )
+
+
 def test_plain_robot_message_does_not_route_to_item_agent(
     db: Session,
     monkeypatch,
@@ -144,6 +160,95 @@ def test_term_command_routes_to_named_item_agent(
     assert response.route_key == "alpha"
     assert captured["message"] == "status?"
     assert response.reply_chunks == ["agent response"]
+
+
+def test_qq_term_response_is_single_truncated_reply(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {"options": {"max_message_length": 1000}}
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=False,
+        )
+    )
+    db.commit()
+
+    async def fake_chat_with_item(**kwargs):
+        return "x" * 3000
+
+    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
+
+    response = asyncio.run(
+        robot_service.handle_inbound_message(
+            db,
+            robot,
+            _qq_message("/term alpha status?"),
+        )
+    )
+
+    assert response.success is True
+    assert len(response.reply_chunks) == 1
+    assert len(response.reply_chunks[0]) <= 1000
+    assert response.reply_chunks[0].endswith("[content truncated]")
+
+
+def test_filtered_output_skips_exhausted_qq_reply_budget(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=True,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    sent_messages: list[tuple[RobotReplyTarget, str]] = []
+
+    def fake_send_message(robot_id: str, target: RobotReplyTarget, text: str):
+        sent_messages.append((target, text))
+
+    monkeypatch.setattr(robot_bridge_client, "send_message", fake_send_message)
+
+    robot_service._register_audience(  # noqa: SLF001
+        robot.id,
+        item.id,
+        "qq_official:group:g1:u1",
+        RobotReplyTarget(
+            target_type="universal",
+            target_id="g1",
+            metadata={
+                "reply_platform": "qq_official",
+                "reply_max_replies": 5,
+                "reply_used_replies": 5,
+            },
+        ),
+    )
+
+    robot_service.dispatch_filtered_output(
+        str(item.id),
+        "line-one\nline-two",
+        item_title=item.title,
+    )
+
+    assert sent_messages == []
 
 
 def test_send_command_writes_directly_to_terminal(

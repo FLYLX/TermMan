@@ -58,6 +58,7 @@ import {
   listRobotBindings,
   listRobotPlatforms,
   type RobotBindingRecord,
+  type RobotDebugEvent,
   type RobotDebugInfo,
   type RobotPlatformRecord,
   type RobotRecord,
@@ -97,6 +98,52 @@ function getRobotCredentials(robot: RobotRecord): Record<string, string> {
   }
 
   return {}
+}
+
+function getEditableRobotCredentials(
+  robot: RobotRecord,
+  platform: RobotPlatformRecord | null,
+): Record<string, string> {
+  const credentials = getRobotCredentials(robot)
+  if (!platform) {
+    return credentials
+  }
+
+  return Object.fromEntries(
+    platform.fields.map((field) => [
+      field.key,
+      field.secret ? "" : credentials[field.key] ?? "",
+    ]),
+  )
+}
+
+function mergeRobotCredentialsForSave(
+  robot: RobotRecord,
+  platform: RobotPlatformRecord | null,
+  formCredentials: Record<string, string>,
+): Record<string, string> {
+  const existingCredentials = getRobotCredentials(robot)
+  if (!platform) {
+    return existingCredentials
+  }
+
+  return Object.fromEntries(
+    platform.fields
+      .map((field) => {
+        const formValue = formCredentials[field.key]?.trim() ?? ""
+        if (formValue) {
+          return [field.key, formValue] as const
+        }
+        if (field.secret && existingCredentials[field.key]) {
+          return [field.key, existingCredentials[field.key]] as const
+        }
+        if (!field.secret && existingCredentials[field.key]) {
+          return [field.key, existingCredentials[field.key]] as const
+        }
+        return null
+      })
+      .filter((entry): entry is readonly [string, string] => entry !== null),
+  )
 }
 
 function useRobotDetailCopy() {
@@ -614,6 +661,35 @@ function getErrorText(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
 
+function formatDebugPayload(payload: Record<string, unknown>) {
+  const entries = [
+    ["platform", payload.platform],
+    ["sender", payload.sender_key],
+    ["target", payload.target_id],
+    ["target_type", payload.target_type],
+    ["item", payload.item_title ?? payload.item_id],
+    ["route", payload.route_key],
+    ["retry_after", payload.retry_after_seconds],
+  ].filter(([, value]) => value !== undefined && value !== null && value !== "")
+
+  return entries
+    .map(([label, value]) => `${label}: ${String(value)}`)
+    .join(" | ")
+}
+
+function getDebugDirectionLabel(event: RobotDebugEvent) {
+  if (event.direction === "platform_to_bridge") {
+    return "IN"
+  }
+  if (
+    event.direction === "bridge_to_platform" ||
+    event.direction === "backend_to_bridge"
+  ) {
+    return "OUT"
+  }
+  return "SYS"
+}
+
 function RobotKeyValue({
   label,
   value,
@@ -643,7 +719,7 @@ function RobotBasicConfigPanel({
   const [form, setForm] = useState(() => ({
     name: robot.name,
     is_enabled: robot.is_enabled,
-    credentials: getRobotCredentials(robot),
+    credentials: getEditableRobotCredentials(robot, platform),
   }))
 
   useEffect(() => {
@@ -651,10 +727,10 @@ function RobotBasicConfigPanel({
       setForm({
         name: robot.name,
         is_enabled: robot.is_enabled,
-        credentials: getRobotCredentials(robot),
+        credentials: getEditableRobotCredentials(robot, platform),
       })
     }
-  }, [isEditing, robot])
+  }, [isEditing, platform, robot])
 
   const handleSave = async () => {
     if (!form.name.trim()) {
@@ -662,13 +738,10 @@ function RobotBasicConfigPanel({
       return
     }
 
-    const credentials = Object.fromEntries(
-      (platform?.fields ?? [])
-        .map((field) => [
-          field.key,
-          form.credentials[field.key]?.trim() ?? "",
-        ] as const)
-        .filter(([, value]) => value !== ""),
+    const credentials = mergeRobotCredentialsForSave(
+      robot,
+      platform,
+      form.credentials,
     )
 
     setIsSaving(true)
@@ -771,6 +844,7 @@ function RobotBasicConfigPanel({
                     id={`robot-edit-${field.key}`}
                     type={field.secret ? "password" : "text"}
                     value={form.credentials[field.key] ?? ""}
+                    placeholder={field.secret ? "Leave blank to keep current value" : undefined}
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
@@ -899,6 +973,9 @@ function RobotDebugPanel({
                   className="rounded-xl border bg-muted/10 p-3 text-sm"
                 >
                   <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary" className="h-6">
+                      {getDebugDirectionLabel(event)}
+                    </Badge>
                     <Badge
                       variant={
                         event.status === "error" ? "destructive" : "outline"
@@ -918,6 +995,11 @@ function RobotDebugPanel({
                   {event.message ? (
                     <div className="mt-2 whitespace-pre-wrap break-words text-muted-foreground">
                       {event.message}
+                    </div>
+                  ) : null}
+                  {formatDebugPayload(event.payload) ? (
+                    <div className="mt-2 break-words font-mono text-xs text-muted-foreground">
+                      {formatDebugPayload(event.payload)}
                     </div>
                   ) : null}
                 </div>
