@@ -38,3 +38,23 @@ def get_robot_events(robot_id: str, limit: int = 100) -> list[dict[str, Any]]:
     safe_limit = max(1, min(limit, MAX_EVENTS_PER_ROBOT))
     with _lock:
         return list(_events.get(str(robot_id), []))[:safe_limit]
+
+
+def record_loaded_robot_event(
+    robot_ids: list[str],
+    *,
+    direction: str,
+    event: str,
+    status: str = "ok",
+    message: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    for robot_id in robot_ids:
+        record_robot_event(
+            robot_id,
+            direction=direction,
+            event=event,
+            status=status,
+            message=message,
+            payload=payload,
+        )

@@ -48,6 +48,13 @@ class ResolvedRobotBinding:
     route_key: str
 
 
+@dataclass
+class RobotCommand:
+    mode: str
+    target: str | None
+    text: str
+
+
 class RobotServiceError(Exception):
     def __init__(self, message: str, status_code: int = 400):
         super().__init__(message)
@@ -85,12 +92,24 @@ class RobotService:
         text = (message.text or "").strip()
         if not text:
             return RobotDispatchResponse(success=True, ignored=True, reason="empty_message")
+        command = self._parse_robot_command(text)
+
+        if command.mode == "chat":
+            response_text = (
+                "普通消息不会发送到终端。请使用 `/term <终端别名或ID> <内容>` 与指定终端的 agent 对话，"
+                "或使用 `/send <终端别名或ID> <输入>` 直接写入终端。"
+            )
+            return RobotDispatchResponse(
+                success=True,
+                ignored=False,
+                reply_chunks=self._chunk_text(robot, response_text),
+            )
 
         try:
             resolved_binding, message_text = self._resolve_chat_binding(
                 session,
                 robot,
-                message,
+                command,
             )
             self._remember_conversation(robot.id, message.sender_key, resolved_binding.item.id)
             self._register_audience(
@@ -99,6 +118,29 @@ class RobotService:
                 message.sender_key,
                 message.reply_target.model_copy(deep=True),
             )
+
+            if command.mode == "send":
+                success = self._write_to_item_terminal(resolved_binding.item.id, message_text)
+                if not success:
+                    raise RobotServiceError("终端未运行或后端尚未连接到该终端。")
+                response_text = "已发送到终端。"
+                record_robot_event(
+                    str(robot.id),
+                    direction="backend_to_item",
+                    event="terminal_write",
+                    message=message_text,
+                    payload={
+                        "item_id": str(resolved_binding.item.id),
+                        "route_key": resolved_binding.route_key,
+                    },
+                )
+                return RobotDispatchResponse(
+                    success=True,
+                    ignored=False,
+                    item_id=str(resolved_binding.item.id),
+                    route_key=resolved_binding.route_key,
+                    reply_chunks=self._chunk_text(robot, response_text),
+                )
 
             response_text = await self._chat_with_item(
                 session=session,
@@ -288,7 +330,7 @@ class RobotService:
         self,
         session: Session,
         robot: Robot,
-        message: RobotInboundMessage,
+        command: RobotCommand,
     ) -> tuple[ResolvedRobotBinding, str]:
         bindings = [
             ResolvedRobotBinding(
@@ -303,7 +345,26 @@ class RobotService:
         if not bindings:
             raise RobotServiceError("当前机器人没有可聊天的终端绑定")
 
-        explicit_route_key, message_text = self._extract_route_key(message.text)
+        explicit_route_key = self.normalize_chat_alias(command.target)
+        if explicit_route_key:
+            for resolved in bindings:
+                if (
+                    resolved.route_key == explicit_route_key
+                    or str(resolved.item.id) == command.target
+                    or self.normalize_chat_alias(resolved.item.title) == explicit_route_key
+                ):
+                    if not command.text:
+                        raise RobotServiceError("请在终端别名后补充内容")
+                    return resolved, command.text
+            raise RobotServiceError(f"没有找到路由 `{command.target}` 对应的终端")
+
+        aliases = ", ".join(sorted(binding.route_key for binding in bindings))
+        raise RobotServiceError(
+            "请指定终端：`/term <别名或ID> <内容>` 或 `/send <别名或ID> <输入>`。"
+            f" 可用别名: {aliases}"
+        )
+
+        explicit_route_key, message_text = None, ""
         if explicit_route_key:
             for resolved in bindings:
                 if resolved.route_key == explicit_route_key:
@@ -351,6 +412,40 @@ class RobotService:
             return route_key, (hash_match.group(2) or "").strip()
 
         return None, normalized
+
+    def _parse_robot_command(self, text: str) -> RobotCommand:
+        normalized = (text or "").strip()
+        if not normalized:
+            return RobotCommand(mode="chat", target=None, text="")
+
+        command_match = re.match(
+            r"^/(term|item|terminal|send|write)\s+(\S+)(?:\s+(.*))?$",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if command_match:
+            verb = command_match.group(1).lower()
+            mode = "send" if verb in {"send", "write"} else "term"
+            return RobotCommand(
+                mode=mode,
+                target=command_match.group(2),
+                text=(command_match.group(3) or "").strip(),
+            )
+
+        hash_match = re.match(r"^#(\S+)(?:\s+(.*))?$", normalized)
+        if hash_match:
+            return RobotCommand(
+                mode="term",
+                target=hash_match.group(1),
+                text=(hash_match.group(2) or "").strip(),
+            )
+
+        return RobotCommand(mode="chat", target=None, text=normalized)
+
+    def _write_to_item_terminal(self, item_id: uuid.UUID, command: str) -> bool:
+        from app.services import socket_pool_facade
+
+        return socket_pool_facade.write_to_item(str(item_id), command)
 
     async def _chat_with_item(
         self,

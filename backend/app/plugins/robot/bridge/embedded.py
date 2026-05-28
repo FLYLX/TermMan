@@ -16,7 +16,7 @@ from app.plugins.robot.contracts import (
     RobotDispatchResponse,
     RobotInboundMessage,
 )
-from app.plugins.robot.debug_log import record_robot_event
+from app.plugins.robot.debug_log import record_loaded_robot_event, record_robot_event
 from app.plugins.robot.platforms import (
     build_inbound_message,
     normalize_robot_platform_id,
@@ -276,18 +276,52 @@ def init_embedded_bridge() -> APIRouter | None:
 
         @bridge_handler.handle()
         async def handle_robot_message(bot: Bot, event: Event) -> None:
+            loaded_robot_ids = list(_identity_by_robot_id.keys())
+            logger.info(
+                "[Bridge] Received platform event: bot=%s event=%s",
+                getattr(bot, "self_id", None),
+                event.__class__.__name__,
+            )
             platform_id = resolve_platform_from_bot(bot)
             if not platform_id:
+                record_loaded_robot_event(
+                    loaded_robot_ids,
+                    direction="platform_to_bridge",
+                    event="event_ignored",
+                    status="error",
+                    message="Unsupported bot adapter",
+                    payload={"bot_class": bot.__class__.__module__},
+                )
                 return
 
             try:
                 bot_identity = resolve_bot_identity(bot)
             except Exception:
+                record_loaded_robot_event(
+                    loaded_robot_ids,
+                    direction="platform_to_bridge",
+                    event="event_ignored",
+                    status="error",
+                    message="Failed to resolve bot identity",
+                    payload={"platform": platform_id},
+                )
                 logger.exception("[Bridge] Failed to resolve bot identity")
                 return
 
             robot_id = _robot_id_by_identity.get(bot_identity)
             if not robot_id:
+                record_loaded_robot_event(
+                    loaded_robot_ids,
+                    direction="platform_to_bridge",
+                    event="event_ignored",
+                    status="error",
+                    message=f"No TermMan robot is mapped to identity {bot_identity}",
+                    payload={
+                        "platform": platform_id,
+                        "bot_identity": bot_identity,
+                        "known_identities": list(_robot_id_by_identity.keys()),
+                    },
+                )
                 logger.warning(
                     "[Bridge] No TermMan robot is mapped to identity %s",
                     bot_identity,
@@ -296,6 +330,17 @@ def init_embedded_bridge() -> APIRouter | None:
 
             inbound = build_inbound_message(platform_id, bot, event)
             if inbound is None:
+                record_robot_event(
+                    robot_id,
+                    direction="platform_to_bridge",
+                    event="event_ignored",
+                    status="error",
+                    message="Inbound message is empty or unsupported",
+                    payload={
+                        "event_type": event.__class__.__name__,
+                        "event": str(event),
+                    },
+                )
                 return
             record_robot_event(
                 robot_id,
