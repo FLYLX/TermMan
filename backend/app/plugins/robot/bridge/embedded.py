@@ -31,6 +31,7 @@ _bridge_router: APIRouter | None = None
 _loaded_robots: list = []
 _robot_id_by_identity: dict[str, str] = {}
 _identity_by_robot_id: dict[str, str] = {}
+_seen_connected_robot_ids: set[str] = set()
 _initialized = False
 _connection_errors: dict[str, str] = {}
 _error_file_path: str = "/tmp/robot_bridge_errors.json"
@@ -328,6 +329,7 @@ def init_embedded_bridge() -> APIRouter | None:
                 )
                 return
 
+            _seen_connected_robot_ids.add(robot_id)
             inbound = build_inbound_message(platform_id, bot, event)
             if inbound is None:
                 record_robot_event(
@@ -511,13 +513,13 @@ def init_embedded_bridge() -> APIRouter | None:
         @_bridge_router.get("/internal/health")
         async def internal_health() -> dict[str, Any]:
             _load_connection_errors()
-            connected_identities: list[str] = []
-            for bot in get_bots().values():
-                try:
-                    identity = resolve_bot_identity(bot)
-                    connected_identities.append(identity)
-                except Exception:
-                    continue
+            connected_bot_count = len(get_bots())
+            connected_identities = [
+                identity
+                for robot_id, identity in _identity_by_robot_id.items()
+                if robot_id in _seen_connected_robot_ids
+                or (connected_bot_count > 0 and robot_id not in _connection_errors)
+            ]
 
             robot_status: dict[str, dict[str, Any]] = {}
             for robot_id, identity in _identity_by_robot_id.items():
@@ -542,7 +544,7 @@ def init_embedded_bridge() -> APIRouter | None:
 
             return {
                 "loaded_robot_count": len(_identity_by_robot_id),
-                "connected_bot_count": len(get_bots()),
+                "connected_bot_count": connected_bot_count,
                 "platforms": sorted(
                     {
                         normalize_robot_platform_id(robot.platform or robot.protocol)

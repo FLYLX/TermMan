@@ -80,6 +80,7 @@ def _load_enabled_robot_configs() -> tuple[list[Robot], dict[str, str], dict[str
 
 
 LOADED_ROBOTS, ROBOT_ID_BY_IDENTITY, IDENTITY_BY_ROBOT_ID = _load_enabled_robot_configs()
+SEEN_CONNECTED_ROBOT_IDS: set[str] = set()
 
 INIT_KWARGS = build_nonebot_init_kwargs(LOADED_ROBOTS)
 INIT_KWARGS.setdefault("driver", "~fastapi+~httpx+~websockets")
@@ -152,6 +153,7 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
         )
         return
 
+    SEEN_CONNECTED_ROBOT_IDS.add(robot_id)
     inbound = build_inbound_message(platform_id, bot, event)
     if inbound is None:
         return
@@ -218,13 +220,12 @@ async def internal_reload(
 
 @app.get("/internal/health")
 async def internal_health() -> dict[str, Any]:
-    connected_identities: list[str] = []
-    for bot in get_bots().values():
-        try:
-            identity = resolve_bot_identity(bot)
-            connected_identities.append(identity)
-        except Exception:
-            continue
+    connected_bot_count = len(get_bots())
+    connected_identities = [
+        identity
+        for robot_id, identity in IDENTITY_BY_ROBOT_ID.items()
+        if robot_id in SEEN_CONNECTED_ROBOT_IDS or connected_bot_count > 0
+    ]
 
     robot_status: dict[str, dict[str, Any]] = {}
     for robot_id, identity in IDENTITY_BY_ROBOT_ID.items():
@@ -248,7 +249,7 @@ async def internal_health() -> dict[str, Any]:
 
     return {
         "loaded_robot_count": len(IDENTITY_BY_ROBOT_ID),
-        "connected_bot_count": len(get_bots()),
+        "connected_bot_count": connected_bot_count,
         "platforms": sorted(
             {
                 normalize_robot_platform_id(robot.platform or robot.protocol)
