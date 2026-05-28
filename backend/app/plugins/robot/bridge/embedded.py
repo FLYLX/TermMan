@@ -299,6 +299,9 @@ def init_embedded_bridge() -> APIRouter | None:
         from nonebot.adapters import Bot, Event
         from sqlmodel import Session, select
 
+        globals()["Bot"] = Bot
+        globals()["Event"] = Event
+
         from app.core.db import engine
         from app.models import Robot
         from app.plugins.robot.platforms import (
