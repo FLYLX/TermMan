@@ -17,12 +17,12 @@ from app.plugins.robot.contracts import (
     RobotInboundMessage,
 )
 from app.plugins.robot.debug_log import record_loaded_robot_event, record_robot_event
+from app.plugins.robot.bridge.rate_limit import send_text_with_rate_limit
 from app.plugins.robot.platforms import (
     build_inbound_message,
     normalize_robot_platform_id,
     resolve_bot_identity,
     resolve_platform_from_bot,
-    send_text_with_bot,
 )
 
 logger = logging.getLogger(__name__)
@@ -367,7 +367,12 @@ def init_embedded_bridge() -> APIRouter | None:
                 )
                 logger.exception("[Bridge] Failed to dispatch message for robot %s", robot_id)
                 try:
-                    await send_text_with_bot(bot, inbound.reply_target, f"Robot bridge failed: {exc}")
+                    await send_text_with_rate_limit(
+                        bot,
+                        inbound.reply_target,
+                        f"Robot bridge failed: {exc}",
+                        robot_id=robot_id,
+                    )
                 except Exception:
                     logger.exception(
                         "[Bridge] Failed to send bridge error back to platform for robot %s",
@@ -389,7 +394,12 @@ def init_embedded_bridge() -> APIRouter | None:
                         "target_id": inbound.reply_target.target_id,
                     },
                 )
-                await send_text_with_bot(bot, inbound.reply_target, chunk)
+                await send_text_with_rate_limit(
+                    bot,
+                    inbound.reply_target,
+                    chunk,
+                    robot_id=robot_id,
+                )
 
         nonebot_app = get_asgi()
 
@@ -477,7 +487,12 @@ def init_embedded_bridge() -> APIRouter | None:
                     "target_id": body.target.target_id,
                 },
             )
-            await send_text_with_bot(bot, body.target, body.text)
+            await send_text_with_rate_limit(
+                bot,
+                body.target,
+                body.text,
+                robot_id=robot_id,
+            )
             return {"success": True}
 
         @_bridge_router.post("/internal/reload", response_model=RobotBridgeReloadResponse)

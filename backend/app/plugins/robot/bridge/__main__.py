@@ -22,6 +22,7 @@ from app.plugins.robot.contracts import (
     RobotDispatchResponse,
     RobotInboundMessage,
 )
+from app.plugins.robot.bridge.rate_limit import send_text_with_rate_limit
 from app.plugins.robot.platforms import (
     build_inbound_message,
     build_nonebot_init_kwargs,
@@ -32,7 +33,6 @@ from app.plugins.robot.platforms import (
     resolve_bot_identity,
     resolve_platform_from_bot,
     resolve_robot_identity,
-    send_text_with_bot,
 )
 
 logger = logging.getLogger(__name__)
@@ -161,7 +161,12 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
     except Exception as exc:
         logger.exception("[RobotBridge] Failed to dispatch message for robot %s", robot_id)
         try:
-            await send_text_with_bot(bot, inbound.reply_target, f"Robot bridge failed: {exc}")
+            await send_text_with_rate_limit(
+                bot,
+                inbound.reply_target,
+                f"Robot bridge failed: {exc}",
+                robot_id=robot_id,
+            )
         except Exception:
             logger.exception(
                 "[RobotBridge] Failed to send bridge error back to platform for robot %s",
@@ -173,7 +178,7 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
         return
 
     for chunk in dispatch.reply_chunks:
-        await send_text_with_bot(bot, inbound.reply_target, chunk)
+        await send_text_with_rate_limit(bot, inbound.reply_target, chunk, robot_id=robot_id)
 
 
 app = get_asgi()
@@ -193,7 +198,7 @@ async def internal_send(
     if bot is None:
         raise HTTPException(status_code=404, detail="Robot is not loaded in bridge")
 
-    await send_text_with_bot(bot, body.target, body.text)
+    await send_text_with_rate_limit(bot, body.target, body.text, robot_id=robot_id)
     return {"success": True}
 
 
