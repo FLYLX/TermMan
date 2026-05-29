@@ -14,18 +14,28 @@ from app.services import initialize_daemon_connections
 
 logger = logging.getLogger(__name__)
 
-_bridge_router = None
-if settings.ROBOT_PLUGIN_ENABLED and settings.ROBOT_BRIDGE_EMBEDDED:
-    from app.plugins.robot.bridge.embedded import init_embedded_bridge, get_bridge_router
-    logger.info("[App] Initializing embedded robot bridge...")
-    init_embedded_bridge()
-    _bridge_router = get_bridge_router()
-    if _bridge_router:
-        logger.info("[App] Robot bridge initialized")
+_bridge_router_included = False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _bridge_router_included
+
+    if settings.ROBOT_PLUGIN_ENABLED and settings.ROBOT_BRIDGE_EMBEDDED:
+        from app.plugins.robot.bridge.embedded import init_embedded_bridge, get_bridge_router
+
+        logger.info("[App] Initializing embedded robot bridge...")
+        init_embedded_bridge()
+        bridge_router = get_bridge_router()
+        if bridge_router and not _bridge_router_included:
+            app.include_router(bridge_router)
+            _bridge_router_included = True
+            logger.info("[App] Robot bridge router included")
+        if bridge_router:
+            logger.info("[App] Robot bridge initialized")
+
+    initialize_daemon_connections()
+
     from app.services.agent.mcp import mcp_server_manager
     logger.info("[App] Starting MCP servers...")
     await mcp_server_manager.start_all()
@@ -71,13 +81,6 @@ elif settings.all_cors_origins:
     )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
-
-if _bridge_router:
-    app.include_router(_bridge_router)
-    logger.info("[App] Robot bridge router included")
-
-
-initialize_daemon_connections()
 
 
 # 注意：已移除每次请求后更新daemon连接池表的中间件

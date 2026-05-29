@@ -5,12 +5,13 @@ import os
 import tempfile
 import threading
 import time
+import uvicorn
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, FastAPI, Header, HTTPException
 
 from app.core.config import settings
 from app.plugins.robot.contracts import (
@@ -47,9 +48,13 @@ _error_file_path: str = "/tmp/robot_bridge_errors.json"
 _identity_file_path: str = "/tmp/robot_bridge_identities.json"
 _cooldown_file_path: str = "/tmp/robot_bridge_cooldowns.json"
 _singleton_lock_path: str = str(Path(tempfile.gettempdir()) / "termman_robot_bridge.lock")
+_owner_info_path: str = str(Path(tempfile.gettempdir()) / "termman_robot_bridge_owner.json")
 _singleton_lock_file: Any | None = None
 _singleton_lock_owner = False
 _singleton_lock_guard = threading.Lock()
+_ipc_server: uvicorn.Server | None = None
+_ipc_thread: threading.Thread | None = None
+_ipc_base_url: str | None = None
 QQ_GATEWAY_RATE_LIMIT_COOLDOWN_SECONDS = 600
 
 
@@ -163,6 +168,158 @@ def _release_singleton_lock() -> None:
             pass
         _singleton_lock_file = None
         _singleton_lock_owner = False
+
+
+def _write_owner_info(base_url: str) -> None:
+    try:
+        import json
+
+        with open(_owner_info_path, "w") as f:
+            json.dump(
+                {
+                    "pid": os.getpid(),
+                    "base_url": base_url,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                f,
+            )
+    except Exception:
+        logger.exception("[Bridge] Failed to write IPC owner info")
+
+
+def _read_owner_info() -> dict[str, Any] | None:
+    try:
+        import json
+
+        with open(_owner_info_path, "r") as f:
+            raw = json.load(f)
+        if isinstance(raw, dict) and raw.get("base_url"):
+            return raw
+    except Exception:
+        return None
+    return None
+
+
+def _remove_owner_info() -> None:
+    try:
+        os.remove(_owner_info_path)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        logger.exception("[Bridge] Failed to remove IPC owner info")
+
+
+async def _forward_to_owner(
+    path: str,
+    *,
+    body: Any | None = None,
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    owner_info = _read_owner_info()
+    if not owner_info:
+        raise HTTPException(status_code=503, detail="Robot bridge owner is not available")
+
+    base_url = str(owner_info["base_url"]).rstrip("/")
+    shared_secret = settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY
+    headers = {"X-TermMan-Bridge-Token": shared_secret}
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        if body is None:
+            response = await client.get(f"{base_url}{path}", headers=headers)
+        else:
+            response = await client.post(
+                f"{base_url}{path}",
+                headers=headers,
+                content=body.model_dump_json() if hasattr(body, "model_dump_json") else None,
+                json=None if hasattr(body, "model_dump_json") else body,
+            )
+        response.raise_for_status()
+        return response.json()
+
+
+def _start_ipc_server(send_handler, health_handler) -> str:
+    global _ipc_base_url, _ipc_server, _ipc_thread
+    if _ipc_base_url:
+        return _ipc_base_url
+
+    app = FastAPI()
+
+    @app.post("/internal/send")
+    async def ipc_send(
+        body: RobotBridgeSendRequest,
+        x_termman_bridge_token: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        _assert_bridge_permission(x_termman_bridge_token)
+        return await send_handler(body)
+
+    @app.get("/internal/health")
+    async def ipc_health(
+        x_termman_bridge_token: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        _assert_bridge_permission(x_termman_bridge_token)
+        return await health_handler()
+
+    config = uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=0,
+        log_level="warning",
+        lifespan="off",
+    )
+    server = uvicorn.Server(config)
+    started = threading.Event()
+    failed: list[BaseException] = []
+
+    def run_server() -> None:
+        try:
+            server.config.load()
+            server.lifespan = server.config.lifespan_class(server.config)
+            import asyncio
+
+            async def serve() -> None:
+                await server.startup()
+                started.set()
+                if server.should_exit:
+                    return
+                await server.main_loop()
+                await server.shutdown()
+
+            asyncio.run(serve())
+        except BaseException as exc:
+            failed.append(exc)
+            started.set()
+
+    thread = threading.Thread(target=run_server, daemon=True)
+    thread.start()
+    if not started.wait(timeout=5.0):
+        raise RuntimeError("Timed out starting robot bridge IPC server")
+    if failed:
+        raise RuntimeError(f"Failed to start robot bridge IPC server: {failed[0]}")
+    if not server.servers:
+        raise RuntimeError("Robot bridge IPC server did not expose a socket")
+
+    sockname = server.servers[0].sockets[0].getsockname()
+    base_url = f"http://127.0.0.1:{sockname[1]}"
+    _ipc_server = server
+    _ipc_thread = thread
+    _ipc_base_url = base_url
+    _write_owner_info(base_url)
+    logger.info("[Bridge] IPC owner server started at %s", base_url)
+    return base_url
+
+
+def _stop_ipc_server() -> None:
+    global _ipc_base_url, _ipc_server, _ipc_thread
+    if _ipc_server is not None:
+        _ipc_server.should_exit = True
+    if _ipc_thread is not None and _ipc_thread.is_alive():
+        _ipc_thread.join(timeout=3.0)
+    _ipc_server = None
+    _ipc_thread = None
+    _ipc_base_url = None
+    _remove_owner_info()
 
 
 def _load_cooldowns() -> dict[str, float]:
@@ -386,6 +543,14 @@ def get_loaded_robots() -> tuple[list, dict[str, str], dict[str, str]]:
 def _build_idle_bridge_router(reason: str) -> APIRouter:
     router = APIRouter(prefix="/robot-bridge", tags=["robot-bridge"])
 
+    @router.post("/internal/send")
+    async def internal_send(
+        body: RobotBridgeSendRequest,
+        x_termman_bridge_token: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        _assert_bridge_permission(x_termman_bridge_token)
+        return await _forward_to_owner("/internal/send", body=body)
+
     @router.post("/internal/reload", response_model=RobotBridgeReloadResponse)
     async def internal_reload(
         x_termman_bridge_token: str | None = Header(default=None),
@@ -399,22 +564,35 @@ def _build_idle_bridge_router(reason: str) -> APIRouter:
         threading.Thread(target=_restart, daemon=True).start()
         return RobotBridgeReloadResponse(success=True, detail="Bridge restart scheduled")
 
-        @router.get("/internal/health")
-        async def internal_health() -> dict[str, Any]:
+    @router.get("/internal/health")
+    async def internal_health(
+        x_termman_bridge_token: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        _assert_bridge_permission(x_termman_bridge_token)
+        try:
+            owner_health = await _forward_to_owner("/internal/health", timeout=5.0)
+            owner_health["proxy_worker"] = {
+                "pid": os.getpid(),
+                "status": "forwarded_to_owner",
+                "reason": reason,
+            }
+            return owner_health
+        except Exception as exc:
             checked_at = datetime.now(timezone.utc).isoformat()
             return {
                 "checked_at": checked_at,
                 "live": True,
                 "status": "idle",
-            "reason": reason,
-            "loaded_robot_count": 0,
-            "connected_bot_count": 0,
-            "platforms": [],
-            "connected_identities": [],
-            "robots": {},
-            "backend": {"reachable": True},
-            "connection_errors": _load_connection_errors(),
-        }
+                "reason": reason,
+                "owner_error": str(exc),
+                "loaded_robot_count": 0,
+                "connected_bot_count": 0,
+                "platforms": [],
+                "connected_identities": [],
+                "robots": {},
+                "backend": {"reachable": True},
+                "connection_errors": _load_connection_errors(),
+            }
 
     return router
 
@@ -430,6 +608,14 @@ def init_embedded_bridge() -> APIRouter | None:
         return _bridge_router
 
     _initialized = True
+
+    if not _acquire_singleton_lock():
+        logger.info(
+            "[Bridge] Another backend process already owns the robot bridge lock; "
+            "skip initializing NoneBot in this worker"
+        )
+        _bridge_router = _build_idle_bridge_router("robot_bridge_lock_owned_by_another_process")
+        return _bridge_router
 
     try:
         import nonebot
@@ -761,16 +947,6 @@ def init_embedded_bridge() -> APIRouter | None:
         @_bridge_router.on_event("startup")
         async def startup_nonebot():
             global _connection_errors
-            if not _acquire_singleton_lock():
-                error_msg = (
-                    "Another backend process already owns the robot bridge lock; "
-                    "skip starting NoneBot adapters to avoid duplicate QQ websocket connections"
-                )
-                logger.warning("[Bridge] %s", error_msg)
-                for robot_id in _identity_by_robot_id:
-                    _save_connection_error(robot_id, error_msg)
-                return
-
             logger.info("[Bridge] Starting NoneBot adapters...")
             for adapter in driver._adapters.values():
                 adapter_name = str(adapter.get_name())
@@ -786,6 +962,7 @@ def init_embedded_bridge() -> APIRouter | None:
                     robot_id = _get_robot_id_for_adapter(adapter_name)
                     if robot_id:
                         _save_connection_error(robot_id, error_msg)
+            _start_ipc_server(_send_from_owner, _health_from_owner)
         
         from nonebot.internal.adapter.adapter import Adapter
         
@@ -829,6 +1006,7 @@ def init_embedded_bridge() -> APIRouter | None:
         @_bridge_router.on_event("shutdown")
         async def shutdown_nonebot():
             logger.info("[Bridge] Stopping NoneBot adapters...")
+            _stop_ipc_server()
             for bot in driver._adapters.values():
                 try:
                     await bot.shutdown()
@@ -836,13 +1014,7 @@ def init_embedded_bridge() -> APIRouter | None:
                     logger.error(f"[Bridge] Failed to stop adapter: {e}")
             _release_singleton_lock()
 
-        @_bridge_router.post("/internal/send")
-        async def internal_send(
-            body: RobotBridgeSendRequest,
-            x_termman_bridge_token: str | None = Header(default=None),
-        ) -> dict[str, Any]:
-            _assert_bridge_permission(x_termman_bridge_token)
-
+        async def _send_from_owner(body: RobotBridgeSendRequest) -> dict[str, Any]:
             robot_id = str(body.robot_id)
             bot = _resolve_bot_for_robot(robot_id)
             if bot is None:
@@ -866,21 +1038,20 @@ def init_embedded_bridge() -> APIRouter | None:
             )
             return {"success": True}
 
-        @_bridge_router.post("/internal/reload", response_model=RobotBridgeReloadResponse)
-        async def internal_reload(
+        @_bridge_router.post("/internal/send")
+        async def internal_send(
+            body: RobotBridgeSendRequest,
             x_termman_bridge_token: str | None = Header(default=None),
-        ) -> RobotBridgeReloadResponse:
+        ) -> dict[str, Any]:
             _assert_bridge_permission(x_termman_bridge_token)
+            try:
+                return await _send_from_owner(body)
+            except HTTPException as exc:
+                if exc.status_code != 404:
+                    raise
+                return await _forward_to_owner("/internal/send", body=body)
 
-            def _restart() -> None:
-                time.sleep(0.2)
-                os._exit(0)
-
-            threading.Thread(target=_restart, daemon=True).start()
-            return RobotBridgeReloadResponse(success=True, detail="Bridge restart scheduled")
-
-        @_bridge_router.get("/internal/health")
-        async def internal_health() -> dict[str, Any]:
+        async def _health_from_owner() -> dict[str, Any]:
             checked_at = datetime.now(timezone.utc).isoformat()
             _load_connection_errors()
             connected_bot_count = len(get_bots())
@@ -949,7 +1120,31 @@ def init_embedded_bridge() -> APIRouter | None:
                 "robots": robot_status,
                 "backend": backend_status,
                 "connection_errors": _connection_errors,
+                "ipc_owner": {
+                    "pid": os.getpid(),
+                    "base_url": _ipc_base_url,
+                },
             }
+
+        @_bridge_router.post("/internal/reload", response_model=RobotBridgeReloadResponse)
+        async def internal_reload(
+            x_termman_bridge_token: str | None = Header(default=None),
+        ) -> RobotBridgeReloadResponse:
+            _assert_bridge_permission(x_termman_bridge_token)
+
+            def _restart() -> None:
+                time.sleep(0.2)
+                os._exit(0)
+
+            threading.Thread(target=_restart, daemon=True).start()
+            return RobotBridgeReloadResponse(success=True, detail="Bridge restart scheduled")
+
+        @_bridge_router.get("/internal/health")
+        async def internal_health(
+            x_termman_bridge_token: str | None = Header(default=None),
+        ) -> dict[str, Any]:
+            _assert_bridge_permission(x_termman_bridge_token)
+            return await _health_from_owner()
 
         logger.info(
             "[Bridge] Embedded bridge initialized with %d robot(s), platforms: %s",
