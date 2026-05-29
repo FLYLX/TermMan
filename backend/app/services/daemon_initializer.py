@@ -9,8 +9,11 @@ marking everything as stopped.
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from collections.abc import Iterable
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.exc import OperationalError
@@ -41,6 +44,40 @@ TERMINAL_STATUS_TO_ITEM_STATUS = {
 connection_manager = ConnectionManager()
 socket_manager = SocketManager()
 socket_pool_facade = SocketPoolFacade(socket_manager=socket_manager)
+
+_initializer_lock_path = str(Path(tempfile.gettempdir()) / "termman_daemon_initializer.lock")
+_initializer_lock_file: Any | None = None
+_initializer_lock_owner = False
+
+
+def _acquire_initializer_lock() -> bool:
+    global _initializer_lock_file, _initializer_lock_owner
+    if _initializer_lock_owner:
+        return True
+
+    Path(_initializer_lock_path).parent.mkdir(parents=True, exist_ok=True)
+    lock_file = open(_initializer_lock_path, "a+")
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock_file.close()
+        return False
+
+    lock_file.seek(0)
+    lock_file.truncate()
+    lock_file.write(str(os.getpid()))
+    lock_file.flush()
+    _initializer_lock_file = lock_file
+    _initializer_lock_owner = True
+    return True
 
 
 def _build_daemon_key(host: str, port: int, api_key: str) -> str:
@@ -267,6 +304,13 @@ def initialize_daemon_connections():
     Initialize daemon main connections and restore running item state after
     backend startup.
     """
+
+    if not _acquire_initializer_lock():
+        logger.warning(
+            "Another backend process already owns daemon initialization; "
+            "skip startup daemon sync to avoid duplicate backend room subscribers"
+        )
+        return
 
     logger.info("Starting up application and initializing daemon connections...")
 

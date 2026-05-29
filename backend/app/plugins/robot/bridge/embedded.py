@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 import threading
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -44,6 +46,10 @@ _connection_errors: dict[str, dict[str, str]] = {}
 _error_file_path: str = "/tmp/robot_bridge_errors.json"
 _identity_file_path: str = "/tmp/robot_bridge_identities.json"
 _cooldown_file_path: str = "/tmp/robot_bridge_cooldowns.json"
+_singleton_lock_path: str = str(Path(tempfile.gettempdir()) / "termman_robot_bridge.lock")
+_singleton_lock_file: Any | None = None
+_singleton_lock_owner = False
+_singleton_lock_guard = threading.Lock()
 QQ_GATEWAY_RATE_LIMIT_COOLDOWN_SECONDS = 600
 
 
@@ -93,6 +99,70 @@ def _save_connection_error(robot_id: str, error: str) -> None:
 
 def _is_rate_limit_error(error: str) -> bool:
     return "100017" in error or "频率限制" in error or "rate limit" in error.lower()
+
+
+def _is_empty_resumed_payload(payload: Any) -> bool:
+    return (
+        str(getattr(payload, "type", "") or "").upper() == "RESUMED"
+        and not isinstance(getattr(payload, "data", None), dict)
+    )
+
+
+def _acquire_singleton_lock() -> bool:
+    global _singleton_lock_file, _singleton_lock_owner
+    with _singleton_lock_guard:
+        if _singleton_lock_owner:
+            return True
+
+        Path(_singleton_lock_path).parent.mkdir(parents=True, exist_ok=True)
+        lock_file = open(_singleton_lock_path, "a+")
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            lock_file.close()
+            return False
+
+        lock_file.seek(0)
+        lock_file.truncate()
+        lock_file.write(str(os.getpid()))
+        lock_file.flush()
+        _singleton_lock_file = lock_file
+        _singleton_lock_owner = True
+        return True
+
+
+def _release_singleton_lock() -> None:
+    global _singleton_lock_file, _singleton_lock_owner
+    with _singleton_lock_guard:
+        lock_file = _singleton_lock_file
+        if lock_file is None:
+            return
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        try:
+            lock_file.close()
+        except OSError:
+            pass
+        _singleton_lock_file = None
+        _singleton_lock_owner = False
 
 
 def _load_cooldowns() -> dict[str, float]:
@@ -448,6 +518,22 @@ def init_embedded_bridge() -> APIRouter | None:
         from nonebot.log import logger as nonebot_logger
         nonebot_logger.add(_loguru_sink, level="ERROR")
 
+        for adapter in driver._adapters.values():
+            if str(adapter.get_name()).lower() == "qq" and hasattr(adapter, "dispatch_event"):
+                original_dispatch_event = adapter.dispatch_event
+
+                def make_dispatch_wrapper(_original):
+                    def wrapped_dispatch_event(bot, payload):
+                        if _is_empty_resumed_payload(payload):
+                            logger.info("[Bridge] Ignored empty QQ RESUMED payload")
+                            return None
+                        return _original(bot, payload)
+
+                    return wrapped_dispatch_event
+
+                adapter.dispatch_event = make_dispatch_wrapper(original_dispatch_event)
+                logger.info("[Bridge] Patched QQ empty RESUMED payload handling")
+
         event_probe = on(priority=1, block=False)
         bridge_handler = on_message(priority=10, block=False)
 
@@ -675,6 +761,16 @@ def init_embedded_bridge() -> APIRouter | None:
         @_bridge_router.on_event("startup")
         async def startup_nonebot():
             global _connection_errors
+            if not _acquire_singleton_lock():
+                error_msg = (
+                    "Another backend process already owns the robot bridge lock; "
+                    "skip starting NoneBot adapters to avoid duplicate QQ websocket connections"
+                )
+                logger.warning("[Bridge] %s", error_msg)
+                for robot_id in _identity_by_robot_id:
+                    _save_connection_error(robot_id, error_msg)
+                return
+
             logger.info("[Bridge] Starting NoneBot adapters...")
             for adapter in driver._adapters.values():
                 adapter_name = str(adapter.get_name())
@@ -738,6 +834,7 @@ def init_embedded_bridge() -> APIRouter | None:
                     await bot.shutdown()
                 except Exception as e:
                     logger.error(f"[Bridge] Failed to stop adapter: {e}")
+            _release_singleton_lock()
 
         @_bridge_router.post("/internal/send")
         async def internal_send(
