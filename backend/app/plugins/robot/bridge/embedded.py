@@ -214,6 +214,7 @@ async def _forward_to_owner(
     *,
     body: Any | None = None,
     timeout: float = 10.0,
+    method: str = "POST",
 ) -> dict[str, Any]:
     owner_info = _read_owner_info()
     if not owner_info:
@@ -227,7 +228,10 @@ async def _forward_to_owner(
 
     async with httpx.AsyncClient(timeout=timeout) as client:
         if body is None:
-            response = await client.get(f"{base_url}{path}", headers=headers)
+            if method.upper() == "GET":
+                response = await client.get(f"{base_url}{path}", headers=headers)
+            else:
+                response = await client.post(f"{base_url}{path}", headers=headers)
         else:
             response = await client.post(
                 f"{base_url}{path}",
@@ -239,7 +243,7 @@ async def _forward_to_owner(
         return response.json()
 
 
-def _start_ipc_server(send_handler, health_handler) -> str:
+def _start_ipc_server(send_handler, health_handler, reload_handler) -> str:
     global _ipc_base_url, _ipc_server, _ipc_thread
     if _ipc_base_url:
         return _ipc_base_url
@@ -260,6 +264,13 @@ def _start_ipc_server(send_handler, health_handler) -> str:
     ) -> dict[str, Any]:
         _assert_bridge_permission(x_termman_bridge_token)
         return await health_handler()
+
+    @app.post("/internal/reload")
+    async def ipc_reload(
+        x_termman_bridge_token: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        _assert_bridge_permission(x_termman_bridge_token)
+        return await reload_handler()
 
     config = uvicorn.Config(
         app,
@@ -556,13 +567,8 @@ def _build_idle_bridge_router(reason: str) -> APIRouter:
         x_termman_bridge_token: str | None = Header(default=None),
     ) -> RobotBridgeReloadResponse:
         _assert_bridge_permission(x_termman_bridge_token)
-
-        def _restart() -> None:
-            time.sleep(0.2)
-            os._exit(0)
-
-        threading.Thread(target=_restart, daemon=True).start()
-        return RobotBridgeReloadResponse(success=True, detail="Bridge restart scheduled")
+        result = await _forward_to_owner("/internal/reload")
+        return RobotBridgeReloadResponse.model_validate(result)
 
     @router.get("/internal/health")
     async def internal_health(
@@ -570,7 +576,7 @@ def _build_idle_bridge_router(reason: str) -> APIRouter:
     ) -> dict[str, Any]:
         _assert_bridge_permission(x_termman_bridge_token)
         try:
-            owner_health = await _forward_to_owner("/internal/health", timeout=5.0)
+            owner_health = await _forward_to_owner("/internal/health", timeout=5.0, method="GET")
             owner_health["proxy_worker"] = {
                 "pid": os.getpid(),
                 "status": "forwarded_to_owner",
@@ -962,7 +968,7 @@ def init_embedded_bridge() -> APIRouter | None:
                     robot_id = _get_robot_id_for_adapter(adapter_name)
                     if robot_id:
                         _save_connection_error(robot_id, error_msg)
-            _start_ipc_server(_send_from_owner, _health_from_owner)
+            _start_ipc_server(_send_from_owner, _health_from_owner, _reload_owner)
         
         from nonebot.internal.adapter.adapter import Adapter
         
@@ -1126,18 +1132,44 @@ def init_embedded_bridge() -> APIRouter | None:
                 },
             }
 
+        async def _reload_owner() -> dict[str, Any]:
+            errors: list[str] = []
+            for adapter in driver._adapters.values():
+                adapter_name = str(adapter.get_name())
+                try:
+                    logger.info("[Bridge] Soft-reloading adapter %s: shutdown", adapter_name)
+                    await adapter.shutdown()
+                except Exception as exc:
+                    error_msg = f"{adapter_name} shutdown failed: {type(exc).__name__}: {exc}"
+                    logger.warning("[Bridge] %s", error_msg)
+                    errors.append(error_msg)
+
+            for adapter in driver._adapters.values():
+                adapter_name = str(adapter.get_name())
+                try:
+                    logger.info("[Bridge] Soft-reloading adapter %s: startup", adapter_name)
+                    await adapter.startup()
+                except Exception as exc:
+                    error_msg = f"{adapter_name} startup failed: {type(exc).__name__}: {exc}"
+                    logger.error("[Bridge] %s", error_msg)
+                    errors.append(error_msg)
+
+            if errors:
+                return {
+                    "success": False,
+                    "detail": "; ".join(errors),
+                }
+            return {
+                "success": True,
+                "detail": "Bridge adapters soft-reloaded without restarting worker",
+            }
+
         @_bridge_router.post("/internal/reload", response_model=RobotBridgeReloadResponse)
         async def internal_reload(
             x_termman_bridge_token: str | None = Header(default=None),
         ) -> RobotBridgeReloadResponse:
             _assert_bridge_permission(x_termman_bridge_token)
-
-            def _restart() -> None:
-                time.sleep(0.2)
-                os._exit(0)
-
-            threading.Thread(target=_restart, daemon=True).start()
-            return RobotBridgeReloadResponse(success=True, detail="Bridge restart scheduled")
+            return RobotBridgeReloadResponse.model_validate(await _reload_owner())
 
         @_bridge_router.get("/internal/health")
         async def internal_health(
