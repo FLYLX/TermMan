@@ -55,6 +55,8 @@ _singleton_lock_guard = threading.Lock()
 _ipc_server: uvicorn.Server | None = None
 _ipc_thread: threading.Thread | None = None
 _ipc_base_url: str | None = None
+_startup_callback: Any | None = None
+_shutdown_callback: Any | None = None
 QQ_GATEWAY_RATE_LIMIT_COOLDOWN_SECONDS = 600
 
 
@@ -551,6 +553,16 @@ def get_loaded_robots() -> tuple[list, dict[str, str], dict[str, str]]:
     return _loaded_robots, _robot_id_by_identity, _identity_by_robot_id
 
 
+async def start_embedded_bridge() -> None:
+    if _startup_callback is not None:
+        await _startup_callback()
+
+
+async def stop_embedded_bridge() -> None:
+    if _shutdown_callback is not None:
+        await _shutdown_callback()
+
+
 def _build_idle_bridge_router(reason: str) -> APIRouter:
     router = APIRouter(prefix="/robot-bridge", tags=["robot-bridge"])
 
@@ -605,6 +617,7 @@ def _build_idle_bridge_router(reason: str) -> APIRouter:
 
 def init_embedded_bridge() -> APIRouter | None:
     global _bridge_router, _loaded_robots, _robot_id_by_identity, _identity_by_robot_id, _initialized
+    global _startup_callback, _shutdown_callback
 
     if not settings.ROBOT_PLUGIN_ENABLED:
         logger.info("[Bridge] Robot plugin disabled, skip bridge initialization")
@@ -950,7 +963,6 @@ def init_embedded_bridge() -> APIRouter | None:
                     return robot_id
             return None
         
-        @_bridge_router.on_event("startup")
         async def startup_nonebot():
             global _connection_errors
             logger.info("[Bridge] Starting NoneBot adapters...")
@@ -1009,7 +1021,6 @@ def init_embedded_bridge() -> APIRouter | None:
                     adapter.run_bot_websocket = make_wrapper(original_run_bot_websocket, robot_id, adapter_name)
                     logger.info(f"[Bridge] Wrapped run_bot_websocket for adapter {adapter_name}")
         
-        @_bridge_router.on_event("shutdown")
         async def shutdown_nonebot():
             logger.info("[Bridge] Stopping NoneBot adapters...")
             _stop_ipc_server()
@@ -1019,6 +1030,9 @@ def init_embedded_bridge() -> APIRouter | None:
                 except Exception as e:
                     logger.error(f"[Bridge] Failed to stop adapter: {e}")
             _release_singleton_lock()
+
+        _startup_callback = startup_nonebot
+        _shutdown_callback = shutdown_nonebot
 
         async def _send_from_owner(body: RobotBridgeSendRequest) -> dict[str, Any]:
             robot_id = str(body.robot_id)

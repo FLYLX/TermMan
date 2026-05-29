@@ -22,7 +22,12 @@ async def lifespan(app: FastAPI):
     global _bridge_router_included
 
     if settings.ROBOT_PLUGIN_ENABLED and settings.ROBOT_BRIDGE_EMBEDDED:
-        from app.plugins.robot.bridge.embedded import init_embedded_bridge, get_bridge_router
+        from app.plugins.robot.bridge.embedded import (
+            get_bridge_router,
+            init_embedded_bridge,
+            start_embedded_bridge,
+            stop_embedded_bridge,
+        )
 
         logger.info("[App] Initializing embedded robot bridge...")
         init_embedded_bridge()
@@ -33,6 +38,9 @@ async def lifespan(app: FastAPI):
             logger.info("[App] Robot bridge router included")
         if bridge_router:
             logger.info("[App] Robot bridge initialized")
+        await start_embedded_bridge()
+    else:
+        stop_embedded_bridge = None
 
     initialize_daemon_connections()
 
@@ -43,6 +51,9 @@ async def lifespan(app: FastAPI):
     
     yield
     
+    if stop_embedded_bridge is not None:
+        await stop_embedded_bridge()
+
     logger.info("[App] Stopping MCP servers...")
     await mcp_server_manager.stop_all()
     logger.info("[App] MCP servers stopped")
