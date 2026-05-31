@@ -11,6 +11,11 @@ ENV UV_COMPILE_BYTECODE=1
 # uv Cache
 ENV UV_LINK_MODE=copy
 
+# China mirror configuration
+ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ENV UV_EXTRA_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
+ENV UV_HTTP_TIMEOUT=300
+
 WORKDIR /app/
 
 # Place executables in the environment at the front of the path
