@@ -2,7 +2,7 @@ FROM mcr.microsoft.com/playwright:v1.58.2-noble
 
 WORKDIR /app
 
-# 安装基础依赖（含CA证书、解压工具）
+# Install base packages needed by the test image.
 RUN apt-get update && apt-get install -y \
     unzip \
     ca-certificates \
@@ -11,22 +11,19 @@ RUN apt-get update && apt-get install -y \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 关键修改：curl添加跳过SSL验证参数，解决SSL_ERROR_SYSCALL问题
-RUN curl -fsSL --insecure https://bun.sh/install | bash
+ENV BUN_CONFIG_REGISTRY=https://registry.npmmirror.com
 
-# 强制设置PATH（确保全局生效）
-ENV PATH="/root/.bun/bin:${PATH}"
+RUN npm config set registry https://registry.npmmirror.com \
+    && npm install -g bun@1 \
+    && ln -sf "$(command -v bun)" /usr/local/bin/bunx \
+    && bun --version
 
-# 验证bun安装
-RUN echo "PATH: $PATH" && bun --version && echo "Bun安装成功"
-
-# 原有拷贝步骤
 COPY package.json bun.lock /app/
 COPY frontend/package.json /app/frontend/
 
 WORKDIR /app/frontend
 
-RUN bun install
+RUN bun install --registry https://registry.npmmirror.com
 
 COPY ./frontend /app/frontend
 
