@@ -3,13 +3,17 @@ FROM oven/bun:1 AS build-stage
 
 WORKDIR /app
 
+ENV BUN_CONFIG_REGISTRY=https://registry.npmmirror.com
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
+
 COPY package.json bun.lock /app/
 
 COPY frontend/package.json /app/frontend/
 
 WORKDIR /app/frontend
 
-RUN bun install
+RUN bun install --registry https://registry.npmmirror.com
 
 COPY ./frontend /app/frontend
 ARG VITE_API_URL

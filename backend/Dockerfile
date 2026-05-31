@@ -15,9 +15,13 @@ ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 
 # China mirror configuration
-ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-ENV UV_EXTRA_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
-ENV UV_HTTP_TIMEOUT=300
+ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
+ENV UV_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ENV UV_HTTP_TIMEOUT=1200
+ENV UV_CONCURRENT_DOWNLOADS=1
+ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
+ENV PIP_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ENV PIP_TIMEOUT=1200
 
 # HuggingFace mirror for China
 ENV HF_ENDPOINT=https://hf-mirror.com
