@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -46,11 +45,6 @@ class RobotPlatformFieldSpec:
 BuildInitCallback = Callable[[dict[str, Any], dict[str, Any]], None]
 IdentityFromRobotCallback = Callable[[dict[str, Any]], str]
 IdentityFromBotCallback = Callable[[Any], str]
-
-QQ_REPLY_MAX_REPLIES = 5
-QQ_GROUP_REPLY_WINDOW = timedelta(minutes=5)
-QQ_PRIVATE_REPLY_WINDOW = timedelta(minutes=60)
-
 
 @dataclass(frozen=True)
 class RobotPlatformSpec:
@@ -262,7 +256,9 @@ def _build_onebot_v11_init(
         "onebot_secret",
         _normalize_string(credentials.get("secret")),
     )
-    init_kwargs.setdefault("onebot_ws_urls", set()).add(str(credentials["ws_url"]))
+    ws_url = _normalize_string(credentials.get("ws_url"))
+    if ws_url:
+        init_kwargs.setdefault("onebot_ws_urls", set()).add(ws_url)
     _merge_mapping_item(
         init_kwargs,
         "onebot_api_roots",
@@ -497,27 +493,6 @@ def _token_prefix(token: str) -> str:
 
 
 _PLATFORMS: dict[str, RobotPlatformSpec] = {
-    "qq_official": RobotPlatformSpec(
-        id="qq_official",
-        label="QQ Official",
-        description="QQ official bot via NoneBot2.",
-        fields=(
-            RobotPlatformFieldSpec("app_id", "App ID"),
-            RobotPlatformFieldSpec("app_secret", "App Secret", secret=True),
-            RobotPlatformFieldSpec("bot_token", "Bot Token", secret=True),
-        ),
-        adapter_module="nonebot.adapters.qq",
-        adapter_class="Adapter",
-        build_init=_build_qq_init,
-        robot_identity=lambda credentials: _credential_identity(
-            "qq_official",
-            credentials.get("app_id"),
-        ),
-        bot_identity=lambda bot: _credential_identity(
-            "qq_official",
-            getattr(getattr(bot, "bot_info", None), "id", None) or _bot_self_id(bot),
-        ),
-    ),
     "telegram": RobotPlatformSpec(
         id="telegram",
         label="Telegram",
@@ -556,11 +531,11 @@ _PLATFORMS: dict[str, RobotPlatformSpec] = {
     ),
     "onebot_v11": RobotPlatformSpec(
         id="onebot_v11",
-        label="OneBot V11",
-        description="OneBot V11 bridge. Requires the bot self_id.",
+        label="OneBot V11 / NapCat",
+        description="NapCat reverse WebSocket bridge. Requires the logged-in QQ self_id.",
         fields=(
-            RobotPlatformFieldSpec("self_id", "Self ID"),
-            RobotPlatformFieldSpec("ws_url", "WS URL"),
+            RobotPlatformFieldSpec("self_id", "QQ Self ID"),
+            RobotPlatformFieldSpec("ws_url", "Forward WS URL", required=False),
             RobotPlatformFieldSpec("access_token", "Access Token", required=False, secret=True),
             RobotPlatformFieldSpec("secret", "Secret", required=False, secret=True),
             RobotPlatformFieldSpec("api_root", "API Root", required=False),
@@ -843,9 +818,9 @@ _PLATFORMS: dict[str, RobotPlatformSpec] = {
 }
 
 _PLATFORM_ALIASES = {
-    "qq": "qq_official",
-    "qqofficial": "qq_official",
-    "qq_official": "qq_official",
+    "qq": "onebot_v11",
+    "qqofficial": "onebot_v11",
+    "napcat": "onebot_v11",
     "telegram": "telegram",
     "tg": "telegram",
     "discord": "discord",
@@ -874,7 +849,6 @@ _PLATFORM_ALIASES = {
 }
 
 _ADAPTER_NAME_TO_PLATFORM = {
-    "qq": "qq_official",
     "telegram": "telegram",
     "discord": "discord",
     "onebot v11": "onebot_v11",
@@ -925,14 +899,6 @@ def extract_robot_credentials(robot: Robot) -> dict[str, Any]:
         if value is not None and value != ""
     }
 
-    platform_id = normalize_robot_platform_id(robot.platform or robot.protocol)
-    if platform_id == "qq_official":
-        if robot.app_id:
-            credentials.setdefault("app_id", robot.app_id)
-        if robot.app_secret:
-            credentials.setdefault("app_secret", robot.app_secret)
-        if robot.bot_token:
-            credentials.setdefault("bot_token", robot.bot_token)
     return credentials
 
 
@@ -961,23 +927,6 @@ def normalize_robot_config(
     _ensure_required_fields(platform, credentials)
 
     options = dict(raw_options)
-    if platform.id == "qq_official":
-        options["use_websocket"] = _normalize_bool(
-            options.get("use_websocket"),
-            default=True,
-        )
-        options["guild_messages"] = _normalize_bool(
-            options.get("guild_messages"),
-            default=True,
-        )
-        options["direct_message"] = _normalize_bool(
-            options.get("direct_message"),
-            default=True,
-        )
-        options["c2c_group_at_messages"] = _normalize_bool(
-            options.get("c2c_group_at_messages"),
-            default=True,
-        )
 
     return {
         "credentials": credentials,
@@ -1000,12 +949,6 @@ def get_robot_runtime_config(robot: Robot) -> dict[str, Any]:
         "credentials": extract_robot_credentials(robot),
         "options": dict(options),
     }
-    if platform_id == "qq_official" and "use_websocket" not in runtime_config["options"]:
-        runtime_config["options"]["use_websocket"] = bool(robot.use_websocket)
-    if platform_id == "qq_official":
-        runtime_config["options"].setdefault("guild_messages", True)
-        runtime_config["options"].setdefault("direct_message", True)
-        runtime_config["options"].setdefault("c2c_group_at_messages", True)
     return validate_robot_platform_config(platform_id, runtime_config)
 
 
@@ -1108,21 +1051,6 @@ def build_inbound_message(
     target_data = target.dump()
     target_data["source"] = target.source or get_message_id(event, bot)
     metadata: dict[str, Any] = {"target": target_data}
-    if platform_id == "qq_official":
-        now = datetime.now(timezone.utc)
-        window = QQ_PRIVATE_REPLY_WINDOW if bool(target_data.get("private")) else QQ_GROUP_REPLY_WINDOW
-        source = target_data.get("source")
-        metadata.update(
-            {
-                "reply_created_at": now.isoformat(),
-                "reply_expires_at": (now + window).isoformat(),
-                "reply_max_replies": QQ_REPLY_MAX_REPLIES,
-                "reply_used_replies": 0,
-                "reply_platform": "qq_official",
-                "msg_id": str(source or ""),
-                "msg_seq": 1,
-            }
-        )
 
     return RobotInboundMessage(
         sender_key=_extract_sender_key(platform_id, event, target_data),
@@ -1143,45 +1071,6 @@ async def send_text_with_bot(
     normalized_text = (text or "").strip()
     if not normalized_text:
         return
-
-    platform_id = resolve_platform_from_bot(bot)
-    if platform_id == "qq_official":
-        target_data = target.metadata.get("target")
-        msg_id = _normalize_string(target.metadata.get("msg_id"))
-        msg_seq = _normalize_int(target.metadata.get("msg_seq"), default=None)
-        if isinstance(target_data, dict):
-            target_id = str(target_data.get("id") or target.target_id)
-            if bool(target_data.get("private")):
-                await bot.send_to_c2c(
-                    target_id,
-                    normalized_text,
-                    msg_id=msg_id,
-                    msg_seq=msg_seq,
-                )
-                return
-            await bot.send_to_group(
-                target_id,
-                normalized_text,
-                msg_id=msg_id,
-                msg_seq=msg_seq,
-            )
-            return
-        if target.target_type == "c2c":
-            await bot.send_to_c2c(
-                target.target_id,
-                normalized_text,
-                msg_id=msg_id,
-                msg_seq=msg_seq,
-            )
-            return
-        if target.target_type == "group":
-            await bot.send_to_group(
-                target.target_id,
-                normalized_text,
-                msg_id=msg_id,
-                msg_seq=msg_seq,
-            )
-            return
 
     target_data = target.metadata.get("target")
     if isinstance(target_data, dict):

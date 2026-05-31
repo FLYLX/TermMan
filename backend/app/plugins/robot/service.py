@@ -27,8 +27,6 @@ logger = logging.getLogger(__name__)
 
 CONVERSATION_TTL = timedelta(hours=6)
 DEFAULT_MAX_MESSAGE_LENGTH = 1200
-DEFAULT_QQ_REPLY_MAX_MESSAGE_LENGTH = 1800
-
 
 @dataclass
 class ConversationState:
@@ -675,19 +673,7 @@ class RobotService:
         target: RobotReplyTarget,
         text: str,
     ) -> list[str]:
-        if target.metadata.get("reply_platform") != "qq_official":
-            return self._chunk_text(robot, text)
-
-        normalized = (text or "").strip()
-        if not normalized:
-            return []
-
-        limit = self._max_message_length(robot, default=DEFAULT_QQ_REPLY_MAX_MESSAGE_LENGTH)
-        if len(normalized) <= limit:
-            return [normalized]
-
-        suffix = "\n\n[content truncated]"
-        return [normalized[: max(1, limit - len(suffix))].rstrip() + suffix]
+        return self._chunk_text(robot, text)
 
     def _max_message_length(self, robot: Robot, *, default: int) -> int:
         config = robot.config if isinstance(robot.config, dict) else {}

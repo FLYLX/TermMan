@@ -71,7 +71,7 @@ import {
 
 function normalizePlatformId(platform: string | null | undefined) {
   if (platform === "qq") {
-    return "qq_official"
+    return "onebot_v11"
   }
   return platform ?? ""
 }
@@ -85,16 +85,6 @@ function getRobotCredentials(robot: RobotRecord): Record<string, string> {
           ([, value]) => value !== null && value !== undefined && value !== "",
         )
         .map(([key, value]) => [key, String(value)]),
-    )
-  }
-
-  if (normalizePlatformId(robot.platform) === "qq_official") {
-    return Object.fromEntries(
-      [
-        ["app_id", robot.app_id],
-        ["app_secret", robot.app_secret],
-        ["bot_token", robot.bot_token],
-      ].filter(([, value]) => Boolean(value)) as [string, string][],
     )
   }
 
@@ -1030,12 +1020,6 @@ function RobotDebugPanel({
             </div>
           </div>
         </div>
-
-        {bridge?.cooldown_remaining_seconds ? (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
-            QQ gateway cooldown: {bridge.cooldown_remaining_seconds}s
-          </div>
-        ) : null}
 
         {bridge?.error ? (
           <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">

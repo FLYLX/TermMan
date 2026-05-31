@@ -647,7 +647,6 @@ def get_robot_debug(
             "checked_at": bridge_health.get("checked_at"),
             "last_platform_event_at": robot_health.get("last_platform_event_at"),
             "last_message_event_at": robot_health.get("last_message_event_at"),
-            "cooldown_remaining_seconds": robot_health.get("cooldown_remaining_seconds", 0),
             "error": None
             if connected
             else robot_health.get("error") or historical_error or bridge_health.get("error"),
@@ -657,8 +656,8 @@ def get_robot_debug(
             "event_count": len(events),
             "last_event_at": events[0].get("timestamp") if events else None,
             "qq_event_hint": (
-                "Bridge is connected and READY was received, but no QQ message event has reached TermMan yet. "
-                "Check QQ bot message event subscriptions, scene permissions, and whether the bot is in the chat."
+                "Bridge is connected, but no OneBot/NapCat message event has reached TermMan yet. "
+                "Check the NapCat reverse WebSocket URL and whether the logged-in QQ account is receiving messages."
                 if connected and not robot_health.get("last_message_event_at")
                 else None
             ),

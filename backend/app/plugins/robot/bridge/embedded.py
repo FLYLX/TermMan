@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, FastAPI, Header, HTTPException
+from fastapi import APIRouter, FastAPI, Header, HTTPException, WebSocket
 
 from app.core.config import settings
 from app.plugins.robot.contracts import (
@@ -46,7 +46,6 @@ _initialized = False
 _connection_errors: dict[str, dict[str, str]] = {}
 _error_file_path: str = "/tmp/robot_bridge_errors.json"
 _identity_file_path: str = "/tmp/robot_bridge_identities.json"
-_cooldown_file_path: str = "/tmp/robot_bridge_cooldowns.json"
 _singleton_lock_path: str = str(Path(tempfile.gettempdir()) / "termman_robot_bridge.lock")
 _owner_info_path: str = str(Path(tempfile.gettempdir()) / "termman_robot_bridge_owner.json")
 _singleton_lock_file: Any | None = None
@@ -57,7 +56,6 @@ _ipc_thread: threading.Thread | None = None
 _ipc_base_url: str | None = None
 _startup_callback: Any | None = None
 _shutdown_callback: Any | None = None
-QQ_GATEWAY_RATE_LIMIT_COOLDOWN_SECONDS = 600
 
 
 def _normalize_connection_errors(raw: Any) -> dict[str, dict[str, str]]:
@@ -106,13 +104,6 @@ def _save_connection_error(robot_id: str, error: str) -> None:
 
 def _is_rate_limit_error(error: str) -> bool:
     return "100017" in error or "频率限制" in error or "rate limit" in error.lower()
-
-
-def _is_empty_resumed_payload(payload: Any) -> bool:
-    return (
-        str(getattr(payload, "type", "") or "").upper() == "RESUMED"
-        and not isinstance(getattr(payload, "data", None), dict)
-    )
 
 
 def _acquire_singleton_lock() -> bool:
@@ -335,42 +326,6 @@ def _stop_ipc_server() -> None:
     _remove_owner_info()
 
 
-def _load_cooldowns() -> dict[str, float]:
-    try:
-        import json
-        with open(_cooldown_file_path, "r") as f:
-            raw = json.load(f)
-        return {str(key): float(value) for key, value in raw.items()}
-    except Exception:
-        return {}
-
-
-def _save_cooldowns(cooldowns: dict[str, float]) -> None:
-    try:
-        import json
-        with open(_cooldown_file_path, "w") as f:
-            json.dump(cooldowns, f)
-    except Exception:
-        pass
-
-
-def _set_gateway_cooldown(robot_id: str) -> float:
-    until = time.time() + QQ_GATEWAY_RATE_LIMIT_COOLDOWN_SECONDS
-    cooldowns = _load_cooldowns()
-    cooldowns[robot_id] = until
-    _save_cooldowns(cooldowns)
-    return until
-
-
-def _get_gateway_cooldown_remaining(robot_id: str) -> int:
-    cooldowns = _load_cooldowns()
-    remaining = int(cooldowns.get(robot_id, 0) - time.time())
-    if remaining <= 0 and robot_id in cooldowns:
-        cooldowns.pop(robot_id, None)
-        _save_cooldowns(cooldowns)
-    return max(0, remaining)
-
-
 def _serialize_bot_snapshot(bot: Any) -> dict[str, Any]:
     snapshot: dict[str, Any] = {
         "self_id": str(getattr(bot, "self_id", "") or ""),
@@ -463,20 +418,19 @@ def _loguru_sink(message):
     level_name = level.name if level else None
     if level_name == "ERROR":
         text = record.get("message", "")
-        if "Failed to get gateway info" in text:
+        if "robot bridge" in text.lower():
             exc_info = record.get("exception")
             identities = _load_identities()
-            for robot_id, identity in identities.items():
-                if "qq" in identity.lower():
-                    exc_text = ""
-                    if exc_info:
-                        exc_type = exc_info.type if hasattr(exc_info, "type") else None
-                        exc_value = exc_info.value if hasattr(exc_info, "value") else None
-                        if exc_type and exc_value:
-                            exc_text = f"{exc_type.__name__}: {exc_value}"
-                    error_msg = exc_text if exc_text else text
-                    _save_connection_error(robot_id, error_msg)
-                    break
+            for robot_id in identities:
+                exc_text = ""
+                if exc_info:
+                    exc_type = exc_info.type if hasattr(exc_info, "type") else None
+                    exc_value = exc_info.value if hasattr(exc_info, "value") else None
+                    if exc_type and exc_value:
+                        exc_text = f"{exc_type.__name__}: {exc_value}"
+                error_msg = exc_text if exc_text else text
+                _save_connection_error(robot_id, error_msg)
+                break
 
 
 def _assert_bridge_permission(header_value: str | None) -> None:
@@ -710,35 +664,10 @@ def init_embedded_bridge() -> APIRouter | None:
 
         init_kwargs = build_nonebot_init_kwargs(_loaded_robots)
         init_kwargs.setdefault("driver", "~fastapi+~httpx+~websockets")
-        if any(
-            normalize_robot_platform_id(robot.platform or robot.protocol) == "qq_official"
-            for robot in _loaded_robots
-        ):
-            init_kwargs["qq_is_sandbox"] = settings.ROBOT_QQ_IS_SANDBOX
-
         nonebot.init(**init_kwargs)
         driver = nonebot.get_driver()
         register_nonebot_adapters(driver, _loaded_robots)
         
-        from nonebot.log import logger as nonebot_logger
-        nonebot_logger.add(_loguru_sink, level="ERROR")
-
-        for adapter in driver._adapters.values():
-            if str(adapter.get_name()).lower() == "qq" and hasattr(adapter, "dispatch_event"):
-                original_dispatch_event = adapter.dispatch_event
-
-                def make_dispatch_wrapper(_original):
-                    def wrapped_dispatch_event(bot, payload):
-                        if _is_empty_resumed_payload(payload):
-                            logger.info("[Bridge] Ignored empty QQ RESUMED payload")
-                            return None
-                        return _original(bot, payload)
-
-                    return wrapped_dispatch_event
-
-                adapter.dispatch_event = make_dispatch_wrapper(original_dispatch_event)
-                logger.info("[Bridge] Patched QQ empty RESUMED payload handling")
-
         event_probe = on(priority=1, block=False)
         bridge_handler = on_message(priority=10, block=False)
 
@@ -953,6 +882,20 @@ def init_embedded_bridge() -> APIRouter | None:
         nonebot_app = get_asgi()
 
         _bridge_router = APIRouter(prefix="/robot-bridge", tags=["robot-bridge"])
+
+        @_bridge_router.websocket("/onebot/v11/ws")
+        async def onebot_v11_reverse_ws(websocket: WebSocket) -> None:
+            scope = dict(websocket.scope)
+            scope["path"] = "/onebot/v11/ws"
+            scope["root_path"] = ""
+            await nonebot_app(scope, websocket.receive, websocket.send)
+
+        @_bridge_router.websocket("/onebot/v11/ws/")
+        async def onebot_v11_reverse_ws_slash(websocket: WebSocket) -> None:
+            scope = dict(websocket.scope)
+            scope["path"] = "/onebot/v11/ws/"
+            scope["root_path"] = ""
+            await nonebot_app(scope, websocket.receive, websocket.send)
         
         from nonebot import get_bots
         
@@ -981,45 +924,6 @@ def init_embedded_bridge() -> APIRouter | None:
                     if robot_id:
                         _save_connection_error(robot_id, error_msg)
             _start_ipc_server(_send_from_owner, _health_from_owner, _reload_owner)
-        
-        from nonebot.internal.adapter.adapter import Adapter
-        
-        for adapter in driver._adapters.values():
-            if hasattr(adapter, "run_bot_websocket"):
-                original_run_bot_websocket = adapter.run_bot_websocket
-                adapter_name = str(adapter.get_name())
-                robot_id = _get_robot_id_for_adapter(adapter_name)
-                if robot_id:
-                    def make_wrapper(_original, _robot_id, _adapter_name):
-                        async def wrapped_run_bot_websocket(bot, *args, **kwargs):
-                            global _connection_errors
-                            remaining = _get_gateway_cooldown_remaining(_robot_id)
-                            if remaining > 0:
-                                error_msg = (
-                                    "QQ gateway info is rate limited; "
-                                    f"websocket start is cooling down for {remaining}s"
-                                )
-                                logger.warning("[Bridge] %s", error_msg)
-                                _save_connection_error(_robot_id, error_msg)
-                                return None
-                            try:
-                                result = await _original(bot, *args, **kwargs)
-                                return result
-                            except Exception as e:
-                                error_msg = f"{type(e).__name__}: {str(e)}"
-                                logger.error(f"[Bridge] WebSocket connection failed for {_adapter_name}: {error_msg}")
-                                _save_connection_error(_robot_id, error_msg)
-                                if _is_rate_limit_error(error_msg):
-                                    until = _set_gateway_cooldown(_robot_id)
-                                    logger.warning(
-                                        "[Bridge] QQ gateway rate limited; cooldown until %s",
-                                        datetime.fromtimestamp(until, timezone.utc).isoformat(),
-                                    )
-                                    return None
-                                raise
-                        return wrapped_run_bot_websocket
-                    adapter.run_bot_websocket = make_wrapper(original_run_bot_websocket, robot_id, adapter_name)
-                    logger.info(f"[Bridge] Wrapped run_bot_websocket for adapter {adapter_name}")
         
         async def shutdown_nonebot():
             logger.info("[Bridge] Stopping NoneBot adapters...")
@@ -1093,7 +997,6 @@ def init_embedded_bridge() -> APIRouter | None:
 
             robot_status: dict[str, dict[str, Any]] = {}
             for robot_id, identity in _identity_by_robot_id.items():
-                cooldown_remaining = _get_gateway_cooldown_remaining(robot_id)
                 robot_status[robot_id] = {
                     "identity": identity,
                     "connected": identity in connected_identities,
@@ -1101,14 +1004,11 @@ def init_embedded_bridge() -> APIRouter | None:
                     "last_platform_event_at": _last_platform_event_at_by_robot_id.get(robot_id),
                     "last_message_event_at": _last_message_event_at_by_robot_id.get(robot_id),
                     "error": (
-                        f"QQ gateway rate limited; retry after {cooldown_remaining}s"
-                        if cooldown_remaining > 0
-                        else None
+                        None
                         if identity in connected_identities
                         else (_connection_errors.get(robot_id) or {}).get("message")
                     ),
                     "last_error": _connection_errors.get(robot_id),
-                    "cooldown_remaining_seconds": cooldown_remaining,
                 }
 
             backend_status: dict[str, Any] = {"reachable": False}

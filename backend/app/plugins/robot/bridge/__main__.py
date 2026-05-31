@@ -86,11 +86,6 @@ SEEN_CONNECTED_ROBOT_IDS: set[str] = set()
 
 INIT_KWARGS = build_nonebot_init_kwargs(LOADED_ROBOTS)
 INIT_KWARGS.setdefault("driver", "~fastapi+~httpx+~websockets")
-if any(
-    normalize_robot_platform_id(robot.platform or robot.protocol) == "qq_official"
-    for robot in LOADED_ROBOTS
-):
-    INIT_KWARGS["qq_is_sandbox"] = settings.ROBOT_QQ_IS_SANDBOX
 
 nonebot.init(**INIT_KWARGS)
 driver = nonebot.get_driver()

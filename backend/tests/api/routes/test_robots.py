@@ -19,7 +19,8 @@ def test_list_robot_platforms(
     assert response.status_code == 200
     platforms = response.json()
     platform_ids = {platform["id"] for platform in platforms}
-    assert "qq_official" in platform_ids
+    assert "onebot_v11" in platform_ids
+    assert "qq_official" not in platform_ids
 
 
 def test_create_robot_normalizes_legacy_platform_alias(
@@ -39,13 +40,9 @@ def test_create_robot_normalizes_legacy_platform_alias(
             "is_enabled": True,
             "config": {
                 "credentials": {
-                    "app_id": "1024",
-                    "app_secret": "robot-secret",
-                    "bot_token": "robot-token",
+                    "self_id": "1024",
                 },
-                "options": {
-                    "use_websocket": True,
-                },
+                "options": {},
             },
         },
     )
@@ -53,14 +50,14 @@ def test_create_robot_normalizes_legacy_platform_alias(
     assert response.status_code == 200
     content = response.json()
     assert content["name"] == "QQ Robot"
-    assert content["platform"] == "qq_official"
-    assert content["protocol"] == "qq_official"
+    assert content["platform"] == "onebot_v11"
+    assert content["protocol"] == "onebot_v11"
     assert content["provider"] == "nonebot2"
-    assert content["app_id"] == "1024"
-    assert content["app_secret"] == "robot-secret"
-    assert content["bot_token"] == "robot-token"
-    assert content["use_websocket"] is True
-    assert content["config"]["credentials"]["app_id"] == "1024"
+    assert content["app_id"] is None
+    assert content["app_secret"] is None
+    assert content["bot_token"] is None
+    assert content["use_websocket"] is False
+    assert content["config"]["credentials"]["self_id"] == "1024"
 
 
 def test_create_telegram_robot(
@@ -112,13 +109,11 @@ def test_bind_item_to_robot(
         headers=superuser_token_headers,
         json={
             "name": "binding-robot",
-            "platform": "qq_official",
+            "platform": "onebot_v11",
             "provider": "nonebot2",
             "config": {
                 "credentials": {
-                    "app_id": "2048",
-                    "app_secret": "binding-secret",
-                    "bot_token": "binding-token",
+                    "self_id": "2048",
                 },
                 "options": {},
             },
@@ -161,13 +156,11 @@ def test_dispatch_robot_message_routes_to_item_agent(
         headers=superuser_token_headers,
         json={
             "name": "dispatch-robot",
-            "platform": "qq_official",
+            "platform": "onebot_v11",
             "provider": "nonebot2",
             "config": {
                 "credentials": {
-                    "app_id": "4096",
-                    "app_secret": "dispatch-secret",
-                    "bot_token": "dispatch-token",
+                    "self_id": "4096",
                 },
                 "options": {},
             },
@@ -235,13 +228,11 @@ def test_dispatch_robot_message_rejects_invalid_bridge_token(
         headers=superuser_token_headers,
         json={
             "name": "auth-robot",
-            "platform": "qq_official",
+            "platform": "onebot_v11",
             "provider": "nonebot2",
             "config": {
                 "credentials": {
-                    "app_id": "8192",
-                    "app_secret": "auth-secret",
-                    "bot_token": "auth-token",
+                    "self_id": "8192",
                 },
                 "options": {},
             },

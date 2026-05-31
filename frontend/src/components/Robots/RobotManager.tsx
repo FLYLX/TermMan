@@ -65,7 +65,7 @@ type RobotFormState = {
 
 function normalizePlatformId(platform: string | null | undefined) {
   if (platform === "qq") {
-    return "qq_official"
+    return "onebot_v11"
   }
   return platform ?? ""
 }
@@ -91,17 +91,6 @@ function getRobotCredentials(robot: RobotRecord): Record<string, string> {
           ([, value]) => value !== null && value !== undefined && value !== "",
         )
         .map(([key, value]) => [key, String(value)]),
-    )
-  }
-
-  const normalizedPlatform = normalizePlatformId(robot.platform)
-  if (normalizedPlatform === "qq_official") {
-    return Object.fromEntries(
-      [
-        ["app_id", robot.app_id],
-        ["app_secret", robot.app_secret],
-        ["bot_token", robot.bot_token],
-      ].filter(([, value]) => Boolean(value)) as [string, string][],
     )
   }
 
@@ -206,13 +195,10 @@ function CreateRobotDialog({
         protocol: selectedPlatform.id,
         provider: selectedPlatform.provider,
         is_enabled: true,
-        use_websocket: selectedPlatform.id === "qq_official",
+        use_websocket: false,
         config: {
           credentials,
-          options:
-            selectedPlatform.id === "qq_official"
-              ? { use_websocket: true }
-              : {},
+          options: {},
         },
       })
       await queryClient.invalidateQueries({ queryKey: getRobotsQueryKey() })

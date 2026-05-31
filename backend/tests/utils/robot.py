@@ -12,15 +12,13 @@ def create_random_robot(db: Session) -> Robot:
 
     robot_in = RobotCreate(
         name=f"robot-{random_lower_string()}",
-        platform="qq_official",
-        protocol="qq_official",
+        platform="onebot_v11",
+        protocol="onebot_v11",
         provider="nonebot2",
-        use_websocket=True,
+        use_websocket=False,
         config={
             "credentials": {
-                "app_id": f"app-{random_lower_string()}",
-                "app_secret": random_lower_string(),
-                "bot_token": random_lower_string(),
+                "self_id": random_lower_string(),
             },
             "options": {},
         },
@@ -29,9 +27,6 @@ def create_random_robot(db: Session) -> Robot:
         robot_in,
         update={
             "owner_id": owner_id,
-            "app_id": robot_in.config["credentials"]["app_id"],
-            "app_secret": robot_in.config["credentials"]["app_secret"],
-            "bot_token": robot_in.config["credentials"]["bot_token"],
         },
     )
     db.add(robot)

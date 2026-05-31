@@ -4,7 +4,6 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 from app.plugins.robot.contracts import RobotReplyTarget
@@ -58,73 +57,7 @@ def _is_platform_rate_limit(exc: Exception) -> bool:
 
 
 def _send_interval_for_bot(bot: Any) -> float:
-    platform_id = resolve_platform_from_bot(bot)
-    if platform_id == "qq_official":
-        return DEFAULT_SEND_INTERVAL_SECONDS
     return 0.2
-
-
-def _parse_timestamp(value: Any) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(str(value))
-    except ValueError:
-        return None
-
-
-def _is_reply_window_expired(target: RobotReplyTarget) -> bool:
-    expires_at = _parse_timestamp(target.metadata.get("reply_expires_at"))
-    if expires_at is None:
-        return False
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    return datetime.now(timezone.utc) >= expires_at
-
-
-def _consume_reply_budget(target: RobotReplyTarget) -> bool:
-    if _is_reply_window_expired(target):
-        return False
-
-    max_replies = target.metadata.get("reply_max_replies")
-    if max_replies is None:
-        return True
-
-    try:
-        max_count = int(max_replies)
-        used_count = int(target.metadata.get("reply_used_replies") or 0)
-    except (TypeError, ValueError):
-        return True
-
-    if used_count >= max_count:
-        return False
-
-    target.metadata["reply_used_replies"] = used_count + 1
-    return True
-
-
-def _record_budget_drop(
-    robot_id: str | None,
-    target: RobotReplyTarget,
-    text: str,
-) -> None:
-    if not robot_id:
-        return
-    record_robot_event(
-        robot_id,
-        direction="bridge_to_platform",
-        event="platform_send_dropped",
-        status="error",
-        message="QQ passive reply window expired or reply budget exhausted",
-        payload={
-            "target_type": target.target_type,
-            "target_id": target.target_id,
-            "reply_max_replies": target.metadata.get("reply_max_replies"),
-            "reply_used_replies": target.metadata.get("reply_used_replies"),
-            "reply_expires_at": target.metadata.get("reply_expires_at"),
-            "text_length": len(text),
-        },
-    )
 
 
 async def send_text_with_rate_limit(
@@ -136,10 +69,6 @@ async def send_text_with_rate_limit(
 ) -> None:
     normalized_text = (text or "").strip()
     if not normalized_text:
-        return
-
-    if target.metadata.get("reply_platform") == "qq_official" and not _consume_reply_budget(target):
-        _record_budget_drop(robot_id, target, normalized_text)
         return
 
     key = _send_key(bot, target)
@@ -170,8 +99,6 @@ async def send_text_with_rate_limit(
                         payload={
                             "target_type": target.target_type,
                             "target_id": target.target_id,
-                            "reply_used_replies": target.metadata.get("reply_used_replies"),
-                            "reply_max_replies": target.metadata.get("reply_max_replies"),
                         },
                     )
                 bucket.next_at = time.monotonic() + interval

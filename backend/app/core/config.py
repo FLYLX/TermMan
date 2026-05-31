@@ -95,7 +95,6 @@ class Settings(BaseSettings):
     ROBOT_BRIDGE_AUTO_RELOAD: bool = True
     ROBOT_BRIDGE_HOST: str = "0.0.0.0"
     ROBOT_BRIDGE_PORT: int = 8090
-    ROBOT_QQ_IS_SANDBOX: bool = False
 
     @model_validator(mode="after")
     def _apply_robot_bridge_defaults(self) -> Self:

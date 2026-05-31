@@ -170,17 +170,10 @@ def normalize_robot_stack(
         "config": normalized_config,
     }
 
-    if normalized_platform == "qq_official":
-        update["app_id"] = credentials.get("app_id")
-        update["app_secret"] = credentials.get("app_secret")
-        update["bot_token"] = credentials.get("bot_token")
-        update["use_websocket"] = bool(
-            normalized_config["options"].get("use_websocket", True)
-        )
-    else:
-        update["app_id"] = None
-        update["app_secret"] = None
-        update["bot_token"] = None
+    update["app_id"] = None
+    update["app_secret"] = None
+    update["bot_token"] = None
+    update["use_websocket"] = False
 
     return normalized_config, update
 
