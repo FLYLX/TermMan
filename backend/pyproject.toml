@@ -43,6 +43,7 @@ dependencies = [
     "langchain-core>=0.3.0",
     "pyyaml>=6.0.0",
     "sentence-transformers>=2.2.0",
+    "torch>=2.11.0",
     "chromadb>=0.4.0",
 ]
 
@@ -100,3 +101,11 @@ sort = "-Cover"
 
 [tool.coverage.html]
 show_contexts = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://mirror.sjtu.edu.cn/pytorch-wheels/cpu"
+explicit = true

@@ -1,2 +1,10 @@
 [tool.uv.workspace]
 members = ["backend"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://mirror.sjtu.edu.cn/pytorch-wheels/cpu"
+explicit = true

@@ -19,6 +19,7 @@ ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
 ENV UV_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ENV UV_HTTP_TIMEOUT=1200
 ENV UV_CONCURRENT_DOWNLOADS=1
+ENV UV_TORCH_BACKEND=cpu
 ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
 ENV PIP_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ENV PIP_TIMEOUT=1200
