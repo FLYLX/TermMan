@@ -28,8 +28,8 @@ services:
       - SENTRY_DSN=${SENTRY_DSN}
       - ROBOT_PLUGIN_ENABLED=${ROBOT_PLUGIN_ENABLED:-true}
       - ROBOT_BRIDGE_EMBEDDED=${ROBOT_BRIDGE_EMBEDDED:-true}
-      - ROBOT_BACKEND_URL=http://127.0.0.1:8000
-      - ROBOT_BRIDGE_URL=http://127.0.0.1:8000/robot-bridge
+      - ROBOT_BACKEND_URL=${ROBOT_BACKEND_URL:-http://127.0.0.1:8000}
+      - ROBOT_BRIDGE_URL=${ROBOT_BRIDGE_URL:-http://127.0.0.1:8000/robot-bridge}
       - ROBOT_BRIDGE_SHARED_SECRET=${SECRET_KEY?Variable not set}
       - ROBOT_QQ_IS_SANDBOX=${ROBOT_QQ_IS_SANDBOX:-false}
     volumes:
@@ -68,8 +68,8 @@ services:
       - SENTRY_DSN=${SENTRY_DSN}
       - ROBOT_PLUGIN_ENABLED=${ROBOT_PLUGIN_ENABLED:-true}
       - ROBOT_BRIDGE_EMBEDDED=${ROBOT_BRIDGE_EMBEDDED:-true}
-      - ROBOT_BACKEND_URL=http://127.0.0.1:8000
-      - ROBOT_BRIDGE_URL=http://127.0.0.1:8000/robot-bridge
+      - ROBOT_BACKEND_URL=${ROBOT_BACKEND_URL:-http://127.0.0.1:8000}
+      - ROBOT_BRIDGE_URL=${ROBOT_BRIDGE_URL:-http://127.0.0.1:8000/robot-bridge}
       - ROBOT_BRIDGE_SHARED_SECRET=${SECRET_KEY?Variable not set}
       - ROBOT_QQ_IS_SANDBOX=${ROBOT_QQ_IS_SANDBOX:-false}
     volumes:
@@ -121,7 +121,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        - VITE_API_URL=https://api.${DOMAIN?Variable not set}
+        - VITE_API_URL=${VITE_API_URL?Variable not set}
         - NODE_ENV=production
     labels:
       - traefik.enable=true
@@ -162,6 +162,7 @@ services:
       - WORKDIR=/app/src/workdir
       - LOG_DIR=/app/log
       - DATA_DIR=/app/src/data
+      - BACKEND_URL=${DAEMON_BACKEND_URL:-http://backend:8000}
     volumes:
       - ./daemon/log:/app/log
       - ./daemon/src/workdir:/app/src/workdir
