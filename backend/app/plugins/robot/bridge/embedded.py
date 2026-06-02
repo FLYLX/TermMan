@@ -369,6 +369,25 @@ def _serialize_event_payload(event: Any) -> dict[str, Any]:
     return {}
 
 
+def _summarize_platform_event(event: Any) -> dict[str, Any]:
+    payload = _serialize_event_payload(event)
+    sender = payload.get("sender") if isinstance(payload.get("sender"), dict) else {}
+    summary = {
+        "post_type": payload.get("post_type"),
+        "message_type": payload.get("message_type"),
+        "sub_type": payload.get("sub_type"),
+        "user_id": payload.get("user_id"),
+        "group_id": payload.get("group_id"),
+        "message_id": payload.get("message_id"),
+        "sender_user_id": sender.get("user_id"),
+        "sender_nickname": sender.get("nickname"),
+        "sender_card": sender.get("card"),
+        "sender_role": sender.get("role"),
+        "raw_message": payload.get("raw_message"),
+    }
+    return {key: value for key, value in summary.items() if value not in (None, "")}
+
+
 def _build_ready_event_payload(
     platform_id: str,
     bot_identity: str,
@@ -740,10 +759,12 @@ def init_embedded_bridge() -> APIRouter | None:
         @bridge_handler.handle()
         async def handle_robot_message(bot: Bot, event: Event) -> None:
             loaded_robot_ids = list(_identity_by_robot_id.keys())
+            event_summary = _summarize_platform_event(event)
             logger.info(
-                "[Bridge] Received platform event: bot=%s event=%s raw=%s",
+                "[Bridge] Received platform event: bot=%s event=%s peer=%s raw=%s",
                 getattr(bot, "self_id", None),
                 event.__class__.__name__,
+                event_summary,
                 preview_text(event),
             )
             platform_id = resolve_platform_from_bot(bot)
@@ -754,7 +775,10 @@ def init_embedded_bridge() -> APIRouter | None:
                     event="event_ignored",
                     status="error",
                     message="Unsupported bot adapter",
-                    payload={"bot_class": bot.__class__.__module__},
+                    payload={
+                        "bot_class": bot.__class__.__module__,
+                        "event_summary": event_summary,
+                    },
                 )
                 return
 
@@ -767,7 +791,10 @@ def init_embedded_bridge() -> APIRouter | None:
                     event="event_ignored",
                     status="error",
                     message="Failed to resolve bot identity",
-                    payload={"platform": platform_id},
+                    payload={
+                        "platform": platform_id,
+                        "event_summary": event_summary,
+                    },
                 )
                 logger.exception("[Bridge] Failed to resolve bot identity")
                 return
@@ -784,6 +811,7 @@ def init_embedded_bridge() -> APIRouter | None:
                         "platform": platform_id,
                         "bot_identity": bot_identity,
                         "known_identities": list(_robot_id_by_identity.keys()),
+                        "event_summary": event_summary,
                     },
                 )
                 logger.warning(
@@ -804,6 +832,7 @@ def init_embedded_bridge() -> APIRouter | None:
                     payload={
                         "event_type": event.__class__.__name__,
                         "event": str(event),
+                        "event_summary": event_summary,
                     },
                 )
                 return
@@ -817,6 +846,7 @@ def init_embedded_bridge() -> APIRouter | None:
                     "sender_key": inbound.sender_key,
                     "target_type": inbound.reply_target.target_type,
                     "target_id": inbound.reply_target.target_id,
+                    "event_summary": event_summary,
                 },
             )
             logger.info(

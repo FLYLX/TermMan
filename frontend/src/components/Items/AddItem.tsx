@@ -38,15 +38,14 @@ import {
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 import {
-  buildTerminalTitle,
   CUSTOM_DAEMON_KEY,
-  formatDaemonLabel,
   groupItemsByDaemon,
   type TerminalItem,
 } from "./terminal-utils"
 
 const formSchema = z
   .object({
+    title: z.string().trim().min(1, "Title is required").max(255),
     daemon_key: z.string().min(1),
     command: z.string().min(1),
     working_directory: z.string().optional(),
@@ -121,6 +120,8 @@ const AddItem = ({
           trigger: triggerLabel || "新建终端",
           title: "新建终端",
           description: "选择一个 Daemon，然后只填写指令和工作目录。",
+          terminalTitle: "标题",
+          terminalTitlePlaceholder: "例如：main",
           daemonField: "Daemon",
           daemonPlaceholder: "选择一个可用的 Daemon",
           customDaemon: "手动填写 Daemon",
@@ -140,6 +141,8 @@ const AddItem = ({
           title: "New Terminal",
           description:
             "Select a daemon first, then only fill in the command and working directory.",
+          terminalTitle: "Title",
+          terminalTitlePlaceholder: "Example: main",
           daemonField: "Daemon",
           daemonPlaceholder: "Select an available daemon",
           customDaemon: "Enter daemon manually",
@@ -177,6 +180,7 @@ const AddItem = ({
     mode: "onBlur",
     criteriaMode: "all",
     defaultValues: {
+      title: "",
       daemon_key: defaultDaemonKey,
       command: "",
       working_directory: "",
@@ -192,6 +196,7 @@ const AddItem = ({
     }
 
     form.reset({
+      title: "",
       daemon_key: defaultDaemonKey,
       command: "",
       working_directory: "",
@@ -213,6 +218,7 @@ const AddItem = ({
     onSuccess: () => {
       showSuccessToast(t("items.itemCreated"))
       form.reset({
+        title: "",
         daemon_key: defaultDaemonKey,
         command: "",
         working_directory: "",
@@ -243,16 +249,8 @@ const AddItem = ({
           api_key: data.api_key?.trim() || undefined,
         }
 
-    const daemonLabel = formatDaemonLabel(
-      daemon.socket_host,
-      daemon.socket_port,
-    )
     const formattedData: ItemCreate = {
-      title: buildTerminalTitle({
-        command: data.command,
-        workingDirectory: data.working_directory,
-        daemonLabel,
-      }),
+      title: data.title.trim(),
       command: data.command.trim(),
       working_directory: data.working_directory?.trim() || undefined,
       socket_host: daemon.socket_host,
@@ -377,6 +375,24 @@ const AddItem = ({
                   <Terminal className="size-4 text-violet-500" />
                   {copy.terminalSection}
                 </div>
+
+                <FormField
+                  control={form.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{copy.terminalTitle}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder={copy.terminalTitlePlaceholder}
+                          type="text"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
                 <FormField
                   control={form.control}

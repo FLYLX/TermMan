@@ -73,7 +73,7 @@ def _message(text: str) -> RobotInboundMessage:
     )
 
 
-def test_plain_robot_message_does_not_route_to_item_agent(
+def test_plain_robot_message_routes_to_default_item_agent(
     db: Session,
     monkeypatch,
 ) -> None:
@@ -91,18 +91,23 @@ def test_plain_robot_message_does_not_route_to_item_agent(
     )
     db.commit()
 
-    async def fail_chat_with_item(**kwargs):
-        raise AssertionError("plain messages must not reach item agent")
+    captured: dict[str, object] = {}
 
-    monkeypatch.setattr(robot_service, "_chat_with_item", fail_chat_with_item)
+    async def fake_chat_with_item(**kwargs):
+        captured.update(kwargs)
+        return "agent response"
+
+    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
 
     response = asyncio.run(
         robot_service.handle_inbound_message(db, robot, _message("hello"))
     )
 
     assert response.success is True
-    assert response.item_id is None
-    assert "/term" in response.reply_chunks[0]
+    assert response.item_id == str(item.id)
+    assert response.route_key == "alpha"
+    assert captured["message"] == "hello"
+    assert response.reply_chunks == ["agent response"]
 
 
 def test_term_command_routes_to_named_item_agent(

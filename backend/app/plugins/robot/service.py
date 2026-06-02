@@ -100,26 +100,12 @@ class RobotService:
             return RobotDispatchResponse(success=True, ignored=True, reason="empty_message")
         command = self._parse_robot_command(text)
 
-        if command.mode == "chat":
-            response_text = (
-                "普通消息不会发送到终端。请使用 `/term <终端别名或ID> <内容>` 与指定终端的 agent 对话，"
-                "或使用 `/send <终端别名或ID> <输入>` 直接写入终端。"
-            )
-            return RobotDispatchResponse(
-                success=True,
-                ignored=False,
-                reply_chunks=self._reply_chunks_for_target(
-                    robot,
-                    message.reply_target,
-                    response_text,
-                ),
-            )
-
         try:
             resolved_binding, message_text = self._resolve_chat_binding(
                 session,
                 robot,
                 command,
+                message.sender_key,
             )
             self._remember_conversation(robot.id, message.sender_key, resolved_binding.item.id)
             self._register_audience(
@@ -379,6 +365,7 @@ class RobotService:
         session: Session,
         robot: Robot,
         command: RobotCommand,
+        sender_key: str,
     ) -> tuple[ResolvedRobotBinding, str]:
         bindings = [
             ResolvedRobotBinding(
@@ -406,33 +393,18 @@ class RobotService:
                     return resolved, command.text
             raise RobotServiceError(f"没有找到路由 `{command.target}` 对应的终端")
 
-        aliases = ", ".join(sorted(binding.route_key for binding in bindings))
-        raise RobotServiceError(
-            "请指定终端：`/term <别名或ID> <内容>` 或 `/send <别名或ID> <输入>`。"
-            f" 可用别名: {aliases}"
-        )
-
-        explicit_route_key, message_text = None, ""
-        if explicit_route_key:
-            for resolved in bindings:
-                if resolved.route_key == explicit_route_key:
-                    if not message_text:
-                        raise RobotServiceError("请在路由别名后补充要发给 agent 的内容")
-                    return resolved, message_text
-            raise RobotServiceError(f"没有找到路由 `{explicit_route_key}` 对应的终端")
-
-        remembered_item_id = self._get_remembered_item_id(robot.id, message.sender_key)
+        remembered_item_id = self._get_remembered_item_id(robot.id, sender_key)
         if remembered_item_id:
             for resolved in bindings:
                 if resolved.item.id == remembered_item_id:
-                    return resolved, (message.text or "").strip()
+                    return resolved, command.text
 
         default_bindings = [binding for binding in bindings if binding.binding.is_default_target]
         if len(default_bindings) == 1:
-            return default_bindings[0], (message.text or "").strip()
+            return default_bindings[0], command.text
 
         if len(bindings) == 1:
-            return bindings[0], (message.text or "").strip()
+            return bindings[0], command.text
 
         aliases = ", ".join(sorted(binding.route_key for binding in bindings))
         raise RobotServiceError(
