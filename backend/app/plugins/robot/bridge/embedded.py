@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import inspect
 import tempfile
 import threading
 import time
@@ -539,6 +540,23 @@ def _update_onebot_socket_status(
         _seen_connected_robot_ids.add(robot_id)
     else:
         _seen_connected_robot_ids.discard(robot_id)
+
+
+async def _call_optional_adapter_hook(adapter: Any, hook_name: str) -> bool:
+    adapter_name = str(adapter.get_name()) if hasattr(adapter, "get_name") else adapter.__class__.__name__
+    hook = getattr(adapter, hook_name, None)
+    if not callable(hook):
+        logger.info(
+            "[Bridge] Adapter %s has no %s hook; skip",
+            adapter_name,
+            hook_name,
+        )
+        return False
+
+    result = hook()
+    if inspect.isawaitable(result):
+        await result
+    return True
 
 
 async def _run_logged_onebot_reverse_ws(
@@ -1210,7 +1228,7 @@ def init_embedded_bridge() -> APIRouter | None:
         from nonebot import get_bots
         
         def _get_robot_id_for_adapter(adapter_name: str) -> str | None:
-            adapter_lower = adapter_name.lower()
+            adapter_lower = adapter_name.lower().replace(" ", "_")
             for robot_id, identity in _identity_by_robot_id.items():
                 if identity.startswith(adapter_lower):
                     return robot_id
@@ -1222,8 +1240,9 @@ def init_embedded_bridge() -> APIRouter | None:
             for adapter in driver._adapters.values():
                 adapter_name = str(adapter.get_name())
                 try:
-                    await adapter.startup()
-                    logger.info(f"[Bridge] Adapter {adapter_name} started")
+                    hook_called = await _call_optional_adapter_hook(adapter, "startup")
+                    if hook_called:
+                        logger.info("[Bridge] Adapter %s started", adapter_name)
                     robot_id = _get_robot_id_for_adapter(adapter_name)
                     if robot_id and robot_id in _connection_errors:
                         del _connection_errors[robot_id]
@@ -1238,9 +1257,9 @@ def init_embedded_bridge() -> APIRouter | None:
         async def shutdown_nonebot():
             logger.info("[Bridge] Stopping NoneBot adapters...")
             _stop_ipc_server()
-            for bot in driver._adapters.values():
+            for adapter in driver._adapters.values():
                 try:
-                    await bot.shutdown()
+                    await _call_optional_adapter_hook(adapter, "shutdown")
                 except Exception as e:
                     logger.error(f"[Bridge] Failed to stop adapter: {e}")
             _release_singleton_lock()
@@ -1362,11 +1381,16 @@ def init_embedded_bridge() -> APIRouter | None:
 
         async def _reload_owner() -> dict[str, Any]:
             errors: list[str] = []
+            called_hooks = 0
+            skipped_hooks = 0
             for adapter in driver._adapters.values():
                 adapter_name = str(adapter.get_name())
                 try:
                     logger.info("[Bridge] Soft-reloading adapter %s: shutdown", adapter_name)
-                    await adapter.shutdown()
+                    if await _call_optional_adapter_hook(adapter, "shutdown"):
+                        called_hooks += 1
+                    else:
+                        skipped_hooks += 1
                 except Exception as exc:
                     error_msg = f"{adapter_name} shutdown failed: {type(exc).__name__}: {exc}"
                     logger.warning("[Bridge] %s", error_msg)
@@ -1376,7 +1400,10 @@ def init_embedded_bridge() -> APIRouter | None:
                 adapter_name = str(adapter.get_name())
                 try:
                     logger.info("[Bridge] Soft-reloading adapter %s: startup", adapter_name)
-                    await adapter.startup()
+                    if await _call_optional_adapter_hook(adapter, "startup"):
+                        called_hooks += 1
+                    else:
+                        skipped_hooks += 1
                 except Exception as exc:
                     error_msg = f"{adapter_name} startup failed: {type(exc).__name__}: {exc}"
                     logger.error("[Bridge] %s", error_msg)
@@ -1389,7 +1416,10 @@ def init_embedded_bridge() -> APIRouter | None:
                 }
             return {
                 "success": True,
-                "detail": "Bridge adapters soft-reloaded without restarting worker",
+                "detail": (
+                    "Bridge adapter reload checked: "
+                    f"{called_hooks} hook(s) called, {skipped_hooks} hook(s) skipped"
+                ),
             }
 
         @_bridge_router.post("/internal/reload", response_model=RobotBridgeReloadResponse)
