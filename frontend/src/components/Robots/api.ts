@@ -232,13 +232,35 @@ export type RobotDiagnoseResult = {
       bridge_checked_at?: string | null
       live?: boolean
     }
+    napcat_socket: {
+      status: string
+      connected: boolean
+      last_event?: string | null
+      last_event_at?: string | null
+      socket_path?: string | null
+      client?: string | null
+      self_id?: string | null
+      last_message_seen?: boolean
+      last_socket_receive_seen?: boolean
+      error?: string
+    }
     items: Array<{
       item_id: string
       item_title: string
       allow_chat: boolean
+      receive_filtered_output?: boolean
+      is_default_target?: boolean
+      route_key?: string
       daemon: {
         status: string
         online: boolean
+      }
+      agent_route?: {
+        status: string
+        chat_enabled: boolean
+        route_key: string
+        default_target: boolean
+        filtered_output_enabled: boolean
       }
     }>
   }
@@ -291,6 +313,7 @@ export type RobotDebugInfo = {
       class?: string | null
       bot_info?: Record<string, unknown>
     }>
+    onebot_socket?: Record<string, unknown>
     last_platform_event_at?: string | null
     last_message_event_at?: string | null
     error?: string | null

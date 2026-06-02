@@ -571,6 +571,41 @@ function RobotCard({
                 </div>
               )}
             </div>
+            {diagnoseResult.chain.napcat_socket.status !== "not_applicable" ? (
+              <div className="flex items-center gap-2">
+                <span
+                  className={
+                    diagnoseResult.chain.napcat_socket.connected
+                      ? "text-emerald-600"
+                      : "text-red-500"
+                  }
+                >
+                  {diagnoseResult.chain.napcat_socket.connected ? "✓" : "✗"}
+                </span>
+                <span>{locale === "zh" ? "NapCat Socket" : "NapCat Socket"}</span>
+                {diagnoseResult.chain.napcat_socket.error ? (
+                  <span className="text-red-500 text-[10px]">
+                    {diagnoseResult.chain.napcat_socket.error}
+                  </span>
+                ) : (
+                  <div className="flex min-w-0 flex-col">
+                    <span className="truncate text-muted-foreground">
+                      {diagnoseResult.chain.napcat_socket.last_event || "-"}
+                      {diagnoseResult.chain.napcat_socket.client
+                        ? ` @ ${diagnoseResult.chain.napcat_socket.client}`
+                        : ""}
+                    </span>
+                    <span className="truncate text-[10px] text-muted-foreground">
+                      {diagnoseResult.chain.napcat_socket.last_event_at
+                        ? new Date(
+                            diagnoseResult.chain.napcat_socket.last_event_at,
+                          ).toLocaleString()
+                        : "-"}
+                    </span>
+                  </div>
+                )}
+              </div>
+            ) : null}
             {diagnoseResult.chain.items.map((item) => (
               <div key={item.item_id} className="flex items-center gap-2">
                 <span
@@ -586,6 +621,11 @@ function RobotCard({
                 <span className="text-muted-foreground truncate max-w-32">
                   {item.item_title}
                 </span>
+                {item.route_key ? (
+                  <code className="rounded bg-background px-1 text-[10px]">
+                    /term {item.route_key}
+                  </code>
+                ) : null}
                 <span
                   className={
                     item.daemon.online ? "text-emerald-600" : "text-red-500"

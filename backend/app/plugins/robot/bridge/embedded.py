@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tempfile
@@ -42,6 +43,7 @@ _identity_by_robot_id: dict[str, str] = {}
 _seen_connected_robot_ids: set[str] = set()
 _last_platform_event_at_by_robot_id: dict[str, str] = {}
 _last_message_event_at_by_robot_id: dict[str, str] = {}
+_onebot_socket_status_by_robot_id: dict[str, dict[str, Any]] = {}
 _initialized = False
 _connection_errors: dict[str, dict[str, str]] = {}
 _error_file_path: str = "/tmp/robot_bridge_errors.json"
@@ -386,6 +388,282 @@ def _summarize_platform_event(event: Any) -> dict[str, Any]:
         "raw_message": payload.get("raw_message"),
     }
     return {key: value for key, value in summary.items() if value not in (None, "")}
+
+
+def _decode_websocket_body(message: dict[str, Any]) -> tuple[str | None, int | None]:
+    text = message.get("text")
+    if isinstance(text, str):
+        return text, None
+
+    body = message.get("bytes")
+    if isinstance(body, bytes):
+        try:
+            return body.decode("utf-8"), len(body)
+        except UnicodeDecodeError:
+            return None, len(body)
+
+    return None, None
+
+
+def _summarize_websocket_asgi_message(message: dict[str, Any]) -> tuple[str | None, dict[str, Any]]:
+    text, byte_length = _decode_websocket_body(message)
+    payload: dict[str, Any] = {"asgi_type": message.get("type")}
+    if byte_length is not None:
+        payload["bytes_length"] = byte_length
+    if text is not None:
+        payload["text_preview"] = preview_text(text)
+        try:
+            raw = json.loads(text)
+        except json.JSONDecodeError:
+            raw = None
+        if isinstance(raw, dict):
+            params = raw.get("params") if isinstance(raw.get("params"), dict) else {}
+            for key, value in {
+                "self_id": raw.get("self_id") or params.get("self_id"),
+                "post_type": raw.get("post_type"),
+                "meta_event_type": raw.get("meta_event_type"),
+                "message_type": raw.get("message_type"),
+                "sub_type": raw.get("sub_type"),
+                "user_id": raw.get("user_id"),
+                "group_id": raw.get("group_id"),
+                "message_id": raw.get("message_id"),
+                "raw_message": raw.get("raw_message"),
+                "action": raw.get("action"),
+                "echo": raw.get("echo"),
+                "status": raw.get("status"),
+                "retcode": raw.get("retcode"),
+                "interval": raw.get("interval"),
+            }.items():
+                if value not in (None, ""):
+                    payload[key] = value
+    if message.get("code") is not None:
+        payload["code"] = message.get("code")
+    if message.get("reason"):
+        payload["reason"] = message.get("reason")
+    return text, payload
+
+
+def _resolve_robot_id_from_onebot_socket_message(
+    platform_id: str,
+    message: dict[str, Any],
+) -> str | None:
+    text, _ = _decode_websocket_body(message)
+    if not text:
+        return None
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(raw, dict):
+        return None
+    params = raw.get("params") if isinstance(raw.get("params"), dict) else {}
+    self_id = raw.get("self_id") or params.get("self_id")
+    if self_id is None:
+        return None
+    return _robot_id_by_identity.get(f"{platform_id}:{str(self_id).strip()}")
+
+
+def _record_websocket_debug_event(
+    robot_id: str | None,
+    platform_id: str,
+    *,
+    direction: str,
+    event: str,
+    status: str = "ok",
+    message: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    robot_ids = [robot_id] if robot_id else [
+        candidate_robot_id
+        for candidate_robot_id, identity in _identity_by_robot_id.items()
+        if identity.startswith(f"{platform_id}:")
+    ]
+    for candidate_robot_id in robot_ids:
+        _record_bridge_event(
+            candidate_robot_id,
+            direction=direction,
+            event=event,
+            status=status,
+            message=message,
+            payload=payload,
+        )
+
+
+def _websocket_connection_payload(websocket: WebSocket, path: str) -> dict[str, Any]:
+    client = websocket.client
+    return {
+        "socket_path": path,
+        "client": f"{client.host}:{client.port}" if client else None,
+    }
+
+
+def _update_onebot_socket_status(
+    robot_id: str | None,
+    *,
+    connected: bool,
+    event: str,
+    direction: str,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    if not robot_id:
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+    existing = _onebot_socket_status_by_robot_id.get(robot_id, {})
+    status: dict[str, Any] = {
+        **existing,
+        "connected": connected,
+        "event": event,
+        "direction": direction,
+        "last_event_at": now,
+    }
+    if payload:
+        for key in (
+            "socket_path",
+            "client",
+            "asgi_type",
+            "self_id",
+            "post_type",
+            "meta_event_type",
+            "message_type",
+            "action",
+            "echo",
+            "code",
+            "reason",
+        ):
+            value = payload.get(key)
+            if value not in (None, ""):
+                status[key] = value
+    _onebot_socket_status_by_robot_id[robot_id] = status
+    if connected:
+        _seen_connected_robot_ids.add(robot_id)
+    else:
+        _seen_connected_robot_ids.discard(robot_id)
+
+
+async def _run_logged_onebot_reverse_ws(
+    *,
+    websocket: WebSocket,
+    path: str,
+    nonebot_app: Any,
+) -> None:
+    platform_id = "onebot_v11"
+    scope = dict(websocket.scope)
+    scope["path"] = path
+    scope["root_path"] = ""
+    state: dict[str, Any] = {
+        "robot_id": None,
+        "disconnect_recorded": False,
+        "close_recorded": False,
+    }
+    connection_payload = _websocket_connection_payload(websocket, path)
+    _record_websocket_debug_event(
+        None,
+        platform_id,
+        direction="platform_to_bridge",
+        event="websocket_connect",
+        payload=connection_payload,
+    )
+
+    async def receive() -> dict[str, Any]:
+        raw_message = await websocket.receive()
+        resolved_robot_id = _resolve_robot_id_from_onebot_socket_message(
+            platform_id,
+            raw_message,
+        )
+        if resolved_robot_id:
+            state["robot_id"] = resolved_robot_id
+        text, payload = _summarize_websocket_asgi_message(raw_message)
+        payload.update(connection_payload)
+        asgi_type = raw_message.get("type")
+        event_name = (
+            "websocket_disconnect"
+            if asgi_type == "websocket.disconnect"
+            else "websocket_receive"
+        )
+        if event_name == "websocket_disconnect":
+            state["disconnect_recorded"] = True
+        _update_onebot_socket_status(
+            state.get("robot_id"),
+            connected=event_name != "websocket_disconnect",
+            event=event_name,
+            direction="platform_to_bridge",
+            payload=payload,
+        )
+        _record_websocket_debug_event(
+            state.get("robot_id"),
+            platform_id,
+            direction="platform_to_bridge",
+            event=event_name,
+            message=preview_text(text) if text else None,
+            payload=payload,
+        )
+        return raw_message
+
+    async def send(raw_message: dict[str, Any]) -> None:
+        text, payload = _summarize_websocket_asgi_message(raw_message)
+        payload.update(connection_payload)
+        asgi_type = raw_message.get("type")
+        event_name = {
+            "websocket.accept": "websocket_accept",
+            "websocket.send": "websocket_send",
+            "websocket.close": "websocket_close",
+        }.get(str(asgi_type), "websocket_send")
+        if event_name == "websocket_close":
+            state["close_recorded"] = True
+        _update_onebot_socket_status(
+            state.get("robot_id"),
+            connected=event_name != "websocket_close",
+            event=event_name,
+            direction="bridge_to_platform",
+            payload=payload,
+        )
+        _record_websocket_debug_event(
+            state.get("robot_id"),
+            platform_id,
+            direction="bridge_to_platform",
+            event=event_name,
+            message=preview_text(text) if text else None,
+            payload=payload,
+        )
+        await websocket.send(raw_message)
+
+    try:
+        await nonebot_app(scope, receive, send)
+    except Exception as exc:
+        _record_websocket_debug_event(
+            state.get("robot_id"),
+            platform_id,
+            direction="platform_to_bridge",
+            event="websocket_error",
+            status="error",
+            message=str(exc),
+            payload=connection_payload,
+        )
+        _update_onebot_socket_status(
+            state.get("robot_id"),
+            connected=False,
+            event="websocket_error",
+            direction="platform_to_bridge",
+            payload=connection_payload,
+        )
+        raise
+    finally:
+        if not state.get("disconnect_recorded") and not state.get("close_recorded"):
+            _update_onebot_socket_status(
+                state.get("robot_id"),
+                connected=False,
+                event="websocket_closed",
+                direction="platform_to_bridge",
+                payload=connection_payload,
+            )
+            _record_websocket_debug_event(
+                state.get("robot_id"),
+                platform_id,
+                direction="platform_to_bridge",
+                event="websocket_closed",
+                payload=connection_payload,
+            )
 
 
 def _build_ready_event_payload(
@@ -915,17 +1193,19 @@ def init_embedded_bridge() -> APIRouter | None:
 
         @_bridge_router.websocket("/onebot/v11/ws")
         async def onebot_v11_reverse_ws(websocket: WebSocket) -> None:
-            scope = dict(websocket.scope)
-            scope["path"] = "/onebot/v11/ws"
-            scope["root_path"] = ""
-            await nonebot_app(scope, websocket.receive, websocket.send)
+            await _run_logged_onebot_reverse_ws(
+                websocket=websocket,
+                path="/onebot/v11/ws",
+                nonebot_app=nonebot_app,
+            )
 
         @_bridge_router.websocket("/onebot/v11/ws/")
         async def onebot_v11_reverse_ws_slash(websocket: WebSocket) -> None:
-            scope = dict(websocket.scope)
-            scope["path"] = "/onebot/v11/ws/"
-            scope["root_path"] = ""
-            await nonebot_app(scope, websocket.receive, websocket.send)
+            await _run_logged_onebot_reverse_ws(
+                websocket=websocket,
+                path="/onebot/v11/ws/",
+                nonebot_app=nonebot_app,
+            )
         
         from nonebot import get_bots
         
@@ -1022,7 +1302,7 @@ def init_embedded_bridge() -> APIRouter | None:
                 identity
                 for robot_id, identity in _identity_by_robot_id.items()
                 if robot_id in _seen_connected_robot_ids
-                or connected_bot_count > 0
+                or identity in bot_snapshot_by_identity
             ]
 
             robot_status: dict[str, dict[str, Any]] = {}
@@ -1031,6 +1311,10 @@ def init_embedded_bridge() -> APIRouter | None:
                     "identity": identity,
                     "connected": identity in connected_identities,
                     "bot": bot_snapshot_by_identity.get(identity),
+                    "onebot_socket": _onebot_socket_status_by_robot_id.get(
+                        robot_id,
+                        {"connected": False},
+                    ),
                     "last_platform_event_at": _last_platform_event_at_by_robot_id.get(robot_id),
                     "last_message_event_at": _last_message_event_at_by_robot_id.get(robot_id),
                     "error": (

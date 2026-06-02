@@ -655,8 +655,18 @@ function getErrorText(error: unknown, fallback: string) {
 function formatDebugPayload(payload: Record<string, unknown>) {
   const entries = [
     ["platform", payload.platform],
+    ["socket", payload.socket_path],
+    ["client", payload.client],
+    ["asgi", payload.asgi_type],
     ["username", payload.username],
+    ["self_id", payload.self_id],
     ["user_id", payload.user_id],
+    ["post_type", payload.post_type],
+    ["meta_event_type", payload.meta_event_type],
+    ["message_type", payload.message_type],
+    ["sub_type", payload.sub_type],
+    ["group_id", payload.group_id],
+    ["message_id", payload.message_id],
     ["session", payload.session_id],
     ["shard", payload.shard],
     ["sender", payload.sender_key],
@@ -664,6 +674,16 @@ function formatDebugPayload(payload: Record<string, unknown>) {
     ["target_type", payload.target_type],
     ["item", payload.item_title ?? payload.item_id],
     ["route", payload.route_key],
+    ["raw", payload.raw_message],
+    ["action", payload.action],
+    ["echo", payload.echo],
+    ["status", payload.status],
+    ["retcode", payload.retcode],
+    ["interval", payload.interval],
+    ["text", payload.text_preview],
+    ["bytes", payload.bytes_length],
+    ["code", payload.code],
+    ["reason", payload.reason],
     ["retry_after", payload.retry_after_seconds],
   ].filter(([, value]) => value !== undefined && value !== null && value !== "")
 
@@ -880,6 +900,7 @@ function RobotDebugPanel({
   const [isReloading, setIsReloading] = useState(false)
   const [isTestingDebug, setIsTestingDebug] = useState(false)
   const bridge = debug?.bridge
+  const onebotSocket = bridge?.onebot_socket
 
   const handleReload = async () => {
     setIsReloading(true)
@@ -977,7 +998,7 @@ function RobotDebugPanel({
           </div>
         </div>
 
-        <div className="grid gap-2 text-sm md:grid-cols-3">
+        <div className="grid gap-2 text-sm md:grid-cols-4">
           <div className="rounded-xl border bg-muted/10 p-3">
             <div className="text-xs text-muted-foreground">QQ Bot ID</div>
             <div className="mt-1 truncate font-medium">
@@ -993,10 +1014,43 @@ function RobotDebugPanel({
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">
+            <div className="text-xs text-muted-foreground">NapCat Socket</div>
+            <div className="mt-1 truncate font-medium">
+              {onebotSocket?.connected ? copy.connected : copy.disconnected}
+            </div>
+          </div>
+          <div className="rounded-xl border bg-muted/10 p-3">
             <div className="text-xs text-muted-foreground">Checked</div>
             <div className="mt-1 truncate font-medium">
               {bridge?.checked_at
                 ? new Date(bridge.checked_at).toLocaleString()
+                : "-"}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-2 text-sm md:grid-cols-3">
+          <div className="rounded-xl border bg-muted/10 p-3">
+            <div className="text-xs text-muted-foreground">Socket Event</div>
+            <div className="mt-1 truncate font-medium">
+              {typeof onebotSocket?.event === "string"
+                ? onebotSocket.event
+                : "-"}
+            </div>
+          </div>
+          <div className="rounded-xl border bg-muted/10 p-3">
+            <div className="text-xs text-muted-foreground">Socket Client</div>
+            <div className="mt-1 truncate font-medium">
+              {typeof onebotSocket?.client === "string"
+                ? onebotSocket.client
+                : "-"}
+            </div>
+          </div>
+          <div className="rounded-xl border bg-muted/10 p-3">
+            <div className="text-xs text-muted-foreground">Socket Seen</div>
+            <div className="mt-1 truncate font-medium">
+              {typeof onebotSocket?.last_event_at === "string"
+                ? new Date(onebotSocket.last_event_at).toLocaleString()
                 : "-"}
             </div>
           </div>

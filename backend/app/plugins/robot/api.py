@@ -51,6 +51,10 @@ from .service import robot_service
 router = APIRouter(prefix="/robots", tags=["robots"])
 
 
+def _event_seen(events: list[dict], names: set[str]) -> bool:
+    return any(str(event.get("event") or "") in names for event in events)
+
+
 @router.get("/platforms", response_model=list[RobotPlatformPublic])
 def list_robot_platform_metadata() -> list[RobotPlatformPublic]:
     return list_supported_robot_platforms()
@@ -445,6 +449,8 @@ def diagnose_robot_chain(
 
     robot = get_robot_or_404(session, id)
     assert_robot_permission(robot, current_user)
+    platform_id = normalize_robot_platform_id(robot.platform or robot.protocol)
+    uses_napcat_socket = platform_id == "onebot_v11"
 
     result: dict = {
         "robot_id": str(id),
@@ -461,7 +467,12 @@ def diagnose_robot_chain(
         "provider": robot.provider,
     }
 
+    recent_events = get_robot_events(str(id), limit=200)
     bridge_status: dict = {"status": "unknown", "connected": False}
+    socket_status: dict = {
+        "status": "unknown" if uses_napcat_socket else "not_applicable",
+        "connected": not uses_napcat_socket,
+    }
     try:
         response = httpx.get(
             f"{settings.ROBOT_BRIDGE_URL}/internal/health",
@@ -488,6 +499,11 @@ def diagnose_robot_chain(
         )
         current_error = robot_status.get("error")
         connected = robot_status.get("connected", False)
+        onebot_socket = (
+            robot_status.get("onebot_socket")
+            if isinstance(robot_status.get("onebot_socket"), dict)
+            else {}
+        )
 
         bridge_status = {
             "status": "ok",
@@ -500,10 +516,35 @@ def diagnose_robot_chain(
             "bridge_checked_at": health_data.get("checked_at"),
             "live": bool(health_data.get("live", False)),
         }
+        if uses_napcat_socket:
+            socket_connected = bool(onebot_socket.get("connected"))
+            socket_status = {
+                "status": "ok" if socket_connected else "waiting",
+                "connected": socket_connected,
+                "last_event": onebot_socket.get("event"),
+                "last_event_at": onebot_socket.get("last_event_at"),
+                "socket_path": onebot_socket.get("socket_path"),
+                "client": onebot_socket.get("client"),
+                "self_id": onebot_socket.get("self_id"),
+                "last_message_seen": _event_seen(
+                    recent_events,
+                    {"platform_message", "inbound_message"},
+                ),
+                "last_socket_receive_seen": _event_seen(
+                    recent_events,
+                    {"websocket_receive"},
+                ),
+            }
     except Exception as e:
         bridge_status = {"status": "error", "error": str(e), "connected": False}
+        socket_status = {
+            "status": "error" if uses_napcat_socket else "not_applicable",
+            "error": str(e),
+            "connected": False if uses_napcat_socket else True,
+        }
 
     result["chain"]["qq_to_bridge"] = bridge_status
+    result["chain"]["napcat_socket"] = socket_status
 
     bindings = session.exec(select(RobotItem).where(RobotItem.robot_id == id)).all()
     items_status: list[dict] = []
@@ -517,6 +558,9 @@ def diagnose_robot_chain(
             "item_id": str(item.id),
             "item_title": item.title,
             "allow_chat": binding.allow_chat,
+            "receive_filtered_output": binding.receive_filtered_output,
+            "is_default_target": binding.is_default_target,
+            "route_key": robot_service.build_route_key(item, binding),
         }
 
         daemon_status: dict = {"status": "unknown", "online": False}
@@ -530,6 +574,13 @@ def diagnose_robot_chain(
             daemon_status = {"status": "not_configured", "online": False}
 
         item_status["daemon"] = daemon_status
+        item_status["agent_route"] = {
+            "status": "ok" if binding.allow_chat else "disabled",
+            "chat_enabled": binding.allow_chat,
+            "route_key": item_status["route_key"],
+            "default_target": binding.is_default_target,
+            "filtered_output_enabled": binding.receive_filtered_output,
+        }
         items_status.append(item_status)
 
     result["chain"]["items"] = items_status
@@ -537,6 +588,7 @@ def diagnose_robot_chain(
     all_ok = (
         robot.is_enabled
         and bridge_status.get("connected", False)
+        and (not uses_napcat_socket or socket_status.get("connected", False))
         and any(item.get("daemon", {}).get("online", False) for item in items_status)
     )
     result["overall_status"] = "ok" if all_ok else "degraded"
@@ -617,6 +669,11 @@ def get_robot_debug(
         bridge_health = {"status": "error", "error": str(e)}
 
     robot_health = bridge_health.get("robots", {}).get(str(id), {})
+    onebot_socket = (
+        robot_health.get("onebot_socket")
+        if isinstance(robot_health.get("onebot_socket"), dict)
+        else {}
+    )
     connection_errors = bridge_health.get("connection_errors", {})
     raw_connection_error = connection_errors.get(str(id))
     historical_error = (
@@ -644,6 +701,7 @@ def get_robot_debug(
             "identity": robot_health.get("identity"),
             "bot": robot_health.get("bot"),
             "bots": bridge_health.get("bots", []),
+            "onebot_socket": onebot_socket,
             "checked_at": bridge_health.get("checked_at"),
             "last_platform_event_at": robot_health.get("last_platform_event_at"),
             "last_message_event_at": robot_health.get("last_message_event_at"),
