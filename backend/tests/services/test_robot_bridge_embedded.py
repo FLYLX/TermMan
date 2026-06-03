@@ -47,7 +47,13 @@ def test_idle_bridge_reload_with_enabled_robot_schedules_restart(
         id=uuid4(),
         platform="onebot_v11",
         protocol="onebot_v11",
-        config={"credentials": {"self_id": "1024"}, "options": {}},
+        config={
+            "credentials": {
+                "self_id": "1024",
+                "ws_url": "ws://napcat.test:3001",
+            },
+            "options": {},
+        },
     )
     scheduled_reasons: list[str] = []
     monkeypatch.setattr(embedded, "_read_owner_info", lambda: None)
@@ -91,7 +97,13 @@ def test_idle_bridge_reload_with_missing_owner_does_not_restart_proxy_worker(
         id=uuid4(),
         platform="onebot_v11",
         protocol="onebot_v11",
-        config={"credentials": {"self_id": "2048"}, "options": {}},
+        config={
+            "credentials": {
+                "self_id": "2048",
+                "ws_url": "ws://napcat.test:3001",
+            },
+            "options": {},
+        },
     )
     scheduled_reasons: list[str] = []
     monkeypatch.setattr(embedded, "_read_owner_info", lambda: None)

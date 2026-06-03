@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 LOADED_ROBOTS, ROBOT_ID_BY_IDENTITY, IDENTITY_BY_ROBOT_ID, CONFIG_ERRORS = (
     load_runtime_config()
 )
+ROBOT_BY_ID = {robot.id: robot for robot in LOADED_ROBOTS}
 SEEN_CONNECTED_ROBOT_IDS: set[str] = set()
 LAST_PLATFORM_EVENT_AT_BY_ROBOT_ID: dict[str, str] = {}
 LAST_MESSAGE_EVENT_AT_BY_ROBOT_ID: dict[str, str] = {}
@@ -64,6 +65,38 @@ def _assert_bridge_permission(header_value: str | None) -> None:
 
 def _loaded_robot_platforms(robots: list[BridgeRobot]) -> list[str]:
     return sorted({robot.platform for robot in robots})
+
+
+def _robot_ws_url(robot_id: str) -> str | None:
+    robot = ROBOT_BY_ID.get(robot_id)
+    if robot is None:
+        return None
+    credentials = robot.runtime_config.get("credentials")
+    if not isinstance(credentials, dict):
+        return None
+    value = credentials.get("ws_url")
+    if value in (None, ""):
+        return None
+    return str(value)
+
+
+def _default_onebot_socket_status(robot_id: str) -> dict[str, Any]:
+    status: dict[str, Any] = {"connected": False}
+    ws_url = _robot_ws_url(robot_id)
+    if ws_url:
+        status["server_url"] = ws_url
+        status["ws_url"] = ws_url
+    return status
+
+
+def _connected_bot_identities() -> set[str]:
+    identities: set[str] = set()
+    for bot in get_bots().values():
+        try:
+            identities.add(resolve_bot_identity(bot))
+        except Exception:
+            continue
+    return identities
 
 
 def _serialize_event_payload(event: Event) -> dict[str, Any]:
@@ -134,6 +167,8 @@ def _update_onebot_socket_status(
         **status_payload,
         "connected": True,
         "event": event_name,
+        "server_url": _robot_ws_url(robot_id),
+        "ws_url": _robot_ws_url(robot_id),
         "last_event_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -313,21 +348,26 @@ async def internal_health(
 
     checked_at = datetime.now(timezone.utc).isoformat()
     connected_bot_count = len(get_bots())
+    connected_bot_identities = _connected_bot_identities()
     connected_identities = [
         identity
         for robot_id, identity in IDENTITY_BY_ROBOT_ID.items()
-        if robot_id in SEEN_CONNECTED_ROBOT_IDS or connected_bot_count > 0
+        if robot_id in SEEN_CONNECTED_ROBOT_IDS or identity in connected_bot_identities
     ]
 
     robot_status: dict[str, dict[str, Any]] = {}
     for robot_id, identity in IDENTITY_BY_ROBOT_ID.items():
+        robot = ROBOT_BY_ID.get(robot_id)
+        socket_status = {
+            **_default_onebot_socket_status(robot_id),
+            **ONEBOT_SOCKET_STATUS_BY_ROBOT_ID.get(robot_id, {}),
+        }
         robot_status[robot_id] = {
             "identity": identity,
+            "platform": robot.platform if robot else None,
+            "ws_url": _robot_ws_url(robot_id),
             "connected": identity in connected_identities,
-            "onebot_socket": ONEBOT_SOCKET_STATUS_BY_ROBOT_ID.get(
-                robot_id,
-                {"connected": False},
-            ),
+            "onebot_socket": socket_status,
             "last_platform_event_at": LAST_PLATFORM_EVENT_AT_BY_ROBOT_ID.get(robot_id),
             "last_message_event_at": LAST_MESSAGE_EVENT_AT_BY_ROBOT_ID.get(robot_id),
         }

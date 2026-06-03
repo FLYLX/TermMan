@@ -27,14 +27,6 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
 
 import {
@@ -59,8 +51,6 @@ type RobotBindingsMap = Record<string, number>
 
 type RobotFormState = {
   name: string
-  platform: string
-  route_key: string
   credentials: Record<string, string>
 }
 
@@ -76,8 +66,6 @@ function buildFormForPlatform(
 ): RobotFormState {
   return {
     name: "",
-    platform: platform?.id ?? "",
-    route_key: "",
     credentials: Object.fromEntries(
       (platform?.fields ?? []).map((field) => [field.key, ""]),
     ),
@@ -123,43 +111,32 @@ function CreateRobotDialog({
   const [open, setOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [form, setForm] = useState<RobotFormState>(() =>
-    buildFormForPlatform(platforms[0] ?? null),
+    buildFormForPlatform(
+      platforms.find((platform) => platform.id === "onebot_v11") ?? null,
+    ),
   )
 
   const selectedPlatform =
-    platforms.find((platform) => platform.id === form.platform) ??
-    platforms[0] ??
-    null
+    platforms.find((platform) => platform.id === "onebot_v11") ?? null
 
   useEffect(() => {
-    if (!open || !platforms.length) {
+    if (!open || !selectedPlatform) {
       return
     }
 
-    const hasCurrentPlatform = platforms.some(
-      (platform) => platform.id === form.platform,
-    )
-    if (!hasCurrentPlatform) {
-      setForm(buildFormForPlatform(platforms[0] ?? null))
-    }
-  }, [form.platform, open, platforms])
-
-  const resetForm = () => {
-    setForm(buildFormForPlatform(platforms[0] ?? null))
-  }
-
-  const handlePlatformChange = (platformId: string) => {
-    const platform = platforms.find((entry) => entry.id === platformId) ?? null
     setForm((current) => ({
       ...current,
-      platform: platformId,
       credentials: Object.fromEntries(
-        (platform?.fields ?? []).map((field) => [
+        selectedPlatform.fields.map((field) => [
           field.key,
           current.credentials[field.key] ?? "",
         ]),
       ),
     }))
+  }, [open, selectedPlatform])
+
+  const resetForm = () => {
+    setForm(buildFormForPlatform(selectedPlatform))
   }
 
   const handleSubmit = async () => {
@@ -200,9 +177,7 @@ function CreateRobotDialog({
         use_websocket: false,
         config: {
           credentials,
-          options: {
-            route_key: form.route_key.trim() || undefined,
-          },
+          options: {},
         },
       })
       await queryClient.invalidateQueries({ queryKey: getRobotsQueryKey() })
@@ -234,7 +209,7 @@ function CreateRobotDialog({
       <DialogTrigger asChild>
         <Button
           className="h-9 rounded-xl px-3.5"
-          disabled={platforms.length === 0}
+          disabled={!selectedPlatform}
         >
           <CirclePlus className="mr-2 size-4" />
           {t("robots.add")}
@@ -246,7 +221,7 @@ function CreateRobotDialog({
           <DialogDescription>{t("robots.addDescription")}</DialogDescription>
         </DialogHeader>
 
-        {platforms.length === 0 ? (
+        {!selectedPlatform ? (
           <div className="rounded-2xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
             <div className="font-medium text-foreground">
               {t("robots.noPlatforms")}
@@ -272,26 +247,17 @@ function CreateRobotDialog({
 
             <div className="grid gap-2">
               <Label>{t("robots.platform")}</Label>
-              <Select
-                value={form.platform}
-                onValueChange={handlePlatformChange}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={t("robots.platformPlaceholder")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {platforms.map((platform) => (
-                    <SelectItem key={platform.id} value={platform.id}>
-                      {platform.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedPlatform ? (
+              <div className="rounded-xl border bg-muted/20 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">NapCat</Badge>
+                  <span className="text-sm font-medium">
+                    {selectedPlatform.label}
+                  </span>
+                </div>
                 <p className="text-xs text-muted-foreground">
                   {selectedPlatform.description}
                 </p>
-              ) : null}
+              </div>
             </div>
 
             <div className="grid gap-3">
@@ -304,56 +270,23 @@ function CreateRobotDialog({
                     {field.label}
                     {field.required ? " *" : ""}
                   </Label>
-                  {field.key === "private_key" ? (
-                    <Textarea
-                      id={`robot-field-${field.key}`}
-                      value={form.credentials[field.key] ?? ""}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          credentials: {
-                            ...current.credentials,
-                            [field.key]: event.target.value,
-                          },
-                        }))
-                      }
-                      placeholder={field.label}
-                      className="min-h-28"
-                    />
-                  ) : (
-                    <Input
-                      id={`robot-field-${field.key}`}
-                      type={field.secret ? "password" : "text"}
-                      value={form.credentials[field.key] ?? ""}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          credentials: {
-                            ...current.credentials,
-                            [field.key]: event.target.value,
-                          },
-                        }))
-                      }
-                      placeholder={field.label}
-                    />
-                  )}
+                  <Input
+                    id={`robot-field-${field.key}`}
+                    type={field.secret ? "password" : "text"}
+                    value={form.credentials[field.key] ?? ""}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        credentials: {
+                          ...current.credentials,
+                          [field.key]: event.target.value,
+                        },
+                      }))
+                    }
+                    placeholder={field.label}
+                  />
                 </div>
               ))}
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="robot-route-key">Route key</Label>
-              <Input
-                id="robot-route-key"
-                value={form.route_key}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    route_key: event.target.value,
-                  }))
-                }
-                placeholder="optional public route, e.g. office-qq"
-              />
             </div>
           </div>
         )}
@@ -370,7 +303,7 @@ function CreateRobotDialog({
           <Button
             type="button"
             onClick={() => void handleSubmit()}
-            disabled={isSubmitting || platforms.length === 0}
+            disabled={isSubmitting || !selectedPlatform}
           >
             {isSubmitting ? (
               <Loader2 className="mr-2 size-4 animate-spin" />
@@ -609,17 +542,23 @@ function RobotCard({
                 ) : (
                   <div className="flex min-w-0 flex-col">
                     <span className="truncate text-muted-foreground">
-                      {diagnoseResult.chain.napcat_socket.last_event || "-"}
-                      {diagnoseResult.chain.napcat_socket.client
-                        ? ` @ ${diagnoseResult.chain.napcat_socket.client}`
-                        : ""}
+                      {diagnoseResult.chain.napcat_socket.last_event ||
+                        diagnoseResult.chain.napcat_socket.server_url ||
+                        diagnoseResult.chain.napcat_socket.ws_url ||
+                        "-"}
                     </span>
                     <span className="truncate text-[10px] text-muted-foreground">
-                      {diagnoseResult.chain.napcat_socket.last_event_at
-                        ? new Date(
-                            diagnoseResult.chain.napcat_socket.last_event_at,
-                          ).toLocaleString()
-                        : "-"}
+                      {[
+                        diagnoseResult.chain.napcat_socket.server_url ||
+                          diagnoseResult.chain.napcat_socket.ws_url,
+                        diagnoseResult.chain.napcat_socket.last_event_at
+                          ? new Date(
+                              diagnoseResult.chain.napcat_socket.last_event_at,
+                            ).toLocaleString()
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" | ") || "-"}
                     </span>
                   </div>
                 )}
@@ -822,9 +761,11 @@ export function RobotManager() {
         </div>
         <div className="rounded-2xl border bg-card px-4 py-3 shadow-sm">
           <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            {t("robots.platform")}
+            NapCat
           </div>
-          <div className="mt-2 text-2xl font-semibold">{platforms.length}</div>
+          <div className="mt-2 text-2xl font-semibold">
+            {bridgeHealth?.connected_bot_count ?? 0}/{robots.length}
+          </div>
         </div>
       </section>
 

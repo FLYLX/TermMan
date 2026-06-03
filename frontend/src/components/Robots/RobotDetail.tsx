@@ -3,14 +3,11 @@ import { Link } from "@tanstack/react-router"
 import {
   ArrowLeft,
   Bot,
-  Cable,
   Check,
   CirclePlus,
   Copy,
-  KeyRound,
   Loader2,
   MessageSquare,
-  RadioTower,
   RefreshCw,
   Save,
   Trash2,
@@ -56,7 +53,6 @@ import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
 
 import {
-  createRobotDebugTestEvent,
   createRobotBinding,
   deleteRobotBinding,
   getRobotBindingsQueryKey,
@@ -144,21 +140,6 @@ function mergeRobotCredentialsForSave(
       })
       .filter((entry): entry is readonly [string, string] => entry !== null),
   )
-}
-
-function getRobotOptions(robot: RobotRecord): Record<string, string> {
-  const options = robot.config?.options
-  if (options && typeof options === "object") {
-    return Object.fromEntries(
-      Object.entries(options)
-        .filter(
-          ([, value]) => value !== null && value !== undefined && value !== "",
-        )
-        .map(([key, value]) => [key, String(value)]),
-    )
-  }
-
-  return {}
 }
 
 function useRobotDetailCopy() {
@@ -805,31 +786,19 @@ function RobotConnectionGuidePanel({
   robot: RobotRecord
   debug?: RobotDebugInfo
 }) {
-  const platformId = normalizePlatformId(robot.platform || robot.protocol)
   const credentials = getRobotCredentials(robot)
-  const options = getRobotOptions(robot)
-  const routeKey = debug?.bridge?.route_key || options.route_key || robot.id
-  const wsUrl =
-    debug?.bridge?.public_reverse_ws_url ??
-    `/robot-bridge/r/${routeKey}/onebot/v11/ws`
+  const socket = debug?.bridge?.onebot_socket
+  const socketServerUrl =
+    typeof socket?.server_url === "string"
+      ? socket.server_url
+      : typeof socket?.ws_url === "string"
+        ? socket.ws_url
+        : undefined
+  const wsUrl = debug?.bridge?.napcat_ws_url || socketServerUrl || credentials.ws_url
   const accessToken = credentials.access_token
   const secret = credentials.secret
   const selfId = credentials.self_id
-  const socket = debug?.bridge?.onebot_socket
-  const socketConnected = Boolean(socket?.connected)
-
-  if (platformId !== "onebot_v11") {
-    return (
-      <Card className="rounded-3xl border bg-card shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle>Bot connection guide</CardTitle>
-          <CardDescription>
-            This platform does not use the NapCat OneBot V11 reverse WebSocket endpoint.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    )
-  }
+  const connected = Boolean(debug?.bridge?.connected || socket?.connected)
 
   return (
     <Card className="rounded-3xl border bg-card shadow-sm">
@@ -838,25 +807,28 @@ function RobotConnectionGuidePanel({
           <div>
             <CardTitle>NapCat / OneBot V11 connection</CardTitle>
             <CardDescription>
-              Use these values in NapCat reverse WebSocket settings.
+              Enable NapCat WebSocket Server, then set its server URL here.
             </CardDescription>
           </div>
           <Badge
             className={
-              socketConnected
+              connected
                 ? "w-fit border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                 : "w-fit"
             }
-            variant={socketConnected ? "outline" : "secondary"}
+            variant={connected ? "outline" : "secondary"}
           >
-            {socketConnected ? "Socket connected" : "Waiting for socket"}
+            {connected ? "Connected" : "Waiting for NapCat"}
           </Badge>
         </div>
       </CardHeader>
       <CardContent className="grid gap-4">
         <div className="grid gap-3 md:grid-cols-2">
-          <CopyableConfigValue label="Reverse WebSocket URL" value={wsUrl} />
-          <CopyableConfigValue label="Route key" value={routeKey} />
+          <CopyableConfigValue
+            label="NapCat WS Server URL"
+            value={wsUrl}
+            mutedValue="Configure ws://<napcat-ip>:<port> in robot credentials"
+          />
           <CopyableConfigValue
             label="QQ self_id"
             value={selfId}
@@ -877,18 +849,18 @@ function RobotConnectionGuidePanel({
         </div>
 
         <div className="grid gap-2 rounded-xl border bg-muted/10 p-3 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2 font-medium text-foreground">
-            <KeyRound className="size-4" />
-            NapCat fields
-          </div>
+          <div className="font-medium text-foreground">NapCat fields</div>
           <div className="grid gap-1">
             <div>
-              URL: <span className="font-mono text-foreground">{wsUrl}</span>
+              WebSocket Server:{" "}
+              <span className="font-mono text-foreground">
+                {wsUrl || "ws://<napcat-ip>:<port>"}
+              </span>
             </div>
             <div>
-              Headers:{" "}
+              QQ self_id:{" "}
               <span className="font-mono text-foreground">
-                X-Self-ID: {selfId || "your logged-in QQ number"}
+                {selfId || "the QQ number logged in to NapCat"}
               </span>
             </div>
             <div>
@@ -915,10 +887,10 @@ function RobotBasicConfigPanel({
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [isEditing, setIsEditing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const credentials = getRobotCredentials(robot)
   const [form, setForm] = useState(() => ({
     name: robot.name,
     is_enabled: robot.is_enabled,
-    route_key: getRobotOptions(robot).route_key ?? "",
     credentials: getEditableRobotCredentials(robot, platform),
   }))
 
@@ -927,7 +899,6 @@ function RobotBasicConfigPanel({
       setForm({
         name: robot.name,
         is_enabled: robot.is_enabled,
-        route_key: getRobotOptions(robot).route_key ?? "",
         credentials: getEditableRobotCredentials(robot, platform),
       })
     }
@@ -944,10 +915,8 @@ function RobotBasicConfigPanel({
       platform,
       form.credentials,
     )
-    const options = {
-      ...(robot.config?.options ?? {}),
-      route_key: form.route_key.trim() || undefined,
-    }
+    const options = { ...(robot.config?.options ?? {}) }
+    delete options.route_key
 
     setIsSaving(true)
     try {
@@ -1038,20 +1007,6 @@ function RobotBasicConfigPanel({
               />
               <span className="text-sm">Enabled</span>
             </label>
-            <div className="grid gap-2">
-              <Label htmlFor="robot-edit-route-key">Route key</Label>
-              <Input
-                id="robot-edit-route-key"
-                value={form.route_key}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    route_key: event.target.value,
-                  }))
-                }
-                placeholder="optional public route, e.g. office-qq"
-              />
-            </div>
             <div className="grid gap-3">
               <div className="text-sm font-medium">Credentials</div>
               {(platform?.fields ?? []).map((field) => (
@@ -1082,12 +1037,14 @@ function RobotBasicConfigPanel({
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
             <RobotKeyValue label="Name" value={robot.name} />
-            <RobotKeyValue label="Platform" value={platform?.label ?? robot.platform} />
-            <RobotKeyValue label="Provider" value={robot.provider} />
-            <RobotKeyValue label="App ID" value={robot.app_id} />
+            <RobotKeyValue label="NapCat" value="OneBot V11 WebSocket Server" />
             <RobotKeyValue
-              label="Route key"
-              value={getRobotOptions(robot).route_key ?? robot.id}
+              label="QQ self_id"
+              value={credentials.self_id ?? robot.app_id}
+            />
+            <RobotKeyValue
+              label="NapCat WS Server URL"
+              value={credentials.ws_url}
             />
           </div>
         )}
@@ -1107,9 +1064,15 @@ function RobotDebugPanel({
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [isReloading, setIsReloading] = useState(false)
-  const [isTestingDebug, setIsTestingDebug] = useState(false)
   const bridge = debug?.bridge
   const onebotSocket = bridge?.onebot_socket
+  const napcatWsUrl =
+    bridge?.napcat_ws_url ||
+    (typeof onebotSocket?.server_url === "string"
+      ? onebotSocket.server_url
+      : typeof onebotSocket?.ws_url === "string"
+        ? onebotSocket.ws_url
+        : undefined)
 
   const handleReload = async () => {
     setIsReloading(true)
@@ -1129,20 +1092,6 @@ function RobotDebugPanel({
     }
   }
 
-  const handleCreateTestEvent = async () => {
-    setIsTestingDebug(true)
-    try {
-      await createRobotDebugTestEvent(robotId)
-      await queryClient.invalidateQueries({
-        queryKey: getRobotDebugQueryKey(robotId),
-      })
-    } catch (error) {
-      showErrorToast(error instanceof Error ? error.message : "Failed to create test event")
-    } finally {
-      setIsTestingDebug(false)
-    }
-  }
-
   return (
     <Card className="rounded-3xl border bg-card shadow-sm">
       <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1151,18 +1100,6 @@ function RobotDebugPanel({
           <CardDescription>{copy.debugDescription}</CardDescription>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="h-9 rounded-xl px-3.5"
-            onClick={() => void handleCreateTestEvent()}
-            disabled={isTestingDebug}
-          >
-            {isTestingDebug ? (
-              <Loader2 className="mr-2 size-4 animate-spin" />
-            ) : null}
-            Test event
-          </Button>
           <Button
             type="button"
             variant="outline"
@@ -1200,26 +1137,20 @@ function RobotDebugPanel({
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">URL</div>
+            <div className="text-xs text-muted-foreground">Bridge URL</div>
             <div className="mt-1 truncate font-medium">
               {bridge?.url ?? "-"}
             </div>
           </div>
         </div>
 
-        <div className="grid gap-2 text-sm md:grid-cols-4">
+        <div className="grid gap-2 text-sm md:grid-cols-3">
           <div className="rounded-xl border bg-muted/10 p-3">
             <div className="text-xs text-muted-foreground">QQ Bot ID</div>
             <div className="mt-1 truncate font-medium">
               {bridge?.bot?.bot_info?.id
                 ? String(bridge.bot.bot_info.id)
                 : bridge?.bot?.self_id || "-"}
-            </div>
-          </div>
-          <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">Adapter</div>
-            <div className="mt-1 truncate font-medium">
-              {bridge?.bot?.adapter ?? "-"}
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">
@@ -1248,11 +1179,9 @@ function RobotDebugPanel({
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">Socket Client</div>
+            <div className="text-xs text-muted-foreground">NapCat WS Server</div>
             <div className="mt-1 truncate font-medium">
-              {typeof onebotSocket?.client === "string"
-                ? onebotSocket.client
-                : "-"}
+              {napcatWsUrl ?? "-"}
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">
@@ -1267,7 +1196,7 @@ function RobotDebugPanel({
 
         <div className="grid gap-2 text-sm md:grid-cols-2">
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">Last Platform Event</div>
+            <div className="text-xs text-muted-foreground">Last NapCat Event</div>
             <div className="mt-1 truncate font-medium">
               {bridge?.last_platform_event_at
                 ? new Date(bridge.last_platform_event_at).toLocaleString()
@@ -1470,12 +1399,8 @@ export function RobotDetail({ robotId }: { robotId: string }) {
 
               <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                 <Badge variant="outline" className="h-6 gap-1 px-2">
-                  <Cable className="size-3.5" />
-                  {copy.platform}: {platform?.label ?? robot.platform}
-                </Badge>
-                <Badge variant="outline" className="h-6 gap-1 px-2">
-                  <RadioTower className="size-3.5" />
-                  {copy.provider}: {robot.provider}
+                  <Bot className="size-3.5" />
+                  NapCat
                 </Badge>
                 <Badge variant="outline" className="h-6 gap-1 px-2">
                   <MessageSquare className="size-3.5" />

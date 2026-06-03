@@ -235,10 +235,10 @@ export type RobotDiagnoseResult = {
     napcat_socket: {
       status: string
       connected: boolean
+      server_url?: string | null
+      ws_url?: string | null
       last_event?: string | null
       last_event_at?: string | null
-      socket_path?: string | null
-      client?: string | null
       self_id?: string | null
       last_message_seen?: boolean
       last_socket_receive_seen?: boolean
@@ -294,9 +294,7 @@ export type RobotDebugInfo = {
   }
   bridge: {
     url: string
-    public_base_url?: string
-    public_reverse_ws_url?: string
-    route_key?: string
+    napcat_ws_url?: string | null
     status: string
     loaded_robot_count: number
     connected_bot_count: number
@@ -340,13 +338,6 @@ export async function getRobotDebug(robotId: string) {
 export async function reloadRobotBridge(robotId: string) {
   return apiRequest<{ success: boolean; message?: string; error?: string }>(
     `/api/v1/robots/${robotId}/reload`,
-    { method: "POST" },
-  )
-}
-
-export async function createRobotDebugTestEvent(robotId: string) {
-  return apiRequest<{ success: boolean }>(
-    `/api/v1/robots/${robotId}/debug/test-event`,
     { method: "POST" },
   )
 }

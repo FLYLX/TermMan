@@ -11,7 +11,6 @@ from app.models import Item, Robot, RobotItem, User
 
 from .platforms import (
     extract_robot_credentials,
-    default_robot_route_key,
     normalize_robot_platform_id,
     validate_robot_platform_config,
 )
@@ -67,30 +66,6 @@ def ensure_unique_robot_name(
             status_code=400,
             detail="A robot with this name already exists for your account.",
         )
-
-
-def ensure_unique_robot_route_key(
-    session: Session,
-    current_user: User,
-    route_key: str | None,
-    *,
-    exclude_robot_id: uuid.UUID | None = None,
-) -> None:
-    del current_user
-
-    if not route_key:
-        return
-
-    statement = select(Robot)
-    if exclude_robot_id is not None:
-        statement = statement.where(Robot.id != exclude_robot_id)
-
-    for robot in session.exec(statement).all():
-        if default_robot_route_key(robot) == route_key:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Robot route key `{route_key}` is already in use.",
-            )
 
 
 def normalize_binding_payload(
@@ -181,8 +156,8 @@ def normalize_robot_stack(
     platform_id: str,
     config: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    normalized_platform = normalize_robot_platform_id(platform_id)
     try:
+        normalized_platform = normalize_robot_platform_id(platform_id)
         normalized_config = validate_robot_platform_config(normalized_platform, config)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

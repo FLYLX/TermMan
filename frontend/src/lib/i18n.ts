@@ -365,11 +365,11 @@ const en = {
   "knowledge.chunkCount": "Chunks",
   "robots.pageTitle": "Robots",
   "robots.pageDescription":
-    "Manage NoneBot2 robots and route external chat messages into your terminal agents.",
+    "Connect NapCat OneBot V11 to TermMan and route QQ messages into your terminal agents.",
   "robots.add": "Add Robot",
   "robots.addTitle": "Add Robot",
   "robots.addDescription":
-    "Choose a platform, fill its adapter credentials, then bind terminals to it.",
+    "Fill the NapCat WebSocket Server credentials, then bind terminals to it.",
   "robots.nameRequired": "Robot name is required",
   "robots.credentialsRequired":
     "Please fill in the required platform credentials",
@@ -380,7 +380,7 @@ const en = {
   "robots.credentials": "Credentials",
   "robots.noPlatforms": "No platforms available",
   "robots.noPlatformsDescription":
-    "Install at least one NoneBot2 adapter before creating robots.",
+    "NapCat OneBot V11 support is not available in this build.",
   "robots.appId": "AppID",
   "robots.appSecret": "App Secret",
   "robots.botToken": "Bot Token",
@@ -904,10 +904,10 @@ const zh: Record<TranslationKey, string> = {
   "knowledge.chunkCount": "切块数",
   "robots.pageTitle": "机器人",
   "robots.pageDescription":
-    "统一管理 NoneBot2 机器人，并把外部平台消息路由到终端 agent。",
+    "连接 NapCat OneBot V11，并把 QQ 消息路由到终端 agent。",
   "robots.add": "添加机器人",
   "robots.addTitle": "添加机器人",
-  "robots.addDescription": "选择平台并填写对应适配器凭据，创建后再绑定终端。",
+  "robots.addDescription": "填写 NapCat WebSocket Server 凭据，创建后再绑定终端。",
   "robots.nameRequired": "机器人名称不能为空",
   "robots.credentialsRequired": "请填写当前平台要求的凭据",
   "robots.namePlaceholder": "机器人名称",
@@ -917,7 +917,7 @@ const zh: Record<TranslationKey, string> = {
   "robots.credentials": "平台凭据",
   "robots.noPlatforms": "没有可用平台",
   "robots.noPlatformsDescription":
-    "至少安装一个 NoneBot2 适配器后才能创建机器人。",
+    "当前构建未启用 NapCat OneBot V11 支持。",
   "robots.appId": "AppID",
   "robots.appSecret": "密钥",
   "robots.botToken": "Token",

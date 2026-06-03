@@ -1,9 +1,11 @@
 # NapCat / NoneBot2 Bridge
 
-TermMan runs the robot bridge as a standalone NoneBot2 server from the `robot/`
-subdirectory. In Docker Compose, the `robot-bridge` service listens on
-container port `8090`; the backend exposes it through the same public backend
-port with the `/robot-bridge` prefix.
+TermMan runs the robot bridge as a standalone NoneBot2 microservice from the
+`robot/` subdirectory. In Docker Compose, the `robot-bridge` service listens on
+container port `8090` for backend internal control APIs only.
+
+NapCat should run as the OneBot V11 WebSocket Server. The `robot-bridge`
+service connects to that NapCat server as a WebSocket client.
 
 Environment is split by service:
 
@@ -27,25 +29,28 @@ the root `.env` `ROBOT_BRIDGE_SHARED_SECRET`, or from `SECRET_KEY` when no
 explicit bridge token exists. The backend token and `robot/.env`
 `ROBOT_BRIDGE_SHARED_SECRET` must match.
 
-For local development, configure NapCat reverse WebSocket with:
-
-```text
-ws://127.0.0.1:8000/robot-bridge/r/<route_key>/onebot/v11/ws
-```
-
 TermMan should use these container-internal URLs:
 
 ```env
 ROBOT_BRIDGE_EMBEDDED=false
 ROBOT_BACKEND_URL=http://backend:8000
 ROBOT_BRIDGE_URL=http://robot-bridge:8090
-ROBOT_BRIDGE_PUBLIC_BASE_URL=http://127.0.0.1:8000/robot-bridge
 ROBOT_BRIDGE_SHARED_SECRET=changethis
 ```
 
-`ROBOT_BRIDGE_URL` is the backend-to-bridge internal service URL. NapCat and
-browser-facing guides use `ROBOT_BRIDGE_PUBLIC_BASE_URL` plus the robot route
-key, for example `/r/office-qq/onebot/v11/ws`.
+In NapCat, enable the OneBot V11 WebSocket Server and note its address, for
+example:
 
-In TermMan, create a robot with platform `OneBot V11 / NapCat` and set `QQ Self
-ID` to the QQ account currently logged in to NapCat.
+```text
+ws://<napcat-ip>:<port>
+```
+
+In TermMan, create a robot with platform `OneBot V11 / NapCat` and set:
+
+- `QQ Self ID`: the QQ account currently logged in to NapCat.
+- `NapCat WS Server URL`: the NapCat WebSocket Server URL above.
+- `Access Token` and `Secret`: optional, matching your NapCat settings when
+  enabled.
+
+After saving the robot, reload the bridge. The Robot debug page should show the
+NapCat socket as connected once NoneBot2 has connected to NapCat.

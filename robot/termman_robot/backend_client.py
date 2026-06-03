@@ -36,10 +36,6 @@ def load_runtime_config() -> tuple[
             name=str(item.get("name") or item["id"]),
             runtime_config=dict(item["runtime_config"]),
             identity=str(item["identity"]),
-            route_key=str(item["route_key"]) if item.get("route_key") else None,
-            public_reverse_ws_url=str(item["public_reverse_ws_url"])
-            if item.get("public_reverse_ws_url")
-            else None,
         )
         for item in data.get("robots", [])
     ]

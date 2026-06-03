@@ -19,6 +19,7 @@ def create_random_robot(db: Session) -> Robot:
         config={
             "credentials": {
                 "self_id": random_lower_string(),
+                "ws_url": "ws://napcat.test:3001",
             },
             "options": {},
         },

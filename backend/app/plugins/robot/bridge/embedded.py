@@ -257,8 +257,8 @@ def _load_enabled_robot_configs_from_db() -> tuple[
         ).all()
 
     for robot in robots:
-        platform_id = normalize_robot_platform_id(robot.platform or robot.protocol)
         try:
+            platform_id = normalize_robot_platform_id(robot.platform or robot.protocol)
             get_robot_platform(platform_id)
             get_robot_runtime_config(robot)
             identity = resolve_robot_identity(platform_id, robot)

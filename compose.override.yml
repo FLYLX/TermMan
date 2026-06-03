@@ -93,7 +93,6 @@ services:
       ROBOT_BRIDGE_EMBEDDED: "${ROBOT_BRIDGE_EMBEDDED:-false}"
       ROBOT_BACKEND_URL: "http://backend:8000"
       ROBOT_BRIDGE_URL: "http://robot-bridge:8090"
-      ROBOT_BRIDGE_PUBLIC_BASE_URL: "${ROBOT_BRIDGE_PUBLIC_BASE_URL:-http://127.0.0.1:8000/robot-bridge}"
 
   robot-bridge:
     restart: "no"

@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import inspect
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
-from urllib.parse import urlsplit, urlunsplit
 
-from app.core.config import settings
 from app.models import Robot
 
 from .contracts import RobotInboundMessage, RobotReplyTarget
@@ -76,35 +73,6 @@ def _normalize_string(value: Any) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
-
-
-def normalize_robot_route_key(value: Any) -> str | None:
-    normalized = _normalize_string(value)
-    if normalized is None:
-        return None
-    normalized = re.sub(r"[^a-zA-Z0-9_-]+", "-", normalized).strip("-").lower()
-    return normalized or None
-
-
-def default_robot_route_key(robot: Robot) -> str:
-    configured = None
-    config = robot.config if isinstance(robot.config, dict) else {}
-    options = config.get("options") if isinstance(config.get("options"), dict) else {}
-    if isinstance(options, dict):
-        configured = normalize_robot_route_key(options.get("route_key"))
-    return configured or str(robot.id)
-
-
-def build_robot_public_reverse_ws_url(robot: Robot) -> str:
-    base = settings.ROBOT_BRIDGE_PUBLIC_BASE_URL.rstrip("/")
-    route_key = default_robot_route_key(robot)
-    public_path = f"/r/{route_key}/onebot/v11/ws"
-
-    parts = urlsplit(base)
-    scheme = "wss" if parts.scheme == "https" else "ws"
-    base_path = parts.path.rstrip("/")
-    path = f"{base_path}{public_path}"
-    return urlunsplit((scheme, parts.netloc, path, "", ""))
 
 
 def _normalize_bool(value: Any, *, default: bool = False) -> bool:
@@ -570,10 +538,10 @@ _PLATFORMS: dict[str, RobotPlatformSpec] = {
     "onebot_v11": RobotPlatformSpec(
         id="onebot_v11",
         label="OneBot V11 / NapCat",
-        description="NapCat reverse WebSocket bridge. Requires the logged-in QQ self_id.",
+        description="NoneBot2 connects to a NapCat OneBot V11 WebSocket server. Requires the logged-in QQ self_id.",
         fields=(
             RobotPlatformFieldSpec("self_id", "QQ Self ID"),
-            RobotPlatformFieldSpec("ws_url", "Forward WS URL", required=False),
+            RobotPlatformFieldSpec("ws_url", "NapCat WS Server URL"),
             RobotPlatformFieldSpec("access_token", "Access Token", required=False, secret=True),
             RobotPlatformFieldSpec("secret", "Secret", required=False, secret=True),
             RobotPlatformFieldSpec("api_root", "API Root", required=False),
@@ -855,6 +823,8 @@ _PLATFORMS: dict[str, RobotPlatformSpec] = {
     ),
 }
 
+_SUPPORTED_ROBOT_PLATFORM_IDS = ("onebot_v11",)
+
 _PLATFORM_ALIASES = {
     "qq": "onebot_v11",
     "qqofficial": "onebot_v11",
@@ -905,6 +875,11 @@ _ADAPTER_NAME_TO_PLATFORM = {
 
 def get_robot_platform(platform_id: str) -> RobotPlatformSpec:
     normalized = normalize_robot_platform_id(platform_id)
+    if normalized not in _SUPPORTED_ROBOT_PLATFORM_IDS:
+        raise ValueError(
+            f"Unsupported robot platform `{platform_id}`. "
+            "Only NapCat OneBot V11 is currently supported."
+        )
     try:
         return _PLATFORMS[normalized]
     except KeyError as exc:
@@ -912,7 +887,10 @@ def get_robot_platform(platform_id: str) -> RobotPlatformSpec:
 
 
 def list_supported_robot_platforms() -> list[RobotPlatformPublic]:
-    return [platform.to_public() for platform in _PLATFORMS.values()]
+    return [
+        _PLATFORMS[platform_id].to_public()
+        for platform_id in _SUPPORTED_ROBOT_PLATFORM_IDS
+    ]
 
 
 def normalize_robot_platform_id(platform_id: str | None) -> str:
@@ -965,11 +943,7 @@ def normalize_robot_config(
     _ensure_required_fields(platform, credentials)
 
     options = dict(raw_options)
-    route_key = normalize_robot_route_key(options.get("route_key"))
-    if route_key:
-        options["route_key"] = route_key
-    else:
-        options.pop("route_key", None)
+    options.pop("route_key", None)
 
     return {
         "credentials": credentials,
@@ -1022,15 +996,6 @@ def resolve_robot_identity(platform_id: str, robot: Robot) -> str:
 
 
 def resolve_platform_from_bot(bot: Any) -> str | None:
-    module_name = bot.__class__.__module__.lower()
-    if "github" in module_name:
-        app = getattr(bot, "app", None)
-        if app is None:
-            return None
-        if app.__class__.__name__.lower() == "oauthapp":
-            return "github_oauth"
-        return "github_app"
-
     adapter_name = str(bot.adapter.get_name()).strip().lower()
     return _ADAPTER_NAME_TO_PLATFORM.get(adapter_name)
 

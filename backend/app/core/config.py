@@ -88,9 +88,8 @@ class Settings(BaseSettings):
     CHROMA_PERSIST_DIR: str = str(BACKEND_DIR / "chroma_data")
     KNOWLEDGE_BASE_DIR: str = str(BACKEND_DIR / "knowledge")
     ROBOT_PLUGIN_ENABLED: bool = True
-    ROBOT_BRIDGE_EMBEDDED: bool = True
+    ROBOT_BRIDGE_EMBEDDED: bool = False
     ROBOT_BRIDGE_URL: str = "http://robot-bridge:8090"
-    ROBOT_BRIDGE_PUBLIC_BASE_URL: str = "http://127.0.0.1:8000/robot-bridge"
     ROBOT_BACKEND_URL: str = "http://backend:8000"
     ROBOT_BRIDGE_SHARED_SECRET: str | None = None
     ROBOT_BRIDGE_AUTO_RELOAD: bool = True
@@ -101,8 +100,6 @@ class Settings(BaseSettings):
     def _apply_robot_bridge_defaults(self) -> Self:
         if self.ROBOT_BRIDGE_EMBEDDED:
             self.ROBOT_BRIDGE_URL = "http://127.0.0.1:8000/robot-bridge"
-            if self.ROBOT_BRIDGE_PUBLIC_BASE_URL == "http://127.0.0.1:8000/robot-bridge":
-                self.ROBOT_BRIDGE_PUBLIC_BASE_URL = self.ROBOT_BRIDGE_URL
             if self.ROBOT_BACKEND_URL == "http://backend:8000":
                 self.ROBOT_BACKEND_URL = "http://127.0.0.1:8000"
             if self.ROBOT_BRIDGE_HOST == "0.0.0.0":

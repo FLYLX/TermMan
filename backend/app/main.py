@@ -43,12 +43,6 @@ async def lifespan(app: FastAPI):
             logger.info("[App] Robot bridge initialized")
         await start_embedded_bridge()
     elif settings.ROBOT_PLUGIN_ENABLED:
-        from app.plugins.robot.bridge.proxy import robot_bridge_proxy_router
-
-        if not _bridge_router_included:
-            app.include_router(robot_bridge_proxy_router)
-            _bridge_router_included = True
-            logger.info("[App] Robot bridge proxy router included")
         stop_embedded_bridge = None
     else:
         stop_embedded_bridge = None

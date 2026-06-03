@@ -23,7 +23,6 @@ from .api_support import (
     clear_default_targets,
     current_robot_config,
     ensure_unique_binding_route_key,
-    ensure_unique_robot_route_key,
     ensure_unique_robot_name,
     get_item_or_404,
     get_robot_or_404,
@@ -37,8 +36,6 @@ from .contracts import RobotDispatchResponse, RobotInboundMessage
 from .debug_log import get_robot_events, record_robot_event
 from .platforms import (
     RobotPlatformPublic,
-    build_robot_public_reverse_ws_url,
-    default_robot_route_key,
     get_robot_platform,
     get_robot_runtime_config,
     list_supported_robot_platforms,
@@ -58,6 +55,17 @@ router = APIRouter(prefix="/robots", tags=["robots"])
 
 def _event_seen(events: list[dict], names: set[str]) -> bool:
     return any(str(event.get("event") or "") in names for event in events)
+
+
+def _robot_credential_text(robot: Robot, key: str) -> str | None:
+    config = robot.config if isinstance(robot.config, dict) else {}
+    credentials = config.get("credentials")
+    if not isinstance(credentials, dict):
+        return None
+    value = credentials.get(key)
+    if value in (None, ""):
+        return None
+    return str(value)
 
 
 @router.get("/platforms", response_model=list[RobotPlatformPublic])
@@ -109,8 +117,8 @@ def get_bridge_runtime_config(
 
     for robot in robots:
         robot_id = str(robot.id)
-        platform_id = normalize_robot_platform_id(robot.platform or robot.protocol)
         try:
+            platform_id = normalize_robot_platform_id(robot.platform or robot.protocol)
             runtime_config = get_robot_runtime_config(robot)
             identity = resolve_robot_identity(platform_id, robot)
         except Exception as exc:
@@ -129,8 +137,6 @@ def get_bridge_runtime_config(
                 "name": robot.name,
                 "runtime_config": runtime_config,
                 "identity": identity,
-                "route_key": default_robot_route_key(robot),
-                "public_reverse_ws_url": build_robot_public_reverse_ws_url(robot),
             }
         )
         robot_id_by_identity[identity] = robot_id
@@ -197,11 +203,6 @@ def create_robot(
         str(payload.get("platform") or ""),
         payload.get("config"),
     )
-    ensure_unique_robot_route_key(
-        session,
-        current_user,
-        update["config"].get("options", {}).get("route_key"),
-    )
 
     robot = Robot.model_validate(
         robot_in,
@@ -237,38 +238,35 @@ def update_robot(
         )
 
     update_dict = robot_in.model_dump(exclude_unset=True)
-    merged_platform = normalize_robot_platform_id(
-        str(update_dict.get("platform") or robot.platform or robot.protocol or "")
-    )
-    if "config" in update_dict:
-        incoming_config = update_dict.get("config")
-        if isinstance(incoming_config, dict):
-            existing_config = current_robot_config(robot)
-            incoming_credentials = incoming_config.get("credentials")
-            if isinstance(incoming_credentials, dict):
-                merged_credentials = dict(existing_config.get("credentials") or {})
-                platform = get_robot_platform(merged_platform)
-                secret_keys = {field.key for field in platform.fields if field.secret}
-                for key, value in incoming_credentials.items():
-                    if value not in (None, "") or key not in secret_keys:
-                        merged_credentials[str(key)] = value
-                incoming_config = {
-                    **incoming_config,
-                    "credentials": merged_credentials,
-                }
-        merged_config = normalize_robot_config(
-            merged_platform,
-            incoming_config,
+    try:
+        merged_platform = normalize_robot_platform_id(
+            str(update_dict.get("platform") or robot.platform or robot.protocol or "")
         )
-    else:
-        merged_config = current_robot_config(robot)
+        if "config" in update_dict:
+            incoming_config = update_dict.get("config")
+            if isinstance(incoming_config, dict):
+                existing_config = current_robot_config(robot)
+                incoming_credentials = incoming_config.get("credentials")
+                if isinstance(incoming_credentials, dict):
+                    merged_credentials = dict(existing_config.get("credentials") or {})
+                    platform = get_robot_platform(merged_platform)
+                    secret_keys = {field.key for field in platform.fields if field.secret}
+                    for key, value in incoming_credentials.items():
+                        if value not in (None, "") or key not in secret_keys:
+                            merged_credentials[str(key)] = value
+                    incoming_config = {
+                        **incoming_config,
+                        "credentials": merged_credentials,
+                    }
+            merged_config = normalize_robot_config(
+                merged_platform,
+                incoming_config,
+            )
+        else:
+            merged_config = current_robot_config(robot)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     _, normalized_update = normalize_robot_stack(merged_platform, merged_config)
-    ensure_unique_robot_route_key(
-        session,
-        current_user,
-        normalized_update["config"].get("options", {}).get("route_key"),
-        exclude_robot_id=robot.id,
-    )
 
     if "name" in update_dict and update_dict["name"] is not None:
         normalized_update["name"] = str(update_dict["name"]).strip()
@@ -536,6 +534,7 @@ def diagnose_robot_chain(
     assert_robot_permission(robot, current_user)
     platform_id = normalize_robot_platform_id(robot.platform or robot.protocol)
     uses_napcat_socket = platform_id == "onebot_v11"
+    napcat_ws_url = _robot_credential_text(robot, "ws_url")
 
     result: dict = {
         "robot_id": str(id),
@@ -606,13 +605,18 @@ def diagnose_robot_chain(
         }
         if uses_napcat_socket:
             socket_connected = bool(onebot_socket.get("connected"))
+            socket_server_url = (
+                onebot_socket.get("server_url")
+                or onebot_socket.get("ws_url")
+                or napcat_ws_url
+            )
             socket_status = {
                 "status": "ok" if socket_connected else "waiting",
                 "connected": socket_connected,
+                "server_url": socket_server_url,
+                "ws_url": socket_server_url,
                 "last_event": onebot_socket.get("event"),
                 "last_event_at": onebot_socket.get("last_event_at"),
-                "socket_path": onebot_socket.get("socket_path"),
-                "client": onebot_socket.get("client"),
                 "self_id": onebot_socket.get("self_id"),
                 "last_message_seen": _event_seen(
                     recent_events,
@@ -620,7 +624,7 @@ def diagnose_robot_chain(
                 ),
                 "last_socket_receive_seen": _event_seen(
                     recent_events,
-                    {"websocket_receive"},
+                    {"platform_event", "platform_message"},
                 ),
             }
     except Exception as e:
@@ -629,6 +633,8 @@ def diagnose_robot_chain(
             "status": "error" if uses_napcat_socket else "not_applicable",
             "error": str(e),
             "connected": False if uses_napcat_socket else True,
+            "server_url": napcat_ws_url,
+            "ws_url": napcat_ws_url,
         }
 
     result["chain"]["qq_to_bridge"] = bridge_status
@@ -713,24 +719,6 @@ def reload_robot_bridge(
     return {"success": False, "error": detail}
 
 
-@router.post("/{id}/debug/test-event")
-def create_robot_debug_test_event(
-    session: SessionDep,
-    current_user: CurrentUser,
-    id: uuid.UUID,
-) -> dict:
-    robot = get_robot_or_404(session, id)
-    assert_robot_permission(robot, current_user)
-    record_robot_event(
-        str(id),
-        direction="backend",
-        event="debug_test_event",
-        message="Debug event pipeline is working",
-        payload={"robot_name": robot.name},
-    )
-    return {"success": True}
-
-
 @router.get("/{id}/debug")
 def get_robot_debug(
     session: SessionDep,
@@ -761,11 +749,21 @@ def get_robot_debug(
         bridge_health = {"status": "error", "error": str(e)}
 
     robot_health = bridge_health.get("robots", {}).get(str(id), {})
+    napcat_ws_url = (
+        robot_health.get("ws_url")
+        or _robot_credential_text(robot, "ws_url")
+    )
     onebot_socket = (
         robot_health.get("onebot_socket")
         if isinstance(robot_health.get("onebot_socket"), dict)
         else {}
     )
+    if napcat_ws_url:
+        onebot_socket = {
+            "server_url": napcat_ws_url,
+            "ws_url": napcat_ws_url,
+            **onebot_socket,
+        }
     connection_errors = bridge_health.get("connection_errors", {})
     raw_connection_error = connection_errors.get(str(id))
     historical_error = (
@@ -786,9 +784,7 @@ def get_robot_debug(
         },
         "bridge": {
             "url": settings.ROBOT_BRIDGE_URL,
-            "public_base_url": settings.ROBOT_BRIDGE_PUBLIC_BASE_URL,
-            "public_reverse_ws_url": build_robot_public_reverse_ws_url(robot),
-            "route_key": default_robot_route_key(robot),
+            "napcat_ws_url": napcat_ws_url,
             "status": bridge_health.get(
                 "status", "ok" if "error" not in bridge_health else "error"
             ),
@@ -814,7 +810,7 @@ def get_robot_debug(
             "last_event_at": events[0].get("timestamp") if events else None,
             "qq_event_hint": (
                 "Bridge is connected, but no OneBot/NapCat message event has reached TermMan yet. "
-                "Check the NapCat reverse WebSocket URL and whether the logged-in QQ account is receiving messages."
+                "Check the NapCat WebSocket server URL and whether the logged-in QQ account is receiving messages."
                 if connected and not robot_health.get("last_message_event_at")
                 else None
             ),

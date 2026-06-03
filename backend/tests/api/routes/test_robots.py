@@ -19,8 +19,8 @@ def test_list_robot_platforms(
     assert response.status_code == 200
     platforms = response.json()
     platform_ids = {platform["id"] for platform in platforms}
-    assert "onebot_v11" in platform_ids
-    assert "qq_official" not in platform_ids
+    assert platform_ids == {"onebot_v11"}
+    assert len(platforms) == 1
 
 
 def test_create_robot_normalizes_legacy_platform_alias(
@@ -41,6 +41,7 @@ def test_create_robot_normalizes_legacy_platform_alias(
             "config": {
                 "credentials": {
                     "self_id": "1024",
+                    "ws_url": "ws://napcat.test:3001",
                 },
                 "options": {},
             },
@@ -60,7 +61,7 @@ def test_create_robot_normalizes_legacy_platform_alias(
     assert content["config"]["credentials"]["self_id"] == "1024"
 
 
-def test_create_telegram_robot(
+def test_create_unsupported_robot_platform_is_rejected(
     client: TestClient,
     superuser_token_headers: dict[str, str],
     monkeypatch,
@@ -84,16 +85,8 @@ def test_create_telegram_robot(
         },
     )
 
-    assert response.status_code == 200
-    content = response.json()
-    assert content["name"] == "Telegram Robot"
-    assert content["platform"] == "telegram"
-    assert content["protocol"] == "telegram"
-    assert content["provider"] == "nonebot2"
-    assert content["app_id"] is None
-    assert content["app_secret"] is None
-    assert content["bot_token"] is None
-    assert content["config"]["credentials"]["bot_token"] == "123456:test-token"
+    assert response.status_code == 400
+    assert "Only NapCat OneBot V11 is currently supported" in response.json()["detail"]
 
 
 def test_bind_item_to_robot(
@@ -114,6 +107,7 @@ def test_bind_item_to_robot(
             "config": {
                 "credentials": {
                     "self_id": "2048",
+                    "ws_url": "ws://napcat.test:3001",
                 },
                 "options": {},
             },
@@ -161,6 +155,7 @@ def test_dispatch_robot_message_routes_to_item_agent(
             "config": {
                 "credentials": {
                     "self_id": "4096",
+                    "ws_url": "ws://napcat.test:3001",
                 },
                 "options": {},
             },
@@ -233,6 +228,7 @@ def test_dispatch_robot_message_rejects_invalid_bridge_token(
             "config": {
                 "credentials": {
                     "self_id": "8192",
+                    "ws_url": "ws://napcat.test:3001",
                 },
                 "options": {},
             },
