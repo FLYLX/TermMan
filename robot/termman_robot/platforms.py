@@ -16,6 +16,8 @@ class BridgeRobot:
     name: str
     runtime_config: dict[str, Any]
     identity: str
+    route_key: str | None = None
+    public_reverse_ws_url: str | None = None
 
 
 def _normalize_string(value: Any) -> str | None:

@@ -60,6 +60,7 @@ type RobotBindingsMap = Record<string, number>
 type RobotFormState = {
   name: string
   platform: string
+  route_key: string
   credentials: Record<string, string>
 }
 
@@ -76,6 +77,7 @@ function buildFormForPlatform(
   return {
     name: "",
     platform: platform?.id ?? "",
+    route_key: "",
     credentials: Object.fromEntries(
       (platform?.fields ?? []).map((field) => [field.key, ""]),
     ),
@@ -198,7 +200,9 @@ function CreateRobotDialog({
         use_websocket: false,
         config: {
           credentials,
-          options: {},
+          options: {
+            route_key: form.route_key.trim() || undefined,
+          },
         },
       })
       await queryClient.invalidateQueries({ queryKey: getRobotsQueryKey() })
@@ -335,6 +339,21 @@ function CreateRobotDialog({
                   )}
                 </div>
               ))}
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="robot-route-key">Route key</Label>
+              <Input
+                id="robot-route-key"
+                value={form.route_key}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    route_key: event.target.value,
+                  }))
+                }
+                placeholder="optional public route, e.g. office-qq"
+              />
             </div>
           </div>
         )}

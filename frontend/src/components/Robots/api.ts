@@ -294,6 +294,9 @@ export type RobotDebugInfo = {
   }
   bridge: {
     url: string
+    public_base_url?: string
+    public_reverse_ws_url?: string
+    route_key?: string
     status: string
     loaded_robot_count: number
     connected_bot_count: number

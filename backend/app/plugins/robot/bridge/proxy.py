@@ -33,6 +33,13 @@ _WS_HANDSHAKE_HEADERS = {
 }
 
 
+def _strip_public_route(path: str) -> str:
+    parts = path.split("/")
+    if len(parts) >= 3 and parts[0] == "r" and parts[1]:
+        return "/".join(parts[2:])
+    return path
+
+
 def _target_url(path: str, query: str, *, websocket: bool = False) -> str:
     base = settings.ROBOT_BRIDGE_URL.rstrip("/")
     parts = urlsplit(base)
@@ -40,6 +47,7 @@ def _target_url(path: str, query: str, *, websocket: bool = False) -> str:
     if websocket:
         scheme = "wss" if scheme == "https" else "ws"
 
+    path = _strip_public_route(path)
     base_path = parts.path.rstrip("/")
     target_path = f"{base_path}/{path}".replace("//", "/")
     if not target_path.startswith("/"):

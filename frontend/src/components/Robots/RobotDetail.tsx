@@ -17,7 +17,7 @@ import {
 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 
-import { OpenAPI, type ItemPublic, ItemsService } from "@/client"
+import { type ItemPublic, ItemsService } from "@/client"
 import { useI18n } from "@/components/locale-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -85,20 +85,6 @@ function normalizePlatformId(platform: string | null | undefined) {
   return platform ?? ""
 }
 
-function buildOneBotReverseWsUrl() {
-  const fallbackOrigin =
-    typeof window === "undefined" ? "http://localhost:8000" : window.location.origin
-  const base = OpenAPI.BASE || fallbackOrigin
-
-  try {
-    const url = new URL("/robot-bridge/onebot/v11/ws", base)
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
-    return url.toString()
-  } catch {
-    return "/robot-bridge/onebot/v11/ws"
-  }
-}
-
 function getRobotCredentials(robot: RobotRecord): Record<string, string> {
   const credentials = robot.config?.credentials
   if (credentials && typeof credentials === "object") {
@@ -158,6 +144,21 @@ function mergeRobotCredentialsForSave(
       })
       .filter((entry): entry is readonly [string, string] => entry !== null),
   )
+}
+
+function getRobotOptions(robot: RobotRecord): Record<string, string> {
+  const options = robot.config?.options
+  if (options && typeof options === "object") {
+    return Object.fromEntries(
+      Object.entries(options)
+        .filter(
+          ([, value]) => value !== null && value !== undefined && value !== "",
+        )
+        .map(([key, value]) => [key, String(value)]),
+    )
+  }
+
+  return {}
 }
 
 function useRobotDetailCopy() {
@@ -806,7 +807,11 @@ function RobotConnectionGuidePanel({
 }) {
   const platformId = normalizePlatformId(robot.platform || robot.protocol)
   const credentials = getRobotCredentials(robot)
-  const wsUrl = buildOneBotReverseWsUrl()
+  const options = getRobotOptions(robot)
+  const routeKey = debug?.bridge?.route_key || options.route_key || robot.id
+  const wsUrl =
+    debug?.bridge?.public_reverse_ws_url ??
+    `/robot-bridge/r/${routeKey}/onebot/v11/ws`
   const accessToken = credentials.access_token
   const secret = credentials.secret
   const selfId = credentials.self_id
@@ -851,6 +856,7 @@ function RobotConnectionGuidePanel({
       <CardContent className="grid gap-4">
         <div className="grid gap-3 md:grid-cols-2">
           <CopyableConfigValue label="Reverse WebSocket URL" value={wsUrl} />
+          <CopyableConfigValue label="Route key" value={routeKey} />
           <CopyableConfigValue
             label="QQ self_id"
             value={selfId}
@@ -912,6 +918,7 @@ function RobotBasicConfigPanel({
   const [form, setForm] = useState(() => ({
     name: robot.name,
     is_enabled: robot.is_enabled,
+    route_key: getRobotOptions(robot).route_key ?? "",
     credentials: getEditableRobotCredentials(robot, platform),
   }))
 
@@ -920,6 +927,7 @@ function RobotBasicConfigPanel({
       setForm({
         name: robot.name,
         is_enabled: robot.is_enabled,
+        route_key: getRobotOptions(robot).route_key ?? "",
         credentials: getEditableRobotCredentials(robot, platform),
       })
     }
@@ -936,6 +944,10 @@ function RobotBasicConfigPanel({
       platform,
       form.credentials,
     )
+    const options = {
+      ...(robot.config?.options ?? {}),
+      route_key: form.route_key.trim() || undefined,
+    }
 
     setIsSaving(true)
     try {
@@ -949,6 +961,7 @@ function RobotBasicConfigPanel({
         config: {
           ...(robot.config ?? {}),
           credentials,
+          options,
         },
       })
       await reloadRobotBridge(robot.id)
@@ -1025,6 +1038,20 @@ function RobotBasicConfigPanel({
               />
               <span className="text-sm">Enabled</span>
             </label>
+            <div className="grid gap-2">
+              <Label htmlFor="robot-edit-route-key">Route key</Label>
+              <Input
+                id="robot-edit-route-key"
+                value={form.route_key}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    route_key: event.target.value,
+                  }))
+                }
+                placeholder="optional public route, e.g. office-qq"
+              />
+            </div>
             <div className="grid gap-3">
               <div className="text-sm font-medium">Credentials</div>
               {(platform?.fields ?? []).map((field) => (
@@ -1058,6 +1085,10 @@ function RobotBasicConfigPanel({
             <RobotKeyValue label="Platform" value={platform?.label ?? robot.platform} />
             <RobotKeyValue label="Provider" value={robot.provider} />
             <RobotKeyValue label="App ID" value={robot.app_id} />
+            <RobotKeyValue
+              label="Route key"
+              value={getRobotOptions(robot).route_key ?? robot.id}
+            />
           </div>
         )}
       </CardContent>

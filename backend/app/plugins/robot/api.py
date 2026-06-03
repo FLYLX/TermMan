@@ -23,6 +23,7 @@ from .api_support import (
     clear_default_targets,
     current_robot_config,
     ensure_unique_binding_route_key,
+    ensure_unique_robot_route_key,
     ensure_unique_robot_name,
     get_item_or_404,
     get_robot_or_404,
@@ -36,6 +37,8 @@ from .contracts import RobotDispatchResponse, RobotInboundMessage
 from .debug_log import get_robot_events, record_robot_event
 from .platforms import (
     RobotPlatformPublic,
+    build_robot_public_reverse_ws_url,
+    default_robot_route_key,
     get_robot_platform,
     get_robot_runtime_config,
     list_supported_robot_platforms,
@@ -126,6 +129,8 @@ def get_bridge_runtime_config(
                 "name": robot.name,
                 "runtime_config": runtime_config,
                 "identity": identity,
+                "route_key": default_robot_route_key(robot),
+                "public_reverse_ws_url": build_robot_public_reverse_ws_url(robot),
             }
         )
         robot_id_by_identity[identity] = robot_id
@@ -192,6 +197,11 @@ def create_robot(
         str(payload.get("platform") or ""),
         payload.get("config"),
     )
+    ensure_unique_robot_route_key(
+        session,
+        current_user,
+        update["config"].get("options", {}).get("route_key"),
+    )
 
     robot = Robot.model_validate(
         robot_in,
@@ -253,6 +263,12 @@ def update_robot(
     else:
         merged_config = current_robot_config(robot)
     _, normalized_update = normalize_robot_stack(merged_platform, merged_config)
+    ensure_unique_robot_route_key(
+        session,
+        current_user,
+        normalized_update["config"].get("options", {}).get("route_key"),
+        exclude_robot_id=robot.id,
+    )
 
     if "name" in update_dict and update_dict["name"] is not None:
         normalized_update["name"] = str(update_dict["name"]).strip()
@@ -770,6 +786,9 @@ def get_robot_debug(
         },
         "bridge": {
             "url": settings.ROBOT_BRIDGE_URL,
+            "public_base_url": settings.ROBOT_BRIDGE_PUBLIC_BASE_URL,
+            "public_reverse_ws_url": build_robot_public_reverse_ws_url(robot),
+            "route_key": default_robot_route_key(robot),
             "status": bridge_health.get(
                 "status", "ok" if "error" not in bridge_health else "error"
             ),

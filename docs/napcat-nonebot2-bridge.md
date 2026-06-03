@@ -30,7 +30,7 @@ explicit bridge token exists. The backend token and `robot/.env`
 For local development, configure NapCat reverse WebSocket with:
 
 ```text
-ws://127.0.0.1:8000/robot-bridge/onebot/v11/ws
+ws://127.0.0.1:8000/robot-bridge/r/<route_key>/onebot/v11/ws
 ```
 
 TermMan should use these container-internal URLs:
@@ -39,8 +39,13 @@ TermMan should use these container-internal URLs:
 ROBOT_BRIDGE_EMBEDDED=false
 ROBOT_BACKEND_URL=http://backend:8000
 ROBOT_BRIDGE_URL=http://robot-bridge:8090
+ROBOT_BRIDGE_PUBLIC_BASE_URL=http://127.0.0.1:8000/robot-bridge
 ROBOT_BRIDGE_SHARED_SECRET=changethis
 ```
+
+`ROBOT_BRIDGE_URL` is the backend-to-bridge internal service URL. NapCat and
+browser-facing guides use `ROBOT_BRIDGE_PUBLIC_BASE_URL` plus the robot route
+key, for example `/r/office-qq/onebot/v11/ws`.
 
 In TermMan, create a robot with platform `OneBot V11 / NapCat` and set `QQ Self
 ID` to the QQ account currently logged in to NapCat.

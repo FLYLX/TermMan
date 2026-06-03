@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import inspect
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
+from urllib.parse import urlsplit, urlunsplit
 
+from app.core.config import settings
 from app.models import Robot
 
 from .contracts import RobotInboundMessage, RobotReplyTarget
@@ -73,6 +76,35 @@ def _normalize_string(value: Any) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def normalize_robot_route_key(value: Any) -> str | None:
+    normalized = _normalize_string(value)
+    if normalized is None:
+        return None
+    normalized = re.sub(r"[^a-zA-Z0-9_-]+", "-", normalized).strip("-").lower()
+    return normalized or None
+
+
+def default_robot_route_key(robot: Robot) -> str:
+    configured = None
+    config = robot.config if isinstance(robot.config, dict) else {}
+    options = config.get("options") if isinstance(config.get("options"), dict) else {}
+    if isinstance(options, dict):
+        configured = normalize_robot_route_key(options.get("route_key"))
+    return configured or str(robot.id)
+
+
+def build_robot_public_reverse_ws_url(robot: Robot) -> str:
+    base = settings.ROBOT_BRIDGE_PUBLIC_BASE_URL.rstrip("/")
+    route_key = default_robot_route_key(robot)
+    public_path = f"/r/{route_key}/onebot/v11/ws"
+
+    parts = urlsplit(base)
+    scheme = "wss" if parts.scheme == "https" else "ws"
+    base_path = parts.path.rstrip("/")
+    path = f"{base_path}{public_path}"
+    return urlunsplit((scheme, parts.netloc, path, "", ""))
 
 
 def _normalize_bool(value: Any, *, default: bool = False) -> bool:
@@ -933,6 +965,11 @@ def normalize_robot_config(
     _ensure_required_fields(platform, credentials)
 
     options = dict(raw_options)
+    route_key = normalize_robot_route_key(options.get("route_key"))
+    if route_key:
+        options["route_key"] = route_key
+    else:
+        options.pop("route_key", None)
 
     return {
         "credentials": credentials,
