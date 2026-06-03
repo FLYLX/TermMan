@@ -1,21 +1,22 @@
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import os
-import inspect
 import tempfile
 import threading
 import time
-import uvicorn
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import httpx
+import uvicorn
 from fastapi import APIRouter, FastAPI, Header, HTTPException, WebSocket
 
 from app.core.config import settings
+from app.plugins.robot.bridge.rate_limit import send_text_with_rate_limit
 from app.plugins.robot.contracts import (
     RobotBridgeReloadResponse,
     RobotBridgeSendRequest,
@@ -27,7 +28,6 @@ from app.plugins.robot.debug_log import (
     record_loaded_robot_event,
     record_robot_event,
 )
-from app.plugins.robot.bridge.rate_limit import send_text_with_rate_limit
 from app.plugins.robot.platforms import (
     build_inbound_message,
     normalize_robot_platform_id,
@@ -49,8 +49,12 @@ _initialized = False
 _connection_errors: dict[str, dict[str, str]] = {}
 _error_file_path: str = "/tmp/robot_bridge_errors.json"
 _identity_file_path: str = "/tmp/robot_bridge_identities.json"
-_singleton_lock_path: str = str(Path(tempfile.gettempdir()) / "termman_robot_bridge.lock")
-_owner_info_path: str = str(Path(tempfile.gettempdir()) / "termman_robot_bridge_owner.json")
+_singleton_lock_path: str = str(
+    Path(tempfile.gettempdir()) / "termman_robot_bridge.lock"
+)
+_owner_info_path: str = str(
+    Path(tempfile.gettempdir()) / "termman_robot_bridge_owner.json"
+)
 _singleton_lock_file: Any | None = None
 _singleton_lock_owner = False
 _singleton_lock_guard = threading.Lock()
@@ -59,6 +63,27 @@ _ipc_thread: threading.Thread | None = None
 _ipc_base_url: str | None = None
 _startup_callback: Any | None = None
 _shutdown_callback: Any | None = None
+_restart_scheduled = False
+_restart_guard = threading.Lock()
+_loaded_robot_config_signature: dict[str, Any] = {}
+
+
+def _schedule_process_restart(reason: str) -> bool:
+    global _restart_scheduled
+
+    with _restart_guard:
+        if _restart_scheduled:
+            return False
+        _restart_scheduled = True
+
+    def _restart() -> None:
+        _remove_owner_info()
+        time.sleep(0.2)
+        os._exit(0)
+
+    logger.warning("[Bridge] Backend restart scheduled: %s", reason)
+    threading.Thread(target=_restart, daemon=True).start()
+    return True
 
 
 def _normalize_connection_errors(raw: Any) -> dict[str, dict[str, str]]:
@@ -84,7 +109,8 @@ def _load_connection_errors() -> dict[str, dict[str, str]]:
     global _connection_errors
     try:
         import json
-        with open(_error_file_path, "r") as f:
+
+        with open(_error_file_path) as f:
             _connection_errors = _normalize_connection_errors(json.load(f))
     except Exception:
         _connection_errors = {}
@@ -99,6 +125,7 @@ def _save_connection_error(robot_id: str, error: str) -> None:
     }
     try:
         import json
+
         with open(_error_file_path, "w") as f:
             json.dump(_connection_errors, f)
     except Exception:
@@ -187,7 +214,7 @@ def _read_owner_info() -> dict[str, Any] | None:
     try:
         import json
 
-        with open(_owner_info_path, "r") as f:
+        with open(_owner_info_path) as f:
             raw = json.load(f)
         if isinstance(raw, dict) and raw.get("base_url"):
             return raw
@@ -205,6 +232,83 @@ def _remove_owner_info() -> None:
         logger.exception("[Bridge] Failed to remove IPC owner info")
 
 
+def _load_enabled_robot_configs_from_db() -> tuple[
+    list, dict[str, str], dict[str, str]
+]:
+    from sqlmodel import Session, select
+
+    from app.core.db import engine
+    from app.models import Robot
+    from app.plugins.robot.platforms import (
+        get_robot_platform,
+        get_robot_runtime_config,
+    )
+
+    loaded_robots: list = []
+    robot_id_by_identity: dict[str, str] = {}
+    identity_by_robot_id: dict[str, str] = {}
+
+    with Session(engine) as session:
+        robots = session.exec(
+            select(Robot).where(
+                Robot.is_enabled == True,  # noqa: E712
+                Robot.provider == "nonebot2",
+            )
+        ).all()
+
+    for robot in robots:
+        platform_id = normalize_robot_platform_id(robot.platform or robot.protocol)
+        try:
+            get_robot_platform(platform_id)
+            get_robot_runtime_config(robot)
+            identity = resolve_robot_identity(platform_id, robot)
+        except Exception as exc:
+            logger.warning(
+                "[Bridge] Skip robot %s because runtime config is invalid: %s",
+                robot.id,
+                exc,
+            )
+            continue
+
+        if identity in robot_id_by_identity:
+            logger.warning(
+                "[Bridge] Duplicate robot identity %s detected, keep first robot only",
+                identity,
+            )
+            continue
+
+        loaded_robots.append(robot)
+        robot_id_by_identity[identity] = str(robot.id)
+        identity_by_robot_id[str(robot.id)] = identity
+
+    return loaded_robots, robot_id_by_identity, identity_by_robot_id
+
+
+def _robot_config_signature(robots: list) -> dict[str, Any]:
+    return {
+        str(robot.id): {
+            "platform": normalize_robot_platform_id(robot.platform or robot.protocol),
+            "config": robot.config if isinstance(robot.config, dict) else {},
+            "enabled": bool(robot.is_enabled),
+        }
+        for robot in robots
+    }
+
+
+def _current_enabled_robot_config_signature() -> tuple[
+    list, dict[str, str], dict[str, str], dict[str, Any]
+]:
+    robots, robot_id_by_identity, identity_by_robot_id = (
+        _load_enabled_robot_configs_from_db()
+    )
+    return (
+        robots,
+        robot_id_by_identity,
+        identity_by_robot_id,
+        _robot_config_signature(robots),
+    )
+
+
 async def _forward_to_owner(
     path: str,
     *,
@@ -214,7 +318,9 @@ async def _forward_to_owner(
 ) -> dict[str, Any]:
     owner_info = _read_owner_info()
     if not owner_info:
-        raise HTTPException(status_code=503, detail="Robot bridge owner is not available")
+        raise HTTPException(
+            status_code=503, detail="Robot bridge owner is not available"
+        )
 
     base_url = str(owner_info["base_url"]).rstrip("/")
     shared_secret = settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY
@@ -232,7 +338,9 @@ async def _forward_to_owner(
             response = await client.post(
                 f"{base_url}{path}",
                 headers=headers,
-                content=body.model_dump_json() if hasattr(body, "model_dump_json") else None,
+                content=body.model_dump_json()
+                if hasattr(body, "model_dump_json")
+                else None,
                 json=None if hasattr(body, "model_dump_json") else body,
             )
         response.raise_for_status()
@@ -406,7 +514,9 @@ def _decode_websocket_body(message: dict[str, Any]) -> tuple[str | None, int | N
     return None, None
 
 
-def _summarize_websocket_asgi_message(message: dict[str, Any]) -> tuple[str | None, dict[str, Any]]:
+def _summarize_websocket_asgi_message(
+    message: dict[str, Any],
+) -> tuple[str | None, dict[str, Any]]:
     text, byte_length = _decode_websocket_body(message)
     payload: dict[str, Any] = {"asgi_type": message.get("type")}
     if byte_length is not None:
@@ -474,11 +584,15 @@ def _record_websocket_debug_event(
     message: str | None = None,
     payload: dict[str, Any] | None = None,
 ) -> None:
-    robot_ids = [robot_id] if robot_id else [
-        candidate_robot_id
-        for candidate_robot_id, identity in _identity_by_robot_id.items()
-        if identity.startswith(f"{platform_id}:")
-    ]
+    robot_ids = (
+        [robot_id]
+        if robot_id
+        else [
+            candidate_robot_id
+            for candidate_robot_id, identity in _identity_by_robot_id.items()
+            if identity.startswith(f"{platform_id}:")
+        ]
+    )
     for candidate_robot_id in robot_ids:
         _record_bridge_event(
             candidate_robot_id,
@@ -543,7 +657,11 @@ def _update_onebot_socket_status(
 
 
 async def _call_optional_adapter_hook(adapter: Any, hook_name: str) -> bool:
-    adapter_name = str(adapter.get_name()) if hasattr(adapter, "get_name") else adapter.__class__.__name__
+    adapter_name = (
+        str(adapter.get_name())
+        if hasattr(adapter, "get_name")
+        else adapter.__class__.__name__
+    )
     hook = getattr(adapter, hook_name, None)
     if not callable(hook):
         logger.info(
@@ -690,7 +808,9 @@ def _build_ready_event_payload(
     event: Any,
 ) -> tuple[str, dict[str, Any]]:
     event_payload = _serialize_event_payload(event)
-    user = event_payload.get("user") if isinstance(event_payload.get("user"), dict) else {}
+    user = (
+        event_payload.get("user") if isinstance(event_payload.get("user"), dict) else {}
+    )
     payload = {
         "platform": platform_id,
         "bot_identity": bot_identity,
@@ -712,6 +832,7 @@ def _build_ready_event_payload(
 def _save_identities() -> None:
     try:
         import json
+
         with open(_identity_file_path, "w") as f:
             json.dump(_identity_by_robot_id, f)
     except Exception:
@@ -721,7 +842,8 @@ def _save_identities() -> None:
 def _load_identities() -> dict[str, str]:
     try:
         import json
-        with open(_identity_file_path, "r") as f:
+
+        with open(_identity_file_path) as f:
             return json.load(f)
     except Exception:
         return {}
@@ -848,7 +970,34 @@ def _build_idle_bridge_router(reason: str) -> APIRouter:
         x_termman_bridge_token: str | None = Header(default=None),
     ) -> RobotBridgeReloadResponse:
         _assert_bridge_permission(x_termman_bridge_token)
-        result = await _forward_to_owner("/internal/reload")
+        try:
+            result = await _forward_to_owner("/internal/reload")
+        except HTTPException as exc:
+            if exc.status_code != 503:
+                raise
+            robots, _, _, _ = _current_enabled_robot_config_signature()
+            if robots:
+                if reason != "no_enabled_robots":
+                    return RobotBridgeReloadResponse(
+                        success=False,
+                        detail=(
+                            f"Bridge is idle ({reason}) and owner is not available; "
+                            "restart the backend after fixing bridge startup"
+                        ),
+                    )
+                scheduled = _schedule_process_restart(
+                    f"embedded robot bridge was idle ({reason}); reload requested with enabled robots"
+                )
+                detail = (
+                    "Bridge was idle and a backend restart was scheduled to load enabled robots"
+                    if scheduled
+                    else "Bridge was idle and a backend restart is already scheduled"
+                )
+                return RobotBridgeReloadResponse(success=True, detail=detail)
+            return RobotBridgeReloadResponse(
+                success=True,
+                detail=f"Bridge is idle ({reason}); no enabled robots are configured",
+            )
         return RobotBridgeReloadResponse.model_validate(result)
 
     @router.get("/internal/health")
@@ -857,7 +1006,9 @@ def _build_idle_bridge_router(reason: str) -> APIRouter:
     ) -> dict[str, Any]:
         _assert_bridge_permission(x_termman_bridge_token)
         try:
-            owner_health = await _forward_to_owner("/internal/health", timeout=5.0, method="GET")
+            owner_health = await _forward_to_owner(
+                "/internal/health", timeout=5.0, method="GET"
+            )
             owner_health["proxy_worker"] = {
                 "pid": os.getpid(),
                 "status": "forwarded_to_owner",
@@ -866,17 +1017,32 @@ def _build_idle_bridge_router(reason: str) -> APIRouter:
             return owner_health
         except Exception as exc:
             checked_at = datetime.now(timezone.utc).isoformat()
+            robots, _, identity_by_robot_id, _ = (
+                _current_enabled_robot_config_signature()
+            )
             return {
                 "checked_at": checked_at,
                 "live": True,
                 "status": "idle",
                 "reason": reason,
                 "owner_error": str(exc),
-                "loaded_robot_count": 0,
+                "loaded_robot_count": len(identity_by_robot_id),
                 "connected_bot_count": 0,
-                "platforms": [],
+                "platforms": sorted(
+                    {
+                        normalize_robot_platform_id(robot.platform or robot.protocol)
+                        for robot in robots
+                    }
+                ),
                 "connected_identities": [],
-                "robots": {},
+                "robots": {
+                    robot_id: {
+                        "identity": identity,
+                        "connected": False,
+                        "error": f"Bridge is idle ({reason})",
+                    }
+                    for robot_id, identity in identity_by_robot_id.items()
+                },
                 "backend": {"reachable": True},
                 "connection_errors": _load_connection_errors(),
             }
@@ -885,8 +1051,14 @@ def _build_idle_bridge_router(reason: str) -> APIRouter:
 
 
 def init_embedded_bridge() -> APIRouter | None:
-    global _bridge_router, _loaded_robots, _robot_id_by_identity, _identity_by_robot_id, _initialized
+    global \
+        _bridge_router, \
+        _loaded_robots, \
+        _robot_id_by_identity, \
+        _identity_by_robot_id, \
+        _initialized
     global _startup_callback, _shutdown_callback
+    global _loaded_robot_config_signature
 
     if not settings.ROBOT_PLUGIN_ENABLED:
         logger.info("[Bridge] Robot plugin disabled, skip bridge initialization")
@@ -902,7 +1074,9 @@ def init_embedded_bridge() -> APIRouter | None:
             "[Bridge] Another backend process already owns the robot bridge lock; "
             "skip initializing NoneBot in this worker"
         )
-        _bridge_router = _build_idle_bridge_router("robot_bridge_lock_owned_by_another_process")
+        _bridge_router = _build_idle_bridge_router(
+            "robot_bridge_lock_owned_by_another_process"
+        )
         return _bridge_router
 
     try:
@@ -915,65 +1089,26 @@ def init_embedded_bridge() -> APIRouter | None:
     try:
         from nonebot import get_asgi, get_bots, on, on_message
         from nonebot.adapters import Bot, Event
-        from sqlmodel import Session, select
 
         globals()["Bot"] = Bot
         globals()["Event"] = Event
 
-        from app.core.db import engine
-        from app.models import Robot
         from app.plugins.robot.platforms import (
             build_nonebot_init_kwargs,
-            get_robot_platform,
-            get_robot_runtime_config,
             register_nonebot_adapters,
         )
 
-        def _load_enabled_robot_configs() -> tuple[list[Robot], dict[str, str], dict[str, str]]:
-            loaded_robots: list[Robot] = []
-            robot_id_by_identity: dict[str, str] = {}
-            identity_by_robot_id: dict[str, str] = {}
-
-            with Session(engine) as session:
-                robots = session.exec(
-                    select(Robot).where(
-                        Robot.is_enabled == True,  # noqa: E712
-                        Robot.provider == "nonebot2",
-                    )
-                ).all()
-
-            for robot in robots:
-                platform_id = normalize_robot_platform_id(robot.platform or robot.protocol)
-                try:
-                    get_robot_platform(platform_id)
-                    get_robot_runtime_config(robot)
-                    identity = resolve_robot_identity(platform_id, robot)
-                except Exception as exc:
-                    logger.warning(
-                        "[Bridge] Skip robot %s because runtime config is invalid: %s",
-                        robot.id,
-                        exc,
-                    )
-                    continue
-
-                if identity in robot_id_by_identity:
-                    logger.warning(
-                        "[Bridge] Duplicate robot identity %s detected, keep first robot only",
-                        identity,
-                    )
-                    continue
-
-                loaded_robots.append(robot)
-                robot_id_by_identity[identity] = str(robot.id)
-                identity_by_robot_id[str(robot.id)] = identity
-
-            return loaded_robots, robot_id_by_identity, identity_by_robot_id
-
-        _loaded_robots, _robot_id_by_identity, _identity_by_robot_id = _load_enabled_robot_configs()
+        (
+            _loaded_robots,
+            _robot_id_by_identity,
+            _identity_by_robot_id,
+            _loaded_robot_config_signature,
+        ) = _current_enabled_robot_config_signature()
         _save_identities()
 
         if not _loaded_robots:
             logger.info("[Bridge] No enabled robots found, skip bridge initialization")
+            _release_singleton_lock()
             _bridge_router = _build_idle_bridge_router("no_enabled_robots")
             return _bridge_router
 
@@ -982,7 +1117,7 @@ def init_embedded_bridge() -> APIRouter | None:
         nonebot.init(**init_kwargs)
         driver = nonebot.get_driver()
         register_nonebot_adapters(driver, _loaded_robots)
-        
+
         event_probe = on(priority=1, block=False)
         bridge_handler = on_message(priority=10, block=False)
 
@@ -1163,7 +1298,9 @@ def init_embedded_bridge() -> APIRouter | None:
                     status="error",
                     message=str(exc),
                 )
-                logger.exception("[Bridge] Failed to dispatch message for robot %s", robot_id)
+                logger.exception(
+                    "[Bridge] Failed to dispatch message for robot %s", robot_id
+                )
                 try:
                     await send_text_with_rate_limit(
                         bot,
@@ -1224,16 +1361,14 @@ def init_embedded_bridge() -> APIRouter | None:
                 path="/onebot/v11/ws/",
                 nonebot_app=nonebot_app,
             )
-        
-        from nonebot import get_bots
-        
+
         def _get_robot_id_for_adapter(adapter_name: str) -> str | None:
             adapter_lower = adapter_name.lower().replace(" ", "_")
             for robot_id, identity in _identity_by_robot_id.items():
                 if identity.startswith(adapter_lower):
                     return robot_id
             return None
-        
+
         async def startup_nonebot():
             global _connection_errors
             logger.info("[Bridge] Starting NoneBot adapters...")
@@ -1248,12 +1383,14 @@ def init_embedded_bridge() -> APIRouter | None:
                         del _connection_errors[robot_id]
                 except Exception as e:
                     error_msg = f"{type(e).__name__}: {str(e)}"
-                    logger.error(f"[Bridge] Failed to start adapter {adapter_name}: {error_msg}")
+                    logger.error(
+                        f"[Bridge] Failed to start adapter {adapter_name}: {error_msg}"
+                    )
                     robot_id = _get_robot_id_for_adapter(adapter_name)
                     if robot_id:
                         _save_connection_error(robot_id, error_msg)
             _start_ipc_server(_send_from_owner, _health_from_owner, _reload_owner)
-        
+
         async def shutdown_nonebot():
             logger.info("[Bridge] Stopping NoneBot adapters...")
             _stop_ipc_server()
@@ -1271,7 +1408,9 @@ def init_embedded_bridge() -> APIRouter | None:
             robot_id = str(body.robot_id)
             bot = _resolve_bot_for_robot(robot_id)
             if bot is None:
-                raise HTTPException(status_code=404, detail="Robot is not loaded in bridge")
+                raise HTTPException(
+                    status_code=404, detail="Robot is not loaded in bridge"
+                )
 
             record_robot_event(
                 robot_id,
@@ -1334,8 +1473,12 @@ def init_embedded_bridge() -> APIRouter | None:
                         robot_id,
                         {"connected": False},
                     ),
-                    "last_platform_event_at": _last_platform_event_at_by_robot_id.get(robot_id),
-                    "last_message_event_at": _last_message_event_at_by_robot_id.get(robot_id),
+                    "last_platform_event_at": _last_platform_event_at_by_robot_id.get(
+                        robot_id
+                    ),
+                    "last_message_event_at": _last_message_event_at_by_robot_id.get(
+                        robot_id
+                    ),
                     "error": (
                         None
                         if identity in connected_identities
@@ -1380,32 +1523,54 @@ def init_embedded_bridge() -> APIRouter | None:
             }
 
         async def _reload_owner() -> dict[str, Any]:
+            _, _, _, current_signature = _current_enabled_robot_config_signature()
+            if current_signature != _loaded_robot_config_signature:
+                scheduled = _schedule_process_restart(
+                    "embedded robot bridge config changed; full reload required"
+                )
+                return {
+                    "success": True,
+                    "detail": (
+                        "Bridge config changed and a backend restart was scheduled"
+                        if scheduled
+                        else "Bridge config changed and a backend restart is already scheduled"
+                    ),
+                }
+
             errors: list[str] = []
             called_hooks = 0
             skipped_hooks = 0
             for adapter in driver._adapters.values():
                 adapter_name = str(adapter.get_name())
                 try:
-                    logger.info("[Bridge] Soft-reloading adapter %s: shutdown", adapter_name)
+                    logger.info(
+                        "[Bridge] Soft-reloading adapter %s: shutdown", adapter_name
+                    )
                     if await _call_optional_adapter_hook(adapter, "shutdown"):
                         called_hooks += 1
                     else:
                         skipped_hooks += 1
                 except Exception as exc:
-                    error_msg = f"{adapter_name} shutdown failed: {type(exc).__name__}: {exc}"
+                    error_msg = (
+                        f"{adapter_name} shutdown failed: {type(exc).__name__}: {exc}"
+                    )
                     logger.warning("[Bridge] %s", error_msg)
                     errors.append(error_msg)
 
             for adapter in driver._adapters.values():
                 adapter_name = str(adapter.get_name())
                 try:
-                    logger.info("[Bridge] Soft-reloading adapter %s: startup", adapter_name)
+                    logger.info(
+                        "[Bridge] Soft-reloading adapter %s: startup", adapter_name
+                    )
                     if await _call_optional_adapter_hook(adapter, "startup"):
                         called_hooks += 1
                     else:
                         skipped_hooks += 1
                 except Exception as exc:
-                    error_msg = f"{adapter_name} startup failed: {type(exc).__name__}: {exc}"
+                    error_msg = (
+                        f"{adapter_name} startup failed: {type(exc).__name__}: {exc}"
+                    )
                     logger.error("[Bridge] %s", error_msg)
                     errors.append(error_msg)
 
@@ -1422,7 +1587,9 @@ def init_embedded_bridge() -> APIRouter | None:
                 ),
             }
 
-        @_bridge_router.post("/internal/reload", response_model=RobotBridgeReloadResponse)
+        @_bridge_router.post(
+            "/internal/reload", response_model=RobotBridgeReloadResponse
+        )
         async def internal_reload(
             x_termman_bridge_token: str | None = Header(default=None),
         ) -> RobotBridgeReloadResponse:
@@ -1439,7 +1606,12 @@ def init_embedded_bridge() -> APIRouter | None:
         logger.info(
             "[Bridge] Embedded bridge initialized with %d robot(s), platforms: %s",
             len(_loaded_robots),
-            sorted({normalize_robot_platform_id(r.platform or r.protocol) for r in _loaded_robots}),
+            sorted(
+                {
+                    normalize_robot_platform_id(r.platform or r.protocol)
+                    for r in _loaded_robots
+                }
+            ),
         )
         return _bridge_router
 
@@ -1450,4 +1622,5 @@ def init_embedded_bridge() -> APIRouter | None:
 
 def resolve_robot_identity(platform_id: str, robot) -> str:
     from app.plugins.robot.platforms import resolve_robot_identity as _resolve
+
     return _resolve(platform_id, robot)

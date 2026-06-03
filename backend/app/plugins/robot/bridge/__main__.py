@@ -17,6 +17,7 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.core.db import engine
 from app.models import Robot
+from app.plugins.robot.bridge.rate_limit import send_text_with_rate_limit
 from app.plugins.robot.contracts import (
     RobotBridgeReloadResponse,
     RobotBridgeSendRequest,
@@ -24,7 +25,6 @@ from app.plugins.robot.contracts import (
     RobotInboundMessage,
 )
 from app.plugins.robot.debug_log import preview_text, record_robot_event
-from app.plugins.robot.bridge.rate_limit import send_text_with_rate_limit
 from app.plugins.robot.platforms import (
     build_inbound_message,
     build_nonebot_init_kwargs,
@@ -81,8 +81,13 @@ def _load_enabled_robot_configs() -> tuple[list[Robot], dict[str, str], dict[str
     return loaded_robots, robot_id_by_identity, identity_by_robot_id
 
 
-LOADED_ROBOTS, ROBOT_ID_BY_IDENTITY, IDENTITY_BY_ROBOT_ID = _load_enabled_robot_configs()
+LOADED_ROBOTS, ROBOT_ID_BY_IDENTITY, IDENTITY_BY_ROBOT_ID = (
+    _load_enabled_robot_configs()
+)
 SEEN_CONNECTED_ROBOT_IDS: set[str] = set()
+LAST_PLATFORM_EVENT_AT_BY_ROBOT_ID: dict[str, str] = {}
+LAST_MESSAGE_EVENT_AT_BY_ROBOT_ID: dict[str, str] = {}
+ONEBOT_SOCKET_STATUS_BY_ROBOT_ID: dict[str, dict[str, Any]] = {}
 
 INIT_KWARGS = build_nonebot_init_kwargs(LOADED_ROBOTS)
 INIT_KWARGS.setdefault("driver", "~fastapi+~httpx+~websockets")
@@ -110,6 +115,10 @@ def _record_bridge_event(
     message: str | None = None,
     payload: dict[str, Any] | None = None,
 ) -> None:
+    timestamp = datetime.now(timezone.utc).isoformat()
+    LAST_PLATFORM_EVENT_AT_BY_ROBOT_ID[robot_id] = timestamp
+    if event == "platform_message":
+        LAST_MESSAGE_EVENT_AT_BY_ROBOT_ID[robot_id] = timestamp
     record_robot_event(
         robot_id,
         direction=direction,
@@ -138,6 +147,55 @@ def _record_bridge_event(
             )
     except Exception:
         pass
+
+
+def _serialize_event_payload(event: Event) -> dict[str, Any]:
+    if hasattr(event, "model_dump"):
+        try:
+            data = event.model_dump()
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    if hasattr(event, "dict"):
+        try:
+            data = event.dict()
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return {}
+
+
+def _update_onebot_socket_status(
+    robot_id: str,
+    *,
+    event_name: str,
+    payload: dict[str, Any],
+) -> None:
+    status_payload: dict[str, Any] = {}
+    for key in (
+        "self_id",
+        "post_type",
+        "meta_event_type",
+        "message_type",
+        "sub_type",
+        "user_id",
+        "group_id",
+        "message_id",
+        "raw_message",
+    ):
+        value = payload.get(key)
+        if value not in (None, ""):
+            status_payload[key] = value
+
+    ONEBOT_SOCKET_STATUS_BY_ROBOT_ID[robot_id] = {
+        **ONEBOT_SOCKET_STATUS_BY_ROBOT_ID.get(robot_id, {}),
+        **status_payload,
+        "connected": True,
+        "event": event_name,
+        "last_event_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 async def _dispatch_to_backend(
@@ -186,6 +244,13 @@ async def probe_robot_event(bot: Bot, event: Event) -> None:
         return
 
     SEEN_CONNECTED_ROBOT_IDS.add(robot_id)
+    event_payload = _serialize_event_payload(event)
+    if platform_id == "onebot_v11":
+        _update_onebot_socket_status(
+            robot_id,
+            event_name=event.__class__.__name__,
+            payload=event_payload,
+        )
     _record_bridge_event(
         robot_id,
         direction="platform_to_bridge",
@@ -194,6 +259,7 @@ async def probe_robot_event(bot: Bot, event: Event) -> None:
         payload={
             "platform": platform_id,
             "bot_identity": bot_identity,
+            "event_type": event.__class__.__name__,
             "event": str(event),
         },
     )
@@ -220,6 +286,13 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
         return
 
     SEEN_CONNECTED_ROBOT_IDS.add(robot_id)
+    event_payload = _serialize_event_payload(event)
+    if platform_id == "onebot_v11":
+        _update_onebot_socket_status(
+            robot_id,
+            event_name=event.__class__.__name__,
+            payload=event_payload,
+        )
     inbound = build_inbound_message(platform_id, bot, event)
     if inbound is None:
         return
@@ -246,7 +319,9 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
     try:
         dispatch = await _dispatch_to_backend(robot_id, inbound)
     except Exception as exc:
-        logger.exception("[RobotBridge] Failed to dispatch message for robot %s", robot_id)
+        logger.exception(
+            "[RobotBridge] Failed to dispatch message for robot %s", robot_id
+        )
         try:
             await send_text_with_rate_limit(
                 bot,
@@ -271,7 +346,9 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
             inbound.reply_target.target_id,
             preview_text(chunk),
         )
-        await send_text_with_rate_limit(bot, inbound.reply_target, chunk, robot_id=robot_id)
+        await send_text_with_rate_limit(
+            bot, inbound.reply_target, chunk, robot_id=robot_id
+        )
 
 
 app = get_asgi()
@@ -324,13 +401,19 @@ async def internal_health() -> dict[str, Any]:
         robot_status[robot_id] = {
             "identity": identity,
             "connected": identity in connected_identities,
+            "onebot_socket": ONEBOT_SOCKET_STATUS_BY_ROBOT_ID.get(
+                robot_id,
+                {"connected": False},
+            ),
+            "last_platform_event_at": LAST_PLATFORM_EVENT_AT_BY_ROBOT_ID.get(robot_id),
+            "last_message_event_at": LAST_MESSAGE_EVENT_AT_BY_ROBOT_ID.get(robot_id),
         }
 
     backend_status: dict[str, Any] = {"reachable": False}
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(
-                f"{settings.ROBOT_BACKEND_URL.rstrip('/')}{settings.API_V1_STR}/utils/health",
+                f"{settings.ROBOT_BACKEND_URL.rstrip('/')}{settings.API_V1_STR}/utils/health-check/",
             )
             backend_status = {
                 "reachable": resp.status_code == 200,

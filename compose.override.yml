@@ -85,10 +85,27 @@ services:
       EMAILS_FROM_EMAIL: "noreply@example.com"
       BACKEND_LOG_DIR: "/app/backend/app/services/log"
       ROBOT_PLUGIN_ENABLED: "${ROBOT_PLUGIN_ENABLED:-true}"
-      ROBOT_BRIDGE_EMBEDDED: "${ROBOT_BRIDGE_EMBEDDED:-true}"
-      ROBOT_BACKEND_URL: "${ROBOT_BACKEND_URL:-http://127.0.0.1:8000}"
-      ROBOT_BRIDGE_URL: "${ROBOT_BRIDGE_URL:-http://127.0.0.1:8000/robot-bridge}"
+      ROBOT_BRIDGE_EMBEDDED: "${ROBOT_BRIDGE_EMBEDDED:-false}"
+      ROBOT_BACKEND_URL: "${ROBOT_BACKEND_URL:-http://backend:8000}"
+      ROBOT_BRIDGE_URL: "${ROBOT_BRIDGE_URL:-http://robot-bridge:8090}"
       ROBOT_BRIDGE_SHARED_SECRET: "${SECRET_KEY}"
+
+  robot-bridge:
+    restart: "no"
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    develop:
+      watch:
+        - path: ./backend
+          action: sync
+          target: /app/backend
+          ignore:
+            - ./backend/.venv
+            - ./backend/sql_app.db
+            - .venv
+        - path: ./backend/pyproject.toml
+          action: rebuild
 
   mailcatcher:
     image: schickling/mailcatcher

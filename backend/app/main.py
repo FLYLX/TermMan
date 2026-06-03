@@ -1,9 +1,7 @@
 import logging
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+from contextlib import asynccontextmanager
 
 import sentry_sdk
-from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from starlette.middleware.cors import CORSMiddleware
@@ -11,6 +9,11 @@ from starlette.middleware.cors import CORSMiddleware
 from app.api.main import api_router
 from app.core.config import settings
 from app.services import initialize_daemon_connections
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,18 +42,27 @@ async def lifespan(app: FastAPI):
         if bridge_router:
             logger.info("[App] Robot bridge initialized")
         await start_embedded_bridge()
+    elif settings.ROBOT_PLUGIN_ENABLED:
+        from app.plugins.robot.bridge.proxy import robot_bridge_proxy_router
+
+        if not _bridge_router_included:
+            app.include_router(robot_bridge_proxy_router)
+            _bridge_router_included = True
+            logger.info("[App] Robot bridge proxy router included")
+        stop_embedded_bridge = None
     else:
         stop_embedded_bridge = None
 
     initialize_daemon_connections()
 
     from app.services.agent.mcp import mcp_server_manager
+
     logger.info("[App] Starting MCP servers...")
     await mcp_server_manager.start_all()
     logger.info("[App] MCP servers started")
-    
+
     yield
-    
+
     if stop_embedded_bridge is not None:
         await stop_embedded_bridge()
 
