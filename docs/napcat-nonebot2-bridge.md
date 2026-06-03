@@ -70,3 +70,7 @@ In TermMan, create a robot with platform `OneBot V11 / NapCat` and set:
 
 After saving the robot, reload the bridge. The Robot debug page should show the
 NapCat socket as connected once NoneBot2 has connected to NapCat.
+
+The bridge reload endpoint restarts the `robot-bridge` process. Docker must be
+allowed to restart the container after that exit; the local Compose override
+keeps `robot-bridge` on `restart: unless-stopped` for this reason.

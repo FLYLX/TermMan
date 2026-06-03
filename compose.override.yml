@@ -95,7 +95,7 @@ services:
       ROBOT_BRIDGE_URL: "${ROBOT_BRIDGE_URL:-http://robot-bridge:8090}"
 
   robot-bridge:
-    restart: "no"
+    restart: unless-stopped
     build:
       context: .
       dockerfile: robot/Dockerfile
