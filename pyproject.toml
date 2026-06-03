@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["backend"]
+members = ["backend", "robot"]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }

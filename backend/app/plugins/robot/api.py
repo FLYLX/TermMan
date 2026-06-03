@@ -37,9 +37,11 @@ from .debug_log import get_robot_events, record_robot_event
 from .platforms import (
     RobotPlatformPublic,
     get_robot_platform,
+    get_robot_runtime_config,
     list_supported_robot_platforms,
     normalize_robot_config,
     normalize_robot_platform_id,
+    resolve_robot_identity,
 )
 from .schemas import (
     RobotItemBindingCreate,
@@ -62,19 +64,79 @@ def list_robot_platform_metadata() -> list[RobotPlatformPublic]:
 
 @router.get("/bridge/health")
 def get_bridge_health(current_user: CurrentUser) -> dict:
+    del current_user
+
     import httpx
+
     from app.core.config import settings
 
     try:
         response = httpx.get(
             f"{settings.ROBOT_BRIDGE_URL}/internal/health",
-            headers={"X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY},
+            headers={
+                "X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET
+                or settings.SECRET_KEY
+            },
             timeout=5.0,
         )
         response.raise_for_status()
         return response.json()
     except Exception as e:
         return {"error": str(e), "connected": False}
+
+
+@router.get("/bridge/runtime-config")
+def get_bridge_runtime_config(
+    session: SessionDep,
+    x_termman_bridge_token: str | None = Header(default=None),
+) -> dict:
+    assert_bridge_permission(x_termman_bridge_token)
+
+    robots = session.exec(
+        select(Robot).where(
+            Robot.is_enabled == True,  # noqa: E712
+            Robot.provider == "nonebot2",
+        )
+    ).all()
+
+    loaded_robots: list[dict] = []
+    robot_id_by_identity: dict[str, str] = {}
+    identity_by_robot_id: dict[str, str] = {}
+    errors: dict[str, str] = {}
+
+    for robot in robots:
+        robot_id = str(robot.id)
+        platform_id = normalize_robot_platform_id(robot.platform or robot.protocol)
+        try:
+            runtime_config = get_robot_runtime_config(robot)
+            identity = resolve_robot_identity(platform_id, robot)
+        except Exception as exc:
+            errors[robot_id] = str(exc)
+            continue
+        if identity in robot_id_by_identity:
+            errors[robot_id] = f"Duplicate robot identity `{identity}`"
+            continue
+
+        loaded_robots.append(
+            {
+                "id": robot_id,
+                "platform": platform_id,
+                "protocol": platform_id,
+                "provider": robot.provider,
+                "name": robot.name,
+                "runtime_config": runtime_config,
+                "identity": identity,
+            }
+        )
+        robot_id_by_identity[identity] = robot_id
+        identity_by_robot_id[robot_id] = identity
+
+    return {
+        "robots": loaded_robots,
+        "robot_id_by_identity": robot_id_by_identity,
+        "identity_by_robot_id": identity_by_robot_id,
+        "errors": errors,
+    }
 
 
 @router.get("/", response_model=RobotsPublic)
@@ -253,7 +315,9 @@ def bind_item_to_robot(
         )
     ).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Item is already bound to this robot")
+        raise HTTPException(
+            status_code=400, detail="Item is already bound to this robot"
+        )
 
     payload = normalize_binding_payload(body)
     validate_binding_payload(payload)
@@ -407,6 +471,7 @@ def get_robot_connection_status(
     id: uuid.UUID,
 ) -> dict:
     import httpx
+
     from app.core.config import settings
 
     robot = get_robot_or_404(session, id)
@@ -418,7 +483,10 @@ def get_robot_connection_status(
     try:
         response = httpx.get(
             f"{settings.ROBOT_BRIDGE_URL}/internal/health",
-            headers={"X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY},
+            headers={
+                "X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET
+                or settings.SECRET_KEY
+            },
             timeout=5.0,
         )
         response.raise_for_status()
@@ -444,6 +512,7 @@ def diagnose_robot_chain(
     id: uuid.UUID,
 ) -> dict:
     import httpx
+
     from app.core.config import settings
     from app.services import backend_conn_pool
 
@@ -476,7 +545,10 @@ def diagnose_robot_chain(
     try:
         response = httpx.get(
             f"{settings.ROBOT_BRIDGE_URL}/internal/health",
-            headers={"X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY},
+            headers={
+                "X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET
+                or settings.SECRET_KEY
+            },
             timeout=5.0,
         )
         response.raise_for_status()
@@ -651,6 +723,7 @@ def get_robot_debug(
     limit: int = 100,
 ) -> dict:
     import httpx
+
     from app.core.config import settings
 
     robot = get_robot_or_404(session, id)
@@ -660,7 +733,10 @@ def get_robot_debug(
     try:
         response = httpx.get(
             f"{settings.ROBOT_BRIDGE_URL}/internal/health",
-            headers={"X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY},
+            headers={
+                "X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET
+                or settings.SECRET_KEY
+            },
             timeout=5.0,
         )
         response.raise_for_status()
@@ -694,7 +770,9 @@ def get_robot_debug(
         },
         "bridge": {
             "url": settings.ROBOT_BRIDGE_URL,
-            "status": bridge_health.get("status", "ok" if "error" not in bridge_health else "error"),
+            "status": bridge_health.get(
+                "status", "ok" if "error" not in bridge_health else "error"
+            ),
             "loaded_robot_count": bridge_health.get("loaded_robot_count", 0),
             "connected_bot_count": bridge_health.get("connected_bot_count", 0),
             "connected": robot_health.get("connected", False),
@@ -707,7 +785,9 @@ def get_robot_debug(
             "last_message_event_at": robot_health.get("last_message_event_at"),
             "error": None
             if connected
-            else robot_health.get("error") or historical_error or bridge_health.get("error"),
+            else robot_health.get("error")
+            or historical_error
+            or bridge_health.get("error"),
             "stale_error": historical_error if connected else None,
         },
         "diagnostics": {

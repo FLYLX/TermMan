@@ -1,0 +1,39 @@
+from __future__ import annotations
+
+import uuid
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class RobotReplyTarget(BaseModel):
+    target_type: str
+    target_id: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RobotInboundMessage(BaseModel):
+    sender_key: str
+    text: str
+    reply_target: RobotReplyTarget
+
+
+class RobotDispatchResponse(BaseModel):
+    success: bool
+    ignored: bool = False
+    reason: str | None = None
+    error: str | None = None
+    item_id: str | None = None
+    route_key: str | None = None
+    reply_chunks: list[str] = Field(default_factory=list)
+
+
+class RobotBridgeSendRequest(BaseModel):
+    robot_id: uuid.UUID
+    target: RobotReplyTarget
+    text: str
+
+
+class RobotBridgeReloadResponse(BaseModel):
+    success: bool
+    detail: str

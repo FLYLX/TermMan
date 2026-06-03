@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -483,9 +484,14 @@ def _build_mail_init(init_kwargs: dict[str, Any], runtime_config: dict[str, Any]
 
 
 def _bot_self_id(bot: Any) -> str:
+    self_id = getattr(bot, "self_id", None)
+    if self_id is not None:
+        return str(self_id)
     if hasattr(bot, "get_self_id"):
-        return str(bot.get_self_id())
-    return str(bot.self_id)
+        value = bot.get_self_id()
+        if not inspect.isawaitable(value):
+            return str(value)
+    raise ValueError("Bot self_id is missing")
 
 
 def _token_prefix(token: str) -> str:

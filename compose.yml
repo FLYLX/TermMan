@@ -30,7 +30,6 @@ services:
       - ROBOT_BRIDGE_EMBEDDED=${ROBOT_BRIDGE_EMBEDDED:-false}
       - ROBOT_BACKEND_URL=${ROBOT_BACKEND_URL:-http://backend:8000}
       - ROBOT_BRIDGE_URL=${ROBOT_BRIDGE_URL:-http://robot-bridge:8090}
-      - ROBOT_BRIDGE_SHARED_SECRET=${SECRET_KEY?Variable not set}
       - ROBOT_QQ_IS_SANDBOX=${ROBOT_QQ_IS_SANDBOX:-false}
     volumes:
       - backend-db:/app/backend
@@ -70,7 +69,6 @@ services:
       - ROBOT_BRIDGE_EMBEDDED=${ROBOT_BRIDGE_EMBEDDED:-false}
       - ROBOT_BACKEND_URL=${ROBOT_BACKEND_URL:-http://backend:8000}
       - ROBOT_BRIDGE_URL=${ROBOT_BRIDGE_URL:-http://robot-bridge:8090}
-      - ROBOT_BRIDGE_SHARED_SECRET=${SECRET_KEY?Variable not set}
       - ROBOT_QQ_IS_SANDBOX=${ROBOT_QQ_IS_SANDBOX:-false}
     volumes:
       - backend-db:/app/backend
@@ -112,7 +110,10 @@ services:
       - traefik.http.routers.${STACK_NAME?Variable not set}-backend-http.middlewares=https-redirect
 
   robot-bridge:
-    image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}'
+    image: '${DOCKER_IMAGE_ROBOT:-robot}:${TAG-latest}'
+    build:
+      context: .
+      dockerfile: robot/Dockerfile
     restart: always
     networks:
       - default
@@ -120,33 +121,9 @@ services:
       backend:
         condition: service_healthy
     env_file:
-      - .env
-    environment:
-      - ENVIRONMENT=${ENVIRONMENT}
-      - BACKEND_LOG_DIR=/app/backend/app/services/log
-      - SECRET_KEY=${SECRET_KEY?Variable not set}
-      - FIRST_SUPERUSER=${FIRST_SUPERUSER?Variable not set}
-      - FIRST_SUPERUSER_PASSWORD=${FIRST_SUPERUSER_PASSWORD?Variable not set}
-      - SQLITE_DATABASE_URL=${SQLITE_DATABASE_URL:-sqlite:///./sql_app.db}
-      - ROBOT_PLUGIN_ENABLED=${ROBOT_PLUGIN_ENABLED:-true}
-      - ROBOT_BRIDGE_EMBEDDED=false
-      - ROBOT_BACKEND_URL=http://backend:8000
-      - ROBOT_BRIDGE_URL=http://robot-bridge:8090
-      - ROBOT_BRIDGE_SHARED_SECRET=${SECRET_KEY?Variable not set}
-      - ROBOT_BRIDGE_HOST=0.0.0.0
-      - ROBOT_BRIDGE_PORT=8090
-      - ROBOT_QQ_IS_SANDBOX=${ROBOT_QQ_IS_SANDBOX:-false}
-    command:
-      - bash
-      - scripts/run_backend.sh
-      - python
-      - -m
-      - app.plugins.robot.bridge
+      - ./robot/.env
     volumes:
-      - backend-db:/app/backend
-      - ./backend/app/services/log:/app/backend/app/services/log
-      - ./backend/skills:/app/backend/skills
-      - ./backend/knowledge:/app/backend/knowledge
+      - ./robot:/app/robot
 
   frontend:
     image: '${DOCKER_IMAGE_FRONTEND?Variable not set}:${TAG-latest}'

@@ -4,7 +4,10 @@ import {
   ArrowLeft,
   Bot,
   Cable,
+  Check,
   CirclePlus,
+  Copy,
+  KeyRound,
   Loader2,
   MessageSquare,
   RadioTower,
@@ -14,7 +17,7 @@ import {
 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 
-import { type ItemPublic, ItemsService } from "@/client"
+import { OpenAPI, type ItemPublic, ItemsService } from "@/client"
 import { useI18n } from "@/components/locale-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -44,6 +47,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
 
 import {
@@ -74,6 +83,20 @@ function normalizePlatformId(platform: string | null | undefined) {
     return "onebot_v11"
   }
   return platform ?? ""
+}
+
+function buildOneBotReverseWsUrl() {
+  const fallbackOrigin =
+    typeof window === "undefined" ? "http://localhost:8000" : window.location.origin
+  const base = OpenAPI.BASE || fallbackOrigin
+
+  try {
+    const url = new URL("/robot-bridge/onebot/v11/ws", base)
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
+    return url.toString()
+  } catch {
+    return "/robot-bridge/onebot/v11/ws"
+  }
 }
 
 function getRobotCredentials(robot: RobotRecord): Record<string, string> {
@@ -720,6 +743,161 @@ function RobotKeyValue({
   )
 }
 
+function CopyableConfigValue({
+  label,
+  value,
+  mutedValue,
+  secret = false,
+}: {
+  label: string
+  value?: string | null
+  mutedValue?: string
+  secret?: boolean
+}) {
+  const [copiedText, copy] = useCopyToClipboard()
+  const displayValue = value || mutedValue || "-"
+  const canCopy = Boolean(value)
+  const isCopied = copiedText === value
+
+  return (
+    <div className="grid gap-1.5 rounded-xl border bg-muted/10 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-medium text-muted-foreground">{label}</span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="size-7 rounded-lg"
+              disabled={!canCopy}
+              onClick={() => {
+                if (value) {
+                  void copy(value)
+                }
+              }}
+            >
+              {isCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+              <span className="sr-only">Copy {label}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{isCopied ? "Copied" : `Copy ${label}`}</TooltipContent>
+        </Tooltip>
+      </div>
+      <div
+        className={
+          value
+            ? "break-all font-mono text-sm"
+            : "break-all font-mono text-sm text-muted-foreground"
+        }
+      >
+        {secret && value ? "********" : displayValue}
+      </div>
+    </div>
+  )
+}
+
+function RobotConnectionGuidePanel({
+  robot,
+  debug,
+}: {
+  robot: RobotRecord
+  debug?: RobotDebugInfo
+}) {
+  const platformId = normalizePlatformId(robot.platform || robot.protocol)
+  const credentials = getRobotCredentials(robot)
+  const wsUrl = buildOneBotReverseWsUrl()
+  const accessToken = credentials.access_token
+  const secret = credentials.secret
+  const selfId = credentials.self_id
+  const socket = debug?.bridge?.onebot_socket
+  const socketConnected = Boolean(socket?.connected)
+
+  if (platformId !== "onebot_v11") {
+    return (
+      <Card className="rounded-3xl border bg-card shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle>Bot connection guide</CardTitle>
+          <CardDescription>
+            This platform does not use the NapCat OneBot V11 reverse WebSocket endpoint.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
+
+  return (
+    <Card className="rounded-3xl border bg-card shadow-sm">
+      <CardHeader className="pb-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle>NapCat / OneBot V11 connection</CardTitle>
+            <CardDescription>
+              Use these values in NapCat reverse WebSocket settings.
+            </CardDescription>
+          </div>
+          <Badge
+            className={
+              socketConnected
+                ? "w-fit border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                : "w-fit"
+            }
+            variant={socketConnected ? "outline" : "secondary"}
+          >
+            {socketConnected ? "Socket connected" : "Waiting for socket"}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <CopyableConfigValue label="Reverse WebSocket URL" value={wsUrl} />
+          <CopyableConfigValue
+            label="QQ self_id"
+            value={selfId}
+            mutedValue="Set the logged-in QQ number in robot credentials"
+          />
+          <CopyableConfigValue
+            label="Access Token"
+            value={accessToken}
+            mutedValue="Not configured"
+            secret
+          />
+          <CopyableConfigValue
+            label="Secret"
+            value={secret}
+            mutedValue="Not configured"
+            secret
+          />
+        </div>
+
+        <div className="grid gap-2 rounded-xl border bg-muted/10 p-3 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 font-medium text-foreground">
+            <KeyRound className="size-4" />
+            NapCat fields
+          </div>
+          <div className="grid gap-1">
+            <div>
+              URL: <span className="font-mono text-foreground">{wsUrl}</span>
+            </div>
+            <div>
+              Headers:{" "}
+              <span className="font-mono text-foreground">
+                X-Self-ID: {selfId || "your logged-in QQ number"}
+              </span>
+            </div>
+            <div>
+              Token:{" "}
+              <span className="font-mono text-foreground">
+                {accessToken ? "use the configured Access Token" : "leave blank"}
+              </span>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 function RobotBasicConfigPanel({
   robot,
   platform,
@@ -1324,6 +1502,11 @@ export function RobotDetail({ robotId }: { robotId: string }) {
       </Card>
 
       <RobotBasicConfigPanel robot={robot} platform={platform} />
+
+      <RobotConnectionGuidePanel
+        robot={robot}
+        debug={debugQuery.data as RobotDebugInfo | undefined}
+      />
 
       <RobotDebugPanel
         robotId={robotId}

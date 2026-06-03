@@ -47,6 +47,10 @@ services:
 
 
 
+  prestart:
+    volumes:
+      - ./backend:/app/backend
+
   backend:
     restart: "no"
     ports:
@@ -75,6 +79,7 @@ services:
           action: rebuild
     # TODO: remove once coverage is done locally
     volumes:
+      - ./backend:/app/backend
       - ./backend/htmlcov:/app/backend/htmlcov
       - ./backend/skills:/app/backend/skills
       - ./backend/knowledge:/app/backend/knowledge
@@ -88,23 +93,20 @@ services:
       ROBOT_BRIDGE_EMBEDDED: "${ROBOT_BRIDGE_EMBEDDED:-false}"
       ROBOT_BACKEND_URL: "${ROBOT_BACKEND_URL:-http://backend:8000}"
       ROBOT_BRIDGE_URL: "${ROBOT_BRIDGE_URL:-http://robot-bridge:8090}"
-      ROBOT_BRIDGE_SHARED_SECRET: "${SECRET_KEY}"
 
   robot-bridge:
     restart: "no"
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: robot/Dockerfile
     develop:
       watch:
-        - path: ./backend
+        - path: ./robot
           action: sync
-          target: /app/backend
+          target: /app/robot
           ignore:
-            - ./backend/.venv
-            - ./backend/sql_app.db
-            - .venv
-        - path: ./backend/pyproject.toml
+            - ./robot/.venv
+        - path: ./robot/pyproject.toml
           action: rebuild
 
   mailcatcher:
