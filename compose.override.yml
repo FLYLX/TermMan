@@ -91,14 +91,16 @@ services:
       BACKEND_LOG_DIR: "/app/backend/app/services/log"
       ROBOT_PLUGIN_ENABLED: "${ROBOT_PLUGIN_ENABLED:-true}"
       ROBOT_BRIDGE_EMBEDDED: "${ROBOT_BRIDGE_EMBEDDED:-false}"
-      ROBOT_BACKEND_URL: "http://backend:8000"
-      ROBOT_BRIDGE_URL: "http://robot-bridge:8090"
+      ROBOT_BACKEND_URL: "${ROBOT_BACKEND_URL:-http://backend:8000}"
+      ROBOT_BRIDGE_URL: "${ROBOT_BRIDGE_URL:-http://robot-bridge:8090}"
 
   robot-bridge:
     restart: "no"
     build:
       context: .
       dockerfile: robot/Dockerfile
+    ports:
+      - "${ROBOT_BRIDGE_HOST_PORT:-8091}:8090"
     develop:
       watch:
         - path: ./robot

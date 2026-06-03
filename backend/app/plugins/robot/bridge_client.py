@@ -22,11 +22,53 @@ class RobotBridgeClient:
         self._base_url = settings.ROBOT_BRIDGE_URL.rstrip("/")
         self._shared_secret = settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY
 
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
     def _headers(self) -> dict[str, str]:
         return {
             "Content-Type": "application/json",
             "X-TermMan-Bridge-Token": self._shared_secret,
         }
+
+    def _friendly_error(self, exc: Exception) -> str:
+        message = str(exc)
+        if "Name or service not known" in message or "[Errno -2]" in message:
+            return (
+                f"{self._base_url}: {message}. Backend cannot resolve this "
+                "ROBOT_BRIDGE_URL. Set ROBOT_BRIDGE_URL in the root .env to "
+                "the bridge address reachable from the backend runtime."
+            )
+        return f"{self._base_url}: {message}"
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        timeout: float,
+        **kwargs,
+    ) -> httpx.Response:
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                response = client.request(
+                    method,
+                    f"{self._base_url}{path}",
+                    headers=self._headers(),
+                    **kwargs,
+                )
+            response.raise_for_status()
+            return response
+        except Exception as exc:
+            raise RuntimeError(self._friendly_error(exc)) from exc
+
+    def get_health(self) -> dict:
+        response = self._request("GET", "/internal/health", timeout=5.0)
+        data = response.json()
+        if isinstance(data, dict):
+            return data
+        return {"data": data}
 
     def send_message(self, robot_id: uuid.UUID | str, target: RobotReplyTarget, text: str) -> None:
         if not text.strip():
@@ -49,13 +91,12 @@ class RobotBridgeClient:
             },
         )
         try:
-            with httpx.Client(timeout=10.0) as client:
-                response = client.post(
-                    f"{self._base_url}/internal/send",
-                    headers=self._headers(),
-                    content=payload.model_dump_json(),
-                )
-                response.raise_for_status()
+            self._request(
+                "POST",
+                "/internal/send",
+                timeout=10.0,
+                content=payload.model_dump_json(),
+            )
         except Exception as exc:
             record_robot_event(
                 robot_id_str,
@@ -71,14 +112,9 @@ class RobotBridgeClient:
             return False, "Bridge auto reload is disabled"
 
         try:
-            with httpx.Client(timeout=5.0) as client:
-                response = client.post(
-                    f"{self._base_url}/internal/reload",
-                    headers=self._headers(),
-                )
-                response.raise_for_status()
-                result = RobotBridgeReloadResponse.model_validate(response.json())
-                return result.success, result.detail
+            response = self._request("POST", "/internal/reload", timeout=5.0)
+            result = RobotBridgeReloadResponse.model_validate(response.json())
+            return result.success, result.detail
         except Exception as exc:
             logger.info("[RobotBridge] reload notification skipped: %s", exc)
             return False, str(exc)

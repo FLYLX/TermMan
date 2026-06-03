@@ -35,8 +35,24 @@ TermMan should use these container-internal URLs:
 ROBOT_BRIDGE_EMBEDDED=false
 ROBOT_BACKEND_URL=http://backend:8000
 ROBOT_BRIDGE_URL=http://robot-bridge:8090
+ROBOT_BRIDGE_HOST_PORT=8091
 ROBOT_BRIDGE_SHARED_SECRET=changethis
 ```
+
+The backend calls only `ROBOT_BRIDGE_URL`. It does not try alternate bridge
+addresses at runtime.
+
+Use `ROBOT_BRIDGE_URL=http://robot-bridge:8090` when the backend runs in the
+Docker Compose network. If the backend runs directly on the host while
+`robot-bridge` runs in Docker, expose the bridge with `ROBOT_BRIDGE_HOST_PORT`
+and set `ROBOT_BRIDGE_URL` manually, for example:
+
+```env
+ROBOT_BRIDGE_URL=http://127.0.0.1:8091
+ROBOT_BRIDGE_HOST_PORT=8091
+```
+
+Change both values together when the host port `8091` is already occupied.
 
 In NapCat, enable the OneBot V11 WebSocket Server and note its address, for
 example:

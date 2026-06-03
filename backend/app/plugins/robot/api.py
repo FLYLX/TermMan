@@ -77,23 +77,14 @@ def list_robot_platform_metadata() -> list[RobotPlatformPublic]:
 def get_bridge_health(current_user: CurrentUser) -> dict:
     del current_user
 
-    import httpx
-
-    from app.core.config import settings
-
     try:
-        response = httpx.get(
-            f"{settings.ROBOT_BRIDGE_URL}/internal/health",
-            headers={
-                "X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET
-                or settings.SECRET_KEY
-            },
-            timeout=5.0,
-        )
-        response.raise_for_status()
-        return response.json()
+        return robot_bridge_client.get_health()
     except Exception as e:
-        return {"error": str(e), "connected": False}
+        return {
+            "error": str(e),
+            "connected": False,
+            "bridge_url": robot_bridge_client.base_url,
+        }
 
 
 @router.get("/bridge/runtime-config")
@@ -484,10 +475,6 @@ def get_robot_connection_status(
     current_user: CurrentUser,
     id: uuid.UUID,
 ) -> dict:
-    import httpx
-
-    from app.core.config import settings
-
     robot = get_robot_or_404(session, id)
     assert_robot_permission(robot, current_user)
 
@@ -495,16 +482,7 @@ def get_robot_connection_status(
         return {"robot_id": str(id), "connected": False, "reason": "robot_disabled"}
 
     try:
-        response = httpx.get(
-            f"{settings.ROBOT_BRIDGE_URL}/internal/health",
-            headers={
-                "X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET
-                or settings.SECRET_KEY
-            },
-            timeout=5.0,
-        )
-        response.raise_for_status()
-        health_data = response.json()
+        health_data = robot_bridge_client.get_health()
 
         robots_status = health_data.get("robots", {})
         robot_status = robots_status.get(str(id), {})
@@ -525,9 +503,6 @@ def diagnose_robot_chain(
     current_user: CurrentUser,
     id: uuid.UUID,
 ) -> dict:
-    import httpx
-
-    from app.core.config import settings
     from app.services import backend_conn_pool
 
     robot = get_robot_or_404(session, id)
@@ -558,16 +533,7 @@ def diagnose_robot_chain(
         "connected": not uses_napcat_socket,
     }
     try:
-        response = httpx.get(
-            f"{settings.ROBOT_BRIDGE_URL}/internal/health",
-            headers={
-                "X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET
-                or settings.SECRET_KEY
-            },
-            timeout=5.0,
-        )
-        response.raise_for_status()
-        health_data = response.json()
+        health_data = robot_bridge_client.get_health()
 
         robots_status = health_data.get("robots", {})
         robot_status = robots_status.get(str(id), {})
@@ -726,25 +692,12 @@ def get_robot_debug(
     id: uuid.UUID,
     limit: int = 100,
 ) -> dict:
-    import httpx
-
-    from app.core.config import settings
-
     robot = get_robot_or_404(session, id)
     assert_robot_permission(robot, current_user)
 
     bridge_health: dict = {"status": "unknown"}
     try:
-        response = httpx.get(
-            f"{settings.ROBOT_BRIDGE_URL}/internal/health",
-            headers={
-                "X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET
-                or settings.SECRET_KEY
-            },
-            timeout=5.0,
-        )
-        response.raise_for_status()
-        bridge_health = response.json()
+        bridge_health = robot_bridge_client.get_health()
     except Exception as e:
         bridge_health = {"status": "error", "error": str(e)}
 
@@ -783,7 +736,7 @@ def get_robot_debug(
             "app_id": robot.app_id,
         },
         "bridge": {
-            "url": settings.ROBOT_BRIDGE_URL,
+            "url": robot_bridge_client.base_url,
             "napcat_ws_url": napcat_ws_url,
             "status": bridge_health.get(
                 "status", "ok" if "error" not in bridge_health else "error"
