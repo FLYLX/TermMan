@@ -20,7 +20,6 @@ class AgentInputBridge:
 
     def handle_stream(self, item_uuid: str, data: dict[str, object]) -> None:
         try:
-            from app.plugins.robot import dispatch_filtered_output_if_enabled
             from app.services.agent import item_handler_context
             from app.services.agent.stream_manager import stream_manager
 
@@ -30,11 +29,6 @@ class AgentInputBridge:
 
             item = self._load_item(item_uuid)
             filtered_output = self._build_filtered_output(item, data, raw_output)
-            dispatch_filtered_output_if_enabled(
-                item_uuid,
-                filtered_output,
-                item_title=item.title if item else None,
-            )
 
             handler_id = item_handler_context.get_handler(item_uuid) or self._load_handler_id(item_uuid)
             if not handler_id:

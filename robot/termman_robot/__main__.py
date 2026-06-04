@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import threading
-import time
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -41,8 +39,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _load_initial_runtime_config() -> tuple[
+    list[BridgeRobot], dict[str, str], dict[str, str], dict[str, str]
+]:
+    try:
+        return load_runtime_config()
+    except Exception as exc:
+        logger.warning("[RobotBridge] Initial runtime config unavailable: %s", exc)
+        return [], {}, {}, {"startup": str(exc)}
+
+
 LOADED_ROBOTS, ROBOT_ID_BY_IDENTITY, IDENTITY_BY_ROBOT_ID, CONFIG_ERRORS = (
-    load_runtime_config()
+    _load_initial_runtime_config()
 )
 ROBOT_BY_ID = {robot.id: robot for robot in LOADED_ROBOTS}
 SEEN_CONNECTED_ROBOT_IDS: set[str] = set()
@@ -68,6 +76,98 @@ def _assert_bridge_permission(header_value: str | None) -> None:
 
 def _loaded_robot_platforms(robots: list[BridgeRobot]) -> list[str]:
     return sorted({robot.platform for robot in robots})
+
+
+def _sync_onebot_adapter_config(new_robots: list[BridgeRobot]) -> str | None:
+    try:
+        new_init_kwargs = build_nonebot_init_kwargs(new_robots)
+    except Exception as exc:
+        return str(exc)
+
+    adapter = getattr(driver, "_adapters", {}).get("OneBot V11")
+    if adapter is None:
+        return "OneBot V11 adapter is not loaded"
+
+    onebot_config = getattr(adapter, "onebot_config", None)
+    if onebot_config is None:
+        return "OneBot V11 adapter config is not available"
+
+    onebot_config.onebot_access_token = new_init_kwargs.get("onebot_access_token")
+    onebot_config.onebot_secret = new_init_kwargs.get("onebot_secret")
+    return None
+
+
+def reload_runtime_config() -> RobotBridgeReloadResponse:
+    global \
+        LOADED_ROBOTS, \
+        ROBOT_ID_BY_IDENTITY, \
+        IDENTITY_BY_ROBOT_ID, \
+        ROBOT_BY_ID, \
+        CONFIG_ERRORS
+
+    try:
+        (
+            new_robots,
+            new_robot_id_by_identity,
+            new_identity_by_robot_id,
+            new_errors,
+        ) = load_runtime_config()
+    except Exception as exc:
+        logger.exception("[RobotBridge] Failed to soft reload runtime config")
+        return RobotBridgeReloadResponse(
+            success=False,
+            detail=f"Bridge soft reload failed: {exc}",
+        )
+
+    sync_error = _sync_onebot_adapter_config(new_robots)
+    if sync_error is not None:
+        return RobotBridgeReloadResponse(
+            success=False,
+            detail=f"Bridge soft reload failed: {sync_error}",
+        )
+
+    old_robot_ids = set(IDENTITY_BY_ROBOT_ID)
+    old_identities = set(ROBOT_ID_BY_IDENTITY)
+    new_robot_ids = set(new_identity_by_robot_id)
+    new_identities = set(new_robot_id_by_identity)
+    removed_robot_ids = old_robot_ids - new_robot_ids
+    changed_robot_ids = {
+        robot_id
+        for robot_id in old_robot_ids & new_robot_ids
+        if IDENTITY_BY_ROBOT_ID.get(robot_id) != new_identity_by_robot_id.get(robot_id)
+    }
+
+    LOADED_ROBOTS = new_robots
+    ROBOT_ID_BY_IDENTITY = new_robot_id_by_identity
+    IDENTITY_BY_ROBOT_ID = new_identity_by_robot_id
+    ROBOT_BY_ID = {robot.id: robot for robot in new_robots}
+    CONFIG_ERRORS = new_errors
+
+    stale_robot_ids = removed_robot_ids | changed_robot_ids
+    for robot_id in stale_robot_ids:
+        SEEN_CONNECTED_ROBOT_IDS.discard(robot_id)
+        LAST_PLATFORM_EVENT_AT_BY_ROBOT_ID.pop(robot_id, None)
+        LAST_MESSAGE_EVENT_AT_BY_ROBOT_ID.pop(robot_id, None)
+        ONEBOT_SOCKET_STATUS_BY_ROBOT_ID.pop(robot_id, None)
+
+    added_robot_count = len(new_robot_ids - old_robot_ids)
+    removed_robot_count = len(removed_robot_ids)
+    changed_identity_count = len(changed_robot_ids)
+    detail = (
+        "Bridge runtime config soft reloaded: "
+        f"{len(new_robots)} robot(s), "
+        f"{added_robot_count} added, "
+        f"{removed_robot_count} removed, "
+        f"{changed_identity_count} identity changed"
+    )
+    if old_identities != new_identities:
+        logger.info(
+            "[RobotBridge] Identity mapping soft reloaded: old=%s new=%s",
+            sorted(old_identities),
+            sorted(new_identities),
+        )
+    logger.info("[RobotBridge] %s", detail)
+    return RobotBridgeReloadResponse(success=True, detail=detail)
 
 
 def _onebot_reverse_ws_url() -> str:
@@ -435,13 +535,7 @@ async def internal_reload(
     x_termman_bridge_token: str | None = Header(default=None),
 ) -> RobotBridgeReloadResponse:
     _assert_bridge_permission(x_termman_bridge_token)
-
-    def _restart() -> None:
-        time.sleep(0.2)
-        os._exit(0)
-
-    threading.Thread(target=_restart, daemon=True).start()
-    return RobotBridgeReloadResponse(success=True, detail="Bridge restart scheduled")
+    return await asyncio.to_thread(reload_runtime_config)
 
 
 @app.get("/internal/health")

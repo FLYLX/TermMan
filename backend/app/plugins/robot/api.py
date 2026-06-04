@@ -359,7 +359,7 @@ def bind_item_to_robot(
         robot_id=id,
         item_id=body.item_id,
         allow_chat=payload.get("allow_chat", True),
-        receive_filtered_output=payload.get("receive_filtered_output", False),
+        receive_filtered_output=False,
         chat_alias=payload.get("chat_alias"),
         is_default_target=payload.get("is_default_target", False),
     )
@@ -402,11 +402,12 @@ def update_robot_item_binding(
     payload = normalize_binding_payload(body)
     merged_payload = {
         "allow_chat": binding.allow_chat,
-        "receive_filtered_output": binding.receive_filtered_output,
+        "receive_filtered_output": False,
         "chat_alias": binding.chat_alias,
         "is_default_target": binding.is_default_target,
     }
     merged_payload.update(payload)
+    merged_payload["receive_filtered_output"] = False
     validate_binding_payload(merged_payload)
 
     if "chat_alias" in payload:
@@ -422,7 +423,7 @@ def update_robot_item_binding(
         clear_default_targets(session, id, exclude_item_id=item_id)
 
     binding.allow_chat = merged_payload["allow_chat"]
-    binding.receive_filtered_output = merged_payload["receive_filtered_output"]
+    binding.receive_filtered_output = False
     binding.chat_alias = merged_payload["chat_alias"]
     binding.is_default_target = merged_payload["is_default_target"]
 
@@ -639,7 +640,7 @@ def diagnose_robot_chain(
             "item_id": str(item.id),
             "item_title": item.title,
             "allow_chat": binding.allow_chat,
-            "receive_filtered_output": binding.receive_filtered_output,
+            "receive_filtered_output": False,
             "is_default_target": binding.is_default_target,
             "route_key": robot_service.build_route_key(item, binding),
         }
@@ -660,7 +661,7 @@ def diagnose_robot_chain(
             "chat_enabled": binding.allow_chat,
             "route_key": item_status["route_key"],
             "default_target": binding.is_default_target,
-            "filtered_output_enabled": binding.receive_filtered_output,
+            "filtered_output_enabled": False,
         }
         items_status.append(item_status)
 

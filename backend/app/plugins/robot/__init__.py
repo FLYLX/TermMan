@@ -18,24 +18,6 @@ def include_robot_plugin_router(api_router: APIRouter) -> None:
     api_router.include_router(router)
 
 
-def dispatch_filtered_output_if_enabled(
-    item_id: str,
-    filtered_output: str,
-    *,
-    item_title: str | None = None,
-) -> None:
-    if not is_robot_plugin_enabled():
-        return
-
-    from .service import robot_service
-
-    robot_service.dispatch_filtered_output(
-        item_id,
-        filtered_output,
-        item_title=item_title,
-    )
-
-
 def __getattr__(name: str):
     if name == "RobotService":
         from .service import RobotService
@@ -49,7 +31,6 @@ def __getattr__(name: str):
 
 __all__ = [
     "RobotService",
-    "dispatch_filtered_output_if_enabled",
     "include_robot_plugin_router",
     "is_robot_plugin_enabled",
     "robot_service",

@@ -139,7 +139,7 @@ def serialize_binding(
         item_id=binding.item_id,
         item_title=item.title,
         allow_chat=binding.allow_chat,
-        receive_filtered_output=binding.receive_filtered_output,
+        receive_filtered_output=False,
         chat_alias=binding.chat_alias,
         route_key=route_key,
         is_default_target=binding.is_default_target,

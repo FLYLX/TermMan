@@ -221,7 +221,6 @@ function useRobotDetailCopy() {
           alias: "路由别名",
           aliasPlaceholder: "留空则自动使用终端标题",
           allowChat: "允许聊天输入",
-          receiveOutput: "接收过滤输出",
           defaultTarget: "默认聊天目标",
           save: "保存",
           remove: "解绑",
@@ -261,7 +260,6 @@ function useRobotDetailCopy() {
           alias: "Route alias",
           aliasPlaceholder: "Leave blank to use the terminal title",
           allowChat: "Allow chat input",
-          receiveOutput: "Receive filtered output",
           defaultTarget: "Default chat target",
           save: "Save",
           remove: "Unbind",
@@ -325,7 +323,6 @@ function useRobotDetailUiCopy() {
           alias: "路由别名",
           aliasPlaceholder: "留空则自动使用终端标题",
           allowChat: "允许聊天输入",
-          receiveOutput: "接收过滤输出",
           defaultTarget: "默认聊天目标",
           save: "保存",
           remove: "解绑",
@@ -505,7 +502,6 @@ function AddRobotBindingDialog({
   const [itemId, setItemId] = useState("")
   const [chatAlias, setChatAlias] = useState("")
   const [allowChat, setAllowChat] = useState(true)
-  const [receiveFilteredOutput, setReceiveFilteredOutput] = useState(true)
   const [isDefaultTarget, setIsDefaultTarget] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
@@ -513,7 +509,6 @@ function AddRobotBindingDialog({
     setItemId("")
     setChatAlias("")
     setAllowChat(true)
-    setReceiveFilteredOutput(true)
     setIsDefaultTarget(false)
   }
 
@@ -529,7 +524,7 @@ function AddRobotBindingDialog({
         item_id: itemId,
         chat_alias: chatAlias.trim() || null,
         allow_chat: allowChat,
-        receive_filtered_output: receiveFilteredOutput,
+        receive_filtered_output: false,
         is_default_target: allowChat ? isDefaultTarget : false,
       })
       await invalidateRobotQueries(queryClient, robotId)
@@ -617,16 +612,6 @@ function AddRobotBindingDialog({
 
               <label className="flex items-center gap-3">
                 <Checkbox
-                  checked={receiveFilteredOutput}
-                  onCheckedChange={(checked) =>
-                    setReceiveFilteredOutput(Boolean(checked))
-                  }
-                />
-                <span className="text-sm">{copy.receiveOutput}</span>
-              </label>
-
-              <label className="flex items-center gap-3">
-                <Checkbox
                   checked={isDefaultTarget}
                   disabled={!allowChat}
                   onCheckedChange={(checked) =>
@@ -675,9 +660,6 @@ function RobotBindingCard({
 
   const [chatAlias, setChatAlias] = useState(binding.chat_alias ?? "")
   const [allowChat, setAllowChat] = useState(binding.allow_chat)
-  const [receiveFilteredOutput, setReceiveFilteredOutput] = useState(
-    binding.receive_filtered_output,
-  )
   const [isDefaultTarget, setIsDefaultTarget] = useState(
     binding.is_default_target,
   )
@@ -687,19 +669,16 @@ function RobotBindingCard({
   useEffect(() => {
     setChatAlias(binding.chat_alias ?? "")
     setAllowChat(binding.allow_chat)
-    setReceiveFilteredOutput(binding.receive_filtered_output)
     setIsDefaultTarget(binding.is_default_target)
   }, [
     binding.allow_chat,
     binding.chat_alias,
     binding.is_default_target,
-    binding.receive_filtered_output,
   ])
 
   const isDirty =
     chatAlias.trim() !== (binding.chat_alias ?? "") ||
     allowChat !== binding.allow_chat ||
-    receiveFilteredOutput !== binding.receive_filtered_output ||
     isDefaultTarget !== binding.is_default_target
 
   const handleSave = async () => {
@@ -708,7 +687,7 @@ function RobotBindingCard({
       await updateRobotBinding(robotId, binding.item_id, {
         chat_alias: chatAlias.trim() || null,
         allow_chat: allowChat,
-        receive_filtered_output: receiveFilteredOutput,
+        receive_filtered_output: false,
         is_default_target: allowChat ? isDefaultTarget : false,
       })
       await invalidateRobotQueries(queryClient, robotId)
@@ -808,7 +787,7 @@ function RobotBindingCard({
           />
         </div>
 
-        <div className="grid gap-3 rounded-2xl border bg-muted/20 p-3 md:grid-cols-3">
+        <div className="grid gap-3 rounded-2xl border bg-muted/20 p-3 md:grid-cols-2">
           <label className="flex items-center gap-3">
             <Checkbox
               checked={allowChat}
@@ -822,17 +801,6 @@ function RobotBindingCard({
               }}
             />
             <span className="text-sm">{copy.allowChat}</span>
-          </label>
-
-          <label className="flex items-center gap-3">
-            <Checkbox
-              checked={receiveFilteredOutput}
-              disabled={isSaving || isRemoving}
-              onCheckedChange={(checked) =>
-                setReceiveFilteredOutput(Boolean(checked))
-              }
-            />
-            <span className="text-sm">{copy.receiveOutput}</span>
           </label>
 
           <label className="flex items-center gap-3">

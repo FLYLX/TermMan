@@ -1,14 +1,26 @@
+from __future__ import annotations
+
 import logging
 import re
 import threading
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from app.models import ItemHandler
-from app.services.agent.skills.loader import skill_loader
-from app.services.agent.skills.definition import SkillDefinition
+from app.services.agent.mcp.robot_context import (
+    RobotMCPContext,
+    register_robot_mcp_context,
+    unregister_robot_mcp_context,
+)
 from app.services.agent.mcp.server_manager import mcp_server_manager
+from app.services.agent.skills.definition import SkillDefinition
+from app.services.agent.skills.loader import skill_loader
 from app.services.filters.output_filter import OutputFilter, OutputFilterConfig
+
+if TYPE_CHECKING:
+    from app.models import Item
+    from app.plugins.robot.contracts import RobotReplyTarget
+    from app.services.agent.mcp.types import MCPTool
 
 logger = logging.getLogger(__name__)
 
@@ -25,33 +37,36 @@ class AgentContext:
     enabled_knowledge_files: list[str] = field(default_factory=list)
     output_filter_enabled: bool = False
     output_filter_rules: dict = field(default_factory=dict)
+    robot_id: str = ""
+    robot_sender_key: str = ""
+    robot_context_token: str = ""
 
 
 class Agent:
-    _instances: dict[str, "Agent"] = {}
-    
+    _instances: dict[str, Agent] = {}
+
     def __new__(cls, handler_id: str):
         if handler_id in cls._instances:
             return cls._instances[handler_id]
         instance = super().__new__(cls)
         cls._instances[handler_id] = instance
         return instance
-    
+
     def __init__(self, handler_id: str):
         if hasattr(self, "_initialized") and self._initialized:
             return
-        
+
         self._initialized = True
         self.handler_id = handler_id
         self._context: AgentContext | None = None
         self._skills: dict[str, SkillDefinition] = {}
         self._mcp_servers: list[str] = []
         self._mcp_tools: list[dict] = []
-        self._mcp_tools_raw: list["MCPTool"] = []
+        self._mcp_tools_raw: list[MCPTool] = []
         logger.info(f"[Agent] Created agent for handler {handler_id}")
-    
+
     @classmethod
-    def from_handler(cls, handler: ItemHandler) -> "Agent":
+    def from_handler(cls, handler: ItemHandler) -> Agent:
         agent = cls(str(handler.id))
         agent._context = AgentContext(
             handler_id=str(handler.id),
@@ -64,20 +79,20 @@ class Agent:
         )
         agent._load_skills()
         return agent
-    
+
     def _load_skills(self):
         self._skills.clear()
         self._mcp_servers.clear()
         self._mcp_tools.clear()
         self._mcp_tools_raw.clear()
-        
+
         if self._context:
             if self._context.enabled_mcp_servers:
                 for server_name in self._context.enabled_mcp_servers:
                     if server_name not in self._mcp_servers:
                         self._mcp_servers.append(server_name)
                         logger.info(f"[Agent] Added MCP server from handler config: {server_name}")
-            
+
             if self._context.enabled_skills:
                 for skill_id in self._context.enabled_skills:
                     skill = skill_loader.get(skill_id)
@@ -90,11 +105,11 @@ class Agent:
                                     logger.info(f"[Agent] Added MCP server from skill '{skill_id}': {server_name}")
                     else:
                         logger.warning(f"[Agent] Skill '{skill_id}' not found")
-        
+
         self._load_mcp_tools()
-        
+
         logger.info(f"[Agent] Loaded {len(self._skills)} skills, {len(self._mcp_servers)} MCP servers ({self._mcp_servers}), {len(self._mcp_tools)} tools for handler {self.handler_id}")
-    
+
     def _load_mcp_tools(self):
         self._mcp_tools.clear()
         self._mcp_tools_raw.clear()
@@ -116,7 +131,7 @@ class Agent:
         if not self._context:
             return []
         return self._context.enabled_knowledge_files
-    
+
     async def start_mcp_servers(self):
         running_servers: list[str] = []
         for server_name in self._mcp_servers:
@@ -138,20 +153,45 @@ class Agent:
                 ]
             )
             logger.info(f"[Agent] MCP server '{server_name}' running, loaded {tools_count} tools")
-    
-    def set_item_context(self, item_id: str, item: "Item" = None):
+
+    def set_item_context(self, item_id: str, item: Item | None = None):
         if self._context:
             self._context.item_id = item_id
             if item:
                 self._context.output_filter_enabled = item.output_filter_enabled
                 self._context.output_filter_rules = item.output_filter_rules or {}
-    
+
+    def set_robot_context(
+        self,
+        *,
+        robot_id: str,
+        sender_key: str,
+        reply_target: RobotReplyTarget,
+    ) -> None:
+        if self._context:
+            self.clear_robot_context()
+            context = RobotMCPContext(
+                robot_id=robot_id,
+                sender_key=sender_key,
+                reply_target=reply_target.model_copy(deep=True),
+            )
+            self._context.robot_id = robot_id
+            self._context.robot_sender_key = sender_key
+            self._context.robot_context_token = register_robot_mcp_context(context)
+
+    def clear_robot_context(self) -> None:
+        if self._context:
+            unregister_robot_mcp_context(self._context.robot_context_token)
+            self._context.robot_id = ""
+            self._context.robot_sender_key = ""
+            self._context.robot_context_token = ""
+
     def _get_output_filter(self) -> OutputFilter | None:
         if not self._context or not self._context.output_filter_enabled:
             return None
-        
+
         from app.services.filters.output_filter import FilterRule
-        
+
         filters = []
         for filter_name, filter_config in self._context.output_filter_rules.items():
             if isinstance(filter_config, dict):
@@ -162,13 +202,13 @@ class Agent:
                     replace_rules=filter_config.get("action", {}).get("replace_rules", {}),
                 )
                 filters.append(filter_rule)
-        
+
         config = OutputFilterConfig(enabled=True, filters=filters)
         return OutputFilter(config)
-    
+
     def get_skills(self) -> list[SkillDefinition]:
         return list(self._skills.values())
-    
+
     def reload_skills(self):
         self._load_skills()
 
@@ -183,22 +223,22 @@ class Agent:
         self._context.enabled_mcp_servers = handler.enabled_mcp_servers or []
         self._context.enabled_knowledge_files = handler.enabled_knowledge_files or []
         self._load_skills()
-    
+
     def update_skills(self, enabled_skills: list[str]):
         skill_loader.reload()
         if self._context:
             self._context.enabled_skills = enabled_skills
         self._load_skills()
-    
+
     def update_mcp_servers(self, enabled_mcp_servers: list[str]):
         if self._context:
             self._context.enabled_mcp_servers = enabled_mcp_servers
         self._load_skills()
-    
+
     def match_skills(self, query: str) -> list[SkillDefinition]:
         matched = []
         query_lower = query.lower()
-        
+
         for skill in self._skills.values():
             if skill.trigger and skill.trigger.patterns:
                 for pattern in skill.trigger.patterns:
@@ -218,36 +258,36 @@ class Agent:
                     if kw in query_lower:
                         matched.append(skill)
                     break
-        
+
         return matched
-    
+
     def get_mcp_servers(self) -> list[str]:
         return self._mcp_servers.copy()
-    
+
     def get_skip_memory_tools(self) -> list[str]:
         return [
             f"mcp_{tool.server_name}_{tool.name}"
             for tool in self._mcp_tools_raw
             if tool.skip_memory
         ]
-    
+
     def get_tools_for_litellm(self) -> list[dict]:
         return self._mcp_tools.copy()
-    
+
     async def execute_tool(self, tool_name: str, args: dict) -> dict:
         if not tool_name.startswith("mcp_"):
             return {"success": False, "error": f"Tool '{tool_name}' is not an MCP tool"}
-        
+
         parts = tool_name.split("_", 2)
         if len(parts) < 3:
             return {"success": False, "error": f"Invalid MCP tool name: {tool_name}"}
-        
+
         server_name = parts[1]
         actual_tool_name = parts[2]
-        
+
         if server_name not in self._mcp_servers:
             return {"success": False, "error": f"MCP server '{server_name}' not available for this agent"}
-        
+
         for tool in self._mcp_tools:
             if tool.get("function", {}).get("name") == tool_name:
                 input_schema = tool.get("function", {}).get("parameters", {})
@@ -255,13 +295,20 @@ class Agent:
                 if "item_id" in properties and "item_id" not in args:
                     if self._context and self._context.item_id:
                         args["item_id"] = self._context.item_id
+                if (
+                    tool_name == "mcp_robot_send_message"
+                    and self._context
+                    and self._context.robot_id
+                    and self._context.robot_context_token
+                ):
+                    args["_robot_context_token"] = self._context.robot_context_token
                 break
-        
+
         if "command" in args:
             output_filter = self._get_output_filter()
             if output_filter:
                 filter_result = output_filter.filter(args["command"])
-                
+
                 if filter_result.is_blocked:
                     logger.warning(f"[Agent] Command blocked by output filter: {filter_result.reason}")
                     return {
@@ -269,11 +316,11 @@ class Agent:
                         "error": f"Command blocked by security filter: {filter_result.reason}",
                         "blocked": True,
                     }
-                
+
                 if filter_result.action.value == "modified":
                     logger.info(f"[Agent] Command modified by output filter: {args['command']} -> {filter_result.command}")
                     args["command"] = filter_result.command
-        
+
         try:
             result = await mcp_server_manager.call_tool(server_name, actual_tool_name, args)
             logger.info(f"[Agent] Executed MCP tool '{tool_name}' with args: {args}")
@@ -285,16 +332,16 @@ class Agent:
 
 class AgentManager:
     _instance = None
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._agents = {}
         return cls._instance
-    
+
     def get_or_create(self, handler: ItemHandler) -> Agent:
         handler_id = str(handler.id)
-        
+
         if handler_id in self._agents:
             agent = self._agents[handler_id]
             context = agent._context
@@ -313,7 +360,7 @@ class AgentManager:
                 skill_loader.reload()
                 agent.refresh_from_handler(handler)
             return agent
-        
+
         agent = Agent.from_handler(handler)
         self._agents[handler_id] = agent
         return agent
@@ -332,7 +379,7 @@ class AgentManager:
 class ItemHandlerContext:
     _instance = None
     _lock = threading.Lock()
-    
+
     def __new__(cls):
         if cls._instance is None:
             with cls._lock:
@@ -340,7 +387,7 @@ class ItemHandlerContext:
                     cls._instance = super().__new__(cls)
                     cls._instance._initialized = False
         return cls._instance
-    
+
     def __init__(self):
         if self._initialized:
             return
@@ -348,16 +395,16 @@ class ItemHandlerContext:
         self._item_handlers: dict[str, str] = {}
         self._global_lock = threading.RLock()
         logger.info("[ItemHandlerContext] Initialized")
-    
+
     def set_handler(self, item_id: str, handler_id: str):
         with self._global_lock:
             self._item_handlers[item_id] = handler_id
             logger.info(f"[ItemHandlerContext] Set handler={handler_id} for item={item_id}")
-    
-    def get_handler(self, item_id: str) -> Optional[str]:
+
+    def get_handler(self, item_id: str) -> str | None:
         with self._global_lock:
             return self._item_handlers.get(item_id)
-    
+
     def remove_handler(self, item_id: str):
         with self._global_lock:
             if item_id in self._item_handlers:

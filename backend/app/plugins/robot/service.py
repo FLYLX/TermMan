@@ -10,11 +10,9 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from app.core.db import engine
 from app.models import Item, Robot, RobotItem, User
 from app.services.agent.chat_runtime import collect_chat_response
 
-from .bridge_client import robot_bridge_client
 from .contracts import RobotDispatchResponse, RobotInboundMessage, RobotReplyTarget
 from .debug_log import preview_text, record_robot_event
 from .platforms import (
@@ -31,12 +29,6 @@ DEFAULT_MAX_MESSAGE_LENGTH = 1200
 @dataclass
 class ConversationState:
     item_id: uuid.UUID
-    updated_at: datetime
-
-
-@dataclass
-class AudienceState:
-    target: RobotReplyTarget
     updated_at: datetime
 
 
@@ -64,7 +56,6 @@ class RobotServiceError(Exception):
 class RobotService:
     def __init__(self) -> None:
         self._conversation_routes: dict[tuple[str, str], ConversationState] = {}
-        self._audiences: dict[tuple[str, str], dict[str, AudienceState]] = {}
         self._lock = threading.RLock()
 
     async def handle_inbound_message(
@@ -108,12 +99,6 @@ class RobotService:
                 message.sender_key,
             )
             self._remember_conversation(robot.id, message.sender_key, resolved_binding.item.id)
-            self._register_audience(
-                robot.id,
-                resolved_binding.item.id,
-                message.sender_key,
-                message.reply_target.model_copy(deep=True),
-            )
 
             if command.mode == "send":
                 success = self._write_to_item_terminal(resolved_binding.item.id, message_text)
@@ -147,6 +132,8 @@ class RobotService:
                 robot=robot,
                 item=resolved_binding.item,
                 message=message_text,
+                sender_key=message.sender_key,
+                reply_target=message.reply_target,
             )
             response = RobotDispatchResponse(
                 success=True,
@@ -247,63 +234,10 @@ class RobotService:
         *,
         item_title: str | None = None,
     ) -> None:
-        text = (filtered_output or "").strip()
-        if not text:
-            return
-
-        try:
-            item_uuid = uuid.UUID(str(item_id))
-        except ValueError:
-            logger.warning("[RobotService] Invalid item id for output dispatch: %s", item_id)
-            return
-
-        with Session(engine) as session:
-            item = session.get(Item, item_uuid)
-            if item is None:
-                return
-
-            title = item_title or item.title or "Item"
-            bindings = session.exec(
-                select(RobotItem).where(
-                    RobotItem.item_id == item_uuid,
-                    RobotItem.receive_filtered_output == True,  # noqa: E712
-                )
-            ).all()
-
-            for binding in bindings:
-                robot = session.get(Robot, binding.robot_id)
-                if robot is None or not robot.is_enabled:
-                    continue
-
-                try:
-                    self._assert_robot_supported(robot)
-                except RobotServiceError:
-                    continue
-
-                targets = self._reserve_audience_targets(robot.id, item_uuid)
-                if not targets:
-                    continue
-
-                output_text = f"[{title}]\n{text}"
-                for target in targets:
-                    if target.remaining_reply_budget() == 0:
-                        record_robot_event(
-                            str(robot.id),
-                            direction="backend_to_bridge",
-                            event="filtered_output_dropped",
-                            status="error",
-                            message="QQ reply budget exhausted before filtered output dispatch",
-                            payload={"item_id": str(item.id), "item_title": title},
-                        )
-                        continue
-                    record_robot_event(
-                        str(robot.id),
-                        direction="backend_to_bridge",
-                        event="filtered_output",
-                        message=output_text,
-                        payload={"item_id": str(item.id), "item_title": title},
-                    )
-                    self._safe_send_via_bridge(robot, target, output_text)
+        logger.debug(
+            "[RobotService] Skipping terminal output dispatch to robot for item=%s",
+            item_id,
+        )
 
     def normalize_chat_alias(self, value: str | None) -> str | None:
         if value is None:
@@ -474,6 +408,8 @@ class RobotService:
         robot: Robot,
         item: Item,
         message: str,
+        sender_key: str,
+        reply_target: RobotReplyTarget,
     ) -> str:
         owner = session.get(User, robot.owner_id)
         if owner is None:
@@ -485,6 +421,9 @@ class RobotService:
                 item_id=str(item.id),
                 current_user=owner,
                 message=message,
+                robot_id=str(robot.id),
+                robot_sender_key=sender_key,
+                robot_reply_target=reply_target,
             )
         except HTTPException as exc:
             detail = exc.detail if isinstance(exc.detail, str) else "Item agent is unavailable"
@@ -528,50 +467,6 @@ class RobotService:
             state = self._conversation_routes.get((str(robot_id), sender_key))
             return state.item_id if state else None
 
-    def _register_audience(
-        self,
-        robot_id: uuid.UUID,
-        item_id: uuid.UUID,
-        sender_key: str,
-        target: RobotReplyTarget,
-    ) -> None:
-        with self._lock:
-            self._prune_locked()
-            audience_key = (str(robot_id), str(item_id))
-            audience = self._audiences.setdefault(audience_key, {})
-            audience[sender_key] = AudienceState(target=target, updated_at=self._now())
-
-    def _reserve_audience_targets(
-        self,
-        robot_id: uuid.UUID,
-        item_id: uuid.UUID,
-    ) -> list[RobotReplyTarget]:
-        with self._lock:
-            self._prune_locked()
-            audience = self._audiences.get((str(robot_id), str(item_id)), {})
-            unique_targets: dict[tuple[str, str, str | None], RobotReplyTarget] = {}
-
-            for state in audience.values():
-                target = state.target.model_copy(deep=True)
-                if target.target_type in {"c2c", "group"}:
-                    msg_id = str(target.metadata.get("msg_id") or "").strip()
-                    if not msg_id:
-                        continue
-                    next_seq = max(int(target.metadata.get("msg_seq") or 0) + 1, 1)
-                    target.metadata["msg_id"] = msg_id
-                    target.metadata["msg_seq"] = next_seq
-                    state.target.metadata["msg_id"] = msg_id
-                    state.target.metadata["msg_seq"] = next_seq
-
-                key = (
-                    target.target_type,
-                    target.target_id,
-                    str(target.metadata.get("msg_id") or "") or None,
-                )
-                unique_targets[key] = target
-
-            return list(unique_targets.values())
-
     def _prune_locked(self) -> None:
         now = self._now()
         expired_after = now - CONVERSATION_TTL
@@ -583,38 +478,6 @@ class RobotService:
         ]
         for key in expired_routes:
             self._conversation_routes.pop(key, None)
-
-        expired_audience_keys: list[tuple[str, str]] = []
-        for key, audience in self._audiences.items():
-            expired_members = [
-                sender_key
-                for sender_key, state in audience.items()
-                if state.updated_at < expired_after
-            ]
-            for sender_key in expired_members:
-                audience.pop(sender_key, None)
-            if not audience:
-                expired_audience_keys.append(key)
-
-        for key in expired_audience_keys:
-            self._audiences.pop(key, None)
-
-    def _send_via_bridge(self, robot: Robot, target: RobotReplyTarget, text: str) -> None:
-        for chunk in self._reply_chunks_for_target(robot, target, text):
-            robot_bridge_client.send_message(str(robot.id), target, chunk)
-            if target.target_type in {"c2c", "group"}:
-                current_seq = max(int(target.metadata.get("msg_seq") or 0), 1)
-                target.metadata["msg_seq"] = current_seq + 1
-
-    def _safe_send_via_bridge(self, robot: Robot, target: RobotReplyTarget, text: str) -> None:
-        try:
-            self._send_via_bridge(robot, target, text)
-        except Exception as exc:
-            logger.warning(
-                "[RobotService] Failed to send bridge message for robot %s: %s",
-                robot.id,
-                exc,
-            )
 
     def _chunk_text(self, robot: Robot, text: str) -> list[str]:
         normalized = (text or "").strip()

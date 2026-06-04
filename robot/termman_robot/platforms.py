@@ -69,8 +69,8 @@ def build_nonebot_init_kwargs(robots: list[BridgeRobot]) -> dict[str, Any]:
 
 
 def register_nonebot_adapters(driver: Any, robots: list[BridgeRobot]) -> None:
-    if not any(robot.platform == "onebot_v11" for robot in robots):
-        return
+    del robots
+
     from nonebot.adapters.onebot.v11 import Adapter
 
     driver.register_adapter(Adapter)

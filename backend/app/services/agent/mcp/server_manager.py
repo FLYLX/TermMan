@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 class MCPServerManager:
     CONFIG_FILE = "mcp_servers.json"
-    BUILTIN_SERVERS = {"local"}
-    
+    BUILTIN_SERVERS = {"local", "robot"}
+
     def __init__(self, config_dir: Path | None = None):
         if config_dir is None:
             import os
@@ -21,22 +21,22 @@ class MCPServerManager:
                 config_dir = Path("/app")
             else:
                 config_dir = Path(__file__).parent.parent.parent.parent.parent
-        
+
         self.config_dir = Path(config_dir)
         self._servers: dict[str, MCPServer] = {}
         self._clients: dict[str, MCPClient | InProcessMCPClient] = {}
         self._load_config()
-    
+
     def _load_config(self):
         config_file = self.config_dir / self.CONFIG_FILE
         if not config_file.exists():
             logger.info(f"[MCPServerManager] Config file not found: {config_file}")
             return
-        
+
         try:
             with open(config_file, encoding="utf-8") as f:
                 config = json.load(f)
-            
+
             servers_data = config.get("mcpServers", {})
             for name, server_config in servers_data.items():
                 server = MCPServer(
@@ -48,118 +48,137 @@ class MCPServerManager:
                     description=server_config.get("description", ""),
                 )
                 self._servers[name] = server
-            
+
             logger.info(f"[MCPServerManager] Loaded {len(self._servers)} MCP servers from config")
-            
+
         except Exception as e:
             logger.error(f"[MCPServerManager] Failed to load config: {e}")
-    
+
     def get_server(self, name: str) -> MCPServer | None:
         return self._servers.get(name)
-    
+
     def get_all_servers(self) -> list[MCPServer]:
         return list(self._servers.values())
-    
+
     def get_enabled_servers(self) -> list[MCPServer]:
         return [s for s in self._servers.values() if s.enabled]
-    
+
     async def start_server(self, name: str) -> bool:
         server = self._servers.get(name)
         if not server:
             logger.warning(f"[MCPServerManager] Server '{name}' not found")
             return False
-        
+
         if name in self._clients:
             client = self._clients[name]
             if client.is_running:
                 logger.info(f"[MCPServerManager] Server '{name}' already running")
                 return True
-        
+
         if name in self.BUILTIN_SERVERS:
             return await self._start_builtin_server(name)
-        
+
         logger.info(f"[MCPServerManager] Starting server '{name}': {server.command} {' '.join(server.args)}")
-        
+
         client = MCPClient(server)
         if not await client.start():
             logger.error(f"[MCPServerManager] Failed to start process for '{name}'")
             return False
-        
+
         if not await client.initialize():
             logger.error(f"[MCPServerManager] Failed to initialize '{name}'")
             await client.stop()
             return False
-        
+
         tools = await client.list_tools()
-        
+
         self._clients[name] = client
         logger.info(f"[MCPServerManager] Server '{name}' started with {len(tools)} tools")
         return True
-    
+
     async def _start_builtin_server(self, name: str) -> bool:
         if name == "local":
             from .local_server import LocalMCPServer
             instance = LocalMCPServer()
-            
+
             async def handle_request(request: dict) -> dict:
                 return await instance._handle_request(request)
-            
+
             client = InProcessMCPClient(name, handle_request)
-            
+
             if not await client.initialize():
                 logger.error(f"[MCPServerManager] Failed to initialize builtin '{name}'")
                 return False
-            
+
             tools = await client.list_tools()
             self._clients[name] = client
-            
+
             logger.info(f"[MCPServerManager] Builtin server '{name}' started with {len(tools)} tools (JSON-RPC)")
             return True
-        
+
+        if name == "robot":
+            from .robot_server import RobotMCPServer
+            instance = RobotMCPServer()
+
+            async def handle_request(request: dict) -> dict:
+                return await instance._handle_request(request)
+
+            client = InProcessMCPClient(name, handle_request)
+
+            if not await client.initialize():
+                logger.error(f"[MCPServerManager] Failed to initialize builtin '{name}'")
+                return False
+
+            tools = await client.list_tools()
+            self._clients[name] = client
+
+            logger.info(f"[MCPServerManager] Builtin server '{name}' started with {len(tools)} tools (JSON-RPC)")
+            return True
+
         return False
-    
+
     async def stop_server(self, name: str):
         if name in self._clients:
             await self._clients[name].stop()
             del self._clients[name]
-    
+
     async def start_all(self):
         for server in self.get_enabled_servers():
             await self.start_server(server.name)
-    
+
     async def stop_all(self):
         for name in list(self._clients.keys()):
             await self.stop_server(name)
-    
+
     def get_tools_for_server(self, server_name: str) -> list[MCPTool]:
         client = self._clients.get(server_name)
         return client.get_tools() if client else []
-    
+
     async def call_tool(self, server_name: str, tool_name: str, arguments: dict) -> Any:
         client = self._clients.get(server_name)
         if not client:
             logger.warning(f"[MCPServerManager] Server '{server_name}' not running, available: {list(self._clients.keys())}")
             return [{"type": "text", "text": f"Error: Server '{server_name}' not running"}]
-        
+
         logger.info(f"[MCPServerManager] Calling tool '{tool_name}' on server '{server_name}' with args: {arguments}")
         result = await client.call_tool(tool_name, arguments)
         logger.info(f"[MCPServerManager] Tool result: {result}")
         return result
-    
+
     def reload_config(self):
         self._servers.clear()
         self._load_config()
-    
+
     async def reload_all(self):
         logger.info("[MCPServerManager] Reloading all MCP servers...")
         await self.stop_all()
         self.reload_config()
         await self.start_all()
         logger.info("[MCPServerManager] MCP servers reloaded")
-    
+
     def _save_config(self):
         config_file = self.config_dir / self.CONFIG_FILE
-        
+
         config = {"mcpServers": {}}
         for name, server in self._servers.items():
             config["mcpServers"][name] = {
@@ -169,12 +188,12 @@ class MCPServerManager:
                 "enabled": server.enabled,
                 "description": server.description,
             }
-        
+
         with open(config_file, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
-        
+
         logger.info(f"[MCPServerManager] Saved {len(self._servers)} MCP servers to config")
-    
+
     def add_server(
         self,
         name: str,
@@ -186,7 +205,7 @@ class MCPServerManager:
     ):
         if name in self._servers:
             raise ValueError(f"Server '{name}' already exists")
-        
+
         server = MCPServer(
             name=name,
             command=command,
@@ -198,7 +217,7 @@ class MCPServerManager:
         self._servers[name] = server
         self._save_config()
         logger.info(f"[MCPServerManager] Added MCP server '{name}'")
-    
+
     def update_server(
         self,
         name: str,
@@ -211,7 +230,7 @@ class MCPServerManager:
         server = self._servers.get(name)
         if not server:
             raise ValueError(f"Server '{name}' not found")
-        
+
         if command is not None:
             server.command = command
         if args is not None:
@@ -222,18 +241,18 @@ class MCPServerManager:
             server.enabled = enabled
         if description is not None:
             server.description = description
-        
+
         self._save_config()
         logger.info(f"[MCPServerManager] Updated MCP server '{name}'")
-    
+
     def delete_server(self, name: str):
         if name not in self._servers:
             raise ValueError(f"Server '{name}' not found")
-        
+
         del self._servers[name]
         self._save_config()
         logger.info(f"[MCPServerManager] Deleted MCP server '{name}'")
-    
+
     def is_server_running(self, name: str) -> bool:
         client = self._clients.get(name)
         return client is not None and client.is_running

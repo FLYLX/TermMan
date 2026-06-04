@@ -10,6 +10,7 @@ from app.models import Item, ItemHandler, ItemHandlerItem, User
 from app.services.agent.agent import agent_manager, item_handler_context
 
 if TYPE_CHECKING:
+    from app.plugins.robot.contracts import RobotReplyTarget
     from app.services.agent.agent import Agent
 
 
@@ -70,28 +71,42 @@ async def collect_chat_response(
     current_user: User,
     message: str,
     history: list[Any] | None = None,
+    robot_id: str | None = None,
+    robot_sender_key: str | None = None,
+    robot_reply_target: RobotReplyTarget | None = None,
 ) -> str:
     from app.api.routes.chat import generate_stream
 
     handler, _, agent = await prepare_chat_agent(session, item_id, current_user)
 
+    if robot_id and robot_sender_key and robot_reply_target:
+        agent.set_robot_context(
+            robot_id=robot_id,
+            sender_key=robot_sender_key,
+            reply_target=robot_reply_target,
+        )
+
     content = ""
     error_message = ""
-    for chunk in generate_stream(
-        message=message,
-        history=history or [],
-        handler=handler,
-        item_id=item_id,
-        agent=agent,
-    ):
-        if not chunk.startswith("data: "):
-            continue
+    try:
+        for chunk in generate_stream(
+            message=message,
+            history=history or [],
+            handler=handler,
+            item_id=item_id,
+            agent=agent,
+        ):
+            if not chunk.startswith("data: "):
+                continue
 
-        payload = json.loads(chunk[6:].strip())
-        if payload.get("type") == "agent_response":
-            content = str(payload.get("content") or content)
-        elif payload.get("type") in {"agent_error", "error"}:
-            error_message = str(payload.get("content") or error_message)
+            payload = json.loads(chunk[6:].strip())
+            if payload.get("type") == "agent_response":
+                content = str(payload.get("content") or content)
+            elif payload.get("type") in {"agent_error", "error"}:
+                error_message = str(payload.get("content") or error_message)
+    finally:
+        if robot_id:
+            agent.clear_robot_context()
 
     if error_message:
         raise HTTPException(status_code=500, detail=error_message)

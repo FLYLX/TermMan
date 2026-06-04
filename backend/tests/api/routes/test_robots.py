@@ -209,7 +209,7 @@ def test_bind_item_to_robot(
     content = response.json()
     assert content["item_id"] == str(item.id)
     assert content["allow_chat"] is True
-    assert content["receive_filtered_output"] is True
+    assert content["receive_filtered_output"] is False
     assert content["chat_alias"] == "alpha-room"
     assert content["route_key"] == "alpha-room"
     assert content["is_default_target"] is True
@@ -256,9 +256,11 @@ def test_dispatch_robot_message_routes_to_item_agent(
 
     expected_item_id = item.id
 
-    async def fake_chat_with_item(*, session, robot, item, message):
+    async def fake_chat_with_item(*, session, robot, item, message, sender_key, reply_target):
         del session, robot
         assert message == "status?"
+        assert sender_key == "group_group-1_member-1"
+        assert reply_target.target_id == "group-openid"
         assert item.id == expected_item_id
         return "agent-ok"
 
