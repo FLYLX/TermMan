@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import threading
@@ -9,6 +10,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import nonebot
+import uvicorn
 from fastapi import FastAPI, Header, HTTPException
 from nonebot import get_asgi, get_bots, on, on_message
 from nonebot.adapters import Bot, Event
@@ -512,7 +514,24 @@ def main() -> None:
         len(LOADED_ROBOTS),
         _loaded_robot_platforms(LOADED_ROBOTS),
     )
-    nonebot.run(host=settings.ROBOT_BRIDGE_HOST, port=settings.ROBOT_BRIDGE_PORT)
+
+    def _run_server() -> None:
+        uvicorn.run(
+            app,
+            host=settings.ROBOT_BRIDGE_HOST,
+            port=settings.ROBOT_BRIDGE_PORT,
+            log_level="info",
+        )
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        _run_server()
+        return
+
+    thread = threading.Thread(target=_run_server, daemon=False)
+    thread.start()
+    thread.join()
 
 
 if __name__ == "__main__":

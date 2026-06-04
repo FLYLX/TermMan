@@ -170,6 +170,32 @@ function getReverseWsEndpoint(
   )
 }
 
+function getPublicReverseWsEndpoint(endpoint?: string | null) {
+  const fallbackPath = "/onebot/v11/ws"
+  if (typeof window === "undefined") {
+    return endpoint || `ws://<termman-host>:7000${fallbackPath}`
+  }
+
+  const currentHost = window.location.hostname
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
+  const fallback = `${protocol}//${currentHost}:7000${fallbackPath}`
+  if (!endpoint) {
+    return fallback
+  }
+
+  try {
+    const parsed = new URL(endpoint.replace(/^http:/, "ws:").replace(/^https:/, "wss:"))
+    if (["robot-bridge", "backend", "localhost", "127.0.0.1", "0.0.0.0"].includes(parsed.hostname)) {
+      parsed.protocol = protocol
+      parsed.hostname = currentHost
+      parsed.port = parsed.port || "7000"
+    }
+    return parsed.toString()
+  } catch {
+    return endpoint
+  }
+}
+
 function useRobotDetailCopy() {
   const { locale } = useI18n()
 
@@ -985,6 +1011,7 @@ function RobotConnectionGuidePanel({
   const credentials = getRobotCredentials(robot)
   const socket = debug?.bridge?.onebot_socket
   const reverseWsUrl = getReverseWsEndpoint(debug, credentials)
+  const publicReverseWsUrl = getPublicReverseWsEndpoint(reverseWsUrl)
   const accessToken = credentials.access_token
   const secret = credentials.secret
   const selfId = credentials.self_id
@@ -1014,7 +1041,7 @@ function RobotConnectionGuidePanel({
         <div className="grid gap-3 md:grid-cols-2">
           <CopyableConfigValue
             label={copy.reverseEndpoint}
-            value={reverseWsUrl}
+            value={publicReverseWsUrl}
             mutedValue={copy.reverseEndpointHint}
           />
           <CopyableConfigValue
@@ -1043,7 +1070,7 @@ function RobotConnectionGuidePanel({
             <div>
               {copy.reverseWebSocketUrl}:{" "}
               <span className="font-mono text-foreground">
-                {reverseWsUrl || "ws://<termman-host>:7000/onebot/v11/ws"}
+                {publicReverseWsUrl}
               </span>
             </div>
             <div>
@@ -1257,6 +1284,7 @@ function RobotDebugPanel({
   const bridge = debug?.bridge
   const onebotSocket = bridge?.onebot_socket
   const reverseWsUrl = getReverseWsEndpoint(debug)
+  const publicReverseWsUrl = getPublicReverseWsEndpoint(reverseWsUrl)
 
   const handleReload = async () => {
     setIsReloading(true)
@@ -1383,7 +1411,7 @@ function RobotDebugPanel({
               {copy.reverseEndpointStatus}
             </div>
             <div className="mt-1 truncate font-medium">
-              {reverseWsUrl ?? "-"}
+              {publicReverseWsUrl}
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">

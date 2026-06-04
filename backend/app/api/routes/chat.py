@@ -253,6 +253,29 @@ def _format_tool_result(result: Any) -> str:
     return str(result)
 
 
+def _run_async_from_sync(coro_factory):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro_factory())
+
+    result_queue: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+
+    def runner():
+        try:
+            result_queue.put((True, asyncio.run(coro_factory())))
+        except BaseException as exc:
+            result_queue.put((False, exc))
+
+    thread = threading.Thread(target=runner, daemon=True)
+    thread.start()
+    thread.join()
+    ok, result = result_queue.get()
+    if ok:
+        return result
+    raise result
+
+
 def _build_completion_kwargs(
     handler: ItemHandler,
     *,
@@ -722,8 +745,6 @@ def generate_stream(
 
     tool_call_history: list[tuple[str, str]] = []
     final_response = ""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
 
     try:
         for _ in range(MAX_ITERATIONS):
@@ -958,7 +979,12 @@ def generate_stream(
                     )
                     yield _to_sse(action_event)
 
-                result = loop.run_until_complete(agent.execute_tool(tool_name, tool_args))
+                result = _run_async_from_sync(
+                    lambda tool_name=tool_name, tool_args=tool_args: agent.execute_tool(
+                        tool_name,
+                        tool_args,
+                    )
+                )
                 result_text = _format_tool_result(result)
 
                 if result_text and not hide_tool_details:
@@ -1025,8 +1051,6 @@ def generate_stream(
                 "timestamp": error_event["timestamp"],
             }
         )
-    finally:
-        loop.close()
 
 
 @router.post("/{item_id}")

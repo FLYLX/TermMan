@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -94,6 +95,98 @@ def _fake_sync_completion(**kwargs):
 
 def _non_status_event_types(events: list[dict]) -> list[str]:
     return [event["type"] for event in events if event["type"] != "agent_status"]
+
+
+def test_generate_stream_executes_tool_inside_running_event_loop(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+
+    item, handler = _create_linked_item_and_handler(db)
+    tool_name = "mcp_local_execute_command"
+    call_count = {"value": 0}
+    tool_calls: list[tuple[str, dict]] = []
+
+    fake_agent = _make_fake_agent(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": "Send a command to the terminal",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        execute_tool_result=lambda name, args: (
+            tool_calls.append((name, dict(args)))
+            or {"success": True, "result": [{"type": "text", "text": "sent"}]}
+        ),
+    )
+
+    def fake_stream_completion(**kwargs):
+        assert kwargs["messages"]
+        call_count["value"] += 1
+        if call_count["value"] == 1:
+            return iter(
+                [
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(
+                                    content="Running command",
+                                    tool_calls=[
+                                        SimpleNamespace(
+                                            index=0,
+                                            id="call_1",
+                                            function=SimpleNamespace(
+                                                name=tool_name,
+                                                arguments='{"command":"pwd"}',
+                                            ),
+                                        )
+                                    ],
+                                ),
+                                finish_reason=None,
+                            )
+                        ]
+                    )
+                ]
+            )
+
+        return iter(
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(content="Command dispatched", tool_calls=None),
+                            finish_reason="stop",
+                        )
+                    ]
+                )
+            ]
+        )
+
+    monkeypatch.setattr(chat_route, "completion", fake_stream_completion)
+    monkeypatch.setattr(chat_route, "get_relevant_memories", lambda *args, **kwargs: "")
+    monkeypatch.setattr(chat_route, "extract_important_info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
+
+    async def consume_inside_running_loop():
+        return list(
+            chat_route.generate_stream(
+                message="run pwd",
+                history=[],
+                handler=handler,
+                item_id=str(item.id),
+                agent=fake_agent,
+            )
+        )
+
+    chunks = asyncio.run(consume_inside_running_loop())
+
+    assert tool_calls == [(tool_name, {"command": "pwd", "item_id": str(item.id)})]
+    assert any('"type": "agent_response"' in chunk for chunk in chunks)
 
 
 def test_append_chat_message_preserves_order_and_metadata(db: Session) -> None:
