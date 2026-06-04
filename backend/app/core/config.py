@@ -89,12 +89,12 @@ class Settings(BaseSettings):
     KNOWLEDGE_BASE_DIR: str = str(BACKEND_DIR / "knowledge")
     ROBOT_PLUGIN_ENABLED: bool = True
     ROBOT_BRIDGE_EMBEDDED: bool = False
-    ROBOT_BRIDGE_URL: str = "http://robot-bridge:8090"
+    ROBOT_BRIDGE_URL: str = "http://robot-bridge:7000"
     ROBOT_BACKEND_URL: str = "http://backend:8000"
     ROBOT_BRIDGE_SHARED_SECRET: str | None = None
     ROBOT_BRIDGE_AUTO_RELOAD: bool = True
     ROBOT_BRIDGE_HOST: str = "0.0.0.0"
-    ROBOT_BRIDGE_PORT: int = 8090
+    ROBOT_BRIDGE_PORT: int = 7000
 
     @model_validator(mode="after")
     def _apply_robot_bridge_defaults(self) -> Self:

@@ -29,7 +29,7 @@ services:
       - ROBOT_PLUGIN_ENABLED=${ROBOT_PLUGIN_ENABLED:-true}
       - ROBOT_BRIDGE_EMBEDDED=${ROBOT_BRIDGE_EMBEDDED:-false}
       - ROBOT_BACKEND_URL=${ROBOT_BACKEND_URL:-http://backend:8000}
-      - ROBOT_BRIDGE_URL=${ROBOT_BRIDGE_URL:-http://robot-bridge:8090}
+      - ROBOT_BRIDGE_URL=${ROBOT_BRIDGE_URL:-http://robot-bridge:7000}
       - ROBOT_QQ_IS_SANDBOX=${ROBOT_QQ_IS_SANDBOX:-false}
     volumes:
       - backend-db:/app/backend
@@ -68,7 +68,7 @@ services:
       - ROBOT_PLUGIN_ENABLED=${ROBOT_PLUGIN_ENABLED:-true}
       - ROBOT_BRIDGE_EMBEDDED=${ROBOT_BRIDGE_EMBEDDED:-false}
       - ROBOT_BACKEND_URL=${ROBOT_BACKEND_URL:-http://backend:8000}
-      - ROBOT_BRIDGE_URL=${ROBOT_BRIDGE_URL:-http://robot-bridge:8090}
+      - ROBOT_BRIDGE_URL=${ROBOT_BRIDGE_URL:-http://robot-bridge:7000}
       - ROBOT_QQ_IS_SANDBOX=${ROBOT_QQ_IS_SANDBOX:-false}
     volumes:
       - backend-db:/app/backend

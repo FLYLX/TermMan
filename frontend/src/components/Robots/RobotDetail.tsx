@@ -1043,7 +1043,7 @@ function RobotConnectionGuidePanel({
             <div>
               {copy.reverseWebSocketUrl}:{" "}
               <span className="font-mono text-foreground">
-                {reverseWsUrl || "ws://<termman-host>:8090/onebot/v11/ws"}
+                {reverseWsUrl || "ws://<termman-host>:7000/onebot/v11/ws"}
               </span>
             </div>
             <div>

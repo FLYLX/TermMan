@@ -2,7 +2,7 @@
 
 TermMan runs the robot bridge as a standalone NoneBot2 microservice from the
 `robot/` subdirectory. In Docker Compose, the `robot-bridge` service listens on
-container port `8090` for backend internal control APIs and OneBot V11 reverse
+container port `7000` for backend internal control APIs and OneBot V11 reverse
 WebSocket connections.
 
 NapCat should use OneBot V11 reverse WebSocket. The `robot-bridge` service is
@@ -35,25 +35,25 @@ TermMan should use these container-internal URLs:
 ```env
 ROBOT_BRIDGE_EMBEDDED=false
 ROBOT_BACKEND_URL=http://backend:8000
-ROBOT_BRIDGE_URL=http://robot-bridge:8090
-ROBOT_BRIDGE_HOST_PORT=8091
+ROBOT_BRIDGE_URL=http://robot-bridge:7000
+ROBOT_BRIDGE_HOST_PORT=7000
 ROBOT_BRIDGE_SHARED_SECRET=changethis
 ```
 
 The backend calls only `ROBOT_BRIDGE_URL`. It does not try alternate bridge
 addresses at runtime.
 
-Use `ROBOT_BRIDGE_URL=http://robot-bridge:8090` when the backend runs in the
+Use `ROBOT_BRIDGE_URL=http://robot-bridge:7000` when the backend runs in the
 Docker Compose network. If the backend runs directly on the host while
 `robot-bridge` runs in Docker, expose the bridge with `ROBOT_BRIDGE_HOST_PORT`
 and set `ROBOT_BRIDGE_URL` manually, for example:
 
 ```env
-ROBOT_BRIDGE_URL=http://127.0.0.1:8091
-ROBOT_BRIDGE_HOST_PORT=8091
+ROBOT_BRIDGE_URL=http://127.0.0.1:7000
+ROBOT_BRIDGE_HOST_PORT=7000
 ```
 
-Change both values together when the host port `8091` is already occupied.
+Change both values together when the host port `7000` is already occupied.
 
 `robot/.env` also has `ROBOT_BRIDGE_URL`. Set that value to the address NapCat
 can reach. The Robot debug page shows the final reverse WebSocket endpoint:
