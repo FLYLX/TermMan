@@ -49,6 +49,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
 
@@ -139,6 +145,28 @@ function mergeRobotCredentialsForSave(
         return null
       })
       .filter((entry): entry is readonly [string, string] => entry !== null),
+  )
+}
+
+function getRecordString(
+  record: Record<string, unknown> | undefined,
+  key: string,
+) {
+  const value = record?.[key]
+  return typeof value === "string" && value.trim() ? value : undefined
+}
+
+function getReverseWsEndpoint(
+  debug: RobotDebugInfo | undefined,
+  credentials?: Record<string, string>,
+) {
+  const socket = debug?.bridge?.onebot_socket
+  return (
+    debug?.bridge?.onebot_reverse_ws_url ||
+    debug?.bridge?.napcat_ws_url ||
+    getRecordString(socket, "reverse_ws_url") ||
+    getRecordString(socket, "ws_url") ||
+    credentials?.reverse_ws_url
   )
 }
 
@@ -248,8 +276,172 @@ function useRobotDetailCopy() {
   }
 }
 
+function useRobotDetailUiCopy() {
+  const base = useRobotDetailCopy()
+  const { locale } = useI18n()
+
+  const page =
+    locale === "zh"
+      ? {
+          enabled: "已启用",
+          disabled: "未启用",
+          back: "返回机器人列表",
+          notFound: "没有找到这个机器人",
+          loading: "加载机器人中...",
+          loadFailed: "机器人详情加载失败",
+          bindingTitle: "终端绑定",
+          platform: "平台",
+          provider: "提供方",
+          totalBindings: "绑定数",
+          availableTerminals: "可绑定终端",
+          manageItem: "终端",
+          routeKey: "当前路由",
+          alias: "路由别名",
+          aliasPlaceholder: "留空则自动使用终端标题",
+          allowChat: "允许聊天输入",
+          receiveOutput: "接收过滤输出",
+          defaultTarget: "默认聊天目标",
+          save: "保存",
+          remove: "解绑",
+          updated: "绑定配置已更新",
+          removed: "绑定已删除",
+          updateFailed: "更新绑定失败",
+          removeFailed: "删除绑定失败",
+          removeConfirm: (title: string) => `确认解除与“${title}”的绑定吗？`,
+          addTrigger: "绑定终端",
+          addTitle: "给机器人绑定终端",
+          addDescription: "选择一个终端，并设置机器人如何把消息路由给它。",
+          itemPlaceholder: "选择一个终端",
+          addEmpty: "当前没有可绑定的终端",
+          addSuccess: "机器人绑定终端成功",
+          addFailed: "绑定终端失败",
+          itemRequired: "请选择一个终端",
+          cancel: "取消",
+          bind: "绑定",
+          tabConnection: "连接",
+          tabBindings: "绑定",
+          tabDebug: "调试",
+          tabSettings: "设置",
+          bindingDescription: "管理这个机器人可以收发消息的终端。",
+          copied: "已复制",
+          copyLabel: (label: string) => `复制${label}`,
+          notConfigured: "未配置",
+          connectionTitle: "NapCat 反向 WebSocket",
+          connectionDescription:
+            "NapCat 作为客户端，主动连接这个 OneBot V11 反向 WebSocket。",
+          waitingForNapCat: "等待 NapCat 连接",
+          reverseEndpoint: "反向 WS 地址",
+          reverseEndpointHint:
+            "请在 robot/.env 中把 ROBOT_BRIDGE_URL 设置成 NapCat 能访问的地址",
+          selfIdLabel: "QQ self_id",
+          selfIdHint: "填写 NapCat 当前登录的 QQ 号",
+          accessTokenLabel: "Access Token",
+          secretLabel: "Secret",
+          reverseSettingsTitle: "NapCat 配置项",
+          reverseWebSocketUrl: "反向 WebSocket 地址",
+          tokenLabel: "Token",
+          tokenConfigured: "使用已配置的 Access Token",
+          tokenEmpty: "留空",
+          selfIdFallback: "NapCat 当前登录的 QQ 号",
+          settingsTitle: "基础设置",
+          settingsDescription: "编辑机器人名称、启用状态和 NapCat 凭据。",
+          settingsUpdated: "机器人配置已更新",
+          settingsUpdateFailed: "更新机器人失败",
+          nameRequired: "机器人名称不能为空",
+          nameLabel: "名称",
+          edit: "编辑",
+          credentials: "凭据",
+          keepCurrentSecret: "留空则保留当前值",
+          napcatMode: "OneBot V11 反向 WebSocket",
+          debugTitle: "运行调试",
+          debugDescription: "查看 Bridge 连接、NapCat 事件、最近收发和错误。",
+          reload: "重载 Bridge",
+          reloadRequested: "Bridge 重载已请求",
+          reloadFailed: "Bridge 重载失败",
+          connected: "已连接",
+          disconnected: "未连接",
+          bridgeStatus: "Bridge",
+          botStatus: "Bot",
+          identity: "Identity",
+          bridgeUrl: "Bridge URL",
+          qqBotId: "QQ Bot ID",
+          napcatReverseWs: "NapCat 反向 WS",
+          checked: "Checked",
+          socketEvent: "Socket Event",
+          reverseEndpointStatus: "反向 WS 地址",
+          socketSeen: "Socket Seen",
+          lastNapcatEvent: "Last NapCat Event",
+          lastMessageEvent: "Last Message Event",
+          recentEvents: "最近事件",
+          noEvents: "暂无调试事件",
+        }
+      : {
+          tabConnection: "Connection",
+          tabBindings: "Bindings",
+          tabDebug: "Debug",
+          tabSettings: "Settings",
+          bindingDescription:
+            "Manage the terminals this robot can send messages to and receive output from.",
+          copied: "Copied",
+          copyLabel: (label: string) => `Copy ${label}`,
+          notConfigured: "Not configured",
+          connectionTitle: "NapCat reverse WebSocket",
+          connectionDescription:
+            "NapCat connects as a client to this OneBot V11 reverse WebSocket.",
+          waitingForNapCat: "Waiting for NapCat",
+          reverseEndpoint: "Reverse WS Endpoint",
+          reverseEndpointHint:
+            "Set robot/.env ROBOT_BRIDGE_URL to the address NapCat can reach",
+          selfIdLabel: "QQ self_id",
+          selfIdHint: "Set the QQ number currently logged in to NapCat",
+          accessTokenLabel: "Access Token",
+          secretLabel: "Secret",
+          reverseSettingsTitle: "NapCat settings",
+          reverseWebSocketUrl: "Reverse WebSocket URL",
+          tokenLabel: "Token",
+          tokenConfigured: "Use the configured Access Token",
+          tokenEmpty: "Leave blank",
+          selfIdFallback: "the QQ number logged in to NapCat",
+          settingsTitle: "Basic settings",
+          settingsDescription:
+            "Edit robot name, enabled state, and NapCat credentials.",
+          settingsUpdated: "Robot updated",
+          settingsUpdateFailed: "Failed to update robot",
+          nameRequired: "Name is required",
+          nameLabel: "Name",
+          edit: "Edit",
+          credentials: "Credentials",
+          keepCurrentSecret: "Leave blank to keep current value",
+          napcatMode: "OneBot V11 reverse WebSocket",
+          debugTitle: "Runtime debug",
+          debugDescription:
+            "Inspect bridge connectivity, NapCat events, recent traffic, and errors.",
+          reload: "Reload bridge",
+          reloadRequested: "Bridge reload requested",
+          reloadFailed: "Failed to reload bridge",
+          connected: "Connected",
+          disconnected: "Disconnected",
+          bridgeStatus: "Bridge",
+          botStatus: "Bot",
+          identity: "Identity",
+          bridgeUrl: "Bridge URL",
+          qqBotId: "QQ Bot ID",
+          napcatReverseWs: "NapCat Reverse WS",
+          checked: "Checked",
+          socketEvent: "Socket Event",
+          reverseEndpointStatus: "Reverse Endpoint",
+          socketSeen: "Socket Seen",
+          lastNapcatEvent: "Last NapCat Event",
+          lastMessageEvent: "Last Message Event",
+          recentEvents: "Recent events",
+          noEvents: "No debug events yet",
+        }
+
+  return { ...base, ...page }
+}
+
 function RobotEnabledBadge({ enabled }: { enabled: boolean }) {
-  const copy = useRobotDetailCopy()
+  const copy = useRobotDetailUiCopy()
 
   return enabled ? (
     <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
@@ -279,7 +471,7 @@ function AddRobotBindingDialog({
   robotId: string
   availableItems: ItemPublic[]
 }) {
-  const copy = useRobotDetailCopy()
+  const copy = useRobotDetailUiCopy()
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
 
@@ -451,7 +643,7 @@ function RobotBindingCard({
   robotId: string
   binding: RobotBindingRecord
 }) {
-  const copy = useRobotDetailCopy()
+  const copy = useRobotDetailUiCopy()
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
 
@@ -736,6 +928,7 @@ function CopyableConfigValue({
   mutedValue?: string
   secret?: boolean
 }) {
+  const copyText = useRobotDetailUiCopy()
   const [copiedText, copy] = useCopyToClipboard()
   const displayValue = value || mutedValue || "-"
   const canCopy = Boolean(value)
@@ -760,10 +953,12 @@ function CopyableConfigValue({
               }}
             >
               {isCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-              <span className="sr-only">Copy {label}</span>
+              <span className="sr-only">{copyText.copyLabel(label)}</span>
             </Button>
           </TooltipTrigger>
-          <TooltipContent>{isCopied ? "Copied" : `Copy ${label}`}</TooltipContent>
+          <TooltipContent>
+            {isCopied ? copyText.copied : copyText.copyLabel(label)}
+          </TooltipContent>
         </Tooltip>
       </div>
       <div
@@ -786,15 +981,10 @@ function RobotConnectionGuidePanel({
   robot: RobotRecord
   debug?: RobotDebugInfo
 }) {
+  const copy = useRobotDetailUiCopy()
   const credentials = getRobotCredentials(robot)
   const socket = debug?.bridge?.onebot_socket
-  const socketServerUrl =
-    typeof socket?.server_url === "string"
-      ? socket.server_url
-      : typeof socket?.ws_url === "string"
-        ? socket.ws_url
-        : undefined
-  const wsUrl = debug?.bridge?.napcat_ws_url || socketServerUrl || credentials.ws_url
+  const reverseWsUrl = getReverseWsEndpoint(debug, credentials)
   const accessToken = credentials.access_token
   const secret = credentials.secret
   const selfId = credentials.self_id
@@ -805,10 +995,8 @@ function RobotConnectionGuidePanel({
       <CardHeader className="pb-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <CardTitle>NapCat / OneBot V11 connection</CardTitle>
-            <CardDescription>
-              Enable NapCat WebSocket Server, then set its server URL here.
-            </CardDescription>
+            <CardTitle>{copy.connectionTitle}</CardTitle>
+            <CardDescription>{copy.connectionDescription}</CardDescription>
           </div>
           <Badge
             className={
@@ -818,55 +1006,57 @@ function RobotConnectionGuidePanel({
             }
             variant={connected ? "outline" : "secondary"}
           >
-            {connected ? "Connected" : "Waiting for NapCat"}
+            {connected ? copy.connected : copy.waitingForNapCat}
           </Badge>
         </div>
       </CardHeader>
       <CardContent className="grid gap-4">
         <div className="grid gap-3 md:grid-cols-2">
           <CopyableConfigValue
-            label="NapCat WS Server URL"
-            value={wsUrl}
-            mutedValue="Configure ws://<napcat-ip>:<port> in robot credentials"
+            label={copy.reverseEndpoint}
+            value={reverseWsUrl}
+            mutedValue={copy.reverseEndpointHint}
           />
           <CopyableConfigValue
-            label="QQ self_id"
+            label={copy.selfIdLabel}
             value={selfId}
-            mutedValue="Set the logged-in QQ number in robot credentials"
+            mutedValue={copy.selfIdHint}
           />
           <CopyableConfigValue
-            label="Access Token"
+            label={copy.accessTokenLabel}
             value={accessToken}
-            mutedValue="Not configured"
+            mutedValue={copy.notConfigured}
             secret
           />
           <CopyableConfigValue
-            label="Secret"
+            label={copy.secretLabel}
             value={secret}
-            mutedValue="Not configured"
+            mutedValue={copy.notConfigured}
             secret
           />
         </div>
 
         <div className="grid gap-2 rounded-xl border bg-muted/10 p-3 text-sm text-muted-foreground">
-          <div className="font-medium text-foreground">NapCat fields</div>
+          <div className="font-medium text-foreground">
+            {copy.reverseSettingsTitle}
+          </div>
           <div className="grid gap-1">
             <div>
-              WebSocket Server:{" "}
+              {copy.reverseWebSocketUrl}:{" "}
               <span className="font-mono text-foreground">
-                {wsUrl || "ws://<napcat-ip>:<port>"}
+                {reverseWsUrl || "ws://<termman-host>:8090/onebot/v11/ws"}
               </span>
             </div>
             <div>
-              QQ self_id:{" "}
+              {copy.selfIdLabel}:{" "}
               <span className="font-mono text-foreground">
-                {selfId || "the QQ number logged in to NapCat"}
+                {selfId || copy.selfIdFallback}
               </span>
             </div>
             <div>
-              Token:{" "}
+              {copy.tokenLabel}:{" "}
               <span className="font-mono text-foreground">
-                {accessToken ? "use the configured Access Token" : "leave blank"}
+                {accessToken ? copy.tokenConfigured : copy.tokenEmpty}
               </span>
             </div>
           </div>
@@ -883,6 +1073,7 @@ function RobotBasicConfigPanel({
   robot: RobotRecord
   platform: RobotPlatformRecord | null
 }) {
+  const copy = useRobotDetailUiCopy()
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [isEditing, setIsEditing] = useState(false)
@@ -906,7 +1097,7 @@ function RobotBasicConfigPanel({
 
   const handleSave = async () => {
     if (!form.name.trim()) {
-      showErrorToast("Name is required")
+      showErrorToast(copy.nameRequired)
       return
     }
 
@@ -939,10 +1130,12 @@ function RobotBasicConfigPanel({
       await queryClient.invalidateQueries({
         queryKey: getRobotDebugQueryKey(robot.id),
       })
-      showSuccessToast("Robot updated")
+      showSuccessToast(copy.settingsUpdated)
       setIsEditing(false)
     } catch (error) {
-      showErrorToast(error instanceof Error ? error.message : "Failed to update robot")
+      showErrorToast(
+        error instanceof Error ? error.message : copy.settingsUpdateFailed,
+      )
     } finally {
       setIsSaving(false)
     }
@@ -952,8 +1145,8 @@ function RobotBasicConfigPanel({
     <Card className="rounded-3xl border bg-card shadow-sm">
       <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <CardTitle>Basic config</CardTitle>
-          <CardDescription>{platform?.description ?? robot.platform}</CardDescription>
+          <CardTitle>{copy.settingsTitle}</CardTitle>
+          <CardDescription>{copy.settingsDescription}</CardDescription>
         </div>
         <div className="flex gap-2">
           {isEditing ? (
@@ -964,7 +1157,7 @@ function RobotBasicConfigPanel({
                 onClick={() => setIsEditing(false)}
                 disabled={isSaving}
               >
-                Cancel
+                {copy.cancel}
               </Button>
               <Button
                 type="button"
@@ -972,12 +1165,12 @@ function RobotBasicConfigPanel({
                 disabled={isSaving}
               >
                 {isSaving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                Save
+                {copy.save}
               </Button>
             </>
           ) : (
             <Button type="button" variant="outline" onClick={() => setIsEditing(true)}>
-              Edit
+              {copy.edit}
             </Button>
           )}
         </div>
@@ -986,7 +1179,7 @@ function RobotBasicConfigPanel({
         {isEditing ? (
           <>
             <div className="grid gap-2">
-              <Label htmlFor="robot-edit-name">Name</Label>
+              <Label htmlFor="robot-edit-name">{copy.nameLabel}</Label>
               <Input
                 id="robot-edit-name"
                 value={form.name}
@@ -1005,10 +1198,10 @@ function RobotBasicConfigPanel({
                   }))
                 }
               />
-              <span className="text-sm">Enabled</span>
+              <span className="text-sm">{copy.enabled}</span>
             </label>
             <div className="grid gap-3">
-              <div className="text-sm font-medium">Credentials</div>
+              <div className="text-sm font-medium">{copy.credentials}</div>
               {(platform?.fields ?? []).map((field) => (
                 <div key={field.key} className="grid gap-2">
                   <Label htmlFor={`robot-edit-${field.key}`}>
@@ -1019,7 +1212,9 @@ function RobotBasicConfigPanel({
                     id={`robot-edit-${field.key}`}
                     type={field.secret ? "password" : "text"}
                     value={form.credentials[field.key] ?? ""}
-                    placeholder={field.secret ? "Leave blank to keep current value" : undefined}
+                    placeholder={
+                      field.secret ? copy.keepCurrentSecret : undefined
+                    }
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
@@ -1036,15 +1231,11 @@ function RobotBasicConfigPanel({
           </>
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
-            <RobotKeyValue label="Name" value={robot.name} />
-            <RobotKeyValue label="NapCat" value="OneBot V11 WebSocket Server" />
+            <RobotKeyValue label={copy.nameLabel} value={robot.name} />
+            <RobotKeyValue label="NapCat" value={copy.napcatMode} />
             <RobotKeyValue
-              label="QQ self_id"
+              label={copy.selfIdLabel}
               value={credentials.self_id ?? robot.app_id}
-            />
-            <RobotKeyValue
-              label="NapCat WS Server URL"
-              value={credentials.ws_url}
             />
           </div>
         )}
@@ -1060,19 +1251,13 @@ function RobotDebugPanel({
   robotId: string
   debug?: RobotDebugInfo
 }) {
-  const copy = useRobotDetailCopy()
+  const copy = useRobotDetailUiCopy()
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [isReloading, setIsReloading] = useState(false)
   const bridge = debug?.bridge
   const onebotSocket = bridge?.onebot_socket
-  const napcatWsUrl =
-    bridge?.napcat_ws_url ||
-    (typeof onebotSocket?.server_url === "string"
-      ? onebotSocket.server_url
-      : typeof onebotSocket?.ws_url === "string"
-        ? onebotSocket.ws_url
-        : undefined)
+  const reverseWsUrl = getReverseWsEndpoint(debug)
 
   const handleReload = async () => {
     setIsReloading(true)
@@ -1119,25 +1304,33 @@ function RobotDebugPanel({
       <CardContent className="grid gap-4">
         <div className="grid gap-2 text-sm md:grid-cols-4">
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">Bridge</div>
+            <div className="text-xs text-muted-foreground">
+              {copy.bridgeStatus}
+            </div>
             <div className="mt-1 font-medium">
               {bridge?.status ?? "unknown"}
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">Bot</div>
+            <div className="text-xs text-muted-foreground">
+              {copy.botStatus}
+            </div>
             <div className="mt-1 font-medium">
               {bridge?.connected ? copy.connected : copy.disconnected}
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">Identity</div>
+            <div className="text-xs text-muted-foreground">
+              {copy.identity}
+            </div>
             <div className="mt-1 truncate font-medium">
               {bridge?.identity ?? "-"}
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">Bridge URL</div>
+            <div className="text-xs text-muted-foreground">
+              {copy.bridgeUrl}
+            </div>
             <div className="mt-1 truncate font-medium">
               {bridge?.url ?? "-"}
             </div>
@@ -1146,7 +1339,9 @@ function RobotDebugPanel({
 
         <div className="grid gap-2 text-sm md:grid-cols-3">
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">QQ Bot ID</div>
+            <div className="text-xs text-muted-foreground">
+              {copy.qqBotId}
+            </div>
             <div className="mt-1 truncate font-medium">
               {bridge?.bot?.bot_info?.id
                 ? String(bridge.bot.bot_info.id)
@@ -1154,13 +1349,17 @@ function RobotDebugPanel({
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">NapCat Socket</div>
+            <div className="text-xs text-muted-foreground">
+              {copy.napcatReverseWs}
+            </div>
             <div className="mt-1 truncate font-medium">
               {onebotSocket?.connected ? copy.connected : copy.disconnected}
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">Checked</div>
+            <div className="text-xs text-muted-foreground">
+              {copy.checked}
+            </div>
             <div className="mt-1 truncate font-medium">
               {bridge?.checked_at
                 ? new Date(bridge.checked_at).toLocaleString()
@@ -1171,7 +1370,9 @@ function RobotDebugPanel({
 
         <div className="grid gap-2 text-sm md:grid-cols-3">
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">Socket Event</div>
+            <div className="text-xs text-muted-foreground">
+              {copy.socketEvent}
+            </div>
             <div className="mt-1 truncate font-medium">
               {typeof onebotSocket?.event === "string"
                 ? onebotSocket.event
@@ -1179,13 +1380,17 @@ function RobotDebugPanel({
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">NapCat WS Server</div>
+            <div className="text-xs text-muted-foreground">
+              {copy.reverseEndpointStatus}
+            </div>
             <div className="mt-1 truncate font-medium">
-              {napcatWsUrl ?? "-"}
+              {reverseWsUrl ?? "-"}
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">Socket Seen</div>
+            <div className="text-xs text-muted-foreground">
+              {copy.socketSeen}
+            </div>
             <div className="mt-1 truncate font-medium">
               {typeof onebotSocket?.last_event_at === "string"
                 ? new Date(onebotSocket.last_event_at).toLocaleString()
@@ -1196,7 +1401,9 @@ function RobotDebugPanel({
 
         <div className="grid gap-2 text-sm md:grid-cols-2">
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">Last NapCat Event</div>
+            <div className="text-xs text-muted-foreground">
+              {copy.lastNapcatEvent}
+            </div>
             <div className="mt-1 truncate font-medium">
               {bridge?.last_platform_event_at
                 ? new Date(bridge.last_platform_event_at).toLocaleString()
@@ -1204,7 +1411,9 @@ function RobotDebugPanel({
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">
-            <div className="text-xs text-muted-foreground">Last Message Event</div>
+            <div className="text-xs text-muted-foreground">
+              {copy.lastMessageEvent}
+            </div>
             <div className="mt-1 truncate font-medium">
               {bridge?.last_message_event_at
                 ? new Date(bridge.last_message_event_at).toLocaleString()
@@ -1279,7 +1488,7 @@ function RobotDebugPanel({
 }
 
 export function RobotDetail({ robotId }: { robotId: string }) {
-  const copy = useRobotDetailCopy()
+  const copy = useRobotDetailUiCopy()
 
   const robotQuery = useQuery({
     queryKey: getRobotQueryKey(robotId),
@@ -1424,50 +1633,69 @@ export function RobotDetail({ robotId }: { robotId: string }) {
                   {copy.back}
                 </Link>
               </Button>
-              <AddRobotBindingDialog
-                robotId={robotId}
-                availableItems={availableItems}
-              />
             </div>
           </div>
         </div>
       </section>
 
-      <Card className="rounded-3xl border bg-card shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle>{copy.bindingTitle}</CardTitle>
-          <CardDescription>{copy.bindingDescription}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {bindings.length === 0 ? (
-            <div className="rounded-2xl border border-dashed bg-muted/10 px-6 py-10 text-center text-sm text-muted-foreground">
-              {copy.bindingEmpty}
-            </div>
-          ) : (
-            <div className="grid gap-3">
-              {bindings.map((binding) => (
-                <RobotBindingCard
-                  key={`${binding.robot_id}:${binding.item_id}`}
-                  robotId={robotId}
-                  binding={binding}
-                />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="connection" className="gap-4">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl p-1 sm:grid-cols-4 lg:w-fit">
+          <TabsTrigger value="connection">{copy.tabConnection}</TabsTrigger>
+          <TabsTrigger value="bindings">{copy.tabBindings}</TabsTrigger>
+          <TabsTrigger value="debug">{copy.tabDebug}</TabsTrigger>
+          <TabsTrigger value="settings">{copy.tabSettings}</TabsTrigger>
+        </TabsList>
 
-      <RobotBasicConfigPanel robot={robot} platform={platform} />
+        <TabsContent value="connection" className="mt-0">
+          <RobotConnectionGuidePanel
+            robot={robot}
+            debug={debugQuery.data as RobotDebugInfo | undefined}
+          />
+        </TabsContent>
 
-      <RobotConnectionGuidePanel
-        robot={robot}
-        debug={debugQuery.data as RobotDebugInfo | undefined}
-      />
+        <TabsContent value="bindings" className="mt-0">
+          <Card className="rounded-3xl border bg-card shadow-sm">
+            <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle>{copy.bindingTitle}</CardTitle>
+                <CardDescription>{copy.bindingDescription}</CardDescription>
+              </div>
+              <AddRobotBindingDialog
+                robotId={robotId}
+                availableItems={availableItems}
+              />
+            </CardHeader>
+            <CardContent>
+              {bindings.length === 0 ? (
+                <div className="rounded-2xl border border-dashed bg-muted/10 px-6 py-10 text-center text-sm text-muted-foreground">
+                  {copy.bindingEmpty}
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {bindings.map((binding) => (
+                    <RobotBindingCard
+                      key={`${binding.robot_id}:${binding.item_id}`}
+                      robotId={robotId}
+                      binding={binding}
+                    />
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <RobotDebugPanel
-        robotId={robotId}
-        debug={debugQuery.data as RobotDebugInfo | undefined}
-      />
+        <TabsContent value="debug" className="mt-0">
+          <RobotDebugPanel
+            robotId={robotId}
+            debug={debugQuery.data as RobotDebugInfo | undefined}
+          />
+        </TabsContent>
+
+        <TabsContent value="settings" className="mt-0">
+          <RobotBasicConfigPanel robot={robot} platform={platform} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

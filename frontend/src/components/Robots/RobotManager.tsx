@@ -534,7 +534,9 @@ function RobotCard({
                 >
                   {diagnoseResult.chain.napcat_socket.connected ? "✓" : "✗"}
                 </span>
-                <span>{locale === "zh" ? "NapCat Socket" : "NapCat Socket"}</span>
+                <span>
+                  {locale === "zh" ? "NapCat 反向 WS" : "NapCat Reverse WS"}
+                </span>
                 {diagnoseResult.chain.napcat_socket.error ? (
                   <span className="text-red-500 text-[10px]">
                     {diagnoseResult.chain.napcat_socket.error}
@@ -543,13 +545,15 @@ function RobotCard({
                   <div className="flex min-w-0 flex-col">
                     <span className="truncate text-muted-foreground">
                       {diagnoseResult.chain.napcat_socket.last_event ||
+                        diagnoseResult.chain.napcat_socket.reverse_ws_url ||
                         diagnoseResult.chain.napcat_socket.server_url ||
                         diagnoseResult.chain.napcat_socket.ws_url ||
                         "-"}
                     </span>
                     <span className="truncate text-[10px] text-muted-foreground">
                       {[
-                        diagnoseResult.chain.napcat_socket.server_url ||
+                        diagnoseResult.chain.napcat_socket.reverse_ws_url ||
+                          diagnoseResult.chain.napcat_socket.server_url ||
                           diagnoseResult.chain.napcat_socket.ws_url,
                         diagnoseResult.chain.napcat_socket.last_event_at
                           ? new Date(

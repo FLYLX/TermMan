@@ -236,6 +236,7 @@ export type RobotDiagnoseResult = {
       status: string
       connected: boolean
       server_url?: string | null
+      reverse_ws_url?: string | null
       ws_url?: string | null
       last_event?: string | null
       last_event_at?: string | null
@@ -295,6 +296,7 @@ export type RobotDebugInfo = {
   bridge: {
     url: string
     napcat_ws_url?: string | null
+    onebot_reverse_ws_url?: string | null
     status: string
     loaded_robot_count: number
     connected_bot_count: number

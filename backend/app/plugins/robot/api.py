@@ -1,3 +1,4 @@
+import secrets
 import uuid
 from datetime import datetime, timezone
 
@@ -53,19 +54,35 @@ from .service import robot_service
 router = APIRouter(prefix="/robots", tags=["robots"])
 
 
-def _event_seen(events: list[dict], names: set[str]) -> bool:
-    return any(str(event.get("event") or "") in names for event in events)
+def _generate_robot_access_token() -> str:
+    return secrets.token_urlsafe(32)
 
 
-def _robot_credential_text(robot: Robot, key: str) -> str | None:
-    config = robot.config if isinstance(robot.config, dict) else {}
+def _ensure_onebot_access_token(
+    platform_id: str,
+    config: dict,
+) -> dict:
+    if normalize_robot_platform_id(platform_id) != "onebot_v11":
+        return config
+
     credentials = config.get("credentials")
     if not isinstance(credentials, dict):
-        return None
-    value = credentials.get(key)
-    if value in (None, ""):
-        return None
-    return str(value)
+        credentials = {}
+    access_token = str(credentials.get("access_token") or "").strip()
+    if access_token:
+        return config
+
+    return {
+        **config,
+        "credentials": {
+            **credentials,
+            "access_token": _generate_robot_access_token(),
+        },
+    }
+
+
+def _event_seen(events: list[dict], names: set[str]) -> bool:
+    return any(str(event.get("event") or "") in names for event in events)
 
 
 @router.get("/platforms", response_model=list[RobotPlatformPublic])
@@ -194,6 +211,10 @@ def create_robot(
         str(payload.get("platform") or ""),
         payload.get("config"),
     )
+    update["config"] = _ensure_onebot_access_token(
+        str(update["platform"]),
+        update["config"],
+    )
 
     robot = Robot.model_validate(
         robot_in,
@@ -257,6 +278,7 @@ def update_robot(
             merged_config = current_robot_config(robot)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    merged_config = _ensure_onebot_access_token(merged_platform, merged_config)
     _, normalized_update = normalize_robot_stack(merged_platform, merged_config)
 
     if "name" in update_dict and update_dict["name"] is not None:
@@ -509,7 +531,6 @@ def diagnose_robot_chain(
     assert_robot_permission(robot, current_user)
     platform_id = normalize_robot_platform_id(robot.platform or robot.protocol)
     uses_napcat_socket = platform_id == "onebot_v11"
-    napcat_ws_url = _robot_credential_text(robot, "ws_url")
 
     result: dict = {
         "robot_id": str(id),
@@ -571,16 +592,18 @@ def diagnose_robot_chain(
         }
         if uses_napcat_socket:
             socket_connected = bool(onebot_socket.get("connected"))
-            socket_server_url = (
-                onebot_socket.get("server_url")
+            reverse_ws_url = (
+                onebot_socket.get("reverse_ws_url")
                 or onebot_socket.get("ws_url")
-                or napcat_ws_url
+                or robot_status.get("reverse_ws_url")
+                or health_data.get("onebot_reverse_ws_url")
             )
             socket_status = {
                 "status": "ok" if socket_connected else "waiting",
                 "connected": socket_connected,
-                "server_url": socket_server_url,
-                "ws_url": socket_server_url,
+                "server_url": reverse_ws_url,
+                "reverse_ws_url": reverse_ws_url,
+                "ws_url": reverse_ws_url,
                 "last_event": onebot_socket.get("event"),
                 "last_event_at": onebot_socket.get("last_event_at"),
                 "self_id": onebot_socket.get("self_id"),
@@ -599,8 +622,6 @@ def diagnose_robot_chain(
             "status": "error" if uses_napcat_socket else "not_applicable",
             "error": str(e),
             "connected": False if uses_napcat_socket else True,
-            "server_url": napcat_ws_url,
-            "ws_url": napcat_ws_url,
         }
 
     result["chain"]["qq_to_bridge"] = bridge_status
@@ -702,19 +723,23 @@ def get_robot_debug(
         bridge_health = {"status": "error", "error": str(e)}
 
     robot_health = bridge_health.get("robots", {}).get(str(id), {})
-    napcat_ws_url = (
-        robot_health.get("ws_url")
-        or _robot_credential_text(robot, "ws_url")
-    )
     onebot_socket = (
         robot_health.get("onebot_socket")
         if isinstance(robot_health.get("onebot_socket"), dict)
         else {}
     )
-    if napcat_ws_url:
+    reverse_ws_url = (
+        onebot_socket.get("reverse_ws_url")
+        or robot_health.get("reverse_ws_url")
+        or bridge_health.get("onebot_reverse_ws_url")
+        or onebot_socket.get("ws_url")
+        or robot_health.get("ws_url")
+    )
+    if reverse_ws_url:
         onebot_socket = {
-            "server_url": napcat_ws_url,
-            "ws_url": napcat_ws_url,
+            "server_url": reverse_ws_url,
+            "reverse_ws_url": reverse_ws_url,
+            "ws_url": reverse_ws_url,
             **onebot_socket,
         }
     connection_errors = bridge_health.get("connection_errors", {})
@@ -737,7 +762,8 @@ def get_robot_debug(
         },
         "bridge": {
             "url": robot_bridge_client.base_url,
-            "napcat_ws_url": napcat_ws_url,
+            "napcat_ws_url": reverse_ws_url,
+            "onebot_reverse_ws_url": reverse_ws_url,
             "status": bridge_health.get(
                 "status", "ok" if "error" not in bridge_health else "error"
             ),
@@ -763,7 +789,7 @@ def get_robot_debug(
             "last_event_at": events[0].get("timestamp") if events else None,
             "qq_event_hint": (
                 "Bridge is connected, but no OneBot/NapCat message event has reached TermMan yet. "
-                "Check the NapCat WebSocket server URL and whether the logged-in QQ account is receiving messages."
+                "Check the NapCat reverse WebSocket endpoint and whether the logged-in QQ account is receiving messages."
                 if connected and not robot_health.get("last_message_event_at")
                 else None
             ),

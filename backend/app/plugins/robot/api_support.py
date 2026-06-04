@@ -162,7 +162,6 @@ def normalize_robot_stack(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    credentials = normalized_config["credentials"]
     update: dict[str, Any] = {
         "platform": normalized_platform,
         "protocol": normalized_platform,

@@ -10,7 +10,6 @@ from app.plugins.robot.contracts import RobotReplyTarget
 from app.plugins.robot.debug_log import preview_text, record_robot_event
 from app.plugins.robot.platforms import (
     resolve_bot_identity,
-    resolve_platform_from_bot,
     send_text_with_bot,
 )
 
@@ -56,7 +55,7 @@ def _is_platform_rate_limit(exc: Exception) -> bool:
     )
 
 
-def _send_interval_for_bot(bot: Any) -> float:
+def _send_interval_for_bot(_bot: Any) -> float:
     return 0.2
 
 

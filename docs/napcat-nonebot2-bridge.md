@@ -2,10 +2,11 @@
 
 TermMan runs the robot bridge as a standalone NoneBot2 microservice from the
 `robot/` subdirectory. In Docker Compose, the `robot-bridge` service listens on
-container port `8090` for backend internal control APIs only.
+container port `8090` for backend internal control APIs and OneBot V11 reverse
+WebSocket connections.
 
-NapCat should run as the OneBot V11 WebSocket Server. The `robot-bridge`
-service connects to that NapCat server as a WebSocket client.
+NapCat should use OneBot V11 reverse WebSocket. The `robot-bridge` service is
+the WebSocket server, and NapCat connects to it as the client.
 
 Environment is split by service:
 
@@ -54,22 +55,22 @@ ROBOT_BRIDGE_HOST_PORT=8091
 
 Change both values together when the host port `8091` is already occupied.
 
-In NapCat, enable the OneBot V11 WebSocket Server and note its address, for
-example:
+`robot/.env` also has `ROBOT_BRIDGE_URL`. Set that value to the address NapCat
+can reach. The Robot debug page shows the final reverse WebSocket endpoint:
 
 ```text
-ws://<napcat-ip>:<port>
+ws://<termman-host>:<bridge-port>/onebot/v11/ws
 ```
 
 In TermMan, create a robot with platform `OneBot V11 / NapCat` and set:
 
 - `QQ Self ID`: the QQ account currently logged in to NapCat.
-- `NapCat WS Server URL`: the NapCat WebSocket Server URL above.
 - `Access Token` and `Secret`: optional, matching your NapCat settings when
   enabled.
 
-After saving the robot, reload the bridge. The Robot debug page should show the
-NapCat socket as connected once NoneBot2 has connected to NapCat.
+After saving the robot, reload the bridge. Configure NapCat's OneBot V11
+reverse WebSocket URL with the endpoint shown on the Robot page. The debug
+page should show the NapCat socket as connected after NapCat connects.
 
 The bridge reload endpoint restarts the `robot-bridge` process. Docker must be
 allowed to restart the container after that exit; the local Compose override

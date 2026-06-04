@@ -369,7 +369,7 @@ const en = {
   "robots.add": "Add Robot",
   "robots.addTitle": "Add Robot",
   "robots.addDescription":
-    "Fill the NapCat WebSocket Server credentials, then bind terminals to it.",
+    "Fill the NapCat reverse WebSocket credentials, then bind terminals to it.",
   "robots.nameRequired": "Robot name is required",
   "robots.credentialsRequired":
     "Please fill in the required platform credentials",
@@ -907,7 +907,7 @@ const zh: Record<TranslationKey, string> = {
     "连接 NapCat OneBot V11，并把 QQ 消息路由到终端 agent。",
   "robots.add": "添加机器人",
   "robots.addTitle": "添加机器人",
-  "robots.addDescription": "填写 NapCat WebSocket Server 凭据，创建后再绑定终端。",
+  "robots.addDescription": "填写 NapCat 反向 WebSocket 凭据，创建后再绑定终端。",
   "robots.nameRequired": "机器人名称不能为空",
   "robots.credentialsRequired": "请填写当前平台要求的凭据",
   "robots.namePlaceholder": "机器人名称",

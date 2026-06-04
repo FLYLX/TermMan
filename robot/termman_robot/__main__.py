@@ -6,6 +6,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import nonebot
 from fastapi import FastAPI, Header, HTTPException
@@ -67,26 +68,27 @@ def _loaded_robot_platforms(robots: list[BridgeRobot]) -> list[str]:
     return sorted({robot.platform for robot in robots})
 
 
-def _robot_ws_url(robot_id: str) -> str | None:
-    robot = ROBOT_BY_ID.get(robot_id)
-    if robot is None:
-        return None
-    credentials = robot.runtime_config.get("credentials")
-    if not isinstance(credentials, dict):
-        return None
-    value = credentials.get("ws_url")
-    if value in (None, ""):
-        return None
-    return str(value)
+def _onebot_reverse_ws_url() -> str:
+    base_url = settings.ROBOT_BRIDGE_URL.rstrip("/")
+    parts = urlsplit(base_url)
+    scheme = "wss" if parts.scheme == "https" else "ws"
+    base_path = parts.path.rstrip("/")
+    path = f"{base_path}/onebot/v11/ws".replace("//", "/")
+    if not path.startswith("/"):
+        path = f"/{path}"
+    return urlunsplit((scheme, parts.netloc, path, "", ""))
 
 
 def _default_onebot_socket_status(robot_id: str) -> dict[str, Any]:
-    status: dict[str, Any] = {"connected": False}
-    ws_url = _robot_ws_url(robot_id)
-    if ws_url:
-        status["server_url"] = ws_url
-        status["ws_url"] = ws_url
-    return status
+    del robot_id
+    reverse_ws_url = _onebot_reverse_ws_url()
+    return {
+        "connected": False,
+        "mode": "reverse_websocket",
+        "socket_path": "/onebot/v11/ws",
+        "reverse_ws_url": reverse_ws_url,
+        "ws_url": reverse_ws_url,
+    }
 
 
 def _connected_bot_identities() -> set[str]:
@@ -115,6 +117,74 @@ def _serialize_event_payload(event: Event) -> dict[str, Any]:
         except Exception:
             pass
     return {}
+
+
+def _summarize_event_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    summary: dict[str, Any] = {}
+    for key in (
+        "self_id",
+        "post_type",
+        "meta_event_type",
+        "message_type",
+        "sub_type",
+        "user_id",
+        "group_id",
+        "message_id",
+        "raw_message",
+    ):
+        value = payload.get(key)
+        if value not in (None, ""):
+            summary[key] = value
+    return summary
+
+
+def _serialize_bot_snapshot(bot: Bot) -> dict[str, Any]:
+    snapshot: dict[str, Any] = {
+        "self_id": str(getattr(bot, "self_id", "") or ""),
+        "adapter": None,
+        "class": bot.__class__.__name__,
+    }
+    try:
+        snapshot["adapter"] = str(bot.adapter.get_name())
+    except Exception:
+        snapshot["adapter"] = None
+
+    bot_info = getattr(bot, "bot_info", None)
+    if bot_info is not None:
+        snapshot["bot_info"] = {
+            key: value
+            for key, value in {
+                "id": getattr(bot_info, "id", None),
+                "username": getattr(bot_info, "username", None),
+                "name": getattr(bot_info, "name", None),
+            }.items()
+            if value is not None
+        }
+    return snapshot
+
+
+def _robot_ids_for_platform(platform_id: str) -> list[str]:
+    return [robot.id for robot in LOADED_ROBOTS if robot.platform == platform_id]
+
+
+def _record_loaded_robot_event(
+    robot_ids: list[str],
+    *,
+    direction: str,
+    event: str,
+    status: str = "ok",
+    message: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    for robot_id in robot_ids:
+        _record_bridge_event(
+            robot_id,
+            direction=direction,
+            event=event,
+            status=status,
+            message=message,
+            payload=payload,
+        )
 
 
 def _record_bridge_event(
@@ -167,8 +237,10 @@ def _update_onebot_socket_status(
         **status_payload,
         "connected": True,
         "event": event_name,
-        "server_url": _robot_ws_url(robot_id),
-        "ws_url": _robot_ws_url(robot_id),
+        "mode": "reverse_websocket",
+        "socket_path": "/onebot/v11/ws",
+        "reverse_ws_url": _onebot_reverse_ws_url(),
+        "ws_url": _onebot_reverse_ws_url(),
         "last_event_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -200,6 +272,20 @@ async def probe_robot_event(bot: Bot, event: Event) -> None:
 
     robot_id = ROBOT_ID_BY_IDENTITY.get(bot_identity)
     if not robot_id:
+        event_payload = _serialize_event_payload(event)
+        _record_loaded_robot_event(
+            _robot_ids_for_platform(platform_id),
+            direction="platform_to_bridge",
+            event="platform_event_unmapped",
+            status="error",
+            message=event.__class__.__name__,
+            payload={
+                "platform": platform_id,
+                "bot_identity": bot_identity,
+                "known_identities": list(ROBOT_ID_BY_IDENTITY.keys()),
+                "event_summary": _summarize_event_payload(event_payload),
+            },
+        )
         return
 
     SEEN_CONNECTED_ROBOT_IDS.add(robot_id)
@@ -219,6 +305,7 @@ async def probe_robot_event(bot: Bot, event: Event) -> None:
             "platform": platform_id,
             "bot_identity": bot_identity,
             "event_type": event.__class__.__name__,
+            "event_summary": _summarize_event_payload(event_payload),
             "event": str(event),
         },
     )
@@ -238,6 +325,20 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
 
     robot_id = ROBOT_ID_BY_IDENTITY.get(bot_identity)
     if not robot_id:
+        event_payload = _serialize_event_payload(event)
+        _record_loaded_robot_event(
+            _robot_ids_for_platform(platform_id),
+            direction="platform_to_bridge",
+            event="event_ignored",
+            status="error",
+            message=f"No TermMan robot is mapped to identity {bot_identity}",
+            payload={
+                "platform": platform_id,
+                "bot_identity": bot_identity,
+                "known_identities": list(ROBOT_ID_BY_IDENTITY.keys()),
+                "event_summary": _summarize_event_payload(event_payload),
+            },
+        )
         logger.warning(
             "[RobotBridge] No TermMan robot is mapped to identity %s", bot_identity
         )
@@ -271,6 +372,7 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
             "sender_key": inbound.sender_key,
             "target_type": inbound.reply_target.target_type,
             "target_id": inbound.reply_target.target_id,
+            "event_summary": _summarize_event_payload(event_payload),
         },
     )
 
@@ -348,11 +450,22 @@ async def internal_health(
 
     checked_at = datetime.now(timezone.utc).isoformat()
     connected_bot_count = len(get_bots())
-    connected_bot_identities = _connected_bot_identities()
+    bot_snapshots: list[dict[str, Any]] = []
+    bot_snapshot_by_identity: dict[str, dict[str, Any]] = {}
+    for bot in get_bots().values():
+        snapshot = _serialize_bot_snapshot(bot)
+        bot_snapshots.append(snapshot)
+        try:
+            bot_snapshot_by_identity[resolve_bot_identity(bot)] = snapshot
+        except Exception:
+            continue
+    connected_bot_identities = (
+        set(bot_snapshot_by_identity.keys()) or _connected_bot_identities()
+    )
     connected_identities = [
         identity
-        for robot_id, identity in IDENTITY_BY_ROBOT_ID.items()
-        if robot_id in SEEN_CONNECTED_ROBOT_IDS or identity in connected_bot_identities
+        for identity in IDENTITY_BY_ROBOT_ID.values()
+        if identity in connected_bot_identities
     ]
 
     robot_status: dict[str, dict[str, Any]] = {}
@@ -362,11 +475,17 @@ async def internal_health(
             **_default_onebot_socket_status(robot_id),
             **ONEBOT_SOCKET_STATUS_BY_ROBOT_ID.get(robot_id, {}),
         }
+        connected = identity in connected_identities
+        socket_status["connected"] = connected
+        if connected:
+            socket_status.setdefault("event", "websocket_connected")
         robot_status[robot_id] = {
             "identity": identity,
             "platform": robot.platform if robot else None,
-            "ws_url": _robot_ws_url(robot_id),
-            "connected": identity in connected_identities,
+            "reverse_ws_url": _onebot_reverse_ws_url(),
+            "ws_url": _onebot_reverse_ws_url(),
+            "connected": connected,
+            "bot": bot_snapshot_by_identity.get(identity),
             "onebot_socket": socket_status,
             "last_platform_event_at": LAST_PLATFORM_EVENT_AT_BY_ROBOT_ID.get(robot_id),
             "last_message_event_at": LAST_MESSAGE_EVENT_AT_BY_ROBOT_ID.get(robot_id),
@@ -379,7 +498,9 @@ async def internal_health(
         "connected_bot_count": connected_bot_count,
         "platforms": _loaded_robot_platforms(LOADED_ROBOTS),
         "connected_identities": connected_identities,
+        "onebot_reverse_ws_url": _onebot_reverse_ws_url(),
         "robots": robot_status,
+        "bots": bot_snapshots,
         "backend": await check_backend_health(),
         "connection_errors": CONFIG_ERRORS,
     }

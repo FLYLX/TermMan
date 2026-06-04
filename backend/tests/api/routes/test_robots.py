@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from app.core.config import settings
+from app.models import Robot
 from app.plugins.robot.bridge_client import robot_bridge_client
 from app.plugins.robot.service import robot_service
 from tests.utils.item import create_random_item
@@ -59,6 +60,83 @@ def test_create_robot_normalizes_legacy_platform_alias(
     assert content["bot_token"] is None
     assert content["use_websocket"] is False
     assert content["config"]["credentials"]["self_id"] == "1024"
+    assert content["config"]["credentials"]["access_token"]
+
+
+def test_create_robot_keeps_custom_access_token(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(robot_bridge_client, "notify_reload", lambda: None)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/robots/",
+        headers=superuser_token_headers,
+        json={
+            "name": "fixed-token-robot",
+            "platform": "onebot_v11",
+            "provider": "nonebot2",
+            "config": {
+                "credentials": {
+                    "self_id": "1025",
+                    "access_token": "fixed-token",
+                },
+                "options": {},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    credentials = response.json()["config"]["credentials"]
+    assert credentials["self_id"] == "1025"
+    assert credentials["access_token"] == "fixed-token"
+
+
+def test_update_robot_backfills_missing_access_token(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(robot_bridge_client, "notify_reload", lambda: None)
+    create_response = client.post(
+        f"{settings.API_V1_STR}/robots/",
+        headers=superuser_token_headers,
+        json={
+            "name": "legacy-token-robot",
+            "platform": "onebot_v11",
+            "provider": "nonebot2",
+            "config": {
+                "credentials": {
+                    "self_id": "1026",
+                    "access_token": "temp-token",
+                },
+                "options": {},
+            },
+        },
+    )
+    robot_id = create_response.json()["id"]
+
+    robot = db.get(Robot, robot_id)
+    assert robot is not None
+    robot.config = {"credentials": {"self_id": "1026"}, "options": {}}
+    db.add(robot)
+    db.commit()
+
+    response = client.put(
+        f"{settings.API_V1_STR}/robots/{robot_id}",
+        headers=superuser_token_headers,
+        json={
+            "name": "legacy-token-robot-renamed",
+        },
+    )
+
+    assert response.status_code == 200
+    credentials = response.json()["config"]["credentials"]
+    assert credentials["self_id"] == "1026"
+    assert credentials["access_token"]
+    assert credentials["access_token"] != "temp-token"
 
 
 def test_create_unsupported_robot_platform_is_rejected(

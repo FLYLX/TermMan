@@ -65,14 +65,6 @@ def build_nonebot_init_kwargs(robots: list[BridgeRobot]) -> dict[str, Any]:
                     "Conflicting shared adapter config for `onebot_secret`"
                 )
             init_kwargs["onebot_secret"] = secret
-        ws_url = _normalize_string(credentials.get("ws_url"))
-        if ws_url:
-            init_kwargs.setdefault("onebot_ws_urls", set()).add(ws_url)
-        api_root = _normalize_string(credentials.get("api_root"))
-        if api_root is not None:
-            init_kwargs.setdefault("onebot_api_roots", {})[
-                str(credentials["self_id"])
-            ] = api_root
     return init_kwargs
 
 

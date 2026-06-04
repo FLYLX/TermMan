@@ -257,15 +257,6 @@ def _build_onebot_v11_init(
         "onebot_secret",
         _normalize_string(credentials.get("secret")),
     )
-    ws_url = _normalize_string(credentials.get("ws_url"))
-    if ws_url:
-        init_kwargs.setdefault("onebot_ws_urls", set()).add(ws_url)
-    _merge_mapping_item(
-        init_kwargs,
-        "onebot_api_roots",
-        str(credentials["self_id"]),
-        _normalize_string(credentials.get("api_root")),
-    )
 
 
 def _build_onebot_v12_init(
@@ -538,13 +529,11 @@ _PLATFORMS: dict[str, RobotPlatformSpec] = {
     "onebot_v11": RobotPlatformSpec(
         id="onebot_v11",
         label="OneBot V11 / NapCat",
-        description="NoneBot2 connects to a NapCat OneBot V11 WebSocket server. Requires the logged-in QQ self_id.",
+        description="NapCat connects to the TermMan robot bridge by OneBot V11 reverse WebSocket. Requires the logged-in QQ self_id.",
         fields=(
             RobotPlatformFieldSpec("self_id", "QQ Self ID"),
-            RobotPlatformFieldSpec("ws_url", "NapCat WS Server URL"),
             RobotPlatformFieldSpec("access_token", "Access Token", required=False, secret=True),
             RobotPlatformFieldSpec("secret", "Secret", required=False, secret=True),
-            RobotPlatformFieldSpec("api_root", "API Root", required=False),
         ),
         adapter_module="nonebot.adapters.onebot.v11",
         adapter_class="Adapter",
@@ -935,10 +924,11 @@ def normalize_robot_config(
         else {}
     )
 
+    allowed_fields = {field.key for field in platform.fields}
     credentials = {
         str(key): value
         for key, value in raw_credentials.items()
-        if value is not None and value != ""
+        if str(key) in allowed_fields and value is not None and value != ""
     }
     _ensure_required_fields(platform, credentials)
 
