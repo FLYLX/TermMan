@@ -1026,7 +1026,6 @@ function RobotConnectionGuidePanel({
             label={copy.accessTokenLabel}
             value={accessToken}
             mutedValue={copy.notConfigured}
-            secret
           />
           <CopyableConfigValue
             label={copy.secretLabel}
@@ -1056,7 +1055,7 @@ function RobotConnectionGuidePanel({
             <div>
               {copy.tokenLabel}:{" "}
               <span className="font-mono text-foreground">
-                {accessToken ? copy.tokenConfigured : copy.tokenEmpty}
+                {accessToken || copy.tokenEmpty}
               </span>
             </div>
           </div>
