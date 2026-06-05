@@ -1,8 +1,17 @@
 import { apiRequest } from "@/lib/api-request"
 
+export type RobotReplyMessageType =
+  | "private"
+  | "group"
+  | "channel"
+  | "command"
+  | "mention"
+
 export type RobotConfig = {
   credentials?: Record<string, unknown>
-  options?: Record<string, unknown>
+  options?: Record<string, unknown> & {
+    reply_message_types?: RobotReplyMessageType[]
+  }
 }
 
 export type RobotRecord = {

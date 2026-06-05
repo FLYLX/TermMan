@@ -20,9 +20,10 @@ class RobotMCPServer:
             name="send_message",
             description=(
                 "Send a concise message to the current NoneBot/NapCat conversation. "
-                "Use only when the user should be proactively notified or when you need "
-                "to send an extra robot-side update. The target is always the current "
-                "robot conversation; do not ask for or invent group IDs."
+                "Use this when your robot instructions say a QQ-side message should be "
+                "delivered through the tool, or when an additional proactive robot-side "
+                "update is needed. The target is always the current robot conversation; "
+                "do not ask for or invent group IDs."
             ),
             input_schema={
                 "type": "object",

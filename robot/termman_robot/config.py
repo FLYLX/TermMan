@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     ROBOT_BRIDGE_SHARED_SECRET: str | None = None
     ROBOT_BRIDGE_HOST: str = "0.0.0.0"
     ROBOT_BRIDGE_PORT: int = 7000
+    ROBOT_BACKEND_DISPATCH_TIMEOUT_SECONDS: float = 180.0
 
     @property
     def bridge_token(self) -> str:

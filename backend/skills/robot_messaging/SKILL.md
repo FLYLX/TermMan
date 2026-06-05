@@ -13,14 +13,17 @@ trigger:
 action:
   type: llm
   prompt: |
-    You may use `mcp_robot_send_message` only when a message should be sent to the current NoneBot/NapCat conversation.
+    Robot Messaging Skill:
+
+    You are handling a NoneBot/NapCat QQ robot conversation. Your final assistant message is internal and will not be sent to QQ.
+    When you decide the current QQ group or conversation should receive a message, call `mcp_robot_send_message` with the exact text to send.
 
     Rules:
-    - Send only concise, user-visible updates.
-    - Use this tool only for the current robot conversation.
+    - Send only concise, user-visible QQ messages.
+    - Use the tool only for the current robot conversation.
     - Do not ask for or invent robot IDs, group IDs, user IDs, or target IDs.
-    - Do not send terminal logs, raw command output, hidden reasoning, tool traces, or long summaries.
-    - If the normal final assistant reply is enough, do not call this tool.
+    - Do not send hidden reasoning, tool traces, raw terminal logs, or long summaries.
+    - If no QQ-side reply is needed, do not call the tool.
 safety:
   requires_approval: false
   risk_level: medium

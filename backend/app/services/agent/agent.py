@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+ROBOT_MCP_SERVER_NAME = "robot"
+
 
 @dataclass
 class AgentContext:
@@ -40,6 +42,7 @@ class AgentContext:
     robot_id: str = ""
     robot_sender_key: str = ""
     robot_context_token: str = ""
+    robot_mcp_server_transient: bool = False
 
 
 class Agent:
@@ -178,13 +181,42 @@ class Agent:
             self._context.robot_id = robot_id
             self._context.robot_sender_key = sender_key
             self._context.robot_context_token = register_robot_mcp_context(context)
+            self._context.robot_mcp_server_transient = False
+
+    async def ensure_robot_context_tools(self) -> None:
+        if not self._context or not self._context.robot_id:
+            return
+
+        if ROBOT_MCP_SERVER_NAME not in self._mcp_servers:
+            self._mcp_servers.append(ROBOT_MCP_SERVER_NAME)
+            self._context.robot_mcp_server_transient = True
+
+        if not mcp_server_manager.is_server_running(ROBOT_MCP_SERVER_NAME):
+            started = await mcp_server_manager.start_server(ROBOT_MCP_SERVER_NAME)
+            if not started:
+                logger.warning(
+                    "[Agent] Robot MCP server is not available for handler %s",
+                    self.handler_id,
+                )
+                return
+
+        self._load_mcp_tools()
 
     def clear_robot_context(self) -> None:
         if self._context:
+            should_remove_robot_mcp = self._context.robot_mcp_server_transient
             unregister_robot_mcp_context(self._context.robot_context_token)
             self._context.robot_id = ""
             self._context.robot_sender_key = ""
             self._context.robot_context_token = ""
+            self._context.robot_mcp_server_transient = False
+            if should_remove_robot_mcp and ROBOT_MCP_SERVER_NAME in self._mcp_servers:
+                self._mcp_servers = [
+                    server_name
+                    for server_name in self._mcp_servers
+                    if server_name != ROBOT_MCP_SERVER_NAME
+                ]
+                self._load_mcp_tools()
 
     def _get_output_filter(self) -> OutputFilter | None:
         if not self._context or not self._context.output_filter_enabled:

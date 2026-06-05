@@ -481,6 +481,14 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
     try:
         dispatch = await dispatch_to_backend(robot_id, inbound)
     except Exception as exc:
+        error_message = str(exc) or exc.__class__.__name__
+        _record_bridge_event(
+            robot_id,
+            direction="bridge_to_backend",
+            event="dispatch_failed",
+            status="error",
+            message=error_message,
+        )
         logger.exception(
             "[RobotBridge] Failed to dispatch message for robot %s", robot_id
         )
@@ -488,12 +496,14 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
             await send_text_with_rate_limit(
                 bot,
                 inbound.reply_target,
-                f"Robot bridge failed: {exc}",
+                f"Backend dispatch failed: {error_message}",
             )
-        except Exception:
+        except Exception as send_exc:
             logger.exception(
-                "[RobotBridge] Failed to send bridge error back to platform for robot %s",
+                "[RobotBridge] Failed to send dispatch error back to platform "
+                "for robot %s: %s",
                 robot_id,
+                send_exc,
             )
         return
 
@@ -507,7 +517,24 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
             inbound.reply_target.target_id,
             preview_text(chunk),
         )
-        await send_text_with_rate_limit(bot, inbound.reply_target, chunk)
+        try:
+            await send_text_with_rate_limit(bot, inbound.reply_target, chunk)
+        except Exception as send_exc:
+            _record_bridge_event(
+                robot_id,
+                direction="bridge_to_platform",
+                event="platform_send_failed",
+                status="error",
+                message=str(send_exc) or send_exc.__class__.__name__,
+                payload={
+                    "target_type": inbound.reply_target.target_type,
+                    "target_id": inbound.reply_target.target_id,
+                },
+            )
+            logger.exception(
+                "[RobotBridge] Failed to send platform reply for robot %s",
+                robot_id,
+            )
 
 
 app = get_asgi()

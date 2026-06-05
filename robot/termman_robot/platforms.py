@@ -127,6 +127,72 @@ def _extract_sender_key(
     return f"{platform_id}:{scope}:{parent_id or target_id}:{user_id or target_id}"
 
 
+def _bot_self_ids(bot: Any, event: Any) -> set[str]:
+    values = [
+        getattr(bot, "self_id", None),
+        getattr(bot, "user_id", None),
+        getattr(bot, "id", None),
+        getattr(event, "self_id", None),
+    ]
+    return {str(value).strip() for value in values if str(value or "").strip()}
+
+
+def _event_message_segments(event: Any) -> list[Any]:
+    get_message = getattr(event, "get_message", None)
+    message = get_message() if callable(get_message) else getattr(event, "message", None)
+    if message is None or isinstance(message, str):
+        return []
+
+    try:
+        return list(message)
+    except TypeError:
+        return []
+
+
+def _segment_type(segment: Any) -> str:
+    if isinstance(segment, dict):
+        return str(segment.get("type") or "").strip().lower()
+    return str(getattr(segment, "type", "") or "").strip().lower()
+
+
+def _segment_data(segment: Any) -> dict[str, Any]:
+    data = segment.get("data") if isinstance(segment, dict) else getattr(segment, "data", None)
+    return data if isinstance(data, dict) else {}
+
+
+def _raw_message_mentions_bot(event: Any, self_ids: set[str]) -> bool:
+    raw_message = str(getattr(event, "raw_message", "") or "")
+    return any(
+        f"[CQ:at,qq={self_id}]" in raw_message
+        or f"[CQ:at,qq={self_id}," in raw_message
+        for self_id in self_ids
+    )
+
+
+def _event_mentions_bot(bot: Any, event: Any) -> bool:
+    to_me = getattr(event, "to_me", False)
+    if callable(to_me):
+        try:
+            to_me = to_me()
+        except Exception:
+            to_me = False
+    if bool(to_me):
+        return True
+
+    self_ids = _bot_self_ids(bot, event)
+    if not self_ids:
+        return False
+
+    for segment in _event_message_segments(event):
+        if _segment_type(segment) != "at":
+            continue
+        mention_id = _segment_data(segment).get("qq")
+        if str(mention_id or "").strip() in self_ids:
+            return True
+
+    return _raw_message_mentions_bot(event, self_ids)
+
+
 def build_inbound_message(
     platform_id: str,
     bot: Any,
@@ -142,6 +208,8 @@ def build_inbound_message(
     target_data = target.dump()
     target_data["source"] = target.source or get_message_id(event, bot)
     metadata: dict[str, Any] = {"target": target_data}
+    if _event_mentions_bot(bot, event):
+        metadata["mentioned_bot"] = True
 
     return RobotInboundMessage(
         sender_key=_extract_sender_key(platform_id, event, target_data),
@@ -165,6 +233,16 @@ async def send_text_with_bot(
 
     target_data = target.metadata.get("target")
     if isinstance(target_data, dict):
+        adapter_name = str(bot.adapter.get_name()).strip().lower()
+        if adapter_name == "onebot v11":
+            connections = getattr(bot.adapter, "connections", {})
+            self_id = str(getattr(bot, "self_id", "") or "")
+            if self_id not in connections:
+                raise ConnectionError(
+                    "OneBot reverse WebSocket is not connected; "
+                    "NapCat may have disconnected before the reply was sent"
+                )
+
         from nonebot_plugin_alconna import UniMessage
         from nonebot_plugin_alconna.uniseg import Target
 

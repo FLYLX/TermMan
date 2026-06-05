@@ -25,6 +25,23 @@ logger = logging.getLogger(__name__)
 
 CONVERSATION_TTL = timedelta(hours=6)
 DEFAULT_MAX_MESSAGE_LENGTH = 1200
+REPLY_MESSAGE_TYPE_PRIVATE = "private"
+REPLY_MESSAGE_TYPE_GROUP = "group"
+REPLY_MESSAGE_TYPE_CHANNEL = "channel"
+REPLY_MESSAGE_TYPE_COMMAND = "command"
+REPLY_MESSAGE_TYPE_MENTION = "mention"
+DEFAULT_REPLY_MESSAGE_TYPES = frozenset(
+    {
+        REPLY_MESSAGE_TYPE_PRIVATE,
+        REPLY_MESSAGE_TYPE_GROUP,
+        REPLY_MESSAGE_TYPE_CHANNEL,
+        REPLY_MESSAGE_TYPE_COMMAND,
+        REPLY_MESSAGE_TYPE_MENTION,
+    }
+)
+ALLOWED_REPLY_MESSAGE_TYPES = DEFAULT_REPLY_MESSAGE_TYPES
+REPLY_MESSAGE_TYPE_DISABLED_REASON = "reply_message_type_disabled"
+
 
 @dataclass
 class ConversationState:
@@ -90,6 +107,26 @@ class RobotService:
         if not text:
             return RobotDispatchResponse(success=True, ignored=True, reason="empty_message")
         command = self._parse_robot_command(text)
+        reply_categories = self._reply_message_categories(message, command)
+        allowed_reply_types = self._allowed_reply_message_types(robot)
+        if not allowed_reply_types.intersection(reply_categories):
+            record_robot_event(
+                str(robot.id),
+                direction="backend",
+                event="message_ignored",
+                status="ignored",
+                message=message.text,
+                payload={
+                    "reason": REPLY_MESSAGE_TYPE_DISABLED_REASON,
+                    "reply_message_types": sorted(reply_categories),
+                    "allowed_reply_message_types": sorted(allowed_reply_types),
+                },
+            )
+            return RobotDispatchResponse(
+                success=True,
+                ignored=True,
+                reason=REPLY_MESSAGE_TYPE_DISABLED_REASON,
+            )
 
         try:
             resolved_binding, message_text = self._resolve_chat_binding(
@@ -140,11 +177,7 @@ class RobotService:
                 ignored=False,
                 item_id=str(resolved_binding.item.id),
                 route_key=resolved_binding.route_key,
-                reply_chunks=self._reply_chunks_for_target(
-                    robot,
-                    message.reply_target,
-                    response_text,
-                ),
+                reply_chunks=[],
             )
             record_robot_event(
                 str(robot.id),
@@ -155,6 +188,7 @@ class RobotService:
                     "item_id": str(resolved_binding.item.id),
                     "route_key": resolved_binding.route_key,
                     "chunk_count": len(response.reply_chunks),
+                    "reply_delivery": "mcp_tool",
                 },
             )
             logger.info(
@@ -395,6 +429,58 @@ class RobotService:
             )
 
         return RobotCommand(mode="chat", target=None, text=normalized)
+
+    def _allowed_reply_message_types(self, robot: Robot) -> set[str]:
+        config = robot.config if isinstance(robot.config, dict) else {}
+        options = config.get("options") if isinstance(config.get("options"), dict) else {}
+        if "reply_message_types" not in options:
+            return set(DEFAULT_REPLY_MESSAGE_TYPES)
+
+        raw_types = options.get("reply_message_types")
+        if not isinstance(raw_types, list):
+            return set(DEFAULT_REPLY_MESSAGE_TYPES)
+
+        return {
+            normalized_type
+            for value in raw_types
+            if isinstance(value, str)
+            for normalized_type in {value.strip().lower()}
+            if normalized_type in ALLOWED_REPLY_MESSAGE_TYPES
+        }
+
+    def _reply_message_categories(
+        self,
+        message: RobotInboundMessage,
+        command: RobotCommand,
+    ) -> set[str]:
+        categories = {self._conversation_message_type(message)}
+        if command.mode != "chat" or command.target:
+            categories.add(REPLY_MESSAGE_TYPE_COMMAND)
+        if bool(message.reply_target.metadata.get("mentioned_bot")):
+            categories.add(REPLY_MESSAGE_TYPE_MENTION)
+        return categories
+
+    def _conversation_message_type(self, message: RobotInboundMessage) -> str:
+        target_data = message.reply_target.metadata.get("target")
+        if isinstance(target_data, dict):
+            if bool(target_data.get("private")):
+                return REPLY_MESSAGE_TYPE_PRIVATE
+            if bool(target_data.get("channel")):
+                return REPLY_MESSAGE_TYPE_CHANNEL
+
+        target_type = (message.reply_target.target_type or "").strip().lower()
+        if target_type in {"private", "c2c", "direct", "direct_message", "friend"}:
+            return REPLY_MESSAGE_TYPE_PRIVATE
+        if target_type in {"channel", "guild", "guild_channel"}:
+            return REPLY_MESSAGE_TYPE_CHANNEL
+        if target_type == "group":
+            return REPLY_MESSAGE_TYPE_GROUP
+
+        if ":private:" in message.sender_key:
+            return REPLY_MESSAGE_TYPE_PRIVATE
+        if ":channel:" in message.sender_key:
+            return REPLY_MESSAGE_TYPE_CHANNEL
+        return REPLY_MESSAGE_TYPE_GROUP
 
     def _write_to_item_terminal(self, item_id: uuid.UUID, command: str) -> bool:
         from app.services import socket_pool_facade

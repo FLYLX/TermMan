@@ -924,15 +924,21 @@ async def _dispatch_to_backend(
     payload: RobotInboundMessage,
 ) -> RobotDispatchResponse:
     shared_secret = settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            f"{settings.ROBOT_BACKEND_URL.rstrip('/')}"
-            f"{settings.API_V1_STR}/robots/{robot_id}/dispatch",
-            headers={"X-TermMan-Bridge-Token": shared_secret},
-            content=payload.model_dump_json(),
-        )
-        response.raise_for_status()
-        return RobotDispatchResponse.model_validate(response.json())
+    timeout = settings.ROBOT_BACKEND_DISPATCH_TIMEOUT_SECONDS
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                f"{settings.ROBOT_BACKEND_URL.rstrip('/')}"
+                f"{settings.API_V1_STR}/robots/{robot_id}/dispatch",
+                headers={"X-TermMan-Bridge-Token": shared_secret},
+                content=payload.model_dump_json(),
+            )
+            response.raise_for_status()
+            return RobotDispatchResponse.model_validate(response.json())
+    except httpx.TimeoutException as exc:
+        raise TimeoutError(
+            f"Backend dispatch timed out after {timeout:g}s"
+        ) from exc
 
 
 def get_bridge_router() -> APIRouter | None:
@@ -1291,12 +1297,13 @@ def init_embedded_bridge() -> APIRouter | None:
             try:
                 dispatch = await _dispatch_to_backend(robot_id, inbound)
             except Exception as exc:
+                error_message = str(exc) or exc.__class__.__name__
                 record_robot_event(
                     robot_id,
                     direction="bridge_to_backend",
                     event="dispatch_failed",
                     status="error",
-                    message=str(exc),
+                    message=error_message,
                 )
                 logger.exception(
                     "[Bridge] Failed to dispatch message for robot %s", robot_id
@@ -1305,13 +1312,15 @@ def init_embedded_bridge() -> APIRouter | None:
                     await send_text_with_rate_limit(
                         bot,
                         inbound.reply_target,
-                        f"Robot bridge failed: {exc}",
+                        f"Backend dispatch failed: {error_message}",
                         robot_id=robot_id,
                     )
-                except Exception:
+                except Exception as send_exc:
                     logger.exception(
-                        "[Bridge] Failed to send bridge error back to platform for robot %s",
+                        "[Bridge] Failed to send dispatch error back to platform "
+                        "for robot %s: %s",
                         robot_id,
+                        send_exc,
                     )
                 return
 
@@ -1335,12 +1344,29 @@ def init_embedded_bridge() -> APIRouter | None:
                         "target_id": inbound.reply_target.target_id,
                     },
                 )
-                await send_text_with_rate_limit(
-                    bot,
-                    inbound.reply_target,
-                    chunk,
-                    robot_id=robot_id,
-                )
+                try:
+                    await send_text_with_rate_limit(
+                        bot,
+                        inbound.reply_target,
+                        chunk,
+                        robot_id=robot_id,
+                    )
+                except Exception as send_exc:
+                    record_robot_event(
+                        robot_id,
+                        direction="bridge_to_platform",
+                        event="platform_send_failed",
+                        status="error",
+                        message=str(send_exc) or send_exc.__class__.__name__,
+                        payload={
+                            "target_type": inbound.reply_target.target_type,
+                            "target_id": inbound.reply_target.target_id,
+                        },
+                    )
+                    logger.exception(
+                        "[Bridge] Failed to send platform reply for robot %s",
+                        robot_id,
+                    )
 
         nonebot_app = get_asgi()
 

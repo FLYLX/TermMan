@@ -85,6 +85,7 @@ async def collect_chat_response(
             sender_key=robot_sender_key,
             reply_target=robot_reply_target,
         )
+        await agent.ensure_robot_context_tools()
 
     content = ""
     error_message = ""

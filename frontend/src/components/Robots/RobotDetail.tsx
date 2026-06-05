@@ -148,6 +148,75 @@ function mergeRobotCredentialsForSave(
   )
 }
 
+const REPLY_MESSAGE_TYPES = [
+  "private",
+  "group",
+  "channel",
+  "command",
+  "mention",
+] as const
+type ReplyMessageType = (typeof REPLY_MESSAGE_TYPES)[number]
+
+const DEFAULT_REPLY_MESSAGE_TYPES: ReplyMessageType[] = [...REPLY_MESSAGE_TYPES]
+
+function isReplyMessageType(value: unknown): value is ReplyMessageType {
+  return (
+    typeof value === "string" &&
+    REPLY_MESSAGE_TYPES.includes(value as ReplyMessageType)
+  )
+}
+
+function getRobotReplyMessageTypes(robot: RobotRecord): ReplyMessageType[] {
+  const rawTypes = robot.config?.options?.reply_message_types
+  if (!Array.isArray(rawTypes)) {
+    return [...DEFAULT_REPLY_MESSAGE_TYPES]
+  }
+
+  const selectedTypes = rawTypes.filter(isReplyMessageType)
+  return REPLY_MESSAGE_TYPES.filter((type) => selectedTypes.includes(type))
+}
+
+function getReplyMessageTypeLabel(
+  copy: {
+    replyPrivate: string
+    replyGroup: string
+    replyChannel: string
+    replyCommand: string
+    replyMention: string
+  },
+  type: ReplyMessageType,
+) {
+  switch (type) {
+    case "private":
+      return copy.replyPrivate
+    case "group":
+      return copy.replyGroup
+    case "channel":
+      return copy.replyChannel
+    case "command":
+      return copy.replyCommand
+    case "mention":
+      return copy.replyMention
+  }
+}
+
+function getReplyMessageTypeSummary(
+  copy: {
+    replyPrivate: string
+    replyGroup: string
+    replyChannel: string
+    replyCommand: string
+    replyMention: string
+    replyNone: string
+  },
+  types: ReplyMessageType[],
+) {
+  if (types.length === 0) {
+    return copy.replyNone
+  }
+  return types.map((type) => getReplyMessageTypeLabel(copy, type)).join(", ")
+}
+
 function getRecordString(
   record: Record<string, unknown> | undefined,
   key: string,
@@ -374,6 +443,14 @@ function useRobotDetailUiCopy() {
           nameLabel: "名称",
           edit: "编辑",
           credentials: "凭据",
+          replyScopeTitle: "回复范围",
+          replyScopeDescription: "选择机器人会交给 Agent 处理的消息类型。",
+          replyPrivate: "私聊消息",
+          replyGroup: "群聊消息",
+          replyChannel: "频道消息",
+          replyCommand: "路由命令",
+          replyMention: "@机器人消息",
+          replyNone: "未启用",
           keepCurrentSecret: "留空则保留当前值",
           napcatMode: "OneBot V11 反向 WebSocket",
           debugTitle: "运行调试",
@@ -434,6 +511,15 @@ function useRobotDetailUiCopy() {
           nameLabel: "Name",
           edit: "Edit",
           credentials: "Credentials",
+          replyScopeTitle: "Reply scope",
+          replyScopeDescription:
+            "Choose which message types this robot sends to the Agent.",
+          replyPrivate: "Private messages",
+          replyGroup: "Group messages",
+          replyChannel: "Channel messages",
+          replyCommand: "Route commands",
+          replyMention: "@ robot messages",
+          replyNone: "Disabled",
           keepCurrentSecret: "Leave blank to keep current value",
           napcatMode: "OneBot V11 reverse WebSocket",
           debugTitle: "Runtime debug",
@@ -1077,6 +1163,7 @@ function RobotBasicConfigPanel({
     name: robot.name,
     is_enabled: robot.is_enabled,
     credentials: getEditableRobotCredentials(robot, platform),
+    replyMessageTypes: getRobotReplyMessageTypes(robot),
   }))
 
   useEffect(() => {
@@ -1085,6 +1172,7 @@ function RobotBasicConfigPanel({
         name: robot.name,
         is_enabled: robot.is_enabled,
         credentials: getEditableRobotCredentials(robot, platform),
+        replyMessageTypes: getRobotReplyMessageTypes(robot),
       })
     }
   }, [isEditing, platform, robot])
@@ -1102,6 +1190,7 @@ function RobotBasicConfigPanel({
     )
     const options = { ...(robot.config?.options ?? {}) }
     delete options.route_key
+    options.reply_message_types = form.replyMessageTypes
 
     setIsSaving(true)
     try {
@@ -1194,6 +1283,45 @@ function RobotBasicConfigPanel({
               />
               <span className="text-sm">{copy.enabled}</span>
             </label>
+            <div className="grid gap-3 rounded-xl border bg-muted/10 p-3">
+              <div>
+                <div className="text-sm font-medium">{copy.replyScopeTitle}</div>
+                <div className="text-xs text-muted-foreground">
+                  {copy.replyScopeDescription}
+                </div>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {REPLY_MESSAGE_TYPES.map((type) => (
+                  <label
+                    key={type}
+                    className="flex items-center gap-3 rounded-lg border bg-background/60 px-3 py-2"
+                  >
+                    <Checkbox
+                      checked={form.replyMessageTypes.includes(type)}
+                      onCheckedChange={(checked) =>
+                        setForm((current) => {
+                          const nextTypes = new Set(current.replyMessageTypes)
+                          if (checked) {
+                            nextTypes.add(type)
+                          } else {
+                            nextTypes.delete(type)
+                          }
+                          return {
+                            ...current,
+                            replyMessageTypes: REPLY_MESSAGE_TYPES.filter(
+                              (candidate) => nextTypes.has(candidate),
+                            ),
+                          }
+                        })
+                      }
+                    />
+                    <span className="text-sm">
+                      {getReplyMessageTypeLabel(copy, type)}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
             <div className="grid gap-3">
               <div className="text-sm font-medium">{copy.credentials}</div>
               {(platform?.fields ?? []).map((field) => (
@@ -1230,6 +1358,13 @@ function RobotBasicConfigPanel({
             <RobotKeyValue
               label={copy.selfIdLabel}
               value={credentials.self_id ?? robot.app_id}
+            />
+            <RobotKeyValue
+              label={copy.replyScopeTitle}
+              value={getReplyMessageTypeSummary(
+                copy,
+                getRobotReplyMessageTypes(robot),
+              )}
             />
           </div>
         )}

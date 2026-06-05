@@ -139,6 +139,51 @@ def test_update_robot_backfills_missing_access_token(
     assert credentials["access_token"] != "temp-token"
 
 
+def test_update_robot_persists_reply_message_types(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(robot_bridge_client, "notify_reload", lambda: None)
+    create_response = client.post(
+        f"{settings.API_V1_STR}/robots/",
+        headers=superuser_token_headers,
+        json={
+            "name": "reply-filter-robot",
+            "platform": "onebot_v11",
+            "provider": "nonebot2",
+            "config": {
+                "credentials": {
+                    "self_id": "1027",
+                    "access_token": "reply-filter-token",
+                },
+                "options": {},
+            },
+        },
+    )
+    robot_id = create_response.json()["id"]
+
+    response = client.put(
+        f"{settings.API_V1_STR}/robots/{robot_id}",
+        headers=superuser_token_headers,
+        json={
+            "config": {
+                "credentials": {"self_id": "1027"},
+                "options": {"reply_message_types": ["private", "mention", "command"]},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    config = response.json()["config"]
+    assert config["credentials"]["access_token"] == "reply-filter-token"
+    assert config["options"]["reply_message_types"] == [
+        "private",
+        "mention",
+        "command",
+    ]
+
+
 def test_create_unsupported_robot_platform_is_rejected(
     client: TestClient,
     superuser_token_headers: dict[str, str],
@@ -256,7 +301,15 @@ def test_dispatch_robot_message_routes_to_item_agent(
 
     expected_item_id = item.id
 
-    async def fake_chat_with_item(*, session, robot, item, message, sender_key, reply_target):
+    async def fake_chat_with_item(
+        *,
+        session,
+        robot,
+        item,
+        message,
+        sender_key,
+        reply_target,
+    ):
         del session, robot
         assert message == "status?"
         assert sender_key == "group_group-1_member-1"
@@ -289,7 +342,7 @@ def test_dispatch_robot_message_routes_to_item_agent(
     assert content["ignored"] is False
     assert content["item_id"] == str(item.id)
     assert content["route_key"] == "alpha"
-    assert content["reply_chunks"] == ["agent-ok"]
+    assert content["reply_chunks"] == []
 
 
 def test_dispatch_robot_message_rejects_invalid_bridge_token(

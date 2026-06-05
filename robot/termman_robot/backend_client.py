@@ -57,15 +57,21 @@ async def dispatch_to_backend(
     robot_id: str,
     payload: RobotInboundMessage,
 ) -> RobotDispatchResponse:
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            f"{settings.ROBOT_BACKEND_URL.rstrip('/')}"
-            f"{settings.API_V1_STR}/robots/{robot_id}/dispatch",
-            headers=_headers(),
-            content=payload.model_dump_json(),
-        )
-        response.raise_for_status()
-        return RobotDispatchResponse.model_validate(response.json())
+    timeout = settings.ROBOT_BACKEND_DISPATCH_TIMEOUT_SECONDS
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                f"{settings.ROBOT_BACKEND_URL.rstrip('/')}"
+                f"{settings.API_V1_STR}/robots/{robot_id}/dispatch",
+                headers=_headers(),
+                content=payload.model_dump_json(),
+            )
+            response.raise_for_status()
+            return RobotDispatchResponse.model_validate(response.json())
+    except httpx.TimeoutException as exc:
+        raise TimeoutError(
+            f"Backend dispatch timed out after {timeout:g}s"
+        ) from exc
 
 
 def record_bridge_event(
