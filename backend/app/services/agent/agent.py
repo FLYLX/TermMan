@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from app.models import ItemHandler
 from app.services.agent.mcp.robot_context import (
     RobotMCPContext,
+    build_robot_reply_context_summary,
     register_robot_mcp_context,
     unregister_robot_mcp_context,
 )
@@ -42,6 +43,7 @@ class AgentContext:
     robot_id: str = ""
     robot_sender_key: str = ""
     robot_context_token: str = ""
+    robot_reply_context_summary: str = ""
     robot_mcp_server_transient: bool = False
 
 
@@ -181,6 +183,9 @@ class Agent:
             self._context.robot_id = robot_id
             self._context.robot_sender_key = sender_key
             self._context.robot_context_token = register_robot_mcp_context(context)
+            self._context.robot_reply_context_summary = (
+                build_robot_reply_context_summary(reply_target, sender_key)
+            )
             self._context.robot_mcp_server_transient = False
 
     async def ensure_robot_context_tools(self) -> None:
@@ -209,6 +214,7 @@ class Agent:
             self._context.robot_id = ""
             self._context.robot_sender_key = ""
             self._context.robot_context_token = ""
+            self._context.robot_reply_context_summary = ""
             self._context.robot_mcp_server_transient = False
             if should_remove_robot_mcp and ROBOT_MCP_SERVER_NAME in self._mcp_servers:
                 self._mcp_servers = [

@@ -127,6 +127,61 @@ def _extract_sender_key(
     return f"{platform_id}:{scope}:{parent_id or target_id}:{user_id or target_id}"
 
 
+def _event_user_id(event: Any) -> str:
+    get_user_id = getattr(event, "get_user_id", None)
+    if callable(get_user_id):
+        try:
+            return str(get_user_id() or "").strip()
+        except Exception:
+            return ""
+    return str(getattr(event, "user_id", "") or "").strip()
+
+
+def _dump_mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+
+    for method_name in ("model_dump", "dict"):
+        dump_method = getattr(value, method_name, None)
+        if callable(dump_method):
+            try:
+                dumped = dump_method()
+            except Exception:
+                continue
+            if isinstance(dumped, dict):
+                return dict(dumped)
+
+    return {}
+
+
+def _extract_sender_metadata(platform_id: str, event: Any) -> dict[str, Any]:
+    sender_data = _dump_mapping(getattr(event, "sender", None))
+    user_id = _event_user_id(event) or str(sender_data.get("user_id") or "").strip()
+    nickname = str(sender_data.get("nickname") or "").strip()
+    card = str(sender_data.get("card") or "").strip()
+    display_name = card or nickname or user_id
+
+    metadata: dict[str, Any] = {
+        "platform": platform_id,
+        "user_id": user_id,
+        "display_name": display_name,
+    }
+    if nickname:
+        metadata["nickname"] = nickname
+    if card:
+        metadata["card"] = card
+
+    for key in ("role", "title", "sex", "age", "area", "level"):
+        value = sender_data.get(key)
+        if value not in (None, ""):
+            metadata[key] = value
+
+    message_type = str(getattr(event, "message_type", "") or "").strip()
+    if message_type:
+        metadata["message_type"] = message_type
+    return {key: value for key, value in metadata.items() if value not in (None, "")}
+
+
 def _bot_self_ids(bot: Any, event: Any) -> set[str]:
     values = [
         getattr(bot, "self_id", None),
@@ -207,7 +262,10 @@ def build_inbound_message(
     target = get_target(event, bot)
     target_data = target.dump()
     target_data["source"] = target.source or get_message_id(event, bot)
-    metadata: dict[str, Any] = {"target": target_data}
+    metadata: dict[str, Any] = {
+        "target": target_data,
+        "sender": _extract_sender_metadata(platform_id, event),
+    }
     if _event_mentions_bot(bot, event):
         metadata["mentioned_bot"] = True
 

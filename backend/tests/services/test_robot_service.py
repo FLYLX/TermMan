@@ -5,7 +5,7 @@ from sqlmodel import Session
 
 from app.models import RobotItem
 from app.plugins.robot.contracts import RobotInboundMessage, RobotReplyTarget
-from app.plugins.robot.platforms import _event_mentions_bot
+from app.plugins.robot.platforms import _event_mentions_bot, _extract_sender_metadata
 from app.plugins.robot.service import robot_service
 from tests.utils.item import create_random_item
 from tests.utils.robot import create_random_robot
@@ -48,11 +48,14 @@ def _message(
     *,
     sender_key: str = "onebot_v11:group:g1:u1",
     target: dict[str, Any] | None = None,
+    sender: dict[str, Any] | None = None,
     mentioned_bot: bool = False,
 ) -> RobotInboundMessage:
     metadata: dict[str, Any] = {}
     if target is not None:
         metadata["target"] = target
+    if sender is not None:
+        metadata["sender"] = sender
     if mentioned_bot:
         metadata["mentioned_bot"] = True
 
@@ -84,13 +87,22 @@ class _FakeEvent:
         *,
         to_me: bool = False,
         raw_message: str = "",
+        sender: dict[str, Any] | None = None,
+        user_id: str = "",
+        message_type: str = "",
     ) -> None:
         self._message = message
         self.to_me = to_me
         self.raw_message = raw_message
+        self.sender = sender or {}
+        self.user_id = user_id
+        self.message_type = message_type
 
     def get_message(self) -> list[Any]:
         return self._message
+
+    def get_user_id(self) -> str:
+        return self.user_id
 
 
 def test_event_mentions_bot_detects_onebot_at_segment() -> None:
@@ -114,6 +126,30 @@ def test_event_mentions_bot_detects_to_me_flag() -> None:
     event = _FakeEvent([], to_me=True)
 
     assert _event_mentions_bot(_FakeBot(), event) is True
+
+
+def test_extract_sender_metadata_prefers_group_card() -> None:
+    event = _FakeEvent(
+        [],
+        user_id="10002",
+        message_type="group",
+        sender={
+            "user_id": 10002,
+            "nickname": "Nick",
+            "card": "Alice",
+            "role": "admin",
+        },
+    )
+
+    assert _extract_sender_metadata("onebot_v11", event) == {
+        "platform": "onebot_v11",
+        "user_id": "10002",
+        "display_name": "Alice",
+        "nickname": "Nick",
+        "card": "Alice",
+        "role": "admin",
+        "message_type": "group",
+    }
 
 
 def test_plain_robot_message_routes_to_default_item_agent(
@@ -152,6 +188,54 @@ def test_plain_robot_message_routes_to_default_item_agent(
     assert captured["message"] == "hello"
     assert captured["sender_key"] == "onebot_v11:group:g1:u1"
     assert isinstance(captured["reply_target"], RobotReplyTarget)
+    assert response.reply_chunks == []
+
+
+def test_robot_message_passes_sender_prefix_to_agent(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    captured: dict[str, object] = {}
+
+    async def fake_chat_with_item(**kwargs):
+        captured.update(kwargs)
+        return "agent response"
+
+    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
+
+    response = asyncio.run(
+        robot_service.handle_inbound_message(
+            db,
+            robot,
+            _message(
+                "hello",
+                target={"id": "g1"},
+                sender={
+                    "user_id": "u1",
+                    "display_name": "Alice",
+                },
+            ),
+        )
+    )
+
+    assert response.success is True
+    assert captured["message"] == (
+        "[Robot message; conversation=group:g1; sender=Alice (u1)]\nhello"
+    )
     assert response.reply_chunks == []
 
 

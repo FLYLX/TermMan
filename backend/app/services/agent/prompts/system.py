@@ -26,11 +26,20 @@ def _robot_context_prompt(agent: Agent) -> str:
     if context is None or not getattr(context, "robot_id", ""):
         return ""
 
+    prompt_parts: list[str] = []
     robot_skill = skill_loader.get(ROBOT_MESSAGING_SKILL_ID)
     if robot_skill and robot_skill.action and robot_skill.action.prompt:
-        return robot_skill.action.prompt
+        prompt_parts.append(robot_skill.action.prompt)
+    else:
+        prompt_parts.append(ROBOT_MESSAGING_FALLBACK_PROMPT)
 
-    return ROBOT_MESSAGING_FALLBACK_PROMPT
+    reply_context_summary = str(
+        getattr(context, "robot_reply_context_summary", "") or ""
+    ).strip()
+    if reply_context_summary:
+        prompt_parts.append(reply_context_summary)
+
+    return "\n\n".join(prompt_parts)
 
 
 def _unique_prompt_parts(parts: list[str]) -> list[str]:

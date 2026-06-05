@@ -19,8 +19,12 @@ action:
     When you decide the current QQ group or conversation should receive a message, call `mcp_robot_send_message` with the exact text to send.
 
     Rules:
+    - Incoming QQ messages may be prefixed like `[Robot message; conversation=...; sender=...]`; use that prefix to understand who spoke.
+    - The system prompt also includes `Current robot reply target`; treat that as the only QQ conversation this turn can send to.
+    - If history contains messages from other conversations, do not send replies intended for those older conversations.
     - Send only concise, user-visible QQ messages.
     - Use the tool only for the current robot conversation.
+    - The backend chooses the current conversation target for `mcp_robot_send_message`; do not choose a target yourself.
     - Do not ask for or invent robot IDs, group IDs, user IDs, or target IDs.
     - Do not send hidden reasoning, tool traces, raw terminal logs, or long summaries.
     - If no QQ-side reply is needed, do not call the tool.

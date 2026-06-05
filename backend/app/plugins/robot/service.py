@@ -168,7 +168,7 @@ class RobotService:
                 session=session,
                 robot=robot,
                 item=resolved_binding.item,
-                message=message_text,
+                message=self._agent_message_with_context(message, message_text),
                 sender_key=message.sender_key,
                 reply_target=message.reply_target,
             )
@@ -481,6 +481,51 @@ class RobotService:
         if ":channel:" in message.sender_key:
             return REPLY_MESSAGE_TYPE_CHANNEL
         return REPLY_MESSAGE_TYPE_GROUP
+
+    def _agent_message_with_context(
+        self,
+        inbound_message: RobotInboundMessage,
+        message_text: str,
+    ) -> str:
+        prefix = self._agent_message_context_prefix(inbound_message)
+        if not prefix:
+            return message_text
+        return f"{prefix}\n{message_text}"
+
+    def _agent_message_context_prefix(self, message: RobotInboundMessage) -> str:
+        sender_data = message.reply_target.metadata.get("sender")
+        if not isinstance(sender_data, dict):
+            return ""
+
+        target_data = message.reply_target.metadata.get("target")
+        if not isinstance(target_data, dict):
+            target_data = {}
+
+        conversation_type = self._conversation_message_type(message)
+        conversation_id = str(
+            target_data.get("parent_id")
+            or target_data.get("id")
+            or message.reply_target.target_id
+            or ""
+        ).strip()
+        sender_id = str(sender_data.get("user_id") or "").strip()
+        display_name = str(
+            sender_data.get("display_name")
+            or sender_data.get("card")
+            or sender_data.get("nickname")
+            or sender_id
+            or "unknown"
+        ).strip()
+
+        sender_label = display_name
+        if sender_id and sender_id != display_name:
+            sender_label = f"{display_name} ({sender_id})"
+
+        conversation_label = conversation_type
+        if conversation_id:
+            conversation_label = f"{conversation_type}:{conversation_id}"
+
+        return f"[Robot message; conversation={conversation_label}; sender={sender_label}]"
 
     def _write_to_item_terminal(self, item_id: uuid.UUID, command: str) -> bool:
         from app.services import socket_pool_facade

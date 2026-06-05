@@ -111,6 +111,12 @@ def test_robot_context_temporarily_exposes_send_message_tool(monkeypatch) -> Non
         assert tool_names == ["mcp_robot_send_message"]
 
         context_token = agent._context.robot_context_token
+        assert "Current robot reply target" in agent._context.robot_reply_context_summary
+        assert "conversation: group:g1" in agent._context.robot_reply_context_summary
+        assert "sender_key: onebot_v11:group:g1:u1" in (
+            agent._context.robot_reply_context_summary
+        )
+
         result = asyncio.run(
             agent.execute_tool("mcp_robot_send_message", {"text": "hello"})
         )
@@ -138,15 +144,30 @@ def test_robot_context_temporarily_exposes_send_message_tool(monkeypatch) -> Non
 def test_robot_context_system_prompt_uses_robot_messaging_skill() -> None:
     skill_loader.reload()
     agent = SimpleNamespace(
-        _context=SimpleNamespace(robot_id="robot-1"),
+        _context=SimpleNamespace(
+            robot_id="robot-1",
+            robot_reply_context_summary=(
+                "Current robot reply target:\n"
+                "- conversation: group:g1\n"
+                "- sender: Alice (u1)\n"
+                "- sender_key: onebot_v11:group:g1:u1\n"
+                "- send rule: `mcp_robot_send_message` will send only to this "
+                "current conversation for this turn, not to any conversation shown "
+                "in older history."
+            ),
+        ),
         get_skills=lambda: [],
     )
 
     prompt = get_system_prompt(agent)
 
     assert "Robot Messaging Skill" in prompt
+    assert "Current robot reply target" in prompt
+    assert "conversation: group:g1" in prompt
+    assert "sender: Alice (u1)" in prompt
     assert "final assistant message is internal" in prompt
     assert "mcp_robot_send_message" in prompt
+    assert "not to any conversation shown in older history" in prompt
 
 
 def test_log_manager_reads_legacy_log_when_primary_missing(tmp_path) -> None:
