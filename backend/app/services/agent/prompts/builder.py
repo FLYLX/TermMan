@@ -8,7 +8,10 @@ from app.services.agent.history.chat import (
 )
 from app.services.agent.knowledge.service import knowledge_base_service
 from app.services.agent.memory.vector_store import vector_store
-from app.services.agent.prompts.policy import PromptTurnType, resolve_prompt_memory_policy
+from app.services.agent.prompts.policy import (
+    PromptTurnType,
+    resolve_prompt_memory_policy,
+)
 from app.services.agent.prompts.system import get_system_prompt
 
 if TYPE_CHECKING:
@@ -32,10 +35,21 @@ FILTERED_TERMINAL_LABEL = "终端过滤输出"
 RAW_TERMINAL_LABEL = "原生日志反馈"
 
 
-def _build_skill_prompt(agent: "Agent", query: str) -> str:
+def _build_skill_prompt(
+    agent: "Agent",
+    query: str,
+    *,
+    force_skill_ids: set[str] | None = None,
+) -> str:
     prompt_parts = [get_system_prompt(agent)]
 
     skills = agent.match_skills(query) if query else []
+    if force_skill_ids:
+        existing_skill_ids = {skill.skill_id for skill in skills}
+        for skill in agent.get_skills():
+            if skill.skill_id in force_skill_ids and skill.skill_id not in existing_skill_ids:
+                skills.append(skill)
+                existing_skill_ids.add(skill.skill_id)
     for skill in skills:
         if skill.category == "system":
             continue
@@ -203,8 +217,30 @@ def build_chat_turn_messages(
 ) -> list[dict[str, str]]:
     effective_query = query or message
     policy = resolve_prompt_memory_policy(PromptTurnType.CHAT)
+    recent_context_messages: list[dict[str, str]] = []
+    if policy.include_recent_history:
+        recent_context_messages = _collect_recent_context_messages(
+            item_id,
+            max_messages=policy.max_recent_messages,
+        )
+
+    force_skill_ids: set[str] = set()
+    has_robot_context = "[Robot message;" in message or any(
+        "[Robot message;" in context_message.get("content", "")
+        for context_message in recent_context_messages
+    )
+    if has_robot_context:
+        force_skill_ids.add("robot_messaging")
+
     prompt_messages: list[dict[str, str]] = [
-        {"role": "system", "content": _build_skill_prompt(agent, effective_query)}
+        {
+            "role": "system",
+            "content": _build_skill_prompt(
+                agent,
+                effective_query,
+                force_skill_ids=force_skill_ids,
+            ),
+        }
     ]
 
     if policy.include_session_summary:
@@ -215,12 +251,7 @@ def build_chat_turn_messages(
             )
 
     if policy.include_recent_history:
-        prompt_messages.extend(
-            _collect_recent_context_messages(
-                item_id,
-                max_messages=policy.max_recent_messages,
-            )
-        )
+        prompt_messages.extend(recent_context_messages)
 
     if policy.include_long_term:
         memories = _collect_long_term_memories(

@@ -51,6 +51,7 @@ MAX_ITERATIONS = 10
 LOOP_DETECTION_WINDOW = 6
 LOOP_THRESHOLD = 3
 SILENT_TOOL_NAMES = {"mcp_local_read_terminal_log"}
+ROBOT_SEND_TOOL_NAME = "mcp_robot_send_message"
 AUTO_TASK_SOURCE = "agent_plan"
 AUTO_TASK_TTL_DAYS = 7
 MAX_AUTO_TASKS = 5
@@ -234,6 +235,58 @@ def _persist_and_broadcast_event(
 
 def _should_hide_tool_details(tool_name: str) -> bool:
     return tool_name in SILENT_TOOL_NAMES
+
+
+def _has_tool(tools: list[dict], tool_name: str) -> bool:
+    return any(tool.get("function", {}).get("name") == tool_name for tool in tools)
+
+
+def _has_robot_delivery_context(agent: "Agent", messages: list[dict[str, Any]]) -> bool:
+    context = getattr(agent, "_context", None)
+    if context is not None:
+        if getattr(context, "robot_id", ""):
+            return True
+        if getattr(context, "robot_known_targets", None):
+            return True
+
+    return any(
+        isinstance(message.get("content"), str)
+        and "[Robot message;" in message.get("content", "")
+        for message in messages
+    )
+
+
+def _should_retry_robot_delivery(
+    *,
+    agent: "Agent",
+    messages: list[dict[str, Any]],
+    tools: list[dict],
+    final_response: str,
+    retry_used: bool,
+) -> bool:
+    return (
+        bool(final_response.strip())
+        and not retry_used
+        and _has_tool(tools, ROBOT_SEND_TOOL_NAME)
+        and _has_robot_delivery_context(agent, messages)
+    )
+
+
+def _robot_delivery_correction_message(final_response: str) -> dict[str, str]:
+    return {
+        "role": "system",
+        "content": (
+            "Robot message delivery correction:\n"
+            "You produced a final assistant response without calling "
+            "`mcp_robot_send_message`:\n"
+            f"{final_response.strip()}\n\n"
+            "Final assistant responses are internal to TermMan and are not sent "
+            "to QQ. If that text is intended as a QQ reply, call "
+            "`mcp_robot_send_message` now using the QQ conversation visible in "
+            "context. If no QQ message should be sent, respond with a concise "
+            "internal note explaining that no QQ message was sent."
+        ),
+    }
 
 
 def _format_tool_result(result: Any) -> str:
@@ -748,6 +801,7 @@ def generate_stream(
 
     tool_call_history: list[tuple[str, str]] = []
     final_response = ""
+    robot_delivery_retry_used = False
 
     try:
         for _ in range(MAX_ITERATIONS):
@@ -884,6 +938,17 @@ def generate_stream(
 
             if not ordered_tool_calls:
                 final_response = iteration_content.strip()
+                if _should_retry_robot_delivery(
+                    agent=agent,
+                    messages=messages,
+                    tools=tools,
+                    final_response=final_response,
+                    retry_used=robot_delivery_retry_used,
+                ):
+                    robot_delivery_retry_used = True
+                    messages.append(_robot_delivery_correction_message(final_response))
+                    continue
+
                 if final_response:
                     _complete_agent_task_plan(planned_task_runtime)
                     response_event = _persist_and_broadcast_event(

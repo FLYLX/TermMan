@@ -3,10 +3,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
+from app.api.routes.chat import (
+    ROBOT_SEND_TOOL_NAME,
+    _robot_delivery_correction_message,
+    _should_retry_robot_delivery,
+)
 from app.plugins.robot.contracts import RobotReplyTarget
 from app.services.agent import agent as agent_module
 from app.services.agent.agent import AgentContext
 from app.services.agent.mcp.types import MCPTool
+from app.services.agent.prompts import builder as prompt_builder
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.skills import skill_loader
 from app.services.log_manager import LogManager
@@ -260,6 +266,107 @@ def test_agent_extracts_robot_known_targets_from_context_messages() -> None:
         ]
     finally:
         agent_module.Agent._instances.pop(handler_id, None)
+
+
+def test_robot_context_forces_robot_messaging_skill_prompt(monkeypatch) -> None:
+    robot_skill = SimpleNamespace(
+        skill_id="robot_messaging",
+        name="Robot Messaging",
+        description="Robot messages",
+        category="integration",
+        action=SimpleNamespace(prompt="robot messaging prompt body"),
+        content="",
+    )
+    agent = SimpleNamespace(
+        get_skills=lambda: [robot_skill],
+        match_skills=lambda query: [],
+        enabled_knowledge_files=[],
+    )
+    monkeypatch.setattr(
+        prompt_builder,
+        "resolve_prompt_memory_policy",
+        lambda turn_type: SimpleNamespace(
+            include_session_summary=False,
+            include_recent_history=True,
+            max_recent_messages=4,
+            include_long_term=False,
+            allowed_long_term_types=(),
+            max_long_term_memories=0,
+        ),
+    )
+    monkeypatch.setattr(
+        prompt_builder,
+        "get_chat_messages",
+        lambda item_id: [
+            {
+                "type": "chat_user",
+                "role": "user",
+                "content": (
+                    "[Robot message; conversation=private:2537134688; "
+                    "sender=FLY (2537134688)]\n你好"
+                ),
+            }
+        ],
+    )
+
+    messages = prompt_builder.build_chat_turn_messages(
+        agent,
+        item_id="item-1",
+        message="你好",
+    )
+
+    assert "robot messaging prompt body" in messages[0]["content"]
+
+
+def test_robot_delivery_retry_triggers_when_model_returns_plain_reply() -> None:
+    tools = [
+        {
+            "type": "function",
+            "function": {"name": ROBOT_SEND_TOOL_NAME},
+        }
+    ]
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_known_targets=[
+                {
+                    "conversation": "private:2537134688",
+                    "target_type": "private",
+                    "target_id": "2537134688",
+                    "sender": "FLY (2537134688)",
+                }
+            ],
+        )
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                "[Robot message; conversation=private:2537134688; "
+                "sender=FLY (2537134688)]\n你好"
+            ),
+        }
+    ]
+
+    assert _should_retry_robot_delivery(
+        agent=agent,
+        messages=messages,
+        tools=tools,
+        final_response="你好呀~",
+        retry_used=False,
+    ) is True
+    assert _should_retry_robot_delivery(
+        agent=agent,
+        messages=messages,
+        tools=tools,
+        final_response="你好呀~",
+        retry_used=True,
+    ) is False
+
+    correction = _robot_delivery_correction_message("你好呀~")
+    assert correction["role"] == "system"
+    assert "mcp_robot_send_message" in correction["content"]
+    assert "你好呀~" in correction["content"]
 
 
 def test_robot_context_system_prompt_uses_robot_messaging_skill() -> None:
