@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import secrets
 import threading
 from dataclasses import dataclass
@@ -12,6 +13,9 @@ class RobotMCPContext:
     robot_id: str
     sender_key: str
     reply_target: RobotReplyTarget
+
+
+ROBOT_MESSAGE_STAMP_RE = re.compile(r"\[Robot message; (?P<body>[^\]]+)\]")
 
 
 def _robot_conversation_type(reply_target: RobotReplyTarget, sender_key: str) -> str:
@@ -90,12 +94,64 @@ def build_robot_reply_context_summary(
             f"- sender: {sender_label}",
             f"- sender_key: {sender_key}",
             (
-                "- send rule: `mcp_robot_send_message` will send only to this "
-                "current conversation for this turn, not to any conversation "
-                "shown in older history."
+                "- send rule: the model may choose this target or another QQ "
+                "conversation visible in context. If multiple QQ conversations are "
+                "visible, pass a short `reply_to` reference; when omitting target "
+                "fields, the tool sends to this current target."
             ),
         ]
     )
+
+
+def _parse_robot_message_stamp_body(body: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for part in body.split(";"):
+        key, separator, value = part.strip().partition("=")
+        if not separator:
+            continue
+        normalized_key = key.strip().lower()
+        normalized_value = value.strip()
+        if normalized_key and normalized_value:
+            parsed[normalized_key] = normalized_value
+    return parsed
+
+
+def _target_from_robot_message_stamp(stamp: dict[str, str]) -> dict[str, str] | None:
+    conversation = stamp.get("conversation", "").strip()
+    target_type = stamp.get("mcp_target_type", "").strip().lower()
+    target_id = stamp.get("mcp_target_id", "").strip()
+
+    if (not target_type or not target_id) and ":" in conversation:
+        conversation_type, conversation_id = conversation.split(":", 1)
+        target_type = target_type or conversation_type.strip().lower()
+        target_id = target_id or conversation_id.strip()
+
+    if target_type not in {"group", "private"} or not target_id:
+        return None
+
+    normalized_conversation = conversation or f"{target_type}:{target_id}"
+    return {
+        "conversation": normalized_conversation,
+        "target_type": target_type,
+        "target_id": target_id,
+        "sender": stamp.get("sender", "").strip(),
+    }
+
+
+def extract_robot_context_targets_from_text(text: str) -> list[dict[str, str]]:
+    targets: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for match in ROBOT_MESSAGE_STAMP_RE.finditer(text or ""):
+        stamp = _parse_robot_message_stamp_body(match.group("body"))
+        target = _target_from_robot_message_stamp(stamp)
+        if target is None:
+            continue
+        key = f"{target['target_type']}:{target['target_id']}"
+        if key in seen:
+            continue
+        seen.add(key)
+        targets.append(target)
+    return targets
 
 
 _lock = threading.RLock()

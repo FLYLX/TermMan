@@ -12,12 +12,17 @@ DEFAULT_SYSTEM_PROMPT = "You are a helpful AI assistant."
 ROBOT_MESSAGING_SKILL_ID = "robot_messaging"
 ROBOT_MESSAGING_FALLBACK_PROMPT = (
     "Robot Messaging Skill:\n\n"
-    "You are handling a NoneBot/NapCat QQ robot conversation. "
-    "Your final assistant message is internal and will not be sent to QQ. "
-    "When you decide the current QQ group or conversation should receive a "
-    "message, call `mcp_robot_send_message` with the exact text to send. "
-    "The tool always sends to the current robot conversation; do not ask for "
-    "or invent QQ group IDs."
+    "You can send concise user-visible messages through the TermMan "
+    "NoneBot/NapCat QQ robot by calling `mcp_robot_send_message`. "
+    "Choose the target from the QQ conversations visible in the current chat "
+    "context. If there is more than one possible QQ conversation, pass a short "
+    "`reply_to` reference such as the sender name or conversation label, and "
+    "the backend resolves it to the actual QQ target. In an incoming QQ robot "
+    "conversation, omitting target fields sends to the current QQ conversation; "
+    "your final assistant message is internal and will not be sent to QQ. In "
+    "TermMan backend chat, ask which group/private chat to use when the context "
+    "does not identify a clear QQ target. "
+    "Do not invent robot IDs, group IDs, QQ numbers, or target IDs."
 )
 
 

@@ -5,7 +5,11 @@ from sqlmodel import Session
 
 from app.models import RobotItem
 from app.plugins.robot.contracts import RobotInboundMessage, RobotReplyTarget
-from app.plugins.robot.platforms import _event_mentions_bot, _extract_sender_metadata
+from app.plugins.robot.platforms import (
+    _event_mentions_bot,
+    _extract_sender_metadata,
+    send_text_with_bot,
+)
 from app.plugins.robot.service import robot_service
 from tests.utils.item import create_random_item
 from tests.utils.robot import create_random_robot
@@ -74,6 +78,24 @@ class _FakeBot:
     self_id = "10001"
 
 
+class _FakeOneBotAdapter:
+    connections = {"10001": object()}
+
+    def get_name(self) -> str:
+        return "OneBot V11"
+
+
+class _FakeOneBotBot:
+    self_id = "10001"
+
+    def __init__(self) -> None:
+        self.adapter = _FakeOneBotAdapter()
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def call_api(self, action: str, **kwargs: Any) -> None:
+        self.calls.append((action, kwargs))
+
+
 class _FakeSegment:
     def __init__(self, segment_type: str, data: dict[str, Any]) -> None:
         self.type = segment_type
@@ -103,6 +125,42 @@ class _FakeEvent:
 
     def get_user_id(self) -> str:
         return self.user_id
+
+
+def test_send_text_with_bot_uses_onebot_group_and_private_actions() -> None:
+    bot = _FakeOneBotBot()
+
+    asyncio.run(
+        send_text_with_bot(
+            bot,
+            RobotReplyTarget(target_type="group", target_id="123456"),
+            " 群消息 ",
+        )
+    )
+    asyncio.run(
+        send_text_with_bot(
+            bot,
+            RobotReplyTarget(target_type="private", target_id="654321"),
+            "私信消息",
+        )
+    )
+
+    assert bot.calls == [
+        (
+            "send_group_msg",
+            {
+                "group_id": 123456,
+                "message": "群消息",
+            },
+        ),
+        (
+            "send_private_msg",
+            {
+                "user_id": 654321,
+                "message": "私信消息",
+            },
+        ),
+    ]
 
 
 def test_event_mentions_bot_detects_onebot_at_segment() -> None:
@@ -235,6 +293,55 @@ def test_robot_message_passes_sender_prefix_to_agent(
     assert response.success is True
     assert captured["message"] == (
         "[Robot message; conversation=group:g1; sender=Alice (u1)]\nhello"
+    )
+    assert response.reply_chunks == []
+
+
+def test_private_robot_message_passes_context_stamp_to_agent(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    captured: dict[str, object] = {}
+
+    async def fake_chat_with_item(**kwargs):
+        captured.update(kwargs)
+        return "agent response"
+
+    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
+
+    response = asyncio.run(
+        robot_service.handle_inbound_message(
+            db,
+            robot,
+            _message(
+                "hello",
+                sender_key="onebot_v11:private:u1",
+                target={"id": "u1", "private": True},
+                sender={
+                    "user_id": "u1",
+                    "display_name": "Alice",
+                },
+            ),
+        )
+    )
+
+    assert response.success is True
+    assert captured["message"] == (
+        "[Robot message; conversation=private:u1; sender=Alice (u1)]\nhello"
     )
     assert response.reply_chunks == []
 

@@ -10,6 +10,7 @@ from app.models import ItemHandler
 from app.services.agent.mcp.robot_context import (
     RobotMCPContext,
     build_robot_reply_context_summary,
+    extract_robot_context_targets_from_text,
     register_robot_mcp_context,
     unregister_robot_mcp_context,
 )
@@ -45,6 +46,9 @@ class AgentContext:
     robot_context_token: str = ""
     robot_reply_context_summary: str = ""
     robot_mcp_server_transient: bool = False
+    current_user_id: str = ""
+    current_user_is_superuser: bool = False
+    robot_known_targets: list[dict[str, str]] = field(default_factory=list)
 
 
 class Agent:
@@ -165,6 +169,29 @@ class Agent:
             if item:
                 self._context.output_filter_enabled = item.output_filter_enabled
                 self._context.output_filter_rules = item.output_filter_rules or {}
+
+    def set_user_context(self, user_id: str, is_superuser: bool = False) -> None:
+        if self._context:
+            self._context.current_user_id = user_id
+            self._context.current_user_is_superuser = is_superuser
+
+    def set_robot_known_targets_from_messages(self, messages: list[dict]) -> None:
+        if not self._context:
+            return
+
+        targets_by_key: dict[str, dict[str, str]] = {}
+        for message in messages:
+            content = message.get("content") if isinstance(message, dict) else ""
+            if not isinstance(content, str):
+                continue
+            for target in extract_robot_context_targets_from_text(content):
+                target_data = dict(target)
+                if self._context.robot_id and not target_data.get("robot_id"):
+                    target_data["robot_id"] = self._context.robot_id
+                key = f"{target_data.get('target_type')}:{target_data.get('target_id')}"
+                targets_by_key[key] = target_data
+
+        self._context.robot_known_targets = list(targets_by_key.values())
 
     def set_robot_context(
         self,
@@ -325,6 +352,19 @@ class Agent:
 
         if server_name not in self._mcp_servers:
             return {"success": False, "error": f"MCP server '{server_name}' not available for this agent"}
+
+        if tool_name == "mcp_robot_send_message":
+            args.pop("_robot_context_token", None)
+            args.pop("_termman_user_id", None)
+            args.pop("_termman_is_superuser", None)
+            args.pop("_robot_known_targets", None)
+            if self._context and self._context.current_user_id:
+                args["_termman_user_id"] = self._context.current_user_id
+                args["_termman_is_superuser"] = self._context.current_user_is_superuser
+            if self._context and self._context.robot_known_targets:
+                args["_robot_known_targets"] = [
+                    dict(target) for target in self._context.robot_known_targets
+                ]
 
         for tool in self._mcp_tools:
             if tool.get("function", {}).get("name") == tool_name:

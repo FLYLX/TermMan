@@ -141,6 +141,127 @@ def test_robot_context_temporarily_exposes_send_message_tool(monkeypatch) -> Non
         agent_module.Agent._instances.pop(handler_id, None)
 
 
+def test_robot_mcp_explicit_target_gets_backend_user_context(monkeypatch) -> None:
+    handler_id = f"handler-{uuid4()}"
+    agent = agent_module.Agent(handler_id)
+    agent._context = AgentContext(
+        handler_id=handler_id,
+        enabled_mcp_servers=["robot"],
+        current_user_id="user-1",
+        current_user_is_superuser=False,
+    )
+    agent._mcp_servers = ["robot"]
+    agent._mcp_tools = [
+        MCPTool(
+            name="send_message",
+            description="Send robot message",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "target_type": {"type": "string"},
+                    "target_id": {"type": "string"},
+                },
+            },
+            server_name="robot",
+        ).to_litellm_tool()
+    ]
+
+    captured_call: dict[str, object] = {}
+
+    async def fake_call_tool(server_name: str, tool_name: str, args: dict):
+        captured_call["server_name"] = server_name
+        captured_call["tool_name"] = tool_name
+        captured_call["args"] = dict(args)
+        return [{"type": "text", "text": "sent"}]
+
+    monkeypatch.setattr(
+        agent_module.mcp_server_manager,
+        "call_tool",
+        fake_call_tool,
+    )
+
+    try:
+        result = asyncio.run(
+            agent.execute_tool(
+                "mcp_robot_send_message",
+                {
+                    "text": "hello",
+                    "target_type": "group",
+                    "target_id": "123456",
+                    "_termman_user_id": "forged",
+                    "_termman_is_superuser": True,
+                    "_robot_context_token": "forged-token",
+                },
+            )
+        )
+
+        assert result == {
+            "success": True,
+            "result": [{"type": "text", "text": "sent"}],
+        }
+        assert captured_call["server_name"] == "robot"
+        assert captured_call["tool_name"] == "send_message"
+        assert captured_call["args"] == {
+            "text": "hello",
+            "target_type": "group",
+            "target_id": "123456",
+            "_termman_user_id": "user-1",
+            "_termman_is_superuser": False,
+        }
+    finally:
+        agent_module.Agent._instances.pop(handler_id, None)
+
+
+def test_agent_extracts_robot_known_targets_from_context_messages() -> None:
+    handler_id = f"handler-{uuid4()}"
+    agent = agent_module.Agent(handler_id)
+    agent._context = AgentContext(
+        handler_id=handler_id,
+        enabled_mcp_servers=["robot"],
+        robot_id="robot-1",
+    )
+
+    try:
+        agent.set_robot_known_targets_from_messages(
+            [
+                {
+                    "role": "user",
+                    "content": (
+                        "[Robot message; conversation=group:123456; "
+                        "sender=Alice (10001)]\nserver error"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "[Robot message; conversation=private:654321; "
+                        "sender=Bob (654321)]\nhello"
+                    ),
+                },
+            ]
+        )
+
+        assert agent._context.robot_known_targets == [
+            {
+                "conversation": "group:123456",
+                "target_type": "group",
+                "target_id": "123456",
+                "sender": "Alice (10001)",
+                "robot_id": "robot-1",
+            },
+            {
+                "conversation": "private:654321",
+                "target_type": "private",
+                "target_id": "654321",
+                "sender": "Bob (654321)",
+                "robot_id": "robot-1",
+            },
+        ]
+    finally:
+        agent_module.Agent._instances.pop(handler_id, None)
+
+
 def test_robot_context_system_prompt_uses_robot_messaging_skill() -> None:
     skill_loader.reload()
     agent = SimpleNamespace(
@@ -151,9 +272,10 @@ def test_robot_context_system_prompt_uses_robot_messaging_skill() -> None:
                 "- conversation: group:g1\n"
                 "- sender: Alice (u1)\n"
                 "- sender_key: onebot_v11:group:g1:u1\n"
-                "- send rule: `mcp_robot_send_message` will send only to this "
-                "current conversation for this turn, not to any conversation shown "
-                "in older history."
+                "- send rule: the model may choose this target or another QQ "
+                "conversation visible in context. If multiple QQ conversations are "
+                "visible, pass a short `reply_to` reference; when omitting target "
+                "fields, the tool sends to this current target."
             ),
         ),
         get_skills=lambda: [],
@@ -167,7 +289,7 @@ def test_robot_context_system_prompt_uses_robot_messaging_skill() -> None:
     assert "sender: Alice (u1)" in prompt
     assert "final assistant message is internal" in prompt
     assert "mcp_robot_send_message" in prompt
-    assert "not to any conversation shown in older history" in prompt
+    assert "Decide which QQ conversation should receive" in prompt
 
 
 def test_log_manager_reads_legacy_log_when_primary_missing(tmp_path) -> None:

@@ -280,6 +280,47 @@ def build_inbound_message(
     )
 
 
+def _normalize_onebot_target_id(value: str) -> int | str:
+    normalized = str(value or "").strip()
+    return int(normalized) if normalized.isdigit() else normalized
+
+
+async def _send_onebot_text_with_explicit_target(
+    bot: Any,
+    target: RobotReplyTarget,
+    text: str,
+) -> bool:
+    adapter_name = str(bot.adapter.get_name()).strip().lower()
+    if adapter_name != "onebot v11":
+        return False
+
+    connections = getattr(bot.adapter, "connections", {})
+    self_id = str(getattr(bot, "self_id", "") or "")
+    if self_id not in connections:
+        raise ConnectionError(
+            "OneBot reverse WebSocket is not connected; "
+            "NapCat may have disconnected before the message was sent"
+        )
+
+    target_type = str(target.target_type or "").strip().lower()
+    target_id = _normalize_onebot_target_id(target.target_id)
+    if target_type == "group":
+        await bot.call_api(
+            "send_group_msg",
+            group_id=target_id,
+            message=text,
+        )
+        return True
+    if target_type in {"private", "c2c", "friend", "direct", "direct_message"}:
+        await bot.call_api(
+            "send_private_msg",
+            user_id=target_id,
+            message=text,
+        )
+        return True
+    return False
+
+
 async def send_text_with_bot(
     bot: Any,
     target: RobotReplyTarget,
@@ -310,6 +351,9 @@ async def send_text_with_bot(
         if source:
             uni_target.source = source
         await UniMessage(normalized_text).send(target=uni_target, bot=bot)
+        return
+
+    if await _send_onebot_text_with_explicit_target(bot, target, normalized_text):
         return
 
     raise ValueError("Unsupported reply target for current bot")

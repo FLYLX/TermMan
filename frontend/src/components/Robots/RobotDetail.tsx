@@ -10,6 +10,7 @@ import {
   MessageSquare,
   RefreshCw,
   Save,
+  Send,
   Trash2,
 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
@@ -55,6 +56,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
 
@@ -76,6 +78,9 @@ import {
   type RobotRecord,
   readRobot,
   reloadRobotBridge,
+  sendRobotDebugMessage,
+  sendRobotManualMessage,
+  type RobotManualMessageTargetType,
   updateRobot,
   updateRobotBinding,
 } from "./api"
@@ -358,6 +363,41 @@ function useRobotDetailCopy() {
         ? "查看 Bridge 连接、最近收发和错误。"
         : "Inspect bridge connectivity, recent traffic, and errors.",
     reload: locale === "zh" ? "重载 Bridge" : "Reload bridge",
+    testSend: locale === "zh" ? "测试发送" : "Test send",
+    testSendMessage:
+      locale === "zh"
+        ? "测试一下能不能从服务器给群里发消息"
+        : "Testing whether the server can send a message to this QQ conversation",
+    testSendRequested:
+      locale === "zh" ? "测试消息已发送" : "Test message sent",
+    testSendFailed:
+      locale === "zh" ? "测试发送失败" : "Failed to send test message",
+    manualSendTitle:
+      locale === "zh" ? "指定 QQ 会话发送" : "Send to QQ target",
+    manualSendDescription:
+      locale === "zh"
+        ? "选择群聊或私信，填写群号或 QQ 号，然后从服务器直接发送。"
+        : "Choose group or private chat, enter the group ID or QQ number, then send directly from the server.",
+    manualTargetType: locale === "zh" ? "类型" : "Type",
+    manualTargetGroup: locale === "zh" ? "群聊" : "Group",
+    manualTargetPrivate: locale === "zh" ? "私信" : "Private",
+    manualTargetId: locale === "zh" ? "目标 ID" : "Target ID",
+    manualGroupIdPlaceholder:
+      locale === "zh" ? "填写 QQ 群号" : "Enter QQ group ID",
+    manualPrivateIdPlaceholder:
+      locale === "zh" ? "填写 QQ 号" : "Enter QQ number",
+    manualMessage: locale === "zh" ? "消息" : "Message",
+    manualMessagePlaceholder:
+      locale === "zh" ? "输入要发送的消息" : "Enter the message to send",
+    manualSend: locale === "zh" ? "发送" : "Send",
+    manualSendRequested:
+      locale === "zh" ? "消息已发送" : "Message sent",
+    manualSendFailed:
+      locale === "zh" ? "发送失败" : "Failed to send message",
+    manualTargetRequired:
+      locale === "zh" ? "请填写目标 ID" : "Target ID is required",
+    manualMessageRequired:
+      locale === "zh" ? "请输入消息内容" : "Message text is required",
     reloadRequested:
       locale === "zh" ? "Bridge 重载已请求" : "Bridge reload requested",
     reloadFailed:
@@ -456,6 +496,10 @@ function useRobotDetailUiCopy() {
           debugTitle: "运行调试",
           debugDescription: "查看 Bridge 连接、NapCat 事件、最近收发和错误。",
           reload: "重载 Bridge",
+          testSend: "测试发送",
+          testSendMessage: "测试一下能不能从服务器给群里发消息",
+          testSendRequested: "测试消息已发送",
+          testSendFailed: "测试发送失败",
           reloadRequested: "Bridge 重载已请求",
           reloadFailed: "Bridge 重载失败",
           connected: "已连接",
@@ -526,6 +570,11 @@ function useRobotDetailUiCopy() {
           debugDescription:
             "Inspect bridge connectivity, NapCat events, recent traffic, and errors.",
           reload: "Reload bridge",
+          testSend: "Test send",
+          testSendMessage:
+            "Testing whether the server can send a message to this QQ conversation",
+          testSendRequested: "Test message sent",
+          testSendFailed: "Failed to send test message",
           reloadRequested: "Bridge reload requested",
           reloadFailed: "Failed to reload bridge",
           connected: "Connected",
@@ -1384,6 +1433,12 @@ function RobotDebugPanel({
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
   const [isReloading, setIsReloading] = useState(false)
+  const [isSendingTest, setIsSendingTest] = useState(false)
+  const [manualTargetType, setManualTargetType] =
+    useState<RobotManualMessageTargetType>("group")
+  const [manualTargetId, setManualTargetId] = useState("")
+  const [manualMessage, setManualMessage] = useState("")
+  const [isSendingManual, setIsSendingManual] = useState(false)
   const bridge = debug?.bridge
   const onebotSocket = bridge?.onebot_socket
   const reverseWsUrl = getReverseWsEndpoint(debug)
@@ -1407,6 +1462,56 @@ function RobotDebugPanel({
     }
   }
 
+  const handleManualSend = async () => {
+    const targetId = manualTargetId.trim()
+    const text = manualMessage.trim()
+    if (!targetId) {
+      showErrorToast(copy.manualTargetRequired)
+      return
+    }
+    if (!text) {
+      showErrorToast(copy.manualMessageRequired)
+      return
+    }
+
+    setIsSendingManual(true)
+    try {
+      await sendRobotManualMessage(robotId, {
+        target_type: manualTargetType,
+        target_id: targetId,
+        text,
+      })
+      showSuccessToast(copy.manualSendRequested)
+      setManualMessage("")
+      await queryClient.invalidateQueries({
+        queryKey: getRobotDebugQueryKey(robotId),
+      })
+    } catch (error) {
+      showErrorToast(
+        error instanceof Error ? error.message : copy.manualSendFailed,
+      )
+    } finally {
+      setIsSendingManual(false)
+    }
+  }
+
+  const handleTestSend = async () => {
+    setIsSendingTest(true)
+    try {
+      await sendRobotDebugMessage(robotId, copy.testSendMessage)
+      showSuccessToast(copy.testSendRequested)
+      await queryClient.invalidateQueries({
+        queryKey: getRobotDebugQueryKey(robotId),
+      })
+    } catch (error) {
+      showErrorToast(
+        error instanceof Error ? error.message : copy.testSendFailed,
+      )
+    } finally {
+      setIsSendingTest(false)
+    }
+  }
+
   return (
     <Card className="rounded-3xl border bg-card shadow-sm">
       <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1415,6 +1520,20 @@ function RobotDebugPanel({
           <CardDescription>{copy.debugDescription}</CardDescription>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 rounded-xl px-3.5"
+            onClick={() => void handleTestSend()}
+            disabled={isSendingTest}
+          >
+            {isSendingTest ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <Send className="mr-2 size-4" />
+            )}
+            {copy.testSend}
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -1563,6 +1682,76 @@ function RobotDebugPanel({
             {debug.diagnostics.qq_event_hint}
           </div>
         ) : null}
+
+        <div className="grid gap-3 rounded-xl border bg-muted/10 p-3">
+          <div>
+            <div className="text-sm font-medium">{copy.manualSendTitle}</div>
+            <div className="text-xs text-muted-foreground">
+              {copy.manualSendDescription}
+            </div>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-[160px_minmax(180px,240px)_1fr_auto] lg:items-end">
+            <div className="grid gap-2">
+              <Label>{copy.manualTargetType}</Label>
+              <Select
+                value={manualTargetType}
+                onValueChange={(value) =>
+                  setManualTargetType(value as RobotManualMessageTargetType)
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="group">{copy.manualTargetGroup}</SelectItem>
+                  <SelectItem value="private">
+                    {copy.manualTargetPrivate}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="robot-manual-target-id">
+                {copy.manualTargetId}
+              </Label>
+              <Input
+                id="robot-manual-target-id"
+                value={manualTargetId}
+                onChange={(event) => setManualTargetId(event.target.value)}
+                placeholder={
+                  manualTargetType === "group"
+                    ? copy.manualGroupIdPlaceholder
+                    : copy.manualPrivateIdPlaceholder
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="robot-manual-message">
+                {copy.manualMessage}
+              </Label>
+              <Textarea
+                id="robot-manual-message"
+                className="min-h-10 resize-y"
+                value={manualMessage}
+                onChange={(event) => setManualMessage(event.target.value)}
+                placeholder={copy.manualMessagePlaceholder}
+              />
+            </div>
+            <Button
+              type="button"
+              className="h-10 rounded-xl px-3.5"
+              onClick={() => void handleManualSend()}
+              disabled={isSendingManual}
+            >
+              {isSendingManual ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <Send className="mr-2 size-4" />
+              )}
+              {copy.manualSend}
+            </Button>
+          </div>
+        </div>
 
         <div className="space-y-2">
           <div className="text-sm font-medium">{copy.recentEvents}</div>

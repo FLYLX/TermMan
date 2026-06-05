@@ -722,6 +722,9 @@ def generate_stream(
         message=message,
         query=message,
     )
+    set_known_targets = getattr(agent, "set_robot_known_targets_from_messages", None)
+    if callable(set_known_targets):
+        set_known_targets(messages)
     matched_skills = agent.match_skills(message)
     tools = agent.get_tools_for_litellm()
 

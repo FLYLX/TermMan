@@ -4,7 +4,10 @@ import asyncio
 import json
 import logging
 import sys
+import uuid
+from typing import Any
 
+from app.plugins.robot.contracts import RobotReplyTarget
 from app.services.agent.mcp.robot_context import get_robot_mcp_context
 
 logger = logging.getLogger(__name__)
@@ -19,18 +22,62 @@ class RobotMCPServer:
         self.register_tool(
             name="send_message",
             description=(
-                "Send a concise message to the current NoneBot/NapCat conversation. "
-                "Use this when your robot instructions say a QQ-side message should be "
-                "delivered through the tool, or when an additional proactive robot-side "
-                "update is needed. The target is always the current robot conversation; "
-                "do not ask for or invent group IDs."
+                "Send a concise message through the TermMan NoneBot/NapCat QQ robot. "
+                "Choose the recipient from QQ conversations visible in the current "
+                "chat context. If there is a single clear QQ conversation, send with "
+                "only text. If multiple QQ conversations are visible, provide reply_to "
+                "as a short context reference such as sender name or conversation "
+                "label. Use target_type and target_id only when the user explicitly "
+                "provided a QQ group number or QQ number outside the visible context. "
+                "If multiple robots are available, provide robot_id."
             ),
             input_schema={
                 "type": "object",
                 "properties": {
                     "text": {
                         "type": "string",
-                        "description": "Message text to send to the current robot conversation.",
+                        "description": "Message text to send to QQ.",
+                    },
+                    "target_type": {
+                        "type": "string",
+                        "enum": ["group", "private"],
+                        "description": (
+                            "Optional in QQ-triggered robot context. Required in "
+                            "backend chat. Use 'group' for QQ group messages and "
+                            "'private' for QQ private messages."
+                        ),
+                    },
+                    "target_id": {
+                        "type": "string",
+                        "description": (
+                            "Optional in QQ-triggered robot context. Required in "
+                            "backend chat. QQ group number for group messages, or QQ "
+                            "number for private messages."
+                        ),
+                    },
+                    "conversation": {
+                        "type": "string",
+                        "description": (
+                            "Optional conversation reference from context, for "
+                            "example 'group:123456' or 'private:654321'. Use this "
+                            "when choosing a conversation from prior QQ context."
+                        ),
+                    },
+                    "reply_to": {
+                        "type": "string",
+                        "description": (
+                            "Optional natural reference to the QQ conversation from "
+                            "context, such as the sender name, group/private label, "
+                            "or conversation shown in prior robot messages. The "
+                            "backend resolves it against the context target index."
+                        ),
+                    },
+                    "robot_id": {
+                        "type": "string",
+                        "description": (
+                            "Optional robot UUID. Omit only when there is an active "
+                            "QQ robot context or exactly one accessible enabled robot."
+                        ),
                     }
                 },
                 "required": ["text"],
@@ -38,6 +85,246 @@ class RobotMCPServer:
             handler=self._send_message,
             skip_memory=True,
         )
+
+    def _normalize_target_type(self, value: Any) -> str:
+        raw = str(value or "").strip().lower()
+        if raw in {"group", "qq_group"}:
+            return "group"
+        if raw in {"private", "friend", "user", "direct", "c2c"}:
+            return "private"
+        return ""
+
+    def _parse_conversation_target(self, value: Any) -> tuple[str, str]:
+        raw = str(value or "").strip()
+        if not raw or ":" not in raw:
+            return "", ""
+        target_type, target_id = raw.split(":", 1)
+        return self._normalize_target_type(target_type), target_id.strip()
+
+    def _build_explicit_target(self, args: dict) -> RobotReplyTarget | None:
+        target_type = self._normalize_target_type(
+            args.get("target_type") or args.get("mcp_target_type")
+        )
+        target_id = str(args.get("target_id") or args.get("mcp_target_id") or "").strip()
+        if not target_type and not target_id:
+            return None
+        if not target_type:
+            raise ValueError("target_type is required when target_id is provided")
+        if not target_id:
+            raise ValueError("target_id is required when target_type is provided")
+        return RobotReplyTarget(
+            target_type=target_type,
+            target_id=target_id,
+            metadata={"manual_target": True, "mcp_explicit_target": True},
+        )
+
+    def _context_targets(self, args: dict) -> list[dict[str, str]]:
+        raw_targets = args.get("_robot_known_targets")
+        if not isinstance(raw_targets, list):
+            return []
+
+        targets: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for raw_target in raw_targets:
+            if not isinstance(raw_target, dict):
+                continue
+            target_type = self._normalize_target_type(raw_target.get("target_type"))
+            target_id = str(raw_target.get("target_id") or "").strip()
+            if target_type not in {"group", "private"} or not target_id:
+                continue
+            key = f"{target_type}:{target_id}"
+            if key in seen:
+                continue
+            seen.add(key)
+            conversation = str(raw_target.get("conversation") or key).strip() or key
+            targets.append(
+                {
+                    "conversation": conversation,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "sender": str(raw_target.get("sender") or "").strip(),
+                    "robot_id": str(raw_target.get("robot_id") or "").strip(),
+                }
+            )
+        return targets
+
+    def _target_match_score(self, target: dict[str, str], reference: str) -> int:
+        normalized_reference = reference.strip().casefold()
+        if not normalized_reference:
+            return 0
+
+        conversation = target.get("conversation", "")
+        target_type = target.get("target_type", "")
+        target_id = target.get("target_id", "")
+        sender = target.get("sender", "")
+        exact_candidates = {
+            conversation,
+            f"{target_type}:{target_id}",
+            target_id,
+            sender,
+        }
+        if normalized_reference in {candidate.casefold() for candidate in exact_candidates if candidate}:
+            return 100
+
+        partial_candidates = [
+            conversation,
+            f"{target_type}:{target_id}",
+            f"{target_type} {target_id}",
+            target_id,
+            sender,
+            target_type,
+        ]
+        return sum(
+            1
+            for candidate in partial_candidates
+            if candidate
+            and (
+                normalized_reference in candidate.casefold()
+                or candidate.casefold() in normalized_reference
+            )
+        )
+
+    def _resolve_context_target(self, args: dict) -> tuple[RobotReplyTarget | None, str]:
+        targets = self._context_targets(args)
+        if not targets:
+            return None, ""
+
+        reference = str(
+            args.get("reply_to")
+            or args.get("recipient")
+            or args.get("conversation")
+            or ""
+        ).strip()
+        if not reference and len(targets) == 1:
+            target_data = targets[0]
+            return (
+                RobotReplyTarget(
+                    target_type=target_data["target_type"],
+                    target_id=target_data["target_id"],
+                    metadata={
+                        "manual_target": True,
+                        "mcp_context_target": True,
+                    },
+                ),
+                target_data.get("robot_id", ""),
+            )
+
+        if reference:
+            parsed_type, parsed_id = self._parse_conversation_target(reference)
+            if parsed_type and parsed_id:
+                reference = f"{parsed_type}:{parsed_id}"
+
+            scored = [
+                (self._target_match_score(target, reference), target)
+                for target in targets
+            ]
+            matches = [target for score, target in scored if score > 0]
+            if len(matches) == 1:
+                target_data = matches[0]
+                return (
+                    RobotReplyTarget(
+                        target_type=target_data["target_type"],
+                        target_id=target_data["target_id"],
+                        metadata={
+                            "manual_target": True,
+                            "mcp_context_target": True,
+                            "mcp_context_reference": reference,
+                        },
+                    ),
+                    target_data.get("robot_id", ""),
+                )
+            if len(matches) > 1:
+                choices = ", ".join(
+                    f"{target['conversation']} sender={target.get('sender') or '-'}"
+                    for target in matches[:5]
+                )
+                raise ValueError(
+                    "The reply target is ambiguous in context. Choose one of: "
+                    f"{choices}"
+                )
+
+        if len(targets) > 1:
+            choices = ", ".join(
+                f"{target['conversation']} sender={target.get('sender') or '-'}"
+                for target in targets[:5]
+            )
+            raise ValueError(
+                "Multiple QQ conversations are available in context. Set reply_to "
+                f"to one of: {choices}"
+            )
+        return None, ""
+
+    def _get_accessible_robot_id(
+        self,
+        args: dict,
+        *,
+        fallback_robot_id: str = "",
+    ) -> str:
+        explicit_robot_id = str(args.get("robot_id") or "").strip()
+        if explicit_robot_id:
+            return self._assert_robot_access(explicit_robot_id, args)
+        if fallback_robot_id:
+            return fallback_robot_id
+        return self._single_accessible_robot_id(args)
+
+    def _assert_robot_access(self, robot_id: str, args: dict) -> str:
+        try:
+            parsed_robot_id = uuid.UUID(robot_id)
+        except ValueError as exc:
+            raise ValueError("robot_id must be a valid UUID") from exc
+
+        from sqlmodel import Session
+
+        from app.core.db import engine
+        from app.models import Robot
+
+        with Session(engine) as session:
+            robot = session.get(Robot, parsed_robot_id)
+            if robot is None:
+                raise ValueError(f"Robot not found: {robot_id}")
+            if not robot.is_enabled:
+                raise ValueError(f"Robot is disabled: {robot_id}")
+            self._assert_user_can_use_robot(robot, args)
+        return str(parsed_robot_id)
+
+    def _single_accessible_robot_id(self, args: dict) -> str:
+        from sqlmodel import Session, select
+
+        from app.core.db import engine
+        from app.models import Robot
+
+        user_id = str(args.get("_termman_user_id") or "").strip()
+        is_superuser = bool(args.get("_termman_is_superuser"))
+        if not user_id and not is_superuser:
+            raise ValueError(
+                "robot_id is required outside an active robot conversation context"
+            )
+
+        with Session(engine) as session:
+            statement = select(Robot).where(Robot.is_enabled == True)  # noqa: E712
+            if not is_superuser:
+                statement = statement.where(Robot.owner_id == uuid.UUID(user_id))
+            robots = list(session.exec(statement).all())
+
+        if len(robots) == 1:
+            return str(robots[0].id)
+        if not robots:
+            raise ValueError("No enabled QQ robot is available for this user")
+
+        choices = ", ".join(f"{robot.name} ({robot.id})" for robot in robots[:5])
+        raise ValueError(
+            "Multiple enabled QQ robots are available; provide robot_id. "
+            f"Available robots: {choices}"
+        )
+
+    def _assert_user_can_use_robot(self, robot: Any, args: dict) -> None:
+        if bool(args.get("_termman_is_superuser")):
+            return
+        user_id = str(args.get("_termman_user_id") or "").strip()
+        if not user_id:
+            raise ValueError("Not authorized to use this robot")
+        if str(robot.owner_id) != user_id:
+            raise ValueError("Not authorized to use this robot")
 
     def register_tool(
         self,
@@ -62,19 +349,72 @@ class RobotMCPServer:
 
         context_token = str(args.get("_robot_context_token") or "").strip()
         context = get_robot_mcp_context(context_token)
-        if context is None:
+        try:
+            explicit_target = self._build_explicit_target(args)
+        except Exception as exc:
+            return [{"type": "text", "text": f"Error: {exc}"}]
+
+        context_target: RobotReplyTarget | None = None
+        context_target_robot_id = ""
+        if explicit_target is None:
+            try:
+                context_target, context_target_robot_id = self._resolve_context_target(args)
+            except Exception as exc:
+                return [{"type": "text", "text": f"Error: {exc}"}]
+
+        if context is None and explicit_target is None and context_target is None:
             return [
                 {
                     "type": "text",
                     "text": (
-                        "Error: no active robot conversation context. "
-                        "This tool can only be used while handling a NoneBot/NapCat message."
+                        "Error: no active robot conversation context and no "
+                        "matching QQ target in chat context. Use reply_to to choose "
+                        "a QQ conversation from context, or provide target_type and "
+                        "target_id if the target is outside the current context."
                     ),
                 }
             ]
 
         try:
             from app.plugins.robot.bridge_client import robot_bridge_client
+
+            if explicit_target is not None:
+                robot_id = self._get_accessible_robot_id(
+                    args,
+                    fallback_robot_id=context.robot_id if context else "",
+                )
+                robot_bridge_client.send_message(robot_id, explicit_target, text)
+                return [
+                    {
+                        "type": "text",
+                        "text": (
+                            f"Message sent to QQ {explicit_target.target_type} "
+                            f"{explicit_target.target_id}."
+                        ),
+                    }
+                ]
+
+            if context_target is not None:
+                fallback_robot_id = context_target_robot_id
+                if not fallback_robot_id and context is not None:
+                    fallback_robot_id = context.robot_id
+                robot_id = self._get_accessible_robot_id(
+                    args,
+                    fallback_robot_id=fallback_robot_id,
+                )
+                robot_bridge_client.send_message(robot_id, context_target, text)
+                return [
+                    {
+                        "type": "text",
+                        "text": (
+                            f"Message sent to QQ {context_target.target_type} "
+                            f"{context_target.target_id} from chat context."
+                        ),
+                    }
+                ]
+
+            if context is None:
+                return [{"type": "text", "text": "Error: robot context unavailable"}]
 
             robot_bridge_client.send_message(
                 context.robot_id,

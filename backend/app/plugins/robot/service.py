@@ -97,6 +97,7 @@ class RobotService:
                 "sender_key": message.sender_key,
                 "target_type": message.reply_target.target_type,
                 "target_id": message.reply_target.target_id,
+                "reply_target": message.reply_target.model_dump(mode="json"),
             },
         )
         self._assert_robot_supported(robot)
@@ -525,7 +526,12 @@ class RobotService:
         if conversation_id:
             conversation_label = f"{conversation_type}:{conversation_id}"
 
-        return f"[Robot message; conversation={conversation_label}; sender={sender_label}]"
+        parts = [
+            "Robot message",
+            f"conversation={conversation_label}",
+        ]
+        parts.append(f"sender={sender_label}")
+        return f"[{'; '.join(parts)}]"
 
     def _write_to_item_terminal(self, item_id: uuid.UUID, command: str) -> bool:
         from app.services import socket_pool_facade

@@ -1283,6 +1283,7 @@ def init_embedded_bridge() -> APIRouter | None:
                     "sender_key": inbound.sender_key,
                     "target_type": inbound.reply_target.target_type,
                     "target_id": inbound.reply_target.target_id,
+                    "reply_target": inbound.reply_target.model_dump(mode="json"),
                     "event_summary": event_summary,
                 },
             )

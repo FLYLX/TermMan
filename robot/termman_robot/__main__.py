@@ -474,6 +474,7 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
             "sender_key": inbound.sender_key,
             "target_type": inbound.reply_target.target_type,
             "target_id": inbound.reply_target.target_id,
+            "reply_target": inbound.reply_target.model_dump(mode="json"),
             "event_summary": _summarize_event_payload(event_payload),
         },
     )

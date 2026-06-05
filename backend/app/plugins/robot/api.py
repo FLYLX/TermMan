@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel, Field
 from sqlmodel import col, select
 
 from app.api.deps import CurrentUser, SessionDep
@@ -33,7 +34,7 @@ from .api_support import (
     validate_binding_payload,
 )
 from .bridge_client import robot_bridge_client
-from .contracts import RobotDispatchResponse, RobotInboundMessage
+from .contracts import RobotDispatchResponse, RobotInboundMessage, RobotReplyTarget
 from .debug_log import get_robot_events, record_robot_event
 from .platforms import (
     RobotPlatformPublic,
@@ -52,6 +53,16 @@ from .schemas import (
 from .service import robot_service
 
 router = APIRouter(prefix="/robots", tags=["robots"])
+
+
+class RobotDebugSendBody(BaseModel):
+    text: str = Field(..., min_length=1, max_length=1200)
+
+
+class RobotManualSendBody(BaseModel):
+    target_type: str = Field(..., min_length=1, max_length=32)
+    target_id: str = Field(..., min_length=1, max_length=128)
+    text: str = Field(..., min_length=1, max_length=4000)
 
 
 def _generate_robot_access_token() -> str:
@@ -83,6 +94,44 @@ def _ensure_onebot_access_token(
 
 def _event_seen(events: list[dict], names: set[str]) -> bool:
     return any(str(event.get("event") or "") in names for event in events)
+
+
+def _latest_reply_target_from_debug_events(robot_id: uuid.UUID) -> RobotReplyTarget | None:
+    for event in get_robot_events(str(robot_id), limit=200):
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        raw_target = payload.get("reply_target")
+        if not isinstance(raw_target, dict):
+            continue
+        try:
+            return RobotReplyTarget.model_validate(raw_target)
+        except Exception:
+            continue
+    return None
+
+
+def _manual_send_target(body: RobotManualSendBody) -> RobotReplyTarget:
+    raw_target_type = body.target_type.strip().lower()
+    target_id = body.target_id.strip()
+    if not target_id:
+        raise HTTPException(status_code=400, detail="Target ID is required")
+
+    private_types = {"private", "friend", "user", "direct", "c2c"}
+    group_types = {"group", "qq_group"}
+    if raw_target_type in private_types:
+        target_type = "private"
+    elif raw_target_type in group_types:
+        target_type = "group"
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Target type must be group or private",
+        )
+
+    return RobotReplyTarget(
+        target_type=target_type,
+        target_id=target_id,
+        metadata={"manual_target": True},
+    )
 
 
 @router.get("/platforms", response_model=list[RobotPlatformPublic])
@@ -705,6 +754,113 @@ def reload_robot_bridge(
         message=detail,
     )
     return {"success": False, "error": detail}
+
+
+@router.post("/{id}/debug/send")
+def send_robot_debug_message(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    body: RobotDebugSendBody,
+) -> dict:
+    robot = get_robot_or_404(session, id)
+    assert_robot_permission(robot, current_user)
+
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Message text is required")
+
+    target = _latest_reply_target_from_debug_events(id)
+    if target is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No recent robot conversation target found. Send a message from QQ "
+                "first, then try the debug send again."
+            ),
+        )
+
+    try:
+        robot_bridge_client.send_message(robot.id, target, text)
+    except Exception as exc:
+        detail = str(exc) or exc.__class__.__name__
+        record_robot_event(
+            str(id),
+            direction="backend_to_bridge",
+            event="manual_debug_send",
+            status="error",
+            message=detail,
+            payload={
+                "target_type": target.target_type,
+                "target_id": target.target_id,
+            },
+        )
+        raise HTTPException(status_code=502, detail=detail) from exc
+
+    record_robot_event(
+        str(id),
+        direction="backend_to_bridge",
+        event="manual_debug_send",
+        message=text,
+        payload={
+            "target_type": target.target_type,
+            "target_id": target.target_id,
+        },
+    )
+    return {
+        "success": True,
+        "target_type": target.target_type,
+        "target_id": target.target_id,
+    }
+
+
+@router.post("/{id}/messages/send")
+def send_robot_manual_message(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    body: RobotManualSendBody,
+) -> dict:
+    robot = get_robot_or_404(session, id)
+    assert_robot_permission(robot, current_user)
+
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Message text is required")
+
+    target = _manual_send_target(body)
+    try:
+        robot_bridge_client.send_message(robot.id, target, text)
+    except Exception as exc:
+        detail = str(exc) or exc.__class__.__name__
+        record_robot_event(
+            str(id),
+            direction="backend_to_bridge",
+            event="manual_send",
+            status="error",
+            message=detail,
+            payload={
+                "target_type": target.target_type,
+                "target_id": target.target_id,
+            },
+        )
+        raise HTTPException(status_code=502, detail=detail) from exc
+
+    record_robot_event(
+        str(id),
+        direction="backend_to_bridge",
+        event="manual_send",
+        message=text,
+        payload={
+            "target_type": target.target_type,
+            "target_id": target.target_id,
+        },
+    )
+    return {
+        "success": True,
+        "target_type": target.target_type,
+        "target_id": target.target_id,
+    }
 
 
 @router.get("/{id}/debug")

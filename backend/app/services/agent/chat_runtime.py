@@ -59,6 +59,7 @@ async def prepare_chat_agent(
 
     agent = agent_manager.get_or_create(handler)
     agent.set_item_context(item_id, item)
+    agent.set_user_context(str(current_user.id), bool(current_user.is_superuser))
     item_handler_context.set_handler(item_id, str(handler.id))
     await agent.start_mcp_servers()
     return handler, item, agent

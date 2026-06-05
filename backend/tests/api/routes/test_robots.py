@@ -344,6 +344,109 @@ def test_dispatch_robot_message_routes_to_item_agent(
     assert content["route_key"] == "alpha"
     assert content["reply_chunks"] == []
 
+    sent: dict[str, object] = {}
+
+    def fake_send_message(robot_id_arg, target, text):
+        sent["robot_id"] = str(robot_id_arg)
+        sent["target_type"] = target.target_type
+        sent["target_id"] = target.target_id
+        sent["text"] = text
+
+    monkeypatch.setattr(robot_bridge_client, "send_message", fake_send_message)
+
+    debug_send_response = client.post(
+        f"{settings.API_V1_STR}/robots/{robot_id}/debug/send",
+        headers=superuser_token_headers,
+        json={"text": "测试一下能不能从服务器给群里发消息"},
+    )
+
+    assert debug_send_response.status_code == 200
+    assert debug_send_response.json()["success"] is True
+    assert sent == {
+        "robot_id": robot_id,
+        "target_type": "group",
+        "target_id": "group-openid",
+        "text": "测试一下能不能从服务器给群里发消息",
+    }
+
+
+def test_send_robot_message_to_explicit_qq_target(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(robot_bridge_client, "notify_reload", lambda: None)
+    robot_response = client.post(
+        f"{settings.API_V1_STR}/robots/",
+        headers=superuser_token_headers,
+        json={
+            "name": "manual-send-robot",
+            "platform": "onebot_v11",
+            "provider": "nonebot2",
+            "config": {
+                "credentials": {
+                    "self_id": "4097",
+                    "ws_url": "ws://napcat.test:3001",
+                },
+                "options": {},
+            },
+        },
+    )
+    robot_id = robot_response.json()["id"]
+
+    sent: list[dict[str, object]] = []
+
+    def fake_send_message(robot_id_arg, target, text):
+        sent.append(
+            {
+                "robot_id": str(robot_id_arg),
+                "target_type": target.target_type,
+                "target_id": target.target_id,
+                "metadata": target.metadata,
+                "text": text,
+            }
+        )
+
+    monkeypatch.setattr(robot_bridge_client, "send_message", fake_send_message)
+
+    group_response = client.post(
+        f"{settings.API_V1_STR}/robots/{robot_id}/messages/send",
+        headers=superuser_token_headers,
+        json={
+            "target_type": "group",
+            "target_id": "123456",
+            "text": "群消息",
+        },
+    )
+    private_response = client.post(
+        f"{settings.API_V1_STR}/robots/{robot_id}/messages/send",
+        headers=superuser_token_headers,
+        json={
+            "target_type": "private",
+            "target_id": "654321",
+            "text": "私信消息",
+        },
+    )
+
+    assert group_response.status_code == 200
+    assert private_response.status_code == 200
+    assert sent == [
+        {
+            "robot_id": robot_id,
+            "target_type": "group",
+            "target_id": "123456",
+            "metadata": {"manual_target": True},
+            "text": "群消息",
+        },
+        {
+            "robot_id": robot_id,
+            "target_type": "private",
+            "target_id": "654321",
+            "metadata": {"manual_target": True},
+            "text": "私信消息",
+        },
+    ]
+
 
 def test_dispatch_robot_message_rejects_invalid_bridge_token(
     client: TestClient,

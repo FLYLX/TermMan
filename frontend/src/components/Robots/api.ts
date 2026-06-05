@@ -352,3 +352,34 @@ export async function reloadRobotBridge(robotId: string) {
     { method: "POST" },
   )
 }
+
+export async function sendRobotDebugMessage(robotId: string, text: string) {
+  return apiRequest<{
+    success: boolean
+    target_type?: string
+    target_id?: string
+  }>(`/api/v1/robots/${robotId}/debug/send`, {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  })
+}
+
+export type RobotManualMessageTargetType = "group" | "private"
+
+export async function sendRobotManualMessage(
+  robotId: string,
+  payload: {
+    target_type: RobotManualMessageTargetType
+    target_id: string
+    text: string
+  },
+) {
+  return apiRequest<{
+    success: boolean
+    target_type?: string
+    target_id?: string
+  }>(`/api/v1/robots/${robotId}/messages/send`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
