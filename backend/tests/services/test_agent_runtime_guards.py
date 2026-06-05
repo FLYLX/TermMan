@@ -11,6 +11,7 @@ from app.api.routes.chat import (
 from app.plugins.robot.contracts import RobotReplyTarget
 from app.services.agent import agent as agent_module
 from app.services.agent.agent import AgentContext
+from app.services.agent.chat_runtime import _robot_fallback_response_content
 from app.services.agent.mcp.types import MCPTool
 from app.services.agent.prompts import builder as prompt_builder
 from app.services.agent.prompts.system import get_system_prompt
@@ -367,6 +368,36 @@ def test_robot_delivery_retry_triggers_when_model_returns_plain_reply() -> None:
     assert correction["role"] == "system"
     assert "mcp_robot_send_message" in correction["content"]
     assert "你好呀~" in correction["content"]
+
+
+def test_robot_collect_response_fallback_accepts_mcp_tool_delivery() -> None:
+    assert _robot_fallback_response_content(
+        robot_id="robot-1",
+        tool_results=["Message sent to QQ group 123456 from chat context."],
+        warnings=[],
+        done_seen=True,
+    ) == "Message sent to QQ group 123456 from chat context."
+
+
+def test_robot_collect_response_fallback_accepts_warning_completion() -> None:
+    assert _robot_fallback_response_content(
+        robot_id="robot-1",
+        tool_results=[],
+        warnings=["Stopped after reaching the max iteration limit (10)"],
+        done_seen=True,
+    ) == "Stopped after reaching the max iteration limit (10)"
+
+
+def test_non_robot_collect_response_still_requires_content() -> None:
+    assert (
+        _robot_fallback_response_content(
+            robot_id=None,
+            tool_results=["Message sent to QQ group 123456."],
+            warnings=["warning"],
+            done_seen=True,
+        )
+        == ""
+    )
 
 
 def test_robot_context_system_prompt_uses_robot_messaging_skill() -> None:

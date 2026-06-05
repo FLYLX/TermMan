@@ -289,6 +289,86 @@ def _robot_delivery_correction_message(final_response: str) -> dict[str, str]:
     }
 
 
+def _record_robot_context_targets(agent: "Agent", item_id: str) -> None:
+    context = getattr(agent, "_context", None)
+    if context is None:
+        return
+
+    targets = getattr(context, "robot_known_targets", None) or []
+    if not targets:
+        return
+
+    robot_ids = {
+        str(target.get("robot_id") or "").strip()
+        for target in targets
+        if isinstance(target, dict) and str(target.get("robot_id") or "").strip()
+    }
+    if not robot_ids and getattr(context, "robot_id", ""):
+        robot_ids.add(str(context.robot_id))
+
+    if not robot_ids:
+        return
+
+    from app.plugins.robot.debug_log import record_robot_event
+
+    payload_targets = [
+        {
+            "conversation": target.get("conversation"),
+            "target_type": target.get("target_type"),
+            "target_id": target.get("target_id"),
+            "sender": target.get("sender"),
+        }
+        for target in targets
+        if isinstance(target, dict)
+    ]
+    for robot_id in robot_ids:
+        record_robot_event(
+            robot_id,
+            direction="agent_internal",
+            event="robot_context_targets",
+            message=f"{len(payload_targets)} QQ context target(s)",
+            payload={
+                "item_id": item_id,
+                "targets": payload_targets,
+            },
+        )
+
+
+def _record_robot_delivery_correction(
+    agent: "Agent",
+    item_id: str,
+    final_response: str,
+) -> None:
+    context = getattr(agent, "_context", None)
+    if context is None:
+        return
+
+    robot_ids = {
+        str(target.get("robot_id") or "").strip()
+        for target in getattr(context, "robot_known_targets", []) or []
+        if isinstance(target, dict) and str(target.get("robot_id") or "").strip()
+    }
+    if not robot_ids and getattr(context, "robot_id", ""):
+        robot_ids.add(str(context.robot_id))
+
+    if not robot_ids:
+        return
+
+    from app.plugins.robot.debug_log import preview_text, record_robot_event
+
+    for robot_id in robot_ids:
+        record_robot_event(
+            robot_id,
+            direction="agent_internal",
+            event="robot_delivery_correction",
+            message=preview_text(final_response),
+            payload={
+                "item_id": item_id,
+                "reason": "plain_final_response_without_robot_tool_call",
+            },
+        )
+
+
 def _format_tool_result(result: Any) -> str:
     if isinstance(result, dict):
         if result.get("success"):
@@ -778,6 +858,7 @@ def generate_stream(
     set_known_targets = getattr(agent, "set_robot_known_targets_from_messages", None)
     if callable(set_known_targets):
         set_known_targets(messages)
+    _record_robot_context_targets(agent, item_id)
     matched_skills = agent.match_skills(message)
     tools = agent.get_tools_for_litellm()
 
@@ -946,6 +1027,11 @@ def generate_stream(
                     retry_used=robot_delivery_retry_used,
                 ):
                     robot_delivery_retry_used = True
+                    _record_robot_delivery_correction(
+                        agent,
+                        item_id,
+                        final_response,
+                    )
                     messages.append(_robot_delivery_correction_message(final_response))
                     continue
 

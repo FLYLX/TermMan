@@ -326,6 +326,39 @@ class RobotMCPServer:
         if str(robot.owner_id) != user_id:
             raise ValueError("Not authorized to use this robot")
 
+    def _record_tool_send_event(
+        self,
+        *,
+        robot_id: str,
+        target: RobotReplyTarget,
+        text: str,
+        mode: str,
+        args: dict,
+        status: str = "ok",
+        error: str = "",
+    ) -> None:
+        from app.plugins.robot.debug_log import preview_text, record_robot_event
+
+        payload = {
+            "mode": mode,
+            "target_type": target.target_type,
+            "target_id": target.target_id,
+            "reply_to": str(args.get("reply_to") or "").strip() or None,
+            "conversation": str(args.get("conversation") or "").strip() or None,
+            "has_context_token": bool(str(args.get("_robot_context_token") or "").strip()),
+            "context_target_count": len(self._context_targets(args)),
+        }
+        if error:
+            payload["error"] = error
+        record_robot_event(
+            robot_id,
+            direction="agent_to_mcp",
+            event="robot_tool_send_requested",
+            status=status,
+            message=preview_text(text),
+            payload=payload,
+        )
+
     def register_tool(
         self,
         name: str,
@@ -375,6 +408,9 @@ class RobotMCPServer:
                 }
             ]
 
+        attempted_robot_id = ""
+        attempted_target: RobotReplyTarget | None = None
+        attempted_mode = ""
         try:
             from app.plugins.robot.bridge_client import robot_bridge_client
 
@@ -382,6 +418,16 @@ class RobotMCPServer:
                 robot_id = self._get_accessible_robot_id(
                     args,
                     fallback_robot_id=context.robot_id if context else "",
+                )
+                attempted_robot_id = robot_id
+                attempted_target = explicit_target
+                attempted_mode = "explicit_target"
+                self._record_tool_send_event(
+                    robot_id=robot_id,
+                    target=explicit_target,
+                    text=text,
+                    mode="explicit_target",
+                    args=args,
                 )
                 robot_bridge_client.send_message(robot_id, explicit_target, text)
                 return [
@@ -402,6 +448,16 @@ class RobotMCPServer:
                     args,
                     fallback_robot_id=fallback_robot_id,
                 )
+                attempted_robot_id = robot_id
+                attempted_target = context_target
+                attempted_mode = "context_target"
+                self._record_tool_send_event(
+                    robot_id=robot_id,
+                    target=context_target,
+                    text=text,
+                    mode="context_target",
+                    args=args,
+                )
                 robot_bridge_client.send_message(robot_id, context_target, text)
                 return [
                     {
@@ -416,6 +472,16 @@ class RobotMCPServer:
             if context is None:
                 return [{"type": "text", "text": "Error: robot context unavailable"}]
 
+            attempted_robot_id = context.robot_id
+            attempted_target = context.reply_target
+            attempted_mode = "current_context"
+            self._record_tool_send_event(
+                robot_id=context.robot_id,
+                target=context.reply_target,
+                text=text,
+                mode="current_context",
+                args=args,
+            )
             robot_bridge_client.send_message(
                 context.robot_id,
                 context.reply_target.model_copy(deep=True),
@@ -424,6 +490,16 @@ class RobotMCPServer:
             return [{"type": "text", "text": "Message sent to current robot conversation."}]
         except Exception as exc:
             logger.warning("[RobotMCPServer] Failed to send robot message: %s", exc)
+            if attempted_robot_id and attempted_target is not None:
+                self._record_tool_send_event(
+                    robot_id=attempted_robot_id,
+                    target=attempted_target,
+                    text=text,
+                    mode=attempted_mode or "unknown",
+                    args=args,
+                    status="error",
+                    error=str(exc),
+                )
             return [{"type": "text", "text": f"Error: {exc}"}]
 
     def list_tools(self) -> list[dict]:

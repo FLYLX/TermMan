@@ -14,6 +14,62 @@ if TYPE_CHECKING:
     from app.services.agent.agent import Agent
 
 
+def _robot_fallback_response_content(
+    *,
+    robot_id: str | None,
+    tool_results: list[str],
+    warnings: list[str],
+    done_seen: bool,
+) -> str:
+    if not robot_id:
+        return ""
+
+    for result in reversed(tool_results):
+        normalized = result.strip()
+        if (
+            normalized.startswith("Message sent to QQ ")
+            or normalized == "Message sent to current robot conversation."
+        ):
+            return normalized
+
+    for result in reversed(tool_results):
+        if result.strip():
+            return result.strip()
+
+    for warning in reversed(warnings):
+        if warning.strip():
+            return warning.strip()
+
+    if done_seen:
+        return "Agent completed without a final response."
+    return ""
+
+
+def _record_robot_no_final_response(
+    robot_id: str | None,
+    *,
+    fallback_content: str,
+    tool_results: list[str],
+    warnings: list[str],
+) -> None:
+    if not robot_id:
+        return
+
+    from app.plugins.robot.debug_log import preview_text, record_robot_event
+
+    record_robot_event(
+        robot_id,
+        direction="agent_internal",
+        event="agent_no_final_response",
+        message=preview_text(fallback_content),
+        payload={
+            "tool_result_count": len(tool_results),
+            "warning_count": len(warnings),
+            "used_fallback": bool(fallback_content),
+        },
+    )
+
+
 def get_item_handler_llm_config(
     session: Session,
     item_id: str,
@@ -90,6 +146,9 @@ async def collect_chat_response(
 
     content = ""
     error_message = ""
+    tool_results: list[str] = []
+    warnings: list[str] = []
+    done_seen = False
     try:
         for chunk in generate_stream(
             message=message,
@@ -106,6 +165,12 @@ async def collect_chat_response(
                 content = str(payload.get("content") or content)
             elif payload.get("type") in {"agent_error", "error"}:
                 error_message = str(payload.get("content") or error_message)
+            elif payload.get("type") == "agent_tool_result":
+                tool_results.append(str(payload.get("content") or ""))
+            elif payload.get("type") == "agent_warning":
+                warnings.append(str(payload.get("content") or ""))
+            elif payload.get("done") is True:
+                done_seen = True
     finally:
         if robot_id:
             agent.clear_robot_context()
@@ -113,6 +178,20 @@ async def collect_chat_response(
     if error_message:
         raise HTTPException(status_code=500, detail=error_message)
     if not content:
+        fallback_content = _robot_fallback_response_content(
+            robot_id=robot_id,
+            tool_results=tool_results,
+            warnings=warnings,
+            done_seen=done_seen,
+        )
+        if fallback_content:
+            _record_robot_no_final_response(
+                robot_id,
+                fallback_content=fallback_content,
+                tool_results=tool_results,
+                warnings=warnings,
+            )
+            return fallback_content
         raise HTTPException(
             status_code=502,
             detail="Agent did not return any response content.",
