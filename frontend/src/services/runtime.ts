@@ -42,6 +42,12 @@ export type BackendRuntimeStatsResponse = {
   platform: string
   python_version: string
   cpu_count: number | null
+  cpu_model: string | null
+  cpu_frequency_mhz: number | null
+  memory_total_bytes: number | null
+  memory_available_bytes: number | null
+  memory_used_bytes: number | null
+  memory_percent: number | null
   collection_scope: string
   current_pid: number
   aggregate: RuntimeAggregateStats

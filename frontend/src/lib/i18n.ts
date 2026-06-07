@@ -63,7 +63,7 @@ const en = {
   "status.error": "Error",
   "status.unknown": "Unknown",
 
-  "nav.dashboard": "Dashboard",
+  "nav.dashboard": "Data Board",
   "nav.items": "Terminals",
   "nav.itemHandlers": "TermHandlers",
   "nav.robots": "Robots",
@@ -563,7 +563,7 @@ const zh: Record<TranslationKey, string> = {
   "status.error": "错误",
   "status.unknown": "未知",
 
-  "nav.dashboard": "概览",
+  "nav.dashboard": "数据看板",
   "nav.items": "终端",
   "nav.itemHandlers": "TermHandler",
   "nav.robots": "机器人",

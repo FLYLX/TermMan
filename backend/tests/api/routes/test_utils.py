@@ -30,5 +30,10 @@ def test_backend_runtime_stats_returns_payload_for_superuser(
     assert isinstance(content["aggregate"], dict)
     assert isinstance(content["current_process"], dict)
     assert isinstance(content["processes"], list)
+    assert "cpu_model" in content
+    assert "cpu_frequency_mhz" in content
+    assert "memory_total_bytes" in content
+    assert "memory_used_bytes" in content
+    assert "memory_percent" in content
     assert content["current_process"]["pid"] > 0
     assert content["aggregate"]["process_count"] >= 1

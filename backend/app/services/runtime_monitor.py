@@ -61,6 +61,12 @@ class BackendRuntimeStatsResponse(BaseModel):
     platform: str
     python_version: str
     cpu_count: int | None = None
+    cpu_model: str | None = None
+    cpu_frequency_mhz: float | None = None
+    memory_total_bytes: int | None = None
+    memory_available_bytes: int | None = None
+    memory_used_bytes: int | None = None
+    memory_percent: float | None = None
     collection_scope: str
     current_pid: int
     aggregate: RuntimeAggregateStats
@@ -164,6 +170,131 @@ def _read_proc_boot_time() -> float | None:
             except (IndexError, ValueError):
                 return None
     return None
+
+
+def _read_linux_cpu_info() -> tuple[str | None, float | None]:
+    raw = _read_text(Path("/proc/cpuinfo"))
+    if not raw:
+        return None, None
+
+    model: str | None = None
+    frequency_mhz: float | None = None
+    for line in raw.splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        normalized_key = key.strip().lower()
+        normalized_value = value.strip()
+        if (
+            model is None
+            and normalized_key in {"model name", "hardware", "processor"}
+            and normalized_value
+            and not normalized_value.isdigit()
+        ):
+            model = normalized_value
+        if frequency_mhz is None and normalized_key in {"cpu mhz", "clock"}:
+            try:
+                frequency_mhz = round(float(normalized_value.split()[0]), 2)
+            except (IndexError, ValueError):
+                continue
+    return model, frequency_mhz
+
+
+def _read_linux_memory_info() -> dict[str, int | float | None]:
+    raw = _read_text(Path("/proc/meminfo"))
+    if not raw:
+        return {
+            "memory_total_bytes": None,
+            "memory_available_bytes": None,
+            "memory_used_bytes": None,
+            "memory_percent": None,
+        }
+
+    data: dict[str, str] = {}
+    for line in raw.splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        data[key.strip()] = value.strip()
+
+    total = _kb_to_bytes(data.get("MemTotal", "").split()[0] if data.get("MemTotal") else None)
+    available = _kb_to_bytes(
+        data.get("MemAvailable", "").split()[0] if data.get("MemAvailable") else None
+    )
+    if available is None:
+        free = _kb_to_bytes(data.get("MemFree", "").split()[0] if data.get("MemFree") else None)
+        buffers = _kb_to_bytes(data.get("Buffers", "").split()[0] if data.get("Buffers") else None)
+        cached = _kb_to_bytes(data.get("Cached", "").split()[0] if data.get("Cached") else None)
+        parts = [value for value in (free, buffers, cached) if value is not None]
+        available = sum(parts) if parts else None
+
+    used = total - available if total is not None and available is not None else None
+    percent = round((used / total) * 100, 1) if used is not None and total else None
+    return {
+        "memory_total_bytes": total,
+        "memory_available_bytes": available,
+        "memory_used_bytes": used,
+        "memory_percent": percent,
+    }
+
+
+def _windows_system_memory_info() -> dict[str, int | float | None]:
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", wintypes.DWORD),
+                ("dwMemoryLoad", wintypes.DWORD),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+
+        status = MEMORYSTATUSEX()
+        status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            raise OSError("GlobalMemoryStatusEx failed")
+        total = int(status.ullTotalPhys)
+        available = int(status.ullAvailPhys)
+        used = total - available
+        return {
+            "memory_total_bytes": total,
+            "memory_available_bytes": available,
+            "memory_used_bytes": used,
+            "memory_percent": round((used / total) * 100, 1) if total else None,
+        }
+    except Exception:
+        return {
+            "memory_total_bytes": None,
+            "memory_available_bytes": None,
+            "memory_used_bytes": None,
+            "memory_percent": None,
+        }
+
+
+def _collect_system_resource_info() -> dict[str, int | float | str | None]:
+    if Path("/proc/cpuinfo").exists():
+        cpu_model, cpu_frequency_mhz = _read_linux_cpu_info()
+    else:
+        cpu_model = platform.processor() or None
+        cpu_frequency_mhz = None
+
+    if Path("/proc/meminfo").exists():
+        memory_info = _read_linux_memory_info()
+    else:
+        memory_info = _windows_system_memory_info()
+
+    return {
+        "cpu_model": cpu_model,
+        "cpu_frequency_mhz": cpu_frequency_mhz,
+        **memory_info,
+    }
 
 
 def _count_open_fds(pid: int) -> int | None:
@@ -370,6 +501,7 @@ def collect_backend_runtime_stats() -> BackendRuntimeStatsResponse:
 
     current_pid = os.getpid()
     current_process = next((process for process in processes if process.pid == current_pid), processes[0])
+    system_resources = _collect_system_resource_info()
     processes = sorted(
         processes,
         key=lambda process: (
@@ -385,6 +517,12 @@ def collect_backend_runtime_stats() -> BackendRuntimeStatsResponse:
         platform=platform.platform(),
         python_version=sys.version.split()[0],
         cpu_count=os.cpu_count(),
+        cpu_model=system_resources.get("cpu_model"),
+        cpu_frequency_mhz=system_resources.get("cpu_frequency_mhz"),
+        memory_total_bytes=system_resources.get("memory_total_bytes"),
+        memory_available_bytes=system_resources.get("memory_available_bytes"),
+        memory_used_bytes=system_resources.get("memory_used_bytes"),
+        memory_percent=system_resources.get("memory_percent"),
         collection_scope=collection_scope,
         current_pid=current_pid,
         aggregate=_build_aggregate(processes),
