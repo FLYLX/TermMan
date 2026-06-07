@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 try:
     import resource
@@ -72,6 +72,34 @@ class BackendRuntimeStatsResponse(BaseModel):
     aggregate: RuntimeAggregateStats
     current_process: RuntimeProcessStats
     processes: list[RuntimeProcessStats]
+
+
+class RuntimeServiceStats(BaseModel):
+    service: str
+    label: str
+    kind: str
+    status: str = "ok"
+    url: str | None = None
+    runtime: BackendRuntimeStatsResponse | None = None
+    error: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TermManRuntimeTotals(BaseModel):
+    service_count: int
+    ok_count: int
+    process_count: int
+    rss_bytes: int | None = None
+    vms_bytes: int | None = None
+    cpu_percent: float | None = None
+    thread_count: int | None = None
+    open_fds: int | None = None
+
+
+class TermManRuntimeStatsResponse(BaseModel):
+    sampled_at: int
+    services: list[RuntimeServiceStats]
+    totals: TermManRuntimeTotals
 
 
 def _kb_to_bytes(value: str | None) -> int | None:
@@ -488,7 +516,7 @@ def _build_aggregate(processes: list[RuntimeProcessStats]) -> RuntimeAggregateSt
     )
 
 
-def collect_backend_runtime_stats() -> BackendRuntimeStatsResponse:
+def collect_backend_runtime_stats(service: str = "backend") -> BackendRuntimeStatsResponse:
     if Path("/proc").exists():
         collection_scope, processes = _list_linux_related_processes()
     else:
@@ -512,6 +540,7 @@ def collect_backend_runtime_stats() -> BackendRuntimeStatsResponse:
     )
 
     return BackendRuntimeStatsResponse(
+        service=service,
         sampled_at=int(time.time()),
         hostname=socket.gethostname(),
         platform=platform.platform(),
@@ -528,4 +557,60 @@ def collect_backend_runtime_stats() -> BackendRuntimeStatsResponse:
         aggregate=_build_aggregate(processes),
         current_process=current_process,
         processes=processes,
+    )
+
+
+def runtime_service_stats(
+    *,
+    service: str,
+    label: str,
+    kind: str,
+    runtime: BackendRuntimeStatsResponse | dict[str, Any] | None = None,
+    status: str = "ok",
+    url: str | None = None,
+    error: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> RuntimeServiceStats:
+    parsed_runtime = (
+        BackendRuntimeStatsResponse.model_validate(runtime)
+        if runtime is not None
+        else None
+    )
+    return RuntimeServiceStats(
+        service=service,
+        label=label,
+        kind=kind,
+        status=status,
+        url=url,
+        runtime=parsed_runtime,
+        error=error,
+        metadata=metadata or {},
+    )
+
+
+def build_termman_runtime_response(
+    services: list[RuntimeServiceStats],
+) -> TermManRuntimeStatsResponse:
+    aggregates = [
+        service.runtime.aggregate
+        for service in services
+        if service.runtime is not None and service.runtime.aggregate is not None
+    ]
+    cpu_values = [
+        aggregate.cpu_percent for aggregate in aggregates if aggregate.cpu_percent is not None
+    ]
+    cpu_percent = round(sum(cpu_values), 1) if cpu_values else None
+    return TermManRuntimeStatsResponse(
+        sampled_at=int(time.time()),
+        services=services,
+        totals=TermManRuntimeTotals(
+            service_count=len(services),
+            ok_count=sum(1 for service in services if service.status == "ok"),
+            process_count=sum(aggregate.process_count for aggregate in aggregates),
+            rss_bytes=_sum_optional([aggregate.rss_bytes for aggregate in aggregates]),
+            vms_bytes=_sum_optional([aggregate.vms_bytes for aggregate in aggregates]),
+            cpu_percent=cpu_percent,
+            thread_count=_sum_optional([aggregate.thread_count for aggregate in aggregates]),
+            open_fds=_sum_optional([aggregate.open_fds for aggregate in aggregates]),
+        ),
     )

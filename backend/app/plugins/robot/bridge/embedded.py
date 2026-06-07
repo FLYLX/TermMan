@@ -34,6 +34,7 @@ from app.plugins.robot.platforms import (
     resolve_bot_identity,
     resolve_platform_from_bot,
 )
+from app.services.runtime_monitor import collect_backend_runtime_stats
 
 logger = logging.getLogger(__name__)
 
@@ -1051,6 +1052,7 @@ def _build_idle_bridge_router(reason: str) -> APIRouter:
                 },
                 "backend": {"reachable": True},
                 "connection_errors": _load_connection_errors(),
+                "runtime": collect_backend_runtime_stats("robot").model_dump(mode="json"),
             }
 
     return router
@@ -1543,6 +1545,7 @@ def init_embedded_bridge() -> APIRouter | None:
                 "robots": robot_status,
                 "backend": backend_status,
                 "connection_errors": _connection_errors,
+                "runtime": collect_backend_runtime_stats("robot").model_dump(mode="json"),
                 "ipc_owner": {
                     "pid": os.getpid(),
                     "base_url": _ipc_base_url,

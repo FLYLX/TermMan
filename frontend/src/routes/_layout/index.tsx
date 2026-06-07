@@ -46,7 +46,9 @@ import {
 import useAuth from "@/hooks/useAuth"
 import {
   type BackendRuntimeStatsResponse,
+  getTermManRuntimeStats,
   getBackendRuntimeStats,
+  type RuntimeServiceStats,
 } from "@/services/runtime"
 
 export const Route = createFileRoute("/_layout/")({
@@ -434,6 +436,111 @@ function ResourcePanel({
   )
 }
 
+function serviceIcon(kind: string) {
+  if (kind === "daemon") {
+    return Terminal
+  }
+  if (kind === "robot") {
+    return Bot
+  }
+  return Server
+}
+
+function ServiceRuntimePanel({
+  services,
+}: {
+  services: RuntimeServiceStats[]
+}) {
+  return (
+    <Card className="gap-4 py-5">
+      <CardHeader className="flex flex-row items-center justify-between gap-3 px-5">
+        <div className="flex items-center gap-2">
+          <Activity className="size-4 text-primary" />
+          <CardTitle>TermMan 资源占用</CardTitle>
+        </div>
+        <Badge variant="outline">{services.length} 服务</Badge>
+      </CardHeader>
+      <CardContent className="px-5">
+        {services.length === 0 ? (
+          <Alert>
+            <AlertTitle>暂无服务指标</AlertTitle>
+            <AlertDescription>
+              当前还没有读取到 backend、daemon 或 robot 的运行时数据。
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <div className="grid gap-3 xl:grid-cols-3">
+            {services.map((service) => {
+              const Icon = serviceIcon(service.kind)
+              const runtime = service.runtime
+              const aggregate = runtime?.aggregate
+              return (
+                <div
+                  key={`${service.kind}:${service.service}:${service.url ?? ""}`}
+                  className="rounded-md border bg-background px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-md border bg-muted/30">
+                        <Icon className="size-4 text-primary" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {service.label}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {service.url || runtime?.hostname || service.kind}
+                        </p>
+                      </div>
+                    </div>
+                    <StatusPill
+                      connected={service.status === "ok"}
+                      label={service.status === "ok" ? "正常" : "异常"}
+                    />
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs text-muted-foreground">内存</p>
+                      <p className="mt-1 font-semibold">
+                        {formatBytes(aggregate?.rss_bytes)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">CPU</p>
+                      <p className="mt-1 font-semibold">
+                        {formatPercent(aggregate?.cpu_percent)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">进程</p>
+                      <p className="mt-1 font-medium">
+                        {aggregate?.process_count ?? UNKNOWN}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">PID</p>
+                      <p className="mt-1 font-medium">
+                        {runtime?.current_pid ?? UNKNOWN}
+                      </p>
+                    </div>
+                  </div>
+
+                  {service.error ? (
+                    <p className="mt-3 break-words text-xs text-red-600 dark:text-red-300">
+                      {service.error}
+                    </p>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 function ErrorNotice({ title, message }: { title: string; message: string }) {
   return (
     <Alert variant="destructive">
@@ -469,6 +576,14 @@ function Dashboard() {
   const runtimeQuery = useQuery({
     queryKey: ["dashboard-backend-runtime"],
     queryFn: getBackendRuntimeStats,
+    enabled: isAdmin,
+    refetchInterval: 5000,
+    retry: false,
+  })
+
+  const termManRuntimeQuery = useQuery({
+    queryKey: ["dashboard-termman-runtime"],
+    queryFn: getTermManRuntimeStats,
     enabled: isAdmin,
     refetchInterval: 5000,
     retry: false,
@@ -564,12 +679,14 @@ function Dashboard() {
     await Promise.allSettled([
       fetchItems(),
       runtimeQuery.refetch(),
+      termManRuntimeQuery.refetch(),
       bridgeHealthQuery.refetch(),
       robotsQuery.refetch(),
     ])
   }
 
   const runtime = runtimeQuery.data as BackendRuntimeStatsResponse | undefined
+  const termManRuntime = termManRuntimeQuery.data
   const bridgeHealth = bridgeHealthQuery.data as ExtendedBridgeHealth | undefined
   const robots = robotsQuery.data?.data ?? []
   const daemons = useMemo(() => groupItemsByDaemon(items), [items])
@@ -801,6 +918,7 @@ function Dashboard() {
           disabled={
             loading ||
             runtimeQuery.isFetching ||
+            termManRuntimeQuery.isFetching ||
             bridgeHealthQuery.isFetching ||
             robotsQuery.isFetching
           }
@@ -809,6 +927,7 @@ function Dashboard() {
             className={`size-4 ${
               loading ||
               runtimeQuery.isFetching ||
+              termManRuntimeQuery.isFetching ||
               bridgeHealthQuery.isFetching ||
               robotsQuery.isFetching
                 ? "animate-spin"
@@ -835,11 +954,17 @@ function Dashboard() {
           message={bridgeHealthQuery.error.message}
         />
       ) : null}
+      {termManRuntimeQuery.isError ? (
+        <ErrorNotice
+          title="TermMan 资源占用不可读"
+          message={termManRuntimeQuery.error.message}
+        />
+      ) : null}
       {robotsQuery.isError ? (
         <ErrorNotice title="机器人列表不可读" message={robotsQuery.error.message} />
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <MetricTile
           title="后端进程"
           value={String(runtime?.aggregate.process_count ?? 0)}
@@ -859,12 +984,20 @@ function Dashboard() {
           icon={HardDrive}
         />
         <MetricTile
+          title="TermMan 内存"
+          value={formatBytes(termManRuntime?.totals.rss_bytes)}
+          hint={`CPU ${formatPercent(termManRuntime?.totals.cpu_percent)} · ${termManRuntime?.totals.process_count ?? 0} 进程`}
+          icon={Activity}
+        />
+        <MetricTile
           title="机器人连接"
           value={`${connectedRobotCount}/${loadedRobotCount}`}
           hint={`${robots.length} 个配置 · ${bridgeHealth?.platforms?.join(", ") || "无平台"}`}
           icon={Bot}
         />
       </section>
+
+      <ServiceRuntimePanel services={termManRuntime?.services ?? []} />
 
       <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
         <Card className="gap-4 py-5">

@@ -55,8 +55,42 @@ export type BackendRuntimeStatsResponse = {
   processes: RuntimeProcessStats[]
 }
 
+export type RuntimeServiceStats = {
+  service: string
+  label: string
+  kind: string
+  status: string
+  url: string | null
+  runtime: BackendRuntimeStatsResponse | null
+  error: string | null
+  metadata: Record<string, unknown>
+}
+
+export type TermManRuntimeTotals = {
+  service_count: number
+  ok_count: number
+  process_count: number
+  rss_bytes: number | null
+  vms_bytes: number | null
+  cpu_percent: number | null
+  thread_count: number | null
+  open_fds: number | null
+}
+
+export type TermManRuntimeStatsResponse = {
+  sampled_at: number
+  services: RuntimeServiceStats[]
+  totals: TermManRuntimeTotals
+}
+
 export async function getBackendRuntimeStats() {
   return apiRequest<BackendRuntimeStatsResponse>(
     "/api/v1/utils/backend-runtime/",
+  )
+}
+
+export async function getTermManRuntimeStats() {
+  return apiRequest<TermManRuntimeStatsResponse>(
+    "/api/v1/utils/termman-runtime/",
   )
 }

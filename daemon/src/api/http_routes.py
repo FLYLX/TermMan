@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from core import config
 from service.file_service import FileServiceError, file_service
 from service.terminal_manager import terminal_manager
+from runtime_monitor import collect_runtime_stats
 from utils.logger import logger
 
 router = APIRouter()
@@ -100,6 +101,15 @@ async def get_daemon_status():
 @router.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+
+@router.get("/runtime")
+async def runtime_stats(_api_key: Any = Depends(verify_api_key)):
+    payload = collect_runtime_stats("daemon")
+    payload["metadata"] = {
+        "terminal_count": len(terminal_manager.get_all_terminals())
+    }
+    return payload
 
 
 @router.post("/internal/items/{item_uuid}/files/tree")

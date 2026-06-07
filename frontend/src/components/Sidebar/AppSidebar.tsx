@@ -13,7 +13,6 @@ import { SidebarAppearance } from "@/components/Common/Appearance"
 import { SidebarLanguageSwitcher } from "@/components/Common/LanguageSwitcher"
 import { Logo } from "@/components/Common/Logo"
 import { useI18n } from "@/components/locale-provider"
-import { BackendPerformance } from "@/components/Sidebar/BackendPerformance"
 import {
   Sidebar,
   SidebarContent,
@@ -56,7 +55,6 @@ export function AppSidebar() {
         <Main items={translatedItems} />
       </SidebarContent>
       <SidebarFooter className="border-t border-white/8 pt-3">
-        <BackendPerformance enabled={Boolean(currentUser?.is_superuser)} />
         <SidebarAppearance />
         <SidebarLanguageSwitcher />
         <User user={currentUser} />

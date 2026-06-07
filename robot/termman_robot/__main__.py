@@ -31,6 +31,7 @@ from .platforms import (
     resolve_platform_from_bot,
 )
 from .rate_limit import send_text_with_rate_limit
+from .runtime_monitor import collect_runtime_stats
 
 logging.basicConfig(
     level=logging.INFO,
@@ -627,6 +628,7 @@ async def internal_health(
         "bots": bot_snapshots,
         "backend": await check_backend_health(),
         "connection_errors": CONFIG_ERRORS,
+        "runtime": collect_runtime_stats("robot"),
     }
 
 

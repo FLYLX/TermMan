@@ -63,8 +63,8 @@ class RobotBridgeClient:
         except Exception as exc:
             raise RuntimeError(self._friendly_error(exc)) from exc
 
-    def get_health(self) -> dict:
-        response = self._request("GET", "/internal/health", timeout=5.0)
+    def get_health(self, timeout: float = 5.0) -> dict:
+        response = self._request("GET", "/internal/health", timeout=timeout)
         data = response.json()
         if isinstance(data, dict):
             return data
