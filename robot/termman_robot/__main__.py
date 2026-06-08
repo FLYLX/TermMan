@@ -186,9 +186,9 @@ async def _enqueue_robot_dispatch(
         _record_bridge_event(
             robot_id,
             direction="bridge",
-            event="dispatch_queue_full",
-            status="error",
-            message="Robot dispatch queue is full",
+            event="dispatch_dropped_queue_full",
+            status="ignored",
+            message="Robot bridge dispatch queue is full; message dropped.",
             payload={
                 "queue": _dispatch_queue_snapshot(),
                 "target_type": inbound.reply_target.target_type,
@@ -200,17 +200,6 @@ async def _enqueue_robot_dispatch(
             robot_id,
             inbound.reply_target.target_id,
         )
-        try:
-            await send_text_with_rate_limit(
-                bot,
-                inbound.reply_target,
-                "Robot message queue is busy, please try again later.",
-            )
-        except Exception:
-            logger.exception(
-                "[RobotBridge] Failed to send queue-full notice for robot %s",
-                robot_id,
-            )
         return False
 
     _record_bridge_event(

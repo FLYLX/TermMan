@@ -89,6 +89,7 @@ class RobotServiceError(Exception):
 class RobotService:
     def __init__(self) -> None:
         self._conversation_routes: dict[tuple[str, str], ConversationState] = {}
+        self._reply_context_windows: dict[tuple[str, str], datetime] = {}
         self._lock = threading.RLock()
         self._dispatch_queue: queue.Queue[QueuedRobotChatJob] = queue.Queue(
             maxsize=max(1, settings.ROBOT_BACKEND_DISPATCH_QUEUE_SIZE)
@@ -278,7 +279,14 @@ class RobotService:
         if not text:
             return RobotDispatchResponse(success=True, ignored=True, reason="empty_message")
         command = self._parse_robot_command(text)
-        reply_categories = self._reply_message_categories(message, command)
+        direct_reply_trigger = self._message_directly_addresses_bot(message)
+        reply_context_active = self._is_reply_context_active(robot, message)
+        reply_categories = self._reply_message_categories(
+            message,
+            command,
+            direct_reply_trigger=direct_reply_trigger,
+            reply_context_active=reply_context_active,
+        )
         allowed_reply_types = self._allowed_reply_message_types(robot)
         if not allowed_reply_types.intersection(reply_categories):
             record_robot_event(
@@ -298,6 +306,8 @@ class RobotService:
                 ignored=True,
                 reason=REPLY_MESSAGE_TYPE_DISABLED_REASON,
             )
+        if direct_reply_trigger:
+            self._remember_reply_context_window(robot, message)
 
         try:
             resolved_binding, message_text = self._resolve_chat_binding(
@@ -346,13 +356,12 @@ class RobotService:
                 enqueued_at=self._now(),
             )
             if not self._enqueue_chat_job(queued_job):
-                queue_message = "Robot backend dispatch queue is full. Please try again later."
                 record_robot_event(
                     str(robot.id),
                     direction="backend_queue",
-                    event="dispatch_queue_full",
-                    status="error",
-                    message=queue_message,
+                    event="dispatch_dropped_queue_full",
+                    status="ignored",
+                    message="Robot backend dispatch queue is full; message dropped.",
                     payload={
                         "item_id": str(resolved_binding.item.id),
                         "route_key": resolved_binding.route_key,
@@ -360,16 +369,12 @@ class RobotService:
                     },
                 )
                 return RobotDispatchResponse(
-                    success=False,
-                    ignored=False,
+                    success=True,
+                    ignored=True,
                     item_id=str(resolved_binding.item.id),
                     route_key=resolved_binding.route_key,
-                    error=queue_message,
-                    reply_chunks=self._reply_chunks_for_target(
-                        robot,
-                        message.reply_target,
-                        queue_message,
-                    ),
+                    reason="dispatch_queue_full",
+                    reply_chunks=[],
                 )
 
             response = RobotDispatchResponse(
@@ -647,15 +652,102 @@ class RobotService:
             if normalized_type in ALLOWED_REPLY_MESSAGE_TYPES
         }
 
+    def _reply_context_window_seconds(self, robot: Robot) -> int:
+        config = robot.config if isinstance(robot.config, dict) else {}
+        options = config.get("options") if isinstance(config.get("options"), dict) else {}
+        raw_value = options.get("reply_context_window_seconds")
+        try:
+            return max(0, int(raw_value if raw_value is not None else settings.ROBOT_REPLY_CONTEXT_WINDOW_SECONDS))
+        except (TypeError, ValueError):
+            return max(0, settings.ROBOT_REPLY_CONTEXT_WINDOW_SECONDS)
+
+    def _message_directly_addresses_bot(self, message: RobotInboundMessage) -> bool:
+        return bool(
+            message.reply_target.metadata.get("mentioned_bot")
+            or message.reply_target.metadata.get("replied_to_bot")
+        )
+
+    def _reply_context_key(
+        self,
+        robot: Robot,
+        message: RobotInboundMessage,
+    ) -> tuple[str, str]:
+        return (str(robot.id), self._conversation_key(message))
+
+    def _conversation_key(self, message: RobotInboundMessage) -> str:
+        conversation_type = self._conversation_message_type(message)
+        target_data = message.reply_target.metadata.get("target")
+        if not isinstance(target_data, dict):
+            target_data = {}
+        conversation_id = str(
+            target_data.get("parent_id")
+            or target_data.get("id")
+            or message.reply_target.target_id
+            or message.sender_key
+            or ""
+        ).strip()
+        return f"{conversation_type}:{conversation_id or message.sender_key}"
+
+    def _is_reply_context_active(
+        self,
+        robot: Robot,
+        message: RobotInboundMessage,
+    ) -> bool:
+        now = self._now()
+        with self._lock:
+            self._prune_reply_context_windows_locked(now)
+            expires_at = self._reply_context_windows.get(
+                self._reply_context_key(robot, message)
+            )
+            return expires_at is not None and expires_at > now
+
+    def _remember_reply_context_window(
+        self,
+        robot: Robot,
+        message: RobotInboundMessage,
+    ) -> None:
+        window_seconds = self._reply_context_window_seconds(robot)
+        if window_seconds <= 0:
+            return
+
+        now = self._now()
+        expires_at = now + timedelta(seconds=window_seconds)
+        key = self._reply_context_key(robot, message)
+        with self._lock:
+            self._prune_reply_context_windows_locked(now)
+            self._reply_context_windows[key] = expires_at
+        record_robot_event(
+            str(robot.id),
+            direction="backend",
+            event="reply_context_window_refreshed",
+            payload={
+                "conversation": key[1],
+                "window_seconds": window_seconds,
+                "expires_at": expires_at.isoformat(),
+                "mentioned_bot": bool(message.reply_target.metadata.get("mentioned_bot")),
+                "replied_to_bot": bool(message.reply_target.metadata.get("replied_to_bot")),
+            },
+        )
+
+    def _prune_reply_context_windows_locked(self, now: datetime) -> None:
+        expired_keys = [
+            key for key, expires_at in self._reply_context_windows.items() if expires_at <= now
+        ]
+        for key in expired_keys:
+            self._reply_context_windows.pop(key, None)
+
     def _reply_message_categories(
         self,
         message: RobotInboundMessage,
         command: RobotCommand,
+        *,
+        direct_reply_trigger: bool = False,
+        reply_context_active: bool = False,
     ) -> set[str]:
         categories = {self._conversation_message_type(message)}
         if command.mode != "chat" or command.target:
             categories.add(REPLY_MESSAGE_TYPE_COMMAND)
-        if bool(message.reply_target.metadata.get("mentioned_bot")):
+        if direct_reply_trigger or reply_context_active:
             categories.add(REPLY_MESSAGE_TYPE_MENTION)
         return categories
 

@@ -1135,6 +1135,40 @@ def _raw_message_mentions_bot(event: Any, self_ids: set[str]) -> bool:
     )
 
 
+def _candidate_reply_sender_ids(reply_data: dict[str, Any]) -> set[str]:
+    sender = reply_data.get("sender")
+    sender_data = sender if isinstance(sender, dict) else _dump_mapping(sender)
+    candidates = {
+        reply_data.get("self_id"),
+        reply_data.get("sender_id"),
+        reply_data.get("user_id"),
+        reply_data.get("message_sender_id"),
+        sender_data.get("self_id"),
+        sender_data.get("sender_id"),
+        sender_data.get("user_id"),
+        sender_data.get("id"),
+    }
+    return {str(value).strip() for value in candidates if str(value or "").strip()}
+
+
+def _event_replies_to_bot(bot: Any, event: Any) -> bool:
+    self_ids = _bot_self_ids(bot, event)
+    if not self_ids:
+        return False
+
+    reply_data = _dump_mapping(getattr(event, "reply", None))
+    if _candidate_reply_sender_ids(reply_data).intersection(self_ids):
+        return True
+
+    for segment in _event_message_segments(event):
+        if _segment_type(segment) != "reply":
+            continue
+        if _candidate_reply_sender_ids(_segment_data(segment)).intersection(self_ids):
+            return True
+
+    return False
+
+
 def _event_mentions_bot(bot: Any, event: Any) -> bool:
     to_me = getattr(event, "to_me", False)
     if callable(to_me):
@@ -1179,6 +1213,8 @@ def build_inbound_message(
     }
     if _event_mentions_bot(bot, event):
         metadata["mentioned_bot"] = True
+    if _event_replies_to_bot(bot, event):
+        metadata["replied_to_bot"] = True
 
     return RobotInboundMessage(
         sender_key=_extract_sender_key(platform_id, event, target_data),

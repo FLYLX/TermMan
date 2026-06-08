@@ -96,8 +96,9 @@ class Settings(BaseSettings):
     ROBOT_BRIDGE_HOST: str = "0.0.0.0"
     ROBOT_BRIDGE_PORT: int = 7000
     ROBOT_BACKEND_DISPATCH_TIMEOUT_SECONDS: float = 180.0
-    ROBOT_BACKEND_DISPATCH_QUEUE_SIZE: int = 200
+    ROBOT_BACKEND_DISPATCH_QUEUE_SIZE: int = 5
     ROBOT_BACKEND_DISPATCH_WORKERS: int = 1
+    ROBOT_REPLY_CONTEXT_WINDOW_SECONDS: int = 15
 
     @model_validator(mode="after")
     def _apply_robot_bridge_defaults(self) -> Self:

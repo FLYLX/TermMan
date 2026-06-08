@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta
 from typing import Any
 
 from sqlmodel import Session
@@ -7,6 +8,7 @@ from app.models import RobotItem
 from app.plugins.robot.contracts import RobotInboundMessage, RobotReplyTarget
 from app.plugins.robot.platforms import (
     _event_mentions_bot,
+    _event_replies_to_bot,
     _extract_sender_metadata,
     send_text_with_bot,
 )
@@ -54,6 +56,7 @@ def _message(
     target: dict[str, Any] | None = None,
     sender: dict[str, Any] | None = None,
     mentioned_bot: bool = False,
+    replied_to_bot: bool = False,
 ) -> RobotInboundMessage:
     metadata: dict[str, Any] = {}
     if target is not None:
@@ -62,6 +65,8 @@ def _message(
         metadata["sender"] = sender
     if mentioned_bot:
         metadata["mentioned_bot"] = True
+    if replied_to_bot:
+        metadata["replied_to_bot"] = True
 
     return RobotInboundMessage(
         sender_key=sender_key,
@@ -120,6 +125,7 @@ class _FakeEvent:
         *,
         to_me: bool = False,
         raw_message: str = "",
+        reply: Any | None = None,
         sender: dict[str, Any] | None = None,
         user_id: str = "",
         message_type: str = "",
@@ -127,6 +133,7 @@ class _FakeEvent:
         self._message = message
         self.to_me = to_me
         self.raw_message = raw_message
+        self.reply = reply
         self.sender = sender or {}
         self.user_id = user_id
         self.message_type = message_type
@@ -195,6 +202,18 @@ def test_event_mentions_bot_detects_to_me_flag() -> None:
     event = _FakeEvent([], to_me=True)
 
     assert _event_mentions_bot(_FakeBot(), event) is True
+
+
+def test_event_replies_to_bot_detects_reply_sender() -> None:
+    event = _FakeEvent([], reply={"sender": {"user_id": "10001"}})
+
+    assert _event_replies_to_bot(_FakeBot(), event) is True
+
+
+def test_event_replies_to_bot_ignores_other_sender() -> None:
+    event = _FakeEvent([_FakeSegment("reply", {"user_id": "10002"})])
+
+    assert _event_replies_to_bot(_FakeBot(), event) is False
 
 
 def test_extract_sender_metadata_prefers_group_card() -> None:
@@ -563,6 +582,128 @@ def test_reply_message_type_filter_allows_mention_when_group_is_disabled(
     assert response.reply_chunks == []
 
 
+def test_mention_opens_short_reply_context_window(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "reply_context_window_seconds": 15,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_messages: list[str] = []
+
+    def fake_enqueue_chat_job(job) -> bool:
+        queued_messages.append(job.message)
+        return True
+
+    now = robot_service._now()
+    current_time = {"value": now}
+    monkeypatch.setattr(robot_service, "_now", lambda: current_time["value"])
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+
+    before_activation = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("plain before", target={"id": "g1"}),
+    )
+    assert before_activation.ignored is True
+    assert before_activation.reason == "reply_message_type_disabled"
+
+    mentioned = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("hello mention", target={"id": "g1"}, mentioned_bot=True),
+    )
+    assert mentioned.ignored is False
+
+    current_time["value"] = now + timedelta(seconds=14)
+
+    within_window = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("plain after mention", target={"id": "g1"}),
+    )
+    assert within_window.ignored is False
+    assert queued_messages == ["hello mention", "plain after mention"]
+
+    current_time["value"] = now + timedelta(seconds=16)
+
+    expired = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("plain expired", target={"id": "g1"}),
+    )
+    assert expired.ignored is True
+    assert expired.reason == "reply_message_type_disabled"
+
+
+def test_reply_to_bot_refreshes_reply_context_window(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "reply_context_window_seconds": 15,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_messages: list[str] = []
+    monkeypatch.setattr(
+        robot_service,
+        "_enqueue_chat_job",
+        lambda job: queued_messages.append(job.message) or True,
+    )
+
+    replied = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("reply text", target={"id": "g1"}, replied_to_bot=True),
+    )
+    assert replied.ignored is False
+
+    follow_up = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("plain after reply", target={"id": "g1"}),
+    )
+    assert follow_up.ignored is False
+    assert queued_messages == ["reply text", "plain after reply"]
+
+
 def test_term_agent_response_is_not_auto_chunked_for_bridge(
     db: Session,
     monkeypatch,
@@ -596,6 +737,40 @@ def test_term_agent_response_is_not_auto_chunked_for_bridge(
 
     assert response.success is True
     assert captured["job"].message == "status?"
+    assert response.reply_chunks == []
+
+
+def test_robot_message_is_ignored_when_backend_queue_is_full(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", lambda _job: False)
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("hello"),
+    )
+
+    assert response.success is True
+    assert response.ignored is True
+    assert response.reason == "dispatch_queue_full"
+    assert response.item_id == str(item.id)
+    assert response.route_key == "alpha"
     assert response.reply_chunks == []
 
 
