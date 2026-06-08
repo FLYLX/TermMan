@@ -8,7 +8,7 @@ import {
   Settings,
   X,
 } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 import { useI18n } from "@/components/locale-provider"
 import { Badge } from "@/components/ui/badge"
@@ -22,6 +22,37 @@ import {
   getItemHandlerKnowledgeQueryKey,
   listItemHandlerKnowledgeFiles,
 } from "./api"
+
+const LIST_PAGE_SIZE = 10
+
+function LoadMoreButton({
+  remainingCount,
+  onClick,
+}: {
+  remainingCount: number
+  onClick: () => void
+}) {
+  const { locale } = useI18n()
+  const nextCount = Math.min(LIST_PAGE_SIZE, remainingCount)
+
+  if (remainingCount <= 0) {
+    return null
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="w-full"
+      onClick={onClick}
+    >
+      {locale === "zh"
+        ? `再显示 ${nextCount} 条`
+        : `Show ${nextCount} more`}
+    </Button>
+  )
+}
 
 export function KnowledgeBindingSelector({
   itemHandlerId,
@@ -41,6 +72,10 @@ export function KnowledgeBindingSelector({
     null,
   )
   const [pendingPath, setPendingPath] = useState<string | null>(null)
+  const [enabledVisibleCount, setEnabledVisibleCount] =
+    useState(LIST_PAGE_SIZE)
+  const [availableVisibleCount, setAvailableVisibleCount] =
+    useState(LIST_PAGE_SIZE)
 
   const { data: knowledgeFilesData } = useQuery({
     queryKey: getItemHandlerKnowledgeQueryKey(itemHandlerId),
@@ -69,6 +104,27 @@ export function KnowledgeBindingSelector({
         file.path.toLowerCase().includes(normalizedQuery),
     )
   }, [availableFilesList, searchQuery])
+  const visibleEnabledFiles = enabledFilesList.slice(0, enabledVisibleCount)
+  const visibleAvailableFiles = filteredAvailableFiles.slice(
+    0,
+    availableVisibleCount,
+  )
+  const enabledRemainingCount = Math.max(
+    enabledFilesList.length - visibleEnabledFiles.length,
+    0,
+  )
+  const availableRemainingCount = Math.max(
+    filteredAvailableFiles.length - visibleAvailableFiles.length,
+    0,
+  )
+
+  useEffect(() => {
+    setEnabledVisibleCount(LIST_PAGE_SIZE)
+  }, [enabledFilesList.length])
+
+  useEffect(() => {
+    setAvailableVisibleCount(LIST_PAGE_SIZE)
+  }, [availableFilesList.length, searchQuery])
 
   const updateEnabledFiles = async (filePath: string, enable: boolean) => {
     setPendingPath(filePath)
@@ -226,7 +282,15 @@ export function KnowledgeBindingSelector({
               </div>
             ) : (
               <div className="space-y-1 p-2">
-                {enabledFilesList.map((file) => renderFileRow(file, true))}
+                {visibleEnabledFiles.map((file) => renderFileRow(file, true))}
+                <LoadMoreButton
+                  remainingCount={enabledRemainingCount}
+                  onClick={() =>
+                    setEnabledVisibleCount(
+                      (current) => current + LIST_PAGE_SIZE,
+                    )
+                  }
+                />
               </div>
             )}
           </ScrollArea>
@@ -280,9 +344,17 @@ export function KnowledgeBindingSelector({
               </div>
             ) : (
               <div className="space-y-1 p-2">
-                {filteredAvailableFiles.map((file) =>
+                {visibleAvailableFiles.map((file) =>
                   renderFileRow(file, false),
                 )}
+                <LoadMoreButton
+                  remainingCount={availableRemainingCount}
+                  onClick={() =>
+                    setAvailableVisibleCount(
+                      (current) => current + LIST_PAGE_SIZE,
+                    )
+                  }
+                />
               </div>
             )}
           </ScrollArea>

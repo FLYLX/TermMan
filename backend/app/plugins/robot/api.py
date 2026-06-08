@@ -144,12 +144,15 @@ def get_bridge_health(current_user: CurrentUser) -> dict:
     del current_user
 
     try:
-        return robot_bridge_client.get_health()
+        health = robot_bridge_client.get_health()
+        health["backend_dispatch_queue"] = robot_service.dispatch_queue_snapshot()
+        return health
     except Exception as e:
         return {
             "error": str(e),
             "connected": False,
             "bridge_url": robot_bridge_client.base_url,
+            "backend_dispatch_queue": robot_service.dispatch_queue_snapshot(),
         }
 
 
@@ -510,7 +513,7 @@ def unbind_item_from_robot(
 
 
 @router.post("/{id}/dispatch", response_model=RobotDispatchResponse)
-async def dispatch_robot_message(
+def dispatch_robot_message(
     session: SessionDep,
     id: uuid.UUID,
     body: RobotInboundMessage,
@@ -518,7 +521,7 @@ async def dispatch_robot_message(
 ) -> RobotDispatchResponse:
     assert_bridge_permission(x_termman_bridge_token)
     robot = get_robot_or_404(session, id)
-    return await robot_service.handle_inbound_message(session, robot, body)
+    return robot_service.handle_inbound_message(session, robot, body)
 
 
 @router.post("/{id}/debug-events")

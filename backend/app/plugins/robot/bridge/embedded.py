@@ -486,6 +486,7 @@ def _summarize_platform_event(event: Any) -> dict[str, Any]:
     sender = payload.get("sender") if isinstance(payload.get("sender"), dict) else {}
     summary = {
         "post_type": payload.get("post_type"),
+        "meta_event_type": payload.get("meta_event_type"),
         "message_type": payload.get("message_type"),
         "sub_type": payload.get("sub_type"),
         "user_id": payload.get("user_id"),
@@ -498,6 +499,14 @@ def _summarize_platform_event(event: Any) -> dict[str, Any]:
         "raw_message": payload.get("raw_message"),
     }
     return {key: value for key, value in summary.items() if value not in (None, "")}
+
+
+def _is_onebot_heartbeat_event(event: Any) -> bool:
+    payload = _serialize_event_payload(event)
+    return (
+        str(payload.get("post_type") or "").strip().lower() == "meta_event"
+        and str(payload.get("meta_event_type") or "").strip().lower() == "heartbeat"
+    )
 
 
 def _decode_websocket_body(message: dict[str, Any]) -> tuple[str | None, int | None]:
@@ -603,6 +612,31 @@ def _record_websocket_debug_event(
             message=message,
             payload=payload,
         )
+
+
+def _should_record_websocket_debug_event(
+    event_name: str,
+    payload: dict[str, Any],
+) -> bool:
+    if event_name in {
+        "websocket_connect",
+        "websocket_accept",
+        "websocket_disconnect",
+        "websocket_close",
+        "websocket_closed",
+        "websocket_error",
+    }:
+        return True
+    if payload.get("post_type") == "message":
+        return True
+    meta_event_type = str(payload.get("meta_event_type") or "").strip().lower()
+    if meta_event_type and meta_event_type != "heartbeat":
+        return True
+    retcode = payload.get("retcode")
+    if retcode not in (None, 0, "0"):
+        return True
+    action = str(payload.get("action") or "")
+    return action.startswith("send_")
 
 
 def _websocket_connection_payload(websocket: WebSocket, path: str) -> dict[str, Any]:
@@ -727,14 +761,15 @@ async def _run_logged_onebot_reverse_ws(
             direction="platform_to_bridge",
             payload=payload,
         )
-        _record_websocket_debug_event(
-            state.get("robot_id"),
-            platform_id,
-            direction="platform_to_bridge",
-            event=event_name,
-            message=preview_text(text) if text else None,
-            payload=payload,
-        )
+        if _should_record_websocket_debug_event(event_name, payload):
+            _record_websocket_debug_event(
+                state.get("robot_id"),
+                platform_id,
+                direction="platform_to_bridge",
+                event=event_name,
+                message=preview_text(text) if text else None,
+                payload=payload,
+            )
         return raw_message
 
     async def send(raw_message: dict[str, Any]) -> None:
@@ -755,14 +790,15 @@ async def _run_logged_onebot_reverse_ws(
             direction="bridge_to_platform",
             payload=payload,
         )
-        _record_websocket_debug_event(
-            state.get("robot_id"),
-            platform_id,
-            direction="bridge_to_platform",
-            event=event_name,
-            message=preview_text(text) if text else None,
-            payload=payload,
-        )
+        if _should_record_websocket_debug_event(event_name, payload):
+            _record_websocket_debug_event(
+                state.get("robot_id"),
+                platform_id,
+                direction="bridge_to_platform",
+                event=event_name,
+                message=preview_text(text) if text else None,
+                payload=payload,
+            )
         await websocket.send(raw_message)
 
     try:
@@ -898,26 +934,6 @@ def _record_bridge_event(
         message=message,
         payload=payload,
     )
-    try:
-        shared_secret = settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY
-        with httpx.Client(timeout=1.5) as client:
-            client.post(
-                f"{settings.ROBOT_BACKEND_URL.rstrip('/')}"
-                f"{settings.API_V1_STR}/robots/{robot_id}/debug-events",
-                headers={
-                    "Content-Type": "application/json",
-                    "X-TermMan-Bridge-Token": shared_secret,
-                },
-                json={
-                    "direction": direction,
-                    "event": event,
-                    "status": status,
-                    "message": message,
-                    "payload": payload or {},
-                },
-            )
-    except Exception:
-        pass
 
 
 async def _dispatch_to_backend(
@@ -1156,6 +1172,8 @@ def init_embedded_bridge() -> APIRouter | None:
             if robot_id:
                 _seen_connected_robot_ids.add(robot_id)
                 event_name = event.__class__.__name__
+                if platform_id == "onebot_v11" and _is_onebot_heartbeat_event(event):
+                    return
                 if "ready" in event_name.lower():
                     message, payload = _build_ready_event_payload(
                         platform_id,

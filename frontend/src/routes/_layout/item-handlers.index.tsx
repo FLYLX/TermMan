@@ -8,7 +8,7 @@ import {
   Sparkles,
   Terminal,
 } from "lucide-react"
-import { Suspense } from "react"
+import { Suspense, useState } from "react"
 
 import { type ItemHandlerPublic, ItemHandlersService } from "@/client"
 import AddItemHandler from "@/components/ItemHandlers/AddItemHandler"
@@ -21,6 +21,9 @@ import { ItemHandlerActionsMenu } from "@/components/ItemHandlers/ItemHandlerAct
 import { useI18n } from "@/components/locale-provider"
 import PendingItems from "@/components/Pending/PendingItems"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+
+const LIST_PAGE_SIZE = 10
 
 type ItemHandlerWithSummary = ItemHandlerPublic & {
   item_count?: number
@@ -295,6 +298,7 @@ function HandlerCard({
 function ItemHandlersContent() {
   const navigate = useNavigate()
   const { locale, t } = useI18n()
+  const [visibleCount, setVisibleCount] = useState(LIST_PAGE_SIZE)
   const { data: itemHandlers } = useSuspenseQuery(getItemHandlersQueryOptions())
   const { data: llmStatusResponse } = useQuery({
     queryKey: getItemHandlerLlmStatusQueryKey(),
@@ -306,6 +310,12 @@ function ItemHandlersContent() {
   const llmStatusById = new Map(
     (llmStatusResponse?.data ?? []).map((item) => [item.item_handler_id, item]),
   )
+  const visibleItemHandlers = itemHandlers.slice(0, visibleCount)
+  const remainingCount = Math.max(
+    itemHandlers.length - visibleItemHandlers.length,
+    0,
+  )
+  const nextCount = Math.min(LIST_PAGE_SIZE, remainingCount)
 
   const copy =
     locale === "zh"
@@ -352,7 +362,7 @@ function ItemHandlersContent() {
       </section>
 
       <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-        {itemHandlers.map((handler) => (
+        {visibleItemHandlers.map((handler) => (
           <HandlerCard
             key={handler.id}
             handler={handler}
@@ -361,6 +371,21 @@ function ItemHandlersContent() {
           />
         ))}
       </div>
+      {remainingCount > 0 ? (
+        <div className="flex justify-center">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() =>
+              setVisibleCount((current) => current + LIST_PAGE_SIZE)
+            }
+          >
+            {locale === "zh"
+              ? `再显示 ${nextCount} 条`
+              : `Show ${nextCount} more`}
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }

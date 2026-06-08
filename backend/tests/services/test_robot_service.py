@@ -74,6 +74,17 @@ def _message(
     )
 
 
+def _capture_queued_chat(monkeypatch) -> dict[str, Any]:
+    captured: dict[str, Any] = {}
+
+    def fake_enqueue_chat_job(job) -> bool:
+        captured["job"] = job
+        return True
+
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+    return captured
+
+
 class _FakeBot:
     self_id = "10001"
 
@@ -228,24 +239,16 @@ def test_plain_robot_message_routes_to_default_item_agent(
     )
     db.commit()
 
-    captured: dict[str, object] = {}
+    captured = _capture_queued_chat(monkeypatch)
 
-    async def fake_chat_with_item(**kwargs):
-        captured.update(kwargs)
-        return "agent response"
-
-    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
-
-    response = asyncio.run(
-        robot_service.handle_inbound_message(db, robot, _message("hello"))
-    )
+    response = robot_service.handle_inbound_message(db, robot, _message("hello"))
 
     assert response.success is True
     assert response.item_id == str(item.id)
     assert response.route_key == "alpha"
-    assert captured["message"] == "hello"
-    assert captured["sender_key"] == "onebot_v11:group:g1:u1"
-    assert isinstance(captured["reply_target"], RobotReplyTarget)
+    assert captured["job"].message == "hello"
+    assert captured["job"].sender_key == "onebot_v11:group:g1:u1"
+    assert isinstance(captured["job"].reply_target, RobotReplyTarget)
     assert response.reply_chunks == []
 
 
@@ -267,31 +270,23 @@ def test_robot_message_passes_sender_prefix_to_agent(
     )
     db.commit()
 
-    captured: dict[str, object] = {}
+    captured = _capture_queued_chat(monkeypatch)
 
-    async def fake_chat_with_item(**kwargs):
-        captured.update(kwargs)
-        return "agent response"
-
-    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
-
-    response = asyncio.run(
-        robot_service.handle_inbound_message(
-            db,
-            robot,
-            _message(
-                "hello",
-                target={"id": "g1"},
-                sender={
-                    "user_id": "u1",
-                    "display_name": "Alice",
-                },
-            ),
-        )
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "hello",
+            target={"id": "g1"},
+            sender={
+                "user_id": "u1",
+                "display_name": "Alice",
+            },
+        ),
     )
 
     assert response.success is True
-    assert captured["message"] == (
+    assert captured["job"].message == (
         "[Robot message; conversation=group:g1; sender=Alice (u1)]\nhello"
     )
     assert response.reply_chunks == []
@@ -315,32 +310,24 @@ def test_private_robot_message_passes_context_stamp_to_agent(
     )
     db.commit()
 
-    captured: dict[str, object] = {}
+    captured = _capture_queued_chat(monkeypatch)
 
-    async def fake_chat_with_item(**kwargs):
-        captured.update(kwargs)
-        return "agent response"
-
-    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
-
-    response = asyncio.run(
-        robot_service.handle_inbound_message(
-            db,
-            robot,
-            _message(
-                "hello",
-                sender_key="onebot_v11:private:u1",
-                target={"id": "u1", "private": True},
-                sender={
-                    "user_id": "u1",
-                    "display_name": "Alice",
-                },
-            ),
-        )
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "hello",
+            sender_key="onebot_v11:private:u1",
+            target={"id": "u1", "private": True},
+            sender={
+                "user_id": "u1",
+                "display_name": "Alice",
+            },
+        ),
     )
 
     assert response.success is True
-    assert captured["message"] == (
+    assert captured["job"].message == (
         "[Robot message; conversation=private:u1; sender=Alice (u1)]\nhello"
     )
     assert response.reply_chunks == []
@@ -364,28 +351,20 @@ def test_term_command_routes_to_named_item_agent(
     )
     db.commit()
 
-    captured: dict[str, object] = {}
+    captured = _capture_queued_chat(monkeypatch)
 
-    async def fake_chat_with_item(**kwargs):
-        captured.update(kwargs)
-        return "agent response"
-
-    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
-
-    response = asyncio.run(
-        robot_service.handle_inbound_message(
-            db,
-            robot,
-            _message("/term alpha status?"),
-        )
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("/term alpha status?"),
     )
 
     assert response.success is True
     assert response.item_id == str(item.id)
     assert response.route_key == "alpha"
-    assert captured["message"] == "status?"
-    assert captured["sender_key"] == "onebot_v11:group:g1:u1"
-    assert isinstance(captured["reply_target"], RobotReplyTarget)
+    assert captured["job"].message == "status?"
+    assert captured["job"].sender_key == "onebot_v11:group:g1:u1"
+    assert isinstance(captured["job"].reply_target, RobotReplyTarget)
     assert response.reply_chunks == []
 
 
@@ -412,13 +391,15 @@ def test_reply_message_type_filter_ignores_unselected_group_message(
     )
     db.commit()
 
-    async def fail_chat_with_item(**_kwargs):
+    def fail_enqueue_chat_job(_job):
         raise AssertionError("group messages should be filtered before chat dispatch")
 
-    monkeypatch.setattr(robot_service, "_chat_with_item", fail_chat_with_item)
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fail_enqueue_chat_job)
 
-    response = asyncio.run(
-        robot_service.handle_inbound_message(db, robot, _message("hello group"))
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("hello group"),
     )
 
     assert response.success is True
@@ -450,29 +431,21 @@ def test_reply_message_type_filter_allows_configured_private_message(
     )
     db.commit()
 
-    captured: dict[str, object] = {}
+    captured = _capture_queued_chat(monkeypatch)
 
-    async def fake_chat_with_item(**kwargs):
-        captured.update(kwargs)
-        return "private response"
-
-    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
-
-    response = asyncio.run(
-        robot_service.handle_inbound_message(
-            db,
-            robot,
-            _message(
-                "hello private",
-                sender_key="onebot_v11:private:u1",
-                target={"id": "u1", "private": True},
-            ),
-        )
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "hello private",
+            sender_key="onebot_v11:private:u1",
+            target={"id": "u1", "private": True},
+        ),
     )
 
     assert response.success is True
     assert response.ignored is False
-    assert captured["message"] == "hello private"
+    assert captured["job"].message == "hello private"
     assert response.reply_chunks == []
 
 
@@ -499,25 +472,17 @@ def test_reply_message_type_filter_allows_command_when_scope_is_disabled(
     )
     db.commit()
 
-    captured: dict[str, object] = {}
+    captured = _capture_queued_chat(monkeypatch)
 
-    async def fake_chat_with_item(**kwargs):
-        captured.update(kwargs)
-        return "command response"
-
-    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
-
-    response = asyncio.run(
-        robot_service.handle_inbound_message(
-            db,
-            robot,
-            _message("/term alpha status?"),
-        )
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("/term alpha status?"),
     )
 
     assert response.success is True
     assert response.ignored is False
-    assert captured["message"] == "status?"
+    assert captured["job"].message == "status?"
     assert response.reply_chunks == []
 
 
@@ -544,13 +509,15 @@ def test_reply_message_type_filter_ignores_unmentioned_when_only_mention_allowed
     )
     db.commit()
 
-    async def fail_chat_with_item(**_kwargs):
+    def fail_enqueue_chat_job(_job):
         raise AssertionError("unmentioned group messages should be filtered")
 
-    monkeypatch.setattr(robot_service, "_chat_with_item", fail_chat_with_item)
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fail_enqueue_chat_job)
 
-    response = asyncio.run(
-        robot_service.handle_inbound_message(db, robot, _message("hello group"))
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("hello group"),
     )
 
     assert response.success is True
@@ -582,25 +549,17 @@ def test_reply_message_type_filter_allows_mention_when_group_is_disabled(
     )
     db.commit()
 
-    captured: dict[str, object] = {}
+    captured = _capture_queued_chat(monkeypatch)
 
-    async def fake_chat_with_item(**kwargs):
-        captured.update(kwargs)
-        return "mention response"
-
-    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
-
-    response = asyncio.run(
-        robot_service.handle_inbound_message(
-            db,
-            robot,
-            _message("hello mention", mentioned_bot=True),
-        )
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("hello mention", mentioned_bot=True),
     )
 
     assert response.success is True
     assert response.ignored is False
-    assert captured["message"] == "hello mention"
+    assert captured["job"].message == "hello mention"
     assert response.reply_chunks == []
 
 
@@ -627,21 +586,16 @@ def test_term_agent_response_is_not_auto_chunked_for_bridge(
     )
     db.commit()
 
-    async def fake_chat_with_item(**kwargs):
-        assert kwargs["message"] == "status?"
-        return "x" * 3000
+    captured = _capture_queued_chat(monkeypatch)
 
-    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
-
-    response = asyncio.run(
-        robot_service.handle_inbound_message(
-            db,
-            robot,
-            _message("/term alpha status?"),
-        )
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("/term alpha status?"),
     )
 
     assert response.success is True
+    assert captured["job"].message == "status?"
     assert response.reply_chunks == []
 
 
@@ -672,12 +626,10 @@ def test_send_command_writes_directly_to_terminal(
 
     monkeypatch.setattr(robot_service, "_write_to_item_terminal", fake_write)
 
-    response = asyncio.run(
-        robot_service.handle_inbound_message(
-            db,
-            robot,
-            _message("/send alpha ls -la"),
-        )
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("/send alpha ls -la"),
     )
 
     assert response.success is True

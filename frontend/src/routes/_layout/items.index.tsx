@@ -1,7 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Search, Wifi, WifiOff } from "lucide-react"
-import { Suspense } from "react"
+import { Suspense, useEffect, useState } from "react"
 
 import { ItemsService } from "@/client"
 import AddItem from "@/components/Items/AddItem"
@@ -14,8 +14,11 @@ import {
 import { useI18n } from "@/components/locale-provider"
 import PendingItems from "@/components/Pending/PendingItems"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { getStatusLabel } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+
+const LIST_PAGE_SIZE = 10
 
 type ItemsResponse = {
   data: TerminalItem[]
@@ -79,8 +82,8 @@ function TerminalCard({
   const copy =
     locale === "zh"
       ? {
-          command: "指令",
-          waitingCommand: "等待启动指令",
+          command: "命令",
+          waitingCommand: "等待启动命令",
           cwd: "工作目录",
         }
       : {
@@ -162,6 +165,15 @@ function DaemonSection({
   onOpenTerminal: (itemId: string) => void
 }) {
   const { locale } = useI18n()
+  const [visibleCount, setVisibleCount] = useState(LIST_PAGE_SIZE)
+
+  useEffect(() => {
+    setVisibleCount(LIST_PAGE_SIZE)
+  }, [group.key])
+
+  const visibleItems = group.items.slice(0, visibleCount)
+  const remainingCount = Math.max(group.items.length - visibleItems.length, 0)
+  const nextCount = Math.min(LIST_PAGE_SIZE, remainingCount)
 
   const copy =
     locale === "zh"
@@ -219,9 +231,24 @@ function DaemonSection({
       </div>
 
       <div className="grid gap-2 p-3">
-        {group.items.map((item) => (
+        {visibleItems.map((item) => (
           <TerminalCard key={item.id} item={item} onOpen={onOpenTerminal} />
         ))}
+        {remainingCount > 0 ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="justify-center"
+            onClick={() =>
+              setVisibleCount((current) => current + LIST_PAGE_SIZE)
+            }
+          >
+            {locale === "zh"
+              ? `再显示 ${nextCount} 条`
+              : `Show ${nextCount} more`}
+          </Button>
+        ) : null}
       </div>
     </section>
   )
@@ -239,7 +266,8 @@ function ItemsPageContent() {
     locale === "zh"
       ? {
           noTerminals: "还没有终端",
-          noTerminalsHint: "先新建一个终端，再按 Daemon 继续分组使用。",
+          noTerminalsHint:
+            "先新建一个终端，再按 Daemon 继续分组使用。",
         }
       : {
           noTerminals: "No terminals yet",

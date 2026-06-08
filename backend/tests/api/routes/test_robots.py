@@ -299,25 +299,13 @@ def test_dispatch_robot_message_routes_to_item_agent(
     )
     assert bind_response.status_code == 200
 
-    expected_item_id = item.id
+    captured_job: dict[str, object] = {}
 
-    async def fake_chat_with_item(
-        *,
-        session,
-        robot,
-        item,
-        message,
-        sender_key,
-        reply_target,
-    ):
-        del session, robot
-        assert message == "status?"
-        assert sender_key == "group_group-1_member-1"
-        assert reply_target.target_id == "group-openid"
-        assert item.id == expected_item_id
-        return "agent-ok"
+    def fake_enqueue_chat_job(job) -> bool:
+        captured_job["job"] = job
+        return True
 
-    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
 
     response = client.post(
         f"{settings.API_V1_STR}/robots/{robot_id}/dispatch",
@@ -343,6 +331,10 @@ def test_dispatch_robot_message_routes_to_item_agent(
     assert content["item_id"] == str(item.id)
     assert content["route_key"] == "alpha"
     assert content["reply_chunks"] == []
+    assert captured_job["job"].message == "status?"
+    assert captured_job["job"].sender_key == "group_group-1_member-1"
+    assert captured_job["job"].reply_target.target_id == "group-openid"
+    assert captured_job["job"].item_id == item.id
 
     sent: dict[str, object] = {}
 

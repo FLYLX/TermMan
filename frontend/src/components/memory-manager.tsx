@@ -56,7 +56,7 @@ interface MemoryManagerProps {
   itemId: string
 }
 
-const MEMORY_PAGE_SIZE = 30
+const MEMORY_PAGE_SIZE = 10
 
 export function MemoryManager({ itemId }: MemoryManagerProps) {
   const queryClient = useQueryClient()
@@ -72,7 +72,7 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
   const [newMemoryContent, setNewMemoryContent] = useState("")
   const [newMemoryType, setNewMemoryType] = useState<MemoryType>("fact")
   const [newMemoryTtl, setNewMemoryTtl] = useState(30)
-  const [isMemoryListOpen, setIsMemoryListOpen] = useState(false)
+  const [isMemoryListOpen, setIsMemoryListOpen] = useState(true)
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["memory-stats", itemId],
@@ -449,7 +449,7 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
           {!isMemoryListOpen ? (
             <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-6 text-center">
               <p className="text-sm text-muted-foreground">
-                记忆列表默认不加载，展开后按 {MEMORY_PAGE_SIZE} 条一段读取。
+                记忆列表已收起，展开后按 {MEMORY_PAGE_SIZE} 条一段读取。
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 当前统计 {stats?.total ?? 0} 条记忆

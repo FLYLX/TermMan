@@ -5,6 +5,7 @@ import json
 import logging
 import threading
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -22,7 +23,11 @@ from .backend_client import (
     record_bridge_event,
 )
 from .config import settings
-from .contracts import RobotBridgeReloadResponse, RobotBridgeSendRequest
+from .contracts import (
+    RobotBridgeReloadResponse,
+    RobotBridgeSendRequest,
+    RobotInboundMessage,
+)
 from .debug_log import preview_text
 from .platforms import (
     BridgeRobot,
@@ -61,6 +66,17 @@ LAST_PLATFORM_EVENT_AT_BY_ROBOT_ID: dict[str, str] = {}
 LAST_MESSAGE_EVENT_AT_BY_ROBOT_ID: dict[str, str] = {}
 ONEBOT_SOCKET_STATUS_BY_ROBOT_ID: dict[str, dict[str, Any]] = {}
 ONEBOT_ACTIVE_CONNECTIONS: dict[str, dict[str, Any]] = {}
+ROBOT_DISPATCH_QUEUE: asyncio.Queue[RobotDispatchJob] | None = None
+ROBOT_DISPATCH_QUEUE_LOOP: asyncio.AbstractEventLoop | None = None
+ROBOT_DISPATCH_WORKER_TASKS: list[asyncio.Task[None]] = []
+
+
+@dataclass(slots=True)
+class RobotDispatchJob:
+    robot_id: str
+    bot: Bot
+    inbound: RobotInboundMessage
+    enqueued_at: datetime
 
 INIT_KWARGS = build_nonebot_init_kwargs(LOADED_ROBOTS)
 INIT_KWARGS.setdefault("driver", "~fastapi+~httpx+~websockets")
@@ -71,6 +87,143 @@ register_nonebot_adapters(driver, LOADED_ROBOTS)
 
 event_probe = on(priority=1, block=False)
 bridge = on_message(priority=10, block=False)
+
+
+def _dispatch_queue_max_size() -> int:
+    return max(1, settings.ROBOT_BRIDGE_DISPATCH_QUEUE_SIZE)
+
+
+def _dispatch_worker_count() -> int:
+    return max(1, min(settings.ROBOT_BRIDGE_DISPATCH_WORKERS, 16))
+
+
+def _active_dispatch_worker_count() -> int:
+    return len([task for task in ROBOT_DISPATCH_WORKER_TASKS if not task.done()])
+
+
+def _dispatch_queue_snapshot() -> dict[str, int]:
+    queue = ROBOT_DISPATCH_QUEUE
+    return {
+        "size": queue.qsize() if queue is not None else 0,
+        "max_size": _dispatch_queue_max_size(),
+        "workers": _active_dispatch_worker_count(),
+    }
+
+
+def _ensure_dispatch_workers() -> asyncio.Queue[RobotDispatchJob]:
+    global ROBOT_DISPATCH_QUEUE, ROBOT_DISPATCH_QUEUE_LOOP, ROBOT_DISPATCH_WORKER_TASKS
+
+    loop = asyncio.get_running_loop()
+    worker_count = _dispatch_worker_count()
+
+    if ROBOT_DISPATCH_QUEUE is None or ROBOT_DISPATCH_QUEUE_LOOP is not loop:
+        for task in ROBOT_DISPATCH_WORKER_TASKS:
+            task.cancel()
+        ROBOT_DISPATCH_QUEUE = asyncio.Queue(maxsize=_dispatch_queue_max_size())
+        ROBOT_DISPATCH_QUEUE_LOOP = loop
+        ROBOT_DISPATCH_WORKER_TASKS = [
+            loop.create_task(
+                _dispatch_worker(index),
+                name=f"termman-robot-dispatch-worker-{index}",
+            )
+            for index in range(worker_count)
+        ]
+        return ROBOT_DISPATCH_QUEUE
+
+    live_tasks = [task for task in ROBOT_DISPATCH_WORKER_TASKS if not task.done()]
+    missing_count = worker_count - len(live_tasks)
+    if missing_count > 0:
+        start_index = len(live_tasks)
+        live_tasks.extend(
+            loop.create_task(
+                _dispatch_worker(start_index + index),
+                name=f"termman-robot-dispatch-worker-{start_index + index}",
+            )
+            for index in range(missing_count)
+        )
+    ROBOT_DISPATCH_WORKER_TASKS = live_tasks
+    return ROBOT_DISPATCH_QUEUE
+
+
+async def _dispatch_worker(worker_index: int) -> None:
+    del worker_index
+    while True:
+        queue = ROBOT_DISPATCH_QUEUE
+        if queue is None:
+            await asyncio.sleep(0.2)
+            continue
+
+        job = await queue.get()
+        try:
+            await _process_robot_dispatch_job(job)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "[RobotBridge] Dispatch worker crashed while processing robot %s",
+                job.robot_id,
+            )
+        finally:
+            queue.task_done()
+
+
+async def _enqueue_robot_dispatch(
+    robot_id: str,
+    bot: Bot,
+    inbound: RobotInboundMessage,
+) -> bool:
+    queue = _ensure_dispatch_workers()
+    try:
+        queue.put_nowait(
+            RobotDispatchJob(
+                robot_id=robot_id,
+                bot=bot,
+                inbound=inbound,
+                enqueued_at=datetime.now(timezone.utc),
+            )
+        )
+    except asyncio.QueueFull:
+        _record_bridge_event(
+            robot_id,
+            direction="bridge",
+            event="dispatch_queue_full",
+            status="error",
+            message="Robot dispatch queue is full",
+            payload={
+                "queue": _dispatch_queue_snapshot(),
+                "target_type": inbound.reply_target.target_type,
+                "target_id": inbound.reply_target.target_id,
+            },
+        )
+        logger.warning(
+            "[RobotBridge] Dispatch queue full; dropped robot=%s target=%s",
+            robot_id,
+            inbound.reply_target.target_id,
+        )
+        try:
+            await send_text_with_rate_limit(
+                bot,
+                inbound.reply_target,
+                "Robot message queue is busy, please try again later.",
+            )
+        except Exception:
+            logger.exception(
+                "[RobotBridge] Failed to send queue-full notice for robot %s",
+                robot_id,
+            )
+        return False
+
+    _record_bridge_event(
+        robot_id,
+        direction="bridge_to_backend",
+        event="dispatch_queued",
+        payload={
+            "queue": _dispatch_queue_snapshot(),
+            "target_type": inbound.reply_target.target_type,
+            "target_id": inbound.reply_target.target_id,
+        },
+    )
+    return True
 
 
 def _assert_bridge_permission(header_value: str | None) -> None:
@@ -242,6 +395,13 @@ def _summarize_event_payload(payload: dict[str, Any]) -> dict[str, Any]:
         if value not in (None, ""):
             summary[key] = value
     return summary
+
+
+def _is_onebot_heartbeat_payload(payload: dict[str, Any]) -> bool:
+    return (
+        str(payload.get("post_type") or "").strip().lower() == "meta_event"
+        and str(payload.get("meta_event_type") or "").strip().lower() == "heartbeat"
+    )
 
 
 def _is_onebot_websocket_scope(scope: dict[str, Any]) -> bool:
@@ -570,6 +730,35 @@ def _is_onebot_websocket_closed_event(event_name: str) -> bool:
     return event_name in {"websocket_disconnect", "websocket_close", "websocket_closed"}
 
 
+def _should_record_onebot_websocket_event(
+    event_name: str,
+    payload: dict[str, Any],
+) -> bool:
+    if event_name in {
+        "websocket_connect",
+        "websocket_accept",
+        "websocket_disconnect",
+        "websocket_close",
+        "websocket_closed",
+        "websocket_error",
+    }:
+        return True
+
+    if payload.get("post_type") == "message":
+        return True
+
+    meta_event_type = str(payload.get("meta_event_type") or "").strip().lower()
+    if meta_event_type and meta_event_type != "heartbeat":
+        return True
+
+    retcode = payload.get("retcode")
+    if retcode not in (None, 0, "0"):
+        return True
+
+    action = str(payload.get("action") or "")
+    return action.startswith("send_")
+
+
 def _track_onebot_websocket_message(
     connection_id: str,
     state: dict[str, Any],
@@ -612,13 +801,14 @@ def _track_onebot_websocket_message(
             payload=payload,
         )
 
-    _record_onebot_websocket_event(
-        robot_id,
-        direction=direction,
-        event=event_name,
-        message=preview_text(text) if text else None,
-        payload=payload,
-    )
+    if _should_record_onebot_websocket_event(event_name, payload):
+        _record_onebot_websocket_event(
+            robot_id,
+            direction=direction,
+            event=event_name,
+            message=preview_text(text) if text else None,
+            payload=payload,
+        )
 
 
 def _close_tracked_onebot_connection(
@@ -726,6 +916,91 @@ def _resolve_bot_for_robot(robot_id: str) -> Bot | None:
     return None
 
 
+async def _process_robot_dispatch_job(job: RobotDispatchJob) -> None:
+    inbound = job.inbound
+    queue_wait_seconds = (
+        datetime.now(timezone.utc) - job.enqueued_at
+    ).total_seconds()
+    _record_bridge_event(
+        job.robot_id,
+        direction="bridge_to_backend",
+        event="dispatch_started",
+        payload={
+            "queue_wait_seconds": round(queue_wait_seconds, 3),
+            "queue": _dispatch_queue_snapshot(),
+            "target_type": inbound.reply_target.target_type,
+            "target_id": inbound.reply_target.target_id,
+        },
+    )
+
+    try:
+        dispatch = await dispatch_to_backend(job.robot_id, inbound)
+    except Exception as exc:
+        error_message = str(exc) or exc.__class__.__name__
+        _record_bridge_event(
+            job.robot_id,
+            direction="bridge_to_backend",
+            event="dispatch_failed",
+            status="error",
+            message=error_message,
+        )
+        logger.exception(
+            "[RobotBridge] Failed to dispatch message for robot %s", job.robot_id
+        )
+        try:
+            bot = _resolve_bot_for_robot(job.robot_id) or job.bot
+            await send_text_with_rate_limit(
+                bot,
+                inbound.reply_target,
+                f"Backend dispatch failed: {error_message}",
+            )
+        except Exception as send_exc:
+            logger.exception(
+                "[RobotBridge] Failed to send dispatch error back to platform "
+                "for robot %s: %s",
+                job.robot_id,
+                send_exc,
+            )
+        return
+
+    if dispatch.ignored:
+        _record_bridge_event(
+            job.robot_id,
+            direction="bridge_to_backend",
+            event="dispatch_ignored",
+            status="ignored",
+            message=dispatch.reason,
+        )
+        return
+
+    bot = _resolve_bot_for_robot(job.robot_id) or job.bot
+    for chunk in dispatch.reply_chunks:
+        logger.info(
+            "[RobotBridge] Sending platform reply robot=%s target=%s text=%s",
+            job.robot_id,
+            inbound.reply_target.target_id,
+            preview_text(chunk),
+        )
+        try:
+            await send_text_with_rate_limit(bot, inbound.reply_target, chunk)
+        except Exception as send_exc:
+            _record_bridge_event(
+                job.robot_id,
+                direction="bridge_to_platform",
+                event="platform_send_failed",
+                status="error",
+                message=str(send_exc) or send_exc.__class__.__name__,
+                payload={
+                    "target_type": inbound.reply_target.target_type,
+                    "target_id": inbound.reply_target.target_id,
+                },
+            )
+            logger.exception(
+                "[RobotBridge] Failed to send platform reply for robot %s",
+                job.robot_id,
+            )
+
+
 @event_probe.handle()
 async def probe_robot_event(bot: Bot, event: Event) -> None:
     platform_id = resolve_platform_from_bot(bot)
@@ -763,6 +1038,8 @@ async def probe_robot_event(bot: Bot, event: Event) -> None:
             event_name=event.__class__.__name__,
             payload=event_payload,
         )
+        if _is_onebot_heartbeat_payload(event_payload):
+            return
     _record_bridge_event(
         robot_id,
         direction="platform_to_bridge",
@@ -844,68 +1121,22 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
         },
     )
 
-    try:
-        dispatch = await dispatch_to_backend(robot_id, inbound)
-    except Exception as exc:
-        error_message = str(exc) or exc.__class__.__name__
-        _record_bridge_event(
-            robot_id,
-            direction="bridge_to_backend",
-            event="dispatch_failed",
-            status="error",
-            message=error_message,
-        )
-        logger.exception(
-            "[RobotBridge] Failed to dispatch message for robot %s", robot_id
-        )
-        try:
-            await send_text_with_rate_limit(
-                bot,
-                inbound.reply_target,
-                f"Backend dispatch failed: {error_message}",
-            )
-        except Exception as send_exc:
-            logger.exception(
-                "[RobotBridge] Failed to send dispatch error back to platform "
-                "for robot %s: %s",
-                robot_id,
-                send_exc,
-            )
-        return
-
-    if dispatch.ignored:
-        return
-
-    for chunk in dispatch.reply_chunks:
-        logger.info(
-            "[RobotBridge] Sending platform reply robot=%s target=%s text=%s",
-            robot_id,
-            inbound.reply_target.target_id,
-            preview_text(chunk),
-        )
-        try:
-            await send_text_with_rate_limit(bot, inbound.reply_target, chunk)
-        except Exception as send_exc:
-            _record_bridge_event(
-                robot_id,
-                direction="bridge_to_platform",
-                event="platform_send_failed",
-                status="error",
-                message=str(send_exc) or send_exc.__class__.__name__,
-                payload={
-                    "target_type": inbound.reply_target.target_type,
-                    "target_id": inbound.reply_target.target_id,
-                },
-            )
-            logger.exception(
-                "[RobotBridge] Failed to send platform reply for robot %s",
-                robot_id,
-            )
+    await _enqueue_robot_dispatch(robot_id, bot, inbound)
 
 
 app = get_asgi()
 if not isinstance(app, FastAPI):
     raise RuntimeError("NoneBot ASGI app is not a FastAPI instance")
+
+
+async def shutdown_dispatch_workers() -> None:
+    for task in ROBOT_DISPATCH_WORKER_TASKS:
+        task.cancel()
+    if ROBOT_DISPATCH_WORKER_TASKS:
+        await asyncio.gather(*ROBOT_DISPATCH_WORKER_TASKS, return_exceptions=True)
+
+
+app.router.on_shutdown.append(shutdown_dispatch_workers)
 
 
 @app.post("/internal/send")
@@ -997,6 +1228,7 @@ async def internal_health(
         "onebot_reverse_ws_url": _onebot_reverse_ws_url(),
         "robots": robot_status,
         "bots": bot_snapshots,
+        "dispatch_queue": _dispatch_queue_snapshot(),
         "backend": await check_backend_health(),
         "connection_errors": CONFIG_ERRORS,
         "runtime": collect_runtime_stats("robot"),

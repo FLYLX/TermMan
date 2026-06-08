@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+import queue
+import threading
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -7,6 +11,25 @@ import httpx
 from .config import settings
 from .contracts import RobotDispatchResponse, RobotInboundMessage
 from .platforms import BridgeRobot
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _BridgeEvent:
+    robot_id: str
+    direction: str
+    event: str
+    status: str
+    message: str | None
+    payload: dict[str, Any]
+
+
+_EVENT_QUEUE: queue.Queue[_BridgeEvent] = queue.Queue(
+    maxsize=max(50, settings.ROBOT_BRIDGE_EVENT_QUEUE_SIZE)
+)
+_EVENT_WORKER_LOCK = threading.Lock()
+_EVENT_WORKER_STARTED = False
 
 
 def _headers() -> dict[str, str]:
@@ -74,6 +97,51 @@ async def dispatch_to_backend(
         ) from exc
 
 
+def _event_worker() -> None:
+    with httpx.Client(timeout=1.5) as client:
+        while True:
+            event = _EVENT_QUEUE.get()
+            try:
+                client.post(
+                    f"{settings.ROBOT_BACKEND_URL.rstrip('/')}"
+                    f"{settings.API_V1_STR}/robots/{event.robot_id}/debug-events",
+                    headers=_headers(),
+                    json={
+                        "direction": event.direction,
+                        "event": event.event,
+                        "status": event.status,
+                        "message": event.message,
+                        "payload": event.payload,
+                    },
+                )
+            except Exception as exc:
+                logger.debug(
+                    "[RobotBridge] Dropped backend debug event robot=%s event=%s: %s",
+                    event.robot_id,
+                    event.event,
+                    exc,
+                )
+            finally:
+                _EVENT_QUEUE.task_done()
+
+
+def _ensure_event_worker() -> None:
+    global _EVENT_WORKER_STARTED
+
+    if _EVENT_WORKER_STARTED:
+        return
+    with _EVENT_WORKER_LOCK:
+        if _EVENT_WORKER_STARTED:
+            return
+        worker = threading.Thread(
+            target=_event_worker,
+            name="termman-robot-debug-event-writer",
+            daemon=True,
+        )
+        worker.start()
+        _EVENT_WORKER_STARTED = True
+
+
 def record_bridge_event(
     robot_id: str,
     *,
@@ -83,22 +151,24 @@ def record_bridge_event(
     message: str | None = None,
     payload: dict[str, Any] | None = None,
 ) -> None:
+    _ensure_event_worker()
     try:
-        with httpx.Client(timeout=1.5) as client:
-            client.post(
-                f"{settings.ROBOT_BACKEND_URL.rstrip('/')}"
-                f"{settings.API_V1_STR}/robots/{robot_id}/debug-events",
-                headers=_headers(),
-                json={
-                    "direction": direction,
-                    "event": event,
-                    "status": status,
-                    "message": message,
-                    "payload": payload or {},
-                },
+        _EVENT_QUEUE.put_nowait(
+            _BridgeEvent(
+                robot_id=str(robot_id),
+                direction=direction,
+                event=event,
+                status=status,
+                message=message,
+                payload=payload or {},
             )
-    except Exception:
-        pass
+        )
+    except queue.Full:
+        logger.debug(
+            "[RobotBridge] Debug event queue full; dropped robot=%s event=%s",
+            robot_id,
+            event,
+        )
 
 
 async def check_backend_health() -> dict[str, Any]:

@@ -62,6 +62,11 @@ export function DataTable<TData, TValue>({
     state: {
       expanded,
     },
+    initialState: {
+      pagination: {
+        pageSize: 10,
+      },
+    },
     onExpandedChange: setExpanded,
   })
 

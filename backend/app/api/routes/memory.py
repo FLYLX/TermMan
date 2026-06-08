@@ -249,7 +249,7 @@ def get_all_memories(
     memory_type: MemoryType | None = None,
     memory_status: Literal["active", "completed", "resolved"] | None = None,
     offset: int = Query(0, ge=0),
-    limit: int = Query(30, ge=1, le=200),
+    limit: int = Query(10, ge=1, le=200),
     session: SessionDep = None,
     current_user: CurrentUser = None,
 ) -> Any:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import queue
 import re
 import threading
 import uuid
@@ -10,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
+from app.core.config import settings
+from app.core.db import engine
 from app.models import Item, Robot, RobotItem, User
 from app.services.agent.chat_runtime import collect_chat_response
 
@@ -63,6 +67,18 @@ class RobotCommand:
     text: str
 
 
+@dataclass(frozen=True)
+class QueuedRobotChatJob:
+    robot_id: uuid.UUID
+    robot_owner_id: uuid.UUID
+    item_id: uuid.UUID
+    route_key: str
+    message: str
+    sender_key: str
+    reply_target: RobotReplyTarget
+    enqueued_at: datetime
+
+
 class RobotServiceError(Exception):
     def __init__(self, message: str, status_code: int = 400):
         super().__init__(message)
@@ -74,8 +90,162 @@ class RobotService:
     def __init__(self) -> None:
         self._conversation_routes: dict[tuple[str, str], ConversationState] = {}
         self._lock = threading.RLock()
+        self._dispatch_queue: queue.Queue[QueuedRobotChatJob] = queue.Queue(
+            maxsize=max(1, settings.ROBOT_BACKEND_DISPATCH_QUEUE_SIZE)
+        )
+        self._dispatch_workers_started = False
+        self._dispatch_worker_lock = threading.Lock()
 
-    async def handle_inbound_message(
+    def dispatch_queue_snapshot(self) -> dict[str, int]:
+        return {
+            "size": self._dispatch_queue.qsize(),
+            "max_size": self._dispatch_queue.maxsize,
+            "workers": settings.ROBOT_BACKEND_DISPATCH_WORKERS
+            if self._dispatch_workers_started
+            else 0,
+        }
+
+    def _ensure_dispatch_workers(self) -> None:
+        if self._dispatch_workers_started:
+            return
+        with self._dispatch_worker_lock:
+            if self._dispatch_workers_started:
+                return
+            worker_count = max(1, min(settings.ROBOT_BACKEND_DISPATCH_WORKERS, 8))
+            for index in range(worker_count):
+                worker = threading.Thread(
+                    target=self._dispatch_worker_loop,
+                    name=f"termman-backend-robot-dispatch-{index}",
+                    daemon=True,
+                )
+                worker.start()
+            self._dispatch_workers_started = True
+
+    def _enqueue_chat_job(self, job: QueuedRobotChatJob) -> bool:
+        self._ensure_dispatch_workers()
+        try:
+            self._dispatch_queue.put_nowait(job)
+        except queue.Full:
+            return False
+        return True
+
+    def _dispatch_worker_loop(self) -> None:
+        while True:
+            job = self._dispatch_queue.get()
+            try:
+                self._process_chat_job(job)
+            except Exception:
+                logger.exception(
+                    "[RobotService] Robot dispatch worker failed for robot=%s item=%s",
+                    job.robot_id,
+                    job.item_id,
+                )
+            finally:
+                self._dispatch_queue.task_done()
+
+    def _process_chat_job(self, job: QueuedRobotChatJob) -> None:
+        queue_wait_seconds = (self._now() - job.enqueued_at).total_seconds()
+        record_robot_event(
+            str(job.robot_id),
+            direction="backend_worker",
+            event="dispatch_started",
+            payload={
+                "item_id": str(job.item_id),
+                "route_key": job.route_key,
+                "queue_wait_seconds": round(queue_wait_seconds, 3),
+                "queue": self.dispatch_queue_snapshot(),
+            },
+        )
+
+        with Session(engine) as session:
+            robot = session.get(Robot, job.robot_id)
+            item = session.get(Item, job.item_id)
+            if robot is None or item is None:
+                self._record_and_send_job_error(
+                    job,
+                    "Robot or item no longer exists.",
+                )
+                return
+
+            try:
+                response_text = asyncio.run(
+                    self._chat_with_item(
+                        session=session,
+                        robot=robot,
+                        item=item,
+                        message=job.message,
+                        sender_key=job.sender_key,
+                        reply_target=job.reply_target,
+                    )
+                )
+            except RobotServiceError as exc:
+                self._record_and_send_job_error(job, exc.message)
+                return
+            except HTTPException as exc:
+                detail = (
+                    exc.detail if isinstance(exc.detail, str) else "Robot dispatch failed"
+                )
+                self._record_and_send_job_error(job, detail)
+                return
+            except Exception as exc:
+                logger.exception(
+                    "[RobotService] Unexpected queued robot dispatch error for robot %s",
+                    job.robot_id,
+                )
+                self._record_and_send_job_error(
+                    job,
+                    str(exc) or "Robot dispatch failed.",
+                )
+                return
+
+        record_robot_event(
+            str(job.robot_id),
+            direction="backend_to_bridge",
+            event="dispatch_response",
+            message=response_text,
+            payload={
+                "item_id": str(job.item_id),
+                "route_key": job.route_key,
+                "reply_delivery": "mcp_tool",
+                "queue": self.dispatch_queue_snapshot(),
+            },
+        )
+        logger.info(
+            "[RobotService] Queued agent response robot=%s item=%s route=%s text=%s",
+            job.robot_id,
+            job.item_id,
+            job.route_key,
+            preview_text(response_text),
+        )
+
+    def _record_and_send_job_error(
+        self,
+        job: QueuedRobotChatJob,
+        message: str,
+    ) -> None:
+        record_robot_event(
+            str(job.robot_id),
+            direction="backend_worker",
+            event="dispatch_error",
+            status="error",
+            message=message,
+            payload={
+                "item_id": str(job.item_id),
+                "route_key": job.route_key,
+                "queue": self.dispatch_queue_snapshot(),
+            },
+        )
+        try:
+            from .bridge_client import robot_bridge_client
+
+            robot_bridge_client.send_message(job.robot_id, job.reply_target, message)
+        except Exception:
+            logger.exception(
+                "[RobotService] Failed to send queued dispatch error robot=%s",
+                job.robot_id,
+            )
+
+    def handle_inbound_message(
         self,
         session: Session,
         robot: Robot,
@@ -165,40 +335,68 @@ class RobotService:
                     ),
                 )
 
-            response_text = await self._chat_with_item(
-                session=session,
-                robot=robot,
-                item=resolved_binding.item,
+            queued_job = QueuedRobotChatJob(
+                robot_id=robot.id,
+                robot_owner_id=robot.owner_id,
+                item_id=resolved_binding.item.id,
+                route_key=resolved_binding.route_key,
                 message=self._agent_message_with_context(message, message_text),
                 sender_key=message.sender_key,
-                reply_target=message.reply_target,
+                reply_target=message.reply_target.model_copy(deep=True),
+                enqueued_at=self._now(),
             )
+            if not self._enqueue_chat_job(queued_job):
+                queue_message = "Robot backend dispatch queue is full. Please try again later."
+                record_robot_event(
+                    str(robot.id),
+                    direction="backend_queue",
+                    event="dispatch_queue_full",
+                    status="error",
+                    message=queue_message,
+                    payload={
+                        "item_id": str(resolved_binding.item.id),
+                        "route_key": resolved_binding.route_key,
+                        "queue": self.dispatch_queue_snapshot(),
+                    },
+                )
+                return RobotDispatchResponse(
+                    success=False,
+                    ignored=False,
+                    item_id=str(resolved_binding.item.id),
+                    route_key=resolved_binding.route_key,
+                    error=queue_message,
+                    reply_chunks=self._reply_chunks_for_target(
+                        robot,
+                        message.reply_target,
+                        queue_message,
+                    ),
+                )
+
             response = RobotDispatchResponse(
                 success=True,
                 ignored=False,
                 item_id=str(resolved_binding.item.id),
                 route_key=resolved_binding.route_key,
+                reason="queued",
                 reply_chunks=[],
             )
             record_robot_event(
                 str(robot.id),
-                direction="backend_to_bridge",
-                event="dispatch_response",
-                message=response_text,
+                direction="backend_queue",
+                event="dispatch_queued",
                 payload={
                     "item_id": str(resolved_binding.item.id),
                     "route_key": resolved_binding.route_key,
-                    "chunk_count": len(response.reply_chunks),
+                    "queue": self.dispatch_queue_snapshot(),
                     "reply_delivery": "mcp_tool",
                 },
             )
             logger.info(
-                "[RobotService] Agent response robot=%s item=%s route=%s chunks=%d text=%s",
+                "[RobotService] Queued inbound robot=%s item=%s route=%s queue=%s",
                 robot.id,
                 resolved_binding.item.id,
                 resolved_binding.route_key,
-                len(response.reply_chunks),
-                preview_text(response_text),
+                self.dispatch_queue_snapshot(),
             )
             return response
         except RobotServiceError as exc:

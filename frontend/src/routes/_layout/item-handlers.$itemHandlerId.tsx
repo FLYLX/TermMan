@@ -72,6 +72,39 @@ function KeyValue({ label, value }: { label: string; value?: string | null }) {
   )
 }
 
+const LIST_PAGE_SIZE = 10
+
+function LoadMoreButton({
+  remainingCount,
+  onClick,
+  className,
+}: {
+  remainingCount: number
+  onClick: () => void
+  className?: string
+}) {
+  const { locale } = useI18n()
+  const nextCount = Math.min(LIST_PAGE_SIZE, remainingCount)
+
+  if (remainingCount <= 0) {
+    return null
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className={className}
+      onClick={onClick}
+    >
+      {locale === "zh"
+        ? `再显示 ${nextCount} 条`
+        : `Show ${nextCount} more`}
+    </Button>
+  )
+}
+
 type ItemWithStatus = {
   id: string
   title: string
@@ -194,6 +227,10 @@ function SkillSelector({
     null,
   )
   const [pendingSkill, setPendingSkill] = useState<string | null>(null)
+  const [enabledVisibleCount, setEnabledVisibleCount] =
+    useState(LIST_PAGE_SIZE)
+  const [availableVisibleCount, setAvailableVisibleCount] =
+    useState(LIST_PAGE_SIZE)
 
   const enabledSkillsList = useMemo(() => {
     return allSkills.filter((s) => enabledSkills.includes(s.skill_id))
@@ -211,6 +248,27 @@ function SkillSelector({
         s.description?.toLowerCase().includes(searchQuery.toLowerCase()),
     )
   }, [availableSkillsList, searchQuery])
+  const visibleEnabledSkills = enabledSkillsList.slice(0, enabledVisibleCount)
+  const visibleAvailableSkills = filteredAvailableSkills.slice(
+    0,
+    availableVisibleCount,
+  )
+  const enabledRemainingCount = Math.max(
+    enabledSkillsList.length - visibleEnabledSkills.length,
+    0,
+  )
+  const availableRemainingCount = Math.max(
+    filteredAvailableSkills.length - visibleAvailableSkills.length,
+    0,
+  )
+
+  useEffect(() => {
+    setEnabledVisibleCount(LIST_PAGE_SIZE)
+  }, [enabledSkillsList.length])
+
+  useEffect(() => {
+    setAvailableVisibleCount(LIST_PAGE_SIZE)
+  }, [availableSkillsList.length, searchQuery])
 
   const handleDragStart = (e: React.DragEvent, skillId: string) => {
     setDraggedSkill(skillId)
@@ -301,7 +359,7 @@ function SkillSelector({
             </div>
           ) : (
             <div className="p-2 space-y-1">
-              {enabledSkillsList.map((skill) => (
+              {visibleEnabledSkills.map((skill) => (
                 <div
                   key={skill.skill_id}
                   draggable
@@ -334,6 +392,15 @@ function SkillSelector({
                   )}
                 </div>
               ))}
+              <LoadMoreButton
+                remainingCount={enabledRemainingCount}
+                className="w-full"
+                onClick={() =>
+                  setEnabledVisibleCount(
+                    (current) => current + LIST_PAGE_SIZE,
+                  )
+                }
+              />
             </div>
           )}
         </ScrollArea>
@@ -378,7 +445,7 @@ function SkillSelector({
             </div>
           ) : (
             <div className="p-2 space-y-1">
-              {filteredAvailableSkills.map((skill) => (
+              {visibleAvailableSkills.map((skill) => (
                 <div
                   key={skill.skill_id}
                   draggable
@@ -406,6 +473,15 @@ function SkillSelector({
                   </div>
                 </div>
               ))}
+              <LoadMoreButton
+                remainingCount={availableRemainingCount}
+                className="w-full"
+                onClick={() =>
+                  setAvailableVisibleCount(
+                    (current) => current + LIST_PAGE_SIZE,
+                  )
+                }
+              />
             </div>
           )}
         </ScrollArea>
@@ -429,6 +505,10 @@ function MCPSelector({
     null,
   )
   const [pendingServer, setPendingServer] = useState<string | null>(null)
+  const [enabledVisibleCount, setEnabledVisibleCount] =
+    useState(LIST_PAGE_SIZE)
+  const [availableVisibleCount, setAvailableVisibleCount] =
+    useState(LIST_PAGE_SIZE)
 
   const enabledServersList = useMemo(() => {
     return allServers.filter((s) => enabledServers.includes(s.name))
@@ -446,6 +526,27 @@ function MCPSelector({
         s.description?.toLowerCase().includes(searchQuery.toLowerCase()),
     )
   }, [availableServersList, searchQuery])
+  const visibleEnabledServers = enabledServersList.slice(0, enabledVisibleCount)
+  const visibleAvailableServers = filteredAvailableServers.slice(
+    0,
+    availableVisibleCount,
+  )
+  const enabledRemainingCount = Math.max(
+    enabledServersList.length - visibleEnabledServers.length,
+    0,
+  )
+  const availableRemainingCount = Math.max(
+    filteredAvailableServers.length - visibleAvailableServers.length,
+    0,
+  )
+
+  useEffect(() => {
+    setEnabledVisibleCount(LIST_PAGE_SIZE)
+  }, [enabledServersList.length])
+
+  useEffect(() => {
+    setAvailableVisibleCount(LIST_PAGE_SIZE)
+  }, [availableServersList.length, searchQuery])
 
   const handleDragStart = (e: React.DragEvent, serverName: string) => {
     setDraggedServer(serverName)
@@ -536,7 +637,7 @@ function MCPSelector({
             </div>
           ) : (
             <div className="p-2 space-y-1">
-              {enabledServersList.map((server) => (
+              {visibleEnabledServers.map((server) => (
                 <div
                   key={server.name}
                   draggable
@@ -569,6 +670,15 @@ function MCPSelector({
                   )}
                 </div>
               ))}
+              <LoadMoreButton
+                remainingCount={enabledRemainingCount}
+                className="w-full"
+                onClick={() =>
+                  setEnabledVisibleCount(
+                    (current) => current + LIST_PAGE_SIZE,
+                  )
+                }
+              />
             </div>
           )}
         </ScrollArea>
@@ -613,7 +723,7 @@ function MCPSelector({
             </div>
           ) : (
             <div className="p-2 space-y-1">
-              {filteredAvailableServers.map((server) => (
+              {visibleAvailableServers.map((server) => (
                 <div
                   key={server.name}
                   draggable
@@ -641,6 +751,15 @@ function MCPSelector({
                   </div>
                 </div>
               ))}
+              <LoadMoreButton
+                remainingCount={availableRemainingCount}
+                className="w-full"
+                onClick={() =>
+                  setAvailableVisibleCount(
+                    (current) => current + LIST_PAGE_SIZE,
+                  )
+                }
+              />
             </div>
           )}
         </ScrollArea>
@@ -1249,6 +1368,8 @@ function ItemHandlerDetail() {
   const [isEditing, setIsEditing] = useState(false)
   const [activeTab, setActiveTab] = useState("connections")
   const [isConnectionsLoaded, setIsConnectionsLoaded] = useState(false)
+  const [visibleAllItemsCount, setVisibleAllItemsCount] =
+    useState(LIST_PAGE_SIZE)
 
   const { data: itemHandler, isLoading } = useQuery({
     ...getItemHandlerQueryOptions(itemHandlerId),
@@ -1280,6 +1401,11 @@ function ItemHandlerDetail() {
   })
 
   const allItems = (allItemsData as any)?.data || []
+  const visibleAllItems = allItems.slice(0, visibleAllItemsCount)
+  const allItemsRemainingCount = Math.max(
+    allItems.length - visibleAllItems.length,
+    0,
+  )
   const connectedItemsList = (connectedItems as any[]) || []
   const connectedItemIds = new Set(
     connectedItemsList.map((item: any) => item.id),
@@ -1300,6 +1426,10 @@ function ItemHandlerDetail() {
 
   const mcpServers = mcpData?.data || []
   const enabledMcpServers = (itemHandler as any)?.enabled_mcp_servers ?? []
+
+  useEffect(() => {
+    setVisibleAllItemsCount(LIST_PAGE_SIZE)
+  }, [isConnectionsLoaded, itemHandlerId])
 
   const [editForm, setEditForm] = useState({
     name: "",
@@ -1661,7 +1791,7 @@ function ItemHandlerDetail() {
                     </p>
                   ) : (
                     <div className="space-y-1">
-                      {allItems.map((item: any) => (
+                      {visibleAllItems.map((item: any) => (
                         <ItemWithHandlers
                           key={item.id}
                           item={item}
@@ -1669,6 +1799,15 @@ function ItemHandlerDetail() {
                           isConnected={connectedItemIds.has(item.id)}
                         />
                       ))}
+                      <LoadMoreButton
+                        remainingCount={allItemsRemainingCount}
+                        className="w-full"
+                        onClick={() =>
+                          setVisibleAllItemsCount(
+                            (current) => current + LIST_PAGE_SIZE,
+                          )
+                        }
+                      />
                     </div>
                   )}
                 </CardContent>
