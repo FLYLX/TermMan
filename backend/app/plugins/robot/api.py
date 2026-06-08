@@ -926,6 +926,8 @@ def get_robot_debug(
             ),
             "loaded_robot_count": bridge_health.get("loaded_robot_count", 0),
             "connected_bot_count": bridge_health.get("connected_bot_count", 0),
+            "onebot_client_count": bridge_health.get("onebot_client_count", 0),
+            "onebot_clients": bridge_health.get("onebot_clients", []),
             "connected": robot_health.get("connected", False),
             "identity": robot_health.get("identity"),
             "bot": robot_health.get("bot"),

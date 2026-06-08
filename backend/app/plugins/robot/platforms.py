@@ -529,7 +529,11 @@ _PLATFORMS: dict[str, RobotPlatformSpec] = {
     "onebot_v11": RobotPlatformSpec(
         id="onebot_v11",
         label="OneBot V11 / NapCat",
-        description="NapCat connects to the TermMan robot bridge by OneBot V11 reverse WebSocket. Requires the logged-in QQ self_id.",
+        description=(
+            "TermMan robot-bridge provides the OneBot V11 WebSocket server "
+            "at /onebot/v11/ws. NapCat connects to this server as a client. "
+            "Requires the logged-in QQ self_id."
+        ),
         fields=(
             RobotPlatformFieldSpec("self_id", "QQ Self ID"),
             RobotPlatformFieldSpec("access_token", "Access Token", required=False, secret=True),

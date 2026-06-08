@@ -35,6 +35,7 @@ def test_backend_runtime_stats_returns_payload_for_superuser(
     assert "memory_total_bytes" in content
     assert "memory_used_bytes" in content
     assert "memory_percent" in content
+    assert isinstance(content["ip_addresses"], list)
     assert content["current_process"]["pid"] > 0
     assert content["aggregate"]["process_count"] >= 1
 

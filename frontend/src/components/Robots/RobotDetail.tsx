@@ -230,6 +230,14 @@ function getRecordString(
   return typeof value === "string" && value.trim() ? value : undefined
 }
 
+function getRecordNumber(
+  record: Record<string, unknown> | undefined,
+  key: string,
+) {
+  const value = record?.[key]
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
 function getReverseWsEndpoint(
   debug: RobotDebugInfo | undefined,
   credentials?: Record<string, string>,
@@ -510,6 +518,7 @@ function useRobotDetailUiCopy() {
           bridgeUrl: "Bridge URL",
           qqBotId: "QQ Bot ID",
           napcatReverseWs: "NapCat 反向 WS",
+          wsClients: "WS 客户端",
           checked: "Checked",
           socketEvent: "Socket Event",
           reverseEndpointStatus: "反向 WS 地址",
@@ -585,6 +594,7 @@ function useRobotDetailUiCopy() {
           bridgeUrl: "Bridge URL",
           qqBotId: "QQ Bot ID",
           napcatReverseWs: "NapCat Reverse WS",
+          wsClients: "WS Clients",
           checked: "Checked",
           socketEvent: "Socket Event",
           reverseEndpointStatus: "Reverse Endpoint",
@@ -1441,6 +1451,7 @@ function RobotDebugPanel({
   const [isSendingManual, setIsSendingManual] = useState(false)
   const bridge = debug?.bridge
   const onebotSocket = bridge?.onebot_socket
+  const onebotClientCount = getRecordNumber(onebotSocket, "client_count") ?? 0
   const reverseWsUrl = getReverseWsEndpoint(debug)
   const publicReverseWsUrl = getPublicReverseWsEndpoint(reverseWsUrl)
 
@@ -1586,7 +1597,7 @@ function RobotDebugPanel({
           </div>
         </div>
 
-        <div className="grid gap-2 text-sm md:grid-cols-3">
+        <div className="grid gap-2 text-sm md:grid-cols-4">
           <div className="rounded-xl border bg-muted/10 p-3">
             <div className="text-xs text-muted-foreground">
               {copy.qqBotId}
@@ -1603,6 +1614,14 @@ function RobotDebugPanel({
             </div>
             <div className="mt-1 truncate font-medium">
               {onebotSocket?.connected ? copy.connected : copy.disconnected}
+            </div>
+          </div>
+          <div className="rounded-xl border bg-muted/10 p-3">
+            <div className="text-xs text-muted-foreground">
+              {copy.wsClients}
+            </div>
+            <div className="mt-1 truncate font-medium">
+              {onebotClientCount}
             </div>
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">

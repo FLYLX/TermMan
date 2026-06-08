@@ -39,6 +39,7 @@ export type BackendRuntimeStatsResponse = {
   service: string
   sampled_at: number
   hostname: string
+  ip_addresses: string[]
   platform: string
   python_version: string
   cpu_count: number | null

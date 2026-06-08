@@ -365,11 +365,13 @@ const en = {
   "knowledge.chunkCount": "Chunks",
   "robots.pageTitle": "Robots",
   "robots.pageDescription":
-    "Connect NapCat OneBot V11 to TermMan and route QQ messages into your terminal agents.",
+    "TermMan exposes a OneBot V11 WebSocket server; NapCat connects as a client and routes QQ messages into your terminal agents.",
   "robots.add": "Add Robot",
   "robots.addTitle": "Add Robot",
   "robots.addDescription":
-    "Fill the NapCat reverse WebSocket credentials, then bind terminals to it.",
+    "Create the TermMan WebSocket server identity for this QQ account, then bind terminals to it.",
+  "robots.serverModeHint":
+    "Connection mode: TermMan robot-bridge is the WebSocket server at /onebot/v11/ws; NapCat must connect to it as a client.",
   "robots.nameRequired": "Robot name is required",
   "robots.credentialsRequired":
     "Please fill in the required platform credentials",
@@ -377,7 +379,7 @@ const en = {
   "robots.platform": "Platform",
   "robots.platformRequired": "Platform is required",
   "robots.platformPlaceholder": "Select a platform",
-  "robots.credentials": "Credentials",
+  "robots.credentials": "WebSocket server identity",
   "robots.noPlatforms": "No platforms available",
   "robots.noPlatformsDescription":
     "NapCat OneBot V11 support is not available in this build.",
@@ -904,17 +906,20 @@ const zh: Record<TranslationKey, string> = {
   "knowledge.chunkCount": "切块数",
   "robots.pageTitle": "机器人",
   "robots.pageDescription":
-    "连接 NapCat OneBot V11，并把 QQ 消息路由到终端 agent。",
+    "TermMan 提供 OneBot V11 WebSocket 服务端，NapCat 作为客户端连接后把 QQ 消息路由到终端 agent。",
   "robots.add": "添加机器人",
   "robots.addTitle": "添加机器人",
-  "robots.addDescription": "填写 NapCat 反向 WebSocket 凭据，创建后再绑定终端。",
+  "robots.addDescription":
+    "为这个 QQ 号创建 TermMan WebSocket 服务端身份，创建后再绑定终端。",
+  "robots.serverModeHint":
+    "连接方式：TermMan robot-bridge 是 WebSocket 服务端，地址路径为 /onebot/v11/ws；NapCat 作为客户端主动连接它。",
   "robots.nameRequired": "机器人名称不能为空",
   "robots.credentialsRequired": "请填写当前平台要求的凭据",
   "robots.namePlaceholder": "机器人名称",
   "robots.platform": "平台",
   "robots.platformRequired": "请选择平台",
   "robots.platformPlaceholder": "选择平台",
-  "robots.credentials": "平台凭据",
+  "robots.credentials": "WebSocket 服务端身份",
   "robots.noPlatforms": "没有可用平台",
   "robots.noPlatformsDescription":
     "当前构建未启用 NapCat OneBot V11 支持。",

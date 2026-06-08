@@ -183,6 +183,9 @@ export async function deleteRobotBinding(robotId: string, itemId: string) {
 export type BridgeHealthResponse = {
   loaded_robot_count: number
   connected_bot_count: number
+  onebot_client_count?: number
+  onebot_clients?: Array<Record<string, unknown>>
+  onebot_reverse_ws_url?: string | null
   platforms: string[]
   connected_identities: string[]
   robots: Record<string, { identity: string; connected: boolean }>
@@ -309,6 +312,8 @@ export type RobotDebugInfo = {
     status: string
     loaded_robot_count: number
     connected_bot_count: number
+    onebot_client_count?: number
+    onebot_clients?: Array<Record<string, unknown>>
     connected: boolean
     identity?: string | null
     checked_at?: string | null

@@ -1,5 +1,27 @@
 import { OpenAPI } from "@/client"
 
+export class ApiRequestError extends Error {
+  status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = "ApiRequestError"
+    this.status = status
+  }
+}
+
+function handleAuthFailure(status: number, detail: string) {
+  const isMissingUser = status === 404 && detail === "User not found"
+  if (status !== 401 && !isMissingUser) {
+    return
+  }
+
+  localStorage.removeItem("access_token")
+  if (window.location.pathname !== "/login") {
+    window.location.href = "/login"
+  }
+}
+
 export async function apiRequest<T>(
   path: string,
   init?: RequestInit,
@@ -29,7 +51,8 @@ export async function apiRequest<T>(
     } catch {
       detail = response.statusText || detail
     }
-    throw new Error(detail)
+    handleAuthFailure(response.status, detail)
+    throw new ApiRequestError(detail, response.status)
   }
 
   return response.json() as Promise<T>

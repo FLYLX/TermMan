@@ -4,6 +4,7 @@ import {
   Bot,
   Cable,
   CirclePlus,
+  Copy,
   Loader2,
   Search,
   Stethoscope,
@@ -28,6 +29,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import useCustomToast from "@/hooks/useCustomToast"
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 
 import {
   type BridgeHealthResponse,
@@ -43,6 +45,7 @@ import {
   listRobotPlatforms,
   listRobots,
   type RobotBindingRecord,
+  type RobotDiagnoseResult,
   type RobotPlatformRecord,
   type RobotRecord,
 } from "./api"
@@ -85,6 +88,78 @@ function getRobotCredentials(robot: RobotRecord): Record<string, string> {
   }
 
   return {}
+}
+
+function getPublicReverseWsEndpoint(endpoint?: string | null) {
+  const fallbackPath = "/onebot/v11/ws"
+  if (typeof window === "undefined") {
+    return endpoint || `ws://<termman-host>:7000${fallbackPath}`
+  }
+
+  const currentHost = window.location.hostname
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
+  const fallback = `${protocol}//${currentHost}:7000${fallbackPath}`
+  if (!endpoint) {
+    return fallback
+  }
+
+  try {
+    const parsed = new URL(endpoint.replace(/^http:/, "ws:").replace(/^https:/, "wss:"))
+    if (
+      ["robot-bridge", "backend", "localhost", "127.0.0.1", "0.0.0.0"].includes(
+        parsed.hostname,
+      )
+    ) {
+      parsed.protocol = protocol
+      parsed.hostname = currentHost
+      parsed.port = parsed.port || "7000"
+    }
+    return parsed.toString()
+  } catch {
+    return endpoint
+  }
+}
+
+function getNapCatSocketEndpoint(
+  socket: RobotDiagnoseResult["chain"]["napcat_socket"],
+) {
+  return socket.reverse_ws_url || socket.server_url || socket.ws_url || null
+}
+
+function getConfiguredSelfId(
+  identity: string | null | undefined,
+  socketSelfId: string | null | undefined,
+) {
+  if (socketSelfId?.trim()) {
+    return socketSelfId.trim()
+  }
+  if (!identity?.trim()) {
+    return null
+  }
+  const [, selfId] = identity.split(":", 2)
+  return selfId || identity
+}
+
+function getNapCatBridgeStatus(
+  diagnoseResult: RobotDiagnoseResult,
+  locale: "zh" | "en",
+) {
+  const qqToBridge = diagnoseResult.chain.qq_to_bridge
+  const socket = diagnoseResult.chain.napcat_socket
+
+  if (qqToBridge.connected) {
+    return locale === "zh"
+      ? "已接入：NapCat 登录 QQ 已匹配这个机器人"
+      : "Connected: NapCat self_id matches this robot"
+  }
+  if (socket.connected) {
+    return locale === "zh"
+      ? "WS 已连接，但 self_id 没匹配这个机器人"
+      : "WebSocket connected, but self_id does not match this robot"
+  }
+  return locale === "zh"
+    ? "未接入：没有检测到这个 QQ(self_id) 的 NapCat 连接"
+    : "Not connected: no NapCat connection detected for this QQ self_id"
 }
 
 function RobotStatusBadge({ enabled }: { enabled: boolean }) {
@@ -261,6 +336,10 @@ function CreateRobotDialog({
             </div>
 
             <div className="grid gap-3">
+              <div className="flex gap-2 rounded-xl border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                <Cable className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                <span>{t("robots.serverModeHint")}</span>
+              </div>
               <div className="text-sm font-medium">
                 {t("robots.credentials")}
               </div>
@@ -323,6 +402,7 @@ function RobotCard({
   onDelete,
   deletingRobotId,
   connectionStatus,
+  reverseWsUrl,
 }: {
   robot: RobotRecord
   bindingCount: number
@@ -330,14 +410,61 @@ function RobotCard({
   onDelete: (robot: RobotRecord) => void
   deletingRobotId: string | null
   connectionStatus?: { identity: string; connected: boolean }
+  reverseWsUrl: string
 }) {
   const { locale, t } = useI18n()
+  const [copiedText, copy] = useCopyToClipboard()
   const [showDiagnose, setShowDiagnose] = useState(false)
   const platform = platformMap.get(normalizePlatformId(robot.platform)) ?? null
+  const credentials = getRobotCredentials(robot)
+  const accessToken = credentials.access_token ?? ""
   const manageLabel = locale === "zh" ? "管理绑定" : "Manage"
   const connectedLabel = locale === "zh" ? "已连接" : "Connected"
   const disconnectedLabel = locale === "zh" ? "未连接" : "Disconnected"
   const diagnoseLabel = locale === "zh" ? "诊断" : "Diagnose"
+  const wsServerLabel = locale === "zh" ? "WS 服务端地址" : "WS Server URL"
+  const accessTokenLabel = "Access Token"
+  const emptyTokenLabel =
+    locale === "zh" ? "未配置，NapCat Token 留空" : "Not set; leave NapCat token empty"
+  const copiedLabel = locale === "zh" ? "已复制" : "Copied"
+
+  const renderNapCatConfig = (
+    label: string,
+    value: string,
+    emptyValue: string,
+  ) => {
+    const hasValue = value.trim().length > 0
+    const displayValue = hasValue ? value : emptyValue
+    const isCopied = copiedText === value
+    return (
+      <div className="min-w-0 rounded-xl border bg-muted/20 px-3 py-2">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+          <span>{label}</span>
+          {hasValue ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-1.5 text-[11px]"
+              onClick={() => void copy(value)}
+              title={t("common.copyLabel", { label })}
+            >
+              <Copy className="size-3" />
+              <span className="ml-1">{isCopied ? copiedLabel : ""}</span>
+            </Button>
+          ) : null}
+        </div>
+        <div
+          className={`truncate font-mono text-[12px] ${
+            hasValue ? "text-foreground" : "text-muted-foreground"
+          }`}
+          title={displayValue}
+        >
+          {displayValue}
+        </div>
+      </div>
+    )
+  }
 
   const {
     data: diagnoseResult,
@@ -447,6 +574,12 @@ function RobotCard({
       </div>
 
       <div className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          {renderNapCatConfig(wsServerLabel, reverseWsUrl, "-")}
+        </div>
+        <div className="sm:col-span-2">
+          {renderNapCatConfig(accessTokenLabel, accessToken, emptyTokenLabel)}
+        </div>
         <div className="rounded-xl border bg-muted/20 px-3 py-2">
           <div className="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]">
             <Cable className="size-3.5" />
@@ -494,79 +627,86 @@ function RobotCard({
                 {diagnoseResult.chain.robot_config.app_id || "-"}
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <span
-                className={
-                  diagnoseResult.chain.qq_to_bridge.connected
-                    ? "text-emerald-600"
-                    : "text-red-500"
-                }
-              >
-                {diagnoseResult.chain.qq_to_bridge.connected ? "✓" : "✗"}
-              </span>
-              <span>{locale === "zh" ? "QQ → Bridge" : "QQ → Bridge"}</span>
-              {diagnoseResult.chain.qq_to_bridge.error ? (
-                <span className="text-red-500 text-[10px]">
-                  {diagnoseResult.chain.qq_to_bridge.error}
-                </span>
-              ) : (
-                <div className="flex min-w-0 flex-col">
-                  <span className="text-muted-foreground">
-                    {diagnoseResult.chain.qq_to_bridge.identity || "-"}
-                  </span>
-                  {diagnoseResult.chain.qq_to_bridge.stale_error ? (
-                    <span className="truncate text-[10px] text-muted-foreground">
-                      {locale === "zh" ? "历史错误: " : "Previous error: "}
-                      {diagnoseResult.chain.qq_to_bridge.stale_error}
-                    </span>
-                  ) : null}
-                </div>
-              )}
-            </div>
             {diagnoseResult.chain.napcat_socket.status !== "not_applicable" ? (
-              <div className="flex items-center gap-2">
-                <span
-                  className={
-                    diagnoseResult.chain.napcat_socket.connected
-                      ? "text-emerald-600"
-                      : "text-red-500"
-                  }
-                >
-                  {diagnoseResult.chain.napcat_socket.connected ? "✓" : "✗"}
-                </span>
-                <span>
-                  {locale === "zh" ? "NapCat 反向 WS" : "NapCat Reverse WS"}
-                </span>
-                {diagnoseResult.chain.napcat_socket.error ? (
-                  <span className="text-red-500 text-[10px]">
-                    {diagnoseResult.chain.napcat_socket.error}
-                  </span>
-                ) : (
-                  <div className="flex min-w-0 flex-col">
-                    <span className="truncate text-muted-foreground">
-                      {diagnoseResult.chain.napcat_socket.last_event ||
-                        diagnoseResult.chain.napcat_socket.reverse_ws_url ||
-                        diagnoseResult.chain.napcat_socket.server_url ||
-                        diagnoseResult.chain.napcat_socket.ws_url ||
-                        "-"}
-                    </span>
-                    <span className="truncate text-[10px] text-muted-foreground">
-                      {[
-                        diagnoseResult.chain.napcat_socket.reverse_ws_url ||
-                          diagnoseResult.chain.napcat_socket.server_url ||
-                          diagnoseResult.chain.napcat_socket.ws_url,
-                        diagnoseResult.chain.napcat_socket.last_event_at
-                          ? new Date(
-                              diagnoseResult.chain.napcat_socket.last_event_at,
-                            ).toLocaleString()
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" | ") || "-"}
-                    </span>
+              (() => {
+                const socket = diagnoseResult.chain.napcat_socket
+                const endpoint = getPublicReverseWsEndpoint(
+                  getNapCatSocketEndpoint(socket),
+                )
+                const selfId = getConfiguredSelfId(
+                  diagnoseResult.chain.qq_to_bridge.identity,
+                  socket.self_id,
+                )
+                const connected = diagnoseResult.chain.qq_to_bridge.connected
+                const statusText = getNapCatBridgeStatus(diagnoseResult, locale)
+                const error =
+                  diagnoseResult.chain.qq_to_bridge.error || socket.error
+
+                return (
+                  <div className="rounded-lg border bg-background px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={
+                          connected ? "text-emerald-600" : "text-red-500"
+                        }
+                      >
+                        {connected ? "✓" : "✗"}
+                      </span>
+                      <span className="font-medium text-foreground">
+                        {locale === "zh"
+                          ? "NapCat 接入 TermMan"
+                          : "NapCat to TermMan"}
+                      </span>
+                    </div>
+                    <div className="mt-2 grid gap-1 pl-5 text-[11px] text-muted-foreground">
+                      <div className="grid gap-1 sm:grid-cols-[120px_minmax(0,1fr)]">
+                        <span>
+                          {locale === "zh"
+                            ? "机器人 QQ(self_id)"
+                            : "Bot QQ (self_id)"}
+                        </span>
+                        <span className="font-mono text-foreground">
+                          {selfId || "-"}
+                        </span>
+                      </div>
+                      <div className="grid gap-1 sm:grid-cols-[120px_minmax(0,1fr)]">
+                        <span>
+                          {locale === "zh"
+                            ? "NapCat 应填地址"
+                            : "NapCat server URL"}
+                        </span>
+                        <span className="truncate font-mono text-foreground">
+                          {endpoint}
+                        </span>
+                      </div>
+                      <div className="grid gap-1 sm:grid-cols-[120px_minmax(0,1fr)]">
+                        <span>{locale === "zh" ? "当前状态" : "Status"}</span>
+                        <span className={connected ? "text-emerald-600" : ""}>
+                          {statusText}
+                        </span>
+                      </div>
+                      {error ? (
+                        <div className="grid gap-1 sm:grid-cols-[120px_minmax(0,1fr)]">
+                          <span>{locale === "zh" ? "错误" : "Error"}</span>
+                          <span className="break-words text-red-500">
+                            {error}
+                          </span>
+                        </div>
+                      ) : null}
+                      {diagnoseResult.chain.qq_to_bridge.stale_error ? (
+                        <div className="grid gap-1 sm:grid-cols-[120px_minmax(0,1fr)]">
+                          <span>
+                            {locale === "zh" ? "历史错误" : "Previous error"}
+                          </span>
+                          <span className="break-words">
+                            {diagnoseResult.chain.qq_to_bridge.stale_error}
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-                )}
-              </div>
+                )
+              })()
             ) : null}
             {diagnoseResult.chain.items.map((item) => (
               <div key={item.item_id} className="flex items-center gap-2">
@@ -713,6 +853,9 @@ export function RobotManager() {
     (sum, count) => sum + count,
     0,
   )
+  const publicReverseWsUrl = getPublicReverseWsEndpoint(
+    bridgeHealth?.onebot_reverse_ws_url,
+  )
 
   const handleDelete = async (robot: RobotRecord) => {
     if (!window.confirm(t("robots.deleteConfirm", { name: robot.name }))) {
@@ -817,6 +960,7 @@ export function RobotManager() {
                   onDelete={handleDelete}
                   deletingRobotId={deletingRobotId}
                   connectionStatus={connectionStatusMap.get(robot.id)}
+                  reverseWsUrl={publicReverseWsUrl}
                 />
               ))}
             </div>

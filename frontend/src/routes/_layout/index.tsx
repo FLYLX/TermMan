@@ -8,8 +8,6 @@ import {
   ChevronRight,
   Cpu,
   Gauge,
-  HardDrive,
-  Network,
   Plug,
   RefreshCw,
   Server,
@@ -20,7 +18,7 @@ import {
   Wifi,
   type LucideIcon,
 } from "lucide-react"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { ItemHandlerAssociationsService, ItemsService } from "@/client/sdk.gen"
 import {
@@ -29,7 +27,6 @@ import {
   getBridgeHealthQueryKey,
   getRobotsQueryKey,
   listRobots,
-  type RobotRecord,
 } from "@/components/Robots/api"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -56,7 +53,7 @@ export const Route = createFileRoute("/_layout/")({
   head: () => ({
     meta: [
       {
-        title: "数据看板 - TermMan",
+        title: "TermMan",
       },
     ],
   }),
@@ -127,57 +124,12 @@ type ExtendedBridgeHealth = BridgeHealthResponse & {
 
 type KeyValue = {
   label: string
-  value: string
+  value: ReactNode
   hint?: string
+  icon?: LucideIcon
 }
 
 const UNKNOWN = "未上报"
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function firstText(...values: Array<string | number | null | undefined>) {
-  for (const value of values) {
-    if (value === null || value === undefined) {
-      continue
-    }
-    const text = String(value).trim()
-    if (text) {
-      return text
-    }
-  }
-  return null
-}
-
-function displayRecordValue(value: unknown) {
-  if (value === null || value === undefined || value === "") {
-    return null
-  }
-  if (typeof value === "string" || typeof value === "number") {
-    return String(value)
-  }
-  if (typeof value === "boolean") {
-    return value ? "是" : "否"
-  }
-  return null
-}
-
-function readRecordValue(
-  record: Record<string, unknown> | null | undefined,
-  keys: string[],
-) {
-  if (!record) {
-    return null
-  }
-  for (const key of keys) {
-    const value = displayRecordValue(record[key])
-    if (value) {
-      return value
-    }
-  }
-  return null
-}
 
 function formatBytes(value: number | null | undefined) {
   if (value === null || value === undefined) {
@@ -208,6 +160,136 @@ function formatPercent(
   return `${value.toFixed(value >= 10 ? 0 : 1)}%`
 }
 
+function boundedPercent(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return null
+  }
+  return Math.max(0, Math.min(100, value))
+}
+
+function normalizeCpuPercent(
+  value: number | null | undefined,
+  cpuCount: number | null | undefined,
+) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return null
+  }
+  const divisor = cpuCount && cpuCount > 0 ? cpuCount : 1
+  return value / divisor
+}
+
+function formatCpuCores(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return UNKNOWN
+  }
+  const cores = value / 100
+  return `${cores.toFixed(cores >= 10 ? 1 : 2)} 核`
+}
+
+function percentToneClass(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "text-muted-foreground"
+  }
+  if (value >= 85) {
+    return "text-red-500"
+  }
+  if (value >= 70) {
+    return "text-amber-500"
+  }
+  return "text-emerald-500"
+}
+
+function PercentGauge({
+  value,
+  label = "使用率",
+  size = "md",
+}: {
+  value: number | null | undefined
+  label?: string
+  size?: "sm" | "md"
+}) {
+  const bounded = boundedPercent(value)
+  const gaugeValue = bounded ?? 0
+  const isSmall = size === "sm"
+  const displayValue = bounded === null ? "--" : formatPercent(bounded, "--")
+
+  return (
+    <div
+      className={`relative shrink-0 ${isSmall ? "size-11" : "size-16"}`}
+      aria-label={`${label}: ${displayValue}`}
+      title={`${label}: ${displayValue}`}
+    >
+      <svg className="size-full -rotate-90" viewBox="0 0 44 44">
+        <circle
+          cx="22"
+          cy="22"
+          r="18"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="4"
+          className="text-muted-foreground/20"
+        />
+        <circle
+          cx="22"
+          cy="22"
+          r="18"
+          fill="none"
+          pathLength="100"
+          stroke="currentColor"
+          strokeDasharray={`${gaugeValue} 100`}
+          strokeLinecap="round"
+          strokeWidth="4"
+          className={percentToneClass(value)}
+        />
+      </svg>
+      <span
+        className={`absolute inset-0 flex items-center justify-center font-semibold tabular-nums ${
+          isSmall ? "text-[10px]" : "text-xs"
+        }`}
+      >
+        {displayValue}
+      </span>
+    </div>
+  )
+}
+
+type UsageGaugeMetric = {
+  label: string
+  value: number | null | undefined
+  detail?: ReactNode
+}
+
+function UsageGaugePanel({ metrics }: { metrics: UsageGaugeMetric[] }) {
+  return (
+    <Card className="gap-4 py-5">
+      <CardHeader className="flex flex-row items-center gap-2 px-5">
+        <Gauge className="size-4 text-primary" />
+        <CardTitle>使用率</CardTitle>
+      </CardHeader>
+      <CardContent className="px-5">
+        <div className="grid gap-3 sm:grid-cols-3">
+          {metrics.map((metric) => (
+            <div
+              key={metric.label}
+              className="flex min-w-0 items-center gap-3 rounded-md border bg-background px-4 py-3"
+            >
+              <PercentGauge value={metric.value} label={metric.label} />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{metric.label}</p>
+                {metric.detail ? (
+                  <p className="mt-1 break-words text-xs text-muted-foreground">
+                    {metric.detail}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 function formatFrequency(value: number | null | undefined) {
   if (value === null || value === undefined) {
     return UNKNOWN
@@ -231,37 +313,6 @@ function formatSeconds(value: number | null | undefined) {
   const hours = Math.floor(value / 3600)
   const minutes = Math.floor((value % 3600) / 60)
   return `${hours} 小时 ${minutes} 分`
-}
-
-function formatTimestamp(value: number | null | undefined) {
-  if (value === null || value === undefined) {
-    return UNKNOWN
-  }
-  return new Date(value * 1000).toLocaleString()
-}
-
-function formatDateTime(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === "") {
-    return UNKNOWN
-  }
-  const date =
-    typeof value === "number"
-      ? new Date(value > 1_000_000_000_000 ? value : value * 1000)
-      : new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return String(value)
-  }
-  return date.toLocaleString()
-}
-
-function formatCollectionScope(value: string | null | undefined) {
-  if (value === "parent_process_group") {
-    return "后端主进程 + Worker 聚合"
-  }
-  if (value === "current_process") {
-    return "当前后端进程"
-  }
-  return value || UNKNOWN
 }
 
 function statusLabel(status: string | null | undefined) {
@@ -355,54 +406,7 @@ function StatusPill({
   )
 }
 
-function MetricTile({
-  title,
-  value,
-  hint,
-  icon: Icon,
-}: {
-  title: string
-  value: string
-  hint?: string
-  icon: LucideIcon
-}) {
-  return (
-    <Card className="gap-3 py-4">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {title}
-        </CardTitle>
-        <Icon className="size-4 text-primary" />
-      </CardHeader>
-      <CardContent className="px-4">
-        <div className="text-2xl font-semibold tracking-tight">{value}</div>
-        {hint ? (
-          <p className="mt-1 truncate text-xs text-muted-foreground">{hint}</p>
-        ) : null}
-      </CardContent>
-    </Card>
-  )
-}
-
-function KeyValueGrid({ rows }: { rows: KeyValue[] }) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {rows.map((row) => (
-        <div key={row.label} className="min-w-0 border-t pt-3">
-          <p className="text-xs text-muted-foreground">{row.label}</p>
-          <p className="mt-1 break-words text-sm font-medium">{row.value}</p>
-          {row.hint ? (
-            <p className="mt-1 break-words text-xs text-muted-foreground">
-              {row.hint}
-            </p>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function ResourcePanel({
+function CompactSummaryTable({
   title,
   icon: Icon,
   rows,
@@ -412,24 +416,39 @@ function ResourcePanel({
   rows: KeyValue[]
 }) {
   return (
-    <Card className="gap-4 py-5">
+    <Card className="gap-3 py-4">
       <CardHeader className="flex flex-row items-center gap-2 px-5">
         <Icon className="size-4 text-primary" />
-        <CardTitle>{title}</CardTitle>
+        <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
       <CardContent className="px-5">
-        <div className="space-y-3">
-          {rows.map((row) => (
-            <div
-              key={row.label}
-              className="grid grid-cols-[minmax(86px,0.45fr)_1fr] gap-3 text-sm"
-            >
-              <span className="text-muted-foreground">{row.label}</span>
-              <span className="min-w-0 break-words font-medium">
-                {row.value}
-              </span>
-            </div>
-          ))}
+        <div className="grid gap-2 sm:grid-cols-2">
+          {rows.map((row) => {
+            const RowIcon = row.icon
+            return (
+              <div
+                key={row.label}
+                className="flex min-w-0 items-start gap-3 rounded-md border bg-background px-3 py-2.5"
+              >
+                {RowIcon ? (
+                  <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                    <RowIcon className="size-4" />
+                  </span>
+                ) : null}
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">{row.label}</p>
+                  <div className="mt-1 min-w-0 break-words text-sm font-medium leading-snug">
+                    {row.value}
+                  </div>
+                  {row.hint ? (
+                    <p className="mt-1 break-words text-xs text-muted-foreground">
+                      {row.hint}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            )
+          })}
         </div>
       </CardContent>
     </Card>
@@ -446,11 +465,60 @@ function serviceIcon(kind: string) {
   return Server
 }
 
-function ServiceRuntimePanel({
-  services,
-}: {
-  services: RuntimeServiceStats[]
-}) {
+function ServiceRuntimePanel({ services }: { services: RuntimeServiceStats[] }) {
+  const hostLabel = (service: RuntimeServiceStats) =>
+    service.runtime?.hostname || service.url || "未知节点"
+  const serviceIpAddresses = (service: RuntimeServiceStats) =>
+    service.runtime?.ip_addresses?.filter(Boolean) ?? []
+  const serviceLocation = (service: RuntimeServiceStats) => {
+    const ipAddresses = serviceIpAddresses(service)
+    const parts = []
+    if (ipAddresses.length > 0) {
+      parts.push(`IP: ${ipAddresses.join(", ")}`)
+    }
+    parts.push(`主机: ${hostLabel(service)}`)
+    return parts.join(" · ")
+  }
+
+  const serviceLine = (service: RuntimeServiceStats) => {
+    const Icon = serviceIcon(service.kind)
+    const aggregate = service.runtime?.aggregate
+    return (
+      <div
+        key={`${service.kind}:${service.service}:${service.url ?? ""}`}
+        className="relative flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2"
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <Icon className="size-4 shrink-0 text-primary" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{service.label}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span>{formatBytes(aggregate?.rss_bytes)}</span>
+              <span>{aggregate?.process_count ?? 0} 进程</span>
+              <span className="min-w-0 break-words">
+                {serviceLocation(service)}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-sm font-medium tabular-nums">
+            {formatPercent(
+              normalizeCpuPercent(aggregate?.cpu_percent, service.runtime?.cpu_count),
+            )}
+          </span>
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs ${statusBadgeClass(
+              service.status === "ok" ? "connected" : "error",
+            )}`}
+          >
+            {service.status === "ok" ? "正常" : "异常"}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <Card className="gap-4 py-5">
       <CardHeader className="flex flex-row items-center justify-between gap-3 px-5">
@@ -469,72 +537,7 @@ function ServiceRuntimePanel({
             </AlertDescription>
           </Alert>
         ) : (
-          <div className="grid gap-3 xl:grid-cols-3">
-            {services.map((service) => {
-              const Icon = serviceIcon(service.kind)
-              const runtime = service.runtime
-              const aggregate = runtime?.aggregate
-              return (
-                <div
-                  key={`${service.kind}:${service.service}:${service.url ?? ""}`}
-                  className="rounded-md border bg-background px-4 py-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <div className="flex size-8 shrink-0 items-center justify-center rounded-md border bg-muted/30">
-                        <Icon className="size-4 text-primary" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">
-                          {service.label}
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {service.url || runtime?.hostname || service.kind}
-                        </p>
-                      </div>
-                    </div>
-                    <StatusPill
-                      connected={service.status === "ok"}
-                      label={service.status === "ok" ? "正常" : "异常"}
-                    />
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <p className="text-xs text-muted-foreground">内存</p>
-                      <p className="mt-1 font-semibold">
-                        {formatBytes(aggregate?.rss_bytes)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">CPU</p>
-                      <p className="mt-1 font-semibold">
-                        {formatPercent(aggregate?.cpu_percent)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">进程</p>
-                      <p className="mt-1 font-medium">
-                        {aggregate?.process_count ?? UNKNOWN}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">PID</p>
-                      <p className="mt-1 font-medium">
-                        {runtime?.current_pid ?? UNKNOWN}
-                      </p>
-                    </div>
-                  </div>
-
-                  {service.error ? (
-                    <p className="mt-3 break-words text-xs text-red-600 dark:text-red-300">
-                      {service.error}
-                    </p>
-                  ) : null}
-                </div>
-              )
-            })}
-          </div>
+          <div className="space-y-2">{services.map(serviceLine)}</div>
         )}
       </CardContent>
     </Card>
@@ -690,10 +693,6 @@ function Dashboard() {
   const bridgeHealth = bridgeHealthQuery.data as ExtendedBridgeHealth | undefined
   const robots = robotsQuery.data?.data ?? []
   const daemons = useMemo(() => groupItemsByDaemon(items), [items])
-  const robotMap = useMemo(
-    () => new Map(robots.map((robot: RobotRecord) => [robot.id, robot])),
-    [robots],
-  )
 
   const itemStats = useMemo(() => {
     const byStatus = new Map<string, number>()
@@ -717,168 +716,85 @@ function Dashboard() {
     [bridgeHealth],
   )
 
-  const primaryRobotEntry =
-    bridgeRobotEntries.find(([robotId]) => robotId === robots[0]?.id) ??
-    bridgeRobotEntries[0]
-  const primaryRobotStatus = primaryRobotEntry?.[1]
-  const primaryRobotRecord = primaryRobotEntry
-    ? robotMap.get(primaryRobotEntry[0])
-    : robots[0]
-  const primaryBot = primaryRobotStatus?.bot ?? bridgeHealth?.bots?.[0] ?? null
-  const primaryBotInfo = isRecord(primaryBot?.bot_info)
-    ? primaryBot.bot_info
-    : {}
-  const primarySocket = isRecord(primaryRobotStatus?.onebot_socket)
-    ? primaryRobotStatus.onebot_socket
-    : {}
-
-  const robotName =
-    firstText(
-      primaryRobotRecord?.name,
-      readRecordValue(primaryBotInfo, ["username", "name", "nickname"]),
-    ) ?? "未配置机器人"
-  const robotIdentity =
-    firstText(
-      primaryRobotStatus?.identity,
-      primaryRobotRecord?.app_id,
-      primaryBot?.self_id,
-      readRecordValue(primaryBotInfo, ["id", "user_id", "self_id"]),
-      bridgeHealth?.connected_identities?.[0],
-    ) ?? UNKNOWN
-  const napcatVersion =
-    firstText(
-      readRecordValue(primarySocket, [
-        "napcat_version",
-        "napcatVersion",
-        "napcat",
-        "version",
-      ]),
-      readRecordValue(primaryBotInfo, [
-        "napcat_version",
-        "napcatVersion",
-        "version",
-      ]),
-    ) ?? UNKNOWN
-  const qqVersion =
-    firstText(
-      readRecordValue(primarySocket, [
-        "qq_version",
-        "qqVersion",
-        "client_version",
-        "clientVersion",
-        "app_version",
-        "appVersion",
-      ]),
-      readRecordValue(primaryBotInfo, [
-        "qq_version",
-        "qqVersion",
-        "client_version",
-        "clientVersion",
-      ]),
-    ) ?? UNKNOWN
-  const reverseWsUrl =
-    firstText(
-      bridgeHealth?.onebot_reverse_ws_url,
-      primaryRobotStatus?.reverse_ws_url,
-      primaryRobotStatus?.ws_url,
-      readRecordValue(primarySocket, ["reverse_ws_url", "ws_url", "server_url"]),
-    ) ?? UNKNOWN
-
-  const connectedRobotCount =
-    bridgeHealth?.connected_bot_count ??
-    bridgeRobotEntries.filter(([, status]) => status.connected).length
   const loadedRobotCount = bridgeHealth?.loaded_robot_count ?? robots.length
+  const connectedRobotCount = Math.min(
+    loadedRobotCount || Number.POSITIVE_INFINITY,
+    Math.max(
+      bridgeHealth?.connected_bot_count ?? 0,
+      bridgeRobotEntries.filter(([, status]) => status.connected).length,
+    ),
+  )
+  const onebotClientCount = bridgeHealth?.onebot_client_count ?? 0
   const onlineDaemonCount = daemons.filter((daemon) => daemon.online).length
-  const runtimeCpuHint = runtime
-    ? `${runtime.aggregate.process_count} 进程 · PID ${runtime.current_pid}`
-    : isAdmin
-      ? "正在读取后端运行时"
-      : "仅管理员可见"
 
-  const systemRows: KeyValue[] = [
-    { label: "服务", value: runtime?.service ?? "backend" },
-    { label: "主机", value: runtime?.hostname ?? UNKNOWN },
-    { label: "系统版本", value: runtime?.platform ?? UNKNOWN },
-    { label: "Python 版本", value: runtime?.python_version ?? UNKNOWN },
-    { label: "采样时间", value: formatTimestamp(runtime?.sampled_at) },
+  const robotConnectionValue =
+    loadedRobotCount <= 0
+      ? "未配置机器人"
+      : connectedRobotCount > 0
+        ? `${connectedRobotCount}/${loadedRobotCount} 已接入`
+        : "未接入"
+  const robotConnectionHint =
+    loadedRobotCount <= 0
+      ? `${onebotClientCount} 个 NapCat WebSocket 客户端`
+      : `机器人 ${connectedRobotCount}/${loadedRobotCount} · NapCat ${onebotClientCount} 客户端`
+
+  const systemSummaryRows: KeyValue[] = [
     {
-      label: "后端运行时长",
+      label: "CPU 型号",
+      value: runtime?.cpu_model ?? UNKNOWN,
+      icon: Cpu,
+    },
+    {
+      label: "核心 / 主频",
+      value: `${runtime?.cpu_count ?? UNKNOWN} 核 · ${formatFrequency(runtime?.cpu_frequency_mhz)}`,
+      icon: Gauge,
+    },
+    {
+      label: "后端运行",
       value: formatSeconds(runtime?.current_process.uptime_seconds),
-    },
-    {
-      label: "采集范围",
-      value: formatCollectionScope(runtime?.collection_scope),
+      icon: Server,
     },
   ]
-
-  const robotRows: KeyValue[] = [
-    { label: "NapCat 版本", value: napcatVersion },
-    { label: "QQ 版本", value: qqVersion },
-    { label: "WebUI 版本", value: UNKNOWN },
+  const operationSummaryRows: KeyValue[] = [
     {
-      label: "协议",
-      value:
-        firstText(
-          primaryRobotRecord?.protocol,
-          primaryRobotRecord?.platform,
-          primaryRobotStatus?.platform,
-        ) ?? UNKNOWN,
-    },
-    { label: "反向 WS", value: reverseWsUrl },
-    {
-      label: "Bridge 检查时间",
-      value: formatDateTime(bridgeHealth?.checked_at),
-    },
-  ]
-
-  const cpuRows: KeyValue[] = [
-    { label: "型号", value: runtime?.cpu_model ?? UNKNOWN },
-    { label: "内核数", value: String(runtime?.cpu_count ?? UNKNOWN) },
-    { label: "主频", value: formatFrequency(runtime?.cpu_frequency_mhz) },
-    {
-      label: "使用率",
-      value: formatPercent(runtime?.aggregate.cpu_percent),
+      label: "连接状态",
+      value: robotConnectionValue,
+      hint: robotConnectionHint,
+      icon: Bot,
     },
     {
-      label: "后端主进程",
-      value: formatPercent(runtime?.current_process.cpu_percent),
+      label: "终端",
+      value: `${itemStats.running}/${itemStats.total} 运行中`,
+      icon: Terminal,
     },
     {
-      label: "线程数",
-      value: String(runtime?.aggregate.thread_count ?? UNKNOWN),
+      label: "Daemon",
+      value: `${onlineDaemonCount}/${daemons.length} 在线`,
+      icon: Plug,
+    },
+    {
+      label: "浏览器",
+      value: `${itemStats.browserConnections} 连接`,
+      icon: Wifi,
     },
   ]
-
-  const memoryRows: KeyValue[] = [
-    { label: "总量", value: formatBytes(runtime?.memory_total_bytes) },
-    { label: "使用量", value: formatBytes(runtime?.memory_used_bytes) },
-    { label: "可用量", value: formatBytes(runtime?.memory_available_bytes) },
+  const usageGaugeMetrics: UsageGaugeMetric[] = [
     {
-      label: "使用率",
-      value: formatPercent(runtime?.memory_percent, UNKNOWN),
-    },
-    { label: "后端进程", value: formatBytes(runtime?.aggregate.rss_bytes) },
-    {
-      label: "当前进程",
-      value: formatBytes(runtime?.current_process.rss_bytes),
-    },
-  ]
-
-  const networkRows: KeyValue[] = [
-    { label: "HTTP服务器", value: runtime ? "1" : "0" },
-    {
-      label: "HTTP客户端",
-      value: bridgeHealth?.backend?.reachable ? "1" : "0",
-    },
-    { label: "WS服务器", value: reverseWsUrl === UNKNOWN ? "0" : "1" },
-    { label: "WS客户端", value: String(connectedRobotCount) },
-    {
-      label: "已加载机器人",
-      value: String(loadedRobotCount),
+      label: "后端 CPU",
+      value: normalizeCpuPercent(runtime?.aggregate.cpu_percent, runtime?.cpu_count),
+      detail: `${formatCpuCores(runtime?.aggregate.cpu_percent)} · ${runtime?.cpu_count ?? UNKNOWN} 核`,
     },
     {
-      label: "已连接身份",
-      value: String(bridgeHealth?.connected_identities?.length ?? 0),
+      label: "系统内存",
+      value: runtime?.memory_percent,
+      detail: `${formatBytes(runtime?.memory_used_bytes)} / ${formatBytes(runtime?.memory_total_bytes)}`,
+    },
+    {
+      label: "TermMan CPU",
+      value: normalizeCpuPercent(termManRuntime?.totals.cpu_percent, runtime?.cpu_count),
+      detail: `${formatCpuCores(termManRuntime?.totals.cpu_percent)} · ${
+        termManRuntime?.totals.process_count ?? 0
+      } 进程`,
     },
   ]
 
@@ -904,12 +820,6 @@ function Dashboard() {
               label={bridgeHealthQuery.isError ? "Bridge 异常" : "Bridge 可读"}
             />
           </div>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-            数据看板
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            汇总后端运行时、机器人桥接、终端和 Daemon 的当前状态。
-          </p>
         </div>
         <Button
           variant="outline"
@@ -964,201 +874,24 @@ function Dashboard() {
         <ErrorNotice title="机器人列表不可读" message={robotsQuery.error.message} />
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricTile
-          title="后端进程"
-          value={String(runtime?.aggregate.process_count ?? 0)}
-          hint={runtimeCpuHint}
-          icon={Server}
-        />
-        <MetricTile
-          title="CPU 使用率"
-          value={formatPercent(runtime?.aggregate.cpu_percent)}
-          hint={`当前进程 ${formatPercent(runtime?.current_process.cpu_percent)}`}
-          icon={Cpu}
-        />
-        <MetricTile
-          title="系统内存"
-          value={formatBytes(runtime?.memory_used_bytes)}
-          hint={`总量 ${formatBytes(runtime?.memory_total_bytes)} · ${formatPercent(runtime?.memory_percent, UNKNOWN)}`}
-          icon={HardDrive}
-        />
-        <MetricTile
-          title="TermMan 内存"
-          value={formatBytes(termManRuntime?.totals.rss_bytes)}
-          hint={`CPU ${formatPercent(termManRuntime?.totals.cpu_percent)} · ${termManRuntime?.totals.process_count ?? 0} 进程`}
-          icon={Activity}
-        />
-        <MetricTile
-          title="机器人连接"
-          value={`${connectedRobotCount}/${loadedRobotCount}`}
-          hint={`${robots.length} 个配置 · ${bridgeHealth?.platforms?.join(", ") || "无平台"}`}
-          icon={Bot}
-        />
-      </section>
-
-      <ServiceRuntimePanel services={termManRuntime?.services ?? []} />
-
-      <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-        <Card className="gap-4 py-5">
-          <CardHeader className="flex flex-row items-center gap-3 px-5">
-            <div className="flex size-10 items-center justify-center rounded-md border bg-muted/30">
-              <Server className="size-5 text-primary" />
-            </div>
-            <div>
-              <CardTitle>系统信息</CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">
-                后端 API 和宿主环境
-              </p>
-            </div>
-          </CardHeader>
-          <CardContent className="px-5">
-            <KeyValueGrid rows={systemRows} />
-          </CardContent>
-        </Card>
-
-        <Card className="gap-4 py-5">
-          <CardHeader className="flex flex-row items-start justify-between gap-3 px-5">
-            <div className="min-w-0">
-              <div className="flex items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-md border bg-muted/30">
-                  <Bot className="size-5 text-primary" />
-                </div>
-                <div className="min-w-0">
-                  <CardTitle className="truncate">{robotName}</CardTitle>
-                  <p className="mt-1 truncate font-mono text-sm text-muted-foreground">
-                    {robotIdentity}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <StatusPill
-              connected={Boolean(primaryRobotStatus?.connected)}
-              label={primaryRobotStatus?.connected ? "已连接" : "未连接"}
-            />
-          </CardHeader>
-          <CardContent className="px-5">
-            <KeyValueGrid rows={robotRows} />
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-3">
-        <ResourcePanel title="CPU" icon={Gauge} rows={cpuRows} />
-        <ResourcePanel title="内存" icon={Activity} rows={memoryRows} />
-        <ResourcePanel title="网络配置" icon={Network} rows={networkRows} />
-      </section>
-
       <section className="grid gap-4 xl:grid-cols-2">
-        <Card className="gap-4 py-5">
-          <CardHeader className="flex flex-row items-center justify-between gap-3 px-5">
-            <div className="flex items-center gap-2">
-              <Wifi className="size-4 text-primary" />
-              <CardTitle>机器人桥接</CardTitle>
-            </div>
-            <Badge variant="outline">
-              {connectedRobotCount}/{loadedRobotCount}
-            </Badge>
-          </CardHeader>
-          <CardContent className="space-y-3 px-5">
-            {bridgeRobotEntries.length === 0 ? (
-              <Alert>
-                <AlertTitle>暂无桥接状态</AlertTitle>
-                <AlertDescription>
-                  当前没有从 robot bridge 读取到机器人连接信息。
-                </AlertDescription>
-              </Alert>
-            ) : (
-              bridgeRobotEntries.map(([robotId, status]) => {
-                const robot = robotMap.get(robotId)
-                const socket = isRecord(status.onebot_socket)
-                  ? status.onebot_socket
-                  : {}
-                return (
-                  <div
-                    key={robotId}
-                    className="rounded-md border bg-background px-4 py-3"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">
-                          {robot?.name || robotId}
-                        </p>
-                        <p className="truncate font-mono text-xs text-muted-foreground">
-                          {status.identity || UNKNOWN}
-                        </p>
-                      </div>
-                      <StatusPill
-                        connected={status.connected}
-                        label={status.connected ? "已连接" : "未连接"}
-                      />
-                    </div>
-                    <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
-                      <span>
-                        Socket:{" "}
-                        {readRecordValue(socket, ["event", "mode"]) ?? UNKNOWN}
-                      </span>
-                      <span>
-                        最近事件: {formatDateTime(status.last_platform_event_at)}
-                      </span>
-                      <span>
-                        最近消息: {formatDateTime(status.last_message_event_at)}
-                      </span>
-                    </div>
-                    {status.error ? (
-                      <p className="mt-2 break-words text-xs text-red-600 dark:text-red-300">
-                        {status.error}
-                      </p>
-                    ) : null}
-                  </div>
-                )
-              })
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="gap-4 py-5">
-          <CardHeader className="flex flex-row items-center justify-between gap-3 px-5">
-            <div className="flex items-center gap-2">
-              <Terminal className="size-4 text-primary" />
-              <CardTitle>终端与 Daemon</CardTitle>
-            </div>
-            <Badge variant="outline">{items.length} 终端</Badge>
-          </CardHeader>
-          <CardContent className="grid gap-3 px-5 sm:grid-cols-2">
-            <div className="rounded-md border px-4 py-3">
-              <p className="text-xs text-muted-foreground">终端</p>
-              <p className="mt-1 text-xl font-semibold">
-                {itemStats.running}/{itemStats.total}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                运行中 / 总数
-              </p>
-            </div>
-            <div className="rounded-md border px-4 py-3">
-              <p className="text-xs text-muted-foreground">Daemon</p>
-              <p className="mt-1 text-xl font-semibold">
-                {onlineDaemonCount}/{daemons.length}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">在线 / 总数</p>
-            </div>
-            <div className="rounded-md border px-4 py-3">
-              <p className="text-xs text-muted-foreground">浏览器连接</p>
-              <p className="mt-1 text-xl font-semibold">
-                {itemStats.browserConnections}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">当前连接数</p>
-            </div>
-            <div className="rounded-md border px-4 py-3">
-              <p className="text-xs text-muted-foreground">用户订阅</p>
-              <p className="mt-1 text-xl font-semibold">
-                {itemStats.connectedUsers}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">后端会话数</p>
-            </div>
-          </CardContent>
-        </Card>
+        <CompactSummaryTable
+          title="系统摘要"
+          icon={Gauge}
+          rows={systemSummaryRows}
+        />
+        <CompactSummaryTable
+          title="运行摘要"
+          icon={Wifi}
+          rows={operationSummaryRows}
+        />
       </section>
+
+      <UsageGaugePanel metrics={usageGaugeMetrics} />
+
+      <ServiceRuntimePanel
+        services={termManRuntime?.services ?? []}
+      />
 
       <Card className="gap-4 py-5">
         <CardHeader className="flex flex-row items-center justify-between px-5">

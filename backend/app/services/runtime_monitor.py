@@ -58,6 +58,7 @@ class BackendRuntimeStatsResponse(BaseModel):
     service: str = "backend"
     sampled_at: int
     hostname: str
+    ip_addresses: list[str] = Field(default_factory=list)
     platform: str
     python_version: str
     cpu_count: int | None = None
@@ -325,6 +326,36 @@ def _collect_system_resource_info() -> dict[str, int | float | str | None]:
     }
 
 
+def _local_ip_addresses(hostname: str) -> list[str]:
+    addresses: list[str] = []
+
+    def add(address: str | None) -> None:
+        if not address or address.startswith("127.") or address in addresses:
+            return
+        addresses.append(address)
+
+    try:
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            add(info[4][0])
+    except OSError:
+        pass
+
+    try:
+        for address in socket.gethostbyname_ex(hostname)[2]:
+            add(address)
+    except OSError:
+        pass
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            add(sock.getsockname()[0])
+    except OSError:
+        pass
+
+    return addresses
+
+
 def _count_open_fds(pid: int) -> int | None:
     try:
         return len(list((Path("/proc") / str(pid) / "fd").iterdir()))
@@ -539,10 +570,12 @@ def collect_backend_runtime_stats(service: str = "backend") -> BackendRuntimeSta
         ),
     )
 
+    hostname = socket.gethostname()
     return BackendRuntimeStatsResponse(
         service=service,
         sampled_at=int(time.time()),
-        hostname=socket.gethostname(),
+        hostname=hostname,
+        ip_addresses=_local_ip_addresses(hostname),
         platform=platform.platform(),
         python_version=sys.version.split()[0],
         cpu_count=os.cpu_count(),

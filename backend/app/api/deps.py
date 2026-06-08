@@ -28,19 +28,21 @@ TokenDep = Annotated[str, Depends(reusable_oauth2)]
 
 
 def get_current_user(session: SessionDep, token: TokenDep) -> User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[security.ALGORITHM]
         )
         token_data = TokenPayload(**payload)
     except (InvalidTokenError, ValidationError):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Could not validate credentials",
-        )
+        raise credentials_exception
     user = session.get(User, token_data.sub)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise credentials_exception
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
     return user
