@@ -410,6 +410,11 @@ const en = {
   "files.title": "Files",
   "files.description":
     "Explore the daemon filesystem on the left and edit text files on the right.",
+  "files.currentPath": "Current path",
+  "files.pathInputLabel": "Path",
+  "files.pathPlaceholder": "/, folder/path, or folder/file.txt",
+  "files.jump": "Go",
+  "files.pathJumpFailed": "Failed to open path",
   "files.explorer": "Explorer",
   "files.daemonRoot": "daemon root",
   "files.selectFromExplorer": "Select a file from the explorer.",
@@ -810,6 +815,11 @@ const zh: Record<TranslationKey, string> = {
 
   "files.title": "文件",
   "files.description": "左侧浏览 daemon 文件系统，右侧查看和编辑文本文件。",
+  "files.currentPath": "当前路径",
+  "files.pathInputLabel": "路径",
+  "files.pathPlaceholder": "/、目录路径，或目录/文件.txt",
+  "files.jump": "跳转",
+  "files.pathJumpFailed": "打开路径失败",
   "files.explorer": "文件树",
   "files.daemonRoot": "daemon 根目录",
   "files.selectFromExplorer": "从左侧文件树中选择一个文件。",

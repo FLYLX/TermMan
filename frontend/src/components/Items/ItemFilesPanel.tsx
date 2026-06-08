@@ -1,6 +1,7 @@
 import {
   AlertCircle,
   ArrowUp,
+  ChevronRight,
   Download,
   FileText,
   Folder,
@@ -23,6 +24,7 @@ import {
 import { OpenAPI } from "@/client"
 import { useI18n } from "@/components/locale-provider"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
@@ -97,7 +99,7 @@ function normalizePath(path?: string | null) {
   if (!normalized || normalized === "." || normalized === ROOT_PATH) {
     return ROOT_PATH
   }
-  return normalized.replace(/^\/+/, "")
+  return normalized.replace(/^\/+/, "").replace(/\/+$/, "") || ROOT_PATH
 }
 
 function getPathSegments(path: string) {
@@ -262,6 +264,8 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
   const [selectedType, setSelectedType] = useState<"directory" | "file">(
     "directory",
   )
+  const [pathInput, setPathInput] = useState(ROOT_PATH)
+  const [isJumpingPath, setIsJumpingPath] = useState(false)
 
   const [selectedContent, setSelectedContent] =
     useState<FileContentResponse | null>(null)
@@ -285,10 +289,19 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
       ? normalizePath(selectedPath)
       : getParentPath(selectedPath)
   }, [selectedPath, selectedType])
+  const currentPath = useMemo(() => normalizePath(selectedPath), [selectedPath])
+  const currentPathSegments = useMemo(
+    () => getPathSegments(currentPath),
+    [currentPath],
+  )
 
   const selectedDirectory = directories[selectedDirectoryPath]
   const hasUnsavedChanges =
     Boolean(selectedContent) && editorContent !== originalContent
+
+  useEffect(() => {
+    setPathInput(currentPath)
+  }, [currentPath])
 
   const confirmDiscardUnsavedChanges = useCallback(() => {
     if (!hasUnsavedChanges) {
@@ -367,6 +380,30 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
     setContentError(null)
   }, [])
 
+  const fetchFileContent = useCallback(
+    async (path: string) => {
+      const filePath = normalizePath(path)
+      await loadDirectory(getParentPath(filePath))
+      const search = new URLSearchParams({
+        path: filePath,
+        preview_bytes: String(EDITOR_PREVIEW_BYTES),
+      })
+      return apiRequest<FileContentResponse>(
+        `/api/v1/items/${itemId}/files/content?${search.toString()}`,
+      )
+    },
+    [itemId, loadDirectory],
+  )
+
+  const applyFileContent = useCallback((result: FileContentResponse) => {
+    const filePath = normalizePath(result.path)
+    setSelectedPath(filePath)
+    setSelectedType("file")
+    setSelectedContent(result)
+    setEditorContent(result.content)
+    setOriginalContent(result.content)
+  }, [])
+
   const loadFileContent = useCallback(
     async (path: string) => {
       const filePath = normalizePath(path)
@@ -376,17 +413,8 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
       setContentError(null)
 
       try {
-        await loadDirectory(getParentPath(filePath))
-        const search = new URLSearchParams({
-          path: filePath,
-          preview_bytes: String(EDITOR_PREVIEW_BYTES),
-        })
-        const result = await apiRequest<FileContentResponse>(
-          `/api/v1/items/${itemId}/files/content?${search.toString()}`,
-        )
-        setSelectedContent(result)
-        setEditorContent(result.content)
-        setOriginalContent(result.content)
+        const result = await fetchFileContent(filePath)
+        applyFileContent(result)
       } catch (error) {
         const message =
           error instanceof Error ? error.message : t("files.loadFailed")
@@ -396,7 +424,7 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
         setIsLoadingContent(false)
       }
     },
-    [itemId, loadDirectory, resetEditor, t],
+    [applyFileContent, fetchFileContent, resetEditor, t],
   )
 
   useEffect(() => {
@@ -573,6 +601,51 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
 
     await handleSelectDirectory(getParentPath(selectedDirectoryPath))
   }, [handleSelectDirectory, selectedDirectoryPath])
+
+  const handleJumpToPath = useCallback(async () => {
+    const targetPath = normalizePath(pathInput)
+
+    if (targetPath === currentPath) {
+      setPathInput(targetPath)
+      return
+    }
+
+    if (!confirmDiscardUnsavedChanges()) {
+      setPathInput(currentPath)
+      return
+    }
+
+    setIsJumpingPath(true)
+    setContentError(null)
+    try {
+      try {
+        await loadDirectory(targetPath, { force: true })
+        setSelectedPath(targetPath)
+        setSelectedType("directory")
+        resetEditor()
+      } catch {
+        const result = await fetchFileContent(targetPath)
+        applyFileContent(result)
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t("files.pathJumpFailed")
+      setPathInput(currentPath)
+      showErrorToast(message)
+    } finally {
+      setIsJumpingPath(false)
+    }
+  }, [
+    applyFileContent,
+    confirmDiscardUnsavedChanges,
+    currentPath,
+    fetchFileContent,
+    loadDirectory,
+    pathInput,
+    resetEditor,
+    showErrorToast,
+    t,
+  ])
 
   const handleSaveContent = useCallback(async () => {
     if (!selectedContent) {
@@ -1075,6 +1148,77 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
           />
         </div>
       </div>
+
+      <form
+        className="mb-4 rounded-xl border bg-muted/10 px-3 py-3"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void handleJumpToPath()
+        }}
+      >
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
+          <div className="min-w-0 flex-1">
+            <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
+              <span className="mr-1 font-medium text-foreground">
+                {t("files.currentPath")}
+              </span>
+              <button
+                type="button"
+                className="rounded px-1 py-0.5 font-mono hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:text-foreground"
+                onClick={() => void handleSelectDirectory(ROOT_PATH)}
+                disabled={currentPath === ROOT_PATH}
+                title={ROOT_PATH}
+              >
+                {t("files.daemonRoot")}
+              </button>
+              {currentPathSegments.map((segment, index) => {
+                const segmentPath = currentPathSegments
+                  .slice(0, index + 1)
+                  .join("/")
+                const isLast = index === currentPathSegments.length - 1
+                return (
+                  <span
+                    key={segmentPath}
+                    className="flex min-w-0 items-center gap-1"
+                  >
+                    <ChevronRight className="size-3 shrink-0" />
+                    <button
+                      type="button"
+                      className="max-w-[12rem] truncate rounded px-1 py-0.5 font-mono hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:text-foreground"
+                      onClick={() => void handleSelectDirectory(segmentPath)}
+                      disabled={isLast}
+                      title={segmentPath}
+                    >
+                      {segment}
+                    </button>
+                  </span>
+                )
+              })}
+            </div>
+            <Input
+              value={pathInput}
+              onChange={(event) => setPathInput(event.target.value)}
+              placeholder={t("files.pathPlaceholder")}
+              className="font-mono"
+              spellCheck={false}
+              aria-label={t("files.pathInputLabel")}
+            />
+          </div>
+          <Button
+            type="submit"
+            size="sm"
+            className="shrink-0"
+            disabled={isJumpingPath}
+          >
+            {isJumpingPath ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <ChevronRight className="size-4" />
+            )}
+            {t("files.jump")}
+          </Button>
+        </div>
+      </form>
 
       <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
         <div className="rounded-2xl border bg-muted/10">
