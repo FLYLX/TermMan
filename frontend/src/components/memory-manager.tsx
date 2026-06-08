@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
 import {
   Brain,
   CheckCircle2,
@@ -51,6 +56,8 @@ interface MemoryManagerProps {
   itemId: string
 }
 
+const MEMORY_PAGE_SIZE = 30
+
 export function MemoryManager({ itemId }: MemoryManagerProps) {
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
@@ -65,19 +72,37 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
   const [newMemoryContent, setNewMemoryContent] = useState("")
   const [newMemoryType, setNewMemoryType] = useState<MemoryType>("fact")
   const [newMemoryTtl, setNewMemoryTtl] = useState(30)
+  const [isMemoryListOpen, setIsMemoryListOpen] = useState(false)
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["memory-stats", itemId],
     queryFn: () => MemoryService.getMemoryStats(itemId),
   })
 
-  const { data: memoriesData, isLoading: memoriesLoading } = useQuery({
-    queryKey: ["memories", itemId, filterType],
-    queryFn: () =>
+  const {
+    data: memoriesData,
+    isLoading: memoriesLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["memories", itemId, filterType, filterStatus],
+    queryFn: ({ pageParam }) =>
       MemoryService.getAllMemories(
         itemId,
         filterType === "all" ? undefined : filterType,
+        {
+          offset: pageParam,
+          limit: MEMORY_PAGE_SIZE,
+          status: filterStatus === "all" ? undefined : filterStatus,
+        },
       ),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more
+        ? lastPage.offset + lastPage.memories.length
+        : undefined,
+    enabled: isMemoryListOpen,
   })
 
   const {
@@ -268,11 +293,18 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
   const baseMemories =
     searchQuery.trim() && searchResults
       ? searchResults.memories
-      : memoriesData?.memories || []
+      : memoriesData?.pages.flatMap((page) => page.memories) || []
   const displayedMemories =
-    filterStatus === "all"
-      ? baseMemories
-      : baseMemories.filter((memory) => memory.metadata.status === filterStatus)
+    searchQuery.trim() && searchResults && filterStatus !== "all"
+      ? baseMemories.filter((memory) => memory.metadata.status === filterStatus)
+      : baseMemories
+  const totalMemoryCount =
+    searchQuery.trim() && searchResults
+      ? displayedMemories.length
+      : memoriesData?.pages[0]?.count ?? 0
+  const loadedMemoryCount = displayedMemories.length
+  const clearableMemoryCount = stats?.total ?? totalMemoryCount
+  const visibleTotalMemoryCount = totalMemoryCount || clearableMemoryCount
 
   return (
     <div className="space-y-4">
@@ -349,52 +381,63 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
               <Brain className="size-5" />
               记忆管理
             </CardTitle>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => expireMutation.mutate()}
-                disabled={expireMutation.isPending}
+                onClick={() => setIsMemoryListOpen((current) => !current)}
               >
-                {expireMutation.isPending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Clock className="size-4" />
-                )}
-                清理过期
+                {isMemoryListOpen ? "收起列表" : "展开列表"}
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => dedupMutation.mutate()}
-                disabled={dedupMutation.isPending}
-              >
-                {dedupMutation.isPending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Copy className="size-4" />
-                )}
-                去重
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  if (
-                    confirm("确定要压缩记忆吗？这将使用 LLM 合并相似记忆。")
-                  ) {
-                    summarizeMutation.mutate()
-                  }
-                }}
-                disabled={summarizeMutation.isPending}
-              >
-                {summarizeMutation.isPending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Minimize2 className="size-4" />
-                )}
-                压缩
-              </Button>
+              {isMemoryListOpen ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => expireMutation.mutate()}
+                    disabled={expireMutation.isPending}
+                  >
+                    {expireMutation.isPending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Clock className="size-4" />
+                    )}
+                    清理过期
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => dedupMutation.mutate()}
+                    disabled={dedupMutation.isPending}
+                  >
+                    {dedupMutation.isPending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Copy className="size-4" />
+                    )}
+                    去重
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (
+                        confirm("确定要压缩记忆吗？这将使用 LLM 合并相似记忆。")
+                      ) {
+                        summarizeMutation.mutate()
+                      }
+                    }}
+                    disabled={summarizeMutation.isPending}
+                  >
+                    {summarizeMutation.isPending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Minimize2 className="size-4" />
+                    )}
+                    压缩
+                  </Button>
+                </>
+              ) : null}
               <Button size="sm" onClick={() => setIsAddDialogOpen(true)}>
                 <Plus className="size-4" />
                 添加记忆
@@ -403,6 +446,17 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
           </div>
         </CardHeader>
         <CardContent>
+          {!isMemoryListOpen ? (
+            <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-6 text-center">
+              <p className="text-sm text-muted-foreground">
+                记忆列表默认不加载，展开后按 {MEMORY_PAGE_SIZE} 条一段读取。
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                当前统计 {stats?.total ?? 0} 条记忆
+              </p>
+            </div>
+          ) : (
+            <>
           <div className="mb-4 flex flex-wrap gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
@@ -609,10 +663,26 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
             </div>
           )}
 
-          {memoriesData && memoriesData.count > 0 && (
+          {!searchQuery.trim() && hasNextPage ? (
+            <div className="mt-3 flex justify-center">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+              >
+                {isFetchingNextPage ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : null}
+                加载更多
+              </Button>
+            </div>
+          ) : null}
+
+          {!memoriesLoading && clearableMemoryCount > 0 && (
             <div className="mt-4 flex justify-between border-t border-zinc-700 pt-4">
               <span className="text-sm text-zinc-400">
-                当前显示 {displayedMemories.length} / 总计 {memoriesData.count}{" "}
+                当前显示 {loadedMemoryCount} / 总计 {visibleTotalMemoryCount}{" "}
                 条记忆
               </span>
               <Button
@@ -633,6 +703,8 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                 清除所有
               </Button>
             </div>
+          )}
+            </>
           )}
         </CardContent>
       </Card>

@@ -10,12 +10,7 @@ import {
 } from "lucide-react"
 import { Suspense } from "react"
 
-import {
-  type Item,
-  ItemHandlerAssociationsService,
-  type ItemHandlerPublic,
-  ItemHandlersService,
-} from "@/client"
+import { type ItemHandlerPublic, ItemHandlersService } from "@/client"
 import AddItemHandler from "@/components/ItemHandlers/AddItemHandler"
 import {
   getItemHandlerLlmStatusQueryKey,
@@ -27,8 +22,9 @@ import { useI18n } from "@/components/locale-provider"
 import PendingItems from "@/components/Pending/PendingItems"
 import { Badge } from "@/components/ui/badge"
 
-type ItemHandlerWithItems = ItemHandlerPublic & {
-  _items: Item[]
+type ItemHandlerWithSummary = ItemHandlerPublic & {
+  item_count?: number
+  user_count?: number
   enabled_knowledge_files?: string[]
 }
 
@@ -40,31 +36,7 @@ function getItemHandlersQueryOptions() {
         limit: 100,
       })
 
-      const itemHandlersWithItems = await Promise.all(
-        itemHandlers.map(async (handler) => {
-          let items: Item[] = []
-
-          if (handler.id) {
-            try {
-              items = await ItemHandlerAssociationsService.getItemsForHandler({
-                itemHandlerId: handler.id,
-              })
-            } catch (error) {
-              console.error(
-                `Failed to fetch items for handler ${handler.id}:`,
-                error,
-              )
-            }
-          }
-
-          return {
-            ...handler,
-            _items: items,
-          }
-        }),
-      )
-
-      return itemHandlersWithItems as ItemHandlerWithItems[]
+      return itemHandlers as ItemHandlerWithSummary[]
     },
     queryKey: ["itemHandlers"],
     staleTime: 0,
@@ -167,7 +139,7 @@ function HandlerCard({
   llmStatus,
   onOpen,
 }: {
-  handler: ItemHandlerWithItems
+  handler: ItemHandlerWithSummary
   llmStatus?: ItemHandlerLlmStatusItem
   onOpen: (handlerId: string) => void
 }) {
@@ -177,7 +149,7 @@ function HandlerCard({
     ((handler as Record<string, unknown>).enabled_knowledge_files ??
       []) as string[]
   ).length
-  const terminalCount = handler._items.length
+  const terminalCount = handler.item_count ?? 0
   const skillCount = (handler.enabled_skills ?? []).length
   const mcpCount = (
     ((handler as Record<string, unknown>).enabled_mcp_servers ??
@@ -197,6 +169,7 @@ function HandlerCard({
           noApi: "未配置 API",
           attachedTerminals: "已连接终端",
           noTerminals: "当前还没有连接任何终端",
+          terminalSummary: "进入详情后按需加载终端列表。",
         }
       : {
           model: "Model",
@@ -209,6 +182,7 @@ function HandlerCard({
           noApi: "No API configured",
           attachedTerminals: "Attached terminals",
           noTerminals: "No terminals attached yet",
+          terminalSummary: "Open details to load the terminal list on demand.",
         }
 
   return (
@@ -301,25 +275,13 @@ function HandlerCard({
                 </span>
               </div>
 
-              {handler._items.length === 0 ? (
+              {terminalCount === 0 ? (
                 <div className="mt-2 text-xs text-muted-foreground">
                   {copy.noTerminals}
                 </div>
               ) : (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {handler._items.slice(0, 6).map((item) => (
-                    <span
-                      key={item.id}
-                      className="max-w-full truncate rounded-full border bg-background px-2.5 py-1 text-[11px] font-mono text-foreground/90"
-                    >
-                      {item.title}
-                    </span>
-                  ))}
-                  {handler._items.length > 6 && (
-                    <span className="rounded-full border bg-background px-2.5 py-1 text-[11px] text-muted-foreground">
-                      +{handler._items.length - 6}
-                    </span>
-                  )}
+                <div className="mt-2 rounded-lg border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
+                  {terminalCount} {copy.terminals} · {copy.terminalSummary}
                 </div>
               )}
             </div>

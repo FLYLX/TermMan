@@ -90,6 +90,14 @@ function getRobotCredentials(robot: RobotRecord): Record<string, string> {
   return {}
 }
 
+function textOrNull(value: unknown) {
+  if (value === null || value === undefined) {
+    return null
+  }
+  const text = String(value).trim()
+  return text || null
+}
+
 function getPublicReverseWsEndpoint(endpoint?: string | null) {
   const fallbackPath = "/onebot/v11/ws"
   if (typeof window === "undefined") {
@@ -123,21 +131,27 @@ function getPublicReverseWsEndpoint(endpoint?: string | null) {
 function getNapCatSocketEndpoint(
   socket: RobotDiagnoseResult["chain"]["napcat_socket"],
 ) {
-  return socket.reverse_ws_url || socket.server_url || socket.ws_url || null
+  return (
+    textOrNull(socket.reverse_ws_url) ||
+    textOrNull(socket.server_url) ||
+    textOrNull(socket.ws_url)
+  )
 }
 
 function getConfiguredSelfId(
-  identity: string | null | undefined,
-  socketSelfId: string | null | undefined,
+  identity: unknown,
+  socketSelfId: unknown,
 ) {
-  if (socketSelfId?.trim()) {
-    return socketSelfId.trim()
+  const socketText = textOrNull(socketSelfId)
+  if (socketText) {
+    return socketText
   }
-  if (!identity?.trim()) {
+  const identityText = textOrNull(identity)
+  if (!identityText) {
     return null
   }
-  const [, selfId] = identity.split(":", 2)
-  return selfId || identity
+  const [, selfId] = identityText.split(":", 2)
+  return selfId || identityText
 }
 
 function getNapCatBridgeStatus(
@@ -352,6 +366,7 @@ function CreateRobotDialog({
                   <Input
                     id={`robot-field-${field.key}`}
                     type={field.secret ? "password" : "text"}
+                    autoComplete={field.secret ? "new-password" : "off"}
                     value={form.credentials[field.key] ?? ""}
                     onChange={(event) =>
                       setForm((current) => ({
@@ -409,7 +424,7 @@ function RobotCard({
   platformMap: Map<string, RobotPlatformRecord>
   onDelete: (robot: RobotRecord) => void
   deletingRobotId: string | null
-  connectionStatus?: { identity: string; connected: boolean }
+  connectionStatus?: { identity: string | number; connected: boolean }
   reverseWsUrl: string
 }) {
   const { locale, t } = useI18n()
@@ -430,12 +445,13 @@ function RobotCard({
 
   const renderNapCatConfig = (
     label: string,
-    value: string,
+    value: unknown,
     emptyValue: string,
   ) => {
-    const hasValue = value.trim().length > 0
-    const displayValue = hasValue ? value : emptyValue
-    const isCopied = copiedText === value
+    const normalizedValue = textOrNull(value) ?? ""
+    const hasValue = normalizedValue.length > 0
+    const displayValue = hasValue ? normalizedValue : emptyValue
+    const isCopied = copiedText === normalizedValue
     return (
       <div className="min-w-0 rounded-xl border bg-muted/20 px-3 py-2">
         <div className="mb-1 flex items-center justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -446,7 +462,7 @@ function RobotCard({
               variant="ghost"
               size="sm"
               className="h-6 px-1.5 text-[11px]"
-              onClick={() => void copy(value)}
+              onClick={() => void copy(normalizedValue)}
               title={t("common.copyLabel", { label })}
             >
               <Copy className="size-3" />
@@ -817,7 +833,7 @@ export function RobotManager() {
 
   const connectionStatusMap = useMemo(() => {
     if (!bridgeHealth?.robots) {
-      return new Map<string, { identity: string; connected: boolean }>()
+      return new Map<string, { identity: string | number; connected: boolean }>()
     }
     return new Map(
       Object.entries(bridgeHealth.robots).map(([robotId, status]) => [

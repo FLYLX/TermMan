@@ -122,6 +122,7 @@ function Login() {
                       data-testid="email-input"
                       placeholder={copy.emailPlaceholder}
                       type="email"
+                      autoComplete="username"
                       {...field}
                     />
                   </FormControl>
@@ -148,6 +149,7 @@ function Login() {
                     <PasswordInput
                       data-testid="password-input"
                       placeholder={copy.passwordPlaceholder}
+                      autoComplete="current-password"
                       {...field}
                     />
                   </FormControl>

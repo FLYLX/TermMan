@@ -187,8 +187,8 @@ export type BridgeHealthResponse = {
   onebot_clients?: Array<Record<string, unknown>>
   onebot_reverse_ws_url?: string | null
   platforms: string[]
-  connected_identities: string[]
-  robots: Record<string, { identity: string; connected: boolean }>
+  connected_identities: Array<string | number>
+  robots: Record<string, { identity: string | number; connected: boolean }>
   error?: string
   connected?: boolean
 }
@@ -236,7 +236,7 @@ export type RobotDiagnoseResult = {
     qq_to_bridge: {
       status: string
       connected: boolean
-      identity?: string
+      identity?: string | number | null
       backend_reachable?: boolean
       error?: string
       stale_error?: string | null
@@ -247,12 +247,12 @@ export type RobotDiagnoseResult = {
     napcat_socket: {
       status: string
       connected: boolean
-      server_url?: string | null
-      reverse_ws_url?: string | null
-      ws_url?: string | null
+      server_url?: string | number | null
+      reverse_ws_url?: string | number | null
+      ws_url?: string | number | null
       last_event?: string | null
       last_event_at?: string | null
-      self_id?: string | null
+      self_id?: string | number | null
       last_message_seen?: boolean
       last_socket_receive_seen?: boolean
       error?: string

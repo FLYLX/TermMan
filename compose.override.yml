@@ -54,7 +54,7 @@ services:
   backend:
     restart: "no"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -114,13 +114,13 @@ services:
   mailcatcher:
     image: schickling/mailcatcher
     ports:
-      - "1080:1080"
-      - "1025:1025"
+      - "127.0.0.1:1080:1080"
+      - "127.0.0.1:1025:1025"
 
   frontend:
     restart: "no"
     ports:
-      - "5173:80"
+      - "127.0.0.1:5173:80"
     build:
       context: .
       dockerfile: frontend/Dockerfile

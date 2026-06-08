@@ -2,7 +2,7 @@ import logging
 import uuid
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -90,6 +90,19 @@ def _sort_memories(memories: list[dict[str, Any]]) -> list[dict[str, Any]]:
         timestamp_sorted,
         key=_memory_status_bucket,
     )
+
+
+def _filter_memories_by_status(
+    memories: list[dict[str, Any]],
+    memory_status: str | None,
+) -> list[dict[str, Any]]:
+    if not memory_status:
+        return memories
+    return [
+        memory
+        for memory in memories
+        if str(resolve_memory_status(memory) or "").lower() == memory_status
+    ]
 
 
 def _build_status_counts(memories: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
@@ -234,6 +247,9 @@ def clear_all_session_data(
 def get_all_memories(
     item_id: uuid.UUID,
     memory_type: MemoryType | None = None,
+    memory_status: Literal["active", "completed", "resolved"] | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=200),
     session: SessionDep = None,
     current_user: CurrentUser = None,
 ) -> Any:
@@ -243,8 +259,16 @@ def get_all_memories(
         item_id=str(item_id),
         memory_type=memory_type,
     )
-    sorted_memories = _sort_memories(memories)
-    return {"memories": sorted_memories, "count": len(sorted_memories)}
+    filtered_memories = _filter_memories_by_status(memories, memory_status)
+    sorted_memories = _sort_memories(filtered_memories)
+    page_memories = sorted_memories[offset : offset + limit]
+    return {
+        "memories": page_memories,
+        "count": len(sorted_memories),
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + len(page_memories) < len(sorted_memories),
+    }
 
 
 @router.get("/{item_id}/memories/stats")

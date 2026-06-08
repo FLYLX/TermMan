@@ -1246,30 +1246,37 @@ function ItemHandlerDetail() {
   const { t, localeTag } = useI18n()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const [isSaving, setIsSaving] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [activeTab, setActiveTab] = useState("connections")
+  const [isConnectionsLoaded, setIsConnectionsLoaded] = useState(false)
 
   const { data: itemHandler, isLoading } = useQuery({
     ...getItemHandlerQueryOptions(itemHandlerId),
   })
 
-  const { data: connectedItems } = useQuery({
+  const { data: connectedItems, isLoading: connectedItemsLoading } = useQuery({
     queryFn: () =>
       ItemHandlerAssociationsService.getItemsForHandler({ itemHandlerId }),
     queryKey: ["itemHandler-items", itemHandlerId],
+    enabled: isConnectionsLoaded,
   })
 
-  const { data: allItemsData } = useQuery({
+  const { data: allItemsData, isLoading: allItemsLoading } = useQuery({
     queryFn: () => ItemsService.readItems(),
     queryKey: ["items"],
+    enabled: isConnectionsLoaded,
   })
 
-  const { data: skillsData } = useQuery({
+  const { data: skillsData, isLoading: skillsLoading } = useQuery({
     queryKey: ["skills"],
     queryFn: () => SkillsService.listSkills({}),
+    enabled: activeTab === "skills",
   })
 
-  const { data: mcpData } = useQuery({
+  const { data: mcpData, isLoading: mcpLoading } = useQuery({
     queryKey: ["mcp-servers"],
     queryFn: () => McpService.listMcpServers(),
+    enabled: activeTab === "mcp",
   })
 
   const allItems = (allItemsData as any)?.data || []
@@ -1277,6 +1284,11 @@ function ItemHandlerDetail() {
   const connectedItemIds = new Set(
     connectedItemsList.map((item: any) => item.id),
   )
+  const connectedItemCount = isConnectionsLoaded
+    ? connectedItemsList.length
+    : ((itemHandler as any)?.item_count ?? 0)
+  const connectionsLoading =
+    isConnectionsLoaded && (connectedItemsLoading || allItemsLoading)
   const availableItems = allItems.filter(
     (item: any) => !connectedItemIds.has(item.id),
   )
@@ -1296,8 +1308,6 @@ function ItemHandlerDetail() {
     api_url: "",
     enabled_skills: [] as string[],
   })
-  const [isEditing, setIsEditing] = useState(false)
-  const [activeTab, setActiveTab] = useState("connections")
 
   useEffect(() => {
     if (itemHandler) {
@@ -1467,6 +1477,10 @@ function ItemHandlerDetail() {
       queryClient.invalidateQueries({
         queryKey: ["itemHandler-items", itemHandlerId],
       })
+      queryClient.invalidateQueries({
+        queryKey: ["itemHandler", itemHandlerId],
+      })
+      queryClient.invalidateQueries({ queryKey: ["itemHandlers"] })
       queryClient.invalidateQueries({ queryKey: ["items"] })
     } catch (_error) {
       showErrorToast(t("itemHandlers.detail.itemConnectFailed"))
@@ -1483,6 +1497,10 @@ function ItemHandlerDetail() {
       queryClient.invalidateQueries({
         queryKey: ["itemHandler-items", itemHandlerId],
       })
+      queryClient.invalidateQueries({
+        queryKey: ["itemHandler", itemHandlerId],
+      })
+      queryClient.invalidateQueries({ queryKey: ["itemHandlers"] })
       queryClient.invalidateQueries({ queryKey: ["items"] })
     } catch (_error) {
       showErrorToast(t("itemHandlers.detail.itemDisconnectFailed"))
@@ -1526,7 +1544,7 @@ function ItemHandlerDetail() {
                   {itemHandler.name}
                 </h1>
                 <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                  {connectedItemsList.length}{" "}
+                  {connectedItemCount}{" "}
                   {t("itemHandlers.detail.connections")}
                 </Badge>
                 <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
@@ -1578,57 +1596,85 @@ function ItemHandlerDetail() {
         </div>
 
         <TabsContent value="connections">
-          <div className="grid gap-6 lg:grid-cols-3">
-            <Card className="overflow-hidden lg:col-span-2">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2">
-                  <Zap className="size-5 text-yellow-500" />
-                  {t("itemHandlers.detail.connectionDiagram")}
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  {t("itemHandlers.detail.connectionDiagramDescription")}
-                </p>
-              </CardHeader>
-              <CardContent className="p-0">
-                <ConnectionDiagram
-                  itemHandler={itemHandler}
-                  connectedItems={connectedItemsList}
-                  availableItems={availableItems}
-                  onConnect={handleConnect}
-                  onDisconnect={handleDisconnect}
-                />
-              </CardContent>
-            </Card>
+          {!isConnectionsLoaded ? (
             <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2">
-                  <Terminal className="size-5 text-blue-500" />
-                  {t("itemHandlers.detail.allItems")}
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  {t("itemHandlers.detail.allItemsDescription")}
-                </p>
-              </CardHeader>
-              <CardContent>
-                {allItems.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {t("itemHandlers.detail.noItems")}
+              <CardContent className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center">
+                <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
+                  <Zap className="size-5 text-yellow-500" />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold">
+                    连接图和终端列表按需加载
+                  </h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    当前已记录 {connectedItemCount} 个连接。点击后再读取全部终端并绘制连接图。
                   </p>
-                ) : (
-                  <div className="space-y-1">
-                    {allItems.map((item: any) => (
-                      <ItemWithHandlers
-                        key={item.id}
-                        item={item}
-                        currentHandlerId={itemHandlerId}
-                        isConnected={connectedItemIds.has(item.id)}
-                      />
-                    ))}
-                  </div>
-                )}
+                </div>
+                <Button onClick={() => setIsConnectionsLoaded(true)}>
+                  加载连接图和终端列表
+                </Button>
               </CardContent>
             </Card>
-          </div>
+          ) : connectionsLoading ? (
+            <Card>
+              <CardContent className="flex items-center justify-center gap-2 px-6 py-10 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                正在加载连接图和终端列表...
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-6 lg:grid-cols-3">
+              <Card className="overflow-hidden lg:col-span-2">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2">
+                    <Zap className="size-5 text-yellow-500" />
+                    {t("itemHandlers.detail.connectionDiagram")}
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    {t("itemHandlers.detail.connectionDiagramDescription")}
+                  </p>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <ConnectionDiagram
+                    itemHandler={itemHandler}
+                    connectedItems={connectedItemsList}
+                    availableItems={availableItems}
+                    onConnect={handleConnect}
+                    onDisconnect={handleDisconnect}
+                  />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2">
+                    <Terminal className="size-5 text-blue-500" />
+                    {t("itemHandlers.detail.allItems")}
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    {t("itemHandlers.detail.allItemsDescription")}
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  {allItems.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      {t("itemHandlers.detail.noItems")}
+                    </p>
+                  ) : (
+                    <div className="space-y-1">
+                      {allItems.map((item: any) => (
+                        <ItemWithHandlers
+                          key={item.id}
+                          item={item}
+                          currentHandlerId={itemHandlerId}
+                          isConnected={connectedItemIds.has(item.id)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="skills">
@@ -1643,11 +1689,18 @@ function ItemHandlerDetail() {
               </p>
             </CardHeader>
             <CardContent>
-              <SkillSelector
-                allSkills={skills}
-                enabledSkills={enabledSkills}
-                onSkillToggle={handleSkillToggle}
-              />
+              {skillsLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  正在加载技能...
+                </div>
+              ) : (
+                <SkillSelector
+                  allSkills={skills}
+                  enabledSkills={enabledSkills}
+                  onSkillToggle={handleSkillToggle}
+                />
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1664,11 +1717,18 @@ function ItemHandlerDetail() {
               </p>
             </CardHeader>
             <CardContent>
-              <MCPSelector
-                allServers={mcpServers}
-                enabledServers={enabledMcpServers}
-                onServerToggle={handleMcpServerToggle}
-              />
+              {mcpLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  正在加载 MCP...
+                </div>
+              ) : (
+                <MCPSelector
+                  allServers={mcpServers}
+                  enabledServers={enabledMcpServers}
+                  onServerToggle={handleMcpServerToggle}
+                />
+              )}
             </CardContent>
           </Card>
         </TabsContent>

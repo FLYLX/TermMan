@@ -77,6 +77,65 @@ def test_get_all_memories_sorts_active_status_first(
     ]
 
 
+def test_get_all_memories_supports_status_filter_and_pagination(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import memory as memory_route
+
+    item = create_random_item(db)
+
+    monkeypatch.setattr(
+        memory_route.vector_store,
+        "get_all_memories",
+        lambda *args, **kwargs: [
+            {
+                "id": "task-old",
+                "content": "当前任务：旧任务",
+                "metadata": {
+                    "memory_type": "task",
+                    "status": "active",
+                    "updated_at": "2026-04-02T09:00:00",
+                },
+            },
+            {
+                "id": "task-new",
+                "content": "当前任务：新任务",
+                "metadata": {
+                    "memory_type": "task",
+                    "status": "active",
+                    "updated_at": "2026-04-02T11:00:00",
+                },
+            },
+            {
+                "id": "task-done",
+                "content": "当前任务：已完成任务（已完成）",
+                "metadata": {
+                    "memory_type": "task",
+                    "status": "completed",
+                    "updated_at": "2026-04-02T12:00:00",
+                },
+            },
+        ],
+    )
+
+    response = client.get(
+        f"{settings.API_V1_STR}/memory/{item.id}/memories",
+        headers=superuser_token_headers,
+        params={"memory_status": "active", "offset": 0, "limit": 1},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 2
+    assert payload["offset"] == 0
+    assert payload["limit"] == 1
+    assert payload["has_more"] is True
+    assert [memory["id"] for memory in payload["memories"]] == ["task-new"]
+
+
 def test_get_memory_stats_includes_status_counts(
     client: TestClient,
     superuser_token_headers: dict[str, str],

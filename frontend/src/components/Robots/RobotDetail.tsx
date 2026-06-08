@@ -1392,6 +1392,7 @@ function RobotBasicConfigPanel({
                   <Input
                     id={`robot-edit-${field.key}`}
                     type={field.secret ? "password" : "text"}
+                    autoComplete={field.secret ? "new-password" : "off"}
                     value={form.credentials[field.key] ?? ""}
                     placeholder={
                       field.secret ? copy.keepCurrentSecret : undefined

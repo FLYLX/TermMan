@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from sqlalchemy import func
 from pydantic import BaseModel
 from sqlmodel import col, select
 
@@ -10,8 +11,10 @@ from app.api.deps import CurrentUser, SessionDep
 from app.models import (
     ItemHandler,
     ItemHandlerCreate,
+    ItemHandlerItem,
     ItemHandlerPublic,
     ItemHandlerUpdate,
+    ItemHandlerUser,
     Message,
 )
 from app.services.agent.agent import agent_manager
@@ -52,6 +55,11 @@ class ItemHandlerLlmStatusListResponse(BaseModel):
     count: int
 
 
+class ItemHandlerSummaryPublic(ItemHandlerPublic):
+    item_count: int = 0
+    user_count: int = 0
+
+
 def _get_item_handler_or_404(session: SessionDep, item_handler_id: uuid.UUID) -> ItemHandler:
     item_handler = session.get(ItemHandler, item_handler_id)
     if not item_handler:
@@ -64,7 +72,40 @@ def _assert_item_handler_permission(item_handler: ItemHandler, current_user: Cur
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
 
-@router.get("/", response_model=list[ItemHandlerPublic])
+def _build_item_handler_summaries(
+    session: SessionDep,
+    item_handlers: list[ItemHandler],
+) -> list[ItemHandlerSummaryPublic]:
+    handler_ids = [handler.id for handler in item_handlers]
+    if not handler_ids:
+        return []
+
+    item_count_rows = session.exec(
+        select(ItemHandlerItem.item_handler_id, func.count())
+        .where(col(ItemHandlerItem.item_handler_id).in_(handler_ids))
+        .group_by(ItemHandlerItem.item_handler_id)
+    ).all()
+    user_count_rows = session.exec(
+        select(ItemHandlerUser.item_handler_id, func.count())
+        .where(col(ItemHandlerUser.item_handler_id).in_(handler_ids))
+        .group_by(ItemHandlerUser.item_handler_id)
+    ).all()
+    item_counts = {handler_id: count for handler_id, count in item_count_rows}
+    user_counts = {handler_id: count for handler_id, count in user_count_rows}
+
+    return [
+        ItemHandlerSummaryPublic.model_validate(
+            handler,
+            update={
+                "item_count": item_counts.get(handler.id, 0),
+                "user_count": user_counts.get(handler.id, 0),
+            },
+        )
+        for handler in item_handlers
+    ]
+
+
+@router.get("/", response_model=list[ItemHandlerSummaryPublic])
 def read_item_handlers(
     session: SessionDep,
     current_user: CurrentUser,
@@ -91,7 +132,7 @@ def read_item_handlers(
             .limit(limit)
         )
 
-    return session.exec(statement).all()
+    return _build_item_handler_summaries(session, session.exec(statement).all())
 
 
 @router.get("/llm/status", response_model=ItemHandlerLlmStatusListResponse)
@@ -129,7 +170,7 @@ def read_item_handler_llm_statuses(
     )
 
 
-@router.get("/{id}", response_model=ItemHandlerPublic)
+@router.get("/{id}", response_model=ItemHandlerSummaryPublic)
 def read_item_handler(
     session: SessionDep,
     current_user: CurrentUser,
@@ -141,7 +182,7 @@ def read_item_handler(
 
     item_handler = _get_item_handler_or_404(session, id)
     _assert_item_handler_permission(item_handler, current_user)
-    return item_handler
+    return _build_item_handler_summaries(session, [item_handler])[0]
 
 
 @router.post("/", response_model=ItemHandlerPublic)

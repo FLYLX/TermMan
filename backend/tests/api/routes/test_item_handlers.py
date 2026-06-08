@@ -6,7 +6,8 @@ from sqlmodel import Session
 
 from app.api.routes import item_handlers as item_handlers_route
 from app.core.config import settings
-from app.models import ItemHandlerCreate
+from app.models import ItemHandlerCreate, ItemHandlerItem
+from tests.utils.item import create_random_item
 from tests.utils.item_handler import create_random_item_handler
 from tests.utils.user import create_random_user
 
@@ -97,6 +98,41 @@ def test_read_item_handlers(
     item_handler_ids = {str(item_handler1.id), str(item_handler2.id)}
     response_ids = {handler["id"] for handler in content}
     assert item_handler_ids.issubset(response_ids)
+
+
+def test_read_item_handlers_include_association_counts(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    item_handler = create_random_item_handler(db)
+    item = create_random_item(db)
+    db.add(ItemHandlerItem(item_handler_id=item_handler.id, item_id=item.id))
+    db.commit()
+
+    detail_response = client.get(
+        f"{settings.API_V1_STR}/item-handlers/{item_handler.id}",
+        headers=superuser_token_headers,
+    )
+
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["item_count"] == 1
+    assert detail["user_count"] == 0
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/item-handlers/",
+        headers=superuser_token_headers,
+    )
+
+    assert list_response.status_code == 200
+    matching_handler = next(
+        handler
+        for handler in list_response.json()
+        if handler["id"] == str(item_handler.id)
+    )
+    assert matching_handler["item_count"] == 1
+    assert matching_handler["user_count"] == 0
 
 
 def test_update_item_handler(

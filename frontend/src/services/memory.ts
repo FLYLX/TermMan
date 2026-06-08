@@ -62,6 +62,20 @@ export interface MemorySearchRequest {
   memory_type?: MemoryType
 }
 
+export interface MemoryListOptions {
+  offset?: number
+  limit?: number
+  status?: ManagedMemoryStatus
+}
+
+export interface MemoryListResponse {
+  memories: Memory[]
+  count: number
+  offset: number
+  limit: number
+  has_more: boolean
+}
+
 export const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
   fact: "事实",
   preference: "偏好",
@@ -94,10 +108,20 @@ export class MemoryService {
   public static getAllMemories(
     itemId: string,
     memoryType?: MemoryType,
-  ): CancelablePromise<{ memories: Memory[]; count: number }> {
+    options: MemoryListOptions = {},
+  ): CancelablePromise<MemoryListResponse> {
     const query: Record<string, unknown> = {}
     if (memoryType) {
       query.memory_type = memoryType
+    }
+    if (options.offset !== undefined) {
+      query.offset = options.offset
+    }
+    if (options.limit !== undefined) {
+      query.limit = options.limit
+    }
+    if (options.status) {
+      query.memory_status = options.status
     }
     return __request(OpenAPI, {
       method: "GET",
