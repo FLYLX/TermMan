@@ -536,19 +536,13 @@ function ItemDetailPage({
   })
 
   useEffect(() => {
-    if (outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight
-    }
-  }, [])
-
-  useEffect(() => {
     const timer = setTimeout(() => {
       if (outputRef.current) {
         outputRef.current.scrollTop = outputRef.current.scrollHeight
       }
     }, 100)
     return () => clearTimeout(timer)
-  }, [])
+  }, [isConnected, output])
 
   const handleStartItem = async () => {
     try {
