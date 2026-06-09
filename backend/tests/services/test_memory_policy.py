@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from app.services.agent.prompts.policy import (
     MemoryCandidate,
+    PromptTurnType,
     build_confirmation_memory_candidate,
     build_conversation_memory_candidate,
     build_manual_status_update,
@@ -9,6 +10,7 @@ from app.services.agent.prompts.policy import (
     infer_memory_key,
     persist_memory_candidate,
     resolve_memory_status,
+    resolve_prompt_memory_policy,
     should_reject_long_term_memory,
 )
 
@@ -29,6 +31,18 @@ def test_build_conversation_memory_candidate_for_preference() -> None:
     assert candidate.metadata["verified"] is True
     assert candidate.metadata["skills"] == ["system_prompt"]
     assert candidate.metadata["content_hash"]
+
+
+def test_prompt_memory_policy_enables_long_term_by_default() -> None:
+    chat_policy = resolve_prompt_memory_policy(PromptTurnType.CHAT)
+    terminal_policy = resolve_prompt_memory_policy(PromptTurnType.TERMINAL_FILTERED)
+    raw_feedback_policy = resolve_prompt_memory_policy(PromptTurnType.TERMINAL_RAW_FEEDBACK)
+
+    assert chat_policy.include_long_term is True
+    assert chat_policy.max_long_term_memories == 5
+    assert terminal_policy.include_long_term is True
+    assert terminal_policy.max_long_term_memories == 3
+    assert raw_feedback_policy.include_long_term is False
 
 
 def test_build_conversation_memory_candidate_rejects_generic_or_log_noise() -> None:

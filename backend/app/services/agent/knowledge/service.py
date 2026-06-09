@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import threading
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -21,10 +22,12 @@ DEFAULT_CHUNK_OVERLAP = 180
 
 
 class KnowledgeBaseService:
-    _instance: "KnowledgeBaseService | None" = None
+    _instance: KnowledgeBaseService | None = None
     _client: Any = None
     _collection: Collection | None = None
     _embedding_service: EmbeddingService | None = None
+    _init_lock = threading.RLock()
+    _sync_lock = threading.RLock()
 
     def __new__(cls):
         if cls._instance is None:
@@ -51,15 +54,19 @@ class KnowledgeBaseService:
         if self._client is not None:
             return
 
-        self._storage_root().mkdir(parents=True, exist_ok=True)
-        Path(settings.CHROMA_PERSIST_DIR).mkdir(parents=True, exist_ok=True)
+        with self._init_lock:
+            if self._client is not None:
+                return
 
-        self._client = chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIR)
-        self._collection = self._client.get_or_create_collection(
-            name="shared_knowledge",
-            metadata={"description": "Shared knowledge documents indexed for item handlers"},
-        )
-        self._embedding_service = EmbeddingService()
+            self._storage_root().mkdir(parents=True, exist_ok=True)
+            Path(settings.CHROMA_PERSIST_DIR).mkdir(parents=True, exist_ok=True)
+
+            self._client = chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIR)
+            self._collection = self._client.get_or_create_collection(
+                name="shared_knowledge",
+                metadata={"description": "Shared knowledge documents indexed for item handlers"},
+            )
+            self._embedding_service = EmbeddingService()
 
     def normalize_relative_path(self, raw_path: str) -> str:
         candidate = (raw_path or "").replace("\\", "/").strip().lstrip("/")
@@ -153,9 +160,15 @@ class KnowledgeBaseService:
             raise FileNotFoundError(relative_path)
         return absolute_path
 
-    def list_files(self, enabled_files: list[str] | None = None) -> list[dict[str, Any]]:
+    def list_files(
+        self,
+        enabled_files: list[str] | None = None,
+        *,
+        sync: bool = True,
+    ) -> list[dict[str, Any]]:
         self._ensure_initialized()
-        self.sync_library()
+        if sync:
+            self.sync_library()
 
         enabled_set = set(self.normalize_enabled_files(enabled_files))
         index = self._read_index()
@@ -264,106 +277,143 @@ class KnowledgeBaseService:
         digest = hashlib.sha1(file_path.encode("utf-8")).hexdigest()[:16]
         return f"knowledge:{digest}:{content_hash[:16]}:{index}"
 
+    def _is_index_entry_current(self, index_payload: dict[str, Any], file_path: str) -> bool:
+        entry = index_payload.get("files", {}).get(file_path)
+        absolute_path = self._files_dir() / file_path
+
+        if not absolute_path.exists() or not absolute_path.is_file():
+            return entry is None
+
+        if not entry or "chunk_ids" not in entry:
+            return False
+
+        stat = absolute_path.stat()
+        return (
+            entry.get("mtime_ns") == stat.st_mtime_ns
+            and entry.get("size") == stat.st_size
+        )
+
+    def _needs_sync_for_enabled_files(self, enabled_files: list[str]) -> bool:
+        index_payload = self._read_index()
+        return any(
+            not self._is_index_entry_current(index_payload, file_path)
+            for file_path in enabled_files
+        )
+
+    def _sync_enabled_files_if_needed(self, enabled_files: list[str]) -> dict[str, Any] | None:
+        if not enabled_files:
+            return None
+
+        self._ensure_initialized()
+        if not self._needs_sync_for_enabled_files(enabled_files):
+            return None
+
+        with self._sync_lock:
+            if not self._needs_sync_for_enabled_files(enabled_files):
+                return None
+            return self.sync_library()
+
     def sync_library(self) -> dict[str, Any]:
         self._ensure_initialized()
-        existing_paths = set(self.get_existing_relative_paths())
-        files_dir = self._files_dir()
-        index_payload = self._read_index()
+        with self._sync_lock:
+            existing_paths = set(self.get_existing_relative_paths())
+            files_dir = self._files_dir()
+            index_payload = self._read_index()
 
-        added: list[str] = []
-        updated: list[str] = []
-        removed: list[str] = []
-        skipped: list[str] = []
+            added: list[str] = []
+            updated: list[str] = []
+            removed: list[str] = []
+            skipped: list[str] = []
 
-        for indexed_path in list(index_payload.get("files", {}).keys()):
-            if indexed_path not in existing_paths:
-                if self._remove_indexed_entry(index_payload, indexed_path):
-                    removed.append(indexed_path)
+            for indexed_path in list(index_payload.get("files", {}).keys()):
+                if indexed_path not in existing_paths:
+                    if self._remove_indexed_entry(index_payload, indexed_path):
+                        removed.append(indexed_path)
 
-        for file_path in sorted(existing_paths):
-            absolute_path = files_dir / file_path
-            stat = absolute_path.stat()
-            current_entry = index_payload.get("files", {}).get(file_path)
+            for file_path in sorted(existing_paths):
+                absolute_path = files_dir / file_path
+                stat = absolute_path.stat()
+                current_entry = index_payload.get("files", {}).get(file_path)
 
-            if (
-                current_entry
-                and current_entry.get("mtime_ns") == stat.st_mtime_ns
-                and current_entry.get("size") == stat.st_size
-                and current_entry.get("chunk_ids")
-            ):
-                skipped.append(file_path)
-                continue
+                if (
+                    current_entry
+                    and current_entry.get("mtime_ns") == stat.st_mtime_ns
+                    and current_entry.get("size") == stat.st_size
+                    and "chunk_ids" in current_entry
+                ):
+                    skipped.append(file_path)
+                    continue
 
-            raw_bytes = absolute_path.read_bytes()
-            content_hash = hashlib.sha256(raw_bytes).hexdigest()
-            text = self._decode_content(raw_bytes)
+                raw_bytes = absolute_path.read_bytes()
+                content_hash = hashlib.sha256(raw_bytes).hexdigest()
+                text = self._decode_content(raw_bytes)
 
-            if (
-                current_entry
-                and current_entry.get("content_hash") == content_hash
-                and current_entry.get("chunk_ids")
-            ):
-                current_entry["mtime_ns"] = stat.st_mtime_ns
-                current_entry["size"] = stat.st_size
-                current_entry["updated_at"] = int(stat.st_mtime)
-                index_payload["files"][file_path] = current_entry
-                skipped.append(file_path)
-                continue
+                if (
+                    current_entry
+                    and current_entry.get("content_hash") == content_hash
+                    and "chunk_ids" in current_entry
+                ):
+                    current_entry["mtime_ns"] = stat.st_mtime_ns
+                    current_entry["size"] = stat.st_size
+                    current_entry["updated_at"] = int(stat.st_mtime)
+                    index_payload["files"][file_path] = current_entry
+                    skipped.append(file_path)
+                    continue
 
-            if current_entry:
-                self._delete_chunk_ids(current_entry.get("chunk_ids", []))
+                if current_entry:
+                    self._delete_chunk_ids(current_entry.get("chunk_ids", []))
 
-            chunks = self._chunk_text(text)
-            chunk_ids: list[str] = []
-            if chunks:
-                chunk_ids = [
-                    self._build_chunk_id(file_path, content_hash, index)
-                    for index in range(len(chunks))
-                ]
-                try:
-                    self._collection.delete(ids=chunk_ids)
-                except Exception:
-                    logger.debug("[Knowledge] Ignored cleanup failure before add", exc_info=True)
+                chunks = self._chunk_text(text)
+                chunk_ids: list[str] = []
+                if chunks:
+                    chunk_ids = [
+                        self._build_chunk_id(file_path, content_hash, index)
+                        for index in range(len(chunks))
+                    ]
+                    try:
+                        self._collection.delete(ids=chunk_ids)
+                    except Exception:
+                        logger.debug("[Knowledge] Ignored cleanup failure before add", exc_info=True)
 
-                embeddings = self._embedding_service.encode(chunks)
-                metadatas = [
-                    {
-                        "file_path": file_path,
-                        "file_name": Path(file_path).name,
-                        "chunk_index": index,
-                        "content_hash": content_hash,
-                        "source_type": "knowledge_file",
-                    }
-                    for index in range(len(chunks))
-                ]
-                self._collection.add(
-                    ids=chunk_ids,
-                    embeddings=embeddings,
-                    documents=chunks,
-                    metadatas=metadatas,
-                )
+                    embeddings = self._embedding_service.encode(chunks)
+                    metadatas = [
+                        {
+                            "file_path": file_path,
+                            "file_name": Path(file_path).name,
+                            "chunk_index": index,
+                            "content_hash": content_hash,
+                            "source_type": "knowledge_file",
+                        }
+                        for index in range(len(chunks))
+                    ]
+                    self._collection.add(
+                        ids=chunk_ids,
+                        embeddings=embeddings,
+                        documents=chunks,
+                        metadatas=metadatas,
+                    )
 
-            index_payload["files"][file_path] = {
-                "file_name": Path(file_path).name,
-                "size": stat.st_size,
-                "mtime_ns": stat.st_mtime_ns,
-                "updated_at": int(stat.st_mtime),
-                "content_hash": content_hash,
-                "chunk_ids": chunk_ids,
+                index_payload["files"][file_path] = {
+                    "file_name": Path(file_path).name,
+                    "size": stat.st_size,
+                    "mtime_ns": stat.st_mtime_ns,
+                    "updated_at": int(stat.st_mtime),
+                    "content_hash": content_hash,
+                    "chunk_ids": chunk_ids,
+                }
+
+                if current_entry:
+                    updated.append(file_path)
+                else:
+                    added.append(file_path)
+
+            self._write_index(index_payload)
+            return {
+                "added": added,
+                "updated": updated,
+                "removed": removed,
+                "skipped": skipped,
             }
-
-            if current_entry:
-                updated.append(file_path)
-            else:
-                added.append(file_path)
-
-        self._write_index(index_payload)
-        return {
-            "added": added,
-            "updated": updated,
-            "removed": removed,
-            "skipped": skipped,
-        }
 
     def search(
         self,
@@ -376,8 +426,12 @@ class KnowledgeBaseService:
             return []
 
         self._ensure_initialized()
-        self.sync_library()
-        query_embedding = self._embedding_service.encode_single(query.strip())
+        try:
+            self._sync_enabled_files_if_needed(normalized_enabled)
+            query_embedding = self._embedding_service.encode_single(query.strip())
+        except Exception as exc:
+            logger.warning("[Knowledge] Failed to prepare knowledge search: %s", exc)
+            return []
 
         entries_by_id: dict[str, dict[str, Any]] = {}
         for file_path in normalized_enabled:

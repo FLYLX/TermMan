@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from app.services.agent.history.chat import (
@@ -11,6 +12,7 @@ from app.services.agent.knowledge.service import knowledge_base_service
 from app.services.agent.memory.vector_store import vector_store
 from app.services.agent.prompts.policy import (
     PromptTurnType,
+    resolve_memory_status,
     resolve_prompt_memory_policy,
 )
 from app.services.agent.prompts.system import get_system_prompt
@@ -76,6 +78,15 @@ SESSION_SUMMARY_LABEL = "会话摘要"
 LONG_TERM_MEMORY_LABEL = "相关长期记忆"
 FILTERED_TERMINAL_LABEL = "终端过滤输出"
 RAW_TERMINAL_LABEL = "原生日志反馈"
+MIN_LONG_TERM_MEMORY_RELEVANCE = 0.08
+MEMORY_TYPE_RANK_BONUS = {
+    "preference": 0.18,
+    "task": 0.16,
+    "error": 0.14,
+    "context": 0.08,
+    "fact": 0.04,
+}
+PINNED_MEMORY_TYPES = ("preference", "task", "error")
 
 
 def _build_skill_prompt(
@@ -193,6 +204,8 @@ def _collect_long_term_memories(
                 query=query,
                 n_results=n_results,
                 memory_type=memory_type,
+                include_expired=False,
+                active_only=True,
             )
         except Exception as exc:
             logger.warning(
@@ -201,7 +214,7 @@ def _collect_long_term_memories(
                 memory_type,
                 exc,
             )
-            return ""
+            continue
         for memory in memories:
             memory_id = memory.get("id")
             if memory_id in seen_ids:
@@ -209,12 +222,148 @@ def _collect_long_term_memories(
             seen_ids.add(memory_id)
             collected.append(memory)
 
-    collected.sort(key=lambda memory: memory.get("distance") or 0)
-    trimmed = collected[:n_results]
+    trimmed = _select_long_term_memories(
+        collected,
+        allowed_types=allowed_types,
+        n_results=n_results,
+    )
     if not trimmed:
         return ""
 
-    return "\n".join(f"- {memory['content']}" for memory in trimmed if memory.get("content"))
+    return "\n".join(_format_long_term_memory(memory) for memory in trimmed)
+
+
+def _parse_memory_datetime(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _memory_type(memory: dict[str, Any]) -> str:
+    metadata = memory.get("metadata") or {}
+    return str(metadata.get("memory_type") or "fact")
+
+
+def _memory_relevance_score(memory: dict[str, Any]) -> float:
+    distance = memory.get("distance")
+    if distance is None:
+        return 0.25
+    try:
+        normalized_distance = min(max(float(distance), 0.0), 2.0)
+    except (TypeError, ValueError):
+        return 0.25
+    return max(0.0, 1.0 - normalized_distance / 2.0)
+
+
+def _memory_recency_score(memory: dict[str, Any]) -> float:
+    metadata = memory.get("metadata") or {}
+    timestamp = _parse_memory_datetime(
+        metadata.get("updated_at") or metadata.get("created_at")
+    )
+    if timestamp is None:
+        return 0.0
+
+    now = datetime.now(timestamp.tzinfo) if timestamp.tzinfo else datetime.now()
+    age_days = max(0, (now - timestamp).days)
+    if age_days <= 7:
+        return 0.08
+    if age_days <= 30:
+        return 0.05
+    if age_days <= 90:
+        return 0.02
+    return 0.0
+
+
+def _is_memory_expired(memory: dict[str, Any]) -> bool:
+    metadata = memory.get("metadata") or {}
+    expires_at = _parse_memory_datetime(metadata.get("expires_at"))
+    if expires_at is None:
+        return False
+    now = datetime.now(expires_at.tzinfo) if expires_at.tzinfo else datetime.now()
+    return expires_at < now
+
+
+def _is_inactive_status_memory(memory: dict[str, Any]) -> bool:
+    memory_type = _memory_type(memory)
+    status = str(resolve_memory_status(memory) or "").lower()
+    return (
+        (memory_type == "task" and status == "completed")
+        or (memory_type == "error" and status == "resolved")
+    )
+
+
+def _memory_rank_score(memory: dict[str, Any]) -> float:
+    metadata = memory.get("metadata") or {}
+    verified_bonus = 0.1 if metadata.get("verified") is True else 0.0
+    return (
+        _memory_relevance_score(memory)
+        + MEMORY_TYPE_RANK_BONUS.get(_memory_type(memory), 0.0)
+        + verified_bonus
+        + _memory_recency_score(memory)
+    )
+
+
+def _select_long_term_memories(
+    memories: list[dict[str, Any]],
+    *,
+    allowed_types: tuple[str, ...],
+    n_results: int,
+) -> list[dict[str, Any]]:
+    candidates = [
+        memory
+        for memory in memories
+        if memory.get("content")
+        and _memory_type(memory) in allowed_types
+        and not _is_memory_expired(memory)
+        and not _is_inactive_status_memory(memory)
+        and _memory_relevance_score(memory) >= MIN_LONG_TERM_MEMORY_RELEVANCE
+    ]
+    if not candidates:
+        return []
+
+    candidates.sort(key=_memory_rank_score, reverse=True)
+    selected: list[dict[str, Any]] = []
+    selected_ids: set[str] = set()
+
+    for memory_type in PINNED_MEMORY_TYPES:
+        if memory_type not in allowed_types or len(selected) >= n_results:
+            continue
+        typed_memory = next(
+            (memory for memory in candidates if _memory_type(memory) == memory_type),
+            None,
+        )
+        if typed_memory is None:
+            continue
+        selected.append(typed_memory)
+        selected_ids.add(str(typed_memory.get("id") or id(typed_memory)))
+
+    for memory in candidates:
+        if len(selected) >= n_results:
+            break
+        memory_id = str(memory.get("id") or id(memory))
+        if memory_id in selected_ids:
+            continue
+        selected.append(memory)
+        selected_ids.add(memory_id)
+
+    selected.sort(key=_memory_rank_score, reverse=True)
+    return selected[:n_results]
+
+
+def _format_long_term_memory(memory: dict[str, Any]) -> str:
+    metadata = memory.get("metadata") or {}
+    tags = [_memory_type(memory)]
+    status = resolve_memory_status(memory)
+    if status:
+        tags.append(str(status))
+    if metadata.get("verified") is True:
+        tags.append("verified")
+
+    content = str(memory.get("content") or "").strip()
+    return f"- [{', '.join(tags)}] {content}"
 
 
 def _collect_handler_knowledge(
@@ -227,11 +376,16 @@ def _collect_handler_knowledge(
     if not enabled_files or not query or n_results <= 0:
         return ""
 
-    results = knowledge_base_service.search(
-        query,
-        enabled_files=enabled_files,
-        n_results=n_results,
-    )
+    try:
+        results = knowledge_base_service.search(
+            query,
+            enabled_files=enabled_files,
+            n_results=n_results,
+        )
+    except Exception as exc:
+        logger.warning("[PromptBuilder] Failed to query handler knowledge: %s", exc)
+        return ""
+
     if not results:
         return ""
 

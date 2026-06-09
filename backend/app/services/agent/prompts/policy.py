@@ -3,11 +3,10 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import Any
-
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +32,9 @@ def resolve_prompt_memory_policy(turn_type: PromptTurnType) -> PromptMemoryPolic
         return PromptMemoryPolicy(
             include_session_summary=True,
             include_recent_history=True,
-            include_long_term=False,
+            include_long_term=True,
             max_recent_messages=10,
-            max_long_term_memories=3,
+            max_long_term_memories=5,
             allowed_long_term_types=("fact", "preference", "task", "error", "context"),
         )
 
@@ -52,10 +51,10 @@ def resolve_prompt_memory_policy(turn_type: PromptTurnType) -> PromptMemoryPolic
     return PromptMemoryPolicy(
         include_session_summary=True,
         include_recent_history=True,
-        include_long_term=False,
+        include_long_term=True,
         max_recent_messages=8,
-        max_long_term_memories=0,
-        allowed_long_term_types=(),
+        max_long_term_memories=3,
+        allowed_long_term_types=("preference", "task", "error", "context"),
     )
 
 
@@ -633,7 +632,7 @@ def build_conversation_memory_candidate(
         metadata["status"] = "active"
     if matched_skills:
         skill_ids = [
-            getattr(skill, "skill_id")
+            skill.skill_id
             for skill in matched_skills
             if getattr(skill, "skill_id", None)
         ]
@@ -680,7 +679,7 @@ def build_confirmation_memory_candidate(
     }
     if matched_skills:
         skill_ids = [
-            getattr(skill, "skill_id")
+            skill.skill_id
             for skill in matched_skills
             if getattr(skill, "skill_id", None)
         ]
@@ -751,7 +750,7 @@ def build_status_update_memory_candidate(
     }
     if matched_skills:
         skill_ids = [
-            getattr(skill, "skill_id")
+            skill.skill_id
             for skill in matched_skills
             if getattr(skill, "skill_id", None)
         ]

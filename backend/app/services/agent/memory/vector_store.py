@@ -4,8 +4,8 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
-from chromadb import Collection
 import chromadb
+from chromadb import Collection
 
 from app.core.config import settings
 
@@ -24,6 +24,7 @@ MEMORY_TYPES = {
 DEFAULT_MEMORY_TTL_DAYS = 30
 DEDUP_THRESHOLD = 0.95
 SUMMARIZE_THRESHOLD = 10
+DEFAULT_RECALL_CANDIDATE_MULTIPLIER = 4
 
 
 class EmbeddingService:
@@ -130,6 +131,57 @@ class VectorStoreService:
             return filters[0]
         return {"$and": filters}
 
+    @staticmethod
+    def _parse_datetime(value: Any) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+    @classmethod
+    def _is_expired_memory(cls, metadata: dict[str, Any]) -> bool:
+        expires_at = cls._parse_datetime(metadata.get("expires_at"))
+        if expires_at is None:
+            return False
+        now = datetime.now(expires_at.tzinfo) if expires_at.tzinfo else datetime.now()
+        return expires_at < now
+
+    @staticmethod
+    def _resolved_memory_status(memory_type: str, content: str, metadata: dict[str, Any]) -> str:
+        status = str(metadata.get("status") or "").lower()
+        if status:
+            return status
+        normalized = (content or "").strip()
+        if memory_type == "task":
+            if normalized.endswith("\uff08\u5df2\u5b8c\u6210\uff09"):
+                return "completed"
+            return "active"
+        if memory_type == "error":
+            if normalized.endswith("\uff08\u5df2\u89e3\u51b3\uff09"):
+                return "resolved"
+            return "active"
+        return ""
+
+    @classmethod
+    def _is_inactive_status_memory(cls, content: str, metadata: dict[str, Any]) -> bool:
+        memory_type = str(metadata.get("memory_type") or "")
+        status = cls._resolved_memory_status(memory_type, content, metadata)
+        return (
+            (memory_type == "task" and status == "completed")
+            or (memory_type == "error" and status == "resolved")
+        )
+
+    @staticmethod
+    def _similarity_from_distance(distance: Any) -> float | None:
+        if distance is None:
+            return None
+        try:
+            return 1.0 - float(distance)
+        except (TypeError, ValueError):
+            return None
+
     def add_memory(
         self,
         item_id: str,
@@ -176,18 +228,18 @@ class VectorStoreService:
         query_embedding = self._try_encode_single(content)
         if query_embedding is None:
             return False
-        
+
         results = self._collection.query(
             query_embeddings=[query_embedding],
             n_results=1,
             where={"item_id": item_id},
         )
-        
+
         if results["distances"] and results["distances"][0]:
             distance = results["distances"][0][0]
             similarity = 1 - distance
             return similarity >= DEDUP_THRESHOLD
-        
+
         return False
 
     def search_memories(
@@ -196,29 +248,50 @@ class VectorStoreService:
         query: str,
         n_results: int = 5,
         memory_type: MemoryType | None = None,
+        *,
+        include_expired: bool = False,
+        active_only: bool = True,
+        min_similarity: float | None = None,
+        candidate_multiplier: int = DEFAULT_RECALL_CANDIDATE_MULTIPLIER,
     ) -> list[dict[str, Any]]:
         self._ensure_initialized()
         query_embedding = self._try_encode_single(query)
         if query_embedding is None:
             return []
         where_filter = self._build_where_filter(item_id=item_id, memory_type=memory_type)
+        query_results = max(n_results, n_results * max(candidate_multiplier, 1))
 
         results = self._collection.query(
             query_embeddings=[query_embedding],
-            n_results=n_results,
+            n_results=query_results,
             where=where_filter,
         )
 
         memories = []
         if results["documents"] and results["documents"][0]:
             for i, doc in enumerate(results["documents"][0]):
+                metadata = results["metadatas"][0][i] if results["metadatas"] else {}
+                distance = results["distances"][0][i] if results["distances"] else None
+                if not include_expired and self._is_expired_memory(metadata):
+                    continue
+                if active_only and self._is_inactive_status_memory(doc, metadata):
+                    continue
+                similarity = self._similarity_from_distance(distance)
+                if (
+                    min_similarity is not None
+                    and similarity is not None
+                    and similarity < min_similarity
+                ):
+                    continue
                 memory = {
                     "id": results["ids"][0][i],
                     "content": doc,
-                    "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
-                    "distance": results["distances"][0][i] if results["distances"] else None,
+                    "metadata": metadata,
+                    "distance": distance,
                 }
                 memories.append(memory)
+                if len(memories) >= n_results:
+                    break
 
         return memories
 
@@ -229,9 +302,9 @@ class VectorStoreService:
     ) -> list[dict[str, Any]]:
         self._ensure_initialized()
         where_filter = self._build_where_filter(item_id=item_id, memory_type=memory_type)
-        
+
         results = self._collection.get(where=where_filter)
-        
+
         memories = []
         if results["ids"]:
             for i, memory_id in enumerate(results["ids"]):
@@ -240,7 +313,7 @@ class VectorStoreService:
                     "content": results["documents"][i] if results["documents"] else "",
                     "metadata": results["metadatas"][i] if results["metadatas"] else {},
                 })
-        
+
         return memories
 
     def get_memory(self, memory_id: str) -> dict[str, Any] | None:
@@ -256,28 +329,28 @@ class VectorStoreService:
 
     def get_memory_stats(self, item_id: str) -> dict[str, Any]:
         all_memories = self.get_all_memories(item_id)
-        
+
         stats = {
             "total": len(all_memories),
             "by_type": {},
             "expired_count": 0,
         }
-        
+
         now = datetime.now()
         for memory in all_memories:
             meta = memory.get("metadata", {})
             m_type = meta.get("memory_type", "fact")
             stats["by_type"][m_type] = stats["by_type"].get(m_type, 0) + 1
-            
+
             expires_at = meta.get("expires_at")
             if expires_at:
                 try:
                     exp_time = datetime.fromisoformat(expires_at)
                     if exp_time < now:
                         stats["expired_count"] += 1
-                except:
+                except ValueError:
                     pass
-        
+
         return stats
 
     def delete_memory(self, memory_id: str) -> bool:
@@ -299,7 +372,7 @@ class VectorStoreService:
         all_memories = self.get_all_memories(item_id)
         now = datetime.now()
         expired_ids = []
-        
+
         for memory in all_memories:
             meta = memory.get("metadata", {})
             expires_at = meta.get("expires_at")
@@ -308,42 +381,42 @@ class VectorStoreService:
                     exp_time = datetime.fromisoformat(expires_at)
                     if exp_time < now:
                         expired_ids.append(memory["id"])
-                except:
+                except ValueError:
                     pass
-        
+
         if expired_ids:
             self._collection.delete(ids=expired_ids)
             logger.info(f"[VectorStore] Expired {len(expired_ids)} memories for item {item_id}")
-        
+
         return len(expired_ids)
 
     def deduplicate_memories(self, item_id: str) -> int:
         all_memories = self.get_all_memories(item_id)
         if len(all_memories) < 2:
             return 0
-        
+
         contents = [m["content"] for m in all_memories]
         embeddings = self._try_encode(contents)
         if embeddings is None:
             return 0
-        
+
         ids_to_delete = set()
-        
+
         for i in range(len(embeddings)):
             if all_memories[i]["id"] in ids_to_delete:
                 continue
             for j in range(i + 1, len(embeddings)):
                 if all_memories[j]["id"] in ids_to_delete:
                     continue
-                
+
                 similarity = self._cosine_similarity(embeddings[i], embeddings[j])
                 if similarity >= DEDUP_THRESHOLD:
                     ids_to_delete.add(all_memories[j]["id"])
-        
+
         if ids_to_delete:
             self._collection.delete(ids=list(ids_to_delete))
             logger.info(f"[VectorStore] Deduplicated {len(ids_to_delete)} memories for item {item_id}")
-        
+
         return len(ids_to_delete)
 
     def _cosine_similarity(self, a: list[float], b: list[float]) -> float:
@@ -361,17 +434,17 @@ class VectorStoreService:
             existing = self._collection.get(ids=[memory_id])
             if not existing["ids"]:
                 return False
-            
+
             current_meta = existing["metadatas"][0] if existing["metadatas"] else {}
             current_doc = existing["documents"][0] if existing["documents"] else ""
-            
+
             new_content = content or current_doc
             new_meta = {**current_meta, **(metadata or {})}
-            
+
             embedding = self._try_encode_single(new_content)
             if embedding is None:
                 return False
-            
+
             self._collection.delete(ids=[memory_id])
             self._collection.add(
                 ids=[memory_id],
@@ -379,7 +452,7 @@ class VectorStoreService:
                 documents=[new_content],
                 metadatas=[new_meta],
             )
-            
+
             logger.info(f"[VectorStore] Updated memory {memory_id}")
             return True
         except Exception as e:
@@ -400,29 +473,29 @@ class VectorStoreService:
         threshold: int = 10,
     ) -> dict[str, Any]:
         all_memories = self.get_all_memories(item_id)
-        
+
         if len(all_memories) < threshold:
             return {"summarized": 0, "message": f"记忆数量 ({len(all_memories)}) 未达到阈值 ({threshold})"}
-        
+
         from litellm import completion
-        
+
         memories_by_type: dict[str, list[dict]] = {}
         for memory in all_memories:
             m_type = memory.get("metadata", {}).get("memory_type", "fact")
             if m_type not in memories_by_type:
                 memories_by_type[m_type] = []
             memories_by_type[m_type].append(memory)
-        
+
         total_summarized = 0
         summaries_created = 0
-        
+
         for m_type, memories in memories_by_type.items():
             if len(memories) < 3:
                 continue
-            
+
             contents = [m["content"] for m in memories]
             combined = "\n".join(f"- {c}" for c in contents)
-            
+
             prompt = f"""请将以下 {len(memories)} 条{MEMORY_TYPES.get(m_type, m_type)}记忆压缩成 1-3 条精简的摘要。
 保留关键信息，去除重复和冗余内容。
 
@@ -442,16 +515,16 @@ class VectorStoreService:
                     kwargs["api_key"] = api_key
                 if api_base:
                     kwargs["api_base"] = api_base
-                
+
                 response = completion(**kwargs)
                 summary_text = response.choices[0].message.content.strip()
-                
+
                 summary_lines = [line.strip() for line in summary_text.split("\n") if line.strip()]
-                
+
                 for old_memory in memories:
                     self._collection.delete(ids=[old_memory["id"]])
                     total_summarized += 1
-                
+
                 for line in summary_lines:
                     if line and len(line) > 10:
                         self.add_memory(
@@ -461,12 +534,12 @@ class VectorStoreService:
                             ttl_days=DEFAULT_MEMORY_TTL_DAYS,
                         )
                         summaries_created += 1
-                
+
                 logger.info(f"[VectorStore] Summarized {len(memories)} {m_type} memories into {len(summary_lines)} for item {item_id}")
-                
+
             except Exception as e:
                 logger.error(f"[VectorStore] Failed to summarize {m_type} memories: {e}")
-        
+
         return {
             "summarized": total_summarized,
             "summaries_created": summaries_created,

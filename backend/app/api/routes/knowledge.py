@@ -1,5 +1,3 @@
-from typing import Any
-
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -64,7 +62,7 @@ def _prune_deleted_file_from_handlers(
 
 
 @router.get("/files", response_model=KnowledgeFileListResponse)
-def list_knowledge_files(current_user: CurrentUser) -> KnowledgeFileListResponse:
+def list_knowledge_files(_current_user: CurrentUser) -> KnowledgeFileListResponse:
     files = [
         KnowledgeFileItem.model_validate(item)
         for item in knowledge_base_service.list_files()
@@ -78,7 +76,7 @@ def list_knowledge_files(current_user: CurrentUser) -> KnowledgeFileListResponse
 
 @router.post("/files/upload", response_model=KnowledgeUploadResponse)
 async def upload_knowledge_files(
-    current_user: CurrentUser,
+    _current_user: CurrentUser,
     files: list[UploadFile] = File(...),
 ) -> KnowledgeUploadResponse:
     uploaded_items: list[KnowledgeFileItem] = []
@@ -102,7 +100,7 @@ async def upload_knowledge_files(
 
     listed_files = {
         entry["path"]: entry
-        for entry in knowledge_base_service.list_files()
+        for entry in knowledge_base_service.list_files(sync=False)
     }
 
     for file_path in saved_paths:
@@ -125,7 +123,7 @@ async def upload_knowledge_files(
 
 @router.get("/files/download/{file_path:path}")
 def download_knowledge_file(
-    current_user: CurrentUser,
+    _current_user: CurrentUser,
     file_path: str,
 ) -> FileResponse:
     try:
@@ -145,7 +143,7 @@ def download_knowledge_file(
 @router.delete("/files/{file_path:path}")
 def delete_knowledge_file(
     session: SessionDep,
-    current_user: CurrentUser,
+    _current_user: CurrentUser,
     file_path: str,
 ) -> Message:
     try:

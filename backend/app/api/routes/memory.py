@@ -8,15 +8,15 @@ from sqlmodel import Session, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Item, ItemChatSession, ItemChatSessionPublic
+from app.services.agent.memory.vector_store import (
+    MEMORY_TYPES,
+    MemoryType,
+    vector_store,
+)
 from app.services.agent.prompts.policy import (
     build_manual_status_update,
     get_allowed_memory_statuses,
     resolve_memory_status,
-)
-from app.services.agent.memory.vector_store import (
-    vector_store,
-    MemoryType,
-    MEMORY_TYPES,
 )
 
 logger = logging.getLogger(__name__)
@@ -148,17 +148,17 @@ def get_chat_session(
     current_user: CurrentUser,
 ) -> Any:
     _get_accessible_item(item_id, session, current_user)
-    
+
     chat_session = session.exec(
         select(ItemChatSession).where(ItemChatSession.item_id == item_id)
     ).first()
-    
+
     if not chat_session:
         chat_session = ItemChatSession(item_id=item_id, messages=[])
         session.add(chat_session)
         session.commit()
         session.refresh(chat_session)
-    
+
     return chat_session
 
 
@@ -170,20 +170,20 @@ def save_chat_session(
     current_user: CurrentUser,
 ) -> Any:
     _get_accessible_item(item_id, session, current_user)
-    
+
     chat_session = session.exec(
         select(ItemChatSession).where(ItemChatSession.item_id == item_id)
     ).first()
-    
+
     if not chat_session:
         chat_session = ItemChatSession(item_id=item_id, messages=messages)
         session.add(chat_session)
     else:
         chat_session.messages = messages
-    
+
     session.commit()
     session.refresh(chat_session)
-    
+
     return chat_session
 
 
@@ -194,15 +194,15 @@ def clear_chat_session(
     current_user: CurrentUser,
 ) -> Any:
     _get_accessible_item(item_id, session, current_user)
-    
+
     chat_session = session.exec(
         select(ItemChatSession).where(ItemChatSession.item_id == item_id)
     ).first()
-    
+
     if chat_session:
         chat_session.messages = []
         session.commit()
-    
+
     return {"message": "Chat session cleared"}
 
 
@@ -213,9 +213,9 @@ def clear_all_session_data(
     current_user: CurrentUser,
 ) -> Any:
     item = _get_accessible_item(item_id, session, current_user)
-    
+
     results = {}
-    
+
     chat_session = session.exec(
         select(ItemChatSession).where(ItemChatSession.item_id == item_id)
     ).first()
@@ -223,14 +223,14 @@ def clear_all_session_data(
         chat_session.messages = []
         session.commit()
         results["chat_session"] = "cleared"
-    
+
     try:
         vector_store.delete_item_memories(str(item_id))
         results["memories"] = "cleared"
     except Exception as e:
         logger.error(f"Failed to clear memories: {e}")
         results["memories"] = f"error: {e}"
-    
+
     try:
         from app.services.log_manager import LogManager
         LogManager().delete_log(str(item.owner_id), str(item_id))
@@ -238,7 +238,7 @@ def clear_all_session_data(
     except Exception as e:
         logger.error(f"Failed to clear terminal log: {e}")
         results["terminal_log"] = f"error: {e}"
-    
+
     logger.info(f"[Memory] Cleared all session data for item {item_id}: {results}")
     return {"message": "All session data cleared", "details": results}
 
@@ -305,6 +305,8 @@ def search_memories(
         query=request.query,
         n_results=request.n_results,
         memory_type=request.memory_type,
+        include_expired=True,
+        active_only=False,
     )
 
     return {"memories": _sort_memories(memories)}
@@ -326,10 +328,10 @@ def add_memory(
         metadata=request.metadata,
         ttl_days=request.ttl_days,
     )
-    
+
     if memory_id is None:
         return {"memory_id": None, "message": "Duplicate memory skipped"}
-    
+
     return {"memory_id": memory_id, "message": "Memory added"}
 
 
@@ -348,10 +350,10 @@ def update_memory(
         content=request.content,
         metadata=request.metadata,
     )
-    
+
     if not success:
         raise HTTPException(status_code=404, detail="Memory not found")
-    
+
     return {"message": "Memory updated"}
 
 
@@ -454,23 +456,23 @@ def summarize_memories(
     session: SessionDep = None,
     current_user: CurrentUser = None,
 ) -> Any:
-    from app.services.agent.agent import agent_manager
     from sqlmodel import select
-    from app.models import Item, ItemHandler, ItemHandlerItem
 
-    item = _get_accessible_item(item_id, session, current_user)
+    from app.models import ItemHandler, ItemHandlerItem
+
+    _get_accessible_item(item_id, session, current_user)
 
     handler_item = session.exec(
         select(ItemHandlerItem).where(ItemHandlerItem.item_id == item_id)
     ).first()
-    
+
     if not handler_item:
         raise HTTPException(status_code=404, detail="No handler associated with this item")
-    
+
     handler = session.get(ItemHandler, handler_item.item_handler_id)
     if not handler:
         raise HTTPException(status_code=404, detail="Handler not found")
-    
+
     result = vector_store.summarize_memories(
         item_id=str(item_id),
         model=handler.model or "deepseek/deepseek-chat",
@@ -478,5 +480,5 @@ def summarize_memories(
         api_base=handler.api_url,
         threshold=threshold,
     )
-    
+
     return result
