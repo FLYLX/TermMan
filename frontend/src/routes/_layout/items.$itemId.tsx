@@ -1235,7 +1235,7 @@ function ItemDetailPage({
 
             <TabsContent value="filters" className="space-y-4">
               <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-                <div className="mb-4 flex items-start justify-between gap-4">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex items-start gap-2">
                     <Filter className="mt-1 size-5 text-blue-500" />
                     <div>
@@ -1247,48 +1247,51 @@ function ItemDetailPage({
                       </p>
                     </div>
                   </div>
-                  <div className="flex min-h-8 items-center gap-2 text-xs text-muted-foreground">
-                    {isSavingInputFilter ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" />
-                        <span>{t("items.detail.autoSaving")}</span>
-                      </>
-                    ) : inputFilterSaveState === "saved" ? (
-                      <>
-                        <Check className="size-4 text-emerald-500" />
-                        <span>{t("items.detail.autoSaved")}</span>
-                      </>
-                    ) : inputFilterSaveState === "error" ? (
-                      <>
-                        <AlertCircle className="size-4 text-red-500" />
-                        <span className="text-red-500">
-                          {t("items.detail.autoSaveFailed")}
-                        </span>
-                      </>
-                    ) : (
-                      <span>{t("items.detail.autoSaveEnabled")}</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mb-4 flex flex-wrap items-center gap-4 rounded-lg border bg-muted/30 p-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">
-                      {t("common.enabled")}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setInputFilterEnabled(!inputFilterEnabled)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        inputFilterEnabled ? "bg-blue-500" : "bg-muted"
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          inputFilterEnabled ? "translate-x-6" : "translate-x-1"
+                  <div className="flex shrink-0 flex-row items-center justify-between gap-4 sm:flex-col sm:items-end sm:justify-start">
+                    <div className="flex min-h-5 items-center gap-2 text-xs text-muted-foreground">
+                      {isSavingInputFilter ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" />
+                          <span>{t("items.detail.autoSaving")}</span>
+                        </>
+                      ) : inputFilterSaveState === "saved" ? (
+                        <>
+                          <Check className="size-4 text-emerald-500" />
+                          <span>{t("items.detail.autoSaved")}</span>
+                        </>
+                      ) : inputFilterSaveState === "error" ? (
+                        <>
+                          <AlertCircle className="size-4 text-red-500" />
+                          <span className="text-red-500">
+                            {t("items.detail.autoSaveFailed")}
+                          </span>
+                        </>
+                      ) : (
+                        <span>{t("items.detail.autoSaveEnabled")}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">
+                        {t("common.enabled")}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setInputFilterEnabled(!inputFilterEnabled)
+                        }
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          inputFilterEnabled ? "bg-blue-500" : "bg-muted"
                         }`}
-                      />
-                    </button>
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            inputFilterEnabled
+                              ? "translate-x-6"
+                              : "translate-x-1"
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1358,7 +1361,7 @@ function ItemDetailPage({
               </section>
 
               <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-                <div className="mb-4 flex items-start justify-between gap-4">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex items-start gap-2">
                     <Shield className="mt-1 size-5 text-orange-500" />
                     <div>
@@ -1370,52 +1373,51 @@ function ItemDetailPage({
                       </p>
                     </div>
                   </div>
-                  <div className="flex min-h-8 items-center gap-2 text-xs text-muted-foreground">
-                    {isSavingOutputFilter ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" />
-                        <span>{t("items.detail.autoSaving")}</span>
-                      </>
-                    ) : outputFilterSaveState === "saved" ? (
-                      <>
-                        <Check className="size-4 text-emerald-500" />
-                        <span>{t("items.detail.autoSaved")}</span>
-                      </>
-                    ) : outputFilterSaveState === "error" ? (
-                      <>
-                        <AlertCircle className="size-4 text-red-500" />
-                        <span className="text-red-500">
-                          {t("items.detail.autoSaveFailed")}
-                        </span>
-                      </>
-                    ) : (
-                      <span>{t("items.detail.autoSaveEnabled")}</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mb-4 flex flex-wrap items-center gap-4 rounded-lg border bg-muted/30 p-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">
-                      {t("common.enabled")}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setOutputFilterEnabled(!outputFilterEnabled)
-                      }
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        outputFilterEnabled ? "bg-orange-500" : "bg-muted"
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          outputFilterEnabled
-                            ? "translate-x-6"
-                            : "translate-x-1"
+                  <div className="flex shrink-0 flex-row items-center justify-between gap-4 sm:flex-col sm:items-end sm:justify-start">
+                    <div className="flex min-h-5 items-center gap-2 text-xs text-muted-foreground">
+                      {isSavingOutputFilter ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" />
+                          <span>{t("items.detail.autoSaving")}</span>
+                        </>
+                      ) : outputFilterSaveState === "saved" ? (
+                        <>
+                          <Check className="size-4 text-emerald-500" />
+                          <span>{t("items.detail.autoSaved")}</span>
+                        </>
+                      ) : outputFilterSaveState === "error" ? (
+                        <>
+                          <AlertCircle className="size-4 text-red-500" />
+                          <span className="text-red-500">
+                            {t("items.detail.autoSaveFailed")}
+                          </span>
+                        </>
+                      ) : (
+                        <span>{t("items.detail.autoSaveEnabled")}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">
+                        {t("common.enabled")}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOutputFilterEnabled(!outputFilterEnabled)
+                        }
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          outputFilterEnabled ? "bg-orange-500" : "bg-muted"
                         }`}
-                      />
-                    </button>
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            outputFilterEnabled
+                              ? "translate-x-6"
+                              : "translate-x-1"
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                 </div>
 

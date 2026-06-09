@@ -47,16 +47,12 @@ export function FilterGeneratorCard({
     target === "input"
       ? {
           flow: "Terminal output -> Agent",
-          description:
-            "Generate rules for text emitted by the terminal before Agent, timeline, or robot routing receives it.",
           promptLabel: "Prompt for terminal output -> Agent filter",
           placeholder:
             "Example: ignore progress bars, log error prompts, redact access tokens from terminal output.",
         }
       : {
           flow: "Agent command -> terminal",
-          description:
-            "Generate rules for shell commands before Agent sends them to the terminal for execution.",
           promptLabel: "Prompt for Agent command -> terminal filter",
           placeholder:
             "Example: block destructive disk commands, log sudo usage, redact passwords before execution.",
@@ -125,10 +121,6 @@ export function FilterGeneratorCard({
               </Badge>
             )}
           </div>
-          <p className="text-xs text-muted-foreground">
-            {targetMeta.description} The generated JSON will be loaded into the
-            filter editor after you apply it.
-          </p>
         </div>
         <div className="flex gap-2">
           <Button
