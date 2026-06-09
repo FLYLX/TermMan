@@ -31,6 +31,7 @@ services:
       - ROBOT_BACKEND_URL=${ROBOT_BACKEND_URL:-http://backend:8000}
       - ROBOT_BRIDGE_URL=${ROBOT_BRIDGE_URL:-http://robot-bridge:7000}
       - ROBOT_QQ_IS_SANDBOX=${ROBOT_QQ_IS_SANDBOX:-false}
+      - LITELLM_LOCAL_MODEL_COST_MAP=${LITELLM_LOCAL_MODEL_COST_MAP:-True}
     volumes:
       - backend-db:/app/backend
       - ./backend/app/services/log:/app/backend/app/services/log
@@ -70,6 +71,7 @@ services:
       - ROBOT_BACKEND_URL=${ROBOT_BACKEND_URL:-http://backend:8000}
       - ROBOT_BRIDGE_URL=${ROBOT_BRIDGE_URL:-http://robot-bridge:7000}
       - ROBOT_QQ_IS_SANDBOX=${ROBOT_QQ_IS_SANDBOX:-false}
+      - LITELLM_LOCAL_MODEL_COST_MAP=${LITELLM_LOCAL_MODEL_COST_MAP:-True}
     volumes:
       - backend-db:/app/backend
       - ./backend/app/services/log:/app/backend/app/services/log

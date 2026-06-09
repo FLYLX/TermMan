@@ -62,10 +62,19 @@ services:
     command:
       - bash
       - scripts/run_backend.sh
-      - fastapi
-      - run
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
       - --reload
-      - "app/main.py"
+      - --reload-dir
+      - app
+      - --reload-include
+      - "*.py"
+      - --reload-exclude
+      - "app/services/log/*"
     develop:
       watch:
         - path: ./backend
@@ -93,6 +102,7 @@ services:
       ROBOT_BRIDGE_EMBEDDED: "${ROBOT_BRIDGE_EMBEDDED:-false}"
       ROBOT_BACKEND_URL: "${ROBOT_BACKEND_URL:-http://backend:8000}"
       ROBOT_BRIDGE_URL: "${ROBOT_BRIDGE_URL:-http://robot-bridge:7000}"
+      LITELLM_LOCAL_MODEL_COST_MAP: "${LITELLM_LOCAL_MODEL_COST_MAP:-True}"
 
   robot-bridge:
     restart: unless-stopped
