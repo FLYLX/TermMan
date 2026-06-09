@@ -62,8 +62,6 @@ type ItemsResponse = {
   count: number
 }
 
-type FilterAutoSaveState = "idle" | "saving" | "saved" | "error"
-
 function createDefaultInputRules(): Record<string, FilterRule> {
   return {
     block_filter: {
@@ -385,13 +383,6 @@ function ItemDetailPage({
     ),
   )
 
-  const [isSavingInputFilter, setIsSavingInputFilter] = useState(false)
-  const [isSavingOutputFilter, setIsSavingOutputFilter] = useState(false)
-  const [inputFilterSaveState, setInputFilterSaveState] =
-    useState<FilterAutoSaveState>("idle")
-  const [outputFilterSaveState, setOutputFilterSaveState] =
-    useState<FilterAutoSaveState>("idle")
-
   const [inputFilterEnabled, setInputFilterEnabled] = useState(
     item.input_filter_enabled || false,
   )
@@ -496,10 +487,6 @@ function ItemDetailPage({
     previousItemIdRef.current = item.id
     itemUpdatedAtRef.current = incomingUpdatedAt
     if (isNewItem) {
-      setIsSavingInputFilter(false)
-      setIsSavingOutputFilter(false)
-      setInputFilterSaveState("idle")
-      setOutputFilterSaveState("idle")
       setConfigForm({
         title: item.title,
         description: item.description ?? "",
@@ -520,24 +507,6 @@ function ItemDetailPage({
   useEffect(() => {
     latestOutputSignatureRef.current = outputSignature
   }, [outputSignature])
-
-  useEffect(() => {
-    if (
-      inputSignature !== inputSyncedSignatureRef.current &&
-      inputFilterSaveState === "saved"
-    ) {
-      setInputFilterSaveState("idle")
-    }
-  }, [inputFilterSaveState, inputSignature])
-
-  useEffect(() => {
-    if (
-      outputSignature !== outputSyncedSignatureRef.current &&
-      outputFilterSaveState === "saved"
-    ) {
-      setOutputFilterSaveState("idle")
-    }
-  }, [outputFilterSaveState, outputSignature])
 
   const shouldConnect = item.status === "running" && item.daemon_online
 
@@ -731,8 +700,6 @@ function ItemDetailPage({
         input_filter_rules: inputFilterRules,
       }
 
-      setIsSavingInputFilter(true)
-      setInputFilterSaveState("saving")
       try {
         const updatedItem = await ItemsService.updateItem({
           id: item.id,
@@ -748,14 +715,10 @@ function ItemDetailPage({
           updatedItem.updated_at || itemUpdatedAtRef.current
 
         if (latestInputSignatureRef.current === payloadSignature) {
-          setInputFilterSaveState("saved")
-          setIsSavingInputFilter(false)
           updateItemCaches(updatedItem)
         }
       } catch (error) {
         console.error("Failed to auto-save input filter:", error)
-        setInputFilterSaveState("error")
-        setIsSavingInputFilter(false)
         showErrorToast(t("items.detail.inputFilterSaveFailed"))
       }
     }, 600)
@@ -783,8 +746,6 @@ function ItemDetailPage({
         output_filter_rules: outputFilterRules,
       }
 
-      setIsSavingOutputFilter(true)
-      setOutputFilterSaveState("saving")
       try {
         const updatedItem = await ItemsService.updateItem({
           id: item.id,
@@ -800,14 +761,10 @@ function ItemDetailPage({
           updatedItem.updated_at || itemUpdatedAtRef.current
 
         if (latestOutputSignatureRef.current === payloadSignature) {
-          setOutputFilterSaveState("saved")
-          setIsSavingOutputFilter(false)
           updateItemCaches(updatedItem)
         }
       } catch (error) {
         console.error("Failed to auto-save output filter:", error)
-        setOutputFilterSaveState("error")
-        setIsSavingOutputFilter(false)
         showErrorToast(t("items.detail.outputFilterSaveFailed"))
       }
     }, 600)
@@ -1247,29 +1204,7 @@ function ItemDetailPage({
                       </p>
                     </div>
                   </div>
-                  <div className="flex shrink-0 flex-row items-center justify-between gap-4 sm:flex-col sm:items-end sm:justify-start">
-                    <div className="flex min-h-5 items-center gap-2 text-xs text-muted-foreground">
-                      {isSavingInputFilter ? (
-                        <>
-                          <Loader2 className="size-4 animate-spin" />
-                          <span>{t("items.detail.autoSaving")}</span>
-                        </>
-                      ) : inputFilterSaveState === "saved" ? (
-                        <>
-                          <Check className="size-4 text-emerald-500" />
-                          <span>{t("items.detail.autoSaved")}</span>
-                        </>
-                      ) : inputFilterSaveState === "error" ? (
-                        <>
-                          <AlertCircle className="size-4 text-red-500" />
-                          <span className="text-red-500">
-                            {t("items.detail.autoSaveFailed")}
-                          </span>
-                        </>
-                      ) : (
-                        <span>{t("items.detail.autoSaveEnabled")}</span>
-                      )}
-                    </div>
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-4 gap-y-2">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">
                         {t("common.enabled")}
@@ -1373,29 +1308,7 @@ function ItemDetailPage({
                       </p>
                     </div>
                   </div>
-                  <div className="flex shrink-0 flex-row items-center justify-between gap-4 sm:flex-col sm:items-end sm:justify-start">
-                    <div className="flex min-h-5 items-center gap-2 text-xs text-muted-foreground">
-                      {isSavingOutputFilter ? (
-                        <>
-                          <Loader2 className="size-4 animate-spin" />
-                          <span>{t("items.detail.autoSaving")}</span>
-                        </>
-                      ) : outputFilterSaveState === "saved" ? (
-                        <>
-                          <Check className="size-4 text-emerald-500" />
-                          <span>{t("items.detail.autoSaved")}</span>
-                        </>
-                      ) : outputFilterSaveState === "error" ? (
-                        <>
-                          <AlertCircle className="size-4 text-red-500" />
-                          <span className="text-red-500">
-                            {t("items.detail.autoSaveFailed")}
-                          </span>
-                        </>
-                      ) : (
-                        <span>{t("items.detail.autoSaveEnabled")}</span>
-                      )}
-                    </div>
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-4 gap-y-2">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">
                         {t("common.enabled")}
