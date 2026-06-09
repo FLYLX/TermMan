@@ -326,6 +326,159 @@ def test_robot_mcp_send_message_prefers_active_context_over_ambiguous_history(
     assert sent["reply_target"].target_id == "current-group"
 
 
+def test_robot_mcp_blocks_reply_to_other_context_from_active_robot_turn(
+    monkeypatch,
+) -> None:
+    server = RobotMCPServer()
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="current-group",
+        metadata={
+            "conversation": {
+                "type": "group",
+                "id": "current-group",
+                "target_type": "group",
+                "target_id": "current-group",
+            }
+        },
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:current-group:user-1",
+            reply_target=target,
+        )
+    )
+    sent: list[tuple[str, RobotReplyTarget, str]] = []
+
+    def fake_send_message(robot_id, reply_target, text):
+        sent.append((robot_id, reply_target, text))
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+
+    try:
+        result = server.call_tool(
+            "send_message",
+            {
+                "text": "wrong chat",
+                "_robot_context_token": token,
+                "reply_to": "group:other-group",
+                "_robot_known_targets": [
+                    {
+                        "conversation": "group:other-group",
+                        "target_type": "group",
+                        "target_id": "other-group",
+                        "sender": "Alice (10001)",
+                        "robot_id": "robot-current",
+                    }
+                ],
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert result[0]["type"] == "text"
+    assert "active QQ-triggered context is locked to group:current-group" in result[0]["text"]
+    assert sent == []
+
+
+def test_robot_mcp_blocks_explicit_other_target_from_active_robot_turn(
+    monkeypatch,
+) -> None:
+    server = RobotMCPServer()
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="current-group",
+        metadata={"target": {"id": "current-group"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:current-group:user-1",
+            reply_target=target,
+        )
+    )
+    sent: list[tuple[str, RobotReplyTarget, str]] = []
+
+    def fake_send_message(robot_id, reply_target, text):
+        sent.append((robot_id, reply_target, text))
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+
+    try:
+        result = server.call_tool(
+            "send_message",
+            {
+                "text": "wrong explicit target",
+                "_robot_context_token": token,
+                "target_type": "group",
+                "target_id": "other-group",
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert result[0]["type"] == "text"
+    assert "active QQ-triggered context is locked to group:current-group" in result[0]["text"]
+    assert sent == []
+
+
+def test_robot_mcp_blocks_broadcast_from_active_robot_turn(monkeypatch) -> None:
+    server = RobotMCPServer()
+    target = RobotReplyTarget(
+        target_type="private",
+        target_id="654321",
+        metadata={"target": {"id": "654321", "private": True}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:private:654321",
+            reply_target=target,
+        )
+    )
+    sent: list[tuple[str, RobotReplyTarget, str]] = []
+
+    def fake_send_message(robot_id, reply_target, text):
+        sent.append((robot_id, reply_target, text))
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+
+    try:
+        result = server.call_tool(
+            "send_message",
+            {
+                "text": "broadcast from active",
+                "_robot_context_token": token,
+                "broadcast": True,
+                "_robot_known_targets": [
+                    {
+                        "conversation": "group:123456",
+                        "target_type": "group",
+                        "target_id": "123456",
+                        "sender": "Alice (10001)",
+                        "robot_id": "robot-current",
+                    }
+                ],
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert result[0]["type"] == "text"
+    assert "active QQ-triggered context is locked to private:654321" in result[0]["text"]
+    assert sent == []
+
+
 def test_robot_mcp_send_message_broadcasts_to_context_targets(monkeypatch) -> None:
     server = RobotMCPServer()
     sent: list[tuple[str, str, str, str]] = []

@@ -4,6 +4,8 @@ import {
   ArrowLeft,
   Bot,
   Check,
+  ChevronDown,
+  ChevronRight,
   CirclePlus,
   Copy,
   Loader2,
@@ -64,6 +66,8 @@ import {
   createRobotBinding,
   deleteRobotBinding,
   getRobotBindingsQueryKey,
+  getRobotConnectionQueryKey,
+  getRobotConnectionStatus,
   getRobotDebug,
   getRobotDebugQueryKey,
   getRobotPlatformsQueryKey,
@@ -72,6 +76,7 @@ import {
   listRobotBindings,
   listRobotPlatforms,
   type RobotBindingRecord,
+  type RobotConnectionStatus,
   type RobotDebugEvent,
   type RobotDebugInfo,
   type RobotPlatformRecord,
@@ -84,6 +89,8 @@ import {
   updateRobot,
   updateRobotBinding,
 } from "./api"
+
+const ROBOT_DEBUG_EVENT_PAGE_SIZE = 10
 
 function normalizePlatformId(platform: string | null | undefined) {
   if (platform === "qq") {
@@ -605,7 +612,23 @@ function useRobotDetailUiCopy() {
           noEvents: "No debug events yet",
         }
 
-  return { ...base, ...page }
+  const lazyPage =
+    locale === "zh"
+      ? {
+          debugLoading: "正在读取调试信息...",
+          debugExpand: "展开详细调试",
+          debugCollapse: "收起详细调试",
+          debugLoadMoreEvents: (count: number) => `再显示 ${count} 条事件`,
+        }
+      : {
+          debugLoading: "Loading debug data...",
+          debugExpand: "Expand debug details",
+          debugCollapse: "Collapse debug details",
+          debugLoadMoreEvents: (count: number) =>
+            `Show ${count} more events`,
+        }
+
+  return { ...base, ...page, ...lazyPage }
 }
 
 function RobotEnabledBadge({ enabled }: { enabled: boolean }) {
@@ -1116,9 +1139,11 @@ function CopyableConfigValue({
 function RobotConnectionGuidePanel({
   robot,
   debug,
+  connectionStatus,
 }: {
   robot: RobotRecord
   debug?: RobotDebugInfo
+  connectionStatus?: RobotConnectionStatus
 }) {
   const copy = useRobotDetailUiCopy()
   const credentials = getRobotCredentials(robot)
@@ -1128,7 +1153,9 @@ function RobotConnectionGuidePanel({
   const accessToken = credentials.access_token
   const secret = credentials.secret
   const selfId = credentials.self_id
-  const connected = Boolean(debug?.bridge?.connected || socket?.connected)
+  const connected = Boolean(
+    connectionStatus?.connected || debug?.bridge?.connected || socket?.connected,
+  )
 
   return (
     <Card className="rounded-3xl border bg-card shadow-sm">
@@ -1436,13 +1463,16 @@ function RobotBasicConfigPanel({
 function RobotDebugPanel({
   robotId,
   debug,
+  isLoading,
 }: {
   robotId: string
   debug?: RobotDebugInfo
+  isLoading?: boolean
 }) {
   const copy = useRobotDetailUiCopy()
   const queryClient = useQueryClient()
   const { showErrorToast, showSuccessToast } = useCustomToast()
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [isReloading, setIsReloading] = useState(false)
   const [isSendingTest, setIsSendingTest] = useState(false)
   const [manualTargetType, setManualTargetType] =
@@ -1455,6 +1485,16 @@ function RobotDebugPanel({
   const onebotClientCount = getRecordNumber(onebotSocket, "client_count") ?? 0
   const reverseWsUrl = getReverseWsEndpoint(debug)
   const publicReverseWsUrl = getPublicReverseWsEndpoint(reverseWsUrl)
+  const events = debug?.events ?? []
+  const [visibleEventCount, setVisibleEventCount] = useState(
+    ROBOT_DEBUG_EVENT_PAGE_SIZE,
+  )
+  const visibleEvents = events.slice(0, visibleEventCount)
+  const remainingEventCount = Math.max(events.length - visibleEvents.length, 0)
+
+  useEffect(() => {
+    setVisibleEventCount(ROBOT_DEBUG_EVENT_PAGE_SIZE)
+  }, [events.length, robotId])
 
   const handleReload = async () => {
     setIsReloading(true)
@@ -1563,6 +1603,13 @@ function RobotDebugPanel({
         </div>
       </CardHeader>
       <CardContent className="grid gap-4">
+        {isLoading && !debug ? (
+          <div className="flex items-center gap-2 rounded-xl border border-dashed bg-muted/10 px-4 py-6 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            {copy.debugLoading}
+          </div>
+        ) : null}
+
         <div className="grid gap-2 text-sm md:grid-cols-4">
           <div className="rounded-xl border bg-muted/10 p-3">
             <div className="text-xs text-muted-foreground">
@@ -1598,6 +1645,25 @@ function RobotDebugPanel({
           </div>
         </div>
 
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 rounded-xl px-3.5"
+            onClick={() => setIsDetailsOpen((current) => !current)}
+          >
+            {isDetailsOpen ? (
+              <ChevronDown className="mr-2 size-4" />
+            ) : (
+              <ChevronRight className="mr-2 size-4" />
+            )}
+            {isDetailsOpen ? copy.debugCollapse : copy.debugExpand}
+          </Button>
+        </div>
+
+        {isDetailsOpen ? (
+          <>
         <div className="grid gap-2 text-sm md:grid-cols-4">
           <div className="rounded-xl border bg-muted/10 p-3">
             <div className="text-xs text-muted-foreground">
@@ -1775,13 +1841,13 @@ function RobotDebugPanel({
 
         <div className="space-y-2">
           <div className="text-sm font-medium">{copy.recentEvents}</div>
-          {!debug || debug.events.length === 0 ? (
+          {events.length === 0 ? (
             <div className="rounded-xl border border-dashed bg-muted/10 px-4 py-6 text-sm text-muted-foreground">
               {copy.noEvents}
             </div>
           ) : (
             <div className="grid gap-2">
-              {debug.events.map((event, index) => (
+              {visibleEvents.map((event, index) => (
                 <div
                   key={`${event.timestamp}-${index}`}
                   className="rounded-xl border bg-muted/10 p-3 text-sm"
@@ -1818,9 +1884,28 @@ function RobotDebugPanel({
                   ) : null}
                 </div>
               ))}
+              {remainingEventCount > 0 ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full rounded-xl"
+                  onClick={() =>
+                    setVisibleEventCount(
+                      (current) => current + ROBOT_DEBUG_EVENT_PAGE_SIZE,
+                    )
+                  }
+                >
+                  {copy.debugLoadMoreEvents(
+                    Math.min(ROBOT_DEBUG_EVENT_PAGE_SIZE, remainingEventCount),
+                  )}
+                </Button>
+              ) : null}
             </div>
           )}
         </div>
+          </>
+        ) : null}
       </CardContent>
     </Card>
   )
@@ -1828,6 +1913,27 @@ function RobotDebugPanel({
 
 export function RobotDetail({ robotId }: { robotId: string }) {
   const copy = useRobotDetailUiCopy()
+  const [activeTab, setActiveTab] = useState("connection")
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(
+    () => new Set<string>(["connection"]),
+  )
+  const activateTab = (value: string) => {
+    setActiveTab(value)
+    setVisitedTabs((current) => {
+      if (current.has(value)) {
+        return current
+      }
+      const next = new Set(current)
+      next.add(value)
+      return next
+    })
+  }
+  const hasVisitedTab = (value: string) => visitedTabs.has(value)
+
+  useEffect(() => {
+    setActiveTab("connection")
+    setVisitedTabs(new Set<string>(["connection"]))
+  }, [robotId])
 
   const robotQuery = useQuery({
     queryKey: getRobotQueryKey(robotId),
@@ -1851,11 +1957,18 @@ export function RobotDetail({ robotId }: { robotId: string }) {
     queryFn: () => listRobotPlatforms(),
   })
 
+  const connectionQuery = useQuery({
+    queryKey: getRobotConnectionQueryKey(robotId),
+    queryFn: () => getRobotConnectionStatus(robotId),
+    enabled: Boolean(robotId),
+    refetchInterval: activeTab === "connection" ? 5000 : false,
+  })
+
   const debugQuery = useQuery({
     queryKey: getRobotDebugQueryKey(robotId),
     queryFn: () => getRobotDebug(robotId),
-    enabled: Boolean(robotId),
-    refetchInterval: 5000,
+    enabled: Boolean(robotId) && hasVisitedTab("debug"),
+    refetchInterval: activeTab === "debug" ? 5000 : false,
   })
 
   const robot = robotQuery.data as RobotRecord | undefined
@@ -1977,7 +2090,7 @@ export function RobotDetail({ robotId }: { robotId: string }) {
         </div>
       </section>
 
-      <Tabs defaultValue="connection" className="gap-4">
+      <Tabs value={activeTab} onValueChange={activateTab} className="gap-4">
         <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl p-1 sm:grid-cols-4 lg:w-fit">
           <TabsTrigger value="connection">{copy.tabConnection}</TabsTrigger>
           <TabsTrigger value="bindings">{copy.tabBindings}</TabsTrigger>
@@ -1989,6 +2102,9 @@ export function RobotDetail({ robotId }: { robotId: string }) {
           <RobotConnectionGuidePanel
             robot={robot}
             debug={debugQuery.data as RobotDebugInfo | undefined}
+            connectionStatus={
+              connectionQuery.data as RobotConnectionStatus | undefined
+            }
           />
         </TabsContent>
 
@@ -2025,10 +2141,13 @@ export function RobotDetail({ robotId }: { robotId: string }) {
         </TabsContent>
 
         <TabsContent value="debug" className="mt-0">
-          <RobotDebugPanel
-            robotId={robotId}
-            debug={debugQuery.data as RobotDebugInfo | undefined}
-          />
+          {hasVisitedTab("debug") ? (
+            <RobotDebugPanel
+              robotId={robotId}
+              debug={debugQuery.data as RobotDebugInfo | undefined}
+              isLoading={debugQuery.isLoading}
+            />
+          ) : null}
         </TabsContent>
 
         <TabsContent value="settings" className="mt-0">

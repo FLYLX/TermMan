@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.core.db import engine
 from app.models import Item, Robot, RobotItem, User
-from app.services.agent.chat_runtime import collect_chat_response
+from app.services.agent.chat_runtime import ChatResponseResult, collect_chat_response
 
 from .contracts import RobotDispatchResponse, RobotInboundMessage, RobotReplyTarget
 from .debug_log import preview_text, record_robot_event
@@ -76,7 +76,10 @@ class QueuedRobotChatJob:
     message: str
     sender_key: str
     reply_target: RobotReplyTarget
+    conversation_key: str
     enqueued_at: datetime
+    direct_reply_trigger: bool = False
+    reply_context_active: bool = False
 
 
 class RobotServiceError(Exception):
@@ -169,7 +172,7 @@ class RobotService:
                 return
 
             try:
-                response_text = asyncio.run(
+                response = asyncio.run(
                     self._chat_with_item(
                         session=session,
                         robot=robot,
@@ -179,6 +182,13 @@ class RobotService:
                         reply_target=job.reply_target,
                     )
                 )
+                self._apply_reply_context_result(
+                    robot,
+                    job.conversation_key,
+                    robot_message_sent=response.robot_message_sent,
+                    reply_target=job.reply_target,
+                )
+                response_text = response.content
             except RobotServiceError as exc:
                 self._record_and_send_job_error(job, exc.message)
                 return
@@ -224,6 +234,11 @@ class RobotService:
         job: QueuedRobotChatJob,
         message: str,
     ) -> None:
+        self._clear_reply_context_window_for_key(
+            job.robot_id,
+            job.conversation_key,
+            reason="dispatch_error",
+        )
         record_robot_event(
             str(job.robot_id),
             direction="backend_worker",
@@ -281,6 +296,7 @@ class RobotService:
         command = self._parse_robot_command(text)
         direct_reply_trigger = self._message_directly_addresses_bot(message)
         reply_context_active = self._is_reply_context_active(robot, message)
+        conversation_key = self._conversation_key(message)
         reply_categories = self._reply_message_categories(
             message,
             command,
@@ -308,7 +324,6 @@ class RobotService:
             )
         if direct_reply_trigger:
             self._remember_reply_context_window(robot, message)
-
         try:
             resolved_binding, message_text = self._resolve_chat_binding(
                 session,
@@ -323,6 +338,11 @@ class RobotService:
                 if not success:
                     raise RobotServiceError("终端未运行或后端尚未连接到该终端。")
                 response_text = "已发送到终端。"
+                self._clear_reply_context_window_for_key(
+                    robot.id,
+                    conversation_key,
+                    reason="terminal_command",
+                )
                 record_robot_event(
                     str(robot.id),
                     direction="backend_to_item",
@@ -361,9 +381,17 @@ class RobotService:
                 ),
                 sender_key=message.sender_key,
                 reply_target=message.reply_target.model_copy(deep=True),
+                conversation_key=conversation_key,
+                direct_reply_trigger=direct_reply_trigger,
+                reply_context_active=reply_context_active,
                 enqueued_at=self._now(),
             )
             if not self._enqueue_chat_job(queued_job):
+                self._clear_reply_context_window_for_key(
+                    robot.id,
+                    conversation_key,
+                    reason="dispatch_queue_full",
+                )
                 record_robot_event(
                     str(robot.id),
                     direction="backend_queue",
@@ -402,6 +430,9 @@ class RobotService:
                     "route_key": resolved_binding.route_key,
                     "queue": self.dispatch_queue_snapshot(),
                     "reply_delivery": "mcp_tool",
+                    "conversation": conversation_key,
+                    "direct_reply_trigger": direct_reply_trigger,
+                    "reply_context_active": reply_context_active,
                 },
             )
             logger.info(
@@ -413,6 +444,11 @@ class RobotService:
             )
             return response
         except RobotServiceError as exc:
+            self._clear_reply_context_window_for_key(
+                robot.id,
+                conversation_key,
+                reason="dispatch_error",
+            )
             record_robot_event(
                 str(robot.id),
                 direction="backend",
@@ -432,6 +468,11 @@ class RobotService:
             )
         except HTTPException as exc:
             detail = exc.detail if isinstance(exc.detail, str) else "Robot dispatch failed"
+            self._clear_reply_context_window_for_key(
+                robot.id,
+                conversation_key,
+                reason="dispatch_error",
+            )
             record_robot_event(
                 str(robot.id),
                 direction="backend",
@@ -453,6 +494,11 @@ class RobotService:
             logger.exception(
                 "[RobotService] Unexpected inbound message error for robot %s",
                 robot.id,
+            )
+            self._clear_reply_context_window_for_key(
+                robot.id,
+                conversation_key,
+                reason="dispatch_error",
             )
             record_robot_event(
                 str(robot.id),
@@ -682,18 +728,108 @@ class RobotService:
     ) -> tuple[str, str]:
         return (str(robot.id), self._conversation_key(message))
 
-    def _conversation_key(self, message: RobotInboundMessage) -> str:
-        conversation_type = self._conversation_message_type(message)
-        target_data = message.reply_target.metadata.get("target")
+    def _message_conversation_parts(
+        self,
+        message: RobotInboundMessage,
+    ) -> tuple[str, str]:
+        metadata = message.reply_target.metadata
+        target_data = metadata.get("target")
         if not isinstance(target_data, dict):
             target_data = {}
+        sender_data = metadata.get("sender")
+        if not isinstance(sender_data, dict):
+            sender_data = {}
+        conversation_data = metadata.get("conversation")
+        if not isinstance(conversation_data, dict):
+            conversation_data = {}
+
+        conversation_type = str(
+            conversation_data.get("type")
+            or conversation_data.get("conversation_type")
+            or ""
+        ).strip().lower()
         conversation_id = str(
-            target_data.get("parent_id")
-            or target_data.get("id")
-            or message.reply_target.target_id
-            or message.sender_key
+            conversation_data.get("id")
+            or conversation_data.get("conversation_id")
             or ""
         ).strip()
+        if conversation_type and conversation_id:
+            return conversation_type, conversation_id
+
+        message_type = str(
+            target_data.get("message_type")
+            or sender_data.get("message_type")
+            or ""
+        ).strip().lower()
+        group_id = str(
+            target_data.get("group_id")
+            or conversation_data.get("group_id")
+            or ""
+        ).strip()
+        user_id = str(
+            target_data.get("user_id")
+            or sender_data.get("user_id")
+            or conversation_data.get("user_id")
+            or ""
+        ).strip()
+
+        if message_type == "private" or bool(target_data.get("private")):
+            return REPLY_MESSAGE_TYPE_PRIVATE, (
+                user_id
+                or str(target_data.get("id") or message.reply_target.target_id or "").strip()
+                or message.sender_key
+            )
+        if message_type == "group" or group_id:
+            return REPLY_MESSAGE_TYPE_GROUP, (
+                group_id
+                or str(
+                    target_data.get("parent_id")
+                    or target_data.get("id")
+                    or message.reply_target.target_id
+                    or ""
+                ).strip()
+                or message.sender_key
+            )
+        if bool(target_data.get("channel")):
+            return REPLY_MESSAGE_TYPE_CHANNEL, (
+                str(
+                    target_data.get("parent_id")
+                    or target_data.get("id")
+                    or message.reply_target.target_id
+                    or ""
+                ).strip()
+                or message.sender_key
+            )
+
+        target_type = (message.reply_target.target_type or "").strip().lower()
+        if target_type in {"private", "c2c", "direct", "direct_message", "friend"}:
+            return REPLY_MESSAGE_TYPE_PRIVATE, (
+                str(message.reply_target.target_id or "").strip()
+                or user_id
+                or message.sender_key
+            )
+        if target_type in {"channel", "guild", "guild_channel"}:
+            return REPLY_MESSAGE_TYPE_CHANNEL, (
+                str(message.reply_target.target_id or "").strip() or message.sender_key
+            )
+        if target_type == "group":
+            return REPLY_MESSAGE_TYPE_GROUP, (
+                str(message.reply_target.target_id or "").strip() or message.sender_key
+            )
+
+        if ":private:" in message.sender_key:
+            tail = message.sender_key.rsplit(":private:", 1)[-1].split(":", 1)[0]
+            return REPLY_MESSAGE_TYPE_PRIVATE, tail or message.sender_key
+        if ":channel:" in message.sender_key:
+            tail = message.sender_key.rsplit(":channel:", 1)[-1].split(":", 1)[0]
+            return REPLY_MESSAGE_TYPE_CHANNEL, tail or message.sender_key
+        if ":group:" in message.sender_key:
+            tail = message.sender_key.rsplit(":group:", 1)[-1].split(":", 1)[0]
+            return REPLY_MESSAGE_TYPE_GROUP, tail or message.sender_key
+        return REPLY_MESSAGE_TYPE_GROUP, message.sender_key
+
+    def _conversation_key(self, message: RobotInboundMessage) -> str:
+        conversation_type, conversation_id = self._message_conversation_parts(message)
         return f"{conversation_type}:{conversation_id or message.sender_key}"
 
     def _is_reply_context_active(
@@ -714,16 +850,30 @@ class RobotService:
         robot: Robot,
         message: RobotInboundMessage,
     ) -> None:
+        self._remember_reply_context_window_for_key(
+            robot,
+            self._conversation_key(message),
+            metadata=message.reply_target.metadata,
+        )
+
+    def _remember_reply_context_window_for_key(
+        self,
+        robot: Robot,
+        conversation_key: str,
+        *,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
         window_seconds = self._reply_context_window_seconds(robot)
         if window_seconds <= 0:
             return
 
         now = self._now()
         expires_at = now + timedelta(seconds=window_seconds)
-        key = self._reply_context_key(robot, message)
+        key = (str(robot.id), conversation_key)
         with self._lock:
             self._prune_reply_context_windows_locked(now)
             self._reply_context_windows[key] = expires_at
+        metadata = metadata or {}
         record_robot_event(
             str(robot.id),
             direction="backend",
@@ -732,9 +882,55 @@ class RobotService:
                 "conversation": key[1],
                 "window_seconds": window_seconds,
                 "expires_at": expires_at.isoformat(),
-                "mentioned_bot": bool(message.reply_target.metadata.get("mentioned_bot")),
-                "replied_to_bot": bool(message.reply_target.metadata.get("replied_to_bot")),
+                "mentioned_bot": bool(metadata.get("mentioned_bot")),
+                "replied_to_bot": bool(metadata.get("replied_to_bot")),
             },
+        )
+
+    def _clear_reply_context_window_for_key(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+        *,
+        reason: str,
+    ) -> None:
+        if not conversation_key:
+            return
+
+        key = (str(robot_id), conversation_key)
+        with self._lock:
+            removed = self._reply_context_windows.pop(key, None) is not None
+        if removed:
+            record_robot_event(
+                str(robot_id),
+                direction="backend",
+                event="reply_context_window_cleared",
+                payload={
+                    "conversation": conversation_key,
+                    "reason": reason,
+                },
+            )
+
+    def _apply_reply_context_result(
+        self,
+        robot: Robot,
+        conversation_key: str,
+        *,
+        robot_message_sent: bool,
+        reply_target: RobotReplyTarget,
+    ) -> None:
+        if robot_message_sent:
+            self._remember_reply_context_window_for_key(
+                robot,
+                conversation_key,
+                metadata=reply_target.metadata,
+            )
+            return
+
+        self._clear_reply_context_window_for_key(
+            robot.id,
+            conversation_key,
+            reason="agent_did_not_send_qq_message",
         )
 
     def _prune_reply_context_windows_locked(self, now: datetime) -> None:
@@ -760,26 +956,7 @@ class RobotService:
         return categories
 
     def _conversation_message_type(self, message: RobotInboundMessage) -> str:
-        target_data = message.reply_target.metadata.get("target")
-        if isinstance(target_data, dict):
-            if bool(target_data.get("private")):
-                return REPLY_MESSAGE_TYPE_PRIVATE
-            if bool(target_data.get("channel")):
-                return REPLY_MESSAGE_TYPE_CHANNEL
-
-        target_type = (message.reply_target.target_type or "").strip().lower()
-        if target_type in {"private", "c2c", "direct", "direct_message", "friend"}:
-            return REPLY_MESSAGE_TYPE_PRIVATE
-        if target_type in {"channel", "guild", "guild_channel"}:
-            return REPLY_MESSAGE_TYPE_CHANNEL
-        if target_type == "group":
-            return REPLY_MESSAGE_TYPE_GROUP
-
-        if ":private:" in message.sender_key:
-            return REPLY_MESSAGE_TYPE_PRIVATE
-        if ":channel:" in message.sender_key:
-            return REPLY_MESSAGE_TYPE_CHANNEL
-        return REPLY_MESSAGE_TYPE_GROUP
+        return self._message_conversation_parts(message)[0]
 
     def _agent_message_with_context(
         self,
@@ -825,13 +1002,7 @@ class RobotService:
         if not isinstance(target_data, dict):
             target_data = {}
 
-        conversation_type = self._conversation_message_type(message)
-        conversation_id = str(
-            target_data.get("parent_id")
-            or target_data.get("id")
-            or message.reply_target.target_id
-            or ""
-        ).strip()
+        conversation_type, conversation_id = self._message_conversation_parts(message)
         sender_id = str(sender_data.get("user_id") or "").strip()
         display_name = str(
             sender_data.get("display_name")
@@ -872,13 +1043,13 @@ class RobotService:
         message: str,
         sender_key: str,
         reply_target: RobotReplyTarget,
-    ) -> str:
+    ) -> ChatResponseResult:
         owner = session.get(User, robot.owner_id)
         if owner is None:
             raise RobotServiceError("机器人所属用户不存在", status_code=404)
 
         try:
-            return await collect_chat_response(
+            result = await collect_chat_response(
                 session=session,
                 item_id=str(item.id),
                 current_user=owner,
@@ -886,7 +1057,11 @@ class RobotService:
                 robot_id=str(robot.id),
                 robot_sender_key=sender_key,
                 robot_reply_target=reply_target,
+                return_result=True,
             )
+            if isinstance(result, ChatResponseResult):
+                return result
+            return ChatResponseResult(content=str(result or ""))
         except HTTPException as exc:
             detail = exc.detail if isinstance(exc.detail, str) else "Item agent is unavailable"
             raise RobotServiceError(detail, status_code=exc.status_code) from exc

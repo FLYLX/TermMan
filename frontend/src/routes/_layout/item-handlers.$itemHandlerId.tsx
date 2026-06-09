@@ -73,6 +73,7 @@ function KeyValue({ label, value }: { label: string; value?: string | null }) {
 }
 
 const LIST_PAGE_SIZE = 10
+type ItemHandlerTab = "connections" | "skills" | "knowledge" | "mcp" | "config"
 
 function LoadMoreButton({
   remainingCount,
@@ -98,9 +99,7 @@ function LoadMoreButton({
       className={className}
       onClick={onClick}
     >
-      {locale === "zh"
-        ? `再显示 ${nextCount} 条`
-        : `Show ${nextCount} more`}
+      {locale === "zh" ? `再显示 ${nextCount} 条` : `Show ${nextCount} more`}
     </Button>
   )
 }
@@ -227,8 +226,7 @@ function SkillSelector({
     null,
   )
   const [pendingSkill, setPendingSkill] = useState<string | null>(null)
-  const [enabledVisibleCount, setEnabledVisibleCount] =
-    useState(LIST_PAGE_SIZE)
+  const [enabledVisibleCount, setEnabledVisibleCount] = useState(LIST_PAGE_SIZE)
   const [availableVisibleCount, setAvailableVisibleCount] =
     useState(LIST_PAGE_SIZE)
 
@@ -396,9 +394,7 @@ function SkillSelector({
                 remainingCount={enabledRemainingCount}
                 className="w-full"
                 onClick={() =>
-                  setEnabledVisibleCount(
-                    (current) => current + LIST_PAGE_SIZE,
-                  )
+                  setEnabledVisibleCount((current) => current + LIST_PAGE_SIZE)
                 }
               />
             </div>
@@ -505,8 +501,7 @@ function MCPSelector({
     null,
   )
   const [pendingServer, setPendingServer] = useState<string | null>(null)
-  const [enabledVisibleCount, setEnabledVisibleCount] =
-    useState(LIST_PAGE_SIZE)
+  const [enabledVisibleCount, setEnabledVisibleCount] = useState(LIST_PAGE_SIZE)
   const [availableVisibleCount, setAvailableVisibleCount] =
     useState(LIST_PAGE_SIZE)
 
@@ -674,9 +669,7 @@ function MCPSelector({
                 remainingCount={enabledRemainingCount}
                 className="w-full"
                 onClick={() =>
-                  setEnabledVisibleCount(
-                    (current) => current + LIST_PAGE_SIZE,
-                  )
+                  setEnabledVisibleCount((current) => current + LIST_PAGE_SIZE)
                 }
               />
             </div>
@@ -1366,10 +1359,33 @@ function ItemHandlerDetail() {
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const [isSaving, setIsSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
-  const [activeTab, setActiveTab] = useState("connections")
+  const [activeTab, setActiveTab] = useState<ItemHandlerTab>("connections")
+  const [visitedTabs, setVisitedTabs] = useState<Set<ItemHandlerTab>>(
+    () => new Set<ItemHandlerTab>(["connections"]),
+  )
   const [isConnectionsLoaded, setIsConnectionsLoaded] = useState(false)
   const [visibleAllItemsCount, setVisibleAllItemsCount] =
     useState(LIST_PAGE_SIZE)
+  const activateTab = (value: string) => {
+    const nextTab = value as ItemHandlerTab
+    setActiveTab(nextTab)
+    setVisitedTabs((current) => {
+      if (current.has(nextTab)) {
+        return current
+      }
+      const next = new Set(current)
+      next.add(nextTab)
+      return next
+    })
+  }
+  const hasVisitedTab = (value: ItemHandlerTab) => visitedTabs.has(value)
+
+  useEffect(() => {
+    setActiveTab("connections")
+    setVisitedTabs(new Set<ItemHandlerTab>(["connections"]))
+    setIsConnectionsLoaded(false)
+    setVisibleAllItemsCount(LIST_PAGE_SIZE)
+  }, [itemHandlerId])
 
   const { data: itemHandler, isLoading } = useQuery({
     ...getItemHandlerQueryOptions(itemHandlerId),
@@ -1391,13 +1407,13 @@ function ItemHandlerDetail() {
   const { data: skillsData, isLoading: skillsLoading } = useQuery({
     queryKey: ["skills"],
     queryFn: () => SkillsService.listSkills({}),
-    enabled: activeTab === "skills",
+    enabled: hasVisitedTab("skills"),
   })
 
   const { data: mcpData, isLoading: mcpLoading } = useQuery({
     queryKey: ["mcp-servers"],
     queryFn: () => McpService.listMcpServers(),
-    enabled: activeTab === "mcp",
+    enabled: hasVisitedTab("mcp"),
   })
 
   const allItems = (allItemsData as any)?.data || []
@@ -1461,7 +1477,7 @@ function ItemHandlerDetail() {
         enabled_skills: enabledSkills,
       })
       setIsEditing(true)
-      setActiveTab("config")
+      activateTab("config")
     }
   }
 
@@ -1674,8 +1690,7 @@ function ItemHandlerDetail() {
                   {itemHandler.name}
                 </h1>
                 <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                  {connectedItemCount}{" "}
-                  {t("itemHandlers.detail.connections")}
+                  {connectedItemCount} {t("itemHandlers.detail.connections")}
                 </Badge>
                 <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
                   {enabledSkills.length} {t("itemHandlers.detail.skills")}
@@ -1696,23 +1711,23 @@ function ItemHandlerDetail() {
         </div>
       </section>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-3">
+      <Tabs value={activeTab} onValueChange={activateTab} className="gap-3">
         <div className="overflow-x-auto">
           <div className="flex min-w-max items-center justify-between gap-3">
             <TabsList className="h-auto gap-1 bg-muted/70 p-1">
-            <TabsTrigger value="connections">
-              {t("itemHandlers.detail.connections")}
-            </TabsTrigger>
-            <TabsTrigger value="skills">
-              {t("itemHandlers.detail.skills")}
-            </TabsTrigger>
-            <TabsTrigger value="knowledge">
-              {t("itemHandlers.detail.knowledge")}
-            </TabsTrigger>
-            <TabsTrigger value="mcp">MCP</TabsTrigger>
-            <TabsTrigger value="config">
-              {t("itemHandlers.detail.config")}
-            </TabsTrigger>
+              <TabsTrigger value="connections">
+                {t("itemHandlers.detail.connections")}
+              </TabsTrigger>
+              <TabsTrigger value="skills">
+                {t("itemHandlers.detail.skills")}
+              </TabsTrigger>
+              <TabsTrigger value="knowledge">
+                {t("itemHandlers.detail.knowledge")}
+              </TabsTrigger>
+              <TabsTrigger value="mcp">MCP</TabsTrigger>
+              <TabsTrigger value="config">
+                {t("itemHandlers.detail.config")}
+              </TabsTrigger>
             </TabsList>
             <Button
               type="button"
@@ -1737,7 +1752,8 @@ function ItemHandlerDetail() {
                     连接图和终端列表按需加载
                   </h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    当前已记录 {connectedItemCount} 个连接。点击后再读取全部终端并绘制连接图。
+                    当前已记录 {connectedItemCount}{" "}
+                    个连接。点击后再读取全部终端并绘制连接图。
                   </p>
                 </div>
                 <Button onClick={() => setIsConnectionsLoaded(true)}>
@@ -1817,219 +1833,238 @@ function ItemHandlerDetail() {
         </TabsContent>
 
         <TabsContent value="skills">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Zap className="size-5 text-yellow-500" />
-                {t("itemHandlers.detail.skillsConfiguration")}
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {t("itemHandlers.detail.skillsConfigurationDescription")}
-              </p>
-            </CardHeader>
-            <CardContent>
-              {skillsLoading ? (
-                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" />
-                  正在加载技能...
-                </div>
-              ) : (
-                <SkillSelector
-                  allSkills={skills}
-                  enabledSkills={enabledSkills}
-                  onSkillToggle={handleSkillToggle}
-                />
-              )}
-            </CardContent>
-          </Card>
+          {hasVisitedTab("skills") ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="size-5 text-yellow-500" />
+                  {t("itemHandlers.detail.skillsConfiguration")}
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  {t("itemHandlers.detail.skillsConfigurationDescription")}
+                </p>
+              </CardHeader>
+              <CardContent>
+                {skillsLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                    正在加载技能...
+                  </div>
+                ) : (
+                  <SkillSelector
+                    allSkills={skills}
+                    enabledSkills={enabledSkills}
+                    onSkillToggle={handleSkillToggle}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
         </TabsContent>
 
         <TabsContent value="mcp">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Server className="size-5 text-purple-500" />
-                {t("itemHandlers.detail.mcpConfiguration")}
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {t("itemHandlers.detail.mcpConfigurationDescription")}
-              </p>
-            </CardHeader>
-            <CardContent>
-              {mcpLoading ? (
-                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" />
-                  正在加载 MCP...
-                </div>
-              ) : (
-                <MCPSelector
-                  allServers={mcpServers}
-                  enabledServers={enabledMcpServers}
-                  onServerToggle={handleMcpServerToggle}
-                />
-              )}
-            </CardContent>
-          </Card>
+          {hasVisitedTab("mcp") ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Server className="size-5 text-purple-500" />
+                  {t("itemHandlers.detail.mcpConfiguration")}
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  {t("itemHandlers.detail.mcpConfigurationDescription")}
+                </p>
+              </CardHeader>
+              <CardContent>
+                {mcpLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                    正在加载 MCP...
+                  </div>
+                ) : (
+                  <MCPSelector
+                    allServers={mcpServers}
+                    enabledServers={enabledMcpServers}
+                    onServerToggle={handleMcpServerToggle}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
         </TabsContent>
 
         <TabsContent value="knowledge">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Terminal className="size-5 text-emerald-500" />
-                {t("itemHandlers.detail.knowledgeConfiguration")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <KnowledgeBindingSelector
-                itemHandlerId={itemHandlerId}
-                enabledKnowledgeFiles={enabledKnowledgeFiles}
-                onKnowledgeToggle={handleKnowledgeToggle}
-              />
-            </CardContent>
-          </Card>
+          {hasVisitedTab("knowledge") ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Terminal className="size-5 text-emerald-500" />
+                  {t("itemHandlers.detail.knowledgeConfiguration")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <KnowledgeBindingSelector
+                  itemHandlerId={itemHandlerId}
+                  enabledKnowledgeFiles={enabledKnowledgeFiles}
+                  onKnowledgeToggle={handleKnowledgeToggle}
+                />
+              </CardContent>
+            </Card>
+          ) : null}
         </TabsContent>
 
         <TabsContent value="config">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Settings className="size-5" />
-                    {t("itemHandlers.detail.modelSettings")}
-                  </CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    {t("itemHandlers.detail.modelSettingsDescription")}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  {!isEditing ? (
-                    <Button size="sm" onClick={startEditing}>
-                      {t("itemHandlers.detail.edit")}
-                    </Button>
-                  ) : (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={cancelEditing}
-                      >
-                        {t("common.cancel")}
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={saveChanges}
-                        disabled={isSaving || !editForm.name.trim()}
-                      >
-                        {isSaving ? t("common.loading") : t("common.save")}
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {isEditing ? (
-                <>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">
-                        {t("common.name")}
-                      </label>
-                      <Input
-                        value={editForm.name}
-                        onChange={(e) =>
-                          setEditForm({ ...editForm, name: e.target.value })
-                        }
-                        aria-invalid={!editForm.name.trim()}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">
-                        {t("common.model")}
-                      </label>
-                      <Input
-                        value={editForm.model}
-                        onChange={(e) =>
-                          setEditForm({ ...editForm, model: e.target.value })
-                        }
-                        placeholder="e.g., gpt-4"
-                      />
-                    </div>
+          {hasVisitedTab("config") ? (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Settings className="size-5" />
+                      {t("itemHandlers.detail.modelSettings")}
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      {t("itemHandlers.detail.modelSettingsDescription")}
+                    </p>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">
-                        {t("common.apiKey")}
-                      </label>
-                      <Input
-                        value={editForm.api_key}
-                        onChange={(e) =>
-                          setEditForm({ ...editForm, api_key: e.target.value })
-                        }
-                        placeholder={t("common.apiKey")}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">
-                        {t("common.apiUrl")}
-                      </label>
-                      <Input
-                        value={editForm.api_url}
-                        onChange={(e) =>
-                          setEditForm({ ...editForm, api_url: e.target.value })
-                        }
-                        placeholder={t("common.apiUrl")}
-                      />
-                    </div>
+                  <div className="flex gap-2">
+                    {!isEditing ? (
+                      <Button size="sm" onClick={startEditing}>
+                        {t("itemHandlers.detail.edit")}
+                      </Button>
+                    ) : (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={cancelEditing}
+                        >
+                          {t("common.cancel")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={saveChanges}
+                          disabled={isSaving || !editForm.name.trim()}
+                        >
+                          {isSaving ? t("common.loading") : t("common.save")}
+                        </Button>
+                      </>
+                    )}
                   </div>
-                </>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <KeyValue label={t("common.name")} value={itemHandler.name} />
-                  <KeyValue
-                    label={t("common.model")}
-                    value={itemHandler.model}
-                  />
-                  <KeyValue
-                    label={t("common.apiKey")}
-                    value={
-                      itemHandler.api_key
-                        ? `****${itemHandler.api_key.slice(-4)}`
-                        : null
-                    }
-                  />
-                  <KeyValue
-                    label={t("common.apiUrl")}
-                    value={itemHandler.api_url}
-                  />
                 </div>
-              )}
-              <div className="border-t pt-4 mt-4">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <KeyValue label={t("common.id")} value={itemHandler.id} />
-                  <KeyValue
-                    label={t("common.ownerId")}
-                    value={itemHandler.owner_id}
-                  />
-                  <KeyValue
-                    label={t("common.createdAt")}
-                    value={
-                      formatDate(itemHandler.created_at, localeTag) || undefined
-                    }
-                  />
-                  <KeyValue
-                    label={t("common.updatedAt")}
-                    value={
-                      formatDate(itemHandler.updated_at, localeTag) || undefined
-                    }
-                  />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {isEditing ? (
+                  <>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">
+                          {t("common.name")}
+                        </label>
+                        <Input
+                          value={editForm.name}
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, name: e.target.value })
+                          }
+                          aria-invalid={!editForm.name.trim()}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">
+                          {t("common.model")}
+                        </label>
+                        <Input
+                          value={editForm.model}
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, model: e.target.value })
+                          }
+                          placeholder="e.g., gpt-4"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">
+                          {t("common.apiKey")}
+                        </label>
+                        <Input
+                          value={editForm.api_key}
+                          onChange={(e) =>
+                            setEditForm({
+                              ...editForm,
+                              api_key: e.target.value,
+                            })
+                          }
+                          placeholder={t("common.apiKey")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">
+                          {t("common.apiUrl")}
+                        </label>
+                        <Input
+                          value={editForm.api_url}
+                          onChange={(e) =>
+                            setEditForm({
+                              ...editForm,
+                              api_url: e.target.value,
+                            })
+                          }
+                          placeholder={t("common.apiUrl")}
+                        />
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <KeyValue
+                      label={t("common.name")}
+                      value={itemHandler.name}
+                    />
+                    <KeyValue
+                      label={t("common.model")}
+                      value={itemHandler.model}
+                    />
+                    <KeyValue
+                      label={t("common.apiKey")}
+                      value={
+                        itemHandler.api_key
+                          ? `****${itemHandler.api_key.slice(-4)}`
+                          : null
+                      }
+                    />
+                    <KeyValue
+                      label={t("common.apiUrl")}
+                      value={itemHandler.api_url}
+                    />
+                  </div>
+                )}
+                <div className="border-t pt-4 mt-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <KeyValue label={t("common.id")} value={itemHandler.id} />
+                    <KeyValue
+                      label={t("common.ownerId")}
+                      value={itemHandler.owner_id}
+                    />
+                    <KeyValue
+                      label={t("common.createdAt")}
+                      value={
+                        formatDate(itemHandler.created_at, localeTag) ||
+                        undefined
+                      }
+                    />
+                    <KeyValue
+                      label={t("common.updatedAt")}
+                      value={
+                        formatDate(itemHandler.updated_at, localeTag) ||
+                        undefined
+                      }
+                    />
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          ) : null}
         </TabsContent>
       </Tabs>
     </div>

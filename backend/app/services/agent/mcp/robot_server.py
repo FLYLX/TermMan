@@ -25,11 +25,14 @@ class RobotMCPServer:
                 "Send a concise message through the TermMan NoneBot/NapCat QQ robot. "
                 "In an incoming QQ-triggered agent turn, calling this tool with only "
                 "text sends to the current QQ conversation that triggered the turn. "
-                "Use reply_to only when intentionally choosing a different QQ "
-                "conversation visible in context. Use target_type and target_id only "
-                "when the user explicitly provided a QQ group number or QQ number "
-                "outside the visible context. If multiple robots are available, "
-                "provide robot_id."
+                "Do not use reply_to, conversation, broadcast, target_type, or "
+                "target_id in that incoming QQ-triggered context; cross-conversation "
+                "sends are blocked there to prevent replying to the wrong group. "
+                "In backend chat, use reply_to only when intentionally choosing a "
+                "different QQ conversation visible in context. Use target_type and "
+                "target_id only when the user explicitly provided a QQ group number "
+                "or QQ number outside the visible context. If multiple robots are "
+                "available, provide robot_id."
             ),
             input_schema={
                 "type": "object",
@@ -171,6 +174,28 @@ class RobotMCPServer:
         if context is None:
             return None
         target = context.reply_target
+        conversation_data = target.metadata.get("conversation")
+        if isinstance(conversation_data, dict):
+            target_type = self._normalize_target_type(
+                conversation_data.get("target_type")
+                or conversation_data.get("type")
+                or conversation_data.get("conversation_type")
+            )
+            target_id = str(
+                conversation_data.get("target_id")
+                or conversation_data.get("id")
+                or conversation_data.get("conversation_id")
+                or ""
+            ).strip()
+            if target_type in {"group", "private"} and target_id:
+                return {
+                    "conversation": f"{target_type}:{target_id}",
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "sender": "",
+                    "robot_id": context.robot_id,
+                }
+
         target_type = self._normalize_target_type(target.target_type)
         target_id = str(target.target_id or "").strip()
         target_data = target.metadata.get("target")
@@ -180,7 +205,9 @@ class RobotMCPServer:
             elif bool(target_data.get("channel")):
                 return None
             target_id = str(
-                target_data.get("parent_id")
+                target_data.get("group_id")
+                or target_data.get("user_id")
+                or target_data.get("parent_id")
                 or target_data.get("id")
                 or target_id
             ).strip()
@@ -363,6 +390,79 @@ class RobotMCPServer:
             )
         return None, ""
 
+    def _same_target(self, left: RobotReplyTarget, right: dict[str, str]) -> bool:
+        left_type = self._normalize_target_type(left.target_type)
+        left_id = str(left.target_id or "").strip()
+        left_data = left.metadata.get("conversation")
+        if isinstance(left_data, dict):
+            left_type = self._normalize_target_type(
+                left_data.get("target_type")
+                or left_data.get("type")
+                or left_data.get("conversation_type")
+                or left_type
+            )
+            left_id = str(
+                left_data.get("target_id")
+                or left_data.get("id")
+                or left_data.get("conversation_id")
+                or left_id
+            ).strip()
+        return left_type == right.get("target_type") and left_id == right.get("target_id")
+
+    def _reference_matches_active_target(
+        self,
+        reference: str,
+        active_target: dict[str, str],
+    ) -> bool:
+        normalized = reference.strip().casefold()
+        if not normalized:
+            return True
+        candidates = {
+            active_target.get("conversation", ""),
+            f"{active_target.get('target_type', '')}:{active_target.get('target_id', '')}",
+            active_target.get("target_id", ""),
+        }
+        return normalized in {candidate.casefold() for candidate in candidates if candidate}
+
+    def _active_context_target_override_error(
+        self,
+        *,
+        context: Any,
+        explicit_target: RobotReplyTarget | None,
+        broadcast: bool,
+        context_reference: str,
+    ) -> str:
+        if context is None:
+            return ""
+
+        active_target = self._context_target_from_active_context(context)
+        active_label = (
+            active_target["conversation"] if active_target is not None else "current"
+        )
+        error = (
+            "Error: active QQ-triggered context is locked to "
+            f"{active_label}. Omit reply_to/conversation/broadcast/target_type/"
+            "target_id to send to the current QQ conversation. Cross-conversation "
+            "sends must be initiated from backend chat, not from an incoming QQ "
+            "message turn."
+        )
+
+        if broadcast:
+            return error
+        if explicit_target is not None:
+            if active_target is not None and self._same_target(
+                explicit_target,
+                active_target,
+            ):
+                return ""
+            return error
+        if context_reference and (
+            active_target is None
+            or not self._reference_matches_active_target(context_reference, active_target)
+        ):
+            return error
+        return ""
+
     def _get_accessible_robot_id(
         self,
         args: dict,
@@ -510,6 +610,18 @@ class RobotMCPServer:
         context_target: RobotReplyTarget | None = None
         context_target_robot_id = ""
         context_reference = self._context_reference(args)
+        active_context_override_error = self._active_context_target_override_error(
+            context=context,
+            explicit_target=explicit_target,
+            broadcast=broadcast,
+            context_reference=context_reference,
+        )
+        if active_context_override_error:
+            return [{"type": "text", "text": active_context_override_error}]
+        if context is not None:
+            explicit_target = None
+            context_reference = ""
+
         if explicit_target is None and not broadcast and (context is None or context_reference):
             try:
                 context_target, context_target_robot_id = self._resolve_context_target(args)

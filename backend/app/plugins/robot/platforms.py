@@ -1017,18 +1017,114 @@ def _extract_event_text(event: Any) -> str:
     return str(getattr(event, "message", "") or "").strip()
 
 
+def _event_attr_text(event: Any, name: str) -> str:
+    return str(getattr(event, name, "") or "").strip()
+
+
+def _clean_mapping(value: dict[str, Any]) -> dict[str, Any]:
+    return {key: item for key, item in value.items() if item not in (None, "")}
+
+
+def _extract_conversation_metadata(
+    platform_id: str,
+    event: Any,
+    target_data: dict[str, Any],
+) -> dict[str, Any]:
+    user_id = _event_user_id(event)
+    message_type = _event_attr_text(event, "message_type").lower()
+    group_id = _event_attr_text(event, "group_id")
+    guild_id = _event_attr_text(event, "guild_id")
+    channel_id = _event_attr_text(event, "channel_id")
+    target_id = str(target_data.get("id") or "").strip()
+    parent_id = str(target_data.get("parent_id") or "").strip()
+
+    if platform_id == "onebot_v11":
+        if message_type == "private" or bool(target_data.get("private")):
+            conversation_id = user_id or target_id
+            return _clean_mapping(
+                {
+                    "platform": platform_id,
+                    "type": "private",
+                    "id": conversation_id,
+                    "target_type": "private",
+                    "target_id": conversation_id,
+                    "user_id": user_id,
+                    "message_type": message_type or "private",
+                }
+            )
+        if group_id or message_type == "group":
+            conversation_id = group_id or parent_id or target_id
+            return _clean_mapping(
+                {
+                    "platform": platform_id,
+                    "type": "group",
+                    "id": conversation_id,
+                    "target_type": "group",
+                    "target_id": conversation_id,
+                    "group_id": group_id,
+                    "user_id": user_id,
+                    "message_type": message_type or "group",
+                }
+            )
+
+    if bool(target_data.get("private")):
+        conversation_id = user_id or target_id
+        return _clean_mapping(
+            {
+                "platform": platform_id,
+                "type": "private",
+                "id": conversation_id,
+                "target_type": "private",
+                "target_id": conversation_id,
+                "user_id": user_id,
+                "message_type": message_type or "private",
+            }
+        )
+    if bool(target_data.get("channel")):
+        conversation_id = parent_id or channel_id or target_id
+        return _clean_mapping(
+            {
+                "platform": platform_id,
+                "type": "channel",
+                "id": conversation_id,
+                "target_type": "channel",
+                "target_id": channel_id or target_id,
+                "guild_id": guild_id or parent_id,
+                "channel_id": channel_id or target_id,
+                "user_id": user_id,
+                "message_type": message_type or "channel",
+            }
+        )
+
+    conversation_id = group_id or parent_id or target_id
+    return _clean_mapping(
+        {
+            "platform": platform_id,
+            "type": "group",
+            "id": conversation_id,
+            "target_type": "group",
+            "target_id": conversation_id,
+            "group_id": group_id,
+            "user_id": user_id,
+            "message_type": message_type or "group",
+        }
+    )
+
+
 def _extract_sender_key(
     platform_id: str,
     event: Any,
     target_data: dict[str, Any],
+    conversation_data: dict[str, Any] | None = None,
 ) -> str:
-    get_user_id = getattr(event, "get_user_id", None)
-    user_id = ""
-    if callable(get_user_id):
-        try:
-            user_id = str(get_user_id() or "")
-        except Exception:
-            user_id = ""
+    conversation_data = conversation_data or {}
+    user_id = str(conversation_data.get("user_id") or _event_user_id(event)).strip()
+    conversation_type = str(conversation_data.get("type") or "").strip().lower()
+    conversation_id = str(conversation_data.get("id") or "").strip()
+    if conversation_type and conversation_id:
+        if conversation_type == "private":
+            return f"{platform_id}:private:{user_id or conversation_id}"
+        return f"{platform_id}:{conversation_type}:{conversation_id}:{user_id or conversation_id}"
 
     target_id = str(target_data.get("id") or "")
     parent_id = str(target_data.get("parent_id") or "")
@@ -1207,9 +1303,15 @@ def build_inbound_message(
     target = get_target(event, bot)
     target_data = target.dump()
     target_data["source"] = target.source or get_message_id(event, bot)
+    conversation_data = _extract_conversation_metadata(platform_id, event, target_data)
+    for key in ("message_type", "group_id", "user_id", "guild_id", "channel_id"):
+        value = conversation_data.get(key)
+        if value not in (None, ""):
+            target_data.setdefault(key, value)
     metadata: dict[str, Any] = {
         "target": target_data,
         "sender": _extract_sender_metadata(platform_id, event),
+        "conversation": conversation_data,
     }
     if _event_mentions_bot(bot, event):
         metadata["mentioned_bot"] = True
@@ -1217,7 +1319,12 @@ def build_inbound_message(
         metadata["replied_to_bot"] = True
 
     return RobotInboundMessage(
-        sender_key=_extract_sender_key(platform_id, event, target_data),
+        sender_key=_extract_sender_key(
+            platform_id,
+            event,
+            target_data,
+            conversation_data=conversation_data,
+        ),
         text=text,
         reply_target=RobotReplyTarget(
             target_type="universal",

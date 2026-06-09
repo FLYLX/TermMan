@@ -19,8 +19,21 @@ ROBOT_MESSAGE_STAMP_RE = re.compile(r"\[Robot message; (?P<body>[^\]]+)\]")
 
 
 def _robot_conversation_type(reply_target: RobotReplyTarget, sender_key: str) -> str:
+    conversation_data = reply_target.metadata.get("conversation")
+    if isinstance(conversation_data, dict):
+        conversation_type = str(
+            conversation_data.get("type")
+            or conversation_data.get("conversation_type")
+            or ""
+        ).strip().lower()
+        if conversation_type:
+            return conversation_type
+
     target_data = reply_target.metadata.get("target")
     if isinstance(target_data, dict):
+        message_type = str(target_data.get("message_type") or "").strip().lower()
+        if message_type in {"private", "group", "channel"}:
+            return message_type
         if bool(target_data.get("private")):
             return "private"
         if bool(target_data.get("channel")):
@@ -42,8 +55,27 @@ def _robot_conversation_type(reply_target: RobotReplyTarget, sender_key: str) ->
 
 
 def _robot_conversation_id(reply_target: RobotReplyTarget) -> str:
+    conversation_data = reply_target.metadata.get("conversation")
+    if isinstance(conversation_data, dict):
+        conversation_id = str(
+            conversation_data.get("id")
+            or conversation_data.get("conversation_id")
+            or ""
+        ).strip()
+        if conversation_id:
+            return conversation_id
+
     target_data = reply_target.metadata.get("target")
     if isinstance(target_data, dict):
+        message_type = str(target_data.get("message_type") or "").strip().lower()
+        if message_type == "group":
+            group_id = str(target_data.get("group_id") or "").strip()
+            if group_id:
+                return group_id
+        if message_type == "private":
+            user_id = str(target_data.get("user_id") or "").strip()
+            if user_id:
+                return user_id
         return str(
             target_data.get("parent_id")
             or target_data.get("id")
@@ -95,9 +127,13 @@ def build_robot_reply_context_summary(
             f"- sender_key: {sender_key}",
             (
                 "- send rule: call `mcp_robot_send_message` with only `text` to "
-                "reply to this current QQ conversation. Pass `reply_to` only when "
-                "intentionally sending to another QQ conversation visible in "
-                "context."
+                "reply to this current QQ conversation only when this message "
+                "needs a bot response. Do not call the tool for ordinary group "
+                "chatter, messages directed at someone else, or messages that "
+                "do not need a response. Do not pass `reply_to`, `conversation`, "
+                "`broadcast`, `target_type`, or `target_id` in this active QQ "
+                "context; it is locked to the current conversation to prevent "
+                "replying to the wrong group/private chat."
             ),
         ]
     )

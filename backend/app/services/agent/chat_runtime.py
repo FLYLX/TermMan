@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException
@@ -12,6 +13,21 @@ from app.services.agent.agent import agent_manager, item_handler_context
 if TYPE_CHECKING:
     from app.plugins.robot.contracts import RobotReplyTarget
     from app.services.agent.agent import Agent
+
+
+@dataclass(frozen=True)
+class ChatResponseResult:
+    content: str
+    robot_message_sent: bool = False
+
+
+def _is_robot_send_tool_result(value: str) -> bool:
+    normalized = value.strip()
+    return (
+        normalized.startswith("Message sent to QQ ")
+        or normalized == "Message sent to current robot conversation."
+        or normalized.startswith("Broadcast sent to ")
+    )
 
 
 def _robot_fallback_response_content(
@@ -26,10 +42,7 @@ def _robot_fallback_response_content(
 
     for result in reversed(tool_results):
         normalized = result.strip()
-        if (
-            normalized.startswith("Message sent to QQ ")
-            or normalized == "Message sent to current robot conversation."
-        ):
+        if _is_robot_send_tool_result(normalized):
             return normalized
 
     for result in reversed(tool_results):
@@ -131,7 +144,8 @@ async def collect_chat_response(
     robot_id: str | None = None,
     robot_sender_key: str | None = None,
     robot_reply_target: RobotReplyTarget | None = None,
-) -> str:
+    return_result: bool = False,
+) -> str | ChatResponseResult:
     from app.api.routes.chat import generate_stream
 
     handler, _, agent = await prepare_chat_agent(session, item_id, current_user)
@@ -177,6 +191,9 @@ async def collect_chat_response(
 
     if error_message:
         raise HTTPException(status_code=500, detail=error_message)
+    robot_message_sent = bool(robot_id) and any(
+        _is_robot_send_tool_result(result) for result in tool_results
+    )
     if not content:
         fallback_content = _robot_fallback_response_content(
             robot_id=robot_id,
@@ -191,9 +208,15 @@ async def collect_chat_response(
                 tool_results=tool_results,
                 warnings=warnings,
             )
-            return fallback_content
+            result = ChatResponseResult(
+                content=fallback_content,
+                robot_message_sent=robot_message_sent
+                or _is_robot_send_tool_result(fallback_content),
+            )
+            return result if return_result else result.content
         raise HTTPException(
             status_code=502,
             detail="Agent did not return any response content.",
         )
-    return content
+    result = ChatResponseResult(content=content, robot_message_sent=robot_message_sent)
+    return result if return_result else result.content

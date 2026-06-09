@@ -283,8 +283,10 @@ def _robot_delivery_correction_message(final_response: str) -> dict[str, str]:
             "Final assistant responses are internal to TermMan and are not sent "
             "to QQ. If that text is intended as a QQ reply, call "
             "`mcp_robot_send_message` now using the QQ conversation visible in "
-            "context. If no QQ message should be sent, respond with a concise "
-            "internal note explaining that no QQ message was sent."
+            "context. Do not send merely because a robot context exists; if the "
+            "message is ordinary group chatter, directed at someone else, or no "
+            "QQ message should be sent, respond with a concise internal note "
+            "explaining that no QQ message was sent."
         ),
     }
 

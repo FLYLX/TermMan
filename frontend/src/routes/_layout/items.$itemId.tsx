@@ -62,6 +62,14 @@ type ItemsResponse = {
   count: number
 }
 
+type ItemDetailTab =
+  | "terminal"
+  | "files"
+  | "handlers"
+  | "filters"
+  | "config"
+  | "memory"
+
 function createDefaultInputRules(): Record<string, FilterRule> {
   return {
     block_filter: {
@@ -367,6 +375,10 @@ function ItemDetailPage({
   const { t, locale, localeTag } = useI18n()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const [command, setCommand] = useState("")
+  const [activeTab, setActiveTab] = useState<ItemDetailTab>("terminal")
+  const [visitedTabs, setVisitedTabs] = useState<Set<ItemDetailTab>>(
+    () => new Set<ItemDetailTab>(["terminal"]),
+  )
   const outputRef = useRef<HTMLDivElement>(null)
   const previousItemIdRef = useRef(item.id)
   const itemUpdatedAtRef = useRef(item.updated_at || "")
@@ -432,6 +444,24 @@ function ItemDetailPage({
     working_directory: item.working_directory ?? "",
     log_max_size_mb: item.log_max_size_mb?.toString() ?? "100",
   })
+  const activateTab = (value: string) => {
+    const nextTab = value as ItemDetailTab
+    setActiveTab(nextTab)
+    setVisitedTabs((current) => {
+      if (current.has(nextTab)) {
+        return current
+      }
+      const next = new Set(current)
+      next.add(nextTab)
+      return next
+    })
+  }
+  const hasVisitedTab = (value: ItemDetailTab) => visitedTabs.has(value)
+
+  useEffect(() => {
+    setActiveTab("terminal")
+    setVisitedTabs(new Set<ItemDetailTab>(["terminal"]))
+  }, [item.id])
 
   useEffect(() => {
     const isNewItem = previousItemIdRef.current !== item.id
@@ -633,11 +663,15 @@ function ItemDetailPage({
         },
       })
       updateItemCaches(updatedItem)
-      await queryClient.invalidateQueries({ queryKey: ["items", "detail", item.id] })
+      await queryClient.invalidateQueries({
+        queryKey: ["items", "detail", item.id],
+      })
       await queryClient.invalidateQueries({ queryKey: ["items"] })
 
       const daemonId =
-        updatedItem.socket_host && updatedItem.socket_port && updatedItem.api_key
+        updatedItem.socket_host &&
+        updatedItem.socket_port &&
+        updatedItem.api_key
           ? `${updatedItem.socket_host}:${updatedItem.socket_port}:${updatedItem.api_key}`
           : null
       if (daemonId) {
@@ -647,7 +681,9 @@ function ItemDetailPage({
       showSuccessToast("Terminal configuration updated")
       setIsEditingConfig(false)
     } catch (error) {
-      showErrorToast(error instanceof Error ? error.message : "Failed to update terminal")
+      showErrorToast(
+        error instanceof Error ? error.message : "Failed to update terminal",
+      )
     } finally {
       setIsSavingConfig(false)
     }
@@ -908,7 +944,11 @@ function ItemDetailPage({
             </div>
           </section>
 
-          <Tabs defaultValue="terminal" className="gap-2.5">
+          <Tabs
+            value={activeTab}
+            onValueChange={activateTab}
+            className="gap-2.5"
+          >
             <div className="overflow-x-auto">
               <TabsList className="h-auto min-w-max gap-1 bg-muted/70 p-1">
                 <TabsTrigger value="terminal">
@@ -1177,456 +1217,481 @@ function ItemDetailPage({
             </TabsContent>
 
             <TabsContent value="files">
-              <ItemFilesPanel itemId={item.id} />
+              {hasVisitedTab("files") ? (
+                <ItemFilesPanel itemId={item.id} />
+              ) : null}
             </TabsContent>
 
             <TabsContent value="handlers">
-              <ItemHandlersList itemId={item.id} />
+              {hasVisitedTab("handlers") ? (
+                <ItemHandlersList itemId={item.id} />
+              ) : null}
             </TabsContent>
 
             <TabsContent value="filters" className="space-y-4">
-              <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex items-start gap-2">
-                    <Filter className="mt-1 size-5 text-blue-500" />
-                    <div>
-                      <h2 className="text-xl font-semibold">
-                        {t("items.detail.inputFilterSettings")}
-                      </h2>
-                      <p className="text-xs text-muted-foreground">
-                        {t("items.detail.inputFilterFlowDescription")}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-4 gap-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">
-                        {t("common.enabled")}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setInputFilterEnabled(!inputFilterEnabled)
-                        }
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          inputFilterEnabled ? "bg-blue-500" : "bg-muted"
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            inputFilterEnabled
-                              ? "translate-x-6"
-                              : "translate-x-1"
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <FilterGeneratorCard
-                  itemId={item.id}
-                  target="input"
-                  currentRules={inputFilterRules}
-                  onApply={setInputFilterRules}
-                />
-
-                <FilterRuleEditor
-                  value={inputFilterRules}
-                  onChange={setInputFilterRules}
-                  defaultRules={createDefaultInputRules()}
-                />
-
-                <div className="mt-4 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
-                  <div className="mb-3 flex items-center gap-2">
-                    <Terminal className="size-4 text-blue-500" />
-                    <span className="text-sm font-medium">
-                      {t("items.detail.testInputFilter")}
-                    </span>
-                  </div>
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">
-                        {t("items.detail.inputText")}
-                      </Label>
-                      <Textarea
-                        placeholder={t("items.detail.pasteTerminalOutput")}
-                        className="h-40 font-mono text-xs"
-                        value={inputTestText}
-                        onChange={(e) => setInputTestText(e.target.value)}
-                      />
-                      <Button
-                        size="sm"
-                        onClick={handleTestInputFilter}
-                        disabled={isTestingInputFilter}
-                        className="w-full"
-                      >
-                        {isTestingInputFilter ? (
-                          <Loader2 className="mr-2 size-4 animate-spin" />
-                        ) : (
-                          <Play className="mr-2 size-4" />
-                        )}
-                        {t("items.detail.testFilter")}
-                      </Button>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">
-                        {t("items.detail.filterResult")}
-                      </Label>
-                      <div className="h-40 overflow-auto rounded-md border bg-muted/30 p-3">
-                        {inputTestResult ? (
-                          <pre className="whitespace-pre-wrap text-xs font-mono">
-                            {String(inputTestResult.result || "")}
-                          </pre>
-                        ) : (
+              {hasVisitedTab("filters") ? (
+                <>
+                  <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex items-start gap-2">
+                        <Filter className="mt-1 size-5 text-blue-500" />
+                        <div>
+                          <h2 className="text-xl font-semibold">
+                            {t("items.detail.inputFilterSettings")}
+                          </h2>
                           <p className="text-xs text-muted-foreground">
-                            {t("items.detail.clickTestFilter")}
+                            {t("items.detail.inputFilterFlowDescription")}
                           </p>
-                        )}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-4 gap-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">
+                            {t("common.enabled")}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setInputFilterEnabled(!inputFilterEnabled)
+                            }
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              inputFilterEnabled ? "bg-blue-500" : "bg-muted"
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                inputFilterEnabled
+                                  ? "translate-x-6"
+                                  : "translate-x-1"
+                              }`}
+                            />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
-              </section>
 
-              <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex items-start gap-2">
-                    <Shield className="mt-1 size-5 text-orange-500" />
-                    <div>
-                      <h2 className="text-xl font-semibold">
-                        {t("items.detail.outputFilterSettings")}
-                      </h2>
-                      <p className="text-xs text-muted-foreground">
-                        {t("items.detail.outputFilterFlowDescription")}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-4 gap-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">
-                        {t("common.enabled")}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setOutputFilterEnabled(!outputFilterEnabled)
-                        }
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          outputFilterEnabled ? "bg-orange-500" : "bg-muted"
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            outputFilterEnabled
-                              ? "translate-x-6"
-                              : "translate-x-1"
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                    <FilterGeneratorCard
+                      itemId={item.id}
+                      target="input"
+                      currentRules={inputFilterRules}
+                      onApply={setInputFilterRules}
+                    />
 
-                <FilterGeneratorCard
-                  itemId={item.id}
-                  target="output"
-                  currentRules={outputFilterRules}
-                  onApply={setOutputFilterRules}
-                />
+                    <FilterRuleEditor
+                      value={inputFilterRules}
+                      onChange={setInputFilterRules}
+                      defaultRules={createDefaultInputRules()}
+                    />
 
-                <FilterRuleEditor
-                  value={outputFilterRules}
-                  onChange={setOutputFilterRules}
-                  defaultRules={createDefaultOutputRules()}
-                />
-
-                <div className="mt-4 rounded-lg border border-orange-500/30 bg-orange-500/5 p-4">
-                  <div className="mb-3 flex items-center gap-2">
-                    <Shield className="size-4 text-orange-500" />
-                    <span className="text-sm font-medium">
-                      {t("items.detail.testOutputFilter")}
-                    </span>
-                  </div>
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">
-                        {t("items.detail.commandToTest")}
-                      </Label>
-                      <Textarea
-                        placeholder={t("items.detail.enterCommandToTest")}
-                        className="h-32 font-mono text-xs"
-                        value={outputTestCommand}
-                        onChange={(e) => setOutputTestCommand(e.target.value)}
-                      />
-                      <Button
-                        size="sm"
-                        onClick={handleTestOutputFilter}
-                        disabled={isTestingOutputFilter}
-                        className="w-full"
-                      >
-                        {isTestingOutputFilter ? (
-                          <Loader2 className="mr-2 size-4 animate-spin" />
-                        ) : (
-                          <Play className="mr-2 size-4" />
-                        )}
-                        {t("items.detail.testCommand")}
-                      </Button>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">
-                        {t("items.detail.filterResult")}
-                      </Label>
-                      <div className="h-32 overflow-auto rounded-md border bg-muted/30 p-3">
-                        {outputTestResult ? (
-                          <pre className="whitespace-pre-wrap text-xs font-mono">
-                            {String(outputTestResult.result || "")}
-                          </pre>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">
-                            {t("items.detail.clickTestCommand")}
-                          </p>
-                        )}
+                    <div className="mt-4 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
+                      <div className="mb-3 flex items-center gap-2">
+                        <Terminal className="size-4 text-blue-500" />
+                        <span className="text-sm font-medium">
+                          {t("items.detail.testInputFilter")}
+                        </span>
+                      </div>
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label className="text-xs text-muted-foreground">
+                            {t("items.detail.inputText")}
+                          </Label>
+                          <Textarea
+                            placeholder={t("items.detail.pasteTerminalOutput")}
+                            className="h-40 font-mono text-xs"
+                            value={inputTestText}
+                            onChange={(e) => setInputTestText(e.target.value)}
+                          />
+                          <Button
+                            size="sm"
+                            onClick={handleTestInputFilter}
+                            disabled={isTestingInputFilter}
+                            className="w-full"
+                          >
+                            {isTestingInputFilter ? (
+                              <Loader2 className="mr-2 size-4 animate-spin" />
+                            ) : (
+                              <Play className="mr-2 size-4" />
+                            )}
+                            {t("items.detail.testFilter")}
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs text-muted-foreground">
+                            {t("items.detail.filterResult")}
+                          </Label>
+                          <div className="h-40 overflow-auto rounded-md border bg-muted/30 p-3">
+                            {inputTestResult ? (
+                              <pre className="whitespace-pre-wrap text-xs font-mono">
+                                {String(inputTestResult.result || "")}
+                              </pre>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">
+                                {t("items.detail.clickTestFilter")}
+                              </p>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
-              </section>
+                  </section>
+
+                  <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex items-start gap-2">
+                        <Shield className="mt-1 size-5 text-orange-500" />
+                        <div>
+                          <h2 className="text-xl font-semibold">
+                            {t("items.detail.outputFilterSettings")}
+                          </h2>
+                          <p className="text-xs text-muted-foreground">
+                            {t("items.detail.outputFilterFlowDescription")}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-4 gap-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">
+                            {t("common.enabled")}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOutputFilterEnabled(!outputFilterEnabled)
+                            }
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              outputFilterEnabled ? "bg-orange-500" : "bg-muted"
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                outputFilterEnabled
+                                  ? "translate-x-6"
+                                  : "translate-x-1"
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <FilterGeneratorCard
+                      itemId={item.id}
+                      target="output"
+                      currentRules={outputFilterRules}
+                      onApply={setOutputFilterRules}
+                    />
+
+                    <FilterRuleEditor
+                      value={outputFilterRules}
+                      onChange={setOutputFilterRules}
+                      defaultRules={createDefaultOutputRules()}
+                    />
+
+                    <div className="mt-4 rounded-lg border border-orange-500/30 bg-orange-500/5 p-4">
+                      <div className="mb-3 flex items-center gap-2">
+                        <Shield className="size-4 text-orange-500" />
+                        <span className="text-sm font-medium">
+                          {t("items.detail.testOutputFilter")}
+                        </span>
+                      </div>
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label className="text-xs text-muted-foreground">
+                            {t("items.detail.commandToTest")}
+                          </Label>
+                          <Textarea
+                            placeholder={t("items.detail.enterCommandToTest")}
+                            className="h-32 font-mono text-xs"
+                            value={outputTestCommand}
+                            onChange={(e) =>
+                              setOutputTestCommand(e.target.value)
+                            }
+                          />
+                          <Button
+                            size="sm"
+                            onClick={handleTestOutputFilter}
+                            disabled={isTestingOutputFilter}
+                            className="w-full"
+                          >
+                            {isTestingOutputFilter ? (
+                              <Loader2 className="mr-2 size-4 animate-spin" />
+                            ) : (
+                              <Play className="mr-2 size-4" />
+                            )}
+                            {t("items.detail.testCommand")}
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs text-muted-foreground">
+                            {t("items.detail.filterResult")}
+                          </Label>
+                          <div className="h-32 overflow-auto rounded-md border bg-muted/30 p-3">
+                            {outputTestResult ? (
+                              <pre className="whitespace-pre-wrap text-xs font-mono">
+                                {String(outputTestResult.result || "")}
+                              </pre>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">
+                                {t("items.detail.clickTestCommand")}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </>
+              ) : null}
             </TabsContent>
 
             <TabsContent value="config" className="space-y-4">
-              <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <h2 className="text-xl font-semibold">
-                    {t("items.detail.keyInformation")}
-                  </h2>
-                  <div className="flex gap-2">
+              {hasVisitedTab("config") ? (
+                <>
+                  <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <h2 className="text-xl font-semibold">
+                        {t("items.detail.keyInformation")}
+                      </h2>
+                      <div className="flex gap-2">
+                        {isEditingConfig ? (
+                          <>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                resetConfigForm()
+                                setIsEditingConfig(false)
+                              }}
+                              disabled={isSavingConfig}
+                            >
+                              {t("common.cancel")}
+                            </Button>
+                            <Button
+                              type="button"
+                              onClick={() => void handleSaveConfig()}
+                              disabled={isSavingConfig}
+                            >
+                              {isSavingConfig ? (
+                                <Loader2 className="mr-2 size-4 animate-spin" />
+                              ) : null}
+                              {t("common.save")}
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setIsEditingConfig(true)}
+                          >
+                            Edit
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                     {isEditingConfig ? (
-                      <>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            resetConfigForm()
-                            setIsEditingConfig(false)
-                          }}
-                          disabled={isSavingConfig}
-                        >
-                          {t("common.cancel")}
-                        </Button>
-                        <Button
-                          type="button"
-                          onClick={() => void handleSaveConfig()}
-                          disabled={isSavingConfig}
-                        >
-                          {isSavingConfig ? (
-                            <Loader2 className="mr-2 size-4 animate-spin" />
-                          ) : null}
-                          {t("common.save")}
-                        </Button>
-                      </>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setIsEditingConfig(true)}
-                      >
-                        Edit
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                {isEditingConfig ? (
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="grid gap-2">
-                      <Label>Title</Label>
-                      <Input
-                        value={configForm.title}
-                        onChange={(event) =>
-                          setConfigForm((current) => ({
-                            ...current,
-                            title: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>Description</Label>
-                      <Input
-                        value={configForm.description}
-                        onChange={(event) =>
-                          setConfigForm((current) => ({
-                            ...current,
-                            description: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>{t("items.detail.socketHost")}</Label>
-                      <Input
-                        value={configForm.socket_host}
-                        onChange={(event) =>
-                          setConfigForm((current) => ({
-                            ...current,
-                            socket_host: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>{t("items.detail.socketPort")}</Label>
-                      <Input
-                        type="number"
-                        value={configForm.socket_port}
-                        onChange={(event) =>
-                          setConfigForm((current) => ({
-                            ...current,
-                            socket_port: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>Daemon API Key</Label>
-                      <Input
-                        type="password"
-                        value={configForm.api_key}
-                        onChange={(event) =>
-                          setConfigForm((current) => ({
-                            ...current,
-                            api_key: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>{t("items.detail.logMaxSize")}</Label>
-                      <Input
-                        type="number"
-                        value={configForm.log_max_size_mb}
-                        onChange={(event) =>
-                          setConfigForm((current) => ({
-                            ...current,
-                            log_max_size_mb: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>{t("items.detail.command")}</Label>
-                      <Input
-                        value={configForm.command}
-                        onChange={(event) =>
-                          setConfigForm((current) => ({
-                            ...current,
-                            command: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>{t("items.workingDirectory")}</Label>
-                      <Input
-                        value={configForm.working_directory}
-                        onChange={(event) =>
-                          setConfigForm((current) => ({
-                            ...current,
-                            working_directory: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    <CopyValue label={t("common.id")} value={item.id} />
-                    <KeyValue
-                      label={t("common.status")}
-                      value={getStatusLabel(locale, item.status)}
-                    />
-                    <KeyValue label={t("common.ownerId")} value={item.owner_id} />
-                    <KeyValue
-                      label={t("items.detail.socketHost")}
-                      value={item.socket_host}
-                    />
-                    <KeyValue
-                      label={t("items.detail.socketPort")}
-                      value={item.socket_port?.toString()}
-                    />
-                    <KeyValue
-                      label={t("items.detail.socketConnected")}
-                      value={
-                        item.socket_connected ? t("common.yes") : t("common.no")
-                      }
-                    />
-                    <KeyValue
-                      label={t("items.detail.command")}
-                      value={item.command}
-                    />
-                    <KeyValue
-                      label={t("items.workingDirectory")}
-                      value={item.working_directory}
-                    />
-                    <KeyValue
-                      label={t("items.detail.logMaxSize")}
-                      value={item.log_max_size_mb?.toString()}
-                    />
-                    <KeyValue
-                      label={t("items.detail.daemonUrl")}
-                      value={item.daemon_url}
-                    />
-                    <KeyValue
-                      label={t("common.createdAt")}
-                      value={formatDate(item.created_at, localeTag) || undefined}
-                    />
-                    <KeyValue
-                      label={t("common.updatedAt")}
-                      value={formatDate(item.updated_at, localeTag) || undefined}
-                    />
-                  </div>
-                )}
-              </section>
-
-              <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-                <h2 className="mb-4 text-xl font-semibold">
-                  {t("items.detail.connectedUsers")}
-                </h2>
-                {item.connected_users &&
-                Object.keys(item.connected_users).length > 0 ? (
-                  <div className="space-y-2">
-                    {Object.entries(item.connected_users).map(
-                      ([sid, userInfo]) => (
-                        <div
-                          key={sid}
-                          className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2"
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="size-2 rounded-full bg-green-500" />
-                            <span className="font-mono text-sm">
-                              {userInfo.user_uuid}
-                            </span>
-                          </div>
-                          <span className="text-sm text-muted-foreground">
-                            {userInfo.ip}
-                          </span>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="grid gap-2">
+                          <Label>Title</Label>
+                          <Input
+                            value={configForm.title}
+                            onChange={(event) =>
+                              setConfigForm((current) => ({
+                                ...current,
+                                title: event.target.value,
+                              }))
+                            }
+                          />
                         </div>
-                      ),
+                        <div className="grid gap-2">
+                          <Label>Description</Label>
+                          <Input
+                            value={configForm.description}
+                            onChange={(event) =>
+                              setConfigForm((current) => ({
+                                ...current,
+                                description: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>{t("items.detail.socketHost")}</Label>
+                          <Input
+                            value={configForm.socket_host}
+                            onChange={(event) =>
+                              setConfigForm((current) => ({
+                                ...current,
+                                socket_host: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>{t("items.detail.socketPort")}</Label>
+                          <Input
+                            type="number"
+                            value={configForm.socket_port}
+                            onChange={(event) =>
+                              setConfigForm((current) => ({
+                                ...current,
+                                socket_port: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Daemon API Key</Label>
+                          <Input
+                            type="password"
+                            value={configForm.api_key}
+                            onChange={(event) =>
+                              setConfigForm((current) => ({
+                                ...current,
+                                api_key: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>{t("items.detail.logMaxSize")}</Label>
+                          <Input
+                            type="number"
+                            value={configForm.log_max_size_mb}
+                            onChange={(event) =>
+                              setConfigForm((current) => ({
+                                ...current,
+                                log_max_size_mb: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>{t("items.detail.command")}</Label>
+                          <Input
+                            value={configForm.command}
+                            onChange={(event) =>
+                              setConfigForm((current) => ({
+                                ...current,
+                                command: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>{t("items.workingDirectory")}</Label>
+                          <Input
+                            value={configForm.working_directory}
+                            onChange={(event) =>
+                              setConfigForm((current) => ({
+                                ...current,
+                                working_directory: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        <CopyValue label={t("common.id")} value={item.id} />
+                        <KeyValue
+                          label={t("common.status")}
+                          value={getStatusLabel(locale, item.status)}
+                        />
+                        <KeyValue
+                          label={t("common.ownerId")}
+                          value={item.owner_id}
+                        />
+                        <KeyValue
+                          label={t("items.detail.socketHost")}
+                          value={item.socket_host}
+                        />
+                        <KeyValue
+                          label={t("items.detail.socketPort")}
+                          value={item.socket_port?.toString()}
+                        />
+                        <KeyValue
+                          label={t("items.detail.socketConnected")}
+                          value={
+                            item.socket_connected
+                              ? t("common.yes")
+                              : t("common.no")
+                          }
+                        />
+                        <KeyValue
+                          label={t("items.detail.command")}
+                          value={item.command}
+                        />
+                        <KeyValue
+                          label={t("items.workingDirectory")}
+                          value={item.working_directory}
+                        />
+                        <KeyValue
+                          label={t("items.detail.logMaxSize")}
+                          value={item.log_max_size_mb?.toString()}
+                        />
+                        <KeyValue
+                          label={t("items.detail.daemonUrl")}
+                          value={item.daemon_url}
+                        />
+                        <KeyValue
+                          label={t("common.createdAt")}
+                          value={
+                            formatDate(item.created_at, localeTag) || undefined
+                          }
+                        />
+                        <KeyValue
+                          label={t("common.updatedAt")}
+                          value={
+                            formatDate(item.updated_at, localeTag) || undefined
+                          }
+                        />
+                      </div>
                     )}
-                  </div>
-                ) : (
-                  <div className="py-8 text-center text-muted-foreground">
-                    <Users className="mx-auto mb-2 size-8 opacity-50" />
-                    <p>{t("items.detail.noConnectedUsers")}</p>
-                  </div>
-                )}
-              </section>
+                  </section>
+
+                  <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                    <h2 className="mb-4 text-xl font-semibold">
+                      {t("items.detail.connectedUsers")}
+                    </h2>
+                    {item.connected_users &&
+                    Object.keys(item.connected_users).length > 0 ? (
+                      <div className="space-y-2">
+                        {Object.entries(item.connected_users).map(
+                          ([sid, userInfo]) => (
+                            <div
+                              key={sid}
+                              className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2"
+                            >
+                              <div className="flex items-center gap-2">
+                                <div className="size-2 rounded-full bg-green-500" />
+                                <span className="font-mono text-sm">
+                                  {userInfo.user_uuid}
+                                </span>
+                              </div>
+                              <span className="text-sm text-muted-foreground">
+                                {userInfo.ip}
+                              </span>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    ) : (
+                      <div className="py-8 text-center text-muted-foreground">
+                        <Users className="mx-auto mb-2 size-8 opacity-50" />
+                        <p>{t("items.detail.noConnectedUsers")}</p>
+                      </div>
+                    )}
+                  </section>
+                </>
+              ) : null}
             </TabsContent>
 
             <TabsContent value="memory">
-              <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-                <MemoryManager itemId={item.id} />
-              </section>
+              {hasVisitedTab("memory") ? (
+                <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                  <MemoryManager itemId={item.id} />
+                </section>
+              ) : null}
             </TabsContent>
           </Tabs>
         </div>
