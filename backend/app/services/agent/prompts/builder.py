@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from app.services.agent.history.chat import (
@@ -13,6 +14,7 @@ from app.services.agent.prompts.policy import (
     resolve_prompt_memory_policy,
 )
 from app.services.agent.prompts.system import get_system_prompt
+from app.services.agent.skills import skill_loader
 
 if TYPE_CHECKING:
     from app.services.agent.agent import Agent
@@ -28,6 +30,47 @@ ASSISTANT_CONTEXT_TYPES = {
     "agent_warning",
     "agent_error",
 }
+
+TERMINAL_CRITICAL_ALERT_SKILL_ID = "terminal_critical_alert"
+
+CRITICAL_TERMINAL_PATTERNS = (
+    r"\bfatal\b",
+    r"\bcritical\b",
+    r"\bpanic\b",
+    r"\btraceback\s*\(most recent call last\)",
+    r"\bunhandled exception\b",
+    r"\buncaught exception\b",
+    r"\bsegmentation fault\b",
+    r"\bsegfault\b",
+    r"\bout of memory\b",
+    r"\boom(?:\s+killed|\s+kill)?\b",
+    r"\bkilled process\b",
+    r"\bno space left on device\b",
+    r"\bdisk full\b",
+    r"\bpermission denied\b.*\b(start|startup|listen|bind|open)\b",
+    r"\b(startup|start|boot)\s+(failed|failure)\b",
+    r"\b(service|server|process|worker)\s+(crashed|failed|exited|terminated)\b",
+    r"\bexited\s+with\s+(?:code|status)\s+[1-9]\d*\b",
+    r"\baddress already in use\b",
+    r"\beaddrinuse\b",
+    r"\u5d29\u6e83",
+    r"\u5b95\u673a",
+    r"\u81f4\u547d",
+    r"\u4e25\u91cd",
+    r"\u7d27\u6025",
+    r"\u542f\u52a8\u5931\u8d25",
+    r"\u670d\u52a1\u505c\u6b62",
+)
+
+
+def is_critical_terminal_event(text: str) -> bool:
+    normalized = (text or "").strip()
+    if not normalized:
+        return False
+    return any(
+        re.search(pattern, normalized, flags=re.IGNORECASE)
+        for pattern in CRITICAL_TERMINAL_PATTERNS
+    )
 
 SESSION_SUMMARY_LABEL = "会话摘要"
 LONG_TERM_MEMORY_LABEL = "相关长期记忆"
@@ -50,6 +93,11 @@ def _build_skill_prompt(
             if skill.skill_id in force_skill_ids and skill.skill_id not in existing_skill_ids:
                 skills.append(skill)
                 existing_skill_ids.add(skill.skill_id)
+        for skill_id in force_skill_ids - existing_skill_ids:
+            forced_skill = skill_loader.get(skill_id)
+            if forced_skill is not None:
+                skills.append(forced_skill)
+                existing_skill_ids.add(forced_skill.skill_id)
     for skill in skills:
         if skill.category == "system":
             continue
@@ -294,7 +342,16 @@ def build_terminal_turn_messages(
     policy = resolve_prompt_memory_policy(turn_type)
     effective_query = query or terminal_content
     prompt_messages: list[dict[str, str]] = [
-        {"role": "system", "content": _build_skill_prompt(agent, effective_query)}
+        {
+            "role": "system",
+            "content": _build_skill_prompt(
+                agent,
+                effective_query,
+                force_skill_ids={TERMINAL_CRITICAL_ALERT_SKILL_ID}
+                if is_critical_terminal_event(terminal_content)
+                else None,
+            ),
+        }
     ]
 
     if turn_type == PromptTurnType.TERMINAL_RAW_FEEDBACK:

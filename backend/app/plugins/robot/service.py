@@ -350,7 +350,15 @@ class RobotService:
                 robot_owner_id=robot.owner_id,
                 item_id=resolved_binding.item.id,
                 route_key=resolved_binding.route_key,
-                message=self._agent_message_with_context(message, message_text),
+                message=self._agent_message_with_context(
+                    message,
+                    message_text,
+                    trigger_reason=self._agent_trigger_reason(
+                        message,
+                        direct_reply_trigger=direct_reply_trigger,
+                        reply_context_active=reply_context_active,
+                    ),
+                ),
                 sender_key=message.sender_key,
                 reply_target=message.reply_target.model_copy(deep=True),
                 enqueued_at=self._now(),
@@ -777,13 +785,38 @@ class RobotService:
         self,
         inbound_message: RobotInboundMessage,
         message_text: str,
+        *,
+        trigger_reason: str = "",
     ) -> str:
-        prefix = self._agent_message_context_prefix(inbound_message)
+        prefix = self._agent_message_context_prefix(
+            inbound_message,
+            trigger_reason=trigger_reason,
+        )
         if not prefix:
             return message_text
         return f"{prefix}\n{message_text}"
 
-    def _agent_message_context_prefix(self, message: RobotInboundMessage) -> str:
+    def _agent_trigger_reason(
+        self,
+        message: RobotInboundMessage,
+        *,
+        direct_reply_trigger: bool,
+        reply_context_active: bool,
+    ) -> str:
+        if bool(message.reply_target.metadata.get("replied_to_bot")):
+            return "reply_to_bot"
+        if bool(message.reply_target.metadata.get("mentioned_bot")):
+            return "mention_bot"
+        if reply_context_active and not direct_reply_trigger:
+            return "active_chat_window"
+        return "plain"
+
+    def _agent_message_context_prefix(
+        self,
+        message: RobotInboundMessage,
+        *,
+        trigger_reason: str = "",
+    ) -> str:
         sender_data = message.reply_target.metadata.get("sender")
         if not isinstance(sender_data, dict):
             return ""
@@ -820,6 +853,8 @@ class RobotService:
             "Robot message",
             f"conversation={conversation_label}",
         ]
+        if trigger_reason:
+            parts.append(f"trigger={trigger_reason}")
         parts.append(f"sender={sender_label}")
         return f"[{'; '.join(parts)}]"
 

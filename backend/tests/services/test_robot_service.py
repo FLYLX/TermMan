@@ -306,7 +306,7 @@ def test_robot_message_passes_sender_prefix_to_agent(
 
     assert response.success is True
     assert captured["job"].message == (
-        "[Robot message; conversation=group:g1; sender=Alice (u1)]\nhello"
+        "[Robot message; conversation=group:g1; trigger=plain; sender=Alice (u1)]\nhello"
     )
     assert response.reply_chunks == []
 
@@ -347,7 +347,7 @@ def test_private_robot_message_passes_context_stamp_to_agent(
 
     assert response.success is True
     assert captured["job"].message == (
-        "[Robot message; conversation=private:u1; sender=Alice (u1)]\nhello"
+        "[Robot message; conversation=private:u1; trigger=plain; sender=Alice (u1)]\nhello"
     )
     assert response.reply_chunks == []
 
@@ -653,6 +653,95 @@ def test_mention_opens_short_reply_context_window(
     )
     assert expired.ignored is True
     assert expired.reason == "reply_message_type_disabled"
+
+
+def test_reply_context_window_is_scoped_to_current_conversation(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "reply_context_window_seconds": 15,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_messages: list[str] = []
+    monkeypatch.setattr(
+        robot_service,
+        "_enqueue_chat_job",
+        lambda job: queued_messages.append(job.message) or True,
+    )
+
+    activated = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "hello mention",
+            sender_key="onebot_v11:group:g1:u1",
+            target={"id": "g1"},
+            sender={"user_id": "u1", "display_name": "Alice"},
+            mentioned_bot=True,
+        ),
+    )
+    assert activated.ignored is False
+
+    other_group = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "plain in another group",
+            sender_key="onebot_v11:group:g2:u2",
+            target={"id": "g2"},
+            sender={"user_id": "u2", "display_name": "Bob"},
+        ),
+    )
+    assert other_group.ignored is True
+    assert other_group.reason == "reply_message_type_disabled"
+
+    other_private = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "plain in private",
+            sender_key="onebot_v11:private:u2",
+            target={"id": "u2", "private": True},
+            sender={"user_id": "u2", "display_name": "Bob"},
+        ),
+    )
+    assert other_private.ignored is True
+    assert other_private.reason == "reply_message_type_disabled"
+
+    same_group = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "plain in same group",
+            sender_key="onebot_v11:group:g1:u3",
+            target={"id": "g1"},
+            sender={"user_id": "u3", "display_name": "Carol"},
+        ),
+    )
+    assert same_group.ignored is False
+    assert queued_messages == [
+        "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1)]\nhello mention",
+        "[Robot message; conversation=group:g1; trigger=active_chat_window; sender=Carol (u3)]\nplain in same group",
+    ]
 
 
 def test_reply_to_bot_refreshes_reply_context_window(

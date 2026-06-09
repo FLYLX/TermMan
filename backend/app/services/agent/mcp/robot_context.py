@@ -94,10 +94,10 @@ def build_robot_reply_context_summary(
             f"- sender: {sender_label}",
             f"- sender_key: {sender_key}",
             (
-                "- send rule: the model may choose this target or another QQ "
-                "conversation visible in context. If multiple QQ conversations are "
-                "visible, pass a short `reply_to` reference; when omitting target "
-                "fields, the tool sends to this current target."
+                "- send rule: call `mcp_robot_send_message` with only `text` to "
+                "reply to this current QQ conversation. Pass `reply_to` only when "
+                "intentionally sending to another QQ conversation visible in "
+                "context."
             ),
         ]
     )

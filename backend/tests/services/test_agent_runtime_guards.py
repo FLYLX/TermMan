@@ -148,6 +148,54 @@ def test_robot_context_temporarily_exposes_send_message_tool(monkeypatch) -> Non
         agent_module.Agent._instances.pop(handler_id, None)
 
 
+def test_robot_messaging_tools_can_be_temporarily_exposed_for_alerts(monkeypatch) -> None:
+    handler_id = f"handler-{uuid4()}"
+    agent = agent_module.Agent(handler_id)
+    agent._context = AgentContext(handler_id=handler_id, enabled_mcp_servers=[])
+    agent._mcp_servers = []
+
+    tools_by_server = {
+        "robot": [
+            MCPTool(
+                name="send_message",
+                description="Send robot message",
+                input_schema={"type": "object", "properties": {}},
+                server_name="robot",
+            )
+        ]
+    }
+
+    monkeypatch.setattr(
+        agent_module.mcp_server_manager,
+        "is_server_running",
+        lambda name: name == "robot",
+    )
+    monkeypatch.setattr(
+        agent_module.mcp_server_manager,
+        "get_tools_for_server",
+        lambda name: tools_by_server.get(name, []),
+    )
+
+    try:
+        added = asyncio.run(agent.ensure_robot_messaging_tools())
+        tool_names = [
+            tool["function"]["name"]
+            for tool in agent.get_tools_for_litellm()
+        ]
+
+        assert added is True
+        assert agent.get_mcp_servers() == ["robot"]
+        assert tool_names == ["mcp_robot_send_message"]
+
+        agent.clear_transient_robot_messaging_tools()
+
+        assert agent.get_mcp_servers() == []
+        assert agent.get_tools_for_litellm() == []
+    finally:
+        agent.clear_transient_robot_messaging_tools()
+        agent_module.Agent._instances.pop(handler_id, None)
+
+
 def test_robot_mcp_explicit_target_gets_backend_user_context(monkeypatch) -> None:
     handler_id = f"handler-{uuid4()}"
     agent = agent_module.Agent(handler_id)
@@ -319,6 +367,48 @@ def test_robot_context_forces_robot_messaging_skill_prompt(monkeypatch) -> None:
     assert "robot messaging prompt body" in messages[0]["content"]
 
 
+def test_critical_terminal_prompt_forces_alert_skill(monkeypatch) -> None:
+    critical_skill = SimpleNamespace(
+        skill_id="terminal_critical_alert",
+        name="Terminal Critical Alert",
+        description="Critical terminal alerts",
+        category="integration",
+        action=SimpleNamespace(prompt="critical alert prompt body"),
+        content="",
+    )
+    agent = SimpleNamespace(
+        get_skills=lambda: [critical_skill],
+        match_skills=lambda query: [],
+        enabled_knowledge_files=[],
+    )
+    monkeypatch.setattr(
+        prompt_builder,
+        "resolve_prompt_memory_policy",
+        lambda turn_type: SimpleNamespace(
+            include_session_summary=False,
+            max_recent_messages=0,
+            include_recent_history=False,
+            include_long_term=False,
+            allowed_long_term_types=(),
+            max_long_term_memories=0,
+        ),
+    )
+
+    critical_messages = prompt_builder.build_terminal_turn_messages(
+        agent,
+        item_id="item-1",
+        terminal_content="FATAL: service crashed and exited with code 1",
+    )
+    normal_messages = prompt_builder.build_terminal_turn_messages(
+        agent,
+        item_id="item-1",
+        terminal_content="error: file not found during investigation",
+    )
+
+    assert "critical alert prompt body" in critical_messages[0]["content"]
+    assert "critical alert prompt body" not in normal_messages[0]["content"]
+
+
 def test_robot_delivery_retry_triggers_when_model_returns_plain_reply() -> None:
     tools = [
         {
@@ -410,10 +500,10 @@ def test_robot_context_system_prompt_uses_robot_messaging_skill() -> None:
                 "- conversation: group:g1\n"
                 "- sender: Alice (u1)\n"
                 "- sender_key: onebot_v11:group:g1:u1\n"
-                "- send rule: the model may choose this target or another QQ "
-                "conversation visible in context. If multiple QQ conversations are "
-                "visible, pass a short `reply_to` reference; when omitting target "
-                "fields, the tool sends to this current target."
+                "- send rule: call `mcp_robot_send_message` with only `text` to "
+                "reply to this current QQ conversation. Pass `reply_to` only when "
+                "intentionally sending to another QQ conversation visible in "
+                "context."
             ),
         ),
         get_skills=lambda: [],
@@ -427,7 +517,7 @@ def test_robot_context_system_prompt_uses_robot_messaging_skill() -> None:
     assert "sender: Alice (u1)" in prompt
     assert "final assistant message is internal" in prompt
     assert "mcp_robot_send_message" in prompt
-    assert "Decide which QQ conversation should receive" in prompt
+    assert "To reply to that current QQ conversation" in prompt
 
 
 def test_log_manager_reads_legacy_log_when_primary_missing(tmp_path) -> None:

@@ -33,6 +33,9 @@ def _make_fake_agent(*, tools=None, execute_tool_result=None):
         def set_item_context(self, item_id, item):
             return None
 
+        def set_user_context(self, user_id, is_superuser):
+            return None
+
         async def start_mcp_servers(self):
             return None
 
@@ -61,7 +64,7 @@ def _make_fake_agent(*, tools=None, execute_tool_result=None):
     return FakeAgent()
 
 
-def _fake_stream_completion(**kwargs):
+def _fake_stream_completion(**_kwargs):
     chunks = [
         SimpleNamespace(
             choices=[
@@ -83,7 +86,7 @@ def _fake_stream_completion(**kwargs):
     return iter(chunks)
 
 
-def _fake_sync_completion(**kwargs):
+def _fake_sync_completion(**_kwargs):
     return SimpleNamespace(
         choices=[
             SimpleNamespace(
@@ -314,6 +317,7 @@ def test_chat_prompt_includes_handler_knowledge(
     item, handler = _create_linked_item_and_handler(db)
     fake_agent = SimpleNamespace(
         handler_id=str(handler.id),
+        enabled_knowledge_files=["ops.md"],
         match_skills=lambda query: [],
         get_skills=lambda: [],
         get_skip_memory_tools=lambda: [],
@@ -323,7 +327,7 @@ def test_chat_prompt_includes_handler_knowledge(
     monkeypatch.setattr(
         prompt_builder.knowledge_base_service,
         "search",
-        lambda handler_id, query, n_results=4: [
+        lambda query, enabled_files, n_results=4: [
             {
                 "content": "Deploy with docker compose up -d",
                 "metadata": {"file_name": "ops.md"},
@@ -739,7 +743,6 @@ def test_stream_chat_hides_read_terminal_log_tool_details(
     from app.api.routes import chat as chat_route
 
     item, handler = _create_linked_item_and_handler(db)
-    item_id = str(item.id)
     tool_name = "mcp_local_read_terminal_log"
     raw_log_text = "RAW LOG LINE 1\nRAW LOG LINE 2"
 
@@ -868,7 +871,7 @@ def test_terminal_session_stops_after_command_dispatch_and_waits_for_feedback(
 
     call_count = {"value": 0}
 
-    def fake_command_completion(**kwargs):
+    def fake_command_completion(**_kwargs):
         call_count["value"] += 1
         if call_count["value"] > 1:
             raise AssertionError("command dispatch should stop the current turn")
@@ -966,7 +969,7 @@ def test_command_echo_only_terminal_output_does_not_retrigger_command_dispatch(
 
     call_count = {"value": 0}
 
-    def fake_command_completion(**kwargs):
+    def fake_command_completion(**_kwargs):
         call_count["value"] += 1
         if call_count["value"] > 1:
             raise AssertionError("command echo should not trigger another completion")
@@ -1322,8 +1325,8 @@ def test_terminal_prompt_matches_relevant_skills_instead_of_loading_all_skills(m
 
 
 def test_terminal_prompt_skips_long_term_memories_for_filtered_and_raw_feedback(monkeypatch) -> None:
-    from app.services.agent.prompts import builder as prompt_builder
     from app.services.agent import session as session_module
+    from app.services.agent.prompts import builder as prompt_builder
 
     fake_agent = SimpleNamespace(
         match_skills=lambda query: [],
@@ -1398,7 +1401,7 @@ def test_terminal_session_stops_repeated_identical_log_reads(
 
     call_count = {"value": 0}
 
-    def fake_log_completion(**kwargs):
+    def fake_log_completion(**_kwargs):
         call_count["value"] += 1
         if call_count["value"] > 2:
             raise AssertionError("loop guard should stop repeated log reads")

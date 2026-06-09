@@ -6,10 +6,11 @@ import queue
 import re
 import threading
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any
 from uuid import uuid4
 
 from litellm import completion
@@ -19,6 +20,7 @@ from app.services.agent.history.chat import append_chat_message
 from app.services.agent.prompts.builder import (
     build_chat_turn_messages,
     build_terminal_turn_messages,
+    is_critical_terminal_event,
 )
 from app.services.agent.prompts.system import get_system_prompt
 
@@ -66,7 +68,7 @@ class InputMessage:
     raw_content: str = ""
     query: str = ""
     timestamp: datetime = field(default_factory=datetime.now)
-    callback: Optional[Callable] = None
+    callback: Callable | None = None
 
 
 @dataclass
@@ -172,7 +174,7 @@ class AgentSession:
     def __init__(self, item_id: str, handler_id: str):
         self.item_id = item_id
         self.handler_id = handler_id
-        self.agent: Optional[Agent] = None
+        self.agent: Agent | None = None
         self.state = SessionState.IDLE
         self.input_queue: queue.Queue[InputMessage] = queue.Queue(maxsize=MAX_QUEUE_SIZE)
         self.output_callbacks: list[Callable] = []
@@ -186,14 +188,15 @@ class AgentSession:
 
         logger.info(f"[AgentSession] Created session for item={item_id}, handler={handler_id}")
 
-    def get_agent(self) -> Optional[Agent]:
+    def get_agent(self) -> Agent | None:
         if self.agent:
             return self.agent
 
         try:
+            from sqlmodel import Session
+
             from app.core.db import engine
             from app.models import ItemHandler
-            from sqlmodel import Session
 
             with Session(engine) as session:
                 handler = session.get(ItemHandler, self.handler_id)
@@ -895,10 +898,18 @@ class AgentSession:
             self.emit_output(analysis.content, "agent_response")
             return
 
+        transient_robot_tools_added = False
+        loop = None
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(agent.start_mcp_servers())
+            if is_critical_terminal_event(analysis.content):
+                ensure_robot_tools = getattr(agent, "ensure_robot_messaging_tools", None)
+                if callable(ensure_robot_tools):
+                    transient_robot_tools_added = bool(
+                        loop.run_until_complete(ensure_robot_tools())
+                    )
 
             messages = self._build_terminal_messages(
                 agent,
@@ -906,6 +917,9 @@ class AgentSession:
                 analysis.content,
                 terminal_source=analysis.terminal_source,
             )
+            set_known_targets = getattr(agent, "set_robot_known_targets_from_messages", None)
+            if callable(set_known_targets):
+                set_known_targets(messages)
             turn_guard = TurnGuard()
             self._current_turn_id = turn_guard.turn_id
             self._emit_running_terminal_status(analysis.terminal_source)
@@ -941,10 +955,27 @@ class AgentSession:
                     break
                 messages = next_messages
 
+            clear_transient_robot_tools = getattr(
+                agent,
+                "clear_transient_robot_messaging_tools",
+                None,
+            )
+            if transient_robot_tools_added and callable(clear_transient_robot_tools):
+                clear_transient_robot_tools()
             loop.close()
         except Exception as exc:
             logger.error(f"[AgentSession] Terminal processing error: {exc}")
             self.emit_output(f"处理失败: {exc}", "agent_error")
+
+            clear_transient_robot_tools = getattr(
+                agent,
+                "clear_transient_robot_messaging_tools",
+                None,
+            )
+            if transient_robot_tools_added and callable(clear_transient_robot_tools):
+                clear_transient_robot_tools()
+            if loop is not None and not loop.is_closed():
+                loop.close()
 
     def _process_chat_input(self, input_msg: InputMessage, agent: Agent):
         if input_msg.callback:
@@ -1258,7 +1289,7 @@ class AgentSessionManager:
                 self._sessions[item_id] = AgentSession(item_id, handler_id)
             return self._sessions[item_id]
 
-    def get_session(self, item_id: str) -> Optional[AgentSession]:
+    def get_session(self, item_id: str) -> AgentSession | None:
         with self._global_lock:
             return self._sessions.get(item_id)
 
@@ -1283,7 +1314,7 @@ class AgentSessionManager:
         item_id: str,
         handler_id: str,
         message: str,
-        callback: Optional[Callable] = None,
+        callback: Callable | None = None,
         query: str = "",
     ):
         session = self.get_or_create_session(item_id, handler_id)

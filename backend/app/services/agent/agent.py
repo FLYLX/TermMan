@@ -219,9 +219,17 @@ class Agent:
         if not self._context or not self._context.robot_id:
             return
 
+        await self.ensure_robot_messaging_tools()
+
+    async def ensure_robot_messaging_tools(self) -> bool:
+        if not self._context:
+            return False
+
+        added_transient = False
         if ROBOT_MCP_SERVER_NAME not in self._mcp_servers:
             self._mcp_servers.append(ROBOT_MCP_SERVER_NAME)
             self._context.robot_mcp_server_transient = True
+            added_transient = True
 
         if not mcp_server_manager.is_server_running(ROBOT_MCP_SERVER_NAME):
             started = await mcp_server_manager.start_server(ROBOT_MCP_SERVER_NAME)
@@ -230,9 +238,25 @@ class Agent:
                     "[Agent] Robot MCP server is not available for handler %s",
                     self.handler_id,
                 )
-                return
+                return False
 
         self._load_mcp_tools()
+        return added_transient
+
+    def clear_transient_robot_messaging_tools(self) -> None:
+        if not self._context or not self._context.robot_mcp_server_transient:
+            return
+        if self._context.robot_id:
+            return
+
+        self._context.robot_mcp_server_transient = False
+        if ROBOT_MCP_SERVER_NAME in self._mcp_servers:
+            self._mcp_servers = [
+                server_name
+                for server_name in self._mcp_servers
+                if server_name != ROBOT_MCP_SERVER_NAME
+            ]
+            self._load_mcp_tools()
 
     def clear_robot_context(self) -> None:
         if self._context:

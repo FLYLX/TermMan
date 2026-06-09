@@ -28,16 +28,17 @@ action:
 
     Target selection:
     - Incoming QQ messages are shown in context with their source conversation and sender, for example a group conversation or a private conversation.
-    - Decide which QQ conversation should receive the message from the user's request and the QQ message history.
-    - When a suitable QQ conversation appears in the current context, call `mcp_robot_send_message` with `text` and, if more than one QQ conversation appears, a short `reply_to` reference such as the sender name or the conversation label. The backend resolves that context reference to the actual QQ target.
-    - If the system prompt includes `Current robot reply target`, you are handling an incoming QQ robot conversation. Your final assistant message is internal and will not be sent to QQ; call the tool when QQ should receive a message. If the target should be the current QQ conversation, you may omit `reply_to`, `target_type`, and `target_id`.
+    - Decide whether QQ should receive a message. Your final assistant message is internal to TermMan and will not be sent to QQ.
+    - If the system prompt includes `Current robot reply target`, you are handling an incoming QQ robot conversation. To reply to that current QQ conversation, call `mcp_robot_send_message` with only `text`; omit `reply_to`, `target_type`, and `target_id`.
+    - Use `reply_to` only when intentionally choosing a different QQ conversation visible in context. The backend resolves that context reference to the actual QQ target.
     - If you are chatting in the TermMan backend, choose the target from the QQ context history. If the target is not present or ambiguous, ask which group/private chat to use.
+    - For severe terminal alerts, if multiple QQ conversations are visible and they should all receive the same concise alert, call `mcp_robot_send_message` with `broadcast: true` and `text`.
 
     Rules:
     - Use `target_type` and `target_id` only when the target is outside the visible QQ context and the user explicitly supplied the group number or QQ number.
     - If multiple robots are available and the user specified which robot to use, pass `robot_id`; otherwise the backend can use the only accessible enabled robot.
     - If the target group/private conversation or robot identity is missing or ambiguous, ask for that value instead of saying you cannot send because there is no robot context.
-    - If history contains messages from multiple QQ conversations, choose the one the user refers to; if unclear, ask which conversation to use.
+    - If history contains messages from multiple QQ conversations, choose the one the user refers to; if unclear, ask which conversation to use, except for explicit severe alert broadcasts where `broadcast: true` is appropriate.
     - Send only concise, user-visible QQ messages.
     - Do not invent robot IDs, group IDs, QQ numbers, or target IDs.
     - Do not send hidden reasoning, tool traces, raw terminal logs, or long summaries.

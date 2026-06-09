@@ -23,13 +23,13 @@ class RobotMCPServer:
             name="send_message",
             description=(
                 "Send a concise message through the TermMan NoneBot/NapCat QQ robot. "
-                "Choose the recipient from QQ conversations visible in the current "
-                "chat context. If there is a single clear QQ conversation, send with "
-                "only text. If multiple QQ conversations are visible, provide reply_to "
-                "as a short context reference such as sender name or conversation "
-                "label. Use target_type and target_id only when the user explicitly "
-                "provided a QQ group number or QQ number outside the visible context. "
-                "If multiple robots are available, provide robot_id."
+                "In an incoming QQ-triggered agent turn, calling this tool with only "
+                "text sends to the current QQ conversation that triggered the turn. "
+                "Use reply_to only when intentionally choosing a different QQ "
+                "conversation visible in context. Use target_type and target_id only "
+                "when the user explicitly provided a QQ group number or QQ number "
+                "outside the visible context. If multiple robots are available, "
+                "provide robot_id."
             ),
             input_schema={
                 "type": "object",
@@ -78,7 +78,15 @@ class RobotMCPServer:
                             "Optional robot UUID. Omit only when there is an active "
                             "QQ robot context or exactly one accessible enabled robot."
                         ),
-                    }
+                    },
+                    "broadcast": {
+                        "type": "boolean",
+                        "description": (
+                            "When true, send the same message to every QQ "
+                            "conversation visible in the current chat context. Use "
+                            "for severe terminal alerts only."
+                        ),
+                    },
                 },
                 "required": ["text"],
             },
@@ -100,6 +108,14 @@ class RobotMCPServer:
             return "", ""
         target_type, target_id = raw.split(":", 1)
         return self._normalize_target_type(target_type), target_id.strip()
+
+    def _context_reference(self, args: dict) -> str:
+        return str(
+            args.get("reply_to")
+            or args.get("recipient")
+            or args.get("conversation")
+            or ""
+        ).strip()
 
     def _build_explicit_target(self, args: dict) -> RobotReplyTarget | None:
         target_type = self._normalize_target_type(
@@ -148,6 +164,96 @@ class RobotMCPServer:
             )
         return targets
 
+    def _context_target_from_active_context(
+        self,
+        context: Any,
+    ) -> dict[str, str] | None:
+        if context is None:
+            return None
+        target = context.reply_target
+        target_type = self._normalize_target_type(target.target_type)
+        target_id = str(target.target_id or "").strip()
+        target_data = target.metadata.get("target")
+        if isinstance(target_data, dict):
+            if bool(target_data.get("private")):
+                target_type = "private"
+            elif bool(target_data.get("channel")):
+                return None
+            target_id = str(
+                target_data.get("parent_id")
+                or target_data.get("id")
+                or target_id
+            ).strip()
+        if target_type not in {"group", "private"} or not target_id:
+            return None
+        return {
+            "conversation": f"{target_type}:{target_id}",
+            "target_type": target_type,
+            "target_id": target_id,
+            "sender": "",
+            "robot_id": context.robot_id,
+        }
+
+    def _broadcast_context_targets(
+        self,
+        *,
+        args: dict,
+        text: str,
+        context: Any,
+    ) -> list[dict[str, str]]:
+        targets = self._context_targets(args)
+        active_target = self._context_target_from_active_context(context)
+        if active_target is not None:
+            active_key = f"{active_target['target_type']}:{active_target['target_id']}"
+            if all(
+                f"{target['target_type']}:{target['target_id']}" != active_key
+                for target in targets
+            ):
+                targets.insert(0, active_target)
+
+        if not targets:
+            raise ValueError(
+                "broadcast requires at least one visible QQ conversation target"
+            )
+
+        from app.plugins.robot.bridge_client import robot_bridge_client
+
+        sent: list[dict[str, str]] = []
+        for target_data in targets:
+            target = RobotReplyTarget(
+                target_type=target_data["target_type"],
+                target_id=target_data["target_id"],
+                metadata={
+                    "manual_target": True,
+                    "mcp_context_target": True,
+                    "mcp_context_broadcast": True,
+                },
+            )
+            fallback_robot_id = target_data.get("robot_id", "")
+            if not fallback_robot_id and context is not None:
+                fallback_robot_id = context.robot_id
+            robot_id = self._get_accessible_robot_id(
+                args,
+                fallback_robot_id=fallback_robot_id,
+            )
+            self._record_tool_send_event(
+                robot_id=robot_id,
+                target=target,
+                text=text,
+                mode="context_broadcast",
+                args=args,
+            )
+            robot_bridge_client.send_message(robot_id, target, text)
+            sent.append(
+                {
+                    "robot_id": robot_id,
+                    "conversation": target_data["conversation"],
+                    "target_type": target.target_type,
+                    "target_id": target.target_id,
+                }
+            )
+        return sent
+
     def _target_match_score(self, target: dict[str, str], reference: str) -> int:
         normalized_reference = reference.strip().casefold()
         if not normalized_reference:
@@ -189,12 +295,7 @@ class RobotMCPServer:
         if not targets:
             return None, ""
 
-        reference = str(
-            args.get("reply_to")
-            or args.get("recipient")
-            or args.get("conversation")
-            or ""
-        ).strip()
+        reference = self._context_reference(args)
         if not reference and len(targets) == 1:
             target_data = targets[0]
             return (
@@ -242,6 +343,14 @@ class RobotMCPServer:
                     "The reply target is ambiguous in context. Choose one of: "
                     f"{choices}"
                 )
+            choices = ", ".join(
+                f"{target['conversation']} sender={target.get('sender') or '-'}"
+                for target in targets[:5]
+            )
+            raise ValueError(
+                "No QQ conversation matched reply_to/conversation "
+                f"`{reference}`. Choose one of: {choices}"
+            )
 
         if len(targets) > 1:
             choices = ", ".join(
@@ -386,16 +495,28 @@ class RobotMCPServer:
             explicit_target = self._build_explicit_target(args)
         except Exception as exc:
             return [{"type": "text", "text": f"Error: {exc}"}]
+        broadcast = bool(args.get("broadcast"))
+        if broadcast and explicit_target is not None:
+            return [
+                {
+                    "type": "text",
+                    "text": (
+                        "Error: broadcast uses QQ conversations from context; "
+                        "do not combine it with target_type/target_id."
+                    ),
+                }
+            ]
 
         context_target: RobotReplyTarget | None = None
         context_target_robot_id = ""
-        if explicit_target is None:
+        context_reference = self._context_reference(args)
+        if explicit_target is None and not broadcast and (context is None or context_reference):
             try:
                 context_target, context_target_robot_id = self._resolve_context_target(args)
             except Exception as exc:
                 return [{"type": "text", "text": f"Error: {exc}"}]
 
-        if context is None and explicit_target is None and context_target is None:
+        if context is None and explicit_target is None and context_target is None and not broadcast:
             return [
                 {
                     "type": "text",
@@ -413,6 +534,19 @@ class RobotMCPServer:
         attempted_mode = ""
         try:
             from app.plugins.robot.bridge_client import robot_bridge_client
+
+            if broadcast:
+                sent = self._broadcast_context_targets(
+                    args=args,
+                    text=text,
+                    context=context,
+                )
+                return [
+                    {
+                        "type": "text",
+                        "text": f"Broadcast sent to {len(sent)} QQ conversation(s).",
+                    }
+                ]
 
             if explicit_target is not None:
                 robot_id = self._get_accessible_robot_id(
