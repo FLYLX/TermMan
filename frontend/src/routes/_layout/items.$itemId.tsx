@@ -1235,12 +1235,17 @@ function ItemDetailPage({
 
             <TabsContent value="filters" className="space-y-4">
               <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Filter className="size-5 text-blue-500" />
-                    <h2 className="text-xl font-semibold">
-                      {t("items.detail.inputFilterSettings")}
-                    </h2>
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-2">
+                    <Filter className="mt-1 size-5 text-blue-500" />
+                    <div>
+                      <h2 className="text-xl font-semibold">
+                        {t("items.detail.inputFilterSettings")}
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        {t("items.detail.inputFilterFlowDescription")}
+                      </p>
+                    </div>
                   </div>
                   <div className="flex min-h-8 items-center gap-2 text-xs text-muted-foreground">
                     {isSavingInputFilter ? (
@@ -1353,12 +1358,17 @@ function ItemDetailPage({
               </section>
 
               <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Shield className="size-5 text-orange-500" />
-                    <h2 className="text-xl font-semibold">
-                      {t("items.detail.outputFilterSettings")}
-                    </h2>
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-2">
+                    <Shield className="mt-1 size-5 text-orange-500" />
+                    <div>
+                      <h2 className="text-xl font-semibold">
+                        {t("items.detail.outputFilterSettings")}
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        {t("items.detail.outputFilterFlowDescription")}
+                      </p>
+                    </div>
                   </div>
                   <div className="flex min-h-8 items-center gap-2 text-xs text-muted-foreground">
                     {isSavingOutputFilter ? (

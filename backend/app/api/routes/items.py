@@ -277,16 +277,20 @@ def _build_filter_generation_prompts(
     instruction: str,
 ) -> tuple[str, str]:
     target_label = (
-        "terminal output" if target == "input" else "generated shell commands"
+        "terminal output before it reaches Agent/timeline/robot routing"
+        if target == "input"
+        else "Agent-generated shell commands before terminal execution"
     )
     target_behavior = (
-        "Input filters process terminal output. "
-        "Use 'block' to drop dangerous or useless output, 'ignore' to strip noisy fragments, "
-        "'log' to keep the content but mark it as important, and 'replace' to redact secrets."
+        "Path: terminal output -> input filter -> Agent/timeline/robot routing. "
+        "Use 'block' to drop dangerous or useless output, 'ignore' to strip "
+        "noisy fragments, 'log' to keep the content but mark it as important, "
+        "and 'replace' to redact secrets."
         if target == "input"
-        else "Output filters process shell commands before execution. "
-        "Use 'block' to deny dangerous commands, 'ignore' to strip harmless noise fragments, "
-        "'log' to keep the command but flag it, and 'replace' to redact or rewrite sensitive values."
+        else "Path: Agent-generated command -> output filter -> terminal execution. "
+        "Use 'block' to deny dangerous commands, 'ignore' to strip harmless "
+        "noise fragments, 'log' to keep the command but flag it, and 'replace' "
+        "to redact or rewrite sensitive values."
     )
     schema = {
         "rules": {
