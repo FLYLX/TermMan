@@ -1339,6 +1339,14 @@ def _normalize_onebot_target_id(value: str) -> int | str:
     return int(normalized) if normalized.isdigit() else normalized
 
 
+def _prepare_unimessage_target_data(target_data: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    loaded_target_data = dict(target_data)
+    source = str(loaded_target_data.pop("source", "") or "")
+    for key in ("message_type", "group_id", "user_id", "guild_id", "channel_id"):
+        loaded_target_data.pop(key, None)
+    return loaded_target_data, source
+
+
 async def _send_onebot_text_with_explicit_target(
     bot: Any,
     target: RobotReplyTarget,
@@ -1399,8 +1407,7 @@ async def send_text_with_bot(
         from nonebot_plugin_alconna import UniMessage
         from nonebot_plugin_alconna.uniseg import Target
 
-        loaded_target_data = dict(target_data)
-        source = str(loaded_target_data.pop("source", "") or "")
+        loaded_target_data, source = _prepare_unimessage_target_data(target_data)
         uni_target = Target.load(loaded_target_data)
         if source:
             uni_target.source = source
