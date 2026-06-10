@@ -127,13 +127,18 @@ def build_robot_reply_context_summary(
             f"- sender_key: {sender_key}",
             (
                 "- send rule: call `mcp_robot_send_message` with only `text` to "
-                "reply to this current QQ conversation only when this message "
-                "needs a bot response. Do not call the tool for ordinary group "
-                "chatter, messages directed at someone else, or messages that "
-                "do not need a response. Do not pass `reply_to`, `conversation`, "
-                "`broadcast`, `target_type`, or `target_id` in this active QQ "
-                "context; it is locked to the current conversation to prevent "
-                "replying to the wrong group/private chat."
+                "reply to this current QQ conversation when the current message "
+                "is plausibly addressed to the bot after considering recent QQ "
+                "context. Treat `reply_to_bot`, bot mentions, and "
+                "`trigger=active_chat_window` as candidate continuations; reply "
+                "when the sender is continuing, challenging, or correcting the "
+                "bot conversation. Do not call the tool for ordinary group "
+                "chatter with no contextual link to the bot, messages directed "
+                "at someone else, or messages that do not need a response. Do "
+                "not pass `reply_to`, `conversation`, `broadcast`, "
+                "`target_type`, or `target_id` in this active QQ context; it is "
+                "locked to the current conversation to prevent replying to the "
+                "wrong group/private chat."
             ),
         ]
     )

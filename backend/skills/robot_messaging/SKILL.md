@@ -28,9 +28,9 @@ action:
 
     Target selection:
     - Incoming QQ messages are shown in context with their source conversation and sender, for example a group conversation or a private conversation.
-    - Decide whether QQ should receive a message. Being in an awake QQ conversation only means you may evaluate the message; it does not mean you must reply.
-    - Reply selectively. Call `mcp_robot_send_message` only when the sender is addressing you, continuing a conversation with you, asking for a useful response, or when a severe alert explicitly needs QQ notification.
-    - If the message is ordinary group chatter, directed at someone else, already resolved, or does not need a bot response, do not call the tool.
+    - Decide whether QQ should receive a message by using the current message plus recent QQ context. If the message is `reply_to_bot`, mentions the bot, or has `trigger=active_chat_window`, treat it as a candidate continuation of the bot conversation.
+    - Reply selectively, but do handle messages that are plausibly addressed to the bot in context. Call `mcp_robot_send_message` when the sender is addressing you, continuing a conversation with you, challenging/correcting your prior behavior, asking for a useful response, or when a severe alert explicitly needs QQ notification.
+    - If the message is ordinary group chatter with no contextual link to the bot, directed at someone else, already resolved, or does not need a bot response, do not call the tool.
     - Your final assistant message is internal to TermMan and will not be sent to QQ.
     - If the system prompt includes `Current robot reply target`, you are handling an incoming QQ robot conversation. To reply to that current QQ conversation, call `mcp_robot_send_message` with only `text`; omit `reply_to`, `conversation`, `broadcast`, `target_type`, and `target_id`.
     - In an incoming QQ robot conversation, never choose another QQ conversation. Cross-conversation sends are blocked there to prevent replying to the wrong group/private chat.
