@@ -32,8 +32,21 @@ class RobotBridgeClient:
             "X-TermMan-Bridge-Token": self._shared_secret,
         }
 
-    def _friendly_error(self, exc: Exception) -> str:
+    def _response_error_detail(self, response: httpx.Response) -> str:
+        try:
+            data = response.json()
+        except ValueError:
+            return response.text.strip()
+        if isinstance(data, dict):
+            detail = data.get("detail") or data.get("error") or data.get("message")
+            if detail is not None:
+                return str(detail)
+        return str(data)
+
+    def _friendly_error(self, exc: Exception, *, detail: str = "") -> str:
         message = str(exc)
+        if detail:
+            message = f"{message}: {detail}"
         if "Name or service not known" in message or "[Errno -2]" in message:
             return (
                 f"{self._base_url}: {message}. Backend cannot resolve this "
@@ -58,8 +71,18 @@ class RobotBridgeClient:
                     headers=self._headers(),
                     **kwargs,
                 )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise RuntimeError(
+                    self._friendly_error(
+                        exc,
+                        detail=self._response_error_detail(response),
+                    )
+                ) from exc
             return response
+        except RuntimeError:
+            raise
         except Exception as exc:
             raise RuntimeError(self._friendly_error(exc)) from exc
 

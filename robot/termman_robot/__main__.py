@@ -1135,11 +1135,39 @@ async def internal_send(
 ) -> dict[str, Any]:
     _assert_bridge_permission(x_termman_bridge_token)
 
-    bot = _resolve_bot_for_robot(str(body.robot_id))
+    robot_id = str(body.robot_id)
+    bot = _resolve_bot_for_robot(robot_id)
     if bot is None:
         raise HTTPException(status_code=404, detail="Robot is not loaded in bridge")
 
-    await send_text_with_rate_limit(bot, body.target, body.text)
+    payload = {
+        "target_type": body.target.target_type,
+        "target_id": body.target.target_id,
+    }
+    _record_bridge_event(
+        robot_id,
+        direction="bridge_to_platform",
+        event="internal_send",
+        message=body.text,
+        payload=payload,
+    )
+    try:
+        await send_text_with_rate_limit(bot, body.target, body.text)
+    except Exception as exc:
+        error_message = str(exc) or exc.__class__.__name__
+        _record_bridge_event(
+            robot_id,
+            direction="bridge_to_platform",
+            event="platform_send_failed",
+            status="error",
+            message=error_message,
+            payload=payload,
+        )
+        logger.exception(
+            "[RobotBridge] Failed to send internal message for robot %s",
+            robot_id,
+        )
+        raise HTTPException(status_code=502, detail=error_message) from exc
     return {"success": True}
 
 
