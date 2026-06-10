@@ -10,6 +10,7 @@ from app.plugins.robot.platforms import (
     _event_mentions_bot,
     _event_replies_to_bot,
     _extract_conversation_metadata,
+    _extract_event_mentions,
     _extract_sender_key,
     _extract_sender_metadata,
     send_text_with_bot,
@@ -58,6 +59,7 @@ def _message(
     target: dict[str, Any] | None = None,
     sender: dict[str, Any] | None = None,
     conversation: dict[str, Any] | None = None,
+    mentions: list[dict[str, Any]] | None = None,
     mentioned_bot: bool = False,
     replied_to_bot: bool = False,
 ) -> RobotInboundMessage:
@@ -68,6 +70,8 @@ def _message(
         metadata["sender"] = sender
     if conversation is not None:
         metadata["conversation"] = conversation
+    if mentions is not None:
+        metadata["mentions"] = mentions
     if mentioned_bot:
         metadata["mentioned_bot"] = True
     if replied_to_bot:
@@ -209,6 +213,41 @@ def test_event_mentions_bot_ignores_other_at_segment() -> None:
     assert _event_mentions_bot(_FakeBot(), event) is False
 
 
+def test_extract_event_mentions_reads_onebot_at_segments() -> None:
+    event = _FakeEvent(
+        [
+            _FakeSegment(
+                "at",
+                {"qq": "1512220570", "name": "她喜欢我才钓着我"},
+            ),
+            _FakeSegment("text", {"text": " 这个人是小男娘"}),
+        ]
+    )
+
+    assert _extract_event_mentions(event) == [
+        {
+            "id": "1512220570",
+            "qq": "1512220570",
+            "name": "她喜欢我才钓着我",
+        }
+    ]
+
+
+def test_extract_event_mentions_falls_back_to_raw_cq_at() -> None:
+    event = _FakeEvent(
+        [],
+        raw_message="[CQ:at,qq=1512220570,name=她喜欢我才钓着我] 这个人是小男娘",
+    )
+
+    assert _extract_event_mentions(event) == [
+        {
+            "id": "1512220570",
+            "qq": "1512220570",
+            "name": "她喜欢我才钓着我",
+        }
+    ]
+
+
 def test_event_mentions_bot_detects_to_me_flag() -> None:
     event = _FakeEvent([], to_me=True)
 
@@ -249,6 +288,31 @@ def test_extract_sender_metadata_prefers_group_card() -> None:
         "role": "admin",
         "message_type": "group",
     }
+
+
+def test_agent_message_context_prefix_includes_mentioned_targets() -> None:
+    message = _message(
+        "这个人是小男娘",
+        sender={
+            "user_id": "2537134688",
+            "display_name": "只有白龙马知道唐三藏动了情",
+        },
+        conversation={"type": "group", "id": "369040885"},
+        mentions=[
+            {
+                "id": "1512220570",
+                "qq": "1512220570",
+                "name": "她喜欢我才钓着我",
+            }
+        ],
+    )
+
+    prefix = robot_service._agent_message_context_prefix(
+        message,
+        trigger_reason="active_chat_window",
+    )
+
+    assert "mentions=她喜欢我才钓着我 (1512220570)" in prefix
 
 
 def test_onebot_conversation_metadata_uses_group_id() -> None:

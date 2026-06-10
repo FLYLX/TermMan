@@ -1027,7 +1027,37 @@ class RobotService:
         if trigger_reason:
             parts.append(f"trigger={trigger_reason}")
         parts.append(f"sender={sender_label}")
+        mentions_label = self._format_mentions_for_context(
+            message.reply_target.metadata.get("mentions")
+        )
+        if mentions_label:
+            parts.append(f"mentions={mentions_label}")
         return f"[{'; '.join(parts)}]"
+
+    def _format_mentions_for_context(self, raw_mentions: object) -> str:
+        if not isinstance(raw_mentions, list):
+            return ""
+
+        labels: list[str] = []
+        for raw_mention in raw_mentions[:8]:
+            if not isinstance(raw_mention, dict):
+                continue
+            mention_id = str(
+                raw_mention.get("id") or raw_mention.get("qq") or ""
+            ).strip()
+            name = str(
+                raw_mention.get("name")
+                or raw_mention.get("display_name")
+                or raw_mention.get("nickname")
+                or ""
+            ).strip()
+            if name and mention_id and name != mention_id:
+                labels.append(f"{name} ({mention_id})")
+            elif name:
+                labels.append(name)
+            elif mention_id:
+                labels.append(mention_id)
+        return ", ".join(labels)
 
     def _write_to_item_terminal(self, item_id: uuid.UUID, command: str) -> bool:
         from app.services import socket_pool_facade

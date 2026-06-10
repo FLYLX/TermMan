@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -1222,6 +1223,66 @@ def _segment_data(segment: Any) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _clean_mention_value(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _mention_from_data(data: dict[str, Any]) -> dict[str, str] | None:
+    mention_id = _clean_mention_value(
+        data.get("qq") or data.get("id") or data.get("user_id")
+    )
+    if not mention_id:
+        return None
+
+    mention: dict[str, str] = {"id": mention_id, "qq": mention_id}
+    name = _clean_mention_value(
+        data.get("name")
+        or data.get("display_name")
+        or data.get("nickname")
+        or data.get("card")
+    )
+    if name:
+        mention["name"] = name
+    return mention
+
+
+def _append_mention(mentions: list[dict[str, str]], mention: dict[str, str]) -> None:
+    mention_id = mention.get("id", "")
+    for existing in mentions:
+        if existing.get("id") != mention_id:
+            continue
+        if mention.get("name") and not existing.get("name"):
+            existing["name"] = mention["name"]
+        return
+    mentions.append(mention)
+
+
+def _parse_cq_params(raw_params: str) -> dict[str, str]:
+    params: dict[str, str] = {}
+    for part in raw_params.split(","):
+        key, separator, value = part.partition("=")
+        if separator:
+            params[key.strip()] = value.strip()
+    return params
+
+
+def _extract_event_mentions(event: Any) -> list[dict[str, str]]:
+    mentions: list[dict[str, str]] = []
+    for segment in _event_message_segments(event):
+        if _segment_type(segment) != "at":
+            continue
+        mention = _mention_from_data(_segment_data(segment))
+        if mention is not None:
+            _append_mention(mentions, mention)
+
+    raw_message = str(getattr(event, "raw_message", "") or "")
+    for match in re.finditer(r"\[CQ:at,([^\]]+)\]", raw_message):
+        mention = _mention_from_data(_parse_cq_params(match.group(1)))
+        if mention is not None:
+            _append_mention(mentions, mention)
+    return mentions
+
+
 def _raw_message_mentions_bot(event: Any, self_ids: set[str]) -> bool:
     raw_message = str(getattr(event, "raw_message", "") or "")
     return any(
@@ -1313,6 +1374,9 @@ def build_inbound_message(
         "sender": _extract_sender_metadata(platform_id, event),
         "conversation": conversation_data,
     }
+    mentions = _extract_event_mentions(event)
+    if mentions:
+        metadata["mentions"] = mentions
     if _event_mentions_bot(bot, event):
         metadata["mentioned_bot"] = True
     if _event_replies_to_bot(bot, event):
