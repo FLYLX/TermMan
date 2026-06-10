@@ -110,6 +110,49 @@ def _dispatch_queue_snapshot() -> dict[str, int]:
     }
 
 
+def _dispatch_failure_payload(inbound: RobotInboundMessage) -> dict[str, str]:
+    return {
+        "target_type": inbound.reply_target.target_type,
+        "target_id": inbound.reply_target.target_id,
+    }
+
+
+def _is_private_reply_target(inbound: RobotInboundMessage) -> bool:
+    metadata = inbound.reply_target.metadata
+    conversation = metadata.get("conversation")
+    if isinstance(conversation, dict):
+        conversation_type = str(
+            conversation.get("target_type")
+            or conversation.get("type")
+            or conversation.get("message_type")
+            or ""
+        ).strip().lower()
+        if conversation_type == "private":
+            return True
+
+    target_type = str(inbound.reply_target.target_type or "").strip().lower()
+    if target_type in {"private", "friend", "user", "direct", "c2c"}:
+        return True
+
+    target_data = metadata.get("target")
+    return isinstance(target_data, dict) and bool(target_data.get("private"))
+
+
+def _is_robot_command_text(text: str) -> bool:
+    normalized = (text or "").strip().lower()
+    return normalized.startswith(("/term ", "/item ", "/terminal ", "/send ", "/write ", "#"))
+
+
+def _should_notify_dispatch_failure(inbound: RobotInboundMessage) -> bool:
+    metadata = inbound.reply_target.metadata
+    return bool(
+        metadata.get("mentioned_bot")
+        or metadata.get("replied_to_bot")
+        or _is_private_reply_target(inbound)
+        or _is_robot_command_text(inbound.text)
+    )
+
+
 def _ensure_dispatch_workers() -> asyncio.Queue[RobotDispatchJob]:
     global ROBOT_DISPATCH_QUEUE, ROBOT_DISPATCH_QUEUE_LOOP, ROBOT_DISPATCH_WORKER_TASKS
 
@@ -936,6 +979,17 @@ async def _process_robot_dispatch_job(job: RobotDispatchJob) -> None:
         logger.exception(
             "[RobotBridge] Failed to dispatch message for robot %s", job.robot_id
         )
+        if not _should_notify_dispatch_failure(inbound):
+            _record_bridge_event(
+                job.robot_id,
+                direction="bridge_to_platform",
+                event="dispatch_failure_notification_suppressed",
+                status="ignored",
+                message=error_message,
+                payload=_dispatch_failure_payload(inbound),
+            )
+            return
+
         try:
             bot = _resolve_bot_for_robot(job.robot_id) or job.bot
             await send_text_with_rate_limit(
