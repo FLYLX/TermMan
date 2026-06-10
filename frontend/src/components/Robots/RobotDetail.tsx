@@ -188,6 +188,26 @@ function getRobotReplyMessageTypes(robot: RobotRecord): ReplyMessageType[] {
   return REPLY_MESSAGE_TYPES.filter((type) => selectedTypes.includes(type))
 }
 
+const MENTION_MATCH_MODES = ["bot", "any"] as const
+type MentionMatchMode = (typeof MENTION_MATCH_MODES)[number]
+
+const DEFAULT_MENTION_MATCH_MODE: MentionMatchMode = "bot"
+
+function isMentionMatchMode(value: unknown): value is MentionMatchMode {
+  return (
+    typeof value === "string" &&
+    MENTION_MATCH_MODES.includes(value as MentionMatchMode)
+  )
+}
+
+function getRobotMentionMatchMode(robot: RobotRecord): MentionMatchMode {
+  const rawMode = robot.config?.options?.mention_match_mode
+  if (isMentionMatchMode(rawMode)) {
+    return rawMode
+  }
+  return DEFAULT_MENTION_MATCH_MODE
+}
+
 function getReplyMessageTypeLabel(
   copy: {
     replyPrivate: string
@@ -227,6 +247,21 @@ function getReplyMessageTypeSummary(
     return copy.replyNone
   }
   return types.map((type) => getReplyMessageTypeLabel(copy, type)).join(", ")
+}
+
+function getMentionMatchModeLabel(
+  copy: {
+    mentionModeBot: string
+    mentionModeAny: string
+  },
+  mode: MentionMatchMode,
+) {
+  switch (mode) {
+    case "bot":
+      return copy.mentionModeBot
+    case "any":
+      return copy.mentionModeAny
+  }
 }
 
 function getRecordString(
@@ -506,6 +541,9 @@ function useRobotDetailUiCopy() {
           replyCommand: "路由命令",
           replyMention: "@机器人消息",
           replyNone: "未启用",
+          mentionModeTitle: "@ 匹配方式",
+          mentionModeBot: "仅 @机器人",
+          mentionModeAny: "任意 @成员",
           keepCurrentSecret: "留空则保留当前值",
           napcatMode: "OneBot V11 反向 WebSocket",
           debugTitle: "运行调试",
@@ -580,6 +618,9 @@ function useRobotDetailUiCopy() {
           replyCommand: "Route commands",
           replyMention: "@ robot messages",
           replyNone: "Disabled",
+          mentionModeTitle: "@ match mode",
+          mentionModeBot: "Only @ robot",
+          mentionModeAny: "Any @ member",
           keepCurrentSecret: "Leave blank to keep current value",
           napcatMode: "OneBot V11 reverse WebSocket",
           debugTitle: "Runtime debug",
@@ -1250,6 +1291,7 @@ function RobotBasicConfigPanel({
     is_enabled: robot.is_enabled,
     credentials: getEditableRobotCredentials(robot, platform),
     replyMessageTypes: getRobotReplyMessageTypes(robot),
+    mentionMatchMode: getRobotMentionMatchMode(robot),
   }))
 
   useEffect(() => {
@@ -1259,6 +1301,7 @@ function RobotBasicConfigPanel({
         is_enabled: robot.is_enabled,
         credentials: getEditableRobotCredentials(robot, platform),
         replyMessageTypes: getRobotReplyMessageTypes(robot),
+        mentionMatchMode: getRobotMentionMatchMode(robot),
       })
     }
   }, [isEditing, platform, robot])
@@ -1277,6 +1320,7 @@ function RobotBasicConfigPanel({
     const options = { ...(robot.config?.options ?? {}) }
     delete options.route_key
     options.reply_message_types = form.replyMessageTypes
+    options.mention_match_mode = form.mentionMatchMode
 
     setIsSaving(true)
     try {
@@ -1407,6 +1451,31 @@ function RobotBasicConfigPanel({
                   </label>
                 ))}
               </div>
+              <div className="grid gap-2">
+                <Label>{copy.mentionModeTitle}</Label>
+                <Select
+                  value={form.mentionMatchMode}
+                  onValueChange={(value) =>
+                    setForm((current) => ({
+                      ...current,
+                      mentionMatchMode: isMentionMatchMode(value)
+                        ? value
+                        : DEFAULT_MENTION_MATCH_MODE,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MENTION_MATCH_MODES.map((mode) => (
+                      <SelectItem key={mode} value={mode}>
+                        {getMentionMatchModeLabel(copy, mode)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="grid gap-3">
               <div className="text-sm font-medium">{copy.credentials}</div>
@@ -1451,6 +1520,13 @@ function RobotBasicConfigPanel({
               value={getReplyMessageTypeSummary(
                 copy,
                 getRobotReplyMessageTypes(robot),
+              )}
+            />
+            <RobotKeyValue
+              label={copy.mentionModeTitle}
+              value={getMentionMatchModeLabel(
+                copy,
+                getRobotMentionMatchMode(robot),
               )}
             />
           </div>

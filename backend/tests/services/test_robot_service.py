@@ -719,6 +719,115 @@ def test_reply_message_type_filter_allows_mention_when_group_is_disabled(
     assert response.reply_chunks == []
 
 
+def test_reply_message_type_filter_ignores_at_target_by_default_when_only_mention_allowed(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {"reply_message_types": ["mention"]},
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    def fail_enqueue_chat_job(_job):
+        raise AssertionError("@ target should be filtered unless mention_match_mode is any")
+
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fail_enqueue_chat_job)
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "这个人是小男娘",
+            sender={
+                "user_id": "2537134688",
+                "display_name": "只有白龙马知道唐三藏动了情",
+            },
+            conversation={"type": "group", "id": "369040885"},
+            mentions=[
+                {
+                    "id": "1512220570",
+                    "qq": "1512220570",
+                    "name": "她喜欢我才钓着我",
+                }
+            ],
+        ),
+    )
+
+    assert response.success is True
+    assert response.ignored is True
+    assert response.reason == "reply_message_type_disabled"
+    assert response.reply_chunks == []
+
+
+def test_reply_message_type_filter_allows_at_target_when_mention_match_mode_is_any(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "mention_match_mode": "any",
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    captured = _capture_queued_chat(monkeypatch)
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "这个人是小男娘",
+            sender={
+                "user_id": "2537134688",
+                "display_name": "只有白龙马知道唐三藏动了情",
+            },
+            conversation={"type": "group", "id": "369040885"},
+            mentions=[
+                {
+                    "id": "1512220570",
+                    "qq": "1512220570",
+                    "name": "她喜欢我才钓着我",
+                }
+            ],
+        ),
+    )
+
+    assert response.success is True
+    assert response.ignored is False
+    assert "trigger=mention_any" in captured["job"].message
+    assert "mentions=她喜欢我才钓着我 (1512220570)" in captured["job"].message
+    assert response.reply_chunks == []
+
+
 def test_mention_only_keeps_context_active_after_agent_sends_qq_message(
     db: Session,
     monkeypatch,

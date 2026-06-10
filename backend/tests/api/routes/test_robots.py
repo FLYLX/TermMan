@@ -169,7 +169,10 @@ def test_update_robot_persists_reply_message_types(
         json={
             "config": {
                 "credentials": {"self_id": "1027"},
-                "options": {"reply_message_types": ["private", "mention", "command"]},
+                "options": {
+                    "reply_message_types": ["private", "mention", "command"],
+                    "mention_match_mode": "any",
+                },
             },
         },
     )
@@ -182,6 +185,7 @@ def test_update_robot_persists_reply_message_types(
         "mention",
         "command",
     ]
+    assert config["options"]["mention_match_mode"] == "any"
 
 
 def test_create_unsupported_robot_platform_is_rejected(

@@ -7,10 +7,13 @@ export type RobotReplyMessageType =
   | "command"
   | "mention"
 
+export type RobotMentionMatchMode = "bot" | "any"
+
 export type RobotConfig = {
   credentials?: Record<string, unknown>
   options?: Record<string, unknown> & {
     reply_message_types?: RobotReplyMessageType[]
+    mention_match_mode?: RobotMentionMatchMode
   }
 }
 

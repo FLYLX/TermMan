@@ -45,6 +45,15 @@ DEFAULT_REPLY_MESSAGE_TYPES = frozenset(
 )
 ALLOWED_REPLY_MESSAGE_TYPES = DEFAULT_REPLY_MESSAGE_TYPES
 REPLY_MESSAGE_TYPE_DISABLED_REASON = "reply_message_type_disabled"
+MENTION_MATCH_MODE_BOT = "bot"
+MENTION_MATCH_MODE_ANY = "any"
+DEFAULT_MENTION_MATCH_MODE = MENTION_MATCH_MODE_BOT
+ALLOWED_MENTION_MATCH_MODES = frozenset(
+    {
+        MENTION_MATCH_MODE_BOT,
+        MENTION_MATCH_MODE_ANY,
+    }
+)
 
 
 @dataclass
@@ -297,11 +306,13 @@ class RobotService:
         direct_reply_trigger = self._message_directly_addresses_bot(message)
         reply_context_active = self._is_reply_context_active(robot, message)
         conversation_key = self._conversation_key(message)
+        mention_match_mode = self._mention_match_mode(robot)
         reply_categories = self._reply_message_categories(
             message,
             command,
             direct_reply_trigger=direct_reply_trigger,
             reply_context_active=reply_context_active,
+            mention_match_mode=mention_match_mode,
         )
         allowed_reply_types = self._allowed_reply_message_types(robot)
         if not allowed_reply_types.intersection(reply_categories):
@@ -315,6 +326,7 @@ class RobotService:
                     "reason": REPLY_MESSAGE_TYPE_DISABLED_REASON,
                     "reply_message_types": sorted(reply_categories),
                     "allowed_reply_message_types": sorted(allowed_reply_types),
+                    "mention_match_mode": mention_match_mode,
                 },
             )
             return RobotDispatchResponse(
@@ -377,6 +389,7 @@ class RobotService:
                         message,
                         direct_reply_trigger=direct_reply_trigger,
                         reply_context_active=reply_context_active,
+                        mention_match_mode=mention_match_mode,
                     ),
                 ),
                 sender_key=message.sender_key,
@@ -706,6 +719,18 @@ class RobotService:
             if normalized_type in ALLOWED_REPLY_MESSAGE_TYPES
         }
 
+    def _mention_match_mode(self, robot: Robot) -> str:
+        config = robot.config if isinstance(robot.config, dict) else {}
+        options = config.get("options") if isinstance(config.get("options"), dict) else {}
+        raw_mode = options.get("mention_match_mode")
+        if not isinstance(raw_mode, str):
+            return DEFAULT_MENTION_MATCH_MODE
+
+        normalized_mode = raw_mode.strip().lower()
+        if normalized_mode in ALLOWED_MENTION_MATCH_MODES:
+            return normalized_mode
+        return DEFAULT_MENTION_MATCH_MODE
+
     def _reply_context_window_seconds(self, robot: Robot) -> int:
         config = robot.config if isinstance(robot.config, dict) else {}
         options = config.get("options") if isinstance(config.get("options"), dict) else {}
@@ -947,16 +972,32 @@ class RobotService:
         *,
         direct_reply_trigger: bool = False,
         reply_context_active: bool = False,
+        mention_match_mode: str = DEFAULT_MENTION_MATCH_MODE,
     ) -> set[str]:
         categories = {self._conversation_message_type(message)}
         if command.mode != "chat" or command.target:
             categories.add(REPLY_MESSAGE_TYPE_COMMAND)
         if direct_reply_trigger or reply_context_active:
             categories.add(REPLY_MESSAGE_TYPE_MENTION)
+        elif (
+            mention_match_mode == MENTION_MATCH_MODE_ANY
+            and self._message_has_mentions(message)
+        ):
+            categories.add(REPLY_MESSAGE_TYPE_MENTION)
         return categories
 
     def _conversation_message_type(self, message: RobotInboundMessage) -> str:
         return self._message_conversation_parts(message)[0]
+
+    def _message_has_mentions(self, message: RobotInboundMessage) -> bool:
+        mentions = message.reply_target.metadata.get("mentions")
+        if not isinstance(mentions, list):
+            return False
+        return any(
+            isinstance(mention, dict)
+            and bool(str(mention.get("id") or mention.get("qq") or "").strip())
+            for mention in mentions
+        )
 
     def _agent_message_with_context(
         self,
@@ -979,6 +1020,7 @@ class RobotService:
         *,
         direct_reply_trigger: bool,
         reply_context_active: bool,
+        mention_match_mode: str = DEFAULT_MENTION_MATCH_MODE,
     ) -> str:
         if bool(message.reply_target.metadata.get("replied_to_bot")):
             return "reply_to_bot"
@@ -986,6 +1028,11 @@ class RobotService:
             return "mention_bot"
         if reply_context_active and not direct_reply_trigger:
             return "active_chat_window"
+        if (
+            mention_match_mode == MENTION_MATCH_MODE_ANY
+            and self._message_has_mentions(message)
+        ):
+            return "mention_any"
         return "plain"
 
     def _agent_message_context_prefix(
