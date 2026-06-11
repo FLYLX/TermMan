@@ -445,8 +445,15 @@ def build_inbound_message(
     event: Any,
 ) -> RobotInboundMessage | None:
     text = _extract_event_text(event)
+    mentioned_bot = _event_mentions_bot(bot, event)
+    replied_to_bot = _event_replies_to_bot(bot, event)
     if not text:
-        return None
+        if mentioned_bot:
+            text = "[mention_bot]"
+        elif replied_to_bot:
+            text = "[reply_to_bot]"
+        else:
+            return None
 
     from nonebot_plugin_alconna import get_message_id, get_target
 
@@ -466,9 +473,9 @@ def build_inbound_message(
     mentions = _extract_event_mentions(event)
     if mentions:
         metadata["mentions"] = mentions
-    if _event_mentions_bot(bot, event):
+    if mentioned_bot:
         metadata["mentioned_bot"] = True
-    if _event_replies_to_bot(bot, event):
+    if replied_to_bot:
         metadata["replied_to_bot"] = True
 
     return RobotInboundMessage(

@@ -46,6 +46,8 @@ COMMAND_TOOL_NAMES = {
 SILENT_TOOL_NAMES = {READ_LOG_TOOL_NAME}
 TERMINAL_SOURCE_FILTERED = "filtered_output"
 TERMINAL_SOURCE_RAW_FEEDBACK = "raw_feedback"
+ROBOT_MESSAGING_SKILL_ID = "robot_messaging"
+ROBOT_MCP_SERVER_NAME = "robot"
 
 
 class SessionState(Enum):
@@ -59,6 +61,16 @@ class SessionState(Enum):
 class InputType(Enum):
     TERMINAL = "terminal"
     CHAT = "chat"
+
+
+def _agent_has_configured_robot_messaging(agent: Agent) -> bool:
+    context = getattr(agent, "_context", None)
+    if context is None:
+        return False
+    return (
+        ROBOT_MESSAGING_SKILL_ID in set(getattr(context, "enabled_skills", []) or [])
+        or ROBOT_MCP_SERVER_NAME in set(getattr(context, "enabled_mcp_servers", []) or [])
+    )
 
 
 @dataclass
@@ -904,7 +916,10 @@ class AgentSession:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(agent.start_mcp_servers())
-            if is_critical_terminal_event(analysis.content):
+            if (
+                is_critical_terminal_event(analysis.content)
+                and _agent_has_configured_robot_messaging(agent)
+            ):
                 ensure_robot_tools = getattr(agent, "ensure_robot_messaging_tools", None)
                 if callable(ensure_robot_tools):
                     transient_robot_tools_added = bool(

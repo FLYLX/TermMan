@@ -5,7 +5,7 @@ from typing import Any
 
 import yaml
 
-from .definition import SkillDefinition, TriggerConfig, ActionConfig, SafetyConfig
+from .definition import ActionConfig, SafetyConfig, SkillDefinition, TriggerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -24,15 +24,28 @@ class SkillLoader:
         if not self.skills_dir.exists():
             self.skills_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"[SkillLoader] Created skills directory: {self.skills_dir}")
-            return
+        else:
+            for skill_path in self.skills_dir.iterdir():
+                if skill_path.is_dir():
+                    skill = self._load_skill(skill_path)
+                    if skill:
+                        self._skills[skill.skill_id] = skill
 
-        for skill_path in self.skills_dir.iterdir():
-            if skill_path.is_dir():
-                skill = self._load_skill(skill_path)
-                if skill:
-                    self._skills[skill.skill_id] = skill
+        self._load_builtin_plugin_skills()
 
         logger.info(f"[SkillLoader] Loaded {len(self._skills)} skills")
+
+    def _load_builtin_plugin_skills(self) -> None:
+        try:
+            from app.plugins.robot.prompts import build_robot_messaging_skill_definition
+        except Exception as exc:
+            logger.debug("[SkillLoader] Robot plugin skill unavailable: %s", exc)
+            return
+
+        skill = build_robot_messaging_skill_definition()
+        if skill is None or skill.skill_id in self._skills:
+            return
+        self._skills[skill.skill_id] = skill
 
     def _load_skill(self, skill_path: Path) -> SkillDefinition | None:
         skill_file = None
@@ -41,7 +54,7 @@ class SkillLoader:
             if candidate.exists():
                 skill_file = candidate
                 break
-        
+
         if not skill_file:
             logger.warning(f"[SkillLoader] No skill file found in {skill_path}")
             return None
@@ -80,7 +93,7 @@ class SkillLoader:
             "scripts": skill.scripts,
             "templates": skill.templates,
         }
-        
+
         for dir_name, target_dict in dirs.items():
             dir_path = skill_path / dir_name
             if dir_path.exists():

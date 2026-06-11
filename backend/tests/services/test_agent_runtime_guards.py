@@ -9,6 +9,11 @@ from app.api.routes.chat import (
     _should_retry_robot_delivery,
 )
 from app.plugins.robot.contracts import RobotReplyTarget
+from app.plugins.robot.prompts import (
+    build_robot_delivery_reflection_prompt,
+    build_robot_messaging_prompt,
+    build_robot_messaging_skill_definition,
+)
 from app.services.agent import agent as agent_module
 from app.services.agent.agent import AgentContext
 from app.services.agent.chat_runtime import _robot_fallback_response_content
@@ -317,17 +322,14 @@ def test_agent_extracts_robot_known_targets_from_context_messages() -> None:
         agent_module.Agent._instances.pop(handler_id, None)
 
 
-def test_robot_context_forces_robot_messaging_skill_prompt(monkeypatch) -> None:
-    robot_skill = SimpleNamespace(
-        skill_id="robot_messaging",
-        name="Robot Messaging",
-        description="Robot messages",
-        category="integration",
-        action=SimpleNamespace(prompt="robot messaging prompt body"),
-        content="",
-    )
+def test_robot_context_uses_optional_robot_plugin_prompt(monkeypatch) -> None:
+    robot_skill = build_robot_messaging_skill_definition()
+    assert robot_skill is not None
     agent = SimpleNamespace(
+        _context=SimpleNamespace(robot_id="", robot_reply_context_summary=""),
         get_skills=lambda: [robot_skill],
+        get_mcp_servers=lambda: [],
+        get_tools_for_litellm=lambda: [],
         match_skills=lambda query: [],
         enabled_knowledge_files=[],
     )
@@ -364,7 +366,86 @@ def test_robot_context_forces_robot_messaging_skill_prompt(monkeypatch) -> None:
         message="你好",
     )
 
-    assert "robot messaging prompt body" in messages[0]["content"]
+    assert "Robot Messaging Skill" in messages[0]["content"]
+    assert "QQ reply reflection" in messages[0]["content"]
+    assert "silently re-evaluate whether QQ should receive a reply" in messages[0]["content"]
+    assert "mcp_robot_send_message" in messages[0]["content"]
+
+
+def test_non_robot_context_does_not_include_robot_plugin_prompt(monkeypatch) -> None:
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(robot_id="", robot_reply_context_summary=""),
+        get_skills=lambda: [],
+        get_mcp_servers=lambda: [],
+        get_tools_for_litellm=lambda: [],
+        match_skills=lambda query: [],
+        enabled_knowledge_files=[],
+    )
+    monkeypatch.setattr(
+        prompt_builder,
+        "resolve_prompt_memory_policy",
+        lambda turn_type: SimpleNamespace(
+            include_session_summary=False,
+            include_recent_history=True,
+            max_recent_messages=4,
+            include_long_term=False,
+            allowed_long_term_types=(),
+            max_long_term_memories=0,
+        ),
+    )
+    monkeypatch.setattr(prompt_builder, "get_chat_messages", lambda item_id: [])
+
+    messages = prompt_builder.build_chat_turn_messages(
+        agent,
+        item_id="item-1",
+        message="hello",
+    )
+
+    assert "Robot Messaging Skill" not in messages[0]["content"]
+    assert "mcp_robot_send_message" not in messages[0]["content"]
+
+
+def test_robot_history_context_does_not_inject_prompt_without_robot_skill(monkeypatch) -> None:
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(robot_id="", robot_reply_context_summary=""),
+        get_skills=lambda: [],
+        get_mcp_servers=lambda: [],
+        get_tools_for_litellm=lambda: [],
+        match_skills=lambda query: [],
+        enabled_knowledge_files=[],
+    )
+    monkeypatch.setattr(
+        prompt_builder,
+        "resolve_prompt_memory_policy",
+        lambda turn_type: SimpleNamespace(
+            include_session_summary=False,
+            include_recent_history=True,
+            max_recent_messages=4,
+            include_long_term=False,
+            allowed_long_term_types=(),
+            max_long_term_memories=0,
+        ),
+    )
+    monkeypatch.setattr(
+        prompt_builder,
+        "get_chat_messages",
+        lambda item_id: [
+            {
+                "type": "chat_user",
+                "role": "user",
+                "content": "[Robot message; conversation=group:g1; sender=Alice]\nhello",
+            }
+        ],
+    )
+
+    messages = prompt_builder.build_chat_turn_messages(
+        agent,
+        item_id="item-1",
+        message="hello",
+    )
+
+    assert "Robot Messaging Skill" not in messages[0]["content"]
+    assert "mcp_robot_send_message" not in messages[0]["content"]
 
 
 def test_critical_terminal_prompt_forces_alert_skill(monkeypatch) -> None:
@@ -456,6 +537,8 @@ def test_robot_delivery_retry_triggers_when_model_returns_plain_reply() -> None:
 
     correction = _robot_delivery_correction_message("你好呀~")
     assert correction["role"] == "system"
+    assert "Robot message delivery reflection" in correction["content"]
+    assert "Re-evaluate whether QQ should receive that text" in correction["content"]
     assert "mcp_robot_send_message" in correction["content"]
     assert "你好呀~" in correction["content"]
 
@@ -490,8 +573,7 @@ def test_non_robot_collect_response_still_requires_content() -> None:
     )
 
 
-def test_robot_context_system_prompt_uses_robot_messaging_skill() -> None:
-    skill_loader.reload()
+def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     agent = SimpleNamespace(
         _context=SimpleNamespace(
             robot_id="robot-1",
@@ -515,9 +597,25 @@ def test_robot_context_system_prompt_uses_robot_messaging_skill() -> None:
     assert "Current robot reply target" in prompt
     assert "conversation: group:g1" in prompt
     assert "sender: Alice (u1)" in prompt
-    assert "final assistant message is internal" in prompt
+    assert "Your final assistant message is internal" in prompt
     assert "mcp_robot_send_message" in prompt
     assert "To reply to that current QQ conversation" in prompt
+    assert "QQ reply reflection" in prompt
+
+
+def test_robot_plugin_prompt_can_be_disabled(monkeypatch) -> None:
+    monkeypatch.setattr("app.plugins.robot.prompts.is_robot_plugin_enabled", lambda: False)
+
+    assert build_robot_messaging_prompt() == ""
+    assert build_robot_delivery_reflection_prompt("hello") == ""
+
+
+def test_robot_plugin_registers_builtin_skill() -> None:
+    skill = skill_loader.get("robot_messaging")
+
+    assert skill is not None
+    assert skill.mcp_servers == ["robot"]
+    assert "mcp_robot_send_message" in (skill.action.prompt or "")
 
 
 def test_log_manager_reads_legacy_log_when_primary_missing(tmp_path) -> None:

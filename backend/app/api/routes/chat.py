@@ -273,20 +273,28 @@ def _should_retry_robot_delivery(
 
 
 def _robot_delivery_correction_message(final_response: str) -> dict[str, str]:
+    try:
+        from app.plugins.robot.prompts import build_robot_delivery_reflection_prompt
+    except Exception:
+        reflection_prompt = ""
+    else:
+        reflection_prompt = build_robot_delivery_reflection_prompt(final_response)
+
+    if reflection_prompt:
+        return {"role": "system", "content": reflection_prompt}
+
     return {
         "role": "system",
         "content": (
-            "Robot message delivery correction:\n"
+            "Robot message delivery reflection:\n"
             "You produced a final assistant response without calling "
             "`mcp_robot_send_message`:\n"
             f"{final_response.strip()}\n\n"
-            "Final assistant responses are internal to TermMan and are not sent "
-            "to QQ. If that text is intended as a QQ reply, call "
-            "`mcp_robot_send_message` now using the QQ conversation visible in "
-            "context. Do not send merely because a robot context exists; if the "
-            "message is ordinary group chatter, directed at someone else, or no "
-            "QQ message should be sent, respond with a concise internal note "
-            "explaining that no QQ message was sent."
+            "Re-evaluate whether QQ should receive that text. If it should, "
+            "call `mcp_robot_send_message` now using the QQ conversation "
+            "visible in context. If not, respond with a concise internal note "
+            "explaining that no QQ message was sent. Do not output the "
+            "reflection itself."
         ),
     }
 

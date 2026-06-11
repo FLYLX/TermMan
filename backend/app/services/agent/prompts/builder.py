@@ -94,6 +94,7 @@ def _build_skill_prompt(
     query: str,
     *,
     force_skill_ids: set[str] | None = None,
+    extra_prompt_parts: list[str] | None = None,
 ) -> str:
     prompt_parts = [get_system_prompt(agent)]
 
@@ -114,6 +115,9 @@ def _build_skill_prompt(
             continue
         if skill.action and skill.action.prompt:
             prompt_parts.append(skill.action.prompt)
+
+    if extra_prompt_parts:
+        prompt_parts.extend(extra_prompt_parts)
 
     base_prompt = "\n\n".join(part.strip() for part in prompt_parts if part and part.strip())
     if query:
@@ -426,13 +430,23 @@ def build_chat_turn_messages(
             max_messages=policy.max_recent_messages,
         )
 
-    force_skill_ids: set[str] = set()
     has_robot_context = "[Robot message;" in message or any(
         "[Robot message;" in context_message.get("content", "")
         for context_message in recent_context_messages
     )
+    extra_prompt_parts: list[str] = []
     if has_robot_context:
-        force_skill_ids.add("robot_messaging")
+        try:
+            from app.plugins.robot.prompts import build_robot_history_prompt
+        except Exception:
+            robot_prompt = ""
+        else:
+            robot_prompt = build_robot_history_prompt(
+                agent,
+                has_robot_context=has_robot_context,
+            )
+        if robot_prompt:
+            extra_prompt_parts.append(robot_prompt)
 
     prompt_messages: list[dict[str, str]] = [
         {
@@ -440,7 +454,7 @@ def build_chat_turn_messages(
             "content": _build_skill_prompt(
                 agent,
                 effective_query,
-                force_skill_ids=force_skill_ids,
+                extra_prompt_parts=extra_prompt_parts,
             ),
         }
     ]

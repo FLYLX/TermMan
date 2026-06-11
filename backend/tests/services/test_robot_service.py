@@ -13,6 +13,7 @@ from app.plugins.robot.platforms import (
     _extract_event_mentions,
     _extract_sender_key,
     _extract_sender_metadata,
+    build_inbound_message,
     send_text_with_bot,
 )
 from app.plugins.robot.service import robot_service
@@ -159,6 +160,21 @@ class _FakeEvent:
     def get_user_id(self) -> str:
         return self.user_id
 
+    def get_plaintext(self) -> str:
+        texts: list[str] = []
+        for segment in self._message:
+            if getattr(segment, "type", "") == "text":
+                texts.append(str(getattr(segment, "data", {}).get("text") or ""))
+        return "".join(texts)
+
+
+class _FakeAlconnaTarget:
+    id = "123456"
+    source = None
+
+    def dump(self) -> dict[str, Any]:
+        return {"id": self.id}
+
 
 def test_send_text_with_bot_uses_onebot_group_and_private_actions() -> None:
     bot = _FakeOneBotBot()
@@ -252,6 +268,49 @@ def test_event_mentions_bot_detects_to_me_flag() -> None:
     event = _FakeEvent([], to_me=True)
 
     assert _event_mentions_bot(_FakeBot(), event) is True
+
+
+def test_build_inbound_message_keeps_empty_bot_mention(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "nonebot_plugin_alconna.get_message_id",
+        lambda event, bot: "message-1",
+    )
+    monkeypatch.setattr(
+        "nonebot_plugin_alconna.get_target",
+        lambda event, bot: _FakeAlconnaTarget(),
+    )
+    event = _FakeEvent(
+        [_FakeSegment("at", {"qq": "10001"})],
+        user_id="10002",
+        message_type="group",
+        group_id="123456",
+    )
+
+    inbound = build_inbound_message("onebot_v11", _FakeBot(), event)
+
+    assert inbound is not None
+    assert inbound.text == "[mention_bot]"
+    assert inbound.reply_target.metadata["mentioned_bot"] is True
+    assert inbound.reply_target.metadata["conversation"]["id"] == "123456"
+
+
+def test_build_inbound_message_drops_empty_non_mention(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "nonebot_plugin_alconna.get_message_id",
+        lambda event, bot: "message-1",
+    )
+    monkeypatch.setattr(
+        "nonebot_plugin_alconna.get_target",
+        lambda event, bot: _FakeAlconnaTarget(),
+    )
+    event = _FakeEvent(
+        [],
+        user_id="10002",
+        message_type="group",
+        group_id="123456",
+    )
+
+    assert build_inbound_message("onebot_v11", _FakeBot(), event) is None
 
 
 def test_event_replies_to_bot_detects_reply_sender() -> None:
