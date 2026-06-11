@@ -6,6 +6,7 @@ from sqlmodel import Session
 
 from app.models import RobotItem
 from app.plugins.robot.contracts import RobotInboundMessage, RobotReplyTarget
+from app.plugins.robot.conversation_memory import robot_conversation_memory
 from app.plugins.robot.platforms import (
     _event_mentions_bot,
     _event_replies_to_bot,
@@ -459,12 +460,24 @@ def test_plain_group_message_is_ignored_by_default(
 
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fail_enqueue_chat_job)
 
+    memory_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "append_user_message",
+        lambda *args, **kwargs: memory_calls.append((args, kwargs)),
+    )
+
     response = robot_service.handle_inbound_message(db, robot, _message("hello"))
 
     assert response.success is True
     assert response.ignored is True
     assert response.reason == "reply_message_type_disabled"
     assert response.reply_chunks == []
+    assert len(memory_calls) == 1
+    assert str(memory_calls[0][0][0]) == str(robot.id)
+    assert memory_calls[0][0][1] == "group:g1"
+    assert memory_calls[0][0][2] == "hello"
+    assert memory_calls[0][1]["sender"] == "onebot_v11:group:g1:u1"
 
 
 def test_mentioned_group_message_routes_to_default_item_agent(
@@ -486,6 +499,13 @@ def test_mentioned_group_message_routes_to_default_item_agent(
     db.commit()
 
     captured = _capture_queued_chat(monkeypatch)
+    memory_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "append_user_message",
+        lambda *args, **kwargs: memory_calls.append((args, kwargs)),
+    )
+
 
     response = robot_service.handle_inbound_message(
         db,
@@ -501,6 +521,11 @@ def test_mentioned_group_message_routes_to_default_item_agent(
     assert captured["job"].sender_key == "onebot_v11:group:g1:u1"
     assert isinstance(captured["job"].reply_target, RobotReplyTarget)
     assert response.reply_chunks == []
+    assert len(memory_calls) == 1
+    assert str(memory_calls[0][0][0]) == str(robot.id)
+    assert memory_calls[0][0][1] == "group:g1"
+    assert memory_calls[0][0][2] == "hello"
+    assert memory_calls[0][1]["sender"] == "onebot_v11:group:g1:u1"
 
 
 def test_robot_message_passes_sender_prefix_to_agent(

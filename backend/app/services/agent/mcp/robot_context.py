@@ -140,6 +140,13 @@ def build_robot_reply_context_summary(
                 "locked to the current conversation to prevent replying to the "
                 "wrong group/private chat."
             ),
+            (
+                "- memory rule: robot-connected QQ messages are stored in "
+                "conversation-local .log files even when they do not wake the "
+                "agent. If recent context is needed, call "
+                "`mcp_robot_read_conversation_memory` with no target arguments; "
+                "it is locked to this current QQ conversation."
+            ),
         ]
     )
 

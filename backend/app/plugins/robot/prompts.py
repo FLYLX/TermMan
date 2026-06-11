@@ -11,66 +11,44 @@ if TYPE_CHECKING:
 ROBOT_MESSAGING_SKILL_ID = "robot_messaging"
 ROBOT_MESSAGING_PROMPT = (
     "Robot Messaging Skill:\n\n"
-    "You can send concise user-visible messages through the TermMan "
-    "NoneBot/NapCat QQ robot by calling `mcp_robot_send_message`.\n\n"
-    "QQ reply reflection:\n"
-    "- Before deciding whether to call `mcp_robot_send_message`, silently "
-    "re-evaluate whether QQ should receive a reply.\n"
-    "- Treat `trigger=mention_bot`, `trigger=reply_to_bot`, direct bot "
-    "mentions, replies to the bot, and `trigger=active_chat_window` as "
-    "candidate continuations of the bot conversation, not as automatic "
-    "permission to send.\n"
-    "- If the sender is addressing you, continuing a conversation with you, "
-    "challenging or correcting your prior behavior, asking for a useful "
-    "response, or explicitly waking the bot with an otherwise empty mention, "
-    "call `mcp_robot_send_message`.\n"
-    "- If the message is ordinary group chatter with no contextual link to "
-    "the bot, directed at someone else, already resolved, or does not need a "
-    "bot response, do not call the tool and keep any final response as an "
-    "internal TermMan note.\n"
-    "- Do not output the reflection itself.\n\n"
-    "Target selection:\n"
-    "- Incoming QQ messages are shown in context with their source "
-    "conversation and sender.\n"
-    "- If the system prompt includes `Current robot reply target`, you are "
-    "handling an incoming QQ robot conversation. To reply to that current QQ "
-    "conversation, call `mcp_robot_send_message` with only `text`; omit "
+    "Use `mcp_robot_send_message` to send concise QQ-visible messages through "
+    "the TermMan NoneBot/NapCat robot. Use "
+    "`mcp_robot_read_conversation_memory` only when QQ .log context is needed. "
+    "Your final assistant message is internal to TermMan and is not sent to QQ."
+)
+
+ROBOT_ACTIVE_CONTEXT_PROMPT = (
+    "Active QQ Conversation:\n"
+    "- This turn was triggered by one QQ group/private chat only.\n"
+    "- Reply to QQ only when the sender is addressing the bot, continuing or "
+    "correcting the bot conversation, asking for a useful response, or waking "
+    "the bot with an empty mention/reply.\n"
+    "- To reply, call `mcp_robot_send_message` with only `text`; omit "
     "`reply_to`, `conversation`, `broadcast`, `target_type`, and `target_id`.\n"
-    "- In an incoming QQ robot conversation, never choose another QQ "
-    "conversation. Cross-conversation sends are blocked there to prevent "
-    "replying to the wrong group/private chat.\n"
-    "- A mention or reply in one group/private chat only wakes that specific "
-    "conversation. Recent memory may include other QQ conversations, but do "
-    "not send to them unless they are the locked/current target or the user "
-    "explicitly selects them from backend chat.\n"
-    "- Use `reply_to` only in TermMan backend chat when intentionally "
-    "choosing a different QQ conversation visible in context. The backend "
-    "resolves that context reference to the actual QQ target.\n"
-    "- If you are chatting in the TermMan backend, choose the target from "
-    "the QQ context history. If the target is not present or ambiguous, ask "
-    "which group/private chat to use.\n"
-    "- For severe terminal alerts, if multiple QQ conversations are visible "
-    "and they should all receive the same concise alert, call "
-    "`mcp_robot_send_message` with `broadcast: true` and `text`.\n\n"
-    "Rules:\n"
-    "- Your final assistant message is internal to TermMan and will not be "
-    "sent to QQ.\n"
-    "- Use `target_type` and `target_id` only when the target is outside the "
-    "visible QQ context and the user explicitly supplied the group number or "
-    "QQ number.\n"
-    "- If multiple robots are available and the user specified which robot "
-    "to use, pass `robot_id`; otherwise the backend can use the only "
-    "accessible enabled robot.\n"
-    "- If the target group/private conversation or robot identity is missing "
-    "or ambiguous, ask for that value instead of saying there is no robot "
-    "context.\n"
-    "- Never broadcast or reply to every visible QQ conversation unless the "
-    "user explicitly asked for broadcast or a severe alert clearly applies "
-    "to all selected targets.\n"
-    "- Send only concise, user-visible QQ messages.\n"
-    "- Do not invent robot IDs, group IDs, QQ numbers, or target IDs.\n"
-    "- Do not send hidden reasoning, tool traces, raw terminal logs, or long "
-    "summaries.\n"
+    "- If current .log context is needed, call "
+    "`mcp_robot_read_conversation_memory` with no target arguments.\n"
+    "- Do not reply to ordinary group chatter or messages directed at someone "
+    "else. Do not send hidden reasoning, tool traces, raw logs, or long "
+    "summaries."
+)
+
+ROBOT_BACKEND_CONTEXT_PROMPT = (
+    "QQ Context From History:\n"
+    "- Use `reply_to` or `conversation` only when intentionally choosing a QQ "
+    "conversation visible in the current TermMan context.\n"
+    "- Use `target_type` and `target_id` only when the user explicitly supplied "
+    "a QQ group number or QQ number outside visible context.\n"
+    "- If the QQ target or robot identity is missing or ambiguous, ask for it.\n"
+    "- Broadcast only when the user explicitly asks or a severe alert clearly "
+    "applies to every selected QQ conversation."
+)
+
+ROBOT_REFLECTION_PROMPT = (
+    "QQ Reply Reflection:\n"
+    "- Before calling `mcp_robot_send_message`, silently decide whether QQ "
+    "should receive a reply.\n"
+    "- Mentions, replies to the bot, and active chat window triggers are "
+    "candidate continuations, not automatic permission to send.\n"
     "- If no QQ-side reply is needed, do not call the tool."
 )
 
@@ -125,6 +103,7 @@ def build_robot_messaging_prompt(agent: Agent | None = None) -> str:
         getattr(context, "robot_reply_context_summary", "") or ""
     ).strip()
     if reply_context_summary:
+        prompt_parts.append(ROBOT_ACTIVE_CONTEXT_PROMPT)
         prompt_parts.append(reply_context_summary)
 
     return "\n\n".join(prompt_parts)
@@ -145,7 +124,7 @@ def build_robot_history_prompt(agent: Agent, *, has_robot_context: bool) -> str:
         return ""
     if not _agent_has_robot_messaging_enabled(agent):
         return ""
-    return build_robot_messaging_prompt(agent)
+    return "\n\n".join([ROBOT_MESSAGING_PROMPT, ROBOT_BACKEND_CONTEXT_PROMPT])
 
 
 def build_robot_delivery_reflection_prompt(final_response: str) -> str:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -9,6 +10,9 @@ from sqlmodel import Session, select
 
 from app.models import Item, ItemHandler, ItemHandlerItem, User
 from app.services.agent.agent import agent_manager, item_handler_context
+
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     from app.plugins.robot.contracts import RobotReplyTarget
@@ -160,6 +164,19 @@ def _send_robot_final_response_fallback(
         content=text,
     )
     robot_bridge_client.send_message(robot_id, robot_reply_target, text)
+    try:
+        from app.plugins.robot.conversation_memory import (
+            conversation_key_from_reply_target,
+            robot_conversation_memory,
+        )
+
+        robot_conversation_memory.append_assistant_message(
+            robot_id,
+            conversation_key_from_reply_target(robot_reply_target),
+            text,
+        )
+    except Exception as exc:
+        logger.warning("[ChatRuntime] Failed to write robot conversation memory: %s", exc)
     return True
 
 

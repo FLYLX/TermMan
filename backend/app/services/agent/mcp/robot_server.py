@@ -96,6 +96,63 @@ class RobotMCPServer:
             handler=self._send_message,
             skip_memory=True,
         )
+        self.register_tool(
+            name="read_conversation_memory",
+            description=(
+                "Read or search the conversation-local QQ .log memory for the "
+                "TermMan robot. In an incoming QQ-triggered agent turn, call this "
+                "tool with no target arguments to read the current QQ "
+                "conversation that woke the agent. In backend chat, use "
+                "conversation or reply_to only for a QQ conversation visible in "
+                "context, or provide target_type/target_id plus robot_id when the "
+                "user explicitly supplied them."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "conversation": {
+                        "type": "string",
+                        "description": (
+                            "Optional conversation key such as 'group:123456' or "
+                            "'private:654321'. In active QQ context this must "
+                            "match the current conversation."
+                        ),
+                    },
+                    "reply_to": {
+                        "type": "string",
+                        "description": (
+                            "Optional natural reference resolved against visible "
+                            "QQ context in backend chat."
+                        ),
+                    },
+                    "target_type": {
+                        "type": "string",
+                        "enum": ["group", "private"],
+                        "description": "Optional explicit QQ target type.",
+                    },
+                    "target_id": {
+                        "type": "string",
+                        "description": "Optional explicit QQ group number or QQ number.",
+                    },
+                    "robot_id": {
+                        "type": "string",
+                        "description": "Optional robot UUID when no active QQ context exists.",
+                    },
+                    "lines": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 500,
+                        "description": "Maximum recent or matching log lines to return.",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Optional case-insensitive text filter.",
+                    },
+                },
+            },
+            handler=self._read_conversation_memory,
+            skip_memory=True,
+        )
 
     def _normalize_target_type(self, value: Any) -> str:
         raw = str(value or "").strip().lower()
@@ -135,6 +192,16 @@ class RobotMCPServer:
             target_type=target_type,
             target_id=target_id,
             metadata={"manual_target": True, "mcp_explicit_target": True},
+        )
+
+    def _build_conversation_target(self, args: dict) -> RobotReplyTarget | None:
+        target_type, target_id = self._parse_conversation_target(args.get("conversation"))
+        if target_type not in {"group", "private"} or not target_id:
+            return None
+        return RobotReplyTarget(
+            target_type=target_type,
+            target_id=target_id,
+            metadata={"manual_target": True, "mcp_explicit_conversation": True},
         )
 
     def _context_targets(self, args: dict) -> list[dict[str, str]]:
@@ -246,6 +313,7 @@ class RobotMCPServer:
         from app.plugins.robot.bridge_client import robot_bridge_client
 
         sent: list[dict[str, str]] = []
+        delivered: list[tuple[str, RobotReplyTarget]] = []
         for target_data in targets:
             target = RobotReplyTarget(
                 target_type=target_data["target_type"],
@@ -271,6 +339,7 @@ class RobotMCPServer:
                 args=args,
             )
             robot_bridge_client.send_message(robot_id, target, text)
+            delivered.append((robot_id, target))
             sent.append(
                 {
                     "robot_id": robot_id,
@@ -279,6 +348,8 @@ class RobotMCPServer:
                     "target_id": target.target_id,
                 }
             )
+        for robot_id, target in delivered:
+            self._remember_sent_message(robot_id, target, text)
         return sent
 
     def _target_match_score(self, target: dict[str, str], reference: str) -> int:
@@ -568,6 +639,202 @@ class RobotMCPServer:
             payload=payload,
         )
 
+    def _remember_sent_message(
+        self,
+        robot_id: str,
+        target: RobotReplyTarget,
+        text: str,
+    ) -> None:
+        try:
+            from app.plugins.robot.conversation_memory import (
+                conversation_key_from_reply_target,
+                robot_conversation_memory,
+            )
+
+            robot_conversation_memory.append_assistant_message(
+                robot_id,
+                conversation_key_from_reply_target(target),
+                text,
+            )
+        except Exception:
+            logger.exception("[RobotMCPServer] Failed to write sent QQ memory")
+
+    @staticmethod
+    def _memory_line_limit(args: dict) -> int:
+        raw_value = args.get("lines") or args.get("limit") or 80
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            value = 80
+        return max(1, min(500, value))
+
+    @staticmethod
+    def _filter_memory_lines(content: str, query: str, *, lines: int) -> str:
+        normalized_query = query.casefold()
+        matches = [
+            line
+            for line in content.splitlines()
+            if normalized_query in line.casefold()
+        ]
+        return "\n".join(matches[-lines:])
+
+    def _active_context_memory_target_error(
+        self,
+        active_target: dict[str, str] | None,
+    ) -> str:
+        active_label = (
+            active_target["conversation"] if active_target is not None else "current"
+        )
+        return (
+            "Error: active QQ-triggered context is locked to "
+            f"{active_label}. Omit reply_to/conversation/target_type/target_id "
+            "to read the current QQ conversation memory. Cross-conversation "
+            "memory reads must be initiated from backend chat, not from an "
+            "incoming QQ message turn."
+        )
+
+    def _read_conversation_memory(self, args: dict) -> list[dict[str, str]]:
+        context_token = str(args.get("_robot_context_token") or "").strip()
+        context = get_robot_mcp_context(context_token)
+        try:
+            explicit_target = self._build_explicit_target(args)
+            conversation_target = self._build_conversation_target(args)
+        except Exception as exc:
+            return [{"type": "text", "text": f"Error: {exc}"}]
+
+        target: RobotReplyTarget | None = None
+        fallback_robot_id = ""
+        if context is not None:
+            active_target = self._context_target_from_active_context(context)
+            if active_target is None:
+                return [
+                    {
+                        "type": "text",
+                        "text": (
+                            "Error: current QQ conversation memory is unavailable "
+                            "for this target type."
+                        ),
+                    }
+                ]
+            requested_target = explicit_target or conversation_target
+            if requested_target is not None and not self._same_target(
+                requested_target,
+                active_target,
+            ):
+                return [
+                    {
+                        "type": "text",
+                        "text": self._active_context_memory_target_error(active_target),
+                    }
+                ]
+            context_reference = str(
+                args.get("reply_to") or args.get("conversation") or ""
+            ).strip()
+            if context_reference and not self._reference_matches_active_target(
+                context_reference,
+                active_target,
+            ):
+                return [
+                    {
+                        "type": "text",
+                        "text": self._active_context_memory_target_error(active_target),
+                    }
+                ]
+            robot_id = context.robot_id
+            conversation_key = active_target["conversation"]
+        else:
+            if explicit_target is not None:
+                target = explicit_target
+            else:
+                try:
+                    target, fallback_robot_id = self._resolve_context_target(args)
+                except Exception as exc:
+                    if conversation_target is None:
+                        return [{"type": "text", "text": f"Error: {exc}"}]
+                    target = conversation_target
+                if target is None and conversation_target is not None:
+                    target = conversation_target
+            if target is None:
+                return [
+                    {
+                        "type": "text",
+                        "text": (
+                            "Error: no active robot conversation context and no "
+                            "matching QQ conversation memory target. Use reply_to "
+                            "or conversation from visible context, or provide "
+                            "target_type, target_id, and robot_id."
+                        ),
+                    }
+                ]
+            try:
+                robot_id = self._get_accessible_robot_id(
+                    args,
+                    fallback_robot_id=fallback_robot_id,
+                )
+            except Exception as exc:
+                return [{"type": "text", "text": f"Error: {exc}"}]
+            from app.plugins.robot.conversation_memory import (
+                conversation_key_from_reply_target,
+            )
+
+            conversation_key = conversation_key_from_reply_target(target)
+
+        lines = self._memory_line_limit(args)
+        query = str(args.get("query") or "").strip()
+        from app.plugins.robot.conversation_memory import (
+            normalize_conversation_key,
+            robot_conversation_memory,
+        )
+
+        conversation_key = normalize_conversation_key(conversation_key)
+        try:
+            if query:
+                memory = self._filter_memory_lines(
+                    robot_conversation_memory.read(robot_id, conversation_key),
+                    query,
+                    lines=lines,
+                )
+                scope = f"matching query {query!r}"
+            else:
+                memory = robot_conversation_memory.read_recent(
+                    robot_id,
+                    conversation_key,
+                    lines=lines,
+                )
+                scope = f"recent {lines} line(s)"
+        except Exception as exc:
+            return [{"type": "text", "text": f"Error: {exc}"}]
+
+        if not memory.strip():
+            if query:
+                return [
+                    {
+                        "type": "text",
+                        "text": (
+                            "No QQ conversation .log memory matched "
+                            f"{query!r} for {conversation_key}."
+                        ),
+                    }
+                ]
+            return [
+                {
+                    "type": "text",
+                    "text": (
+                        "No QQ conversation .log memory found for "
+                        f"{conversation_key}."
+                    ),
+                }
+            ]
+        return [
+            {
+                "type": "text",
+                "text": (
+                    "QQ conversation .log memory "
+                    f"({conversation_key}, {scope}):\n{memory}"
+                ),
+            }
+        ]
+
     def register_tool(
         self,
         name: str,
@@ -676,6 +943,7 @@ class RobotMCPServer:
                     args=args,
                 )
                 robot_bridge_client.send_message(robot_id, explicit_target, text)
+                self._remember_sent_message(robot_id, explicit_target, text)
                 return [
                     {
                         "type": "text",
@@ -705,6 +973,7 @@ class RobotMCPServer:
                     args=args,
                 )
                 robot_bridge_client.send_message(robot_id, context_target, text)
+                self._remember_sent_message(robot_id, context_target, text)
                 return [
                     {
                         "type": "text",
@@ -729,10 +998,11 @@ class RobotMCPServer:
                 args=args,
             )
             robot_bridge_client.send_message(
-                context.robot_id,
-                context.reply_target.model_copy(deep=True),
+                attempted_robot_id,
+                attempted_target.model_copy(deep=True),
                 text,
             )
+            self._remember_sent_message(attempted_robot_id, attempted_target, text)
             return [{"type": "text", "text": "Message sent to current robot conversation."}]
         except Exception as exc:
             logger.warning("[RobotMCPServer] Failed to send robot message: %s", exc)

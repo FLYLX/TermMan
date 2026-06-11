@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.core.db import engine
 from app.models import Item, Robot, RobotItem, User
+from app.plugins.robot.conversation_memory import robot_conversation_memory
 from app.services.agent.chat_runtime import ChatResponseResult, collect_chat_response
 
 from .contracts import RobotDispatchResponse, RobotInboundMessage, RobotReplyTarget
@@ -275,6 +276,8 @@ class RobotService:
                 "[RobotService] Failed to send queued dispatch error robot=%s",
                 job.robot_id,
             )
+        else:
+            self._remember_assistant_conversation_memory(job.robot_id, job.conversation_key, message)
 
     def handle_inbound_message(
         self,
@@ -312,6 +315,7 @@ class RobotService:
         direct_reply_trigger = self._message_directly_addresses_bot(message)
         reply_context_active = self._is_reply_context_active(robot, message)
         conversation_key = self._conversation_key(message)
+        self._remember_inbound_conversation_memory(robot, message, conversation_key, text)
         mention_match_mode = self._mention_match_mode(robot)
         reply_categories = self._reply_message_categories(
             message,
@@ -376,16 +380,23 @@ class RobotService:
                         "route_key": resolved_binding.route_key,
                     },
                 )
+                reply_chunks = self._reply_chunks_for_target(
+                    robot,
+                    message.reply_target,
+                    response_text,
+                )
+                if reply_chunks:
+                    self._remember_assistant_conversation_memory(
+                        robot.id,
+                        conversation_key,
+                        response_text,
+                    )
                 return RobotDispatchResponse(
                     success=True,
                     ignored=False,
                     item_id=str(resolved_binding.item.id),
                     route_key=resolved_binding.route_key,
-                    reply_chunks=self._reply_chunks_for_target(
-                        robot,
-                        message.reply_target,
-                        response_text,
-                    ),
+                    reply_chunks=reply_chunks,
                 )
 
             queued_job = QueuedRobotChatJob(
@@ -554,6 +565,60 @@ class RobotService:
             "[RobotService] Skipping terminal output dispatch to robot for item=%s",
             item_id,
         )
+
+    def _remember_assistant_conversation_memory(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+        message_text: str,
+    ) -> None:
+        if not message_text.strip():
+            return
+        try:
+            robot_conversation_memory.append_assistant_message(
+                robot_id,
+                conversation_key,
+                message_text,
+            )
+        except Exception:
+            logger.exception(
+                "[RobotService] Failed to write assistant conversation memory robot=%s conversation=%s",
+                robot_id,
+                conversation_key,
+            )
+
+    def _remember_inbound_conversation_memory(
+        self,
+        robot: Robot,
+        message: RobotInboundMessage,
+        conversation_key: str,
+        message_text: str,
+    ) -> None:
+        if not message_text.strip():
+            return
+        try:
+            robot_conversation_memory.append_user_message(
+                robot.id,
+                conversation_key,
+                message_text,
+                sender=self._sender_memory_label(message),
+            )
+        except Exception:
+            logger.exception(
+                "[RobotService] Failed to write conversation memory robot=%s conversation=%s",
+                robot.id,
+                conversation_key,
+            )
+
+    def _sender_memory_label(self, message: RobotInboundMessage) -> str:
+        sender_data = message.reply_target.metadata.get("sender")
+        if isinstance(sender_data, dict):
+            sender_id = str(sender_data.get("user_id") or "").strip()
+            display_name = str(sender_data.get("display_name") or sender_data.get("card") or sender_data.get("nickname") or sender_id or "").strip()
+            if display_name and sender_id and display_name != sender_id:
+                return f"{display_name} ({sender_id})"
+            return display_name or sender_id
+        return message.sender_key
 
     def normalize_chat_alias(self, value: str | None) -> str | None:
         if value is None:

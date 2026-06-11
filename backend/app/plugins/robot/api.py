@@ -1,8 +1,10 @@
+import re
 import secrets
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Header, HTTPException
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, Field
 from sqlmodel import col, select
 
@@ -35,6 +37,10 @@ from .api_support import (
 )
 from .bridge_client import robot_bridge_client
 from .contracts import RobotDispatchResponse, RobotInboundMessage, RobotReplyTarget
+from .conversation_memory import (
+    conversation_key_from_reply_target,
+    robot_conversation_memory,
+)
 from .debug_log import get_robot_events, record_robot_event
 from .platforms import (
     RobotPlatformPublic,
@@ -54,6 +60,14 @@ from .service import robot_service
 
 router = APIRouter(prefix="/robots", tags=["robots"])
 
+CONVERSATION_KEY_PATTERN = r"^(group|private|channel):[^/\\\r\n]+$"
+
+
+class RobotConversationMemoryImportBody(BaseModel):
+    content: str = Field(..., max_length=2 * 1024 * 1024)
+    append: bool = False
+
+
 
 class RobotDebugSendBody(BaseModel):
     text: str = Field(..., min_length=1, max_length=1200)
@@ -63,6 +77,27 @@ class RobotManualSendBody(BaseModel):
     target_type: str = Field(..., min_length=1, max_length=32)
     target_id: str = Field(..., min_length=1, max_length=128)
     text: str = Field(..., min_length=1, max_length=4000)
+
+
+def _remember_sent_robot_message(
+    robot_id: uuid.UUID | str,
+    target: RobotReplyTarget,
+    text: str,
+) -> None:
+    try:
+        robot_conversation_memory.append_assistant_message(
+            str(robot_id),
+            conversation_key_from_reply_target(target),
+            text,
+        )
+    except Exception as exc:
+        record_robot_event(
+            str(robot_id),
+            direction="backend",
+            event="conversation_memory_write_failed",
+            status="error",
+            message=str(exc) or exc.__class__.__name__,
+        )
 
 
 def _generate_robot_access_token() -> str:
@@ -800,6 +835,7 @@ def send_robot_debug_message(
         )
         raise HTTPException(status_code=502, detail=detail) from exc
 
+    _remember_sent_robot_message(id, target, text)
     record_robot_event(
         str(id),
         direction="backend_to_bridge",
@@ -849,6 +885,7 @@ def send_robot_manual_message(
         )
         raise HTTPException(status_code=502, detail=detail) from exc
 
+    _remember_sent_robot_message(id, target, text)
     record_robot_event(
         str(id),
         direction="backend_to_bridge",
@@ -958,3 +995,90 @@ def get_robot_debug(
         },
         "events": events,
     }
+
+
+def _normalize_api_conversation_key(conversation_key: str) -> str:
+    normalized = conversation_key.strip()
+    if not re.match(CONVERSATION_KEY_PATTERN, normalized):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "conversation_key must look like group:<id>, private:<id>, "
+                "or channel:<id>"
+            ),
+        )
+    return normalized
+
+
+@router.get("/{id}/conversation-memory/{conversation_key}")
+def read_robot_conversation_memory(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    conversation_key: str,
+) -> dict:
+    robot = get_robot_or_404(session, id)
+    assert_robot_permission(robot, current_user)
+    normalized_key = _normalize_api_conversation_key(conversation_key)
+    info = robot_conversation_memory.info(str(id), normalized_key)
+    return {
+        "memory": robot_conversation_memory.read(str(id), normalized_key),
+        "info": info.__dict__,
+    }
+
+
+@router.get("/{id}/conversation-memory/{conversation_key}/export")
+def export_robot_conversation_memory(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    conversation_key: str,
+) -> Response:
+    robot = get_robot_or_404(session, id)
+    assert_robot_permission(robot, current_user)
+    normalized_key = _normalize_api_conversation_key(conversation_key)
+    filename = robot_conversation_memory.export_filename(normalized_key)
+    return PlainTextResponse(
+        robot_conversation_memory.read(str(id), normalized_key),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/{id}/conversation-memory/{conversation_key}/import")
+def import_robot_conversation_memory(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    conversation_key: str,
+    body: RobotConversationMemoryImportBody,
+) -> dict:
+    robot = get_robot_or_404(session, id)
+    assert_robot_permission(robot, current_user)
+    normalized_key = _normalize_api_conversation_key(conversation_key)
+    try:
+        info = robot_conversation_memory.replace(
+            str(id),
+            normalized_key,
+            body.content,
+            append=body.append,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "info": info.__dict__}
+
+
+@router.delete("/{id}/conversation-memory/{conversation_key}")
+def delete_robot_conversation_memory(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    conversation_key: str,
+) -> dict:
+    robot = get_robot_or_404(session, id)
+    assert_robot_permission(robot, current_user)
+    deleted = robot_conversation_memory.delete(
+        str(id),
+        _normalize_api_conversation_key(conversation_key),
+    )
+    return {"success": True, "deleted": deleted}

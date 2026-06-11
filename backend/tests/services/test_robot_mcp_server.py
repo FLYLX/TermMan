@@ -1,4 +1,5 @@
 from app.plugins.robot.contracts import RobotReplyTarget
+from app.plugins.robot.conversation_memory import robot_conversation_memory
 from app.services.agent.mcp.robot_context import (
     RobotMCPContext,
     register_robot_mcp_context,
@@ -259,6 +260,62 @@ def test_robot_mcp_send_message_uses_registered_context(monkeypatch) -> None:
     assert sent["text"] == "notify user"
     assert isinstance(sent["reply_target"], RobotReplyTarget)
     assert sent["reply_target"].target_id == "group-1"
+
+
+def test_robot_mcp_reads_registered_context_conversation_memory(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    server = RobotMCPServer()
+    monkeypatch.setattr(robot_conversation_memory, "base_dir", tmp_path)
+    robot_conversation_memory.append_user_message(
+        "robot-current",
+        "group:current-group",
+        "hello current keyword",
+        sender="Alice (10001)",
+    )
+    robot_conversation_memory.append_assistant_message(
+        "robot-current",
+        "group:current-group",
+        "assistant current reply",
+    )
+    robot_conversation_memory.append_user_message(
+        "robot-current",
+        "group:other-group",
+        "other keyword",
+        sender="Bob",
+    )
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="current-group",
+        metadata={"target": {"id": "current-group"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:current-group:user-1",
+            reply_target=target,
+        )
+    )
+
+    try:
+        result = server.call_tool(
+            "read_conversation_memory",
+            {"_robot_context_token": token, "query": "keyword"},
+        )
+        blocked = server.call_tool(
+            "read_conversation_memory",
+            {"_robot_context_token": token, "conversation": "group:other-group"},
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert result[0]["type"] == "text"
+    assert "group:current-group" in result[0]["text"]
+    assert "hello current keyword" in result[0]["text"]
+    assert "assistant current reply" not in result[0]["text"]
+    assert "other keyword" not in result[0]["text"]
+    assert "active QQ-triggered context is locked to group:current-group" in blocked[0]["text"]
 
 
 def test_robot_mcp_send_message_prefers_active_context_over_ambiguous_history(

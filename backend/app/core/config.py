@@ -98,7 +98,9 @@ class Settings(BaseSettings):
     ROBOT_BACKEND_DISPATCH_TIMEOUT_SECONDS: float = 180.0
     ROBOT_BACKEND_DISPATCH_QUEUE_SIZE: int = 50
     ROBOT_BACKEND_DISPATCH_WORKERS: int = 1
-    ROBOT_REPLY_CONTEXT_WINDOW_SECONDS: int = 15
+    ROBOT_REPLY_CONTEXT_WINDOW_SECONDS: int = 30
+    ROBOT_CONVERSATION_MEMORY_DIR: str = str(BACKEND_DIR.parent / ".runtime" / "robot_conversation_memory")
+    ROBOT_CONVERSATION_MEMORY_MAX_BYTES: int = 1024 * 1024
 
     @model_validator(mode="after")
     def _apply_robot_bridge_defaults(self) -> Self:

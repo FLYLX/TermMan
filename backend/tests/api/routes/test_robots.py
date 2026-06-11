@@ -4,6 +4,7 @@ from sqlmodel import Session
 from app.core.config import settings
 from app.models import Robot
 from app.plugins.robot.bridge_client import robot_bridge_client
+from app.plugins.robot.conversation_memory import robot_conversation_memory
 from app.plugins.robot.service import robot_service
 from tests.utils.item import create_random_item
 
@@ -487,3 +488,59 @@ def test_dispatch_robot_message_rejects_invalid_bridge_token(
 
     assert response.status_code == 403
     assert response.json()["detail"] == "Invalid robot bridge token"
+
+
+def test_robot_conversation_memory_import_read_export_delete(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(robot_bridge_client, "notify_reload", lambda: None)
+    monkeypatch.setattr(robot_conversation_memory, "base_dir", tmp_path)
+    robot_response = client.post(
+        f"{settings.API_V1_STR}/robots/",
+        headers=superuser_token_headers,
+        json={
+            "name": "memory-robot",
+            "platform": "onebot_v11",
+            "provider": "nonebot2",
+            "config": {
+                "credentials": {
+                    "self_id": "8193",
+                    "ws_url": "ws://napcat.test:3001",
+                },
+                "options": {},
+            },
+        },
+    )
+    robot_id = robot_response.json()["id"]
+
+    import_response = client.post(
+        f"{settings.API_V1_STR}/robots/{robot_id}/conversation-memory/group:123456/import",
+        headers=superuser_token_headers,
+        json={"content": "[seed] user Alice: hello\n"},
+    )
+    read_response = client.get(
+        f"{settings.API_V1_STR}/robots/{robot_id}/conversation-memory/group:123456",
+        headers=superuser_token_headers,
+    )
+    export_response = client.get(
+        f"{settings.API_V1_STR}/robots/{robot_id}/conversation-memory/group:123456/export",
+        headers=superuser_token_headers,
+    )
+    delete_response = client.delete(
+        f"{settings.API_V1_STR}/robots/{robot_id}/conversation-memory/group:123456",
+        headers=superuser_token_headers,
+    )
+
+    assert import_response.status_code == 200
+    assert import_response.json()["info"]["conversation_key"] == "group:123456"
+    assert import_response.json()["info"]["path"].endswith("123456.log")
+    assert read_response.status_code == 200
+    assert "[seed] user Alice: hello" in read_response.json()["memory"]
+    assert export_response.status_code == 200
+    assert export_response.text == "[seed] user Alice: hello\n"
+    assert "123456.log" in export_response.headers["content-disposition"]
+    assert delete_response.status_code == 200
+    assert delete_response.json()["deleted"] is True

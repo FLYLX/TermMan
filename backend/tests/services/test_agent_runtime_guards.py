@@ -9,6 +9,7 @@ from app.api.routes.chat import (
     _should_retry_robot_delivery,
 )
 from app.plugins.robot.contracts import RobotReplyTarget
+from app.plugins.robot.conversation_memory import RobotConversationMemoryManager
 from app.plugins.robot.prompts import (
     build_robot_delivery_reflection_prompt,
     build_robot_messaging_prompt,
@@ -80,7 +81,13 @@ def test_robot_context_temporarily_exposes_send_message_tool(monkeypatch) -> Non
                 description="Send robot message",
                 input_schema={"type": "object", "properties": {}},
                 server_name="robot",
-            )
+            ),
+            MCPTool(
+                name="read_conversation_memory",
+                description="Read robot conversation memory",
+                input_schema={"type": "object", "properties": {}},
+                server_name="robot",
+            ),
         ]
     }
 
@@ -126,7 +133,10 @@ def test_robot_context_temporarily_exposes_send_message_tool(monkeypatch) -> Non
         ]
 
         assert agent.get_mcp_servers() == ["robot"]
-        assert tool_names == ["mcp_robot_send_message"]
+        assert tool_names == [
+            "mcp_robot_send_message",
+            "mcp_robot_read_conversation_memory",
+        ]
 
         context_token = agent._context.robot_context_token
         assert "Current robot reply target" in agent._context.robot_reply_context_summary
@@ -147,6 +157,24 @@ def test_robot_context_temporarily_exposes_send_message_tool(monkeypatch) -> Non
         assert captured_call["tool_name"] == "send_message"
         assert captured_call["args"] == {
             "text": "hello",
+            "_robot_context_token": context_token,
+        }
+
+        result = asyncio.run(
+            agent.execute_tool(
+                "mcp_robot_read_conversation_memory",
+                {"query": "hello"},
+            )
+        )
+
+        assert result == {
+            "success": True,
+            "result": [{"type": "text", "text": "sent"}],
+        }
+        assert captured_call["server_name"] == "robot"
+        assert captured_call["tool_name"] == "read_conversation_memory"
+        assert captured_call["args"] == {
+            "query": "hello",
             "_robot_context_token": context_token,
         }
 
@@ -172,7 +200,13 @@ def test_robot_messaging_tools_can_be_temporarily_exposed_for_alerts(monkeypatch
                 description="Send robot message",
                 input_schema={"type": "object", "properties": {}},
                 server_name="robot",
-            )
+            ),
+            MCPTool(
+                name="read_conversation_memory",
+                description="Read robot conversation memory",
+                input_schema={"type": "object", "properties": {}},
+                server_name="robot",
+            ),
         ]
     }
 
@@ -196,7 +230,10 @@ def test_robot_messaging_tools_can_be_temporarily_exposed_for_alerts(monkeypatch
 
         assert added is True
         assert agent.get_mcp_servers() == ["robot"]
-        assert tool_names == ["mcp_robot_send_message"]
+        assert tool_names == [
+            "mcp_robot_send_message",
+            "mcp_robot_read_conversation_memory",
+        ]
 
         agent.clear_transient_robot_messaging_tools()
 
@@ -373,8 +410,8 @@ def test_robot_context_uses_optional_robot_plugin_prompt(monkeypatch) -> None:
     )
 
     assert "Robot Messaging Skill" in messages[0]["content"]
-    assert "QQ reply reflection" in messages[0]["content"]
-    assert "silently re-evaluate whether QQ should receive a reply" in messages[0]["content"]
+    assert "QQ Context From History" in messages[0]["content"]
+    assert "QQ Reply Reflection" not in messages[0]["content"]
     assert "mcp_robot_send_message" in messages[0]["content"]
 
 
@@ -722,8 +759,9 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     assert "sender: Alice (u1)" in prompt
     assert "Your final assistant message is internal" in prompt
     assert "mcp_robot_send_message" in prompt
-    assert "To reply to that current QQ conversation" in prompt
-    assert "QQ reply reflection" in prompt
+    assert "Active QQ Conversation" in prompt
+    assert "call `mcp_robot_send_message` with only `text`" in prompt
+    assert "QQ Reply Reflection" not in prompt
 
 
 def test_robot_plugin_prompt_can_be_disabled(monkeypatch) -> None:
@@ -780,3 +818,26 @@ def test_log_manager_reads_legacy_log_when_primary_missing(tmp_path) -> None:
 
     assert manager.write_to_log("user-1", item_id, "primary line\n") is True
     assert manager.get_last_lines(item_id, lines=1) == "primary line\n"
+
+
+def test_robot_conversation_memory_uses_group_log_and_prompt(tmp_path: Path) -> None:
+    manager = RobotConversationMemoryManager(base_dir=tmp_path, max_bytes=4096)
+    info = manager.append_user_message(
+        "robot-1",
+        "group:770362397",
+        "说话",
+        sender="Alice (10001)",
+    )
+    manager.append_assistant_message("robot-1", "group:770362397", "在")
+    manager.append_user_message("robot-1", "group:other", "别的群", sender="Bob")
+
+    assert info.path.endswith("770362397.log")
+    assert "说话" in manager.read("robot-1", "group:770362397")
+    assert "别的群" not in manager.read("robot-1", "group:770362397")
+
+    prompt = manager.format_prompt_memory("robot-1", "group:770362397")
+    assert "Current QQ conversation .log memory" in prompt
+    assert "group:770362397" in prompt
+    assert "Alice (10001)" in prompt
+    assert "说话" in prompt
+    assert "别的群" not in prompt

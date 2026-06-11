@@ -402,7 +402,7 @@ class Agent:
         if server_name not in self._mcp_servers:
             return {"success": False, "error": f"MCP server '{server_name}' not available for this agent"}
 
-        if tool_name == "mcp_robot_send_message":
+        if server_name == ROBOT_MCP_SERVER_NAME:
             args.pop("_robot_context_token", None)
             args.pop("_termman_user_id", None)
             args.pop("_termman_is_superuser", None)
@@ -423,7 +423,7 @@ class Agent:
                     if self._context and self._context.item_id:
                         args["item_id"] = self._context.item_id
                 if (
-                    tool_name == "mcp_robot_send_message"
+                    server_name == ROBOT_MCP_SERVER_NAME
                     and self._context
                     and self._context.robot_id
                     and self._context.robot_context_token
