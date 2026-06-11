@@ -44,6 +44,7 @@ class AgentContext:
     robot_id: str = ""
     robot_sender_key: str = ""
     robot_context_token: str = ""
+    robot_conversation_key: str = ""
     robot_reply_context_summary: str = ""
     robot_mcp_server_transient: bool = False
     current_user_id: str = ""
@@ -209,6 +210,10 @@ class Agent:
             )
             self._context.robot_id = robot_id
             self._context.robot_sender_key = sender_key
+            self._context.robot_conversation_key = self._robot_conversation_key(
+                reply_target,
+                sender_key,
+            )
             self._context.robot_context_token = register_robot_mcp_context(context)
             self._context.robot_reply_context_summary = (
                 build_robot_reply_context_summary(reply_target, sender_key)
@@ -264,6 +269,7 @@ class Agent:
             unregister_robot_mcp_context(self._context.robot_context_token)
             self._context.robot_id = ""
             self._context.robot_sender_key = ""
+            self._context.robot_conversation_key = ""
             self._context.robot_context_token = ""
             self._context.robot_reply_context_summary = ""
             self._context.robot_mcp_server_transient = False
@@ -274,6 +280,25 @@ class Agent:
                     if server_name != ROBOT_MCP_SERVER_NAME
                 ]
                 self._load_mcp_tools()
+
+    def _robot_conversation_key(
+        self,
+        reply_target: RobotReplyTarget,
+        sender_key: str,
+    ) -> str:
+        metadata = reply_target.metadata if reply_target else {}
+        conversation = metadata.get("conversation") if isinstance(metadata, dict) else {}
+        if isinstance(conversation, dict):
+            conversation_type = str(conversation.get("type") or "").strip().lower()
+            conversation_id = str(conversation.get("id") or "").strip()
+            if conversation_type and conversation_id:
+                return f"{conversation_type}:{conversation_id}"
+
+        summary = build_robot_reply_context_summary(reply_target, sender_key)
+        match = re.search(r"^- conversation:\s*(.+)$", summary, flags=re.MULTILINE)
+        if match:
+            return match.group(1).strip()
+        return sender_key
 
     def _get_output_filter(self) -> OutputFilter | None:
         if not self._context or not self._context.output_filter_enabled:

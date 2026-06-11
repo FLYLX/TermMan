@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+ROBOT_MESSAGE_STAMP_RE = re.compile(r"\[Robot message; (?P<body>[^\]]+)\]")
+
 
 ASSISTANT_CONTEXT_TYPES = {
     "agent_action",
@@ -152,7 +154,82 @@ def _event_to_model_message(event: dict[str, Any]) -> dict[str, str] | None:
     return None
 
 
+def _event_is_assistant_context(event: dict[str, Any]) -> bool:
+    return event.get("role") == "assistant" or event.get("type") in ASSISTANT_CONTEXT_TYPES
+
+
+def _robot_context_conversation_key(agent: "Agent") -> str:
+    context = getattr(agent, "_context", None)
+    if context is None:
+        return ""
+    return str(getattr(context, "robot_conversation_key", "") or "").strip()
+
+
+def _robot_message_conversation_key(content: str) -> str:
+    match = ROBOT_MESSAGE_STAMP_RE.search(content or "")
+    if not match:
+        return ""
+    for part in match.group("body").split(";"):
+        key, separator, value = part.strip().partition("=")
+        if separator and key.strip().lower() == "conversation":
+            return value.strip()
+    return ""
+
+
+def _annotate_robot_conversation_context(
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    annotated_events: list[dict[str, Any]] = []
+    active_robot_conversation = ""
+
+    for event in events:
+        content = str(event.get("content", ""))
+        event_conversation = _robot_message_conversation_key(content)
+        associated_conversation = ""
+
+        if event_conversation:
+            active_robot_conversation = event_conversation
+            associated_conversation = event_conversation
+        elif "[Robot message;" in content:
+            active_robot_conversation = ""
+            associated_conversation = "__unknown_robot_conversation__"
+        elif _event_is_assistant_context(event):
+            associated_conversation = active_robot_conversation
+        elif event.get("role") in {"user", "terminal"} or event.get("type") in {
+            "chat_user",
+            "terminal_output",
+        }:
+            active_robot_conversation = ""
+
+        if associated_conversation:
+            event = {**event, "_robot_conversation_key": associated_conversation}
+        annotated_events.append(event)
+
+    return annotated_events
+
+
+def _event_matches_robot_conversation(
+    event: dict[str, Any],
+    robot_conversation_key: str,
+) -> bool:
+    if not robot_conversation_key:
+        return True
+
+    associated_conversation = str(event.get("_robot_conversation_key", "") or "").strip()
+    if associated_conversation:
+        return associated_conversation == robot_conversation_key
+
+    content = str(event.get("content", ""))
+    event_conversation = _robot_message_conversation_key(content)
+    if event_conversation:
+        return event_conversation == robot_conversation_key
+    if "[Robot message;" in content:
+        return False
+    return True
+
+
 def _collect_recent_context_messages(
+    agent: "Agent",
     item_id: str,
     *,
     max_messages: int,
@@ -164,6 +241,8 @@ def _collect_recent_context_messages(
 
     normalized_excluded_terminal = _normalize_content(exclude_terminal_content)
     remaining_terminal_exclusion = bool(normalized_excluded_terminal)
+    robot_conversation_key = _robot_context_conversation_key(agent)
+    all_messages = _annotate_robot_conversation_context(all_messages)
 
     filtered_events: list[dict[str, Any]] = []
     for event in reversed(all_messages):
@@ -175,6 +254,11 @@ def _collect_recent_context_messages(
             and _normalize_content(str(event.get("content", ""))) == normalized_excluded_terminal
         ):
             remaining_terminal_exclusion = False
+            continue
+        if not _event_matches_robot_conversation(
+            event,
+            robot_conversation_key,
+        ):
             continue
         filtered_events.append(event)
         if len(filtered_events) >= max_messages:
@@ -426,6 +510,7 @@ def build_chat_turn_messages(
     recent_context_messages: list[dict[str, str]] = []
     if policy.include_recent_history:
         recent_context_messages = _collect_recent_context_messages(
+            agent,
             item_id,
             max_messages=policy.max_recent_messages,
         )
@@ -544,6 +629,7 @@ def build_terminal_turn_messages(
     if policy.include_recent_history:
         prompt_messages.extend(
             _collect_recent_context_messages(
+                agent,
                 item_id,
                 max_messages=policy.max_recent_messages,
                 exclude_terminal_content=terminal_content,

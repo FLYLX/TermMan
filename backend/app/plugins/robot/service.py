@@ -37,13 +37,19 @@ REPLY_MESSAGE_TYPE_MENTION = "mention"
 DEFAULT_REPLY_MESSAGE_TYPES = frozenset(
     {
         REPLY_MESSAGE_TYPE_PRIVATE,
+        REPLY_MESSAGE_TYPE_COMMAND,
+        REPLY_MESSAGE_TYPE_MENTION,
+    }
+)
+ALLOWED_REPLY_MESSAGE_TYPES = frozenset(
+    {
+        REPLY_MESSAGE_TYPE_PRIVATE,
         REPLY_MESSAGE_TYPE_GROUP,
         REPLY_MESSAGE_TYPE_CHANNEL,
         REPLY_MESSAGE_TYPE_COMMAND,
         REPLY_MESSAGE_TYPE_MENTION,
     }
 )
-ALLOWED_REPLY_MESSAGE_TYPES = DEFAULT_REPLY_MESSAGE_TYPES
 REPLY_MESSAGE_TYPE_DISABLED_REASON = "reply_message_type_disabled"
 MENTION_MATCH_MODE_BOT = "bot"
 MENTION_MATCH_MODE_ANY = "any"
@@ -341,9 +347,14 @@ class RobotService:
                 session,
                 robot,
                 command,
-                message.sender_key,
+                conversation_key,
+                fallback_sender_key=message.sender_key,
             )
-            self._remember_conversation(robot.id, message.sender_key, resolved_binding.item.id)
+            self._remember_conversation(
+                robot.id,
+                conversation_key,
+                resolved_binding.item.id,
+            )
 
             if command.mode == "send":
                 success = self._write_to_item_terminal(resolved_binding.item.id, message_text)
@@ -604,7 +615,8 @@ class RobotService:
         session: Session,
         robot: Robot,
         command: RobotCommand,
-        sender_key: str,
+        conversation_key: str,
+        fallback_sender_key: str = "",
     ) -> tuple[ResolvedRobotBinding, str]:
         bindings = [
             ResolvedRobotBinding(
@@ -632,7 +644,12 @@ class RobotService:
                     return resolved, command.text
             raise RobotServiceError(f"没有找到路由 `{command.target}` 对应的终端")
 
-        remembered_item_id = self._get_remembered_item_id(robot.id, sender_key)
+        remembered_item_id = self._get_remembered_item_id(robot.id, conversation_key)
+        if not remembered_item_id and fallback_sender_key:
+            remembered_item_id = self._get_remembered_item_id(
+                robot.id,
+                fallback_sender_key,
+            )
         if remembered_item_id:
             for resolved in bindings:
                 if resolved.item.id == remembered_item_id:

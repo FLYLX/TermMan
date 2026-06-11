@@ -31,6 +31,7 @@ class SkillLoader:
                     if skill:
                         self._skills[skill.skill_id] = skill
 
+        self._load_builtin_style_skills()
         self._load_builtin_plugin_skills()
 
         logger.info(f"[SkillLoader] Loaded {len(self._skills)} skills")
@@ -46,6 +47,18 @@ class SkillLoader:
         if skill is None or skill.skill_id in self._skills:
             return
         self._skills[skill.skill_id] = skill
+
+    def _load_builtin_style_skills(self) -> None:
+        try:
+            from .builtin import build_builtin_style_skill_definitions
+        except Exception as exc:
+            logger.debug("[SkillLoader] Builtin style skills unavailable: %s", exc)
+            return
+
+        for skill in build_builtin_style_skill_definitions():
+            if skill.skill_id in self._skills:
+                continue
+            self._skills[skill.skill_id] = skill
 
     def _load_skill(self, skill_path: Path) -> SkillDefinition | None:
         skill_file = None

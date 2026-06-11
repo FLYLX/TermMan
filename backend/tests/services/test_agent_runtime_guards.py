@@ -741,6 +741,25 @@ def test_robot_plugin_registers_builtin_skill() -> None:
     assert "mcp_robot_send_message" in (skill.action.prompt or "")
 
 
+def test_style_tone_skills_register_as_builtin_skills() -> None:
+    mutsumi = skill_loader.get("mutsumi_tone")
+    kurumi = skill_loader.get("tokisaki_kurumi_tone")
+    yui = skill_loader.get("hirasawa_yui_tone")
+
+    assert mutsumi is not None
+    assert kurumi is not None
+    assert yui is not None
+    assert mutsumi.skill_dir == "builtin"
+    assert kurumi.skill_dir == "builtin"
+    assert yui.skill_dir == "builtin"
+    assert mutsumi.category == "style"
+    assert kurumi.category == "style"
+    assert yui.category == "style"
+    assert "Mutsumi Tone Skill" in (mutsumi.action.prompt or "")
+    assert "Tokisaki Kurumi Tone Skill" in (kurumi.action.prompt or "")
+    assert "Hirasawa Yui Tone Skill" in (yui.action.prompt or "")
+
+
 def test_log_manager_reads_legacy_log_when_primary_missing(tmp_path) -> None:
     primary_dir = tmp_path / ".runtime" / "item_logs"
     legacy_dir = tmp_path / "backend" / "app" / "services" / "log"

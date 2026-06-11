@@ -308,6 +308,84 @@ def test_chat_prompt_uses_session_summary_and_clips_recent_history(
     assert all("older user message 0" not in message["content"] for message in messages)
 
 
+def test_robot_chat_prompt_filters_recent_history_to_current_conversation(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.plugins.robot.contracts import RobotReplyTarget
+    from app.services.agent import agent as agent_module
+    from app.services.agent.prompts import builder as prompt_builder
+
+    item, _ = _create_linked_item_and_handler(db)
+    robot_agent = agent_module.Agent(f"robot-history-{item.id}")
+    robot_agent._context = agent_module.AgentContext(handler_id=str(item.id))
+    robot_agent.set_robot_context(
+        robot_id="robot-1",
+        sender_key="onebot_v11:group:g2:u2",
+        reply_target=RobotReplyTarget(
+            target_type="group",
+            target_id="g2",
+            metadata={
+                "conversation": {"type": "group", "id": "g2"},
+                "target": {"id": "g2"},
+            },
+        ),
+    )
+
+    try:
+        append_chat_message(
+            str(item.id),
+            role="user",
+            content=(
+                "[Robot message; conversation=group:g1; "
+                "trigger=mention_bot; sender=Alice]\nfrom group one"
+            ),
+            message_type="chat_user",
+        )
+        append_chat_message(
+            str(item.id),
+            role="assistant",
+            content="assistant reply to group one",
+            message_type="agent_response",
+        )
+        append_chat_message(
+            str(item.id),
+            role="user",
+            content=(
+                "[Robot message; conversation=group:g2; "
+                "trigger=mention_bot; sender=Bob]\nfrom group two"
+            ),
+            message_type="chat_user",
+        )
+        append_chat_message(
+            str(item.id),
+            role="assistant",
+            content="assistant reply to group two",
+            message_type="agent_response",
+        )
+
+        monkeypatch.setattr(prompt_builder, "get_system_prompt", lambda agent: "system prompt")
+
+        messages = prompt_builder.build_chat_turn_messages(
+            robot_agent,
+            item_id=str(item.id),
+            message=(
+                "[Robot message; conversation=group:g2; "
+                "trigger=mention_bot; sender=Bob]\nlatest"
+            ),
+        )
+    finally:
+        robot_agent.clear_robot_context()
+        agent_module.Agent._instances.pop(robot_agent.handler_id, None)
+
+    combined = "\n".join(message["content"] for message in messages)
+    assert "from group two" in combined
+    assert "latest" in combined
+    assert "from group one" not in combined
+    assert "assistant reply to group one" not in combined
+    assert "assistant reply to group two" in combined
+
+
 def test_chat_prompt_includes_handler_knowledge(
     db: Session,
     monkeypatch,

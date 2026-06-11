@@ -436,7 +436,38 @@ def test_onebot_conversation_metadata_uses_private_user_id() -> None:
     )
 
 
-def test_plain_robot_message_routes_to_default_item_agent(
+def test_plain_group_message_is_ignored_by_default(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    def fail_enqueue_chat_job(_job):
+        raise AssertionError("plain group chatter should remain asleep by default")
+
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fail_enqueue_chat_job)
+
+    response = robot_service.handle_inbound_message(db, robot, _message("hello"))
+
+    assert response.success is True
+    assert response.ignored is True
+    assert response.reason == "reply_message_type_disabled"
+    assert response.reply_chunks == []
+
+
+def test_mentioned_group_message_routes_to_default_item_agent(
     db: Session,
     monkeypatch,
 ) -> None:
@@ -456,12 +487,17 @@ def test_plain_robot_message_routes_to_default_item_agent(
 
     captured = _capture_queued_chat(monkeypatch)
 
-    response = robot_service.handle_inbound_message(db, robot, _message("hello"))
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("hello", mentioned_bot=True),
+    )
 
     assert response.success is True
     assert response.item_id == str(item.id)
     assert response.route_key == "alpha"
     assert captured["job"].message == "hello"
+    assert captured["job"].conversation_key == "group:g1"
     assert captured["job"].sender_key == "onebot_v11:group:g1:u1"
     assert isinstance(captured["job"].reply_target, RobotReplyTarget)
     assert response.reply_chunks == []
@@ -497,12 +533,13 @@ def test_robot_message_passes_sender_prefix_to_agent(
                 "user_id": "u1",
                 "display_name": "Alice",
             },
+            mentioned_bot=True,
         ),
     )
 
     assert response.success is True
     assert captured["job"].message == (
-        "[Robot message; conversation=group:g1; trigger=plain; sender=Alice (u1)]\nhello"
+        "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1)]\nhello"
     )
     assert response.reply_chunks == []
 
@@ -620,6 +657,47 @@ def test_reply_message_type_filter_ignores_unselected_group_message(
     assert response.success is True
     assert response.ignored is True
     assert response.reason == "reply_message_type_disabled"
+    assert response.reply_chunks == []
+
+
+def test_reply_message_type_filter_allows_configured_group_message(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {"reply_message_types": ["group"]},
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    captured = _capture_queued_chat(monkeypatch)
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("hello group"),
+    )
+
+    assert response.success is True
+    assert response.ignored is False
+    assert response.item_id == str(item.id)
+    assert response.route_key == "alpha"
+    assert captured["job"].message == "hello group"
+    assert captured["job"].conversation_key == "group:g1"
+    assert captured["job"].sender_key == "onebot_v11:group:g1:u1"
     assert response.reply_chunks == []
 
 
@@ -1324,7 +1402,7 @@ def test_robot_message_is_ignored_when_backend_queue_is_full(
     response = robot_service.handle_inbound_message(
         db,
         robot,
-        _message("hello"),
+        _message("hello", mentioned_bot=True),
     )
 
     assert response.success is True
