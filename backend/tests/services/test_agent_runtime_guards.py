@@ -15,8 +15,14 @@ from app.plugins.robot.prompts import (
     build_robot_messaging_skill_definition,
 )
 from app.services.agent import agent as agent_module
+from app.services.agent import chat_runtime
 from app.services.agent.agent import AgentContext
-from app.services.agent.chat_runtime import _robot_fallback_response_content
+from app.services.agent.chat_runtime import (
+    ChatResponseResult,
+    _robot_fallback_response_content,
+    _should_send_robot_final_response_fallback,
+    collect_chat_response,
+)
 from app.services.agent.mcp.types import MCPTool
 from app.services.agent.prompts import builder as prompt_builder
 from app.services.agent.prompts.system import get_system_prompt
@@ -550,6 +556,123 @@ def test_robot_collect_response_fallback_accepts_mcp_tool_delivery() -> None:
         warnings=[],
         done_seen=True,
     ) == "Message sent to QQ group 123456 from chat context."
+
+
+def test_robot_plain_reply_bridge_fallback_requires_direct_wakeup() -> None:
+    direct_target = RobotReplyTarget(
+        target_type="group",
+        target_id="123456",
+        metadata={"mentioned_bot": True},
+    )
+    passive_target = RobotReplyTarget(
+        target_type="group",
+        target_id="123456",
+        metadata={},
+    )
+
+    assert _should_send_robot_final_response_fallback(
+        robot_id="robot-1",
+        robot_reply_target=direct_target,
+        content="pong",
+        robot_message_sent=False,
+    )
+    assert not _should_send_robot_final_response_fallback(
+        robot_id="robot-1",
+        robot_reply_target=passive_target,
+        content="pong",
+        robot_message_sent=False,
+    )
+    assert not _should_send_robot_final_response_fallback(
+        robot_id=None,
+        robot_reply_target=direct_target,
+        content="pong",
+        robot_message_sent=False,
+    )
+    assert not _should_send_robot_final_response_fallback(
+        robot_id="robot-1",
+        robot_reply_target=direct_target,
+        content="",
+        robot_message_sent=False,
+    )
+    assert not _should_send_robot_final_response_fallback(
+        robot_id="robot-1",
+        robot_reply_target=direct_target,
+        content="pong",
+        robot_message_sent=True,
+    )
+
+
+def test_robot_collect_response_sends_plain_final_reply_for_direct_mention(
+    monkeypatch,
+) -> None:
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.context_set = False
+            self.tools_requested = False
+            self.context_cleared = False
+
+        def set_robot_context(self, **kwargs) -> None:
+            self.context_set = True
+            self.robot_context = dict(kwargs)
+
+        async def ensure_robot_context_tools(self) -> None:
+            self.tools_requested = True
+
+        def clear_robot_context(self) -> None:
+            self.context_cleared = True
+
+    fake_agent = FakeAgent()
+
+    async def fake_prepare_chat_agent(*_args, **_kwargs):
+        return SimpleNamespace(name="handler"), SimpleNamespace(id="item-1"), fake_agent
+
+    def fake_generate_stream(**_kwargs):
+        yield 'data: {"type": "agent_response", "content": "pong"}\n\n'
+        yield 'data: {"done": true}\n\n'
+
+    sent: dict[str, object] = {}
+
+    def fake_send_message(robot_id, target, text) -> None:
+        sent["robot_id"] = robot_id
+        sent["target"] = target
+        sent["text"] = text
+
+    monkeypatch.setattr(chat_runtime, "prepare_chat_agent", fake_prepare_chat_agent)
+    monkeypatch.setattr("app.api.routes.chat.generate_stream", fake_generate_stream)
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+    reply_target = RobotReplyTarget(
+        target_type="group",
+        target_id="123456",
+        metadata={"mentioned_bot": True},
+    )
+
+    result = asyncio.run(
+        collect_chat_response(
+            session=SimpleNamespace(),
+            item_id="item-1",
+            current_user=SimpleNamespace(),
+            message="say something",
+            robot_id="robot-1",
+            robot_sender_key="onebot_v11:group:123456:u1",
+            robot_reply_target=reply_target,
+            return_result=True,
+        )
+    )
+
+    assert isinstance(result, ChatResponseResult)
+    assert result.content == "pong"
+    assert result.robot_message_sent is True
+    assert fake_agent.context_set is True
+    assert fake_agent.tools_requested is True
+    assert fake_agent.context_cleared is True
+    assert sent == {
+        "robot_id": "robot-1",
+        "target": reply_target,
+        "text": "pong",
+    }
 
 
 def test_robot_collect_response_fallback_accepts_warning_completion() -> None:

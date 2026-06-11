@@ -83,6 +83,86 @@ def _record_robot_no_final_response(
     )
 
 
+def _robot_reply_target_is_direct_wakeup(
+    robot_reply_target: RobotReplyTarget | None,
+) -> bool:
+    if robot_reply_target is None:
+        return False
+
+    metadata = robot_reply_target.metadata
+    return bool(metadata.get("mentioned_bot") or metadata.get("replied_to_bot"))
+
+
+def _should_send_robot_final_response_fallback(
+    *,
+    robot_id: str | None,
+    robot_reply_target: RobotReplyTarget | None,
+    content: str,
+    robot_message_sent: bool,
+) -> bool:
+    return (
+        bool(robot_id)
+        and robot_reply_target is not None
+        and bool(content.strip())
+        and not robot_message_sent
+        and _robot_reply_target_is_direct_wakeup(robot_reply_target)
+    )
+
+
+def _record_robot_final_response_fallback(
+    robot_id: str | None,
+    *,
+    robot_reply_target: RobotReplyTarget,
+    content: str,
+) -> None:
+    if not robot_id:
+        return
+
+    from app.plugins.robot.debug_log import preview_text, record_robot_event
+
+    metadata = robot_reply_target.metadata
+    record_robot_event(
+        robot_id,
+        direction="agent_internal",
+        event="agent_final_response_bridge_fallback",
+        message=preview_text(content),
+        payload={
+            "target_type": robot_reply_target.target_type,
+            "target_id": robot_reply_target.target_id,
+            "mentioned_bot": bool(metadata.get("mentioned_bot")),
+            "replied_to_bot": bool(metadata.get("replied_to_bot")),
+        },
+    )
+
+
+def _send_robot_final_response_fallback(
+    *,
+    robot_id: str | None,
+    robot_reply_target: RobotReplyTarget | None,
+    content: str,
+    robot_message_sent: bool,
+) -> bool:
+    if not _should_send_robot_final_response_fallback(
+        robot_id=robot_id,
+        robot_reply_target=robot_reply_target,
+        content=content,
+        robot_message_sent=robot_message_sent,
+    ):
+        return False
+
+    assert robot_reply_target is not None
+    from app.plugins.robot.bridge_client import robot_bridge_client
+
+    text = content.strip()
+    _record_robot_final_response_fallback(
+        robot_id,
+        robot_reply_target=robot_reply_target,
+        content=text,
+    )
+    robot_bridge_client.send_message(robot_id, robot_reply_target, text)
+    return True
+
+
 def get_item_handler_llm_config(
     session: Session,
     item_id: str,
@@ -194,6 +274,14 @@ async def collect_chat_response(
     robot_message_sent = bool(robot_id) and any(
         _is_robot_send_tool_result(result) for result in tool_results
     )
+    if content.strip() and not robot_message_sent:
+        robot_message_sent = _send_robot_final_response_fallback(
+            robot_id=robot_id,
+            robot_reply_target=robot_reply_target,
+            content=content,
+            robot_message_sent=robot_message_sent,
+        )
+
     if not content:
         fallback_content = _robot_fallback_response_content(
             robot_id=robot_id,
