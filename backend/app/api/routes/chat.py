@@ -27,6 +27,12 @@ from app.services.agent.history.chat import (
     append_chat_message,
     get_previous_assistant_response_before_latest_user_message,
 )
+from app.services.agent.integrations import (
+    extract_integration_context_targets,
+    get_delivery_retry_decision,
+    record_integration_context_targets,
+    record_integration_delivery_correction,
+)
 from app.services.agent.memory.vector_store import vector_store
 from app.services.agent.prompts.builder import build_chat_turn_messages
 from app.services.agent.prompts.policy import (
@@ -51,7 +57,6 @@ MAX_ITERATIONS = 10
 LOOP_DETECTION_WINDOW = 6
 LOOP_THRESHOLD = 3
 SILENT_TOOL_NAMES = {"mcp_local_read_terminal_log"}
-ROBOT_SEND_TOOL_NAME = "mcp_robot_send_message"
 AUTO_TASK_SOURCE = "agent_plan"
 AUTO_TASK_TTL_DAYS = 7
 MAX_AUTO_TASKS = 5
@@ -235,148 +240,6 @@ def _persist_and_broadcast_event(
 
 def _should_hide_tool_details(tool_name: str) -> bool:
     return tool_name in SILENT_TOOL_NAMES
-
-
-def _has_tool(tools: list[dict], tool_name: str) -> bool:
-    return any(tool.get("function", {}).get("name") == tool_name for tool in tools)
-
-
-def _has_robot_delivery_context(agent: "Agent", messages: list[dict[str, Any]]) -> bool:
-    context = getattr(agent, "_context", None)
-    if context is not None:
-        if getattr(context, "robot_id", ""):
-            return True
-        if getattr(context, "robot_known_targets", None):
-            return True
-
-    return any(
-        isinstance(message.get("content"), str)
-        and "[Robot message;" in message.get("content", "")
-        for message in messages
-    )
-
-
-def _should_retry_robot_delivery(
-    *,
-    agent: "Agent",
-    messages: list[dict[str, Any]],
-    tools: list[dict],
-    final_response: str,
-    retry_used: bool,
-) -> bool:
-    return (
-        bool(final_response.strip())
-        and not retry_used
-        and _has_tool(tools, ROBOT_SEND_TOOL_NAME)
-        and _has_robot_delivery_context(agent, messages)
-    )
-
-
-def _robot_delivery_correction_message(final_response: str) -> dict[str, str]:
-    try:
-        from app.plugins.robot.prompts import build_robot_delivery_reflection_prompt
-    except Exception:
-        reflection_prompt = ""
-    else:
-        reflection_prompt = build_robot_delivery_reflection_prompt(final_response)
-
-    if reflection_prompt:
-        return {"role": "system", "content": reflection_prompt}
-
-    return {
-        "role": "system",
-        "content": (
-            "Robot message delivery reflection:\n"
-            "You produced a final assistant response without calling "
-            "`mcp_robot_send_message`:\n"
-            f"{final_response.strip()}\n\n"
-            "Re-evaluate whether QQ should receive that text. If it should, "
-            "call `mcp_robot_send_message` now using the QQ conversation "
-            "visible in context. If not, respond with a concise internal note "
-            "explaining that no QQ message was sent. Do not output the "
-            "reflection itself."
-        ),
-    }
-
-
-def _record_robot_context_targets(agent: "Agent", item_id: str) -> None:
-    context = getattr(agent, "_context", None)
-    if context is None:
-        return
-
-    targets = getattr(context, "robot_known_targets", None) or []
-    if not targets:
-        return
-
-    robot_ids = {
-        str(target.get("robot_id") or "").strip()
-        for target in targets
-        if isinstance(target, dict) and str(target.get("robot_id") or "").strip()
-    }
-    if not robot_ids and getattr(context, "robot_id", ""):
-        robot_ids.add(str(context.robot_id))
-
-    if not robot_ids:
-        return
-
-    from app.plugins.robot.debug_log import record_robot_event
-
-    payload_targets = [
-        {
-            "conversation": target.get("conversation"),
-            "target_type": target.get("target_type"),
-            "target_id": target.get("target_id"),
-            "sender": target.get("sender"),
-        }
-        for target in targets
-        if isinstance(target, dict)
-    ]
-    for robot_id in robot_ids:
-        record_robot_event(
-            robot_id,
-            direction="agent_internal",
-            event="robot_context_targets",
-            message=f"{len(payload_targets)} QQ context target(s)",
-            payload={
-                "item_id": item_id,
-                "targets": payload_targets,
-            },
-        )
-
-
-def _record_robot_delivery_correction(
-    agent: "Agent",
-    item_id: str,
-    final_response: str,
-) -> None:
-    context = getattr(agent, "_context", None)
-    if context is None:
-        return
-
-    robot_ids = {
-        str(target.get("robot_id") or "").strip()
-        for target in getattr(context, "robot_known_targets", []) or []
-        if isinstance(target, dict) and str(target.get("robot_id") or "").strip()
-    }
-    if not robot_ids and getattr(context, "robot_id", ""):
-        robot_ids.add(str(context.robot_id))
-
-    if not robot_ids:
-        return
-
-    from app.plugins.robot.debug_log import preview_text, record_robot_event
-
-    for robot_id in robot_ids:
-        record_robot_event(
-            robot_id,
-            direction="agent_internal",
-            event="robot_delivery_correction",
-            message=preview_text(final_response),
-            payload={
-                "item_id": item_id,
-                "reason": "plain_final_response_without_robot_tool_call",
-            },
-        )
 
 
 def _format_tool_result(result: Any) -> str:
@@ -865,10 +728,8 @@ def generate_stream(
         message=message,
         query=message,
     )
-    set_known_targets = getattr(agent, "set_robot_known_targets_from_messages", None)
-    if callable(set_known_targets):
-        set_known_targets(messages)
-    _record_robot_context_targets(agent, item_id)
+    extract_integration_context_targets(agent, messages)
+    record_integration_context_targets(agent, item_id)
     matched_skills = agent.match_skills(message)
     tools = agent.get_tools_for_litellm()
 
@@ -892,7 +753,7 @@ def generate_stream(
 
     tool_call_history: list[tuple[str, str]] = []
     final_response = ""
-    robot_delivery_retry_used = False
+    delivery_retry_used_by_integration: dict[str, bool] = {}
 
     try:
         for _ in range(MAX_ITERATIONS):
@@ -1029,20 +890,21 @@ def generate_stream(
 
             if not ordered_tool_calls:
                 final_response = iteration_content.strip()
-                if _should_retry_robot_delivery(
+                delivery_retry_decision = get_delivery_retry_decision(
                     agent=agent,
                     messages=messages,
                     tools=tools,
                     final_response=final_response,
-                    retry_used=robot_delivery_retry_used,
-                ):
-                    robot_delivery_retry_used = True
-                    _record_robot_delivery_correction(
+                    retry_used_by_integration=delivery_retry_used_by_integration,
+                )
+                if delivery_retry_decision is not None:
+                    record_integration_delivery_correction(
                         agent,
-                        item_id,
-                        final_response,
+                        integration_name=delivery_retry_decision.integration_name,
+                        item_id=item_id,
+                        final_response=final_response,
                     )
-                    messages.append(_robot_delivery_correction_message(final_response))
+                    messages.append(delivery_retry_decision.correction_message)
                     continue
 
                 if final_response:

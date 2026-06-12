@@ -9,13 +9,14 @@ from app.api.routes import (
     login,
     mcp,
     memory,
+    plugins,
     private,
     skills,
     users,
     utils,
 )
 from app.core.config import settings
-from app.plugins.robot import include_robot_plugin_router
+from app.services.plugins import plugin_manager
 
 api_router = APIRouter()
 api_router.include_router(login.router)
@@ -29,7 +30,8 @@ api_router.include_router(skills.router)
 api_router.include_router(chat.router)
 api_router.include_router(memory.router, prefix="/memory", tags=["memory"])
 api_router.include_router(mcp.router)
-include_robot_plugin_router(api_router)
+api_router.include_router(plugins.router)
+plugin_manager.include_routers(api_router)
 
 
 if settings.ENVIRONMENT == "local":

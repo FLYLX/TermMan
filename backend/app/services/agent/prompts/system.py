@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from app.services.agent.integrations import build_integration_system_prompt
 from app.services.agent.skills import skill_loader
 
 if TYPE_CHECKING:
@@ -9,15 +10,6 @@ if TYPE_CHECKING:
 
 
 DEFAULT_SYSTEM_PROMPT = "You are a helpful AI assistant."
-
-
-def _robot_context_prompt(agent: Agent) -> str:
-    try:
-        from app.plugins.robot.prompts import build_robot_context_prompt
-    except Exception:
-        return ""
-
-    return build_robot_context_prompt(agent)
 
 
 def _unique_prompt_parts(parts: list[str]) -> list[str]:
@@ -35,7 +27,7 @@ def _unique_prompt_parts(parts: list[str]) -> list[str]:
 def get_system_prompt(agent: Agent | None = None) -> str:
     prompt_parts: list[str] = []
     has_custom_system_prompt = False
-    robot_prompt = ""
+    integration_prompt = ""
 
     if agent is not None:
         for skill in agent.get_skills():
@@ -43,7 +35,7 @@ def get_system_prompt(agent: Agent | None = None) -> str:
                 prompt_parts.append(skill.action.prompt)
                 has_custom_system_prompt = True
 
-        robot_prompt = _robot_context_prompt(agent)
+        integration_prompt = build_integration_system_prompt(agent)
 
     if not has_custom_system_prompt:
         system_skill = skill_loader.get("system_prompt")
@@ -51,8 +43,8 @@ def get_system_prompt(agent: Agent | None = None) -> str:
             prompt_parts.append(system_skill.action.prompt)
             has_custom_system_prompt = True
 
-    if robot_prompt:
-        prompt_parts.append(robot_prompt)
+    if integration_prompt:
+        prompt_parts.append(integration_prompt)
 
     unique_parts = _unique_prompt_parts(prompt_parts)
     if not unique_parts:

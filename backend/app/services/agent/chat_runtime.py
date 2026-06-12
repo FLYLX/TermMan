@@ -10,12 +10,21 @@ from sqlmodel import Session, select
 
 from app.models import Item, ItemHandler, ItemHandlerItem, User
 from app.services.agent.agent import agent_manager, item_handler_context
+from app.services.agent.integrations import (
+    clear_integration_chat_contexts,
+    ensure_integration_chat_context_tools,
+    fallback_is_delivery_result,
+    integration_fallback_response_content,
+    integration_message_sent,
+    record_integration_no_final_response,
+    send_integration_final_response_fallback,
+    setup_integration_chat_contexts,
+)
 
 logger = logging.getLogger(__name__)
 
 
 if TYPE_CHECKING:
-    from app.plugins.robot.contracts import RobotReplyTarget
     from app.services.agent.agent import Agent
 
 
@@ -23,161 +32,6 @@ if TYPE_CHECKING:
 class ChatResponseResult:
     content: str
     robot_message_sent: bool = False
-
-
-def _is_robot_send_tool_result(value: str) -> bool:
-    normalized = value.strip()
-    return (
-        normalized.startswith("Message sent to QQ ")
-        or normalized == "Message sent to current robot conversation."
-        or normalized.startswith("Broadcast sent to ")
-    )
-
-
-def _robot_fallback_response_content(
-    *,
-    robot_id: str | None,
-    tool_results: list[str],
-    warnings: list[str],
-    done_seen: bool,
-) -> str:
-    if not robot_id:
-        return ""
-
-    for result in reversed(tool_results):
-        normalized = result.strip()
-        if _is_robot_send_tool_result(normalized):
-            return normalized
-
-    for result in reversed(tool_results):
-        if result.strip():
-            return result.strip()
-
-    for warning in reversed(warnings):
-        if warning.strip():
-            return warning.strip()
-
-    if done_seen:
-        return "Agent completed without a final response."
-    return ""
-
-
-def _record_robot_no_final_response(
-    robot_id: str | None,
-    *,
-    fallback_content: str,
-    tool_results: list[str],
-    warnings: list[str],
-) -> None:
-    if not robot_id:
-        return
-
-    from app.plugins.robot.debug_log import preview_text, record_robot_event
-
-    record_robot_event(
-        robot_id,
-        direction="agent_internal",
-        event="agent_no_final_response",
-        message=preview_text(fallback_content),
-        payload={
-            "tool_result_count": len(tool_results),
-            "warning_count": len(warnings),
-            "used_fallback": bool(fallback_content),
-        },
-    )
-
-
-def _robot_reply_target_is_direct_wakeup(
-    robot_reply_target: RobotReplyTarget | None,
-) -> bool:
-    if robot_reply_target is None:
-        return False
-
-    metadata = robot_reply_target.metadata
-    return bool(metadata.get("mentioned_bot") or metadata.get("replied_to_bot"))
-
-
-def _should_send_robot_final_response_fallback(
-    *,
-    robot_id: str | None,
-    robot_reply_target: RobotReplyTarget | None,
-    content: str,
-    robot_message_sent: bool,
-) -> bool:
-    return (
-        bool(robot_id)
-        and robot_reply_target is not None
-        and bool(content.strip())
-        and not robot_message_sent
-        and _robot_reply_target_is_direct_wakeup(robot_reply_target)
-    )
-
-
-def _record_robot_final_response_fallback(
-    robot_id: str | None,
-    *,
-    robot_reply_target: RobotReplyTarget,
-    content: str,
-) -> None:
-    if not robot_id:
-        return
-
-    from app.plugins.robot.debug_log import preview_text, record_robot_event
-
-    metadata = robot_reply_target.metadata
-    record_robot_event(
-        robot_id,
-        direction="agent_internal",
-        event="agent_final_response_bridge_fallback",
-        message=preview_text(content),
-        payload={
-            "target_type": robot_reply_target.target_type,
-            "target_id": robot_reply_target.target_id,
-            "mentioned_bot": bool(metadata.get("mentioned_bot")),
-            "replied_to_bot": bool(metadata.get("replied_to_bot")),
-        },
-    )
-
-
-def _send_robot_final_response_fallback(
-    *,
-    robot_id: str | None,
-    robot_reply_target: RobotReplyTarget | None,
-    content: str,
-    robot_message_sent: bool,
-) -> bool:
-    if not _should_send_robot_final_response_fallback(
-        robot_id=robot_id,
-        robot_reply_target=robot_reply_target,
-        content=content,
-        robot_message_sent=robot_message_sent,
-    ):
-        return False
-
-    assert robot_reply_target is not None
-    from app.plugins.robot.bridge_client import robot_bridge_client
-
-    text = content.strip()
-    _record_robot_final_response_fallback(
-        robot_id,
-        robot_reply_target=robot_reply_target,
-        content=text,
-    )
-    robot_bridge_client.send_message(robot_id, robot_reply_target, text)
-    try:
-        from app.plugins.robot.conversation_memory import (
-            conversation_key_from_reply_target,
-            robot_conversation_memory,
-        )
-
-        robot_conversation_memory.append_assistant_message(
-            robot_id,
-            conversation_key_from_reply_target(robot_reply_target),
-            text,
-        )
-    except Exception as exc:
-        logger.warning("[ChatRuntime] Failed to write robot conversation memory: %s", exc)
-    return True
 
 
 def get_item_handler_llm_config(
@@ -240,20 +94,22 @@ async def collect_chat_response(
     history: list[Any] | None = None,
     robot_id: str | None = None,
     robot_sender_key: str | None = None,
-    robot_reply_target: RobotReplyTarget | None = None,
+    robot_reply_target: Any | None = None,
     return_result: bool = False,
 ) -> str | ChatResponseResult:
     from app.api.routes.chat import generate_stream
 
     handler, _, agent = await prepare_chat_agent(session, item_id, current_user)
 
+    integration_contexts: dict[str, dict[str, Any]] = {}
     if robot_id and robot_sender_key and robot_reply_target:
-        agent.set_robot_context(
-            robot_id=robot_id,
-            sender_key=robot_sender_key,
-            reply_target=robot_reply_target,
-        )
-        await agent.ensure_robot_context_tools()
+        integration_contexts["robot"] = {
+            "robot_id": robot_id,
+            "sender_key": robot_sender_key,
+            "reply_target": robot_reply_target,
+        }
+        setup_integration_chat_contexts(agent, integration_contexts)
+        await ensure_integration_chat_context_tools(agent, integration_contexts)
 
     content = ""
     error_message = ""
@@ -283,32 +139,29 @@ async def collect_chat_response(
             elif payload.get("done") is True:
                 done_seen = True
     finally:
-        if robot_id:
-            agent.clear_robot_context()
+        if integration_contexts:
+            clear_integration_chat_contexts(agent, integration_contexts)
 
     if error_message:
         raise HTTPException(status_code=500, detail=error_message)
-    robot_message_sent = bool(robot_id) and any(
-        _is_robot_send_tool_result(result) for result in tool_results
-    )
+    robot_message_sent = bool(integration_contexts) and integration_message_sent(tool_results)
     if content.strip() and not robot_message_sent:
-        robot_message_sent = _send_robot_final_response_fallback(
-            robot_id=robot_id,
-            robot_reply_target=robot_reply_target,
+        robot_message_sent = send_integration_final_response_fallback(
+            integration_contexts,
             content=content,
-            robot_message_sent=robot_message_sent,
+            message_sent=robot_message_sent,
         )
 
     if not content:
-        fallback_content = _robot_fallback_response_content(
-            robot_id=robot_id,
+        fallback_content = integration_fallback_response_content(
+            integration_contexts,
             tool_results=tool_results,
             warnings=warnings,
             done_seen=done_seen,
         )
         if fallback_content:
-            _record_robot_no_final_response(
-                robot_id,
+            record_integration_no_final_response(
+                integration_contexts,
                 fallback_content=fallback_content,
                 tool_results=tool_results,
                 warnings=warnings,
@@ -316,7 +169,7 @@ async def collect_chat_response(
             result = ChatResponseResult(
                 content=fallback_content,
                 robot_message_sent=robot_message_sent
-                or _is_robot_send_tool_result(fallback_content),
+                or fallback_is_delivery_result(fallback_content),
             )
             return result if return_result else result.content
         raise HTTPException(

@@ -3,6 +3,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from app.services.agent.integrations import get_builtin_mcp_server_factory
+
 from .client import MCPClient
 from .inprocess_client import InProcessMCPClient
 from .types import MCPServer, MCPTool
@@ -12,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class MCPServerManager:
     CONFIG_FILE = "mcp_servers.json"
-    BUILTIN_SERVERS = {"local", "robot"}
+    BUILTIN_SERVERS = {"local"}
 
     def __init__(self, config_dir: Path | None = None):
         if config_dir is None:
@@ -63,6 +65,9 @@ class MCPServerManager:
     def get_enabled_servers(self) -> list[MCPServer]:
         return [s for s in self._servers.values() if s.enabled]
 
+    def is_builtin_server_available(self, name: str) -> bool:
+        return name in self.BUILTIN_SERVERS or get_builtin_mcp_server_factory(name) is not None
+
     async def start_server(self, name: str) -> bool:
         server = self._servers.get(name)
         if not server:
@@ -75,7 +80,7 @@ class MCPServerManager:
                 logger.info(f"[MCPServerManager] Server '{name}' already running")
                 return True
 
-        if name in self.BUILTIN_SERVERS:
+        if self.is_builtin_server_available(name):
             return await self._start_builtin_server(name)
 
         logger.info(f"[MCPServerManager] Starting server '{name}': {server.command} {' '.join(server.args)}")
@@ -116,9 +121,9 @@ class MCPServerManager:
             logger.info(f"[MCPServerManager] Builtin server '{name}' started with {len(tools)} tools (JSON-RPC)")
             return True
 
-        if name == "robot":
-            from .robot_server import RobotMCPServer
-            instance = RobotMCPServer()
+        factory = get_builtin_mcp_server_factory(name)
+        if factory is not None:
+            instance = factory()
 
             async def handle_request(request: dict) -> dict:
                 return await instance._handle_request(request)
@@ -166,6 +171,12 @@ class MCPServerManager:
         return result
 
     def reload_config(self):
+        try:
+            from app.services.plugins import plugin_manager
+        except Exception as exc:
+            logger.debug("[MCPServerManager] Plugin reload unavailable: %s", exc)
+        else:
+            plugin_manager.reload()
         self._servers.clear()
         self._load_config()
 

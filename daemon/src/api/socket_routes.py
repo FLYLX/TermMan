@@ -547,8 +547,12 @@ async def on_terminal_write(sid, data):
         for conn in conns:
             if conn.sid == sid:
                 terminal = terminal_manager.get_terminal(item_uuid)
-                if terminal:
-                    terminal.write(command)
+                if terminal and terminal.write(command):
+                    socket_service.sync_broadcast(
+                        item_uuid,
+                        "stream",
+                        {"stdin": command, "stdout": "", "stderr": "", "source": "browser"},
+                    )
                 return
     
     room_listen_conns = daemon_conn_pool.get_all_backend_room_listen_conns()

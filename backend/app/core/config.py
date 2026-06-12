@@ -101,6 +101,10 @@ class Settings(BaseSettings):
     ROBOT_REPLY_CONTEXT_WINDOW_SECONDS: int = 30
     ROBOT_CONVERSATION_MEMORY_DIR: str = str(BACKEND_DIR.parent / ".runtime" / "robot_conversation_memory")
     ROBOT_CONVERSATION_MEMORY_MAX_BYTES: int = 1024 * 1024
+    TERMINAL_WS_DEFAULT_HOST: str = "0.0.0.0"
+    TERMINAL_WS_DEFAULT_PORT_START: int = 7100
+    TERMINAL_WS_DEFAULT_PORT_END: int = 7199
+    TERMINAL_WS_DEFAULT_HEARTBEAT_INTERVAL_SECONDS: float = 30.0
 
     @model_validator(mode="after")
     def _apply_robot_bridge_defaults(self) -> Self:

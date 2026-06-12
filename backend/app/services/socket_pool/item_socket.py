@@ -1,6 +1,6 @@
-from typing import Any
 import logging
 import threading
+from typing import Any
 
 import socketio
 
@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 class ItemSocket:
     """
     代表单个终端的Socket连接 - 按 UPDATE.MD 规范
-    
+
     支持两种订阅者类型：
     1. backend: 永久订阅者，监听输出写日志
     2. browser: 临时订阅者，实时渲染终端
-    
+
     事件流：
     ItemSocket 接收事件 -> 发布到 SubscriptionCenter -> 订阅者收到通知
     """
@@ -64,14 +64,14 @@ class ItemSocket:
             stdout = data.get("stdout", "")
             stderr = data.get("stderr", "")
             stdin = data.get("stdin", "")
-            
+
             if stdout:
                 logger.debug(f"[ItemSocket] Received stdout for item={self.item_uuid}: {len(stdout)} chars")
             if stderr:
                 logger.debug(f"[ItemSocket] Received stderr for item={self.item_uuid}: {len(stderr)} chars")
             if stdin:
                 logger.debug(f"[ItemSocket] Received stdin for item={self.item_uuid}: {len(stdin)} chars")
-            
+
             subscription_center.publish_stream(self.item_uuid, data)
 
     def connect(self, api_key: str, timeout: float = 10.0) -> bool:
@@ -79,9 +79,9 @@ class ItemSocket:
             self._connected_event.clear()
             self._connect_error = None
             self.status = TerminalStatus.STARTING
-            
+
             logger.info(f"[ItemSocket] Connecting to {self.daemon_url} for item {self.item_uuid}, user {self.user_uuid}, type {self.subscriber_type}")
-            
+
             self.sio.connect(
                 self.daemon_url,
                 transports=["websocket"],
@@ -90,17 +90,17 @@ class ItemSocket:
                 wait_timeout=timeout
             )
 
-            logger.info(f"[ItemSocket] Socket connected, emitting terminal_connect")
-            
+            logger.info("[ItemSocket] Socket connected, emitting terminal_connect")
+
             self.sio.emit(ProtocolEvents.TERMINAL_CONNECT, {
                 "item_uuid": self.item_uuid,
                 "token": self.token,
                 "user_uuid": self.user_uuid,
                 "subscriber_type": self.subscriber_type
             })
-            
+
             logger.info(f"[ItemSocket] Waiting for terminal_connected event (timeout={timeout}s)")
-            
+
             if self._connected_event.wait(timeout=timeout):
                 if self._connect_error:
                     logger.error(f"[ItemSocket] Connection rejected: {self._connect_error}")
@@ -109,7 +109,7 @@ class ItemSocket:
                 logger.info(f"[ItemSocket] Connection confirmed for item={self.item_uuid}")
                 return True
             else:
-                logger.error(f"[ItemSocket] Connection timeout waiting for terminal_connected")
+                logger.error("[ItemSocket] Connection timeout waiting for terminal_connected")
                 self.status = TerminalStatus.ERROR
                 return False
 
@@ -137,11 +137,17 @@ class ItemSocket:
             logger.error(f"[ItemSocket] emit error: {e}")
             return False
 
-    def write(self, command: str) -> bool:
+    def write(self, command: str, *, source: str = "backend") -> bool:
         logger.info(f"[ItemSocket] write() called: item={self.item_uuid}, command={command[:50]}...")
-        return self.emit(ProtocolEvents.WRITE, {
+        sent = self.emit(ProtocolEvents.WRITE, {
             "command": command
         })
+        if sent:
+            subscription_center.publish_stream(
+                self.item_uuid,
+                {"stdin": command, "stdout": "", "stderr": "", "source": source},
+            )
+        return sent
 
     def is_connected(self) -> bool:
         return self.status == TerminalStatus.RUNNING

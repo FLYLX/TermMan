@@ -38,15 +38,15 @@ class SkillLoader:
 
     def _load_builtin_plugin_skills(self) -> None:
         try:
-            from app.plugins.robot.prompts import build_robot_messaging_skill_definition
+            from app.services.agent.integrations import get_builtin_skill_definitions
         except Exception as exc:
-            logger.debug("[SkillLoader] Robot plugin skill unavailable: %s", exc)
+            logger.debug("[SkillLoader] Plugin skills unavailable: %s", exc)
             return
 
-        skill = build_robot_messaging_skill_definition()
-        if skill is None or skill.skill_id in self._skills:
-            return
-        self._skills[skill.skill_id] = skill
+        for skill in get_builtin_skill_definitions():
+            if skill is None or skill.skill_id in self._skills:
+                continue
+            self._skills[skill.skill_id] = skill
 
     def _load_builtin_style_skills(self) -> None:
         try:
@@ -148,6 +148,12 @@ class SkillLoader:
 
     def reload(self):
         self._skills.clear()
+        try:
+            from app.services.plugins import plugin_manager
+        except Exception as exc:
+            logger.debug("[SkillLoader] Plugin reload unavailable: %s", exc)
+        else:
+            plugin_manager.reload()
         self._load_all()
 
 

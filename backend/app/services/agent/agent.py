@@ -4,15 +4,12 @@ import logging
 import re
 import threading
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.models import ItemHandler
-from app.services.agent.mcp.robot_context import (
-    RobotMCPContext,
-    build_robot_reply_context_summary,
-    extract_robot_context_targets_from_text,
-    register_robot_mcp_context,
-    unregister_robot_mcp_context,
+from app.services.agent.integrations import (
+    get_agent_integration,
+    inject_integration_tool_args,
 )
 from app.services.agent.mcp.server_manager import mcp_server_manager
 from app.services.agent.skills.definition import SkillDefinition
@@ -21,12 +18,9 @@ from app.services.filters.output_filter import OutputFilter, OutputFilterConfig
 
 if TYPE_CHECKING:
     from app.models import Item
-    from app.plugins.robot.contracts import RobotReplyTarget
     from app.services.agent.mcp.types import MCPTool
 
 logger = logging.getLogger(__name__)
-
-ROBOT_MCP_SERVER_NAME = "robot"
 
 
 @dataclass
@@ -41,15 +35,75 @@ class AgentContext:
     enabled_knowledge_files: list[str] = field(default_factory=list)
     output_filter_enabled: bool = False
     output_filter_rules: dict = field(default_factory=dict)
-    robot_id: str = ""
-    robot_sender_key: str = ""
-    robot_context_token: str = ""
-    robot_conversation_key: str = ""
-    robot_reply_context_summary: str = ""
-    robot_mcp_server_transient: bool = False
+    integration_contexts: dict[str, dict[str, Any]] = field(default_factory=dict)
     current_user_id: str = ""
     current_user_is_superuser: bool = False
-    robot_known_targets: list[dict[str, str]] = field(default_factory=list)
+
+    def _integration_state(self, name: str) -> dict[str, Any]:
+        return self.integration_contexts.setdefault(name, {})
+
+    def _get_robot_value(self, key: str, default: Any = "") -> Any:
+        return self.integration_contexts.get("robot", {}).get(key, default)
+
+    def _set_robot_value(self, key: str, value: Any) -> None:
+        self._integration_state("robot")[key] = value
+
+    @property
+    def robot_id(self) -> str:
+        return str(self._get_robot_value("robot_id", "") or "")
+
+    @robot_id.setter
+    def robot_id(self, value: str) -> None:
+        self._set_robot_value("robot_id", value)
+
+    @property
+    def robot_sender_key(self) -> str:
+        return str(self._get_robot_value("sender_key", "") or "")
+
+    @robot_sender_key.setter
+    def robot_sender_key(self, value: str) -> None:
+        self._set_robot_value("sender_key", value)
+
+    @property
+    def robot_context_token(self) -> str:
+        return str(self._get_robot_value("context_token", "") or "")
+
+    @robot_context_token.setter
+    def robot_context_token(self, value: str) -> None:
+        self._set_robot_value("context_token", value)
+
+    @property
+    def robot_conversation_key(self) -> str:
+        return str(self._get_robot_value("conversation_key", "") or "")
+
+    @robot_conversation_key.setter
+    def robot_conversation_key(self, value: str) -> None:
+        self._set_robot_value("conversation_key", value)
+
+    @property
+    def robot_reply_context_summary(self) -> str:
+        return str(self._get_robot_value("reply_context_summary", "") or "")
+
+    @robot_reply_context_summary.setter
+    def robot_reply_context_summary(self, value: str) -> None:
+        self._set_robot_value("reply_context_summary", value)
+
+    @property
+    def robot_mcp_server_transient(self) -> bool:
+        return bool(self._get_robot_value("mcp_server_transient", False))
+
+    @robot_mcp_server_transient.setter
+    def robot_mcp_server_transient(self, value: bool) -> None:
+        self._set_robot_value("mcp_server_transient", bool(value))
+
+    @property
+    def robot_known_targets(self) -> list[dict[str, str]]:
+        value = self._get_robot_value("known_targets", [])
+        return value if isinstance(value, list) else []
+
+    @robot_known_targets.setter
+    def robot_known_targets(self, value: list[dict[str, str]]) -> None:
+        self._set_robot_value("known_targets", value)
 
 
 class Agent:
@@ -147,6 +201,11 @@ class Agent:
         for server_name in self._mcp_servers:
             if mcp_server_manager.is_server_running(server_name):
                 running_servers.append(server_name)
+            elif mcp_server_manager.is_builtin_server_available(server_name):
+                if await mcp_server_manager.start_server(server_name):
+                    running_servers.append(server_name)
+                else:
+                    logger.warning(f"[Agent] MCP server '{server_name}' not running")
             else:
                 logger.warning(f"[Agent] MCP server '{server_name}' not running")
 
@@ -177,128 +236,52 @@ class Agent:
             self._context.current_user_is_superuser = is_superuser
 
     def set_robot_known_targets_from_messages(self, messages: list[dict]) -> None:
-        if not self._context:
+        integration = get_agent_integration("robot")
+        if integration is None:
             return
-
-        targets_by_key: dict[str, dict[str, str]] = {}
-        for message in messages:
-            content = message.get("content") if isinstance(message, dict) else ""
-            if not isinstance(content, str):
-                continue
-            for target in extract_robot_context_targets_from_text(content):
-                target_data = dict(target)
-                if self._context.robot_id and not target_data.get("robot_id"):
-                    target_data["robot_id"] = self._context.robot_id
-                key = f"{target_data.get('target_type')}:{target_data.get('target_id')}"
-                targets_by_key[key] = target_data
-
-        self._context.robot_known_targets = list(targets_by_key.values())
+        integration.extract_context_targets(self, messages)
 
     def set_robot_context(
         self,
         *,
         robot_id: str,
         sender_key: str,
-        reply_target: RobotReplyTarget,
+        reply_target: Any,
     ) -> None:
-        if self._context:
-            self.clear_robot_context()
-            context = RobotMCPContext(
-                robot_id=robot_id,
-                sender_key=sender_key,
-                reply_target=reply_target.model_copy(deep=True),
-            )
-            self._context.robot_id = robot_id
-            self._context.robot_sender_key = sender_key
-            self._context.robot_conversation_key = self._robot_conversation_key(
-                reply_target,
-                sender_key,
-            )
-            self._context.robot_context_token = register_robot_mcp_context(context)
-            self._context.robot_reply_context_summary = (
-                build_robot_reply_context_summary(reply_target, sender_key)
-            )
-            self._context.robot_mcp_server_transient = False
+        integration = get_agent_integration("robot")
+        if integration is None:
+            return
+        integration.setup_chat_context(
+            self,
+            {
+                "robot_id": robot_id,
+                "sender_key": sender_key,
+                "reply_target": reply_target,
+            },
+        )
 
     async def ensure_robot_context_tools(self) -> None:
-        if not self._context or not self._context.robot_id:
+        integration = get_agent_integration("robot")
+        if integration is None:
             return
-
-        await self.ensure_robot_messaging_tools()
+        await integration.ensure_chat_context_tools(self, {})
 
     async def ensure_robot_messaging_tools(self) -> bool:
-        if not self._context:
+        integration = get_agent_integration("robot")
+        ensure_messaging_tools = getattr(integration, "_ensure_messaging_tools", None)
+        if not callable(ensure_messaging_tools):
             return False
-
-        added_transient = False
-        if ROBOT_MCP_SERVER_NAME not in self._mcp_servers:
-            self._mcp_servers.append(ROBOT_MCP_SERVER_NAME)
-            self._context.robot_mcp_server_transient = True
-            added_transient = True
-
-        if not mcp_server_manager.is_server_running(ROBOT_MCP_SERVER_NAME):
-            started = await mcp_server_manager.start_server(ROBOT_MCP_SERVER_NAME)
-            if not started:
-                logger.warning(
-                    "[Agent] Robot MCP server is not available for handler %s",
-                    self.handler_id,
-                )
-                return False
-
-        self._load_mcp_tools()
-        return added_transient
+        return bool(await ensure_messaging_tools(self))
 
     def clear_transient_robot_messaging_tools(self) -> None:
-        if not self._context or not self._context.robot_mcp_server_transient:
-            return
-        if self._context.robot_id:
-            return
-
-        self._context.robot_mcp_server_transient = False
-        if ROBOT_MCP_SERVER_NAME in self._mcp_servers:
-            self._mcp_servers = [
-                server_name
-                for server_name in self._mcp_servers
-                if server_name != ROBOT_MCP_SERVER_NAME
-            ]
-            self._load_mcp_tools()
+        integration = get_agent_integration("robot")
+        if integration is not None:
+            integration.clear_terminal_alert_tools(self)
 
     def clear_robot_context(self) -> None:
-        if self._context:
-            should_remove_robot_mcp = self._context.robot_mcp_server_transient
-            unregister_robot_mcp_context(self._context.robot_context_token)
-            self._context.robot_id = ""
-            self._context.robot_sender_key = ""
-            self._context.robot_conversation_key = ""
-            self._context.robot_context_token = ""
-            self._context.robot_reply_context_summary = ""
-            self._context.robot_mcp_server_transient = False
-            if should_remove_robot_mcp and ROBOT_MCP_SERVER_NAME in self._mcp_servers:
-                self._mcp_servers = [
-                    server_name
-                    for server_name in self._mcp_servers
-                    if server_name != ROBOT_MCP_SERVER_NAME
-                ]
-                self._load_mcp_tools()
-
-    def _robot_conversation_key(
-        self,
-        reply_target: RobotReplyTarget,
-        sender_key: str,
-    ) -> str:
-        metadata = reply_target.metadata if reply_target else {}
-        conversation = metadata.get("conversation") if isinstance(metadata, dict) else {}
-        if isinstance(conversation, dict):
-            conversation_type = str(conversation.get("type") or "").strip().lower()
-            conversation_id = str(conversation.get("id") or "").strip()
-            if conversation_type and conversation_id:
-                return f"{conversation_type}:{conversation_id}"
-
-        summary = build_robot_reply_context_summary(reply_target, sender_key)
-        match = re.search(r"^- conversation:\s*(.+)$", summary, flags=re.MULTILINE)
-        if match:
-            return match.group(1).strip()
-        return sender_key
+        integration = get_agent_integration("robot")
+        if integration is not None:
+            integration.clear_chat_context(self, {})
 
     def _get_output_filter(self) -> OutputFilter | None:
         if not self._context or not self._context.output_filter_enabled:
@@ -402,18 +385,12 @@ class Agent:
         if server_name not in self._mcp_servers:
             return {"success": False, "error": f"MCP server '{server_name}' not available for this agent"}
 
-        if server_name == ROBOT_MCP_SERVER_NAME:
-            args.pop("_robot_context_token", None)
-            args.pop("_termman_user_id", None)
-            args.pop("_termman_is_superuser", None)
-            args.pop("_robot_known_targets", None)
-            if self._context and self._context.current_user_id:
-                args["_termman_user_id"] = self._context.current_user_id
-                args["_termman_is_superuser"] = self._context.current_user_is_superuser
-            if self._context and self._context.robot_known_targets:
-                args["_robot_known_targets"] = [
-                    dict(target) for target in self._context.robot_known_targets
-                ]
+        inject_integration_tool_args(
+            self,
+            server_name=server_name,
+            tool_name=actual_tool_name,
+            args=args,
+        )
 
         for tool in self._mcp_tools:
             if tool.get("function", {}).get("name") == tool_name:
@@ -422,13 +399,6 @@ class Agent:
                 if "item_id" in properties and "item_id" not in args:
                     if self._context and self._context.item_id:
                         args["item_id"] = self._context.item_id
-                if (
-                    server_name == ROBOT_MCP_SERVER_NAME
-                    and self._context
-                    and self._context.robot_id
-                    and self._context.robot_context_token
-                ):
-                    args["_robot_context_token"] = self._context.robot_context_token
                 break
 
         if "command" in args:

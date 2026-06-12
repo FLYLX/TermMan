@@ -9,9 +9,13 @@ import {
   Loader2,
   Play,
   Plug,
+  RefreshCw,
   Send,
+  Server,
   Shield,
+  Square,
   Terminal,
+  Trash2,
   Users,
   WifiOff,
 } from "lucide-react"
@@ -22,6 +26,7 @@ import {
   ItemsService,
   type ItemUpdate,
 } from "@/client"
+import { OpenAPI } from "@/client/core/OpenAPI"
 import { ChatPanel } from "@/components/Items/ChatPanel"
 import { FilterGeneratorCard } from "@/components/Items/FilterGeneratorCard"
 import {
@@ -47,6 +52,7 @@ import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
 import { useTerminalConnection } from "@/hooks/useTerminalConnection"
 import { getStatusLabel } from "@/lib/i18n"
+import { getPluginsQueryOptions, isPluginEnabled } from "@/lib/plugins-api"
 
 type ItemWithExtras = ItemPublic & {
   daemon_url?: string
@@ -64,11 +70,107 @@ type ItemsResponse = {
 
 type ItemDetailTab =
   | "terminal"
+  | "websocket"
   | "files"
   | "handlers"
   | "filters"
   | "config"
   | "memory"
+
+type TerminalWebSocketServerStatus = {
+  server_id: string
+  item_id: string
+  name: string
+  host: string
+  port: number
+  token: string
+  heartbeat_interval: number
+  message_format: "json"
+  running: boolean
+  client_count: number
+  url: string
+}
+
+type TerminalWebSocketServerListResponse = {
+  servers: TerminalWebSocketServerStatus[]
+}
+
+type TerminalWebSocketServerForm = {
+  name: string
+  host: string
+  port: string
+  token: string
+  heartbeat_interval: string
+  message_format: "json"
+}
+
+function createTerminalWsForm(item: ItemWithExtras): TerminalWebSocketServerForm {
+  return {
+    name: `${item.title} WS`,
+    host: "0.0.0.0",
+    port: "",
+    token: "",
+    heartbeat_interval: "30",
+    message_format: "json",
+  }
+}
+
+function getTerminalWsConnectionUrl(
+  server: TerminalWebSocketServerStatus,
+): string {
+  const host =
+    server.host === "0.0.0.0" || server.host === "::"
+      ? getTerminalWsPublicHost()
+      : server.host
+  return `ws://${host}:${server.port}/?token=${encodeURIComponent(server.token)}`
+}
+
+function getTerminalWsPublicHost(): string {
+  try {
+    const apiUrl = new URL(OpenAPI.BASE || window.location.origin, window.location.origin)
+    if (apiUrl.hostname) {
+      return apiUrl.hostname
+    }
+  } catch {
+    // Fall through to the browser location below.
+  }
+  return window.location.hostname || "127.0.0.1"
+}
+
+async function requestTerminalWebSocket<T>(
+  itemId: string,
+  path = "",
+  init: RequestInit = {},
+): Promise<T> {
+  const token = localStorage.getItem("access_token") || ""
+  const headers = new Headers(init.headers)
+  headers.set("Authorization", `Bearer ${token}`)
+  if (init.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json")
+  }
+
+  const response = await fetch(
+    `${OpenAPI.BASE}/api/v1/items/${itemId}/websocket-servers${path}`,
+    {
+      ...init,
+      headers,
+    },
+  )
+  const contentType = response.headers.get("content-type") || ""
+  const payload = contentType.includes("application/json")
+    ? await response.json().catch(() => undefined)
+    : await response.text().catch(() => "")
+
+  if (!response.ok) {
+    const detail =
+      payload && typeof payload === "object" && "detail" in payload
+        ? String((payload as { detail?: unknown }).detail)
+        : String(payload || `HTTP ${response.status}`)
+    throw new Error(detail)
+  }
+
+  return payload as T
+}
 
 function createDefaultInputRules(): Record<string, FilterRule> {
   return {
@@ -374,6 +476,15 @@ function ItemDetailPage({
   const queryClient = useQueryClient()
   const { t, locale, localeTag } = useI18n()
   const { showSuccessToast, showErrorToast } = useCustomToast()
+  const [copiedText, copy] = useCopyToClipboard()
+  const { data: plugins } = useQuery({
+    ...getPluginsQueryOptions(),
+    enabled: Boolean(item.id),
+  })
+  const terminalWsPluginEnabled = isPluginEnabled(
+    plugins,
+    "termman.terminal_ws",
+  )
   const [command, setCommand] = useState("")
   const [activeTab, setActiveTab] = useState<ItemDetailTab>("terminal")
   const [visitedTabs, setVisitedTabs] = useState<Set<ItemDetailTab>>(
@@ -444,6 +555,19 @@ function ItemDetailPage({
     working_directory: item.working_directory ?? "",
     log_max_size_mb: item.log_max_size_mb?.toString() ?? "100",
   })
+  const [terminalWsServers, setTerminalWsServers] = useState<
+    TerminalWebSocketServerStatus[]
+  >([])
+  const [terminalWsForm, setTerminalWsForm] = useState(() =>
+    createTerminalWsForm(item),
+  )
+  const [isLoadingTerminalWsServers, setIsLoadingTerminalWsServers] =
+    useState(false)
+  const [isCreatingTerminalWsServer, setIsCreatingTerminalWsServer] =
+    useState(false)
+  const [terminalWsActionId, setTerminalWsActionId] = useState<string | null>(
+    null,
+  )
   const activateTab = (value: string) => {
     const nextTab = value as ItemDetailTab
     setActiveTab(nextTab)
@@ -461,6 +585,8 @@ function ItemDetailPage({
   useEffect(() => {
     setActiveTab("terminal")
     setVisitedTabs(new Set<ItemDetailTab>(["terminal"]))
+    setTerminalWsForm(createTerminalWsForm(item))
+    setTerminalWsServers([])
   }, [item.id])
 
   useEffect(() => {
@@ -619,6 +745,137 @@ function ItemDetailPage({
       setCommand("")
     }
   }
+
+  const loadTerminalWsServers = async () => {
+    if (!terminalWsPluginEnabled) {
+      setTerminalWsServers([])
+      return
+    }
+    setIsLoadingTerminalWsServers(true)
+    try {
+      const data =
+        await requestTerminalWebSocket<TerminalWebSocketServerListResponse>(
+          item.id,
+        )
+      setTerminalWsServers(data.servers || [])
+    } catch (error) {
+      showErrorToast(
+        error instanceof Error
+          ? error.message
+          : "Failed to load WebSocket servers",
+      )
+    } finally {
+      setIsLoadingTerminalWsServers(false)
+    }
+  }
+
+  const handleCreateTerminalWsServer = async () => {
+    const name = terminalWsForm.name.trim()
+    if (!name) {
+      showErrorToast("Name is required")
+      return
+    }
+
+    const port = terminalWsForm.port.trim()
+      ? Number(terminalWsForm.port.trim())
+      : null
+    if (port !== null && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+      showErrorToast("Port must be 1-65535")
+      return
+    }
+
+    const heartbeatInterval = terminalWsForm.heartbeat_interval.trim()
+      ? Number(terminalWsForm.heartbeat_interval.trim())
+      : null
+    if (
+      heartbeatInterval !== null &&
+      (!Number.isFinite(heartbeatInterval) ||
+        heartbeatInterval < 1 ||
+        heartbeatInterval > 300)
+    ) {
+      showErrorToast("Heartbeat must be 1-300 seconds")
+      return
+    }
+
+    setIsCreatingTerminalWsServer(true)
+    try {
+      await requestTerminalWebSocket<TerminalWebSocketServerStatus>(item.id, "", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          host: terminalWsForm.host.trim() || null,
+          port,
+          token: terminalWsForm.token.trim() || null,
+          heartbeat_interval: heartbeatInterval,
+          message_format: terminalWsForm.message_format,
+        }),
+      })
+      setTerminalWsForm(createTerminalWsForm(item))
+      await loadTerminalWsServers()
+      showSuccessToast("WebSocket server created")
+    } catch (error) {
+      showErrorToast(
+        error instanceof Error
+          ? error.message
+          : "Failed to create WebSocket server",
+      )
+    } finally {
+      setIsCreatingTerminalWsServer(false)
+    }
+  }
+
+  const handleTerminalWsAction = async (
+    serverId: string,
+    action: "start" | "stop" | "delete",
+  ) => {
+    setTerminalWsActionId(serverId)
+    try {
+      if (action === "delete") {
+        await requestTerminalWebSocket<{ success: boolean }>(
+          item.id,
+          `/${serverId}`,
+          { method: "DELETE" },
+        )
+      } else {
+        await requestTerminalWebSocket<TerminalWebSocketServerStatus>(
+          item.id,
+          `/${serverId}/${action}`,
+          { method: "POST" },
+        )
+      }
+      await loadTerminalWsServers()
+      const actionLabel =
+        action === "start" ? "started" : action === "stop" ? "stopped" : "deleted"
+      showSuccessToast(`WebSocket server ${actionLabel}`)
+    } catch (error) {
+      showErrorToast(
+        error instanceof Error
+          ? error.message
+          : `Failed to ${action} WebSocket server`,
+      )
+    } finally {
+      setTerminalWsActionId(null)
+    }
+  }
+
+  const handleCopyTerminalWsUrl = async (value: string) => {
+    await copy(value)
+    showSuccessToast("Copied")
+  }
+
+  useEffect(() => {
+    if (!terminalWsPluginEnabled) {
+      setTerminalWsServers([])
+      return
+    }
+    void loadTerminalWsServers()
+  }, [item.id, terminalWsPluginEnabled])
+
+  useEffect(() => {
+    if (!terminalWsPluginEnabled && activeTab === "websocket") {
+      setActiveTab("terminal")
+    }
+  }, [activeTab, terminalWsPluginEnabled])
 
   const resetConfigForm = () => {
     setConfigForm({
@@ -954,6 +1211,11 @@ function ItemDetailPage({
                 <TabsTrigger value="terminal">
                   {t("items.detail.terminal")}
                 </TabsTrigger>
+                {terminalWsPluginEnabled && (
+                  <TabsTrigger value="websocket">
+                    WebSocket Server
+                  </TabsTrigger>
+                )}
                 <TabsTrigger value="files">
                   {t("items.detail.files")}
                 </TabsTrigger>
@@ -972,7 +1234,277 @@ function ItemDetailPage({
               </TabsList>
             </div>
 
-            <TabsContent value="terminal">
+            {terminalWsPluginEnabled && (
+              <TabsContent value="websocket" className="space-y-4">
+                {hasVisitedTab("websocket") ? (
+                  <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex items-start gap-2">
+                    <Server className="mt-1 size-5 text-blue-500" />
+                    <div>
+                      <h2 className="text-base font-semibold">
+                        WebSocket Server
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        {item.title}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-fit px-3 text-xs"
+                    onClick={() => void loadTerminalWsServers()}
+                    disabled={isLoadingTerminalWsServers}
+                  >
+                    <RefreshCw
+                      className={`size-3.5 ${isLoadingTerminalWsServers ? "animate-spin" : ""}`}
+                    />
+                    Refresh
+                  </Button>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-12">
+                  <div className="space-y-1.5 xl:col-span-3">
+                    <Label htmlFor="terminal-ws-name">Name</Label>
+                    <Input
+                      id="terminal-ws-name"
+                      value={terminalWsForm.name}
+                      onChange={(event) =>
+                        setTerminalWsForm((current) => ({
+                          ...current,
+                          name: event.target.value,
+                        }))
+                      }
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1.5 xl:col-span-2">
+                    <Label htmlFor="terminal-ws-host">Host</Label>
+                    <Input
+                      id="terminal-ws-host"
+                      value={terminalWsForm.host}
+                      onChange={(event) =>
+                        setTerminalWsForm((current) => ({
+                          ...current,
+                          host: event.target.value,
+                        }))
+                      }
+                      placeholder="0.0.0.0"
+                      className="h-9 font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1.5 xl:col-span-1">
+                    <Label htmlFor="terminal-ws-port">Port</Label>
+                    <Input
+                      id="terminal-ws-port"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={terminalWsForm.port}
+                      onChange={(event) =>
+                        setTerminalWsForm((current) => ({
+                          ...current,
+                          port: event.target.value,
+                        }))
+                      }
+                      placeholder="auto"
+                      className="h-9 font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1.5 xl:col-span-3">
+                    <Label htmlFor="terminal-ws-token">Token</Label>
+                    <Input
+                      id="terminal-ws-token"
+                      value={terminalWsForm.token}
+                      onChange={(event) =>
+                        setTerminalWsForm((current) => ({
+                          ...current,
+                          token: event.target.value,
+                        }))
+                      }
+                      placeholder="auto"
+                      className="h-9 font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1.5 xl:col-span-1">
+                    <Label htmlFor="terminal-ws-heartbeat">Heartbeat</Label>
+                    <Input
+                      id="terminal-ws-heartbeat"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={terminalWsForm.heartbeat_interval}
+                      onChange={(event) =>
+                        setTerminalWsForm((current) => ({
+                          ...current,
+                          heartbeat_interval: event.target.value,
+                        }))
+                      }
+                      className="h-9 font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1.5 xl:col-span-1">
+                    <Label htmlFor="terminal-ws-format">Format</Label>
+                    <Input
+                      id="terminal-ws-format"
+                      value={terminalWsForm.message_format}
+                      disabled
+                      className="h-9 font-mono"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    className="h-9 md:self-end xl:col-span-1"
+                    onClick={() => void handleCreateTerminalWsServer()}
+                    disabled={isCreatingTerminalWsServer}
+                  >
+                    {isCreatingTerminalWsServer ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Server className="size-4" />
+                    )}
+                    Create
+                  </Button>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {isLoadingTerminalWsServers ? (
+                    <div className="flex h-20 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                      Loading
+                    </div>
+                  ) : terminalWsServers.length === 0 ? (
+                    <div className="flex h-20 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                      No WebSocket servers
+                    </div>
+                  ) : (
+                    terminalWsServers.map((server) => {
+                      const connectionUrl = getTerminalWsConnectionUrl(server)
+                      return (
+                        <div
+                          key={server.server_id}
+                          className="rounded-lg border bg-muted/20 p-3"
+                        >
+                        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium">
+                                {server.name}
+                              </span>
+                              <Badge
+                                className={
+                                  server.running
+                                    ? "border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400"
+                                    : "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
+                                }
+                              >
+                                {server.running ? "running" : "stopped"}
+                              </Badge>
+                              <Badge variant="secondary">
+                                {server.client_count} clients
+                              </Badge>
+                            </div>
+                            <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
+                              <span className="truncate">
+                                Host:{" "}
+                                <span className="font-mono text-foreground/80">
+                                  {server.host}
+                                </span>
+                              </span>
+                              <span>
+                                Port:{" "}
+                                <span className="font-mono text-foreground/80">
+                                  {server.port}
+                                </span>
+                              </span>
+                              <span>
+                                Format:{" "}
+                                <span className="font-mono text-foreground/80">
+                                  {server.message_format}
+                                </span>
+                              </span>
+                              <span>
+                                Heartbeat:{" "}
+                                <span className="font-mono text-foreground/80">
+                                  {server.heartbeat_interval}s
+                                </span>
+                              </span>
+                            </div>
+                            <div className="flex min-w-0 items-center gap-2 rounded-md bg-background/70 px-2 py-1.5">
+                              <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                                {connectionUrl}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 shrink-0"
+                                onClick={() =>
+                                  void handleCopyTerminalWsUrl(connectionUrl)
+                                }
+                              >
+                                {copiedText === connectionUrl ? (
+                                  <Check className="size-3.5 text-green-500" />
+                                ) : (
+                                  <Copy className="size-3.5" />
+                                )}
+                                <span className="sr-only">Copy URL</span>
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={server.running ? "outline" : "default"}
+                              className="h-8 px-3 text-xs"
+                              onClick={() =>
+                                void handleTerminalWsAction(
+                                  server.server_id,
+                                  server.running ? "stop" : "start",
+                                )
+                              }
+                              disabled={terminalWsActionId === server.server_id}
+                            >
+                              {terminalWsActionId === server.server_id ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : server.running ? (
+                                <Square className="size-3.5" />
+                              ) : (
+                                <Play className="size-3.5" />
+                              )}
+                              {server.running ? "Stop" : "Start"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="destructive"
+                              className="h-8 px-3 text-xs"
+                              onClick={() =>
+                                void handleTerminalWsAction(
+                                  server.server_id,
+                                  "delete",
+                                )
+                              }
+                              disabled={terminalWsActionId === server.server_id}
+                            >
+                              <Trash2 className="size-3.5" />
+                              Delete
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                      )
+                    })
+                  )}
+                </div>
+                  </section>
+                ) : null}
+              </TabsContent>
+            )}
+
+            <TabsContent value="terminal" className="space-y-4">
               <section className="rounded-2xl border bg-card/85 p-2.5 shadow-sm">
                 <div className="flex flex-col gap-4 xl:flex-row">
                   <div className="flex-1 min-w-0">

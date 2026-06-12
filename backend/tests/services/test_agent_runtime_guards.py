@@ -3,10 +3,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
-from app.api.routes.chat import (
+from app.plugins.robot.agent.integration import (
     ROBOT_SEND_TOOL_NAME,
-    _robot_delivery_correction_message,
-    _should_retry_robot_delivery,
+    _should_send_final_response_fallback,
+    get_robot_agent_integration,
 )
 from app.plugins.robot.contracts import RobotReplyTarget
 from app.plugins.robot.conversation_memory import RobotConversationMemoryManager
@@ -20,8 +20,6 @@ from app.services.agent import chat_runtime
 from app.services.agent.agent import AgentContext
 from app.services.agent.chat_runtime import (
     ChatResponseResult,
-    _robot_fallback_response_content,
-    _should_send_robot_final_response_fallback,
     collect_chat_response,
 )
 from app.services.agent.mcp.types import MCPTool
@@ -322,8 +320,8 @@ def test_agent_extracts_robot_known_targets_from_context_messages() -> None:
     agent._context = AgentContext(
         handler_id=handler_id,
         enabled_mcp_servers=["robot"],
-        robot_id="robot-1",
     )
+    agent._context.robot_id = "robot-1"
 
     try:
         agent.set_robot_known_targets_from_messages(
@@ -562,15 +560,16 @@ def test_robot_delivery_retry_triggers_when_model_returns_plain_reply() -> None:
             ),
         }
     ]
+    integration = get_robot_agent_integration()
 
-    assert _should_retry_robot_delivery(
+    assert integration.should_retry_delivery(
         agent=agent,
         messages=messages,
         tools=tools,
         final_response="你好呀~",
         retry_used=False,
     ) is True
-    assert _should_retry_robot_delivery(
+    assert integration.should_retry_delivery(
         agent=agent,
         messages=messages,
         tools=tools,
@@ -578,7 +577,7 @@ def test_robot_delivery_retry_triggers_when_model_returns_plain_reply() -> None:
         retry_used=True,
     ) is False
 
-    correction = _robot_delivery_correction_message("你好呀~")
+    correction = integration.delivery_correction_message("你好呀~")
     assert correction["role"] == "system"
     assert "Robot message delivery reflection" in correction["content"]
     assert "Re-evaluate whether QQ should receive that text" in correction["content"]
@@ -587,8 +586,8 @@ def test_robot_delivery_retry_triggers_when_model_returns_plain_reply() -> None:
 
 
 def test_robot_collect_response_fallback_accepts_mcp_tool_delivery() -> None:
-    assert _robot_fallback_response_content(
-        robot_id="robot-1",
+    assert get_robot_agent_integration().fallback_response_content(
+        {"robot_id": "robot-1"},
         tool_results=["Message sent to QQ group 123456 from chat context."],
         warnings=[],
         done_seen=True,
@@ -607,31 +606,31 @@ def test_robot_plain_reply_bridge_fallback_requires_direct_wakeup() -> None:
         metadata={},
     )
 
-    assert _should_send_robot_final_response_fallback(
+    assert _should_send_final_response_fallback(
         robot_id="robot-1",
         robot_reply_target=direct_target,
         content="pong",
         robot_message_sent=False,
     )
-    assert not _should_send_robot_final_response_fallback(
+    assert not _should_send_final_response_fallback(
         robot_id="robot-1",
         robot_reply_target=passive_target,
         content="pong",
         robot_message_sent=False,
     )
-    assert not _should_send_robot_final_response_fallback(
+    assert not _should_send_final_response_fallback(
         robot_id=None,
         robot_reply_target=direct_target,
         content="pong",
         robot_message_sent=False,
     )
-    assert not _should_send_robot_final_response_fallback(
+    assert not _should_send_final_response_fallback(
         robot_id="robot-1",
         robot_reply_target=direct_target,
         content="",
         robot_message_sent=False,
     )
-    assert not _should_send_robot_final_response_fallback(
+    assert not _should_send_final_response_fallback(
         robot_id="robot-1",
         robot_reply_target=direct_target,
         content="pong",
@@ -648,14 +647,14 @@ def test_robot_collect_response_sends_plain_final_reply_for_direct_mention(
             self.tools_requested = False
             self.context_cleared = False
 
-        def set_robot_context(self, **kwargs) -> None:
+        def setup_context(self, agent, context: dict) -> None:
             self.context_set = True
-            self.robot_context = dict(kwargs)
+            self.robot_context = dict(context)
 
-        async def ensure_robot_context_tools(self) -> None:
+        async def ensure_tools(self, agent, context: dict) -> None:
             self.tools_requested = True
 
-        def clear_robot_context(self) -> None:
+        def clear_context(self, agent, context: dict) -> None:
             self.context_cleared = True
 
     fake_agent = FakeAgent()
@@ -676,6 +675,18 @@ def test_robot_collect_response_sends_plain_final_reply_for_direct_mention(
 
     monkeypatch.setattr(chat_runtime, "prepare_chat_agent", fake_prepare_chat_agent)
     monkeypatch.setattr("app.api.routes.chat.generate_stream", fake_generate_stream)
+    integration = get_robot_agent_integration()
+    monkeypatch.setattr(integration, "setup_chat_context", fake_agent.setup_context)
+    monkeypatch.setattr(integration, "ensure_chat_context_tools", fake_agent.ensure_tools)
+    monkeypatch.setattr(integration, "clear_chat_context", fake_agent.clear_context)
+    monkeypatch.setattr(
+        "app.services.agent.integrations.hooks.get_agent_integration",
+        lambda name: integration if name == "robot" else None,
+    )
+    monkeypatch.setattr(
+        "app.services.agent.integrations.hooks.get_agent_integrations",
+        lambda: [integration],
+    )
     monkeypatch.setattr(
         "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
         fake_send_message,
@@ -713,8 +724,8 @@ def test_robot_collect_response_sends_plain_final_reply_for_direct_mention(
 
 
 def test_robot_collect_response_fallback_accepts_warning_completion() -> None:
-    assert _robot_fallback_response_content(
-        robot_id="robot-1",
+    assert get_robot_agent_integration().fallback_response_content(
+        {"robot_id": "robot-1"},
         tool_results=[],
         warnings=["Stopped after reaching the max iteration limit (10)"],
         done_seen=True,
@@ -723,8 +734,8 @@ def test_robot_collect_response_fallback_accepts_warning_completion() -> None:
 
 def test_non_robot_collect_response_still_requires_content() -> None:
     assert (
-        _robot_fallback_response_content(
-            robot_id=None,
+        get_robot_agent_integration().fallback_response_content(
+            {"robot_id": None},
             tool_results=["Message sent to QQ group 123456."],
             warnings=["warning"],
             done_seen=True,

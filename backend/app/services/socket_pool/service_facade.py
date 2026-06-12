@@ -71,10 +71,10 @@ class SocketPoolFacade:
     def get_running_sockets(self) -> list[ItemSocket]:
         return self._socket_manager.get_running_sockets()
 
-    def write_to_item(self, item_uuid: str, command: str) -> bool:
+    def write_to_item(self, item_uuid: str, command: str, *, source: str = "backend") -> bool:
         for socket in self.get_item_sockets(item_uuid):
             if socket.is_connected():
-                return socket.write(command)
+                return socket.write(command, source=source)
         return False
 
     def ensure_log_subscription(

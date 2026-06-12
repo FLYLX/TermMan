@@ -17,6 +17,12 @@ from litellm import completion
 
 from app.services.agent.agent import Agent, agent_manager
 from app.services.agent.history.chat import append_chat_message
+from app.services.agent.integrations import (
+    clear_terminal_alert_integration_tools,
+    ensure_terminal_alert_integration_tools,
+    extract_integration_context_targets,
+    should_enable_terminal_alert_integrations,
+)
 from app.services.agent.prompts.builder import (
     build_chat_turn_messages,
     build_terminal_turn_messages,
@@ -46,8 +52,6 @@ COMMAND_TOOL_NAMES = {
 SILENT_TOOL_NAMES = {READ_LOG_TOOL_NAME}
 TERMINAL_SOURCE_FILTERED = "filtered_output"
 TERMINAL_SOURCE_RAW_FEEDBACK = "raw_feedback"
-ROBOT_MESSAGING_SKILL_ID = "robot_messaging"
-ROBOT_MCP_SERVER_NAME = "robot"
 
 
 class SessionState(Enum):
@@ -61,16 +65,6 @@ class SessionState(Enum):
 class InputType(Enum):
     TERMINAL = "terminal"
     CHAT = "chat"
-
-
-def _agent_has_configured_robot_messaging(agent: Agent) -> bool:
-    context = getattr(agent, "_context", None)
-    if context is None:
-        return False
-    return (
-        ROBOT_MESSAGING_SKILL_ID in set(getattr(context, "enabled_skills", []) or [])
-        or ROBOT_MCP_SERVER_NAME in set(getattr(context, "enabled_mcp_servers", []) or [])
-    )
 
 
 @dataclass
@@ -910,7 +904,7 @@ class AgentSession:
             self.emit_output(analysis.content, "agent_response")
             return
 
-        transient_robot_tools_added = False
+        transient_integration_tools_added = False
         loop = None
         try:
             loop = asyncio.new_event_loop()
@@ -918,13 +912,16 @@ class AgentSession:
             loop.run_until_complete(agent.start_mcp_servers())
             if (
                 is_critical_terminal_event(analysis.content)
-                and _agent_has_configured_robot_messaging(agent)
+                and should_enable_terminal_alert_integrations(agent, analysis.content)
             ):
-                ensure_robot_tools = getattr(agent, "ensure_robot_messaging_tools", None)
-                if callable(ensure_robot_tools):
-                    transient_robot_tools_added = bool(
-                        loop.run_until_complete(ensure_robot_tools())
+                transient_integration_tools_added = bool(
+                    loop.run_until_complete(
+                        ensure_terminal_alert_integration_tools(
+                            agent,
+                            analysis.content,
+                        )
                     )
+                )
 
             messages = self._build_terminal_messages(
                 agent,
@@ -932,9 +929,7 @@ class AgentSession:
                 analysis.content,
                 terminal_source=analysis.terminal_source,
             )
-            set_known_targets = getattr(agent, "set_robot_known_targets_from_messages", None)
-            if callable(set_known_targets):
-                set_known_targets(messages)
+            extract_integration_context_targets(agent, messages)
             turn_guard = TurnGuard()
             self._current_turn_id = turn_guard.turn_id
             self._emit_running_terminal_status(analysis.terminal_source)
@@ -970,25 +965,15 @@ class AgentSession:
                     break
                 messages = next_messages
 
-            clear_transient_robot_tools = getattr(
-                agent,
-                "clear_transient_robot_messaging_tools",
-                None,
-            )
-            if transient_robot_tools_added and callable(clear_transient_robot_tools):
-                clear_transient_robot_tools()
+            if transient_integration_tools_added:
+                clear_terminal_alert_integration_tools(agent)
             loop.close()
         except Exception as exc:
             logger.error(f"[AgentSession] Terminal processing error: {exc}")
             self.emit_output(f"处理失败: {exc}", "agent_error")
 
-            clear_transient_robot_tools = getattr(
-                agent,
-                "clear_transient_robot_messaging_tools",
-                None,
-            )
-            if transient_robot_tools_added and callable(clear_transient_robot_tools):
-                clear_transient_robot_tools()
+            if transient_integration_tools_added:
+                clear_terminal_alert_integration_tools(agent)
             if loop is not None and not loop.is_closed():
                 loop.close()
 

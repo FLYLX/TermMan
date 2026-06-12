@@ -18,6 +18,7 @@ import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutSkillsRouteImport } from './routes/_layout/skills'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutRobotsRouteImport } from './routes/_layout/robots'
+import { Route as LayoutPluginsRouteImport } from './routes/_layout/plugins'
 import { Route as LayoutMcpServersRouteImport } from './routes/_layout/mcp-servers'
 import { Route as LayoutKnowledgeRouteImport } from './routes/_layout/knowledge'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
@@ -72,6 +73,11 @@ const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
 const LayoutRobotsRoute = LayoutRobotsRouteImport.update({
   id: '/robots',
   path: '/robots',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutPluginsRoute = LayoutPluginsRouteImport.update({
+  id: '/plugins',
+  path: '/plugins',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutMcpServersRoute = LayoutMcpServersRouteImport.update({
@@ -142,6 +148,7 @@ export interface FileRoutesByFullPath {
   '/items': typeof LayoutItemsRouteWithChildren
   '/knowledge': typeof LayoutKnowledgeRoute
   '/mcp-servers': typeof LayoutMcpServersRoute
+  '/plugins': typeof LayoutPluginsRoute
   '/robots': typeof LayoutRobotsRouteWithChildren
   '/settings': typeof LayoutSettingsRoute
   '/skills': typeof LayoutSkillsRoute
@@ -160,6 +167,7 @@ export interface FileRoutesByTo {
   '/admin': typeof LayoutAdminRoute
   '/knowledge': typeof LayoutKnowledgeRoute
   '/mcp-servers': typeof LayoutMcpServersRoute
+  '/plugins': typeof LayoutPluginsRoute
   '/settings': typeof LayoutSettingsRoute
   '/skills': typeof LayoutSkillsRoute
   '/': typeof LayoutIndexRoute
@@ -182,6 +190,7 @@ export interface FileRoutesById {
   '/_layout/items': typeof LayoutItemsRouteWithChildren
   '/_layout/knowledge': typeof LayoutKnowledgeRoute
   '/_layout/mcp-servers': typeof LayoutMcpServersRoute
+  '/_layout/plugins': typeof LayoutPluginsRoute
   '/_layout/robots': typeof LayoutRobotsRouteWithChildren
   '/_layout/settings': typeof LayoutSettingsRoute
   '/_layout/skills': typeof LayoutSkillsRoute
@@ -206,6 +215,7 @@ export interface FileRouteTypes {
     | '/items'
     | '/knowledge'
     | '/mcp-servers'
+    | '/plugins'
     | '/robots'
     | '/settings'
     | '/skills'
@@ -224,6 +234,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/knowledge'
     | '/mcp-servers'
+    | '/plugins'
     | '/settings'
     | '/skills'
     | '/'
@@ -245,6 +256,7 @@ export interface FileRouteTypes {
     | '/_layout/items'
     | '/_layout/knowledge'
     | '/_layout/mcp-servers'
+    | '/_layout/plugins'
     | '/_layout/robots'
     | '/_layout/settings'
     | '/_layout/skills'
@@ -328,6 +340,13 @@ declare module '@tanstack/react-router' {
       path: '/robots'
       fullPath: '/robots'
       preLoaderRoute: typeof LayoutRobotsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/plugins': {
+      id: '/_layout/plugins'
+      path: '/plugins'
+      fullPath: '/plugins'
+      preLoaderRoute: typeof LayoutPluginsRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/mcp-servers': {
@@ -457,6 +476,7 @@ interface LayoutRouteChildren {
   LayoutItemsRoute: typeof LayoutItemsRouteWithChildren
   LayoutKnowledgeRoute: typeof LayoutKnowledgeRoute
   LayoutMcpServersRoute: typeof LayoutMcpServersRoute
+  LayoutPluginsRoute: typeof LayoutPluginsRoute
   LayoutRobotsRoute: typeof LayoutRobotsRouteWithChildren
   LayoutSettingsRoute: typeof LayoutSettingsRoute
   LayoutSkillsRoute: typeof LayoutSkillsRoute
@@ -469,6 +489,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutItemsRoute: LayoutItemsRouteWithChildren,
   LayoutKnowledgeRoute: LayoutKnowledgeRoute,
   LayoutMcpServersRoute: LayoutMcpServersRoute,
+  LayoutPluginsRoute: LayoutPluginsRoute,
   LayoutRobotsRoute: LayoutRobotsRouteWithChildren,
   LayoutSettingsRoute: LayoutSettingsRoute,
   LayoutSkillsRoute: LayoutSkillsRoute,

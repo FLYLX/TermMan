@@ -3,7 +3,7 @@ import secrets
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, Field
 from sqlmodel import col, select
@@ -20,6 +20,7 @@ from app.models import (
     RobotUpdate,
 )
 
+from . import is_robot_plugin_enabled
 from .api_support import (
     assert_bridge_permission,
     assert_item_permission,
@@ -58,7 +59,17 @@ from .schemas import (
 )
 from .service import robot_service
 
-router = APIRouter(prefix="/robots", tags=["robots"])
+
+def ensure_robot_plugin_enabled() -> None:
+    if not is_robot_plugin_enabled():
+        raise HTTPException(status_code=404, detail="Robot plugin is disabled")
+
+
+router = APIRouter(
+    prefix="/robots",
+    tags=["robots"],
+    dependencies=[Depends(ensure_robot_plugin_enabled)],
+)
 
 CONVERSATION_KEY_PATTERN = r"^(group|private|channel):[^/\\\r\n]+$"
 

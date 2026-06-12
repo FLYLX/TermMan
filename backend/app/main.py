@@ -9,6 +9,7 @@ from starlette.middleware.cors import CORSMiddleware
 from app.api.main import api_router
 from app.core.config import settings
 from app.services import initialize_daemon_connections
+from app.services.plugins import plugin_manager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,35 +18,9 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-_bridge_router_included = False
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _bridge_router_included
-
-    if settings.ROBOT_PLUGIN_ENABLED and settings.ROBOT_BRIDGE_EMBEDDED:
-        from app.plugins.robot.bridge.embedded import (
-            get_bridge_router,
-            init_embedded_bridge,
-            start_embedded_bridge,
-            stop_embedded_bridge,
-        )
-
-        logger.info("[App] Initializing embedded robot bridge...")
-        init_embedded_bridge()
-        bridge_router = get_bridge_router()
-        if bridge_router and not _bridge_router_included:
-            app.include_router(bridge_router)
-            _bridge_router_included = True
-            logger.info("[App] Robot bridge router included")
-        if bridge_router:
-            logger.info("[App] Robot bridge initialized")
-        await start_embedded_bridge()
-    elif settings.ROBOT_PLUGIN_ENABLED:
-        stop_embedded_bridge = None
-    else:
-        stop_embedded_bridge = None
+    await plugin_manager.startup(app)
 
     initialize_daemon_connections()
 
@@ -57,8 +32,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    if stop_embedded_bridge is not None:
-        await stop_embedded_bridge()
+    await plugin_manager.shutdown(app)
 
     logger.info("[App] Stopping MCP servers...")
     await mcp_server_manager.stop_all()

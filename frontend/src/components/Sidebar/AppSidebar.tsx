@@ -1,14 +1,17 @@
+import { useQuery } from "@tanstack/react-query"
 import {
   BookOpen,
   Bot,
   Home,
   Layers,
   Package,
+  Puzzle,
   Server,
   Terminal,
   Users,
 } from "lucide-react"
 
+import { McpService } from "@/client"
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { SidebarLanguageSwitcher } from "@/components/Common/LanguageSwitcher"
 import { Logo } from "@/components/Common/Logo"
@@ -20,26 +23,55 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar"
 import useAuth from "@/hooks/useAuth"
+import { getPluginsQueryOptions, isPluginEnabled } from "@/lib/plugins-api"
 import { type Item, Main } from "./Main"
 import { User } from "./User"
 
-const baseItems: Item[] = [
+type SidebarItem = Item & {
+  feature?: "robot" | "mcp"
+}
+
+const baseItems: SidebarItem[] = [
   { icon: Home, title: "nav.dashboard", path: "/" },
   { icon: Terminal, title: "nav.items", path: "/items" },
   { icon: Layers, title: "nav.itemHandlers", path: "/item-handlers" },
-  { icon: Bot, title: "nav.robots", path: "/robots" },
+  { icon: Bot, title: "nav.robots", path: "/robots", feature: "robot" },
+  { icon: Puzzle, title: "nav.plugins", path: "/plugins" },
   { icon: BookOpen, title: "nav.knowledge", path: "/knowledge" },
   { icon: Package, title: "nav.skills", path: "/skills" },
-  { icon: Server, title: "nav.mcpServers", path: "/mcp-servers" },
+  { icon: Server, title: "nav.mcpServers", path: "/mcp-servers", feature: "mcp" },
 ]
 
 export function AppSidebar() {
   const { user: currentUser } = useAuth()
   const { t } = useI18n()
+  const { data: plugins } = useQuery({
+    ...getPluginsQueryOptions(),
+    enabled: Boolean(currentUser),
+  })
+  const { data: mcpServers } = useQuery({
+    queryFn: () => McpService.listMcpServers(),
+    queryKey: ["mcp-servers"],
+    enabled: Boolean(currentUser),
+  })
+
+  const hasRobotPlugin = isPluginEnabled(plugins, "termman.robot")
+  const hasExternalMcpServers = Boolean(
+    mcpServers?.data?.some((server: { name?: string }) => server.name !== "local"),
+  )
+  const visibleBaseItems = baseItems.filter((item) => {
+    if (item.feature === "robot") {
+      return hasRobotPlugin
+    }
+    if (item.feature === "mcp") {
+      return hasExternalMcpServers
+    }
+    return true
+  })
 
   const items = currentUser?.is_superuser
-    ? [...baseItems, { icon: Users, title: "nav.admin", path: "/admin" }]
-    : baseItems
+    ? [...visibleBaseItems, { icon: Users, title: "nav.admin", path: "/admin" }]
+    : visibleBaseItems
 
   const translatedItems = items.map((item) => ({
     ...item,

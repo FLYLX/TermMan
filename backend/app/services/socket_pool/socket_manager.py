@@ -10,16 +10,16 @@ logger = logging.getLogger(__name__)
 class SocketManager:
     """
     Item Socket池管理 - 按 UPDATE.MD 和 pool.md 规范实现 Room 机制
-    
+
     核心设计：
     1. Backend 作为永久订阅者（permanent）加入 Room，监听输出写日志
     2. Browser 作为临时订阅者（temporary）加入 Room，实时渲染终端
     3. 每个 item 可有多个 socket 连接（不同用户/不同类型）
-    
+
     维护表：
     1. Item-Token映射表: {daemon_id: {item_uuid: token}}
     2. Socket实例表: {(user_uuid, item_uuid, subscriber_type) -> ItemSocket}
-    
+
     注意：此管理器管理的是 Backend 主动创建的 Socket 连接
     """
     def __init__(self):
@@ -37,12 +37,12 @@ class SocketManager:
         return self.sockets.get(("backend", item_uuid, "backend"))
 
     def create_socket(
-        self, 
-        item_uuid: str, 
-        token: str, 
-        daemon_url: str, 
-        user_uuid: str, 
-        api_key: str | None = None, 
+        self,
+        item_uuid: str,
+        token: str,
+        daemon_url: str,
+        user_uuid: str,
+        api_key: str | None = None,
         subscriber_type: str = "browser"
     ) -> ItemSocket:
         socket = ItemSocket(item_uuid, token, daemon_url, user_uuid, subscriber_type)
@@ -69,7 +69,7 @@ class SocketManager:
                     if not hasattr(existing_socket, '_input_handler_id') or not existing_socket._input_handler_id:
                         self._register_input_handler(existing_socket)
                 return existing_socket
-        
+
         socket = self.create_socket(
             item_uuid=item_uuid,
             token=token,
@@ -78,24 +78,24 @@ class SocketManager:
             api_key=api_key,
             subscriber_type="backend"
         )
-        
+
         if socket.is_connected():
             self._register_input_handler(socket)
         else:
             logger.warning(f"[SocketManager] Backend socket NOT connected for item={item_uuid}")
-        
+
         return socket
-    
+
     def _register_input_handler(self, socket: ItemSocket):
         from .input_center import InputCommand
-        
+
         def handle_input(cmd: InputCommand) -> bool:
             logger.info(f"[SocketManager] handle_input called: item={socket.item_uuid}, connected={socket.is_connected()}")
             if socket.is_connected():
-                return socket.write(cmd.command)
+                return socket.write(cmd.command, source=cmd.source)
             logger.warning(f"[SocketManager] handle_input: socket not connected for item={socket.item_uuid}")
             return False
-        
+
         handler_id = input_center.register(
             item_uuid=socket.item_uuid,
             callback=handle_input,
@@ -103,19 +103,19 @@ class SocketManager:
         )
         socket._input_handler_id = handler_id
         logger.info(f"[SocketManager] Registered input handler {handler_id} for item={socket.item_uuid}")
-    
+
     def _unregister_input_handler(self, socket: ItemSocket):
         if hasattr(socket, '_input_handler_id'):
             input_center.unregister(socket._input_handler_id)
             logger.info(f"[SocketManager] Unregistered input handler {socket._input_handler_id} for item={socket.item_uuid}")
 
     def get_or_create_socket(
-        self, 
-        item_uuid: str, 
-        token: str, 
-        daemon_url: str, 
-        user_uuid: str, 
-        api_key: str | None = None, 
+        self,
+        item_uuid: str,
+        token: str,
+        daemon_url: str,
+        user_uuid: str,
+        api_key: str | None = None,
         subscriber_type: str = "browser"
     ) -> ItemSocket:
         socket = self.get_socket(item_uuid, user_uuid, subscriber_type)
@@ -198,7 +198,7 @@ class SocketManager:
 
         logger.info("\n1. Item-Token映射表 [daemon_id -> {item_uuid: token}]")
         logger.info("-" * 80)
-        
+
         token_count = 0
         for daemon_id, items in self.item_tokens.items():
             for item_uuid, token in items.items():
@@ -212,7 +212,7 @@ class SocketManager:
 
         logger.info("\n2. Socket实例表 [(user_uuid, item_uuid, type) -> ItemSocket]")
         logger.info("-" * 80)
-        
+
         socket_count = 0
         for (user_uuid, item_uuid, stype), sock in self.sockets.items():
             status = "connected" if sock.is_connected() else "disconnected"

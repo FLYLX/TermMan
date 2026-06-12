@@ -8,9 +8,34 @@ from sqlmodel import Session, delete
 from app.core.config import settings
 from app.core.db import engine, init_db
 from app.main import app
-from app.models import Item, User, ItemHandler, ItemHandlerItem, ItemHandlerUser, ItemChatSession, Robot, RobotItem
+from app.models import (
+    Item,
+    ItemChatSession,
+    ItemHandler,
+    ItemHandlerItem,
+    ItemHandlerUser,
+    Robot,
+    RobotItem,
+    User,
+)
 from tests.utils.user import authentication_token_from_email
 from tests.utils.utils import get_superuser_token_headers
+
+
+@pytest.fixture(autouse=True)
+def reset_plugin_marketplace_state(tmp_path, monkeypatch) -> Generator[None, None, None]:
+    from app.services.agent.integrations import reload_agent_integrations
+    from app.services.plugins import plugin_manager
+
+    monkeypatch.setattr(plugin_manager, "_state_path", tmp_path / "plugin_marketplace.json")
+    monkeypatch.setattr(plugin_manager, "_state_loaded", False)
+    monkeypatch.setattr(plugin_manager, "_enabled_overrides", {})
+    plugin_manager.reload()
+    yield
+    monkeypatch.setattr(plugin_manager, "_state_loaded", False)
+    monkeypatch.setattr(plugin_manager, "_enabled_overrides", {})
+    plugin_manager.reload()
+    reload_agent_integrations(reload_plugins=False)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -23,7 +48,7 @@ def db() -> Generator[Session, None, None]:
         if db_path.exists():
             db_path.unlink()
     SQLModel.metadata.create_all(engine)
-    
+
     with Session(engine) as session:
         init_db(session)
         yield session
