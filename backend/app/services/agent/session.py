@@ -29,6 +29,7 @@ from app.services.agent.prompts.builder import (
     is_critical_terminal_event,
 )
 from app.services.agent.prompts.system import get_system_prompt
+from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 
 logger = logging.getLogger(__name__)
 
@@ -195,9 +196,6 @@ class AgentSession:
         logger.info(f"[AgentSession] Created session for item={item_id}, handler={handler_id}")
 
     def get_agent(self) -> Agent | None:
-        if self.agent:
-            return self.agent
-
         try:
             from sqlmodel import Session
 
@@ -208,12 +206,12 @@ class AgentSession:
                 handler = session.get(ItemHandler, self.handler_id)
                 if handler:
                     self.agent = agent_manager.get_or_create(handler)
-                    logger.info(f"[AgentSession] Got agent for handler {self.handler_id}")
+                    logger.debug(f"[AgentSession] Refreshed agent for handler {self.handler_id}")
                     return self.agent
         except Exception as exc:
             logger.error(f"[AgentSession] Failed to get agent: {exc}")
 
-        return None
+        return self.agent
 
     def add_output_callback(self, callback: Callable):
         with self.lock:
@@ -950,7 +948,11 @@ class AgentSession:
 
                 if not (hasattr(message, "tool_calls") and message.tool_calls):
                     if message.content:
-                        self.emit_output(message.content.strip(), "agent_response")
+                        final_content = guard_ungrounded_tool_claim(
+                            message.content,
+                            tool_called=turn_guard.tool_call_count > 0,
+                        )
+                        self.emit_output(final_content, "agent_response")
                     break
 
                 next_messages = self._handle_tool_calls(
@@ -1007,7 +1009,11 @@ class AgentSession:
 
                 if not (hasattr(message, "tool_calls") and message.tool_calls):
                     if message.content:
-                        self.emit_output(message.content.strip(), "agent_response")
+                        final_content = guard_ungrounded_tool_claim(
+                            message.content,
+                            tool_called=turn_guard.tool_call_count > 0,
+                        )
+                        self.emit_output(final_content, "agent_response")
                     break
 
                 next_messages = self._handle_tool_calls(agent, loop, messages, message, turn_guard)

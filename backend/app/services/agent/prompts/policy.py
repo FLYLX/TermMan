@@ -80,8 +80,16 @@ PREFERENCE_MEMORY_CUES = (
     "以后都",
     "始终",
     "默认",
+    "人格",
+    "人设",
+    "语气",
+    "口吻",
+    "说话方式",
     "prefer",
     "preference",
+    "persona",
+    "tone",
+    "style",
 )
 
 TASK_MEMORY_CUES = (

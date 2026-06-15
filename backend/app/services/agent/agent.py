@@ -33,6 +33,8 @@ class AgentContext:
     enabled_skills: list[str] = field(default_factory=list)
     enabled_mcp_servers: list[str] = field(default_factory=list)
     enabled_knowledge_files: list[str] = field(default_factory=list)
+    agent_profile: dict[str, Any] = field(default_factory=dict)
+    skill_revision: int = 0
     output_filter_enabled: bool = False
     output_filter_rules: dict = field(default_factory=dict)
     integration_contexts: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -140,6 +142,7 @@ class Agent:
             enabled_skills=handler.enabled_skills or [],
             enabled_mcp_servers=handler.enabled_mcp_servers or [],
             enabled_knowledge_files=handler.enabled_knowledge_files or [],
+            agent_profile=handler.agent_profile or {},
         )
         agent._load_skills()
         return agent
@@ -171,6 +174,8 @@ class Agent:
                         logger.warning(f"[Agent] Skill '{skill_id}' not found")
 
         self._load_mcp_tools()
+        if self._context:
+            self._context.skill_revision = skill_loader.revision
 
         logger.info(f"[Agent] Loaded {len(self._skills)} skills, {len(self._mcp_servers)} MCP servers ({self._mcp_servers}), {len(self._mcp_tools)} tools for handler {self.handler_id}")
 
@@ -319,6 +324,7 @@ class Agent:
         self._context.enabled_skills = handler.enabled_skills or []
         self._context.enabled_mcp_servers = handler.enabled_mcp_servers or []
         self._context.enabled_knowledge_files = handler.enabled_knowledge_files or []
+        self._context.agent_profile = handler.agent_profile or {}
         self._load_skills()
 
     def update_skills(self, enabled_skills: list[str]):
@@ -453,8 +459,11 @@ class AgentManager:
                 or context.enabled_skills != (handler.enabled_skills or [])
                 or context.enabled_mcp_servers != (handler.enabled_mcp_servers or [])
                 or context.enabled_knowledge_files != (handler.enabled_knowledge_files or [])
+                or context.agent_profile != (handler.agent_profile or {})
+                or context.skill_revision != skill_loader.revision
             ):
-                skill_loader.reload()
+                if context.skill_revision == skill_loader.revision:
+                    skill_loader.reload()
                 agent.refresh_from_handler(handler)
             return agent
 

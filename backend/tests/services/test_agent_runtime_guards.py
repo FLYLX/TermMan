@@ -8,12 +8,18 @@ from app.plugins.robot.agent.integration import (
     _should_send_final_response_fallback,
     get_robot_agent_integration,
 )
-from app.plugins.robot.contracts import RobotReplyTarget
+from app.plugins.robot.contracts import RobotInboundMessage, RobotReplyTarget
 from app.plugins.robot.conversation_memory import RobotConversationMemoryManager
 from app.plugins.robot.prompts import (
     build_robot_delivery_reflection_prompt,
     build_robot_messaging_prompt,
     build_robot_messaging_skill_definition,
+)
+from app.plugins.robot.reply_intent import is_no_reply_intent
+from app.plugins.robot.service import (
+    REPLY_MESSAGE_TYPE_GROUP,
+    REPLY_MESSAGE_TYPE_MENTION,
+    RobotService,
 )
 from app.services.agent import agent as agent_module
 from app.services.agent import chat_runtime
@@ -26,6 +32,7 @@ from app.services.agent.mcp.types import MCPTool
 from app.services.agent.prompts import builder as prompt_builder
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.skills import skill_loader
+from app.services.agent.skills.definition import SkillDefinition
 from app.services.log_manager import LogManager
 
 
@@ -64,6 +71,43 @@ def test_start_mcp_servers_does_not_duplicate_tools(monkeypatch) -> None:
         "mcp_local_execute_command",
         "mcp_local_read_terminal_log",
     ]
+
+
+def test_agent_manager_refreshes_cached_agent_when_skill_revision_changes(monkeypatch) -> None:
+    handler_id = f"handler-{uuid4()}"
+    handler = SimpleNamespace(
+        id=handler_id,
+        model="model-a",
+        api_key=None,
+        api_url=None,
+        enabled_skills=["quiet_style"],
+        enabled_mcp_servers=[],
+        enabled_knowledge_files=[],
+        agent_profile={},
+    )
+    skill = SkillDefinition(skill_id="quiet_style", name="Quiet Style")
+
+    monkeypatch.setattr(agent_module.skill_loader, "get", lambda skill_id: skill)
+    monkeypatch.setattr(agent_module.mcp_server_manager, "get_tools_for_server", lambda _name: [])
+
+    manager = agent_module.AgentManager()
+    manager._agents.pop(handler_id, None)
+
+    original_revision = agent_module.skill_loader._revision
+    try:
+        agent_module.skill_loader._revision = 1
+        agent = manager.get_or_create(handler)
+        assert agent._context.skill_revision == 1
+
+        agent_module.skill_loader._revision = 2
+        refreshed = manager.get_or_create(handler)
+
+        assert refreshed is agent
+        assert refreshed._context.skill_revision == 2
+    finally:
+        agent_module.skill_loader._revision = original_revision
+        manager._agents.pop(handler_id, None)
+        agent_module.Agent._instances.pop(handler_id, None)
 
 
 def test_robot_context_temporarily_exposes_send_message_tool(monkeypatch) -> None:
@@ -594,6 +638,28 @@ def test_robot_collect_response_fallback_accepts_mcp_tool_delivery() -> None:
     ) == "Message sent to QQ group 123456 from chat context."
 
 
+def test_robot_delivery_retry_skips_no_reply_intent() -> None:
+    tools = [{"type": "function", "function": {"name": ROBOT_SEND_TOOL_NAME}}]
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(robot_id="robot-1", robot_known_targets=[])
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": "[Robot message; conversation=group:123456]\nhello",
+        }
+    ]
+
+    assert is_no_reply_intent("[no_qq_reply]")
+    assert get_robot_agent_integration().should_retry_delivery(
+        agent=agent,
+        messages=messages,
+        tools=tools,
+        final_response="[no_qq_reply]",
+        retry_used=False,
+    ) is False
+
+
 def test_robot_plain_reply_bridge_fallback_requires_direct_wakeup() -> None:
     direct_target = RobotReplyTarget(
         target_type="group",
@@ -636,6 +702,35 @@ def test_robot_plain_reply_bridge_fallback_requires_direct_wakeup() -> None:
         content="pong",
         robot_message_sent=True,
     )
+
+
+def test_robot_plain_reply_bridge_fallback_skips_no_reply_intent(monkeypatch) -> None:
+    sent: list[str] = []
+
+    def fake_send_message(_robot_id, _target, text) -> None:
+        sent.append(text)
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+    reply_target = RobotReplyTarget(
+        target_type="group",
+        target_id="123456",
+        metadata={"mentioned_bot": True},
+    )
+
+    delivered = get_robot_agent_integration().send_final_response_fallback(
+        {
+            "robot_id": "robot-1",
+            "reply_target": reply_target,
+        },
+        content="[no_qq_reply]",
+        message_sent=False,
+    )
+
+    assert delivered is False
+    assert sent == []
 
 
 def test_robot_collect_response_sends_plain_final_reply_for_direct_mention(
@@ -790,23 +885,77 @@ def test_robot_plugin_registers_builtin_skill() -> None:
     assert "mcp_robot_send_message" in (skill.action.prompt or "")
 
 
-def test_style_tone_skills_register_as_builtin_skills() -> None:
+def test_style_tone_and_persona_skills_load_from_skill_files() -> None:
     mutsumi = skill_loader.get("mutsumi_tone")
     kurumi = skill_loader.get("tokisaki_kurumi_tone")
     yui = skill_loader.get("hirasawa_yui_tone")
+    kurumi_persona = skill_loader.get("tokisaki_kurumi_persona")
 
     assert mutsumi is not None
     assert kurumi is not None
     assert yui is not None
-    assert mutsumi.skill_dir == "builtin"
-    assert kurumi.skill_dir == "builtin"
-    assert yui.skill_dir == "builtin"
+    assert kurumi_persona is not None
+    assert mutsumi.skill_dir == "mutsumi_tone"
+    assert kurumi.skill_dir == "tokisaki_kurumi_tone"
+    assert yui.skill_dir == "hirasawa_yui_tone"
+    assert kurumi_persona.skill_dir == "tokisaki_kurumi_persona"
     assert mutsumi.category == "style"
     assert kurumi.category == "style"
     assert yui.category == "style"
+    assert kurumi_persona.category == "persona"
     assert "Mutsumi Tone Skill" in (mutsumi.action.prompt or "")
     assert "Tokisaki Kurumi Tone Skill" in (kurumi.action.prompt or "")
     assert "Hirasawa Yui Tone Skill" in (yui.action.prompt or "")
+    assert "This skill controls identity" in (kurumi_persona.action.prompt or "")
+
+
+def test_robot_plain_group_message_does_not_wake_even_if_group_type_allowed() -> None:
+    service = RobotService()
+    message = RobotInboundMessage(
+        sender_key="onebot_v11:group:770362397:user:10001",
+        text="ordinary chatter",
+        reply_target=RobotReplyTarget(
+            target_type="group",
+            target_id="770362397",
+            metadata={
+                "conversation": {"type": "group", "id": "770362397"},
+                "target": {"message_type": "group", "group_id": "770362397"},
+            },
+        ),
+    )
+    command = service._parse_robot_command(message.text)
+
+    categories = service._reply_message_categories(message, command)
+
+    assert REPLY_MESSAGE_TYPE_GROUP not in categories
+    assert REPLY_MESSAGE_TYPE_MENTION not in categories
+
+
+def test_robot_empty_direct_wakeup_is_mention_category() -> None:
+    service = RobotService()
+    message = RobotInboundMessage(
+        sender_key="onebot_v11:group:770362397:user:10001",
+        text="",
+        reply_target=RobotReplyTarget(
+            target_type="group",
+            target_id="770362397",
+            metadata={
+                "mentioned_bot": True,
+                "conversation": {"type": "group", "id": "770362397"},
+                "target": {"message_type": "group", "group_id": "770362397"},
+            },
+        ),
+    )
+    command = service._parse_robot_command("[empty robot wakeup]")
+
+    categories = service._reply_message_categories(
+        message,
+        command,
+        direct_reply_trigger=service._message_directly_addresses_bot(message),
+    )
+
+    assert REPLY_MESSAGE_TYPE_MENTION in categories
+    assert REPLY_MESSAGE_TYPE_GROUP not in categories
 
 
 def test_log_manager_reads_legacy_log_when_primary_missing(tmp_path) -> None:

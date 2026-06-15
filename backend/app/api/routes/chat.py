@@ -44,6 +44,7 @@ from app.services.agent.prompts.policy import (
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.session import agent_session_manager
 from app.services.agent.stream_manager import stream_manager
+from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 
 if TYPE_CHECKING:
     from app.services.agent.agent import Agent
@@ -191,6 +192,8 @@ def build_system_prompt_with_skills(
     if matched_skills:
         parts.append("\n## Skills Relevant to Current Query:\n")
         for skill in matched_skills:
+            if skill.category in {"system", "persona"}:
+                continue
             parts.append(f"### {skill.name}")
             if skill.description:
                 parts.append(f"Description: {skill.description}")
@@ -753,6 +756,7 @@ def generate_stream(
 
     tool_call_history: list[tuple[str, str]] = []
     final_response = ""
+    tool_called_this_turn = False
     delivery_retry_used_by_integration: dict[str, bool] = {}
 
     try:
@@ -889,7 +893,10 @@ def generate_stream(
             ]
 
             if not ordered_tool_calls:
-                final_response = iteration_content.strip()
+                final_response = guard_ungrounded_tool_claim(
+                    iteration_content,
+                    tool_called=tool_called_this_turn,
+                )
                 delivery_retry_decision = get_delivery_retry_decision(
                     agent=agent,
                     messages=messages,
@@ -1011,6 +1018,7 @@ def generate_stream(
                         tool_args,
                     )
                 )
+                tool_called_this_turn = True
                 result_text = _format_tool_result(result)
 
                 if result_text and not hide_tool_details:

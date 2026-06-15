@@ -213,6 +213,7 @@ class ItemHandlerBase(SQLModel):
     enabled_skills: Optional[List[str]] = Field(default=None, sa_type=JSON)
     enabled_mcp_servers: Optional[List[str]] = Field(default=None, sa_type=JSON)
     enabled_knowledge_files: Optional[List[str]] = Field(default=None, sa_type=JSON)
+    agent_profile: dict = Field(default_factory=dict, sa_type=JSON)
 
 
 class ItemHandlerCreate(ItemHandlerBase):
@@ -226,6 +227,8 @@ class ItemHandlerUpdate(ItemHandlerBase):
     api_url: Optional[str] = Field(default=None, max_length=255)
     enabled_skills: Optional[List[str]] = Field(default=None, sa_type=JSON)
     enabled_mcp_servers: Optional[List[str]] = Field(default=None, sa_type=JSON)
+    enabled_knowledge_files: Optional[List[str]] = Field(default=None, sa_type=JSON)
+    agent_profile: Optional[dict] = Field(default=None, sa_type=JSON)
 
 
 class ItemHandler(ItemHandlerBase, table=True):

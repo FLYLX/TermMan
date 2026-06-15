@@ -9,6 +9,10 @@ if TYPE_CHECKING:
 
 
 ROBOT_MESSAGING_SKILL_ID = "robot_messaging"
+NO_QQ_REPLY_INSTRUCTION = (
+    "- If no QQ-side reply is needed, do not call `mcp_robot_send_message`; "
+    "return only `[no_qq_reply]` as the internal final response."
+)
 ROBOT_MESSAGING_PROMPT = (
     "Robot Messaging Skill:\n\n"
     "Use `mcp_robot_send_message` to send concise QQ-visible messages through "
@@ -29,7 +33,8 @@ ROBOT_ACTIVE_CONTEXT_PROMPT = (
     "`mcp_robot_read_conversation_memory` with no target arguments.\n"
     "- Do not reply to ordinary group chatter or messages directed at someone "
     "else. Do not send hidden reasoning, tool traces, raw logs, or long "
-    "summaries."
+    "summaries.\n"
+    f"{NO_QQ_REPLY_INSTRUCTION}"
 )
 
 ROBOT_BACKEND_CONTEXT_PROMPT = (
@@ -49,7 +54,7 @@ ROBOT_REFLECTION_PROMPT = (
     "should receive a reply.\n"
     "- Mentions, replies to the bot, and active chat window triggers are "
     "candidate continuations, not automatic permission to send.\n"
-    "- If no QQ-side reply is needed, do not call the tool."
+    f"{NO_QQ_REPLY_INSTRUCTION}"
 )
 
 
@@ -142,7 +147,7 @@ def build_robot_delivery_reflection_prompt(final_response: str) -> str:
         "bot, call `mcp_robot_send_message` now using the locked/current QQ "
         "conversation. If it is ordinary group chatter, directed at someone "
         "else, or no QQ-side response is needed, do not call the tool; respond "
-        "with a concise internal note explaining that no QQ message was sent. "
+        "only with `[no_qq_reply]` as the internal final response. "
         "Do not output the reflection itself."
     )
 

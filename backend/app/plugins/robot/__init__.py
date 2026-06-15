@@ -9,7 +9,7 @@ def is_robot_plugin_enabled() -> bool:
     from app.services.plugins import plugin_manager
 
     plugin = plugin_manager.get(ROBOT_PLUGIN_ID)
-    return bool(plugin and plugin_manager.is_plugin_enabled(plugin))
+    return bool(plugin and plugin.is_enabled())
 
 
 def include_robot_plugin_router(api_router: APIRouter) -> None:

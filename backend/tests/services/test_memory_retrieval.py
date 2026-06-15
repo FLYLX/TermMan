@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 from app.services.agent.memory.vector_store import VectorStoreService
 from app.services.agent.prompts import builder as prompt_builder
+from app.services.agent.skills.definition import ActionConfig, SkillDefinition
 
 
 class FakeEmbeddingService:
@@ -73,6 +75,8 @@ def test_vector_memory_search_filters_expired_and_inactive_by_default() -> None:
 
 
 def test_prompt_long_term_memory_recall_ranks_and_formats(monkeypatch) -> None:
+    monkeypatch.setattr(prompt_builder.vector_store, "get_all_memories", lambda *_args, **_kwargs: [])
+
     def fake_search_memories(*, memory_type: str, **_kwargs):
         memories_by_type = {
             "preference": [
@@ -143,3 +147,55 @@ def test_prompt_long_term_memory_recall_ranks_and_formats(monkeypatch) -> None:
     assert "Robot bridge 通过 OneBot V11 WebSocket 接入 NapCat" in memories
     assert "旧任务" not in memories
     assert "旧错误" not in memories
+
+
+def test_preference_memories_are_always_included_without_query_match(monkeypatch) -> None:
+    def fake_get_all_memories(*_args, memory_type: str, **_kwargs):
+        if memory_type != "preference":
+            return []
+        return [
+            {
+                "id": "pref-persona",
+                "content": "用户偏好：默认使用安静、简短的人格语气回复。",
+                "metadata": {
+                    "memory_type": "preference",
+                    "verified": True,
+                    "updated_at": datetime.now().isoformat(),
+                },
+            }
+        ]
+
+    def fake_search_memories(**_kwargs):
+        return []
+
+    monkeypatch.setattr(prompt_builder.vector_store, "get_all_memories", fake_get_all_memories)
+    monkeypatch.setattr(prompt_builder.vector_store, "search_memories", fake_search_memories)
+
+    memories = prompt_builder._collect_long_term_memories(
+        "item-1",
+        "说话",
+        allowed_types=("fact", "preference", "task", "error", "context"),
+        n_results=3,
+    )
+
+    assert "默认使用安静、简短的人格语气回复" in memories
+
+
+def test_enabled_style_skill_is_included_even_without_trigger(monkeypatch) -> None:
+    style_skill = SkillDefinition(
+        skill_id="quiet_style",
+        name="Quiet Style",
+        category="style",
+        action=ActionConfig(type="llm", prompt="Always-on quiet style prompt."),
+    )
+
+    agent = SimpleNamespace(
+        get_skills=lambda: [style_skill],
+        match_skills=lambda _query: [],
+    )
+    monkeypatch.setattr(prompt_builder, "get_system_prompt", lambda _agent: "Base system.")
+
+    prompt = prompt_builder._build_skill_prompt(agent, "普通问题")
+
+    assert "Base system." in prompt
+    assert "Always-on quiet style prompt." in prompt

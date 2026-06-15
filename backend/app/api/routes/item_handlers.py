@@ -3,8 +3,8 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import func
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlmodel import col, select
 
 from app.api.deps import CurrentUser, SessionDep
@@ -19,6 +19,7 @@ from app.models import (
 )
 from app.services.agent.agent import agent_manager
 from app.services.agent.knowledge import knowledge_base_service
+from app.services.agent.profile import normalize_agent_profile
 from app.services.llm_health_service import llm_health_service
 
 router = APIRouter(prefix="/item-handlers", tags=["item-handlers"])
@@ -90,8 +91,8 @@ def _build_item_handler_summaries(
         .where(col(ItemHandlerUser.item_handler_id).in_(handler_ids))
         .group_by(ItemHandlerUser.item_handler_id)
     ).all()
-    item_counts = {handler_id: count for handler_id, count in item_count_rows}
-    user_counts = {handler_id: count for handler_id, count in user_count_rows}
+    item_counts = dict(item_count_rows)
+    user_counts = dict(user_count_rows)
 
     return [
         ItemHandlerSummaryPublic.model_validate(
@@ -255,6 +256,10 @@ def update_item_handler(
     if "enabled_knowledge_files" in update_dict:
         update_dict["enabled_knowledge_files"] = knowledge_base_service.normalize_enabled_files(
             update_dict.get("enabled_knowledge_files")
+        )
+    if "agent_profile" in update_dict:
+        update_dict["agent_profile"] = normalize_agent_profile(
+            update_dict.get("agent_profile")
         )
     item_handler.sqlmodel_update(update_dict)
 

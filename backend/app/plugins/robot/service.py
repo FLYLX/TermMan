@@ -308,13 +308,15 @@ class RobotService:
         if not robot.is_enabled:
             return RobotDispatchResponse(success=True, ignored=True, reason="robot_disabled")
 
-        text = (message.text or "").strip()
-        if not text:
-            return RobotDispatchResponse(success=True, ignored=True, reason="empty_message")
-        command = self._parse_robot_command(text)
         direct_reply_trigger = self._message_directly_addresses_bot(message)
         reply_context_active = self._is_reply_context_active(robot, message)
         conversation_key = self._conversation_key(message)
+        text = (message.text or "").strip()
+        if not text and not direct_reply_trigger:
+            return RobotDispatchResponse(success=True, ignored=True, reason="empty_message")
+        if not text and direct_reply_trigger:
+            text = "[empty robot wakeup]"
+        command = self._parse_robot_command(text)
         self._remember_inbound_conversation_memory(robot, message, conversation_key, text)
         mention_match_mode = self._mention_match_mode(robot)
         reply_categories = self._reply_message_categories(
@@ -1056,7 +1058,10 @@ class RobotService:
         reply_context_active: bool = False,
         mention_match_mode: str = DEFAULT_MENTION_MATCH_MODE,
     ) -> set[str]:
-        categories = {self._conversation_message_type(message)}
+        message_type = self._conversation_message_type(message)
+        categories: set[str] = set()
+        if message_type == REPLY_MESSAGE_TYPE_PRIVATE:
+            categories.add(REPLY_MESSAGE_TYPE_PRIVATE)
         if command.mode != "chat" or command.target:
             categories.add(REPLY_MESSAGE_TYPE_COMMAND)
         if direct_reply_trigger or reply_context_active:

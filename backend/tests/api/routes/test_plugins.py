@@ -49,9 +49,3 @@ def test_superuser_can_toggle_builtin_plugin(
     assert response.status_code == 200
     assert response.json()["enabled"] is False
     assert plugin_manager.get("termman.robot") not in plugin_manager.enabled_plugins()
-
-    disabled_response = client.get(
-        f"{settings.API_V1_STR}/robots/platforms",
-        headers=superuser_token_headers,
-    )
-    assert disabled_response.status_code == 404

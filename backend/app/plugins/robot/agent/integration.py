@@ -12,6 +12,7 @@ from app.plugins.robot.mcp.context import (
     register_robot_mcp_context,
     unregister_robot_mcp_context,
 )
+from app.plugins.robot.reply_intent import is_no_reply_intent
 from app.services.agent.integrations import NoopAgentIntegration
 from app.services.agent.integrations import (
     register_agent_integration as register_core_agent_integration,
@@ -375,6 +376,7 @@ class RobotAgentIntegration(NoopAgentIntegration):
         return (
             bool(final_response.strip())
             and not retry_used
+            and not is_no_reply_intent(final_response)
             and _has_tool(tools, ROBOT_SEND_TOOL_NAME)
             and self._has_delivery_context(agent, messages)
         )
@@ -502,6 +504,18 @@ class RobotAgentIntegration(NoopAgentIntegration):
     ) -> bool:
         robot_id = str(context.get("robot_id") or "").strip()
         robot_reply_target = context.get("reply_target")
+        if is_no_reply_intent(content):
+            if robot_id:
+                from app.plugins.robot.debug_log import preview_text, record_robot_event
+
+                record_robot_event(
+                    robot_id,
+                    direction="agent_internal",
+                    event="agent_final_response_no_qq_reply",
+                    message=preview_text(content),
+                    payload={"reason": "no_reply_intent"},
+                )
+            return False
         if not _should_send_final_response_fallback(
             robot_id=robot_id,
             robot_reply_target=robot_reply_target,

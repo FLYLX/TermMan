@@ -18,6 +18,34 @@ def test_robot_mcp_send_message_requires_context_or_explicit_target() -> None:
     assert "target_type and target_id" in result[0]["text"]
 
 
+def test_robot_mcp_send_message_noops_no_reply_intent(monkeypatch) -> None:
+    server = RobotMCPServer()
+    sent: list[str] = []
+
+    def fake_send_message(_robot_id, _reply_target, text):
+        sent.append(text)
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+
+    result = server.call_tool(
+        "send_message",
+        {
+            "text": "[no_qq_reply]",
+            "target_type": "group",
+            "target_id": "123456",
+            "_termman_user_id": "user-1",
+        },
+    )
+
+    assert result == [
+        {"type": "text", "text": "No QQ message sent: no reply needed."}
+    ]
+    assert sent == []
+
+
 def test_robot_mcp_send_message_uses_explicit_target(monkeypatch) -> None:
     server = RobotMCPServer()
     sent: dict[str, object] = {}

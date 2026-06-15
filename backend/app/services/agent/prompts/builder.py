@@ -83,6 +83,22 @@ LONG_TERM_MEMORY_LABEL = "相关长期记忆"
 FILTERED_TERMINAL_LABEL = "终端过滤输出"
 RAW_TERMINAL_LABEL = "原生日志反馈"
 MIN_LONG_TERM_MEMORY_RELEVANCE = 0.08
+ALWAYS_ON_SKILL_CATEGORIES = {"style"}
+ALWAYS_ON_MEMORY_TYPES = {"preference"}
+MAX_ALWAYS_ON_MEMORIES_PER_TYPE = 5
+PREFERENCE_LIKE_MEMORY_TYPES = ("preference", "fact", "context")
+PREFERENCE_LIKE_MEMORY_MARKERS = (
+    "用户偏好",
+    "人格",
+    "人设",
+    "性格",
+    "语气",
+    "口吻",
+    "说话方式",
+    "persona",
+    "tone",
+    "style",
+)
 MEMORY_TYPE_RANK_BONUS = {
     "preference": 0.18,
     "task": 0.16,
@@ -103,8 +119,12 @@ def _build_skill_prompt(
     prompt_parts = [get_system_prompt(agent)]
 
     skills = agent.match_skills(query) if query else []
+    existing_skill_ids = {skill.skill_id for skill in skills}
+    for skill in agent.get_skills():
+        if skill.category in ALWAYS_ON_SKILL_CATEGORIES and skill.skill_id not in existing_skill_ids:
+            skills.append(skill)
+            existing_skill_ids.add(skill.skill_id)
     if force_skill_ids:
-        existing_skill_ids = {skill.skill_id for skill in skills}
         for skill in agent.get_skills():
             if skill.skill_id in force_skill_ids and skill.skill_id not in existing_skill_ids:
                 skills.append(skill)
@@ -115,7 +135,7 @@ def _build_skill_prompt(
                 skills.append(forced_skill)
                 existing_skill_ids.add(forced_skill.skill_id)
     for skill in skills:
-        if skill.category == "system":
+        if skill.category in {"system", "persona"}:
             continue
         if skill.action and skill.action.prompt:
             prompt_parts.append(skill.action.prompt)
@@ -127,6 +147,76 @@ def _build_skill_prompt(
     if query:
         return f"{base_prompt}\n\nUser query: {query}"
     return base_prompt
+
+
+def _memory_timestamp(memory: dict[str, Any]) -> float:
+    metadata = memory.get("metadata") or {}
+    timestamp = _parse_memory_datetime(
+        metadata.get("updated_at") or metadata.get("created_at")
+    )
+    if timestamp is None:
+        return 0.0
+    try:
+        return timestamp.timestamp()
+    except OSError:
+        return 0.0
+
+
+def _sort_memories_by_stability(memories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        memories,
+        key=lambda memory: (
+            bool((memory.get("metadata") or {}).get("verified")),
+            _memory_timestamp(memory),
+        ),
+        reverse=True,
+    )
+
+
+def _looks_like_preference_memory(memory: dict[str, Any]) -> bool:
+    if _memory_type(memory) == "preference":
+        return True
+    content = str(memory.get("content") or "").lower()
+    return any(marker.lower() in content for marker in PREFERENCE_LIKE_MEMORY_MARKERS)
+
+
+def _collect_always_on_memories(
+    item_id: str,
+    *,
+    allowed_types: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    collected: list[dict[str, Any]] = []
+    if not allowed_types:
+        return collected
+
+    if "preference" not in allowed_types:
+        return collected
+
+    for memory_type in PREFERENCE_LIKE_MEMORY_TYPES:
+        try:
+            memories = vector_store.get_all_memories(item_id, memory_type=memory_type)
+        except Exception as exc:
+            logger.warning(
+                "[PromptBuilder] Failed to load always-on memories for item=%s, type=%s: %s",
+                item_id,
+                memory_type,
+                exc,
+            )
+            continue
+
+        active_memories = [
+            memory
+            for memory in memories
+            if memory.get("content")
+            and _looks_like_preference_memory(memory)
+            and not _is_memory_expired(memory)
+            and not _is_inactive_status_memory(memory)
+        ]
+        collected.extend(
+            _sort_memories_by_stability(active_memories)[:MAX_ALWAYS_ON_MEMORIES_PER_TYPE]
+        )
+
+    return collected
 
 
 def _normalize_content(value: str) -> str:
@@ -206,36 +296,44 @@ def _collect_long_term_memories(
     allowed_types: tuple[str, ...],
     n_results: int,
 ) -> str:
-    if not query or not allowed_types or n_results <= 0:
+    if not allowed_types or n_results <= 0:
         return ""
 
     collected: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
 
-    for memory_type in allowed_types:
-        try:
-            memories = vector_store.search_memories(
-                item_id=item_id,
-                query=query,
-                n_results=n_results,
-                memory_type=memory_type,
-                include_expired=False,
-                active_only=True,
-            )
-        except Exception as exc:
-            logger.warning(
-                "[PromptBuilder] Failed to query long-term memories for item=%s, type=%s: %s",
-                item_id,
-                memory_type,
-                exc,
-            )
+    for memory in _collect_always_on_memories(item_id, allowed_types=allowed_types):
+        memory_id = memory.get("id")
+        if memory_id in seen_ids:
             continue
-        for memory in memories:
-            memory_id = memory.get("id")
-            if memory_id in seen_ids:
+        seen_ids.add(memory_id)
+        collected.append(memory)
+
+    if query:
+        for memory_type in allowed_types:
+            try:
+                memories = vector_store.search_memories(
+                    item_id=item_id,
+                    query=query,
+                    n_results=n_results,
+                    memory_type=memory_type,
+                    include_expired=False,
+                    active_only=True,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[PromptBuilder] Failed to query long-term memories for item=%s, type=%s: %s",
+                    item_id,
+                    memory_type,
+                    exc,
+                )
                 continue
-            seen_ids.add(memory_id)
-            collected.append(memory)
+            for memory in memories:
+                memory_id = memory.get("id")
+                if memory_id in seen_ids:
+                    continue
+                seen_ids.add(memory_id)
+                collected.append(memory)
 
     trimmed = _select_long_term_memories(
         collected,
@@ -259,7 +357,12 @@ def _parse_memory_datetime(value: Any) -> datetime | None:
 
 def _memory_type(memory: dict[str, Any]) -> str:
     metadata = memory.get("metadata") or {}
-    return str(metadata.get("memory_type") or "fact")
+    memory_type = str(metadata.get("memory_type") or "fact")
+    if memory_type in {"fact", "context"}:
+        content = str(memory.get("content") or "").lower()
+        if any(marker.lower() in content for marker in PREFERENCE_LIKE_MEMORY_MARKERS):
+            return "preference"
+    return memory_type
 
 
 def _memory_relevance_score(memory: dict[str, Any]) -> float:

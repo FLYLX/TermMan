@@ -18,7 +18,12 @@ class SkillLoader:
             skills_dir = Path(__file__).parent.parent.parent.parent.parent / "skills"
         self.skills_dir = Path(skills_dir)
         self._skills: dict[str, SkillDefinition] = {}
+        self._revision = 0
         self._load_all()
+
+    @property
+    def revision(self) -> int:
+        return self._revision
 
     def _load_all(self):
         if not self.skills_dir.exists():
@@ -31,8 +36,8 @@ class SkillLoader:
                     if skill:
                         self._skills[skill.skill_id] = skill
 
-        self._load_builtin_style_skills()
         self._load_builtin_plugin_skills()
+        self._revision += 1
 
         logger.info(f"[SkillLoader] Loaded {len(self._skills)} skills")
 
@@ -45,18 +50,6 @@ class SkillLoader:
 
         for skill in get_builtin_skill_definitions():
             if skill is None or skill.skill_id in self._skills:
-                continue
-            self._skills[skill.skill_id] = skill
-
-    def _load_builtin_style_skills(self) -> None:
-        try:
-            from .builtin import build_builtin_style_skill_definitions
-        except Exception as exc:
-            logger.debug("[SkillLoader] Builtin style skills unavailable: %s", exc)
-            return
-
-        for skill in build_builtin_style_skill_definitions():
-            if skill.skill_id in self._skills:
                 continue
             self._skills[skill.skill_id] = skill
 

@@ -9,6 +9,7 @@ from typing import Any
 
 from app.plugins.robot.contracts import RobotReplyTarget
 from app.plugins.robot.mcp.context import get_robot_mcp_context
+from app.plugins.robot.reply_intent import is_no_reply_intent
 
 logger = logging.getLogger(__name__)
 
@@ -855,6 +856,13 @@ class RobotMCPServer:
         text = str(args.get("text") or "").strip()
         if not text:
             return [{"type": "text", "text": "Error: text required"}]
+        if is_no_reply_intent(text):
+            return [
+                {
+                    "type": "text",
+                    "text": "No QQ message sent: no reply needed.",
+                }
+            ]
 
         context_token = str(args.get("_robot_context_token") or "").strip()
         context = get_robot_mcp_context(context_token)
