@@ -91,6 +91,34 @@ def test_persona_skill_is_system_identity_layer_after_default_identity() -> None
 
     prompt = get_system_prompt(agent)
 
-    assert "Persona Identity Layer" in prompt
-    assert "Style/tone skills only adjust surface voice" in prompt
+    assert "人格身份层" in prompt
+    assert "style/tone skill 只改变表面语气" in prompt
+    assert "不要混合身份" in prompt
     assert prompt.index("You are TermMan runtime.") < prompt.index("Persona says")
+
+
+def test_no_persona_prompt_keeps_identity_blank() -> None:
+    system_skill = SkillDefinition(
+        skill_id="system_prompt",
+        name="System Prompt",
+        category="system",
+        action=ActionConfig(type="llm", prompt="基础系统提示。"),
+    )
+    style_skill = SkillDefinition(
+        skill_id="kurumi_tone",
+        name="Kurumi Tone",
+        category="style",
+        action=ActionConfig(type="llm", prompt="语气提示。"),
+    )
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(agent_profile={}, enabled_knowledge_files=[], skill_revision=3),
+        get_skills=lambda: [system_skill, style_skill],
+        get_mcp_servers=lambda: [],
+    )
+
+    prompt = get_system_prompt(agent)
+
+    assert "默认身份规则" in prompt
+    assert "没有 persona skill 就保持空白身份" in prompt
+    assert "不要自称 TermMan" in prompt
+    assert "人格身份层" not in prompt
