@@ -57,7 +57,8 @@ REQUEST_TIMEOUT = 120
 MAX_ITERATIONS = 10
 LOOP_DETECTION_WINDOW = 6
 LOOP_THRESHOLD = 3
-SILENT_TOOL_NAMES = {"mcp_local_read_terminal_log"}
+SILENT_TOOL_NAMES = {"mcp_local_read_terminal_log", "mcp_robot_send_message"}
+HIDDEN_TOOL_RESULT_NAMES = {"mcp_robot_send_message"}
 AUTO_TASK_SOURCE = "agent_plan"
 AUTO_TASK_TTL_DAYS = 7
 MAX_AUTO_TASKS = 5
@@ -721,6 +722,7 @@ def generate_stream(
     handler: ItemHandler,
     item_id: str,
     agent: "Agent" = None,
+    include_hidden_tool_results: bool = False,
 ) -> Generator[str, None, None]:
     if agent is None:
         agent = agent_manager.get_or_create(handler)
@@ -1021,22 +1023,37 @@ def generate_stream(
                 tool_called_this_turn = True
                 result_text = _format_tool_result(result)
 
-                if result_text and not hide_tool_details:
-                    if (
-                        planned_task_runtime
-                        and not planned_task_runtime.tool_finished
-                        and len(planned_task_runtime.tasks) > 2
-                    ):
-                        _advance_agent_task_plan(planned_task_runtime, 2)
-                        planned_task_runtime.tool_finished = True
-                    result_event = _persist_and_broadcast_event(
-                        item_id,
-                        role="assistant",
-                        content=result_text,
-                        message_type="agent_tool_result",
-                        extra={"tool_name": tool_name},
-                    )
-                    yield _to_sse(result_event)
+                if result_text:
+                    if hide_tool_details:
+                        if (
+                            include_hidden_tool_results
+                            and tool_name in HIDDEN_TOOL_RESULT_NAMES
+                        ):
+                            yield _to_sse(
+                                {
+                                    "type": "agent_tool_result",
+                                    "content": result_text,
+                                    "timestamp": datetime.now().isoformat(),
+                                    "tool_name": tool_name,
+                                    "hidden": True,
+                                }
+                            )
+                    else:
+                        if (
+                            planned_task_runtime
+                            and not planned_task_runtime.tool_finished
+                            and len(planned_task_runtime.tasks) > 2
+                        ):
+                            _advance_agent_task_plan(planned_task_runtime, 2)
+                            planned_task_runtime.tool_finished = True
+                        result_event = _persist_and_broadcast_event(
+                            item_id,
+                            role="assistant",
+                            content=result_text,
+                            message_type="agent_tool_result",
+                            extra={"tool_name": tool_name},
+                        )
+                        yield _to_sse(result_event)
 
                 assistant_message["tool_calls"].append(
                     {

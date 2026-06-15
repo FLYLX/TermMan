@@ -8,6 +8,7 @@ import uuid
 from typing import Any
 
 from app.plugins.robot.contracts import RobotReplyTarget
+from app.plugins.robot.internal_trace import is_robot_internal_trace_text
 from app.plugins.robot.mcp.context import get_robot_mcp_context
 from app.plugins.robot.reply_intent import is_no_reply_intent
 
@@ -861,6 +862,13 @@ class RobotMCPServer:
                 {
                     "type": "text",
                     "text": "No QQ message sent: no reply needed.",
+                }
+            ]
+        if is_robot_internal_trace_text(text):
+            return [
+                {
+                    "type": "text",
+                    "text": "No QQ message sent: internal tool trace.",
                 }
             ]
 

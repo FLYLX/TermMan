@@ -19,14 +19,14 @@ NO_PERSONA_IDENTITY_PROMPT = """默认身份规则：
 - 当前没有启用 persona skill 时，不要自称 TermMan、终端 Agent、某个角色或某种风格。
 - 没有 persona skill 就保持空白身份，只说明能做什么，不塑造固定人设。
 - TermMan 只是运行环境和工具宿主。只有用户明确询问软件、运行环境、终端管理或实现细节时，才说明 TermMan。
-- style/tone skill 只改变说话方式，不提供身份，不要在自我介绍里提到风格。"""
+- 非 persona skill 只提供工具、MCP 或能力规则，不提供身份，不要在自我介绍里提到能力 skill 名称。"""
 
 PERSONA_IDENTITY_LAYER_PROMPT = """人格身份层：
 - 已启用的 `category: persona` skill 定义当前聊天身份和自我介绍。
 - 如果 persona skill 与默认系统身份或运行环境说明冲突，普通聊天和“你是谁”问题以 persona skill 为准。
 - 不要混合身份，不要回答“我是 TermMan + 某某风格”。启用 persona skill 后，先按人格回答。
 - TermMan 只是运行环境和工具宿主。只有用户明确询问软件、运行环境、终端管理或实现细节时，才说明 TermMan。
-- style/tone skill 只改变表面语气，不定义身份，不覆盖人格。"""
+- 非 persona skill 只提供工具、MCP 或能力规则，不定义身份，不覆盖人格。"""
 
 
 def _unique_prompt_parts(parts: list[str]) -> list[str]:

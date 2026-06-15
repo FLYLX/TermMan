@@ -46,6 +46,37 @@ def test_robot_mcp_send_message_noops_no_reply_intent(monkeypatch) -> None:
     assert sent == []
 
 
+def test_robot_mcp_send_message_blocks_internal_tool_trace(monkeypatch) -> None:
+    server = RobotMCPServer()
+    sent: list[str] = []
+
+    def fake_send_message(_robot_id, _reply_target, text):
+        sent.append(text)
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+
+    result = server.call_tool(
+        "send_message",
+        {
+            "text": (
+                "Executing tool: mcp_robot_send_message\n\n"
+                "Message sent to current robot conversation."
+            ),
+            "target_type": "group",
+            "target_id": "123456",
+            "_termman_user_id": "user-1",
+        },
+    )
+
+    assert result == [
+        {"type": "text", "text": "No QQ message sent: internal tool trace."}
+    ]
+    assert sent == []
+
+
 def test_robot_mcp_send_message_uses_explicit_target(monkeypatch) -> None:
     server = RobotMCPServer()
     sent: dict[str, object] = {}

@@ -13,6 +13,8 @@ from .contracts import (
     RobotReplyTarget,
 )
 from .debug_log import record_robot_event
+from .internal_trace import is_robot_internal_trace_text
+from .message_chunks import split_robot_message_for_target
 
 logger = logging.getLogger(__name__)
 
@@ -94,15 +96,26 @@ class RobotBridgeClient:
         return {"data": data}
 
     def send_message(self, robot_id: uuid.UUID | str, target: RobotReplyTarget, text: str) -> None:
-        if not text.strip():
+        robot_id_str = str(robot_id)
+        if is_robot_internal_trace_text(text):
+            record_robot_event(
+                robot_id_str,
+                direction="backend_to_bridge",
+                event="send_message_blocked",
+                status="ignored",
+                message=text,
+                payload={
+                    "target_type": target.target_type,
+                    "target_id": target.target_id,
+                    "reason": "internal_robot_tool_trace",
+                },
+            )
             return
 
-        robot_id_str = str(robot_id)
-        payload = RobotBridgeSendRequest(
-            robot_id=robot_id,
-            target=target,
-            text=text,
-        )
+        chunks = split_robot_message_for_target(target, text)
+        if not chunks:
+            return
+
         record_robot_event(
             robot_id_str,
             direction="backend_to_bridge",
@@ -111,15 +124,37 @@ class RobotBridgeClient:
             payload={
                 "target_type": target.target_type,
                 "target_id": target.target_id,
+                "chunk_count": len(chunks),
             },
         )
+        chunk_index = 0
+        chunk_text = ""
         try:
-            self._request(
-                "POST",
-                "/internal/send",
-                timeout=10.0,
-                content=payload.model_dump_json(),
-            )
+            for chunk_index, chunk_text in enumerate(chunks, start=1):
+                payload = RobotBridgeSendRequest(
+                    robot_id=robot_id,
+                    target=target,
+                    text=chunk_text,
+                )
+                if len(chunks) > 1:
+                    record_robot_event(
+                        robot_id_str,
+                        direction="backend_to_bridge",
+                        event="send_message_chunk",
+                        message=chunk_text,
+                        payload={
+                            "target_type": target.target_type,
+                            "target_id": target.target_id,
+                            "chunk_index": chunk_index,
+                            "chunk_count": len(chunks),
+                        },
+                    )
+                self._request(
+                    "POST",
+                    "/internal/send",
+                    timeout=10.0,
+                    content=payload.model_dump_json(),
+                )
         except Exception as exc:
             record_robot_event(
                 robot_id_str,
@@ -127,6 +162,13 @@ class RobotBridgeClient:
                 event="send_message",
                 status="error",
                 message=str(exc),
+                payload={
+                    "target_type": target.target_type,
+                    "target_id": target.target_id,
+                    "chunk_index": chunk_index,
+                    "chunk_count": len(chunks),
+                    "chunk_text": chunk_text,
+                },
             )
             raise
 

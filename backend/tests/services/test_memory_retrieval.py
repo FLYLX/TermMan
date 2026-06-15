@@ -181,21 +181,21 @@ def test_preference_memories_are_always_included_without_query_match(monkeypatch
     assert "默认使用安静、简短的人格语气回复" in memories
 
 
-def test_enabled_style_skill_is_included_even_without_trigger(monkeypatch) -> None:
-    style_skill = SkillDefinition(
-        skill_id="quiet_style",
-        name="Quiet Style",
-        category="style",
-        action=ActionConfig(type="llm", prompt="Always-on quiet style prompt."),
+def test_persona_skill_is_not_duplicated_as_regular_skill_prompt(monkeypatch) -> None:
+    persona_skill = SkillDefinition(
+        skill_id="quiet_persona",
+        name="Quiet Persona",
+        category="persona",
+        action=ActionConfig(type="llm", prompt="Persona prompt should stay in system."),
     )
 
     agent = SimpleNamespace(
-        get_skills=lambda: [style_skill],
-        match_skills=lambda _query: [],
+        get_skills=lambda: [persona_skill],
+        match_skills=lambda _query: [persona_skill],
     )
     monkeypatch.setattr(prompt_builder, "get_system_prompt", lambda _agent: "Base system.")
 
     prompt = prompt_builder._build_skill_prompt(agent, "普通问题")
 
     assert "Base system." in prompt
-    assert "Always-on quiet style prompt." in prompt
+    assert "Persona prompt should stay in system." not in prompt

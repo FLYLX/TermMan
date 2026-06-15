@@ -535,11 +535,11 @@ def test_robot_history_context_does_not_inject_prompt_without_robot_skill(monkey
 
 def test_critical_terminal_prompt_forces_alert_skill(monkeypatch) -> None:
     critical_skill = SimpleNamespace(
-        skill_id="terminal_critical_alert",
-        name="Terminal Critical Alert",
-        description="Critical terminal alerts",
-        category="integration",
-        action=SimpleNamespace(prompt="critical alert prompt body"),
+        skill_id="terminal_mcp",
+        name="终端 MCP",
+        description="终端 MCP 能力",
+        category="mcp",
+        action=SimpleNamespace(prompt="terminal mcp prompt body"),
         content="",
     )
     agent = SimpleNamespace(
@@ -571,8 +571,8 @@ def test_critical_terminal_prompt_forces_alert_skill(monkeypatch) -> None:
         terminal_content="error: file not found during investigation",
     )
 
-    assert "critical alert prompt body" in critical_messages[0]["content"]
-    assert "critical alert prompt body" not in normal_messages[0]["content"]
+    assert "terminal mcp prompt body" in critical_messages[0]["content"]
+    assert "terminal mcp prompt body" not in normal_messages[0]["content"]
 
 
 def test_robot_delivery_retry_triggers_when_model_returns_plain_reply() -> None:
@@ -818,6 +818,67 @@ def test_robot_collect_response_sends_plain_final_reply_for_direct_mention(
     }
 
 
+def test_robot_collect_response_does_not_return_send_tool_trace(
+    monkeypatch,
+) -> None:
+    class FakeAgent:
+        def setup_context(self, agent, context: dict) -> None:
+            return None
+
+        async def ensure_tools(self, agent, context: dict) -> None:
+            return None
+
+        def clear_context(self, agent, context: dict) -> None:
+            return None
+
+    async def fake_prepare_chat_agent(*_args, **_kwargs):
+        return SimpleNamespace(name="handler"), SimpleNamespace(id="item-1"), FakeAgent()
+
+    def fake_generate_stream(**_kwargs):
+        yield (
+            'data: {"type": "agent_response", '
+            '"content": "Executing tool: mcp_robot_send_message"}\n\n'
+        )
+        yield (
+            'data: {"type": "agent_tool_result", '
+            '"content": "Message sent to current robot conversation."}\n\n'
+        )
+        yield 'data: {"done": true}\n\n'
+
+    monkeypatch.setattr(chat_runtime, "prepare_chat_agent", fake_prepare_chat_agent)
+    monkeypatch.setattr("app.api.routes.chat.generate_stream", fake_generate_stream)
+    integration = get_robot_agent_integration()
+    monkeypatch.setattr(
+        "app.services.agent.integrations.hooks.get_agent_integration",
+        lambda name: integration if name == "robot" else None,
+    )
+    monkeypatch.setattr(
+        "app.services.agent.integrations.hooks.get_agent_integrations",
+        lambda: [integration],
+    )
+
+    result = asyncio.run(
+        collect_chat_response(
+            session=SimpleNamespace(),
+            item_id="item-1",
+            current_user=SimpleNamespace(),
+            message="say something",
+            robot_id="robot-1",
+            robot_sender_key="onebot_v11:group:123456:u1",
+            robot_reply_target=RobotReplyTarget(
+                target_type="group",
+                target_id="123456",
+                metadata={"mentioned_bot": True},
+            ),
+            return_result=True,
+        )
+    )
+
+    assert isinstance(result, ChatResponseResult)
+    assert result.content == ""
+    assert result.robot_message_sent is True
+
+
 def test_robot_collect_response_fallback_accepts_warning_completion() -> None:
     assert get_robot_agent_integration().fallback_response_content(
         {"robot_id": "robot-1"},
@@ -859,13 +920,13 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
 
     prompt = get_system_prompt(agent)
 
-    assert "Robot Messaging Skill" in prompt
+    assert "QQ MCP Skill" in prompt
     assert "Current robot reply target" in prompt
     assert "conversation: group:g1" in prompt
     assert "sender: Alice (u1)" in prompt
-    assert "Your final assistant message is internal" in prompt
+    assert "最终 assistant 文本是 TermMan 内部回复" in prompt
     assert "mcp_robot_send_message" in prompt
-    assert "Active QQ Conversation" in prompt
+    assert "当前 QQ 会话" in prompt
     assert "call `mcp_robot_send_message` with only `text`" in prompt
     assert "QQ Reply Reflection" not in prompt
 
@@ -878,35 +939,39 @@ def test_robot_plugin_prompt_can_be_disabled(monkeypatch) -> None:
 
 
 def test_robot_plugin_registers_builtin_skill() -> None:
-    skill = skill_loader.get("robot_messaging")
+    skill = skill_loader.get("qq_mcp")
 
     assert skill is not None
+    assert skill.category == "mcp"
     assert skill.mcp_servers == ["robot"]
     assert "mcp_robot_send_message" in (skill.action.prompt or "")
 
 
-def test_style_tone_and_persona_skills_load_from_skill_files() -> None:
-    mutsumi = skill_loader.get("mutsumi_tone")
-    kurumi = skill_loader.get("tokisaki_kurumi_tone")
-    yui = skill_loader.get("hirasawa_yui_tone")
-    kurumi_persona = skill_loader.get("tokisaki_kurumi_persona")
+def test_builtin_skills_are_terminal_qq_mcp_and_personas() -> None:
+    terminal_mcp = skill_loader.get("terminal_mcp")
+    qq_mcp = skill_loader.get("qq_mcp")
+    mutsumi = skill_loader.get("mutsumi_persona")
+    kurumi = skill_loader.get("tokisaki_kurumi_persona")
+    yui = skill_loader.get("hirasawa_yui_persona")
 
+    assert terminal_mcp is not None
+    assert qq_mcp is not None
     assert mutsumi is not None
     assert kurumi is not None
     assert yui is not None
-    assert kurumi_persona is not None
-    assert mutsumi.skill_dir == "mutsumi_tone"
-    assert kurumi.skill_dir == "tokisaki_kurumi_tone"
-    assert yui.skill_dir == "hirasawa_yui_tone"
-    assert kurumi_persona.skill_dir == "tokisaki_kurumi_persona"
-    assert mutsumi.category == "style"
-    assert kurumi.category == "style"
-    assert yui.category == "style"
-    assert kurumi_persona.category == "persona"
-    assert "Mutsumi Tone Skill" in (mutsumi.action.prompt or "")
-    assert "Tokisaki Kurumi Tone Skill" in (kurumi.action.prompt or "")
-    assert "Hirasawa Yui Tone Skill" in (yui.action.prompt or "")
-    assert "This skill controls identity" in (kurumi_persona.action.prompt or "")
+    assert terminal_mcp.category == "mcp"
+    assert qq_mcp.category == "mcp"
+    assert mutsumi.skill_dir == "mutsumi_persona"
+    assert kurumi.skill_dir == "tokisaki_kurumi_persona"
+    assert yui.skill_dir == "hirasawa_yui_persona"
+    assert mutsumi.category == "persona"
+    assert kurumi.category == "persona"
+    assert yui.category == "persona"
+    assert "终端 MCP Skill" in (terminal_mcp.action.prompt or "")
+    assert "QQ MCP Skill" in (qq_mcp.action.prompt or "")
+    assert "若叶睦人格 Skill" in (mutsumi.action.prompt or "")
+    assert "时崎狂三人格 Skill" in (kurumi.action.prompt or "")
+    assert "平泽唯人格 Skill" in (yui.action.prompt or "")
 
 
 def test_robot_plain_group_message_does_not_wake_even_if_group_type_allowed() -> None:

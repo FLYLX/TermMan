@@ -5,6 +5,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from app.plugins.robot import is_robot_plugin_enabled
+from app.plugins.robot.internal_trace import is_robot_internal_trace_text
 from app.plugins.robot.mcp.context import (
     RobotMCPContext,
     build_robot_reply_context_summary,
@@ -13,10 +14,6 @@ from app.plugins.robot.mcp.context import (
     unregister_robot_mcp_context,
 )
 from app.plugins.robot.reply_intent import is_no_reply_intent
-from app.services.agent.integrations import NoopAgentIntegration
-from app.services.agent.integrations import (
-    register_agent_integration as register_core_agent_integration,
-)
 
 if TYPE_CHECKING:
     from app.plugins.robot.contracts import RobotReplyTarget
@@ -27,7 +24,9 @@ logger = logging.getLogger(__name__)
 
 ROBOT_MCP_SERVER_NAME = "robot"
 ROBOT_SEND_TOOL_NAME = "mcp_robot_send_message"
+QQ_MCP_SKILL_ID = "qq_mcp"
 ROBOT_MESSAGING_SKILL_ID = "robot_messaging"
+ROBOT_MESSAGING_COMPAT_SKILL_IDS = {QQ_MCP_SKILL_ID, ROBOT_MESSAGING_SKILL_ID}
 ROBOT_MESSAGE_STAMP_RE = re.compile(r"\[Robot message; (?P<body>[^\]]+)\]")
 
 
@@ -56,12 +55,7 @@ def _robot_conversation_key(reply_target: RobotReplyTarget, sender_key: str) -> 
 
 
 def _is_robot_send_tool_result(value: str) -> bool:
-    normalized = value.strip()
-    return (
-        normalized.startswith("Message sent to QQ ")
-        or normalized == "Message sent to current robot conversation."
-        or normalized.startswith("Broadcast sent to ")
-    )
+    return is_robot_internal_trace_text(value)
 
 
 def _parse_robot_message_stamp_body(body: str) -> dict[str, str]:
@@ -119,7 +113,7 @@ def _should_send_final_response_fallback(
     )
 
 
-class RobotAgentIntegration(NoopAgentIntegration):
+class RobotAgentIntegration:
     name = "robot"
 
     def build_system_prompt(self, agent: Agent) -> str:
@@ -553,7 +547,11 @@ class RobotAgentIntegration(NoopAgentIntegration):
         if context is None:
             return False
         return (
-            ROBOT_MESSAGING_SKILL_ID in set(getattr(context, "enabled_skills", []) or [])
+            bool(
+                ROBOT_MESSAGING_COMPAT_SKILL_IDS.intersection(
+                    set(getattr(context, "enabled_skills", []) or [])
+                )
+            )
             or ROBOT_MCP_SERVER_NAME in set(getattr(context, "enabled_mcp_servers", []) or [])
         )
 
@@ -669,6 +667,10 @@ def get_robot_agent_integration() -> RobotAgentIntegration:
 def register_robot_agent_integration() -> None:
     if not is_robot_plugin_enabled():
         return
+    from app.services.agent.integrations.registry import (
+        register_agent_integration as register_core_agent_integration,
+    )
+
     register_core_agent_integration(get_robot_agent_integration())
 
 
@@ -679,6 +681,7 @@ def register_agent_integration() -> None:
 __all__ = [
     "ROBOT_MCP_SERVER_NAME",
     "ROBOT_MESSAGING_SKILL_ID",
+    "QQ_MCP_SKILL_ID",
     "ROBOT_SEND_TOOL_NAME",
     "RobotAgentIntegration",
     "get_robot_agent_integration",

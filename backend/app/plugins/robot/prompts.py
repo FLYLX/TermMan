@@ -8,52 +8,48 @@ if TYPE_CHECKING:
     from app.services.agent.agent import Agent
 
 
+QQ_MCP_SKILL_ID = "qq_mcp"
 ROBOT_MESSAGING_SKILL_ID = "robot_messaging"
+ROBOT_MESSAGING_COMPAT_SKILL_IDS = {QQ_MCP_SKILL_ID, ROBOT_MESSAGING_SKILL_ID}
+
 NO_QQ_REPLY_INSTRUCTION = (
-    "- If no QQ-side reply is needed, do not call `mcp_robot_send_message`; "
-    "return only `[no_qq_reply]` as the internal final response."
+    "- 如果 QQ 侧不需要回复，不要调用 `mcp_robot_send_message`；"
+    "内部最终回复只返回 `[no_qq_reply]`。"
 )
+
 ROBOT_MESSAGING_PROMPT = (
-    "Robot Messaging Skill:\n\n"
-    "Use `mcp_robot_send_message` to send concise QQ-visible messages through "
-    "the TermMan NoneBot/NapCat robot. Use "
-    "`mcp_robot_read_conversation_memory` only when QQ .log context is needed. "
-    "Your final assistant message is internal to TermMan and is not sent to QQ."
+    "QQ MCP Skill：\n\n"
+    "这个 skill 提供 QQ 机器人 MCP 能力，不提供人格。\n"
+    "需要向 QQ 发送可见消息时，调用 `mcp_robot_send_message`。\n"
+    "需要读取当前 QQ 会话 .log 记忆时，调用 `mcp_robot_read_conversation_memory`。\n"
+    "群聊回复尽量短句、分段自然；长内容只调用一次发送工具，发送层会拆成多条短消息。\n"
+    "最终 assistant 文本是 TermMan 内部回复，不会自动发送到 QQ。"
 )
 
 ROBOT_ACTIVE_CONTEXT_PROMPT = (
-    "Active QQ Conversation:\n"
-    "- This turn was triggered by one QQ group/private chat only.\n"
-    "- Reply to QQ only when the sender is addressing the bot, continuing or "
-    "correcting the bot conversation, asking for a useful response, or waking "
-    "the bot with an empty mention/reply.\n"
-    "- To reply, call `mcp_robot_send_message` with only `text`; omit "
-    "`reply_to`, `conversation`, `broadcast`, `target_type`, and `target_id`.\n"
-    "- If current .log context is needed, call "
-    "`mcp_robot_read_conversation_memory` with no target arguments.\n"
-    "- Do not reply to ordinary group chatter or messages directed at someone "
-    "else. Do not send hidden reasoning, tool traces, raw logs, or long "
-    "summaries.\n"
+    "当前 QQ 会话：\n"
+    "- 本轮只由一个 QQ 群聊/私聊触发。\n"
+    "- 只有发送者在叫机器人、延续/纠正机器人对话、请求有用回复，或用空 @/回复唤醒机器人时，才回复 QQ。\n"
+    "- 回复 QQ 时，只调用 `mcp_robot_send_message` 并只传 `text`；不要传 "
+    "`reply_to`、`conversation`、`broadcast`、`target_type`、`target_id`。\n"
+    "- 群聊里别把一句话写太长；需要多说时，写成自然短句，发送层会分段发。\n"
+    "- 需要当前 .log 上下文时，调用 `mcp_robot_read_conversation_memory`，不要传目标参数。\n"
+    "- 不要回复普通群聊闲聊或发给别人的消息。不要发送隐藏推理、工具轨迹、原始日志或长摘要。\n"
     f"{NO_QQ_REPLY_INSTRUCTION}"
 )
 
 ROBOT_BACKEND_CONTEXT_PROMPT = (
-    "QQ Context From History:\n"
-    "- Use `reply_to` or `conversation` only when intentionally choosing a QQ "
-    "conversation visible in the current TermMan context.\n"
-    "- Use `target_type` and `target_id` only when the user explicitly supplied "
-    "a QQ group number or QQ number outside visible context.\n"
-    "- If the QQ target or robot identity is missing or ambiguous, ask for it.\n"
-    "- Broadcast only when the user explicitly asks or a severe alert clearly "
-    "applies to every selected QQ conversation."
+    "历史中的 QQ 上下文：\n"
+    "- 只有明确选择当前 TermMan 上下文里可见的 QQ 会话时，才使用 `reply_to` 或 `conversation`。\n"
+    "- 只有用户显式提供 QQ 群号或 QQ 号时，才使用 `target_type` 和 `target_id`。\n"
+    "- QQ 目标或机器人身份缺失/歧义时，先询问。\n"
+    "- 只有用户明确要求，或严重告警确实适用于所有选中 QQ 会话时，才 broadcast。"
 )
 
 ROBOT_REFLECTION_PROMPT = (
-    "QQ Reply Reflection:\n"
-    "- Before calling `mcp_robot_send_message`, silently decide whether QQ "
-    "should receive a reply.\n"
-    "- Mentions, replies to the bot, and active chat window triggers are "
-    "candidate continuations, not automatic permission to send.\n"
+    "QQ 回复反思：\n"
+    "- 调用 `mcp_robot_send_message` 前，先静默判断 QQ 是否真的需要收到回复。\n"
+    "- @、回复机器人、活跃窗口触发只是候选延续，不等于自动允许发送。\n"
     f"{NO_QQ_REPLY_INSTRUCTION}"
 )
 
@@ -92,7 +88,10 @@ def _agent_has_robot_messaging_enabled(agent: Agent | None) -> bool:
             skills = get_skills() or []
         except Exception:
             skills = []
-        if any(getattr(skill, "skill_id", "") == ROBOT_MESSAGING_SKILL_ID for skill in skills):
+        if any(
+            getattr(skill, "skill_id", "") in ROBOT_MESSAGING_COMPAT_SKILL_IDS
+            for skill in skills
+        ):
             return True
 
     return False
@@ -137,18 +136,14 @@ def build_robot_delivery_reflection_prompt(final_response: str) -> str:
         return ""
 
     return (
-        "Robot message delivery reflection:\n"
-        "You produced a final assistant response without calling "
-        "`mcp_robot_send_message`:\n"
+        "QQ 消息发送反思：\n"
+        "你产出了最终回复，但没有调用 `mcp_robot_send_message`：\n"
         f"{final_response.strip()}\n\n"
-        "Re-evaluate whether QQ should receive that text. If the current QQ "
-        "message is addressed to the bot, continues or corrects a bot "
-        "conversation, asks for a useful response, or explicitly wakes the "
-        "bot, call `mcp_robot_send_message` now using the locked/current QQ "
-        "conversation. If it is ordinary group chatter, directed at someone "
-        "else, or no QQ-side response is needed, do not call the tool; respond "
-        "only with `[no_qq_reply]` as the internal final response. "
-        "Do not output the reflection itself."
+        "重新判断 QQ 是否应该收到这段文本。"
+        "如果当前 QQ 消息确实在叫机器人、延续/纠正机器人对话、请求有用回复，"
+        "或显式唤醒机器人，就调用 `mcp_robot_send_message` 发送到锁定的当前 QQ 会话。"
+        "如果只是普通群聊、发给别人、或 QQ 侧无需回复，不要调用工具；"
+        "内部最终回复只返回 `[no_qq_reply]`。不要输出这段反思本身。"
     )
 
 
@@ -164,19 +159,13 @@ def build_robot_messaging_skill_definition():
     )
 
     return SkillDefinition(
-        skill_id=ROBOT_MESSAGING_SKILL_ID,
-        name="Robot Messaging",
-        description=(
-            "Allow the agent to send concise proactive messages through the "
-            "NoneBot/NapCat QQ robot by MCP."
-        ),
-        category="integration",
+        skill_id=QQ_MCP_SKILL_ID,
+        name="QQ MCP",
+        description="允许助手通过 QQ 机器人 MCP 发送消息和读取会话 .log 记忆。",
+        category="mcp",
         trigger=TriggerConfig(
             type="manual",
             patterns=[
-                "robot",
-                "nonebot",
-                "napcat",
                 "qq",
                 "QQ",
                 "群",
@@ -187,10 +176,18 @@ def build_robot_messaging_skill_definition():
                 "报警",
                 "发消息",
                 "发送消息",
+                "robot",
+                "nonebot",
+                "napcat",
             ],
         ),
         action=ActionConfig(type="llm", prompt=ROBOT_MESSAGING_PROMPT),
-        safety=SafetyConfig(requires_approval=False, risk_level="medium", max_retries=1, timeout=30),
+        safety=SafetyConfig(
+            requires_approval=False,
+            risk_level="medium",
+            max_retries=1,
+            timeout=30,
+        ),
         mcp_servers=["robot"],
         skill_dir="app/plugins/robot",
     )

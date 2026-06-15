@@ -22,6 +22,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+SKILL_ID_ALIASES = {
+    "robot_messaging": "qq_mcp",
+    "terminal_critical_alert": "terminal_mcp",
+    "mutsumi_tone": "mutsumi_persona",
+    "tokisaki_kurumi_tone": "tokisaki_kurumi_persona",
+    "hirasawa_yui_tone": "hirasawa_yui_persona",
+}
+
 
 @dataclass
 class AgentContext:
@@ -162,14 +170,19 @@ class Agent:
 
             if self._context.enabled_skills:
                 for skill_id in self._context.enabled_skills:
-                    skill = skill_loader.get(skill_id)
+                    resolved_skill_id = SKILL_ID_ALIASES.get(skill_id, skill_id)
+                    skill = skill_loader.get(resolved_skill_id)
                     if skill:
-                        self._skills[skill_id] = skill
+                        self._skills[resolved_skill_id] = skill
                         if skill.mcp_servers:
                             for server_name in skill.mcp_servers:
                                 if server_name not in self._mcp_servers:
                                     self._mcp_servers.append(server_name)
-                                    logger.info(f"[Agent] Added MCP server from skill '{skill_id}': {server_name}")
+                                    logger.info(
+                                        "[Agent] Added MCP server from skill '%s': %s",
+                                        resolved_skill_id,
+                                        server_name,
+                                    )
                     else:
                         logger.warning(f"[Agent] Skill '{skill_id}' not found")
 

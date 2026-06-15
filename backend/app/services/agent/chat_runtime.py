@@ -34,6 +34,21 @@ class ChatResponseResult:
     robot_message_sent: bool = False
 
 
+def _looks_like_internal_tool_trace(value: str) -> bool:
+    from app.plugins.robot.internal_trace import is_robot_internal_trace_text
+
+    return is_robot_internal_trace_text(value)
+
+
+def _is_integration_internal_response(value: str) -> bool:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return False
+    return _looks_like_internal_tool_trace(normalized) or fallback_is_delivery_result(
+        normalized
+    )
+
+
 def get_item_handler_llm_config(
     session: Session,
     item_id: str,
@@ -123,13 +138,18 @@ async def collect_chat_response(
             handler=handler,
             item_id=item_id,
             agent=agent,
+            include_hidden_tool_results=True,
         ):
             if not chunk.startswith("data: "):
                 continue
 
             payload = json.loads(chunk[6:].strip())
             if payload.get("type") == "agent_response":
-                content = str(payload.get("content") or content)
+                candidate = str(payload.get("content") or "")
+                if integration_contexts and _is_integration_internal_response(candidate):
+                    tool_results.append(candidate)
+                elif candidate:
+                    content = candidate
             elif payload.get("type") in {"agent_error", "error"}:
                 error_message = str(payload.get("content") or error_message)
             elif payload.get("type") == "agent_tool_result":
@@ -144,6 +164,9 @@ async def collect_chat_response(
 
     if error_message:
         raise HTTPException(status_code=500, detail=error_message)
+    if integration_contexts and _is_integration_internal_response(content):
+        tool_results.append(content)
+        content = ""
     robot_message_sent = bool(integration_contexts) and integration_message_sent(tool_results)
     if content.strip() and not robot_message_sent:
         robot_message_sent = send_integration_final_response_fallback(
@@ -166,10 +189,10 @@ async def collect_chat_response(
                 tool_results=tool_results,
                 warnings=warnings,
             )
+            fallback_delivered = fallback_is_delivery_result(fallback_content)
             result = ChatResponseResult(
-                content=fallback_content,
-                robot_message_sent=robot_message_sent
-                or fallback_is_delivery_result(fallback_content),
+                content="" if fallback_delivered else fallback_content,
+                robot_message_sent=robot_message_sent or fallback_delivered,
             )
             return result if return_result else result.content
         raise HTTPException(

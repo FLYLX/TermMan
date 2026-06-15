@@ -50,7 +50,7 @@ COMMAND_TOOL_NAMES = {
     "mcp_local_execute_command",
     "mcp_local_interrupt_command",
 }
-SILENT_TOOL_NAMES = {READ_LOG_TOOL_NAME}
+SILENT_TOOL_NAMES = {READ_LOG_TOOL_NAME, "mcp_robot_send_message"}
 TERMINAL_SOURCE_FILTERED = "filtered_output"
 TERMINAL_SOURCE_RAW_FEEDBACK = "raw_feedback"
 

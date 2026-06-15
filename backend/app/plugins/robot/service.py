@@ -20,6 +20,7 @@ from app.services.agent.chat_runtime import ChatResponseResult, collect_chat_res
 
 from .contracts import RobotDispatchResponse, RobotInboundMessage, RobotReplyTarget
 from .debug_log import preview_text, record_robot_event
+from .message_chunks import is_group_reply_target, split_robot_message_for_target
 from .platforms import (
     get_robot_platform,
     get_robot_runtime_config,
@@ -225,6 +226,28 @@ class RobotService:
                 )
                 return
 
+        response_text = self._visible_agent_response_text(response)
+        if not response_text:
+            record_robot_event(
+                str(job.robot_id),
+                direction="backend_to_bridge",
+                event="dispatch_completed",
+                payload={
+                    "item_id": str(job.item_id),
+                    "route_key": job.route_key,
+                    "robot_message_sent": response.robot_message_sent,
+                    "queue": self.dispatch_queue_snapshot(),
+                },
+            )
+            logger.info(
+                "[RobotService] Queued agent completed robot=%s item=%s route=%s sent=%s",
+                job.robot_id,
+                job.item_id,
+                job.route_key,
+                response.robot_message_sent,
+            )
+            return
+
         record_robot_event(
             str(job.robot_id),
             direction="backend_to_bridge",
@@ -244,6 +267,23 @@ class RobotService:
             job.route_key,
             preview_text(response_text),
         )
+
+    def _visible_agent_response_text(self, response: ChatResponseResult) -> str:
+        text = (response.content or "").strip()
+        if not text:
+            return ""
+        from app.plugins.robot.internal_trace import is_robot_internal_trace_text
+
+        if is_robot_internal_trace_text(text):
+            return ""
+        try:
+            from app.services.agent.integrations import fallback_is_delivery_result
+
+            if fallback_is_delivery_result(text):
+                return ""
+        except Exception:
+            pass
+        return text
 
     def _record_and_send_job_error(
         self,
@@ -1309,6 +1349,8 @@ class RobotService:
         target: RobotReplyTarget,
         text: str,
     ) -> list[str]:
+        if is_group_reply_target(target):
+            return split_robot_message_for_target(target, text)
         return self._chunk_text(robot, text)
 
     def _max_message_length(self, robot: Robot, *, default: int) -> int:
