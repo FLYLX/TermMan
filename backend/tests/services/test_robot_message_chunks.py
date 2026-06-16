@@ -34,11 +34,26 @@ def test_group_message_is_split_into_short_chunks() -> None:
     chunks = split_robot_message_for_target(target, text, max_chars=18)
 
     assert chunks == [
-        "第一句先简单回应一下。",
-        "第二句补一点上下文。",
-        "第三句再给一个可以执行的建议。",
+        "第一句先简单回应一下",
+        "第二句补一点上下文",
+        "第三句再给一个可以执行的建议",
     ]
     assert all(len(chunk) <= 18 for chunk in chunks)
+
+
+def test_group_message_strips_terminal_period_for_casual_reply() -> None:
+    target = RobotReplyTarget(target_type="group", target_id="123")
+
+    assert split_robot_message_for_target(target, "在。") == ["在"]
+
+
+def test_group_message_respects_explicit_short_lines() -> None:
+    target = RobotReplyTarget(target_type="group", target_id="123")
+    text = "在。\n我先看一下。\n等我一下。"
+
+    chunks = split_robot_message_for_target(target, text)
+
+    assert chunks == ["在", "我先看一下", "等我一下"]
 
 
 def test_private_message_is_not_split() -> None:
@@ -71,6 +86,30 @@ def test_bridge_client_sends_group_chunks_in_order(monkeypatch) -> None:
     sent_texts = [call["body"]["text"] for call in calls]
     assert len(sent_texts) > 1
     assert sent_texts == split_robot_message_for_target(target, text)
+    assert all(call["path"] == "/internal/send" for call in calls)
+
+
+def test_bridge_client_sends_explicit_lines_as_separate_group_messages(monkeypatch) -> None:
+    client = RobotBridgeClient()
+    target = RobotReplyTarget(target_type="group", target_id="123")
+    calls: list[dict] = []
+
+    def fake_request(method, path, *, timeout, content):
+        calls.append(
+            {
+                "method": method,
+                "path": path,
+                "timeout": timeout,
+                "body": json.loads(content),
+            }
+        )
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    client.send_message(uuid.uuid4(), target, "在。\n我先看一下。\n等我一下。")
+
+    assert [call["body"]["text"] for call in calls] == ["在", "我先看一下", "等我一下"]
+    assert len(calls) == 3
     assert all(call["path"] == "/internal/send" for call in calls)
 
 

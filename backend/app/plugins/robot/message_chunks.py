@@ -20,6 +20,7 @@ _PRIVATE_OR_CHANNEL_TARGET_TYPES = {
 }
 _SOFT_SPLIT_SEPARATORS = ("\n", "。", "！", "？", "；", ";", "，", ",", "、", "：", ":", " ")
 _RIGHT_ATTACHING_PUNCTUATION = set("，,。.!?！？；;：:、)]}）】」』")
+_GROUP_TERMINAL_PERIODS = "。．."
 
 
 def _normalized_type(value: object) -> str:
@@ -108,6 +109,10 @@ def _split_long_piece(piece: str, *, max_chars: int) -> list[str]:
     return chunks
 
 
+def _casualize_group_chunk(chunk: str) -> str:
+    return chunk.strip().rstrip(_GROUP_TERMINAL_PERIODS).strip()
+
+
 def split_group_message_text(
     text: str,
     *,
@@ -118,8 +123,12 @@ def split_group_message_text(
         return []
 
     safe_max_chars = max(1, int(max_chars or DEFAULT_GROUP_MESSAGE_CHUNK_CHARS))
-    if len(normalized) <= safe_max_chars:
-        return [normalized]
+    explicit_line_breaks = (
+        len([line for line in normalized.splitlines() if line.strip()]) > 1
+    )
+    if len(normalized) <= safe_max_chars and not explicit_line_breaks:
+        casual = _casualize_group_chunk(normalized)
+        return [casual] if casual else []
 
     chunks: list[str] = []
     current = ""
@@ -143,9 +152,15 @@ def split_group_message_text(
                 else:
                     current = candidate
 
+        if explicit_line_breaks and current:
+            casual = _casualize_group_chunk(current)
+            if casual:
+                chunks.append(casual)
+            current = ""
+
     if current:
         chunks.append(current)
-    return chunks
+    return [chunk for chunk in (_casualize_group_chunk(chunk) for chunk in chunks) if chunk]
 
 
 def split_robot_message_for_target(

@@ -15,7 +15,7 @@ from app.plugins.robot.platforms import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SEND_INTERVAL_SECONDS = 1.2
+DEFAULT_SEND_INTERVAL_SECONDS = 0.8
 RATE_LIMIT_RETRY_DELAYS = (3.0, 8.0)
 
 
@@ -56,7 +56,7 @@ def _is_platform_rate_limit(exc: Exception) -> bool:
 
 
 def _send_interval_for_bot(_bot: Any) -> float:
-    return 0.2
+    return DEFAULT_SEND_INTERVAL_SECONDS
 
 
 async def send_text_with_rate_limit(

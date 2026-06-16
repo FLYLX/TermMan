@@ -1042,6 +1042,15 @@ def test_builtin_skills_are_terminal_qq_mcp_and_personas() -> None:
     assert "若叶睦人格 Skill" in (mutsumi.action.prompt or "")
     assert "时崎狂三人格 Skill" in (kurumi.action.prompt or "")
     assert "平泽唯人格 Skill" in (yui.action.prompt or "")
+    assert "作为一条 QQ 消息分次发送" in (mutsumi.action.prompt or "")
+    assert "作为一条 QQ 消息分次发送" in (kurumi.action.prompt or "")
+    assert "作为一条 QQ 消息分次发送" in (yui.action.prompt or "")
+    assert "不要为了分次回而重复调用发送工具" in (mutsumi.action.prompt or "")
+    assert "不要为了分次回而重复调用发送工具" in (kurumi.action.prompt or "")
+    assert "不要为了分次回而重复调用发送工具" in (yui.action.prompt or "")
+    assert "尽量不要句号" in (mutsumi.action.prompt or "")
+    assert "尽量不要句号" in (kurumi.action.prompt or "")
+    assert "尽量不要句号" in (yui.action.prompt or "")
 
 
 def test_robot_plain_group_message_does_not_wake_even_if_group_type_allowed() -> None:
