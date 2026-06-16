@@ -13,7 +13,7 @@ from .contracts import (
     RobotReplyTarget,
 )
 from .debug_log import record_robot_event
-from .internal_trace import is_robot_internal_trace_text
+from .internal_trace import is_robot_internal_trace_text, sanitize_robot_visible_text
 from .message_chunks import split_robot_message_for_target
 
 logger = logging.getLogger(__name__)
@@ -97,13 +97,15 @@ class RobotBridgeClient:
 
     def send_message(self, robot_id: uuid.UUID | str, target: RobotReplyTarget, text: str) -> None:
         robot_id_str = str(robot_id)
-        if is_robot_internal_trace_text(text):
+        original_text = str(text or "")
+        text = sanitize_robot_visible_text(original_text)
+        if not text or is_robot_internal_trace_text(text):
             record_robot_event(
                 robot_id_str,
                 direction="backend_to_bridge",
                 event="send_message_blocked",
                 status="ignored",
-                message=text,
+                message=original_text,
                 payload={
                     "target_type": target.target_type,
                     "target_id": target.target_id,
@@ -111,6 +113,18 @@ class RobotBridgeClient:
                 },
             )
             return
+        if text != original_text.strip():
+            record_robot_event(
+                robot_id_str,
+                direction="backend_to_bridge",
+                event="send_message_sanitized",
+                status="ok",
+                message=text,
+                payload={
+                    "target_type": target.target_type,
+                    "target_id": target.target_id,
+                },
+            )
 
         chunks = split_robot_message_for_target(target, text)
         if not chunks:

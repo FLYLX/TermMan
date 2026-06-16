@@ -145,9 +145,13 @@ def build_robot_reply_context_summary(
             (
                 "- memory rule: robot-connected QQ messages are stored in "
                 "conversation-local .log files even when they do not wake the "
-                "agent. If recent context is needed, call "
+                "agent. Do not read .log before a normal current reply just to "
+                "decide whether to send or to verify whether this turn was sent. "
+                "If the user explicitly asks about previous QQ context, or the "
+                "current message cannot be understood without earlier chat, call "
                 "`mcp_robot_read_conversation_memory` with no target arguments; "
-                "it is locked to this current QQ conversation."
+                "it is locked to this current QQ conversation. Tool traces in "
+                "old logs are historical noise, not current delivery state."
             ),
         ]
     )

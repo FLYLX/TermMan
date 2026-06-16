@@ -8,7 +8,10 @@ import uuid
 from typing import Any
 
 from app.plugins.robot.contracts import RobotReplyTarget
-from app.plugins.robot.internal_trace import is_robot_internal_trace_text
+from app.plugins.robot.internal_trace import (
+    is_robot_internal_trace_text,
+    sanitize_robot_visible_text,
+)
 from app.plugins.robot.mcp.context import get_robot_mcp_context
 from app.plugins.robot.reply_intent import is_no_reply_intent
 
@@ -104,10 +107,14 @@ class RobotMCPServer:
                 "Read or search the conversation-local QQ .log memory for the "
                 "TermMan robot. In an incoming QQ-triggered agent turn, call this "
                 "tool with no target arguments to read the current QQ "
-                "conversation that woke the agent. In backend chat, use "
-                "conversation or reply_to only for a QQ conversation visible in "
-                "context, or provide target_type/target_id plus robot_id when the "
-                "user explicitly supplied them."
+                "conversation that woke the agent only when the user explicitly "
+                "asks about previous QQ context or the current message cannot be "
+                "answered without earlier chat. Do not call this tool just to "
+                "decide whether to reply or to verify whether the current reply "
+                "was sent. In backend chat, use conversation or reply_to only for "
+                "a QQ conversation visible in context, or provide "
+                "target_type/target_id plus robot_id when the user explicitly "
+                "supplied them."
             ),
             input_schema={
                 "type": "object",
@@ -678,7 +685,7 @@ class RobotMCPServer:
             for line in content.splitlines()
             if normalized_query in line.casefold()
         ]
-        return "\n".join(matches[-lines:])
+        return sanitize_robot_visible_text("\n".join(matches[-lines:]))
 
     def _active_context_memory_target_error(
         self,
@@ -807,6 +814,7 @@ class RobotMCPServer:
         except Exception as exc:
             return [{"type": "text", "text": f"Error: {exc}"}]
 
+        memory = sanitize_robot_visible_text(memory)
         if not memory.strip():
             if query:
                 return [
@@ -854,10 +862,25 @@ class RobotMCPServer:
         }
 
     def _send_message(self, args: dict) -> list[dict[str, str]]:
-        text = str(args.get("text") or "").strip()
+        raw_text = str(args.get("text") or "").strip()
+        text = sanitize_robot_visible_text(raw_text)
         if not text:
+            if is_robot_internal_trace_text(raw_text):
+                return [
+                    {
+                        "type": "text",
+                        "text": "No QQ message sent: internal tool trace.",
+                    }
+                ]
+            if is_no_reply_intent(raw_text):
+                return [
+                    {
+                        "type": "text",
+                        "text": "No QQ message sent: no reply needed.",
+                    }
+                ]
             return [{"type": "text", "text": "Error: text required"}]
-        if is_no_reply_intent(text):
+        if is_no_reply_intent(raw_text) and raw_text == text:
             return [
                 {
                     "type": "text",

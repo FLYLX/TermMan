@@ -49,6 +49,12 @@ def _is_integration_internal_response(value: str) -> bool:
     )
 
 
+def _sanitize_integration_response(value: str) -> str:
+    from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+
+    return sanitize_robot_visible_text(value)
+
+
 def get_item_handler_llm_config(
     session: Session,
     item_id: str,
@@ -146,8 +152,14 @@ async def collect_chat_response(
             payload = json.loads(chunk[6:].strip())
             if payload.get("type") == "agent_response":
                 candidate = str(payload.get("content") or "")
-                if integration_contexts and _is_integration_internal_response(candidate):
-                    tool_results.append(candidate)
+                if integration_contexts:
+                    sanitized_candidate = _sanitize_integration_response(candidate)
+                    if _is_integration_internal_response(candidate):
+                        tool_results.append(candidate)
+                    elif sanitized_candidate:
+                        content = sanitized_candidate
+                    elif candidate:
+                        tool_results.append(candidate)
                 elif candidate:
                     content = candidate
             elif payload.get("type") in {"agent_error", "error"}:
@@ -167,6 +179,8 @@ async def collect_chat_response(
     if integration_contexts and _is_integration_internal_response(content):
         tool_results.append(content)
         content = ""
+    if integration_contexts and content:
+        content = _sanitize_integration_response(content)
     robot_message_sent = bool(integration_contexts) and integration_message_sent(tool_results)
     if content.strip() and not robot_message_sent:
         robot_message_sent = send_integration_final_response_fallback(

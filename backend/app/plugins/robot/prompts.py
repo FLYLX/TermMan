@@ -21,7 +21,8 @@ ROBOT_MESSAGING_PROMPT = (
     "QQ MCP Skill：\n\n"
     "这个 skill 提供 QQ 机器人 MCP 能力，不提供人格。\n"
     "需要向 QQ 发送可见消息时，调用 `mcp_robot_send_message`。\n"
-    "需要读取当前 QQ 会话 .log 记忆时，调用 `mcp_robot_read_conversation_memory`。\n"
+    "只有用户明确询问历史、偏好、前文，或当前消息离开前文无法理解时，才读取当前 QQ 会话 .log 记忆。\n"
+    "需要读取时调用 `mcp_robot_read_conversation_memory`，但不要为了判断本轮是否要回复或是否已经发送而读取旧 .log。\n"
     "群聊回复尽量短句、分段自然；长内容只调用一次发送工具，发送层会拆成多条短消息。\n"
     "最终 assistant 文本是 TermMan 内部回复，不会自动发送到 QQ。"
 )
@@ -33,7 +34,9 @@ ROBOT_ACTIVE_CONTEXT_PROMPT = (
     "- 回复 QQ 时，只调用 `mcp_robot_send_message` 并只传 `text`；不要传 "
     "`reply_to`、`conversation`、`broadcast`、`target_type`、`target_id`。\n"
     "- 群聊里别把一句话写太长；需要多说时，写成自然短句，发送层会分段发。\n"
-    "- 需要当前 .log 上下文时，调用 `mcp_robot_read_conversation_memory`，不要传目标参数。\n"
+    "- 当前轮优先根据这条 QQ 消息判断并发送；不要先读旧 .log 来确认是否该回复或是否已经发过。\n"
+    "- 只有用户明确问历史/前文/偏好，或当前消息离开前文无法理解时，才调用 `mcp_robot_read_conversation_memory`，不要传目标参数。\n"
+    "- 历史或 .log 里的 `Executing tool`、`Message sent`、`[no_qq_reply]` 只可能是旧内部轨迹，不是本轮发送结果。\n"
     "- 不要回复普通群聊闲聊或发给别人的消息。不要发送隐藏推理、工具轨迹、原始日志或长摘要。\n"
     f"{NO_QQ_REPLY_INSTRUCTION}"
 )

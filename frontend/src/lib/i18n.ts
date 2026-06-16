@@ -283,6 +283,7 @@ const en = {
   "itemHandlers.detail.skills": "Skills",
   "itemHandlers.detail.knowledge": "Knowledge",
   "itemHandlers.detail.mcp": "MCP",
+  "itemHandlers.detail.chatLogs": "Chat Logs",
   "itemHandlers.detail.config": "Config",
   "itemHandlers.detail.connectionDiagram": "Connection Diagram",
   "itemHandlers.detail.connectionDiagramDescription":
@@ -785,6 +786,7 @@ const zh: Record<TranslationKey, string> = {
   "itemHandlers.detail.connections": "连接",
   "itemHandlers.detail.skills": "技能",
   "itemHandlers.detail.mcp": "MCP",
+  "itemHandlers.detail.chatLogs": "聊天记录",
   "itemHandlers.detail.config": "配置",
   "itemHandlers.detail.connectionDiagram": "连接图",
   "itemHandlers.detail.connectionDiagramDescription":

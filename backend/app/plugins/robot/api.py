@@ -1021,6 +1021,21 @@ def _normalize_api_conversation_key(conversation_key: str) -> str:
     return normalized
 
 
+@router.get("/{id}/conversation-memory")
+def list_robot_conversation_memory(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+) -> dict:
+    robot = get_robot_or_404(session, id)
+    assert_robot_permission(robot, current_user)
+    entries = robot_conversation_memory.list_conversations(str(id))
+    return {
+        "data": [entry.__dict__ for entry in entries],
+        "count": len(entries),
+    }
+
+
 @router.get("/{id}/conversation-memory/{conversation_key}")
 def read_robot_conversation_memory(
     session: SessionDep,

@@ -1,3 +1,8 @@
+import os
+import tempfile
+import uuid
+from pathlib import Path
+
 from app.plugins.robot.contracts import RobotReplyTarget
 from app.plugins.robot.conversation_memory import robot_conversation_memory
 from app.services.agent.mcp.robot_context import (
@@ -6,6 +11,13 @@ from app.services.agent.mcp.robot_context import (
     unregister_robot_mcp_context,
 )
 from app.services.agent.mcp.robot_server import RobotMCPServer
+
+
+def _test_memory_dir(name: str) -> Path:
+    base = Path(os.environ.get("ROBOT_CONVERSATION_MEMORY_DIR") or tempfile.gettempdir())
+    path = base / f"{name}-{uuid.uuid4().hex}"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def test_robot_mcp_send_message_requires_context_or_explicit_target() -> None:
@@ -75,6 +87,56 @@ def test_robot_mcp_send_message_blocks_internal_tool_trace(monkeypatch) -> None:
         {"type": "text", "text": "No QQ message sent: internal tool trace."}
     ]
     assert sent == []
+
+
+def test_robot_mcp_send_message_sanitizes_mixed_internal_trace(
+    monkeypatch,
+) -> None:
+    server = RobotMCPServer()
+    sent: list[str] = []
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "base_dir",
+        _test_memory_dir("robot-mcp-send-memory"),
+    )
+
+    def fake_send_message(_robot_id, _reply_target, text):
+        sent.append(text)
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+    monkeypatch.setattr(
+        server,
+        "_get_accessible_robot_id",
+        lambda args, fallback_robot_id="": "robot-2",
+    )
+
+    result = server.call_tool(
+        "send_message",
+        {
+            "text": (
+                "在呢。需要做什么测试？\n\n"
+                "Executing tool: mcp_robot_send_message\n\n"
+                "Message sent to current robot conversation.\n\n"
+                "[no_qq_reply]"
+            ),
+            "target_type": "group",
+            "target_id": "123456",
+            "_termman_user_id": "user-1",
+        },
+    )
+
+    assert result == [
+        {"type": "text", "text": "Message sent to QQ group 123456."}
+    ]
+    assert sent == ["在呢。需要做什么测试？"]
+    memory = robot_conversation_memory.read("robot-2", "group:123456")
+    assert "在呢。需要做什么测试？" in memory
+    assert "Executing tool" not in memory
+    assert "Message sent to current robot conversation" not in memory
+    assert "[no_qq_reply]" not in memory
 
 
 def test_robot_mcp_send_message_uses_explicit_target(monkeypatch) -> None:
@@ -375,6 +437,76 @@ def test_robot_mcp_reads_registered_context_conversation_memory(
     assert "assistant current reply" not in result[0]["text"]
     assert "other keyword" not in result[0]["text"]
     assert "active QQ-triggered context is locked to group:current-group" in blocked[0]["text"]
+
+
+def test_robot_mcp_read_memory_sanitizes_old_internal_trace(
+    monkeypatch,
+) -> None:
+    server = RobotMCPServer()
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "base_dir",
+        _test_memory_dir("robot-mcp-read-memory"),
+    )
+    robot_conversation_memory.replace(
+        "robot-current",
+        "private:2537134688",
+        (
+            "[2026-01-01T00:00:00+00:00] user FLY: 测试\n"
+            "[2026-01-01T00:00:01+00:00] assistant: 在呢。需要做什么测试？\n"
+            "Executing tool: mcp_robot_send_message\n"
+            "Message sent to current robot conversation.\n"
+            "[no_qq_reply]\n"
+        ),
+    )
+    target = RobotReplyTarget(
+        target_type="private",
+        target_id="2537134688",
+        metadata={"target": {"id": "2537134688", "private": True}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:private:2537134688",
+            reply_target=target,
+        )
+    )
+
+    try:
+        result = server.call_tool(
+            "read_conversation_memory",
+            {"_robot_context_token": token},
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert result[0]["type"] == "text"
+    assert "在呢。需要做什么测试？" in result[0]["text"]
+    assert "Executing tool" not in result[0]["text"]
+    assert "Message sent to current robot conversation" not in result[0]["text"]
+    assert "[no_qq_reply]" not in result[0]["text"]
+
+
+def test_robot_conversation_memory_lists_group_and_private_logs() -> None:
+    from app.plugins.robot.conversation_memory import RobotConversationMemoryManager
+
+    manager = RobotConversationMemoryManager(
+        base_dir=_test_memory_dir("robot-list-memory")
+    )
+    manager.replace("robot-1", "group:123456", "[seed] user Alice: hello\n")
+    manager.replace("robot-1", "private:654321", "[seed] user Bob: hi\n")
+
+    entries = manager.list_conversations("robot-1")
+
+    assert {entry.conversation_key for entry in entries} == {
+        "group:123456",
+        "private:654321",
+    }
+    assert {entry.filename for entry in entries} == {
+        "123456.log",
+        "private-654321.log",
+    }
+    assert all(entry.exists for entry in entries)
 
 
 def test_robot_mcp_send_message_prefers_active_context_over_ambiguous_history(

@@ -56,6 +56,14 @@ def test_build_conversation_memory_candidate_rejects_generic_or_log_noise() -> N
     )
     assert should_reject_long_term_memory("命令已发送，等待终端反馈") is True
     assert should_reject_long_term_memory("token=super-secret-value") is True
+    assert (
+        should_reject_long_term_memory(
+            "Executing tool: mcp_robot_send_message\n"
+            "Message sent to current robot conversation."
+        )
+        is True
+    )
+    assert should_reject_long_term_memory("[no_qq_reply]") is True
 
 
 def test_persist_memory_candidate_skips_duplicate_hash() -> None:

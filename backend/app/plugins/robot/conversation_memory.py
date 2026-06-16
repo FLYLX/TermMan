@@ -26,6 +26,11 @@ class RobotConversationMemoryInfo:
     updated_at: str | None
 
 
+@dataclass(frozen=True)
+class RobotConversationMemoryEntry(RobotConversationMemoryInfo):
+    filename: str
+
+
 def normalize_conversation_key(conversation_key: str) -> str:
     normalized = " ".join(str(conversation_key or "").strip().split())
     return normalized or f"group:{UNKNOWN_CONVERSATION_ID}"
@@ -160,6 +165,20 @@ class RobotConversationMemoryManager:
         return f"{conversation_type}-{label_id}"
 
     @staticmethod
+    def _conversation_key_from_file_label(file_label: str) -> str:
+        if file_label.startswith("private-"):
+            return conversation_key_from_target(
+                "private",
+                file_label.removeprefix("private-"),
+            )
+        if file_label.startswith("channel-"):
+            return conversation_key_from_target(
+                "channel",
+                file_label.removeprefix("channel-"),
+            )
+        return conversation_key_from_target("group", file_label)
+
+    @staticmethod
     def _safe_segment(value: str) -> str:
         segment = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
         segment = re.sub(r"-{2,}", "-", segment).strip(".-_")
@@ -234,11 +253,13 @@ class RobotConversationMemoryManager:
         conversation_key: str,
         text: str,
     ) -> RobotConversationMemoryInfo:
+        from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+
         return self.append_entry(
             robot_id,
             conversation_key,
             role="assistant",
-            text=text,
+            text=sanitize_robot_visible_text(text),
         )
 
     def read(self, robot_id: uuid.UUID | str, conversation_key: str) -> str:
@@ -321,6 +342,40 @@ class RobotConversationMemoryManager:
         normalized_key = normalize_conversation_key(conversation_key)
         return f"{self._safe_segment(self._file_label(normalized_key))}.log"
 
+    def list_conversations(
+        self,
+        robot_id: uuid.UUID | str,
+    ) -> list[RobotConversationMemoryEntry]:
+        robot_dir = self._robot_dir(robot_id)
+        entries: list[RobotConversationMemoryEntry] = []
+        for path in robot_dir.glob("*.log"):
+            if not path.is_file():
+                continue
+            resolved = path.resolve()
+            if not self._is_within_base(resolved):
+                continue
+            stat = resolved.stat()
+            conversation_key = normalize_conversation_key(
+                self._conversation_key_from_file_label(resolved.stem)
+            )
+            entries.append(
+                RobotConversationMemoryEntry(
+                    robot_id=str(robot_id),
+                    conversation_key=conversation_key,
+                    path=str(resolved),
+                    exists=True,
+                    size_bytes=stat.st_size,
+                    updated_at=datetime.fromtimestamp(
+                        stat.st_mtime,
+                        timezone.utc,
+                    ).isoformat(),
+                    filename=resolved.name,
+                )
+            )
+
+        entries.sort(key=lambda entry: entry.updated_at or "", reverse=True)
+        return entries
+
     def format_prompt_memory(
         self,
         robot_id: uuid.UUID | str,
@@ -328,7 +383,11 @@ class RobotConversationMemoryManager:
         *,
         lines: int = DEFAULT_RECENT_LINES,
     ) -> str:
-        recent = self.read_recent(robot_id, conversation_key, lines=lines).strip()
+        from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+
+        recent = sanitize_robot_visible_text(
+            self.read_recent(robot_id, conversation_key, lines=lines)
+        ).strip()
         if not recent:
             return ""
         normalized_key = normalize_conversation_key(conversation_key)

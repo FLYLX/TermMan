@@ -521,6 +521,15 @@ def test_robot_conversation_memory_import_read_export_delete(
         headers=superuser_token_headers,
         json={"content": "[seed] user Alice: hello\n"},
     )
+    private_import_response = client.post(
+        f"{settings.API_V1_STR}/robots/{robot_id}/conversation-memory/private:654321/import",
+        headers=superuser_token_headers,
+        json={"content": "[seed] user Bob: hi\n"},
+    )
+    list_response = client.get(
+        f"{settings.API_V1_STR}/robots/{robot_id}/conversation-memory",
+        headers=superuser_token_headers,
+    )
     read_response = client.get(
         f"{settings.API_V1_STR}/robots/{robot_id}/conversation-memory/group:123456",
         headers=superuser_token_headers,
@@ -535,8 +544,20 @@ def test_robot_conversation_memory_import_read_export_delete(
     )
 
     assert import_response.status_code == 200
+    assert private_import_response.status_code == 200
     assert import_response.json()["info"]["conversation_key"] == "group:123456"
     assert import_response.json()["info"]["path"].endswith("123456.log")
+    assert list_response.status_code == 200
+    memory_entries = list_response.json()["data"]
+    assert list_response.json()["count"] == 2
+    assert {entry["conversation_key"] for entry in memory_entries} == {
+        "group:123456",
+        "private:654321",
+    }
+    assert {entry["filename"] for entry in memory_entries} == {
+        "123456.log",
+        "private-654321.log",
+    }
     assert read_response.status_code == 200
     assert "[seed] user Alice: hello" in read_response.json()["memory"]
     assert export_response.status_code == 200

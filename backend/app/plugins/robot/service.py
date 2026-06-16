@@ -272,9 +272,13 @@ class RobotService:
         text = (response.content or "").strip()
         if not text:
             return ""
-        from app.plugins.robot.internal_trace import is_robot_internal_trace_text
+        from app.plugins.robot.internal_trace import (
+            is_robot_internal_trace_text,
+            sanitize_robot_visible_text,
+        )
 
-        if is_robot_internal_trace_text(text):
+        text = sanitize_robot_visible_text(text)
+        if not text or is_robot_internal_trace_text(text):
             return ""
         try:
             from app.services.agent.integrations import fallback_is_delivery_result
@@ -614,6 +618,9 @@ class RobotService:
         conversation_key: str,
         message_text: str,
     ) -> None:
+        from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+
+        message_text = sanitize_robot_visible_text(message_text)
         if not message_text.strip():
             return
         try:

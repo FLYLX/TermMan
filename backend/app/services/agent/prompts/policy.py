@@ -187,6 +187,10 @@ LOG_NOISE_PATTERNS = (
     re.compile(r"^\[[^\]]+\]\s*#", re.MULTILINE),
     re.compile(r"^\[[^\]]+\]", re.MULTILINE),
     re.compile(r"^(?:Traceback|Error:|Exception:)", re.MULTILINE),
+    re.compile(r"Executing tool:\s*mcp_robot_send_message", re.IGNORECASE),
+    re.compile(r"Message sent to current robot conversation\.", re.IGNORECASE),
+    re.compile(r"Message sent to QQ\s+\w+", re.IGNORECASE),
+    re.compile(r"\[no_qq_reply\]", re.IGNORECASE),
 )
 
 MEMORY_TTL_DAYS = {

@@ -1,3 +1,4 @@
+import { OpenAPI } from "@/client"
 import { apiRequest } from "@/lib/api-request"
 
 export type RobotReplyMessageType =
@@ -374,6 +375,33 @@ export async function sendRobotDebugMessage(robotId: string, text: string) {
 
 export type RobotManualMessageTargetType = "group" | "private"
 
+export type RobotConversationMemoryEntry = {
+  robot_id: string
+  conversation_key: string
+  path: string
+  exists: boolean
+  size_bytes: number
+  updated_at: string | null
+  filename: string
+}
+
+export type RobotConversationMemoryListResponse = {
+  data: RobotConversationMemoryEntry[]
+  count: number
+}
+
+export type RobotConversationMemoryReadResponse = {
+  memory: string
+  info: {
+    robot_id: string
+    conversation_key: string
+    path: string
+    exists: boolean
+    size_bytes: number
+    updated_at: string | null
+  }
+}
+
 export async function sendRobotManualMessage(
   robotId: string,
   payload: {
@@ -390,4 +418,84 @@ export async function sendRobotManualMessage(
     method: "POST",
     body: JSON.stringify(payload),
   })
+}
+
+function buildRobotAuthHeaders() {
+  const token = localStorage.getItem("access_token") || ""
+  return new Headers({ Authorization: `Bearer ${token}` })
+}
+
+function encodeConversationKey(conversationKey: string) {
+  return encodeURIComponent(conversationKey)
+}
+
+export function getRobotConversationMemoryQueryKey(robotId: string) {
+  return ["robot-conversation-memory", robotId] as const
+}
+
+export async function listRobotConversationMemory(robotId: string) {
+  return apiRequest<RobotConversationMemoryListResponse>(
+    `/api/v1/robots/${robotId}/conversation-memory`,
+  )
+}
+
+export async function readRobotConversationMemory(
+  robotId: string,
+  conversationKey: string,
+) {
+  return apiRequest<RobotConversationMemoryReadResponse>(
+    `/api/v1/robots/${robotId}/conversation-memory/${encodeConversationKey(conversationKey)}`,
+  )
+}
+
+export async function importRobotConversationMemory(
+  robotId: string,
+  conversationKey: string,
+  payload: { content: string; append?: boolean },
+) {
+  return apiRequest<{
+    success: boolean
+    info: RobotConversationMemoryReadResponse["info"]
+  }>(
+    `/api/v1/robots/${robotId}/conversation-memory/${encodeConversationKey(conversationKey)}/import`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
+export async function downloadRobotConversationMemory(
+  robotId: string,
+  entry: RobotConversationMemoryEntry,
+) {
+  const response = await fetch(
+    `${OpenAPI.BASE}/api/v1/robots/${robotId}/conversation-memory/${encodeConversationKey(entry.conversation_key)}/export`,
+    {
+      headers: buildRobotAuthHeaders(),
+    },
+  )
+
+  if (!response.ok) {
+    let detail = "Request failed"
+    try {
+      const payload = await response.json()
+      detail = payload.detail || detail
+    } catch {
+      detail = response.statusText || detail
+    }
+    throw new Error(detail)
+  }
+
+  const blob = await response.blob()
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = entry.filename || `${entry.conversation_key}.log`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => {
+    window.URL.revokeObjectURL(url)
+  }, 0)
 }

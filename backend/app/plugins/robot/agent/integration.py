@@ -5,7 +5,10 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from app.plugins.robot import is_robot_plugin_enabled
-from app.plugins.robot.internal_trace import is_robot_internal_trace_text
+from app.plugins.robot.internal_trace import (
+    is_robot_internal_trace_text,
+    sanitize_robot_visible_text,
+)
 from app.plugins.robot.mcp.context import (
     RobotMCPContext,
     build_robot_reply_context_summary,
@@ -154,6 +157,14 @@ class RobotAgentIntegration:
 
         for event in events:
             content = str(event.get("content", ""))
+            if _event_is_assistant_context(event):
+                sanitized_content = sanitize_robot_visible_text(content)
+                if not sanitized_content:
+                    continue
+                if sanitized_content != content.strip():
+                    event = {**event, "content": sanitized_content}
+                    content = sanitized_content
+
             event_conversation = _robot_message_conversation_key(content)
             associated_conversation = ""
 
@@ -498,7 +509,21 @@ class RobotAgentIntegration:
     ) -> bool:
         robot_id = str(context.get("robot_id") or "").strip()
         robot_reply_target = context.get("reply_target")
-        if is_no_reply_intent(content):
+        raw_content = str(content or "").strip()
+        text = sanitize_robot_visible_text(raw_content)
+        if not text:
+            if robot_id and is_no_reply_intent(raw_content):
+                from app.plugins.robot.debug_log import preview_text, record_robot_event
+
+                record_robot_event(
+                    robot_id,
+                    direction="agent_internal",
+                    event="agent_final_response_no_qq_reply",
+                    message=preview_text(raw_content),
+                    payload={"reason": "no_reply_intent"},
+                )
+            return False
+        if raw_content == text and is_no_reply_intent(text):
             if robot_id:
                 from app.plugins.robot.debug_log import preview_text, record_robot_event
 
@@ -506,21 +531,20 @@ class RobotAgentIntegration:
                     robot_id,
                     direction="agent_internal",
                     event="agent_final_response_no_qq_reply",
-                    message=preview_text(content),
+                    message=preview_text(raw_content),
                     payload={"reason": "no_reply_intent"},
                 )
             return False
         if not _should_send_final_response_fallback(
             robot_id=robot_id,
             robot_reply_target=robot_reply_target,
-            content=content,
+            content=text,
             robot_message_sent=message_sent,
         ):
             return False
 
         from app.plugins.robot.bridge_client import robot_bridge_client
 
-        text = content.strip()
         self._record_final_response_fallback(
             robot_id,
             robot_reply_target=robot_reply_target,
