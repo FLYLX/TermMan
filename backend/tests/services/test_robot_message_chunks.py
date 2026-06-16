@@ -113,6 +113,31 @@ def test_bridge_client_keeps_single_text_as_one_group_message(monkeypatch) -> No
     assert all(call["path"] == "/internal/send" for call in calls)
 
 
+def test_bridge_client_compacts_paragraph_breaks_inside_one_message(monkeypatch) -> None:
+    client = RobotBridgeClient()
+    target = RobotReplyTarget(target_type="group", target_id="123")
+    calls: list[dict] = []
+
+    def fake_request(method, path, *, timeout, content):
+        calls.append(
+            {
+                "method": method,
+                "path": path,
+                "timeout": timeout,
+                "body": json.loads(content),
+            }
+        )
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    client.send_message(uuid.uuid4(), target, "我先看一下\n\n可能是桥接还没接上")
+
+    assert [call["body"]["text"] for call in calls] == [
+        "我先看一下可能是桥接还没接上"
+    ]
+    assert len(calls) == 1
+
+
 def test_bridge_client_blocks_internal_tool_trace(monkeypatch) -> None:
     client = RobotBridgeClient()
     target = RobotReplyTarget(target_type="group", target_id="123")

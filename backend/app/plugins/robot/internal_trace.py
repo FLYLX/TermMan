@@ -4,6 +4,22 @@ ROBOT_SEND_TOOL_NAME = "mcp_robot_send_message"
 NO_QQ_REPLY_MARKER = "[no_qq_reply]"
 
 
+def _is_cjk(value: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in value)
+
+
+def _join_visible_lines(lines: list[str]) -> str:
+    message = ""
+    for line in lines:
+        if not message:
+            message = line
+        elif _is_cjk(message[-1]) or _is_cjk(line[0]):
+            message = f"{message}{line}"
+        else:
+            message = f"{message} {line}"
+    return message.strip()
+
+
 def _normalized_lines(value: str) -> list[str]:
     return [line.strip() for line in str(value or "").splitlines() if line.strip()]
 
@@ -96,3 +112,18 @@ def sanitize_robot_visible_text(value: str) -> str:
         cleaned_lines.pop()
 
     return "\n".join(cleaned_lines).strip()
+
+
+def compact_robot_visible_message_text(value: str) -> str:
+    """Keep one outgoing QQ message as one visual line.
+
+    Multi-message replies should use the MCP `messages` array. Newlines inside a
+    single message are presentation noise from the model, not separate QQ sends.
+    """
+    return _join_visible_lines(
+        [
+            line.strip()
+        for line in str(value or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        if line.strip()
+        ]
+    )

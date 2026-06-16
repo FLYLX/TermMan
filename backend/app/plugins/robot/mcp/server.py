@@ -9,6 +9,7 @@ from typing import Any
 
 from app.plugins.robot.contracts import RobotReplyTarget
 from app.plugins.robot.internal_trace import (
+    compact_robot_visible_message_text,
     is_robot_internal_trace_text,
     sanitize_robot_visible_text,
 )
@@ -45,8 +46,9 @@ class RobotMCPServer:
                     "text": {
                         "type": "string",
                         "description": (
-                            "Single QQ message text. Use this for one-message "
-                            "replies."
+                            "Single QQ message text. Use this for one-message replies. "
+                            "Do not put blank lines, paragraph breaks, or multiple "
+                            "information blocks inside this field."
                         ),
                     },
                     "messages": {
@@ -61,7 +63,8 @@ class RobotMCPServer:
                             "thought. The LLM decides each complete message; the "
                             "backend sends each array item as one QQ message in "
                             "order. Do not split into tiny fragments, and do not "
-                            "use this for long logs or summaries."
+                            "use this for long logs or summaries. Do not put blank "
+                            "lines or paragraph breaks inside any one array item."
                         ),
                     },
                     "target_type": {
@@ -718,7 +721,9 @@ class RobotMCPServer:
     def _sanitize_outgoing_messages(raw_messages: list[str]) -> list[str]:
         messages: list[str] = []
         for raw_message in raw_messages[:5]:
-            text = sanitize_robot_visible_text(str(raw_message or ""))
+            text = compact_robot_visible_message_text(
+                sanitize_robot_visible_text(str(raw_message or ""))
+            )
             if text and not is_no_reply_intent(text) and not is_robot_internal_trace_text(text):
                 messages.append(text)
         return messages
