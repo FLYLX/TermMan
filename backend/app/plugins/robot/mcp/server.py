@@ -14,9 +14,12 @@ from app.plugins.robot.internal_trace import (
     sanitize_robot_visible_text,
 )
 from app.plugins.robot.mcp.context import get_robot_mcp_context
+from app.plugins.robot.message_chunks import is_group_reply_target
 from app.plugins.robot.reply_intent import is_no_reply_intent
 
 logger = logging.getLogger(__name__)
+
+MAX_GROUP_SINGLE_TEXT_CHARS = 36
 
 
 class RobotMCPServer:
@@ -48,7 +51,8 @@ class RobotMCPServer:
                         "description": (
                             "Single QQ message text. Use this for one-message replies. "
                             "Do not put blank lines, paragraph breaks, or multiple "
-                            "information blocks inside this field."
+                            "information blocks inside this field. For QQ groups, "
+                            "keep this within 36 characters; use messages for more."
                         ),
                     },
                     "messages": {
@@ -729,6 +733,32 @@ class RobotMCPServer:
         return messages
 
     @staticmethod
+    def _uses_messages_array(args: dict) -> bool:
+        return isinstance(args.get("messages"), list)
+
+    @staticmethod
+    def _single_text_too_long_for_group(
+        args: dict,
+        target: RobotReplyTarget,
+        messages: list[str],
+    ) -> bool:
+        if RobotMCPServer._uses_messages_array(args):
+            return False
+        if len(messages) != 1 or not is_group_reply_target(target):
+            return False
+        return len(messages[0]) > MAX_GROUP_SINGLE_TEXT_CHARS
+
+    @staticmethod
+    def _group_single_text_too_long_error(text: str) -> str:
+        return (
+            "Error: QQ group reply is too long for a single `text` message. "
+            "Use `messages` with 2-3 complete natural chat messages instead. "
+            "Do not split into tiny fragments. Single group text limit: "
+            f"{MAX_GROUP_SINGLE_TEXT_CHARS} chars. Current text length: "
+            f"{len(text)} chars."
+        )
+
+    @staticmethod
     def _memory_line_limit(args: dict) -> int:
         raw_value = args.get("lines") or args.get("limit") or 80
         try:
@@ -1043,6 +1073,13 @@ class RobotMCPServer:
                     mode="explicit_target",
                     args=args,
                 )
+                if self._single_text_too_long_for_group(args, explicit_target, messages):
+                    return [
+                        {
+                            "type": "text",
+                            "text": self._group_single_text_too_long_error(messages[0]),
+                        }
+                    ]
                 self._send_messages(robot_bridge_client, robot_id, explicit_target, messages)
                 self._remember_sent_messages(robot_id, explicit_target, messages)
                 return [
@@ -1073,6 +1110,13 @@ class RobotMCPServer:
                     mode="context_target",
                     args=args,
                 )
+                if self._single_text_too_long_for_group(args, context_target, messages):
+                    return [
+                        {
+                            "type": "text",
+                            "text": self._group_single_text_too_long_error(messages[0]),
+                        }
+                    ]
                 self._send_messages(robot_bridge_client, robot_id, context_target, messages)
                 self._remember_sent_messages(robot_id, context_target, messages)
                 return [
@@ -1098,6 +1142,13 @@ class RobotMCPServer:
                 mode="current_context",
                 args=args,
             )
+            if self._single_text_too_long_for_group(args, attempted_target, messages):
+                return [
+                    {
+                        "type": "text",
+                        "text": self._group_single_text_too_long_error(messages[0]),
+                    }
+                ]
             self._send_messages(
                 robot_bridge_client,
                 attempted_robot_id,

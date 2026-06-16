@@ -971,18 +971,25 @@ def test_non_robot_collect_response_still_requires_content() -> None:
 
 
 def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
+    from app.plugins.robot.contracts import RobotReplyTarget
+    from app.plugins.robot.mcp.context import build_robot_reply_context_summary
+
     agent = SimpleNamespace(
         _context=SimpleNamespace(
             robot_id="robot-1",
-            robot_reply_context_summary=(
-                "Current robot reply target:\n"
-                "- conversation: group:g1\n"
-                "- sender: Alice (u1)\n"
-                "- sender_key: onebot_v11:group:g1:u1\n"
-                "- send rule: call `mcp_robot_send_message` with only `text` to "
-                "reply to this current QQ conversation. Pass `reply_to` only when "
-                "intentionally sending to another QQ conversation visible in "
-                "context."
+            robot_reply_context_summary=build_robot_reply_context_summary(
+                RobotReplyTarget(
+                    target_type="group",
+                    target_id="g1",
+                    metadata={
+                        "conversation": {"type": "group", "id": "g1"},
+                        "sender": {
+                            "display_name": "Alice",
+                            "user_id": "u1",
+                        },
+                    },
+                ),
+                "onebot_v11:group:g1:u1",
             ),
         ),
         get_skills=lambda: [],
@@ -997,7 +1004,8 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     assert "最终 assistant 文本是 TermMan 内部回复" in prompt
     assert "mcp_robot_send_message" in prompt
     assert "当前 QQ 会话" in prompt
-    assert "call `mcp_robot_send_message` with only `text`" in prompt
+    assert "call `mcp_robot_send_message` with only `text` or `messages`" in prompt
+    assert "not put blank lines or paragraph breaks inside one QQ message" in prompt
     assert "QQ Reply Reflection" not in prompt
 
 
@@ -1048,6 +1056,9 @@ def test_builtin_skills_are_terminal_qq_mcp_and_personas() -> None:
     assert "不要拆成电报式碎片" in (mutsumi.action.prompt or "")
     assert "不要拆成电报式碎片" in (kurumi.action.prompt or "")
     assert "不要拆成电报式碎片" in (yui.action.prompt or "")
+    assert "群聊单条 text 不要超过 36 个字" in (mutsumi.action.prompt or "")
+    assert "群聊单条 text 不要超过 36 个字" in (kurumi.action.prompt or "")
+    assert "群聊单条 text 不要超过 36 个字" in (yui.action.prompt or "")
     assert "不要在单条 QQ 消息里写空行" in (mutsumi.action.prompt or "")
     assert "不要在单条 QQ 消息里写空行" in (kurumi.action.prompt or "")
     assert "不要在单条 QQ 消息里写空行" in (yui.action.prompt or "")

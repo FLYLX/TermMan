@@ -214,6 +214,39 @@ def test_robot_mcp_send_message_uses_llm_chosen_messages(monkeypatch) -> None:
     ]
 
 
+def test_robot_mcp_send_message_rejects_long_group_text(monkeypatch) -> None:
+    server = RobotMCPServer()
+    sent: list[str] = []
+
+    def fake_send_message(_robot_id, _reply_target, text):
+        sent.append(text)
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+    monkeypatch.setattr(
+        server,
+        "_get_accessible_robot_id",
+        lambda args, fallback_robot_id="": "robot-2",
+    )
+
+    result = server.call_tool(
+        "send_message",
+        {
+            "text": "我先看一下这个问题，可能是桥接服务还没接上，也可能是模型没有正确调用发送工具，我确认一下状态",
+            "target_type": "group",
+            "target_id": "123456",
+            "_termman_user_id": "user-1",
+        },
+    )
+
+    assert result[0]["type"] == "text"
+    assert "too long for a single `text` message" in result[0]["text"]
+    assert "Use `messages`" in result[0]["text"]
+    assert sent == []
+
+
 def test_robot_mcp_send_message_compacts_paragraphs_inside_each_message(
     monkeypatch,
 ) -> None:

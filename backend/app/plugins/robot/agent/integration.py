@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.plugins.robot import is_robot_plugin_enabled
 from app.plugins.robot.internal_trace import (
+    compact_robot_visible_message_text,
     is_robot_internal_trace_text,
     sanitize_robot_visible_text,
 )
@@ -510,7 +511,7 @@ class RobotAgentIntegration:
         robot_id = str(context.get("robot_id") or "").strip()
         robot_reply_target = context.get("reply_target")
         raw_content = str(content or "").strip()
-        text = sanitize_robot_visible_text(raw_content)
+        text = compact_robot_visible_message_text(sanitize_robot_visible_text(raw_content))
         if not text:
             if robot_id and is_no_reply_intent(raw_content):
                 from app.plugins.robot.debug_log import preview_text, record_robot_event
