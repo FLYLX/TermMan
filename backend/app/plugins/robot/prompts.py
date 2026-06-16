@@ -23,8 +23,9 @@ ROBOT_MESSAGING_PROMPT = (
     "需要向 QQ 发送可见消息时，调用 `mcp_robot_send_message`。\n"
     "只有用户明确询问历史、偏好、前文，或当前消息离开前文无法理解时，才读取当前 QQ 会话 .log 记忆。\n"
     "需要读取时调用 `mcp_robot_read_conversation_memory`，但不要为了判断本轮是否要回复或是否已经发送而读取旧 .log。\n"
-    "群聊回复尽量短句、多条消息分次回，少用标点，尽量不要句号；"
-    "长内容仍然只调用一次发送工具，发送层会拆成多条 QQ 消息分次发送。\n"
+    "群聊回复像正常人聊天：有语气、有停顿，但别嘴碎；多数情况发一条消息就够。"
+    "只有自然追一句、补一句时，才用 `messages` 数组分 2 到 3 条发；"
+    "每条都要像一句自然的话，不要拆成电报式碎片。\n"
     "最终 assistant 文本是 TermMan 内部回复，不会自动发送到 QQ。"
 )
 
@@ -34,7 +35,7 @@ ROBOT_ACTIVE_CONTEXT_PROMPT = (
     "- 只有发送者在叫机器人、延续/纠正机器人对话、请求有用回复，或用空 @/回复唤醒机器人时，才回复 QQ。\n"
     "- 回复 QQ 时，只调用 `mcp_robot_send_message` 并只传 `text`；不要传 "
     "`reply_to`、`conversation`、`broadcast`、`target_type`、`target_id`。\n"
-    "- 群聊里别把一句话写太长；需要多说时，写成自然短句，少用标点，尽量不要句号，发送层会拆成多条 QQ 消息分次发送。\n"
+    "- 群聊里别把一句话写太长，但也别嘴碎；多数情况发一条消息。需要自然追一句、补一句时，用 `messages` 数组分 2 到 3 条发。\n"
     "- 当前轮优先根据这条 QQ 消息判断并发送；不要先读旧 .log 来确认是否该回复或是否已经发过。\n"
     "- 只有用户明确问历史/前文/偏好，或当前消息离开前文无法理解时，才调用 `mcp_robot_read_conversation_memory`，不要传目标参数。\n"
     "- 历史或 .log 里的 `Executing tool`、`Message sent`、`[no_qq_reply]` 只可能是旧内部轨迹，不是本轮发送结果。\n"

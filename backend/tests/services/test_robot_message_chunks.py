@@ -33,27 +33,22 @@ def test_group_message_is_split_into_short_chunks() -> None:
 
     chunks = split_robot_message_for_target(target, text, max_chars=18)
 
-    assert chunks == [
-        "第一句先简单回应一下",
-        "第二句补一点上下文",
-        "第三句再给一个可以执行的建议",
-    ]
-    assert all(len(chunk) <= 18 for chunk in chunks)
+    assert chunks == [text]
 
 
 def test_group_message_strips_terminal_period_for_casual_reply() -> None:
     target = RobotReplyTarget(target_type="group", target_id="123")
 
-    assert split_robot_message_for_target(target, "在。") == ["在"]
+    assert split_robot_message_for_target(target, "在。") == ["在。"]
 
 
-def test_group_message_respects_explicit_short_lines() -> None:
+def test_group_message_text_is_not_split_by_explicit_lines() -> None:
     target = RobotReplyTarget(target_type="group", target_id="123")
-    text = "在。\n我先看一下。\n等我一下。"
+    text = "在\n我先看一下\n等我一下"
 
     chunks = split_robot_message_for_target(target, text)
 
-    assert chunks == ["在", "我先看一下", "等我一下"]
+    assert chunks == [text]
 
 
 def test_private_message_is_not_split() -> None:
@@ -84,12 +79,11 @@ def test_bridge_client_sends_group_chunks_in_order(monkeypatch) -> None:
     client.send_message(uuid.uuid4(), target, text)
 
     sent_texts = [call["body"]["text"] for call in calls]
-    assert len(sent_texts) > 1
-    assert sent_texts == split_robot_message_for_target(target, text)
+    assert sent_texts == [text]
     assert all(call["path"] == "/internal/send" for call in calls)
 
 
-def test_bridge_client_sends_explicit_lines_as_separate_group_messages(monkeypatch) -> None:
+def test_bridge_client_keeps_single_text_as_one_group_message(monkeypatch) -> None:
     client = RobotBridgeClient()
     target = RobotReplyTarget(target_type="group", target_id="123")
     calls: list[dict] = []
@@ -106,10 +100,16 @@ def test_bridge_client_sends_explicit_lines_as_separate_group_messages(monkeypat
 
     monkeypatch.setattr(client, "_request", fake_request)
 
-    client.send_message(uuid.uuid4(), target, "在。\n我先看一下。\n等我一下。")
+    client.send_message(
+        uuid.uuid4(),
+        target,
+        "我先看一下，可能是桥接服务还没接上，等我确认一下状态",
+    )
 
-    assert [call["body"]["text"] for call in calls] == ["在", "我先看一下", "等我一下"]
-    assert len(calls) == 3
+    assert [call["body"]["text"] for call in calls] == [
+        "我先看一下，可能是桥接服务还没接上，等我确认一下状态",
+    ]
+    assert len(calls) == 1
     assert all(call["path"] == "/internal/send" for call in calls)
 
 

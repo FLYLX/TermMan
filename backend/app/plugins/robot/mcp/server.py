@@ -44,7 +44,25 @@ class RobotMCPServer:
                 "properties": {
                     "text": {
                         "type": "string",
-                        "description": "Message text to send to QQ.",
+                        "description": (
+                            "Single QQ message text. Use this for one-message "
+                            "replies."
+                        ),
+                    },
+                    "messages": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 1,
+                        "maxItems": 3,
+                        "description": (
+                            "Optional ordered QQ messages for human-like "
+                            "multi-message replies. Use only when a normal chat "
+                            "reply would naturally follow up or add one more "
+                            "thought. The LLM decides each complete message; the "
+                            "backend sends each array item as one QQ message in "
+                            "order. Do not split into tiny fragments, and do not "
+                            "use this for long logs or summaries."
+                        ),
                     },
                     "target_type": {
                         "type": "string",
@@ -96,7 +114,6 @@ class RobotMCPServer:
                         ),
                     },
                 },
-                "required": ["text"],
             },
             handler=self._send_message,
             skip_memory=True,
@@ -668,6 +685,44 @@ class RobotMCPServer:
         except Exception:
             logger.exception("[RobotMCPServer] Failed to write sent QQ memory")
 
+    def _remember_sent_messages(
+        self,
+        robot_id: str,
+        target: RobotReplyTarget,
+        messages: list[str],
+    ) -> None:
+        for message in messages:
+            self._remember_sent_message(robot_id, target, message)
+
+    @staticmethod
+    def _send_messages(
+        bridge_client: Any,
+        robot_id: str,
+        target: RobotReplyTarget,
+        messages: list[str],
+    ) -> None:
+        for message in messages:
+            bridge_client.send_message(robot_id, target, message)
+
+    @staticmethod
+    def _raw_message_texts(args: dict) -> list[str]:
+        raw_messages = args.get("messages")
+        if isinstance(raw_messages, list):
+            return [str(value or "") for value in raw_messages]
+        raw_text = args.get("text")
+        if raw_text is None:
+            return []
+        return [str(raw_text)]
+
+    @staticmethod
+    def _sanitize_outgoing_messages(raw_messages: list[str]) -> list[str]:
+        messages: list[str] = []
+        for raw_message in raw_messages[:5]:
+            text = sanitize_robot_visible_text(str(raw_message or ""))
+            if text and not is_no_reply_intent(text) and not is_robot_internal_trace_text(text):
+                messages.append(text)
+        return messages
+
     @staticmethod
     def _memory_line_limit(args: dict) -> int:
         raw_value = args.get("lines") or args.get("limit") or 80
@@ -862,17 +917,19 @@ class RobotMCPServer:
         }
 
     def _send_message(self, args: dict) -> list[dict[str, str]]:
-        raw_text = str(args.get("text") or "").strip()
-        text = sanitize_robot_visible_text(raw_text)
-        if not text:
-            if is_robot_internal_trace_text(raw_text):
+        raw_messages = self._raw_message_texts(args)
+        messages = self._sanitize_outgoing_messages(raw_messages)
+        text = "\n".join(messages).strip()
+        raw_text = "\n".join(str(value or "") for value in raw_messages).strip()
+        if not messages:
+            if any(is_robot_internal_trace_text(str(value or "")) for value in raw_messages):
                 return [
                     {
                         "type": "text",
                         "text": "No QQ message sent: internal tool trace.",
                     }
                 ]
-            if is_no_reply_intent(raw_text):
+            if any(is_no_reply_intent(str(value or "")) for value in raw_messages):
                 return [
                     {
                         "type": "text",
@@ -887,7 +944,7 @@ class RobotMCPServer:
                     "text": "No QQ message sent: no reply needed.",
                 }
             ]
-        if is_robot_internal_trace_text(text):
+        if any(is_robot_internal_trace_text(message) for message in messages):
             return [
                 {
                     "type": "text",
@@ -981,8 +1038,8 @@ class RobotMCPServer:
                     mode="explicit_target",
                     args=args,
                 )
-                robot_bridge_client.send_message(robot_id, explicit_target, text)
-                self._remember_sent_message(robot_id, explicit_target, text)
+                self._send_messages(robot_bridge_client, robot_id, explicit_target, messages)
+                self._remember_sent_messages(robot_id, explicit_target, messages)
                 return [
                     {
                         "type": "text",
@@ -1011,8 +1068,8 @@ class RobotMCPServer:
                     mode="context_target",
                     args=args,
                 )
-                robot_bridge_client.send_message(robot_id, context_target, text)
-                self._remember_sent_message(robot_id, context_target, text)
+                self._send_messages(robot_bridge_client, robot_id, context_target, messages)
+                self._remember_sent_messages(robot_id, context_target, messages)
                 return [
                     {
                         "type": "text",
@@ -1036,12 +1093,13 @@ class RobotMCPServer:
                 mode="current_context",
                 args=args,
             )
-            robot_bridge_client.send_message(
+            self._send_messages(
+                robot_bridge_client,
                 attempted_robot_id,
                 attempted_target.model_copy(deep=True),
-                text,
+                messages,
             )
-            self._remember_sent_message(attempted_robot_id, attempted_target, text)
+            self._remember_sent_messages(attempted_robot_id, attempted_target, messages)
             return [{"type": "text", "text": "Message sent to current robot conversation."}]
         except Exception as exc:
             logger.warning("[RobotMCPServer] Failed to send robot message: %s", exc)

@@ -178,6 +178,42 @@ def test_robot_mcp_send_message_uses_explicit_target(monkeypatch) -> None:
     assert sent["reply_target"].target_id == "123456"
 
 
+def test_robot_mcp_send_message_uses_llm_chosen_messages(monkeypatch) -> None:
+    server = RobotMCPServer()
+    sent: list[tuple[str, str, str, str]] = []
+
+    def fake_send_message(robot_id, reply_target, text):
+        sent.append((robot_id, reply_target.target_type, reply_target.target_id, text))
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+    monkeypatch.setattr(
+        server,
+        "_get_accessible_robot_id",
+        lambda args, fallback_robot_id="": "robot-2",
+    )
+
+    result = server.call_tool(
+        "send_message",
+        {
+            "messages": ["我先看一下", "等我确认一下状态"],
+            "target_type": "group",
+            "target_id": "123456",
+            "_termman_user_id": "user-1",
+        },
+    )
+
+    assert result == [
+        {"type": "text", "text": "Message sent to QQ group 123456."}
+    ]
+    assert sent == [
+        ("robot-2", "group", "123456", "我先看一下"),
+        ("robot-2", "group", "123456", "等我确认一下状态"),
+    ]
+
+
 def test_robot_mcp_send_message_accepts_stamped_target_aliases(monkeypatch) -> None:
     server = RobotMCPServer()
     sent: list[tuple[str, RobotReplyTarget, str]] = []
