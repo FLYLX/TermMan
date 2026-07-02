@@ -735,8 +735,8 @@ function Dashboard() {
         : "未接入"
   const robotConnectionHint =
     loadedRobotCount <= 0
-      ? `${onebotClientCount} 个 NapCat WebSocket 客户端`
-      : `机器人 ${connectedRobotCount}/${loadedRobotCount} · NapCat ${onebotClientCount} 客户端`
+      ? `${onebotClientCount} 个 QQ 接入端`
+      : `机器人 ${connectedRobotCount}/${loadedRobotCount} · QQ 接入 ${onebotClientCount}`
 
   const systemSummaryRows: KeyValue[] = [
     {

@@ -122,6 +122,8 @@ services:
         - USE_CHINA_MIRRORS=${USE_CHINA_MIRRORS:-true}
     ports:
       - "${ROBOT_BRIDGE_HOST_PORT:-33333}:7000"
+    environment:
+      ROBOT_BRIDGE_PUBLIC_URL: "${ROBOT_BRIDGE_PUBLIC_URL:-}"
     develop:
       watch:
         - path: ./robot

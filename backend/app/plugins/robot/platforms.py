@@ -529,11 +529,9 @@ _PLATFORMS: dict[str, RobotPlatformSpec] = {
     ),
     "onebot_v11": RobotPlatformSpec(
         id="onebot_v11",
-        label="OneBot V11 / NapCat",
+        label="QQ 接入端",
         description=(
-            "TermMan robot-bridge provides the OneBot V11 WebSocket server "
-            "at /onebot/v11/ws. NapCat connects to this server as a client. "
-            "Requires the logged-in QQ self_id."
+            "填写当前登录的 QQ 号；接入端连接 /onebot/v11/ws。"
         ),
         fields=(
             RobotPlatformFieldSpec("self_id", "QQ Self ID"),
@@ -823,6 +821,9 @@ _PLATFORM_ALIASES = {
     "qq": "onebot_v11",
     "qqofficial": "onebot_v11",
     "napcat": "onebot_v11",
+    "lagrange": "onebot_v11",
+    "lagrangeonebot": "onebot_v11",
+    "sonwluma": "onebot_v11",
     "telegram": "telegram",
     "tg": "telegram",
     "discord": "discord",
@@ -872,7 +873,7 @@ def get_robot_platform(platform_id: str) -> RobotPlatformSpec:
     if normalized not in _SUPPORTED_ROBOT_PLATFORM_IDS:
         raise ValueError(
             f"Unsupported robot platform `{platform_id}`. "
-            "Only NapCat OneBot V11 is currently supported."
+            "Only OneBot V11 QQ connectors are currently supported."
         )
     try:
         return _PLATFORMS[normalized]
@@ -1432,7 +1433,7 @@ async def _send_onebot_text_with_explicit_target(
     if self_id not in connections:
         raise ConnectionError(
             "OneBot reverse WebSocket is not connected; "
-            "NapCat may have disconnected before the message was sent"
+            "The QQ connector may have disconnected before the message was sent"
         )
 
     target_type = str(target.target_type or "").strip().lower()
@@ -1472,7 +1473,7 @@ async def send_text_with_bot(
             if self_id not in connections:
                 raise ConnectionError(
                     "OneBot reverse WebSocket is not connected; "
-                    "NapCat may have disconnected before the reply was sent"
+                    "The QQ connector may have disconnected before the reply was sent"
                 )
 
         from nonebot_plugin_alconna import UniMessage

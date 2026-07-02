@@ -142,6 +142,8 @@ services:
         condition: service_healthy
     env_file:
       - ./robot/.env
+    environment:
+      - ROBOT_BRIDGE_PUBLIC_URL=${ROBOT_BRIDGE_PUBLIC_URL:-}
     volumes:
       - ./robot:/app/robot
 

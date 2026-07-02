@@ -295,29 +295,7 @@ function getReverseWsEndpoint(
 }
 
 function getPublicReverseWsEndpoint(endpoint?: string | null) {
-  const fallbackPath = "/onebot/v11/ws"
-  if (typeof window === "undefined") {
-    return endpoint || `ws://<termman-host>:7000${fallbackPath}`
-  }
-
-  const currentHost = window.location.hostname
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-  const fallback = `${protocol}//${currentHost}:7000${fallbackPath}`
-  if (!endpoint) {
-    return fallback
-  }
-
-  try {
-    const parsed = new URL(endpoint.replace(/^http:/, "ws:").replace(/^https:/, "wss:"))
-    if (["robot-bridge", "backend", "localhost", "127.0.0.1", "0.0.0.0"].includes(parsed.hostname)) {
-      parsed.protocol = protocol
-      parsed.hostname = currentHost
-      parsed.port = parsed.port || "7000"
-    }
-    return parsed.toString()
-  } catch {
-    return endpoint
-  }
+  return typeof endpoint === "string" ? endpoint.trim() : ""
 }
 
 function useRobotDetailCopy() {
@@ -328,14 +306,14 @@ function useRobotDetailCopy() {
       ? {
           enabled: "已启用",
           disabled: "未启用",
-          back: "返回机器人列表",
-          notFound: "没有找到这个机器人",
-          loading: "加载机器人中...",
-          loadFailed: "机器人详情加载失败",
+          back: "返回机器人 Server 列表",
+          notFound: "没有找到这个机器人 Server",
+          loading: "加载机器人 Server 中...",
+          loadFailed: "机器人 Server 详情加载失败",
           bindingTitle: "终端绑定",
           bindingDescription:
-            "把终端绑定到当前机器人，并控制聊天入口和过滤输出分发。",
-          bindingEmpty: "这个机器人还没有绑定任何终端。",
+            "把终端绑定到当前机器人 Server，并控制聊天入口和过滤输出分发。",
+          bindingEmpty: "这个机器人 Server 还没有绑定任何终端。",
           platform: "平台",
           provider: "提供方",
           totalBindings: "绑定数",
@@ -354,11 +332,11 @@ function useRobotDetailCopy() {
           removeFailed: "删除绑定失败",
           removeConfirm: (title: string) => `确认解除与“${title}”的绑定吗？`,
           addTrigger: "绑定终端",
-          addTitle: "给机器人绑定终端",
-          addDescription: "选择一个终端，并设置这个机器人如何把消息路由给它。",
+          addTitle: "给机器人 Server 绑定终端",
+          addDescription: "选择一个终端，并设置机器人 Server 如何把消息路由给它。",
           itemPlaceholder: "选择一个终端",
           addEmpty: "当前没有可绑定的终端",
-          addSuccess: "机器人绑定终端成功",
+          addSuccess: "机器人 Server 绑定终端成功",
           addFailed: "绑定终端失败",
           itemRequired: "请选择一个终端",
           cancel: "取消",
@@ -367,14 +345,14 @@ function useRobotDetailCopy() {
       : {
           enabled: "Enabled",
           disabled: "Disabled",
-          back: "Back to robots",
-          notFound: "Robot not found",
-          loading: "Loading robot...",
-          loadFailed: "Failed to load robot detail",
+          back: "Back to robot servers",
+          notFound: "Robot server not found",
+          loading: "Loading robot server...",
+          loadFailed: "Failed to load robot server detail",
           bindingTitle: "Terminal bindings",
           bindingDescription:
-            "Bind terminals to this robot and control chat routing and filtered output dispatch.",
-          bindingEmpty: "This robot does not have any terminal bindings yet.",
+            "Bind terminals to this robot server and control chat routing and filtered output dispatch.",
+          bindingEmpty: "This robot server does not have any terminal bindings yet.",
           platform: "Platform",
           provider: "Provider",
           totalBindings: "Bindings",
@@ -393,12 +371,12 @@ function useRobotDetailCopy() {
           removeFailed: "Failed to delete binding",
           removeConfirm: (title: string) => `Remove binding for "${title}"?`,
           addTrigger: "Bind terminal",
-          addTitle: "Bind terminal to robot",
+          addTitle: "Bind terminal to robot server",
           addDescription:
-            "Choose a terminal and define how this robot routes messages to it.",
+            "Choose a terminal and define how this robot server routes messages to it.",
           itemPlaceholder: "Select a terminal",
           addEmpty: "No available terminals to bind",
-          addSuccess: "Robot binding created",
+          addSuccess: "Robot server binding created",
           addFailed: "Failed to bind terminal",
           itemRequired: "Please select a terminal",
           cancel: "Cancel",
@@ -410,9 +388,9 @@ function useRobotDetailCopy() {
     debugTitle: locale === "zh" ? "调试" : "Debug",
     debugDescription:
       locale === "zh"
-        ? "查看 Bridge 连接、最近收发和错误。"
-        : "Inspect bridge connectivity, recent traffic, and errors.",
-    reload: locale === "zh" ? "重载 Bridge" : "Reload bridge",
+        ? "查看机器人 Server 连接、最近收发和错误。"
+        : "Inspect robot server connectivity, recent traffic, and errors.",
+    reload: locale === "zh" ? "重载 Server" : "Reload server",
     testSend: locale === "zh" ? "测试发送" : "Test send",
     testSendMessage:
       locale === "zh"
@@ -449,9 +427,9 @@ function useRobotDetailCopy() {
     manualMessageRequired:
       locale === "zh" ? "请输入消息内容" : "Message text is required",
     reloadRequested:
-      locale === "zh" ? "Bridge 重载已请求" : "Bridge reload requested",
+      locale === "zh" ? "Server 重载已请求" : "Server reload requested",
     reloadFailed:
-      locale === "zh" ? "Bridge 重载失败" : "Failed to reload bridge",
+      locale === "zh" ? "Server 重载失败" : "Failed to reload server",
     connected: locale === "zh" ? "已连接" : "Connected",
     disconnected: locale === "zh" ? "未连接" : "Disconnected",
     recentEvents: locale === "zh" ? "最近事件" : "Recent events",
@@ -468,10 +446,10 @@ function useRobotDetailUiCopy() {
       ? {
           enabled: "已启用",
           disabled: "未启用",
-          back: "返回机器人列表",
-          notFound: "没有找到这个机器人",
-          loading: "加载机器人中...",
-          loadFailed: "机器人详情加载失败",
+          back: "返回机器人 Server 列表",
+          notFound: "没有找到这个机器人 Server",
+          loading: "加载机器人 Server 中...",
+          loadFailed: "机器人 Server 详情加载失败",
           bindingTitle: "终端绑定",
           platform: "平台",
           provider: "提供方",
@@ -491,11 +469,11 @@ function useRobotDetailUiCopy() {
           removeFailed: "删除绑定失败",
           removeConfirm: (title: string) => `确认解除与“${title}”的绑定吗？`,
           addTrigger: "绑定终端",
-          addTitle: "给机器人绑定终端",
-          addDescription: "选择一个终端，并设置机器人如何把消息路由给它。",
+          addTitle: "给机器人 Server 绑定终端",
+          addDescription: "选择一个终端，并设置机器人 Server 如何把消息路由给它。",
           itemPlaceholder: "选择一个终端",
           addEmpty: "当前没有可绑定的终端",
-          addSuccess: "机器人绑定终端成功",
+          addSuccess: "机器人 Server 绑定终端成功",
           addFailed: "绑定终端失败",
           itemRequired: "请选择一个终端",
           cancel: "取消",
@@ -504,71 +482,71 @@ function useRobotDetailUiCopy() {
           tabBindings: "绑定",
           tabDebug: "调试",
           tabSettings: "设置",
-          bindingDescription: "管理这个机器人可以收发消息的终端。",
+          bindingDescription: "管理这个机器人 Server 可以收发消息的终端。",
           copied: "已复制",
           copyLabel: (label: string) => `复制${label}`,
           notConfigured: "未配置",
-          connectionTitle: "NapCat 反向 WebSocket",
+          connectionTitle: "QQ 接入端反向 WebSocket",
           connectionDescription:
-            "NapCat 作为客户端，主动连接这个 OneBot V11 反向 WebSocket。",
-          waitingForNapCat: "等待 NapCat 连接",
+            "QQ 接入端作为客户端连接这个 OneBot V11 反向 WebSocket。",
+          waitingForConnector: "等待 QQ 接入端连接",
           reverseEndpoint: "反向 WS 地址",
           reverseEndpointHint:
-            "请在 robot/.env 中把 ROBOT_BRIDGE_URL 设置成 NapCat 能访问的地址",
+            "请在 robot/.env 中把 ROBOT_BRIDGE_URL 设置成 QQ 接入端能访问的地址",
           selfIdLabel: "QQ self_id",
-          selfIdHint: "填写 NapCat 当前登录的 QQ 号",
+          selfIdHint: "填写 QQ 接入端当前登录的 QQ 号",
           accessTokenLabel: "Access Token",
           secretLabel: "Secret",
-          reverseSettingsTitle: "NapCat 配置项",
+          reverseSettingsTitle: "QQ 接入端配置项",
           reverseWebSocketUrl: "反向 WebSocket 地址",
           tokenLabel: "Token",
           tokenConfigured: "使用已配置的 Access Token",
           tokenEmpty: "留空",
-          selfIdFallback: "NapCat 当前登录的 QQ 号",
+          selfIdFallback: "QQ 接入端当前登录的 QQ 号",
           settingsTitle: "基础设置",
-          settingsDescription: "编辑机器人名称、启用状态和 NapCat 凭据。",
-          settingsUpdated: "机器人配置已更新",
-          settingsUpdateFailed: "更新机器人失败",
-          nameRequired: "机器人名称不能为空",
+          settingsDescription: "编辑机器人 Server 名称、启用状态和 QQ 接入凭据。",
+          settingsUpdated: "机器人 Server 配置已更新",
+          settingsUpdateFailed: "更新机器人 Server 失败",
+          nameRequired: "机器人 Server 名称不能为空",
           nameLabel: "名称",
           edit: "编辑",
           credentials: "凭据",
           replyScopeTitle: "回复范围",
-          replyScopeDescription: "选择机器人会交给 Agent 处理的消息类型。",
+          replyScopeDescription: "选择机器人 Server 会交给 Agent 处理的消息类型。",
           replyPrivate: "私聊消息",
           replyGroup: "群聊消息",
           replyChannel: "频道消息",
           replyCommand: "路由命令",
-          replyMention: "@机器人消息",
+          replyMention: "@机器人 Server 消息",
           replyNone: "未启用",
           mentionModeTitle: "@ 匹配方式",
-          mentionModeBot: "仅 @机器人",
+          mentionModeBot: "仅 @机器人 Server",
           mentionModeAny: "任意 @成员",
           keepCurrentSecret: "留空则保留当前值",
-          napcatMode: "OneBot V11 反向 WebSocket",
+          connectorMode: "OneBot V11 反向 WebSocket",
           debugTitle: "运行调试",
-          debugDescription: "查看 Bridge 连接、NapCat 事件、最近收发和错误。",
-          reload: "重载 Bridge",
+          debugDescription: "查看机器人 Server 连接、QQ 接入端事件、最近收发和错误。",
+          reload: "重载 Server",
           testSend: "测试发送",
           testSendMessage: "测试一下能不能从服务器给群里发消息",
           testSendRequested: "测试消息已发送",
           testSendFailed: "测试发送失败",
-          reloadRequested: "Bridge 重载已请求",
-          reloadFailed: "Bridge 重载失败",
+          reloadRequested: "Server 重载已请求",
+          reloadFailed: "Server 重载失败",
           connected: "已连接",
           disconnected: "未连接",
-          bridgeStatus: "Bridge",
+          bridgeStatus: "Robot Server",
           botStatus: "Bot",
           identity: "Identity",
-          bridgeUrl: "Bridge URL",
+          bridgeUrl: "Server URL",
           qqBotId: "QQ Bot ID",
-          napcatReverseWs: "NapCat 反向 WS",
+          connectorReverseWs: "QQ 接入端反向 WS",
           wsClients: "WS 客户端",
           checked: "Checked",
           socketEvent: "Socket Event",
           reverseEndpointStatus: "反向 WS 地址",
           socketSeen: "Socket Seen",
-          lastNapcatEvent: "Last NapCat Event",
+          lastConnectorEvent: "最近 QQ 接入事件",
           lastMessageEvent: "Last Message Event",
           recentEvents: "最近事件",
           noEvents: "暂无调试事件",
@@ -579,32 +557,32 @@ function useRobotDetailUiCopy() {
           tabDebug: "Debug",
           tabSettings: "Settings",
           bindingDescription:
-            "Manage the terminals this robot can send messages to and receive output from.",
+            "Manage the terminals this robot server can send messages to and receive output from.",
           copied: "Copied",
           copyLabel: (label: string) => `Copy ${label}`,
           notConfigured: "Not configured",
-          connectionTitle: "NapCat reverse WebSocket",
+          connectionTitle: "QQ connector reverse WebSocket",
           connectionDescription:
-            "NapCat connects as a client to this OneBot V11 reverse WebSocket.",
-          waitingForNapCat: "Waiting for NapCat",
+            "QQ connector clients connect to this OneBot V11 reverse WebSocket.",
+          waitingForConnector: "Waiting for QQ connector",
           reverseEndpoint: "Reverse WS Endpoint",
           reverseEndpointHint:
-            "Set robot/.env ROBOT_BRIDGE_URL to the address NapCat can reach",
+            "Set robot/.env ROBOT_BRIDGE_URL to the address the QQ connector can reach",
           selfIdLabel: "QQ self_id",
-          selfIdHint: "Set the QQ number currently logged in to NapCat",
+          selfIdHint: "Set the QQ number currently logged in to the QQ connector",
           accessTokenLabel: "Access Token",
           secretLabel: "Secret",
-          reverseSettingsTitle: "NapCat settings",
+          reverseSettingsTitle: "QQ connector settings",
           reverseWebSocketUrl: "Reverse WebSocket URL",
           tokenLabel: "Token",
           tokenConfigured: "Use the configured Access Token",
           tokenEmpty: "Leave blank",
-          selfIdFallback: "the QQ number logged in to NapCat",
+          selfIdFallback: "the QQ number logged in to the QQ connector",
           settingsTitle: "Basic settings",
           settingsDescription:
-            "Edit robot name, enabled state, and NapCat credentials.",
-          settingsUpdated: "Robot updated",
-          settingsUpdateFailed: "Failed to update robot",
+            "Edit robot server name, enabled state, and QQ connector credentials.",
+          settingsUpdated: "Robot server updated",
+          settingsUpdateFailed: "Failed to update robot server",
           nameRequired: "Name is required",
           nameLabel: "Name",
           edit: "Edit",
@@ -616,38 +594,38 @@ function useRobotDetailUiCopy() {
           replyGroup: "Group messages",
           replyChannel: "Channel messages",
           replyCommand: "Route commands",
-          replyMention: "@ robot messages",
+          replyMention: "@ robot server messages",
           replyNone: "Disabled",
           mentionModeTitle: "@ match mode",
-          mentionModeBot: "Only @ robot",
+          mentionModeBot: "Only @ robot server",
           mentionModeAny: "Any @ member",
           keepCurrentSecret: "Leave blank to keep current value",
-          napcatMode: "OneBot V11 reverse WebSocket",
+          connectorMode: "OneBot V11 reverse WebSocket",
           debugTitle: "Runtime debug",
           debugDescription:
-            "Inspect bridge connectivity, NapCat events, recent traffic, and errors.",
-          reload: "Reload bridge",
+            "Inspect robot server connectivity, QQ connector events, recent traffic, and errors.",
+          reload: "Reload server",
           testSend: "Test send",
           testSendMessage:
             "Testing whether the server can send a message to this QQ conversation",
           testSendRequested: "Test message sent",
           testSendFailed: "Failed to send test message",
-          reloadRequested: "Bridge reload requested",
-          reloadFailed: "Failed to reload bridge",
+          reloadRequested: "Server reload requested",
+          reloadFailed: "Failed to reload server",
           connected: "Connected",
           disconnected: "Disconnected",
-          bridgeStatus: "Bridge",
+          bridgeStatus: "Robot Server",
           botStatus: "Bot",
           identity: "Identity",
-          bridgeUrl: "Bridge URL",
+          bridgeUrl: "Server URL",
           qqBotId: "QQ Bot ID",
-          napcatReverseWs: "NapCat Reverse WS",
+          connectorReverseWs: "QQ Connector Reverse WS",
           wsClients: "WS Clients",
           checked: "Checked",
           socketEvent: "Socket Event",
           reverseEndpointStatus: "Reverse Endpoint",
           socketSeen: "Socket Seen",
-          lastNapcatEvent: "Last NapCat Event",
+          lastConnectorEvent: "Last QQ Connector Event",
           lastMessageEvent: "Last Message Event",
           recentEvents: "Recent events",
           noEvents: "No debug events yet",
@@ -1214,7 +1192,7 @@ function RobotConnectionGuidePanel({
             }
             variant={connected ? "outline" : "secondary"}
           >
-            {connected ? copy.connected : copy.waitingForNapCat}
+            {connected ? copy.connected : copy.waitingForConnector}
           </Badge>
         </div>
       </CardHeader>
@@ -1510,7 +1488,7 @@ function RobotBasicConfigPanel({
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
             <RobotKeyValue label={copy.nameLabel} value={robot.name} />
-            <RobotKeyValue label="NapCat" value={copy.napcatMode} />
+            <RobotKeyValue label="QQ Connector" value={copy.connectorMode} />
             <RobotKeyValue
               label={copy.selfIdLabel}
               value={credentials.self_id ?? robot.app_id}
@@ -1753,7 +1731,7 @@ function RobotDebugPanel({
           </div>
           <div className="rounded-xl border bg-muted/10 p-3">
             <div className="text-xs text-muted-foreground">
-              {copy.napcatReverseWs}
+              {copy.connectorReverseWs}
             </div>
             <div className="mt-1 truncate font-medium">
               {onebotSocket?.connected ? copy.connected : copy.disconnected}
@@ -1813,7 +1791,7 @@ function RobotDebugPanel({
         <div className="grid gap-2 text-sm md:grid-cols-2">
           <div className="rounded-xl border bg-muted/10 p-3">
             <div className="text-xs text-muted-foreground">
-              {copy.lastNapcatEvent}
+              {copy.lastConnectorEvent}
             </div>
             <div className="mt-1 truncate font-medium">
               {bridge?.last_platform_event_at
@@ -2137,7 +2115,7 @@ export function RobotDetail({ robotId }: { robotId: string }) {
               <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                 <Badge variant="outline" className="h-6 gap-1 px-2">
                   <Bot className="size-3.5" />
-                  NapCat
+                  QQ Connector
                 </Badge>
                 <Badge variant="outline" className="h-6 gap-1 px-2">
                   <MessageSquare className="size-3.5" />

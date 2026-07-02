@@ -22,6 +22,7 @@ Rules:
 
 Currently synced:
   - .env VITE_API_URL -> frontend/.env VITE_API_URL
+  - .env ROBOT_BRIDGE_PUBLIC_URL -> robot/.env ROBOT_BRIDGE_PUBLIC_URL
   - .env ROBOT_BRIDGE_SHARED_SECRET -> robot/.env ROBOT_BRIDGE_SHARED_SECRET
     falling back to .env SECRET_KEY when no bridge secret is set.
 
@@ -129,11 +130,13 @@ function Sync-FrontendEnv {
         Set-EnvValue -Path $frontendEnv -Key "VITE_API_URL" -Value $viteApiUrl
         Write-Host "sync   frontend\.env VITE_API_URL from .env"
     }
+
 }
 
 function Sync-RobotEnv {
     $rootEnv = Join-Path $repoRoot ".env"
     $robotEnv = Join-Path $repoRoot "robot\.env"
+    $bridgePublicUrl = Get-EnvValue -Path $rootEnv -Key "ROBOT_BRIDGE_PUBLIC_URL"
     $bridgeSecret = Get-EnvValue -Path $rootEnv -Key "ROBOT_BRIDGE_SHARED_SECRET"
     $secretKey = Get-EnvValue -Path $rootEnv -Key "SECRET_KEY"
 
@@ -141,6 +144,11 @@ function Sync-RobotEnv {
         return
     }
 
+
+    if ($bridgePublicUrl) {
+        Set-EnvValue -Path $robotEnv -Key "ROBOT_BRIDGE_PUBLIC_URL" -Value $bridgePublicUrl
+        Write-Host "sync   robot\.env ROBOT_BRIDGE_PUBLIC_URL from .env"
+    }
     if ($bridgeSecret) {
         Set-EnvValue -Path $robotEnv -Key "ROBOT_BRIDGE_SHARED_SECRET" -Value $bridgeSecret
         Write-Host "sync   robot\.env bridge token from .env ROBOT_BRIDGE_SHARED_SECRET"

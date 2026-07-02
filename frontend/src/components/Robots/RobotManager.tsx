@@ -99,36 +99,10 @@ function textOrNull(value: unknown) {
 }
 
 function getPublicReverseWsEndpoint(endpoint?: string | null) {
-  const fallbackPath = "/onebot/v11/ws"
-  if (typeof window === "undefined") {
-    return endpoint || `ws://<termman-host>:7000${fallbackPath}`
-  }
-
-  const currentHost = window.location.hostname
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-  const fallback = `${protocol}//${currentHost}:7000${fallbackPath}`
-  if (!endpoint) {
-    return fallback
-  }
-
-  try {
-    const parsed = new URL(endpoint.replace(/^http:/, "ws:").replace(/^https:/, "wss:"))
-    if (
-      ["robot-bridge", "backend", "localhost", "127.0.0.1", "0.0.0.0"].includes(
-        parsed.hostname,
-      )
-    ) {
-      parsed.protocol = protocol
-      parsed.hostname = currentHost
-      parsed.port = parsed.port || "7000"
-    }
-    return parsed.toString()
-  } catch {
-    return endpoint
-  }
+  return textOrNull(endpoint) ?? ""
 }
 
-function getNapCatSocketEndpoint(
+function getConnectorSocketEndpoint(
   socket: RobotDiagnoseResult["chain"]["napcat_socket"],
 ) {
   return (
@@ -154,7 +128,7 @@ function getConfiguredSelfId(
   return selfId || identityText
 }
 
-function getNapCatBridgeStatus(
+function getConnectorBridgeStatus(
   diagnoseResult: RobotDiagnoseResult,
   locale: "zh" | "en",
 ) {
@@ -163,17 +137,17 @@ function getNapCatBridgeStatus(
 
   if (qqToBridge.connected) {
     return locale === "zh"
-      ? "已接入：NapCat 登录 QQ 已匹配这个机器人"
-      : "Connected: NapCat self_id matches this robot"
+      ? "已接入：QQ 接入端登录 QQ 已匹配这个机器人 Server"
+      : "Connected: QQ connector self_id matches this robot server"
   }
   if (socket.connected) {
     return locale === "zh"
       ? "WS 已连接，但 self_id 没匹配这个机器人"
-      : "WebSocket connected, but self_id does not match this robot"
+      : "WebSocket connected, but self_id does not match this robot server"
   }
   return locale === "zh"
-    ? "未接入：没有检测到这个 QQ(self_id) 的 NapCat 连接"
-    : "Not connected: no NapCat connection detected for this QQ self_id"
+    ? "未接入：没有检测到这个 QQ(self_id) 的 QQ 接入端连接"
+    : "Not connected: no QQ connector connection detected for this QQ self_id"
 }
 
 function RobotStatusBadge({ enabled }: { enabled: boolean }) {
@@ -338,7 +312,7 @@ function CreateRobotDialog({
               <Label>{t("robots.platform")}</Label>
               <div className="rounded-xl border bg-muted/20 px-3 py-2">
                 <div className="flex items-center gap-2">
-                  <Badge variant="secondary">NapCat</Badge>
+                  <Badge variant="secondary">QQ Connector</Badge>
                   <span className="text-sm font-medium">
                     {selectedPlatform.label}
                   </span>
@@ -440,10 +414,10 @@ function RobotCard({
   const wsServerLabel = locale === "zh" ? "WS 服务端地址" : "WS Server URL"
   const accessTokenLabel = "Access Token"
   const emptyTokenLabel =
-    locale === "zh" ? "未配置，NapCat Token 留空" : "Not set; leave NapCat token empty"
+    locale === "zh" ? "未配置，QQ 接入端 Token 留空" : "Not set; leave QQ connector token empty"
   const copiedLabel = locale === "zh" ? "已复制" : "Copied"
 
-  const renderNapCatConfig = (
+  const renderConnectorConfig = (
     label: string,
     value: unknown,
     emptyValue: string,
@@ -591,10 +565,10 @@ function RobotCard({
 
       <div className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
         <div className="sm:col-span-2">
-          {renderNapCatConfig(wsServerLabel, reverseWsUrl, "-")}
+          {renderConnectorConfig(wsServerLabel, reverseWsUrl, "-")}
         </div>
         <div className="sm:col-span-2">
-          {renderNapCatConfig(accessTokenLabel, accessToken, emptyTokenLabel)}
+          {renderConnectorConfig(accessTokenLabel, accessToken, emptyTokenLabel)}
         </div>
         <div className="rounded-xl border bg-muted/20 px-3 py-2">
           <div className="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]">
@@ -638,7 +612,7 @@ function RobotCard({
               >
                 {diagnoseResult.chain.robot_config.status === "ok" ? "✓" : "✗"}
               </span>
-              <span>{locale === "zh" ? "机器人配置" : "Robot Config"}</span>
+              <span>{locale === "zh" ? "机器人 Server 配置" : "Robot Server Config"}</span>
               <span className="text-muted-foreground">
                 {diagnoseResult.chain.robot_config.app_id || "-"}
               </span>
@@ -647,14 +621,14 @@ function RobotCard({
               (() => {
                 const socket = diagnoseResult.chain.napcat_socket
                 const endpoint = getPublicReverseWsEndpoint(
-                  getNapCatSocketEndpoint(socket),
+                  getConnectorSocketEndpoint(socket),
                 )
                 const selfId = getConfiguredSelfId(
                   diagnoseResult.chain.qq_to_bridge.identity,
                   socket.self_id,
                 )
                 const connected = diagnoseResult.chain.qq_to_bridge.connected
-                const statusText = getNapCatBridgeStatus(diagnoseResult, locale)
+                const statusText = getConnectorBridgeStatus(diagnoseResult, locale)
                 const error =
                   diagnoseResult.chain.qq_to_bridge.error || socket.error
 
@@ -670,15 +644,15 @@ function RobotCard({
                       </span>
                       <span className="font-medium text-foreground">
                         {locale === "zh"
-                          ? "NapCat 接入 TermMan"
-                          : "NapCat to TermMan"}
+                          ? "QQ 接入端接入 TermMan"
+                          : "QQ connector to TermMan"}
                       </span>
                     </div>
                     <div className="mt-2 grid gap-1 pl-5 text-[11px] text-muted-foreground">
                       <div className="grid gap-1 sm:grid-cols-[120px_minmax(0,1fr)]">
                         <span>
                           {locale === "zh"
-                            ? "机器人 QQ(self_id)"
+                            ? "机器人 Server QQ(self_id)"
                             : "Bot QQ (self_id)"}
                         </span>
                         <span className="font-mono text-foreground">
@@ -688,8 +662,8 @@ function RobotCard({
                       <div className="grid gap-1 sm:grid-cols-[120px_minmax(0,1fr)]">
                         <span>
                           {locale === "zh"
-                            ? "NapCat 应填地址"
-                            : "NapCat server URL"}
+                            ? "接入端应填地址"
+                            : "Connector server URL"}
                         </span>
                         <span className="truncate font-mono text-foreground">
                           {endpoint}
@@ -924,7 +898,7 @@ export function RobotManager() {
         </div>
         <div className="rounded-2xl border bg-card px-4 py-3 shadow-sm">
           <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            NapCat
+            QQ Connector
           </div>
           <div className="mt-2 text-2xl font-semibold">
             {bridgeHealth?.connected_bot_count ?? 0}/{robots.length}

@@ -521,7 +521,7 @@ async def _send_onebot_text_with_explicit_target(
     if self_id not in connections:
         raise ConnectionError(
             "OneBot reverse WebSocket is not connected; "
-            "NapCat may have disconnected before the message was sent"
+            "The QQ connector may have disconnected before the message was sent"
         )
 
     target_type = str(target.target_type or "").strip().lower()
@@ -561,7 +561,7 @@ async def send_text_with_bot(
             if self_id not in connections:
                 raise ConnectionError(
                     "OneBot reverse WebSocket is not connected; "
-                    "NapCat may have disconnected before the reply was sent"
+                    "The QQ connector may have disconnected before the reply was sent"
                 )
 
         from nonebot_plugin_alconna import UniMessage

@@ -16,6 +16,7 @@ Rules:
 
 Currently synced:
   - .env VITE_API_URL -> frontend/.env VITE_API_URL
+  - .env ROBOT_BRIDGE_PUBLIC_URL -> robot/.env ROBOT_BRIDGE_PUBLIC_URL
   - .env ROBOT_BRIDGE_SHARED_SECRET -> robot/.env ROBOT_BRIDGE_SHARED_SECRET
     falling back to .env SECRET_KEY when no bridge secret is set.
 
@@ -118,6 +119,7 @@ sync_frontend_env() {
     set_env_value "$frontend_env_path" VITE_API_URL "$vite_api_url"
     echo "sync   frontend/.env VITE_API_URL from .env"
   fi
+
 }
 
 sync_robot_env() {
@@ -126,6 +128,11 @@ sync_robot_env() {
 
   [ -f "$robot_env_path" ] || return 0
 
+
+  if bridge_public_url=$(read_env_value "$root_env_path" ROBOT_BRIDGE_PUBLIC_URL); then
+    set_env_value "$robot_env_path" ROBOT_BRIDGE_PUBLIC_URL "$bridge_public_url"
+    echo "sync   robot/.env ROBOT_BRIDGE_PUBLIC_URL from .env"
+  fi
   if bridge_secret=$(read_env_value "$root_env_path" ROBOT_BRIDGE_SHARED_SECRET); then
     set_env_value "$robot_env_path" ROBOT_BRIDGE_SHARED_SECRET "$bridge_secret"
     echo "sync   robot/.env bridge token from .env ROBOT_BRIDGE_SHARED_SECRET"

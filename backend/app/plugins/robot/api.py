@@ -998,8 +998,8 @@ def get_robot_debug(
             "event_count": len(events),
             "last_event_at": events[0].get("timestamp") if events else None,
             "qq_event_hint": (
-                "Bridge is connected, but no OneBot/NapCat message event has reached TermMan yet. "
-                "Check the NapCat reverse WebSocket endpoint and whether the logged-in QQ account is receiving messages."
+                "Robot server is connected, but no QQ connector message event has reached TermMan yet. "
+                "Check the reverse WebSocket endpoint and whether the logged-in QQ account is receiving messages."
                 if connected and not robot_health.get("last_message_event_at")
                 else None
             ),

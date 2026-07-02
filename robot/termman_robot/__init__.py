@@ -1,1 +1,1 @@
-"""Standalone TermMan robot bridge."""
+"""Standalone TermMan QQ robot server."""

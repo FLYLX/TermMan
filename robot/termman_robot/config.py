@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     ROBOT_BACKEND_URL: str = "http://backend:8000"
     ROBOT_BRIDGE_URL: str = "http://robot-bridge:7000"
+    ROBOT_BRIDGE_PUBLIC_URL: str | None = None
     ROBOT_BRIDGE_SHARED_SECRET: str | None = None
     ROBOT_BRIDGE_HOST: str = "0.0.0.0"
     ROBOT_BRIDGE_PORT: int = 7000

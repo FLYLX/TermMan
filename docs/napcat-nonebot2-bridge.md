@@ -1,17 +1,24 @@
-# NapCat / NoneBot2 Bridge
+# QQ Robot Server / OneBot V11
 
-TermMan runs the robot bridge as a standalone NoneBot2 microservice from the
-`robot/` subdirectory. In Docker Compose, the `robot-bridge` service listens on
-container port `7000` for backend internal control APIs and OneBot V11 reverse
-WebSocket connections.
+TermMan runs the QQ robot server as a standalone NoneBot2 microservice from the
+`robot/` subdirectory. The internal Docker Compose service name is still
+`robot-bridge` for compatibility, but its public role is a robot server for QQ
+connector clients.
 
-NapCat should use OneBot V11 reverse WebSocket. The `robot-bridge` service is
-the WebSocket server, and NapCat connects to it as the client.
+The server exposes OneBot V11 reverse WebSocket at:
+
+```text
+ws://<termman-host>:<robot-server-port>/onebot/v11/ws
+```
+
+NapCat, Lagrange, SonwLuma, and compatible OneBot V11 QQ connector clients
+should connect to this endpoint as clients. TermMan receives QQ messages from
+that socket and routes them into bound terminal agents.
 
 Environment is split by service:
 
-- `.env` controls the backend, frontend, daemon, and Docker Compose stack.
-- `robot/.env` controls only the standalone `robot-bridge` microservice.
+- `.env` controls the backend, frontend, daemon, robot server, and Docker Compose stack.
+- `robot/.env` controls only standalone robot-server local development.
 
 Run this after checkout to create missing environment files:
 
@@ -25,53 +32,41 @@ On Windows PowerShell:
 powershell -ExecutionPolicy Bypass -File scripts/init-env.ps1
 ```
 
-When `robot/.env` is first created, the script copies the bridge token from
-the root `.env` `ROBOT_BRIDGE_SHARED_SECRET`, or from `SECRET_KEY` when no
-explicit bridge token exists. The backend token and `robot/.env`
-`ROBOT_BRIDGE_SHARED_SECRET` must match.
+The init script syncs `ROBOT_BRIDGE_SHARED_SECRET` from the root `.env` into
+`robot/.env` so the backend and robot server use the same internal token.
 
-TermMan should use these container-internal URLs:
+For Docker Compose, keep the backend-to-server URL on the internal network:
 
 ```env
 ROBOT_BRIDGE_EMBEDDED=false
 ROBOT_BACKEND_URL=http://backend:8000
 ROBOT_BRIDGE_URL=http://robot-bridge:7000
-ROBOT_BRIDGE_HOST_PORT=7000
+ROBOT_BRIDGE_HOST_PORT=33333
 ROBOT_BRIDGE_SHARED_SECRET=changethis
 ```
 
-The backend calls only `ROBOT_BRIDGE_URL`. It does not try alternate bridge
-addresses at runtime.
+The backend calls only `ROBOT_BRIDGE_URL`. It does not try alternate robot
+server addresses at runtime.
 
-Use `ROBOT_BRIDGE_URL=http://robot-bridge:7000` when the backend runs in the
-Docker Compose network. If the backend runs directly on the host while
-`robot-bridge` runs in Docker, expose the bridge with `ROBOT_BRIDGE_HOST_PORT`
-and set `ROBOT_BRIDGE_URL` manually, for example:
-
-```env
-ROBOT_BRIDGE_URL=http://127.0.0.1:7000
-ROBOT_BRIDGE_HOST_PORT=7000
-```
-
-Change both values together when the host port `7000` is already occupied.
-
-`robot/.env` also has `ROBOT_BRIDGE_URL`. Set that value to the address NapCat
-can reach. The Robot debug page shows the final reverse WebSocket endpoint:
+If the QQ connector runs outside Docker, expose the robot server with
+`ROBOT_BRIDGE_HOST_PORT` and configure the connector with the host URL, for
+example:
 
 ```text
-ws://<termman-host>:<bridge-port>/onebot/v11/ws
+ws://203.135.104.22:33333/onebot/v11/ws
 ```
 
-In TermMan, create a robot with platform `OneBot V11 / NapCat` and set:
+In TermMan, create a robot server with platform `OneBot V11 / QQ Connectors`
+and set:
 
-- `QQ Self ID`: the QQ account currently logged in to NapCat.
-- `Access Token` and `Secret`: optional, matching your NapCat settings when
-  enabled.
+- `QQ Self ID`: the QQ account currently logged in to the connector client.
+- `Access Token` and `Secret`: optional, matching the connector settings when enabled.
 
-After saving the robot, reload the bridge. Configure NapCat's OneBot V11
-reverse WebSocket URL with the endpoint shown on the Robot page. The debug
-page should show the NapCat socket as connected after NapCat connects.
+After saving the robot server, reload the server. Configure NapCat, Lagrange,
+SonwLuma, or another compatible client with the endpoint shown on the robot
+server page. The debug page should show the connector socket as connected after
+it connects.
 
-The bridge reload endpoint restarts the `robot-bridge` process. Docker must be
-allowed to restart the container after that exit; the local Compose override
+The reload endpoint restarts the internal `robot-bridge` process. Docker must
+be allowed to restart the container after that exit; the local Compose override
 keeps `robot-bridge` on `restart: unless-stopped` for this reason.

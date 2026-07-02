@@ -360,7 +360,7 @@ def reload_runtime_config() -> RobotBridgeReloadResponse:
 
 
 def _onebot_reverse_ws_url() -> str:
-    base_url = settings.ROBOT_BRIDGE_URL.rstrip("/")
+    base_url = (settings.ROBOT_BRIDGE_PUBLIC_URL or settings.ROBOT_BRIDGE_URL).rstrip("/")
     parts = urlsplit(base_url)
     scheme = "wss" if parts.scheme == "https" else "ws"
     base_path = parts.path.rstrip("/")

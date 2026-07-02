@@ -72,7 +72,7 @@ def get_backend_plugin() -> BackendPlugin:
         plugin_id="termman.robot",
         name="Robot",
         version="builtin",
-        description="Optional QQ robot integration through robot bridge and MCP.",
+        description="Optional QQ robot server integration through OneBot V11 connectors and MCP.",
         builtin=True,
         category="messaging",
         enabled=is_enabled,

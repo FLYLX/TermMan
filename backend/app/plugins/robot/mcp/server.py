@@ -31,7 +31,7 @@ class RobotMCPServer:
         self.register_tool(
             name="send_message",
             description=(
-                "Send a concise message through the TermMan NoneBot/NapCat QQ robot. "
+                "Send a concise message through the TermMan QQ connector. "
                 "In an incoming QQ-triggered agent turn, calling this tool with only "
                 "text sends to the current QQ conversation that triggered the turn. "
                 "Do not use reply_to, conversation, broadcast, target_type, or "

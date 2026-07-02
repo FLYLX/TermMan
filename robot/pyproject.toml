@@ -1,7 +1,7 @@
 [project]
 name = "termman-robot-bridge"
 version = "0.1.0"
-description = "Standalone NoneBot2 robot bridge for TermMan"
+description = "Standalone NoneBot2 QQ robot server for TermMan"
 requires-python = ">=3.10,<4.0"
 dependencies = [
     "fastapi[standard]<1.0.0,>=0.114.2",

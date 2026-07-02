@@ -11,7 +11,7 @@ export const Route = createFileRoute("/_layout/robots/")({
   head: () => ({
     meta: [
       {
-        title: "Robots - TermMan",
+        title: "Robot Servers - TermMan",
       },
     ],
   }),

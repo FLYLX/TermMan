@@ -20,7 +20,7 @@
   - 类型：`messaging`
   - 目录：`backend/app/plugins/robot/`
   - 能力：API、agent integration、startup/shutdown
-  - 作用：QQ robot、robot bridge、robot MCP、robot conversation memory。
+  - 作用：QQ robot server、OneBot V11 QQ 接入、robot MCP、robot conversation memory。
 
 - `termman.terminal_ws`
   - 类型：`terminal`
@@ -52,7 +52,7 @@ POST  /api/v1/plugins/reload
   "plugin_id": "termman.robot",
   "name": "Robot",
   "version": "builtin",
-  "description": "Optional QQ robot integration through robot bridge and MCP.",
+  "description": "Optional QQ robot server integration through OneBot V11 connectors and MCP.",
   "builtin": true,
   "category": "messaging",
   "enabled": true,
