@@ -12,7 +12,10 @@ function Show-Usage {
 Usage:
   powershell -ExecutionPolicy Bypass -File scripts/init-env.ps1 [-Force]
 
-Generate .env files from every .env-example file in this repository.
+Generate the root .env file from the repository root .env-example first,
+then generate component .env files from component .env-example files.
+The root .env is always written to the repository root, independent of the
+current working directory.
 When robot/.env is first generated, its bridge token is copied from the
 root .env ROBOT_BRIDGE_SHARED_SECRET, or SECRET_KEY if no bridge token exists.
 
@@ -102,29 +105,48 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $scriptDir "..")).ProviderPath
 $robotEnvTouched = $false
 
+function Copy-EnvExample {
+    param(
+        [Parameter(Mandatory = $true)][string]$ExamplePath,
+        [Parameter(Mandatory = $true)][string]$EnvPath
+    )
+
+    $relExample = Get-RelativePath -Root $repoRoot -Path $ExamplePath
+    $relEnv = Get-RelativePath -Root $repoRoot -Path $EnvPath
+
+    if ((Test-Path -LiteralPath $EnvPath) -and -not $Force) {
+        Write-Host "skip   $relEnv already exists (from $relExample)"
+        return
+    }
+
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $EnvPath) | Out-Null
+    Copy-Item -LiteralPath $ExamplePath -Destination $EnvPath -Force
+    Write-Host "write  $relEnv (from $relExample)"
+
+    if ($relEnv -eq "robot\.env") {
+        $script:robotEnvTouched = $true
+    }
+}
+
+$rootExample = Join-Path $repoRoot ".env-example"
+$rootEnv = Join-Path $repoRoot ".env"
+
+if (-not (Test-Path -LiteralPath $rootExample)) {
+    throw "Missing root .env-example: $rootExample"
+}
+
+Copy-EnvExample -ExamplePath $rootExample -EnvPath $rootEnv
+
 $examples = Get-ChildItem -LiteralPath $repoRoot -Recurse -Force -File -Filter ".env-example" |
     Where-Object {
         $relative = Get-RelativePath -Root $repoRoot -Path $_.FullName
-        -not ($relative -like ".git\*" -or $relative -like "node_modules\*")
+        -not ($relative -eq ".env-example" -or $relative -like ".git\*" -or $relative -like "node_modules\*")
     } |
     Sort-Object FullName
 
 foreach ($exampleFile in $examples) {
     $envFile = Join-Path $exampleFile.DirectoryName ".env"
-    $relExample = Get-RelativePath -Root $repoRoot -Path $exampleFile.FullName
-    $relEnv = Get-RelativePath -Root $repoRoot -Path $envFile
-
-    if ((Test-Path -LiteralPath $envFile) -and -not $Force) {
-        Write-Host "skip   $relEnv already exists (from $relExample)"
-        continue
-    }
-
-    Copy-Item -LiteralPath $exampleFile.FullName -Destination $envFile -Force
-    Write-Host "write  $relEnv (from $relExample)"
-
-    if ($relEnv -eq "robot\.env") {
-        $robotEnvTouched = $true
-    }
+    Copy-EnvExample -ExamplePath $exampleFile.FullName -EnvPath $envFile
 }
 
 if ($robotEnvTouched) {
