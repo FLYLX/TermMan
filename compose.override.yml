@@ -6,12 +6,14 @@ services:
   # etc. To enable it, update .env, set:
   # DOMAIN=localhost.tiangolo.com
   proxy:
+    profiles:
+      - proxy
     image: traefik:3.6
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "80:80"
-      - "8090:8080"
+      - "${TRAEFIK_HTTP_HOST_PORT:-20080}:80"
+      - "${TRAEFIK_DASHBOARD_HOST_PORT:-20081}:8080"
     # Duplicate the command from compose.yml to add --api.insecure=true
     command:
       # Enable Docker in Traefik, so that it reads labels from Docker services
@@ -54,7 +56,7 @@ services:
   backend:
     restart: "no"
     ports:
-      - "8000:8000"
+      - "${BACKEND_HOST_PORT:-28888}:8000"
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -95,10 +97,10 @@ services:
       - ./backend/skills:/app/backend/skills
       - ./backend/knowledge:/app/backend/knowledge
     environment:
-      SMTP_HOST: "mailcatcher"
-      SMTP_PORT: "1025"
-      SMTP_TLS: "false"
-      EMAILS_FROM_EMAIL: "noreply@example.com"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-1025}"
+      SMTP_TLS: "${SMTP_TLS:-false}"
+      EMAILS_FROM_EMAIL: "${EMAILS_FROM_EMAIL:-noreply@example.com}"
       BACKEND_LOG_DIR: "/app/backend/app/services/log"
       ROBOT_PLUGIN_ENABLED: "${ROBOT_PLUGIN_ENABLED:-true}"
       ROBOT_BRIDGE_EMBEDDED: "${ROBOT_BRIDGE_EMBEDDED:-false}"
@@ -106,8 +108,8 @@ services:
       ROBOT_BRIDGE_URL: "${ROBOT_BRIDGE_URL:-http://robot-bridge:7000}"
       ROBOT_CONVERSATION_MEMORY_DIR: "${ROBOT_CONVERSATION_MEMORY_DIR:-/app/backend/.runtime/robot_conversation_memory}"
       TERMINAL_WS_DEFAULT_HOST: "${TERMINAL_WS_DEFAULT_HOST:-0.0.0.0}"
-      TERMINAL_WS_DEFAULT_PORT_START: "${TERMINAL_WS_DEFAULT_PORT_START:-7100}"
-      TERMINAL_WS_DEFAULT_PORT_END: "${TERMINAL_WS_DEFAULT_PORT_END:-7199}"
+      TERMINAL_WS_DEFAULT_PORT_START: "${TERMINAL_WS_DEFAULT_PORT_START:-32000}"
+      TERMINAL_WS_DEFAULT_PORT_END: "${TERMINAL_WS_DEFAULT_PORT_END:-32111}"
       TERMINAL_WS_DEFAULT_HEARTBEAT_INTERVAL_SECONDS: "${TERMINAL_WS_DEFAULT_HEARTBEAT_INTERVAL_SECONDS:-30}"
       LITELLM_LOCAL_MODEL_COST_MAP: "${LITELLM_LOCAL_MODEL_COST_MAP:-True}"
 
@@ -119,7 +121,7 @@ services:
       args:
         - USE_CHINA_MIRRORS=${USE_CHINA_MIRRORS:-true}
     ports:
-      - "${ROBOT_BRIDGE_HOST_PORT:-7000}:7000"
+      - "${ROBOT_BRIDGE_HOST_PORT:-33333}:7000"
     develop:
       watch:
         - path: ./robot
@@ -131,15 +133,18 @@ services:
           action: rebuild
 
   mailcatcher:
+    profiles:
+      - mail
+      - test
     image: schickling/mailcatcher
     ports:
-      - "1080:1080"
-      - "1025:1025"
+      - "${MAILCATCHER_WEB_HOST_PORT:-20108}:1080"
+      - "${MAILCATCHER_SMTP_HOST_PORT:-20125}:1025"
 
   frontend:
     restart: "no"
     ports:
-      - "5173:80"
+      - "${FRONTEND_HOST_PORT:-27777}:80"
     build:
       context: .
       dockerfile: frontend/Dockerfile
@@ -149,6 +154,8 @@ services:
         - USE_CHINA_MIRRORS=${USE_CHINA_MIRRORS:-true}
 
   playwright:
+    profiles:
+      - test
     build:
       context: .
       dockerfile: frontend/Dockerfile.playwright
@@ -172,7 +179,7 @@ services:
       - ./frontend/blob-report:/app/frontend/blob-report
       - ./frontend/test-results:/app/frontend/test-results
     ports:
-      - 9323:9323
+      - ${PLAYWRIGHT_REPORT_HOST_PORT:-20923}:9323
 
   daemon:
     restart: "no"
