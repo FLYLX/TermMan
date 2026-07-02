@@ -1,11 +1,11 @@
 # Stage 0, "build-stage", based on Bun, to build and compile the frontend
 FROM oven/bun:1 AS build-stage
 
+ARG USE_CHINA_MIRRORS=true
+
 WORKDIR /app
 
-ENV BUN_CONFIG_REGISTRY=https://registry.npmmirror.com
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-ENV PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
 
 COPY package.json bun.lock /app/
 
@@ -13,7 +13,12 @@ COPY frontend/package.json /app/frontend/
 
 WORKDIR /app/frontend
 
-RUN bun install --registry https://registry.npmmirror.com
+RUN if [ "$USE_CHINA_MIRRORS" = "true" ]; then \
+        bun install --registry https://registry.npmmirror.com; \
+    else \
+        sed -i 's|https://registry.npmmirror.com|https://registry.npmjs.org|g' /app/bun.lock \
+        && bun install; \
+    fi
 
 COPY ./frontend /app/frontend
 ARG VITE_API_URL

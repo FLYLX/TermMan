@@ -1,5 +1,7 @@
 FROM python:3.10
 
+ARG USE_CHINA_MIRRORS=true
+
 ENV PYTHONUNBUFFERED=1
 
 # Install uv
@@ -11,13 +13,8 @@ ENV UV_COMPILE_BYTECODE=1
 # uv Cache
 ENV UV_LINK_MODE=copy
 
-# China mirror configuration
-ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
-ENV UV_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ENV UV_HTTP_TIMEOUT=1200
 ENV UV_CONCURRENT_DOWNLOADS=1
-ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
-ENV PIP_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ENV PIP_TIMEOUT=1200
 
 WORKDIR /app/
@@ -28,7 +25,13 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Install dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --no-install-workspace
+    if [ "$USE_CHINA_MIRRORS" = "true" ]; then \
+        export UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple; \
+        export UV_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple; \
+        export PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple; \
+        export PIP_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple; \
+    fi \
+    && uv sync --no-install-workspace
 
 # Copy daemon code
 COPY ./src /app/src
@@ -37,7 +40,13 @@ COPY ./test*.py /app/
 # Sync the project
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync
+    if [ "$USE_CHINA_MIRRORS" = "true" ]; then \
+        export UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple; \
+        export UV_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple; \
+        export PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple; \
+        export PIP_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple; \
+    fi \
+    && uv sync
 
 # 设置环境变量
 ENV HOST=0.0.0.0

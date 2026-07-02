@@ -1,16 +1,18 @@
 FROM mcr.microsoft.com/playwright:v1.58.2-noble
 
+ARG USE_CHINA_MIRRORS=true
+
 WORKDIR /app
 
 # Install base packages needed by the test image.
-RUN if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
+RUN if [ "$USE_CHINA_MIRRORS" = "true" ] && [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
         sed -i \
             -e 's|http://archive.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' \
             -e 's|http://security.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' \
             -e 's|https://archive.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' \
             -e 's|https://security.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' \
             /etc/apt/sources.list.d/ubuntu.sources; \
-    elif [ -f /etc/apt/sources.list ]; then \
+    elif [ "$USE_CHINA_MIRRORS" = "true" ] && [ -f /etc/apt/sources.list ]; then \
         sed -i \
             -e 's|http://archive.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' \
             -e 's|http://security.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' \
@@ -26,11 +28,11 @@ RUN if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-ENV BUN_CONFIG_REGISTRY=https://registry.npmmirror.com
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-ENV PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
 
-RUN npm config set registry https://registry.npmmirror.com \
+RUN if [ "$USE_CHINA_MIRRORS" = "true" ]; then \
+        npm config set registry https://registry.npmmirror.com; \
+    fi \
     && npm install -g bun@1 \
     && ln -sf "$(command -v bun)" /usr/local/bin/bunx \
     && bun --version
@@ -40,7 +42,12 @@ COPY frontend/package.json /app/frontend/
 
 WORKDIR /app/frontend
 
-RUN bun install --registry https://registry.npmmirror.com
+RUN if [ "$USE_CHINA_MIRRORS" = "true" ]; then \
+        bun install --registry https://registry.npmmirror.com; \
+    else \
+        sed -i 's|https://registry.npmmirror.com|https://registry.npmjs.org|g' /app/bun.lock \
+        && bun install; \
+    fi
 
 COPY ./frontend /app/frontend
 

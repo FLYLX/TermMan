@@ -5,6 +5,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        - USE_CHINA_MIRRORS=${USE_CHINA_MIRRORS:-true}
     networks:
       - traefik-public
       - default
@@ -105,6 +107,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        - USE_CHINA_MIRRORS=${USE_CHINA_MIRRORS:-true}
     labels:
       - traefik.enable=true
       - traefik.docker.network=traefik-public
@@ -128,6 +132,8 @@ services:
     build:
       context: .
       dockerfile: robot/Dockerfile
+      args:
+        - USE_CHINA_MIRRORS=${USE_CHINA_MIRRORS:-true}
     restart: always
     networks:
       - default
@@ -151,6 +157,7 @@ services:
       args:
         - VITE_API_URL=${VITE_API_URL?Variable not set}
         - NODE_ENV=production
+        - USE_CHINA_MIRRORS=${USE_CHINA_MIRRORS:-true}
     labels:
       - traefik.enable=true
       - traefik.docker.network=traefik-public
@@ -174,6 +181,8 @@ services:
     build:
       context: ./daemon
       dockerfile: Dockerfile
+      args:
+        - USE_CHINA_MIRRORS=${USE_CHINA_MIRRORS:-true}
     restart: always
     networks:
       - default
