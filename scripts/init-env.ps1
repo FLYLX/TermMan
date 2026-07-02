@@ -12,15 +12,21 @@ function Show-Usage {
 Usage:
   powershell -ExecutionPolicy Bypass -File scripts/init-env.ps1 [-Force]
 
-Generate the root .env file from the repository root .env-example first,
-then generate component .env files from component .env-example files.
-The root .env is always written to the repository root, independent of the
-current working directory.
-When robot/.env is first generated, its bridge token is copied from the
-root .env ROBOT_BRIDGE_SHARED_SECRET, or SECRET_KEY if no bridge token exists.
+Generate .env files from every .env-example in the repository.
+
+Rules:
+  1. The repository root .env is the Docker Compose source of truth.
+  2. Component .env files are generated in their own directories.
+  3. Shared values that appear in both places are synced from root .env
+     into component .env files so they cannot drift.
+
+Currently synced:
+  - .env VITE_API_URL -> frontend/.env VITE_API_URL
+  - .env ROBOT_BRIDGE_SHARED_SECRET -> robot/.env ROBOT_BRIDGE_SHARED_SECRET
+    falling back to .env SECRET_KEY when no bridge secret is set.
 
 Options:
-  -Force   Overwrite existing .env files.
+  -Force   Overwrite existing .env files from .env-example first.
   -Help    Show this help.
 "@
 }
@@ -35,11 +41,10 @@ function Get-EnvValue {
         return $null
     }
 
-    $prefix = "$Key="
     $line = Get-Content -LiteralPath $Path |
         Where-Object {
             $trimmed = $_.TrimStart()
-            $trimmed -and -not $trimmed.StartsWith("#") -and $trimmed.StartsWith($prefix)
+            $trimmed -and -not $trimmed.StartsWith("#") -and $trimmed.StartsWith("$Key=")
         } |
         Select-Object -Last 1
 
@@ -96,15 +101,6 @@ function Get-RelativePath {
     return $fullPath
 }
 
-if ($Help) {
-    Show-Usage
-    exit 0
-}
-
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repoRoot = (Resolve-Path -LiteralPath (Join-Path $scriptDir "..")).ProviderPath
-$robotEnvTouched = $false
-
 function Copy-EnvExample {
     param(
         [Parameter(Mandatory = $true)][string]$ExamplePath,
@@ -122,12 +118,45 @@ function Copy-EnvExample {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $EnvPath) | Out-Null
     Copy-Item -LiteralPath $ExamplePath -Destination $EnvPath -Force
     Write-Host "write  $relEnv (from $relExample)"
+}
 
-    if ($relEnv -eq "robot\.env") {
-        $script:robotEnvTouched = $true
+function Sync-FrontendEnv {
+    $rootEnv = Join-Path $repoRoot ".env"
+    $frontendEnv = Join-Path $repoRoot "frontend\.env"
+    $viteApiUrl = Get-EnvValue -Path $rootEnv -Key "VITE_API_URL"
+
+    if ((Test-Path -LiteralPath $frontendEnv) -and $viteApiUrl) {
+        Set-EnvValue -Path $frontendEnv -Key "VITE_API_URL" -Value $viteApiUrl
+        Write-Host "sync   frontend\.env VITE_API_URL from .env"
     }
 }
 
+function Sync-RobotEnv {
+    $rootEnv = Join-Path $repoRoot ".env"
+    $robotEnv = Join-Path $repoRoot "robot\.env"
+    $bridgeSecret = Get-EnvValue -Path $rootEnv -Key "ROBOT_BRIDGE_SHARED_SECRET"
+    $secretKey = Get-EnvValue -Path $rootEnv -Key "SECRET_KEY"
+
+    if (-not (Test-Path -LiteralPath $robotEnv)) {
+        return
+    }
+
+    if ($bridgeSecret) {
+        Set-EnvValue -Path $robotEnv -Key "ROBOT_BRIDGE_SHARED_SECRET" -Value $bridgeSecret
+        Write-Host "sync   robot\.env bridge token from .env ROBOT_BRIDGE_SHARED_SECRET"
+    } elseif ($secretKey) {
+        Set-EnvValue -Path $robotEnv -Key "ROBOT_BRIDGE_SHARED_SECRET" -Value $secretKey
+        Write-Host "sync   robot\.env bridge token from .env SECRET_KEY"
+    }
+}
+
+if ($Help) {
+    Show-Usage
+    exit 0
+}
+
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$repoRoot = (Resolve-Path -LiteralPath (Join-Path $scriptDir "..")).ProviderPath
 $rootExample = Join-Path $repoRoot ".env-example"
 $rootEnv = Join-Path $repoRoot ".env"
 
@@ -149,19 +178,7 @@ foreach ($exampleFile in $examples) {
     Copy-EnvExample -ExamplePath $exampleFile.FullName -EnvPath $envFile
 }
 
-if ($robotEnvTouched) {
-    $rootEnv = Join-Path $repoRoot ".env"
-    $robotEnv = Join-Path $repoRoot "robot\.env"
-    $bridgeSecret = Get-EnvValue -Path $rootEnv -Key "ROBOT_BRIDGE_SHARED_SECRET"
-    $secretKey = Get-EnvValue -Path $rootEnv -Key "SECRET_KEY"
-
-    if ($bridgeSecret) {
-        Set-EnvValue -Path $robotEnv -Key "ROBOT_BRIDGE_SHARED_SECRET" -Value $bridgeSecret
-        Write-Host "sync   robot\.env bridge token from .env ROBOT_BRIDGE_SHARED_SECRET"
-    } elseif ($secretKey) {
-        Set-EnvValue -Path $robotEnv -Key "ROBOT_BRIDGE_SHARED_SECRET" -Value $secretKey
-        Write-Host "sync   robot\.env bridge token from .env SECRET_KEY"
-    }
-}
+Sync-FrontendEnv
+Sync-RobotEnv
 
 Write-Host "Done."
