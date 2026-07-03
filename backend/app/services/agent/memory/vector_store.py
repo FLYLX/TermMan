@@ -48,16 +48,25 @@ class EmbeddingService:
             logger.info("[Embedding] Loading all-MiniLM-L6-v2 model...")
             from sentence_transformers import SentenceTransformer
 
+            model_name = "all-MiniLM-L6-v2"
             try:
-                self._model = SentenceTransformer("all-MiniLM-L6-v2")
-                logger.info("[Embedding] Model loaded successfully")
-            except Exception as e:
-                self._load_error = str(e)
+                self._model = SentenceTransformer(model_name, local_files_only=True)
+                logger.info("[Embedding] Model loaded from local cache")
+            except Exception as local_error:
                 logger.warning(
-                    "[Embedding] Model unavailable; long-term memory search/write will be skipped: %s",
-                    e,
+                    "[Embedding] Local model cache unavailable, trying remote load: %s",
+                    local_error,
                 )
-                raise
+                try:
+                    self._model = SentenceTransformer(model_name)
+                    logger.info("[Embedding] Model loaded successfully")
+                except Exception as e:
+                    self._load_error = str(e)
+                    logger.warning(
+                        "[Embedding] Model unavailable; long-term memory search/write will be skipped: %s",
+                        e,
+                    )
+                    raise
 
     def encode(self, texts: str | list[str]) -> list[list[float]]:
         self._ensure_model()
