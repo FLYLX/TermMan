@@ -208,6 +208,40 @@ function getRobotMentionMatchMode(robot: RobotRecord): MentionMatchMode {
   return DEFAULT_MENTION_MATCH_MODE
 }
 
+const DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS = 10
+const MIN_REPLY_CONTEXT_WINDOW_SECONDS = 0
+const MAX_REPLY_CONTEXT_WINDOW_SECONDS = 3600
+
+function normalizeReplyContextWindowSeconds(value: unknown) {
+  const parsed = typeof value === "number" ? value : Number(value)
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS
+  }
+  return Math.min(
+    MAX_REPLY_CONTEXT_WINDOW_SECONDS,
+    Math.max(MIN_REPLY_CONTEXT_WINDOW_SECONDS, Math.trunc(parsed)),
+  )
+}
+
+function parseReplyContextWindowSeconds(value: string) {
+  const trimmed = value.trim()
+  const parsed = trimmed ? Number(trimmed) : DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS
+  if (
+    !Number.isInteger(parsed) ||
+    parsed < MIN_REPLY_CONTEXT_WINDOW_SECONDS ||
+    parsed > MAX_REPLY_CONTEXT_WINDOW_SECONDS
+  ) {
+    return null
+  }
+  return parsed
+}
+
+function getRobotReplyContextWindowSeconds(robot: RobotRecord) {
+  return normalizeReplyContextWindowSeconds(
+    robot.config?.options?.reply_context_window_seconds,
+  )
+}
+
 function getReplyMessageTypeLabel(
   copy: {
     replyPrivate: string
@@ -522,6 +556,11 @@ function useRobotDetailUiCopy() {
           mentionModeTitle: "@ 匹配方式",
           mentionModeBot: "仅 @机器人 Server",
           mentionModeAny: "任意 @成员",
+          replyWindowTitle: "唤醒保持",
+          replyWindowDescription: "唤醒后同一会话继续进 Agent；0 表示不保持。",
+          replyWindowInvalid: "唤醒保持必须是 0 到 3600 的整数秒",
+          replyWindowValue: (seconds: number) =>
+            seconds > 0 ? `${seconds} 秒` : "不保持",
           keepCurrentSecret: "留空则保留当前值",
           connectorMode: "OneBot V11 反向 WebSocket",
           debugTitle: "运行调试",
@@ -599,6 +638,13 @@ function useRobotDetailUiCopy() {
           mentionModeTitle: "@ match mode",
           mentionModeBot: "Only @ robot server",
           mentionModeAny: "Any @ member",
+          replyWindowTitle: "Wake window",
+          replyWindowDescription:
+            "After wakeup, the same conversation continues to reach the Agent. 0 disables the window.",
+          replyWindowInvalid:
+            "Wake window must be an integer from 0 to 3600 seconds",
+          replyWindowValue: (seconds: number) =>
+            seconds > 0 ? `${seconds}s` : "Off",
           keepCurrentSecret: "Leave blank to keep current value",
           connectorMode: "OneBot V11 reverse WebSocket",
           debugTitle: "Runtime debug",
@@ -1270,6 +1316,7 @@ function RobotBasicConfigPanel({
     credentials: getEditableRobotCredentials(robot, platform),
     replyMessageTypes: getRobotReplyMessageTypes(robot),
     mentionMatchMode: getRobotMentionMatchMode(robot),
+    replyContextWindowSeconds: String(getRobotReplyContextWindowSeconds(robot)),
   }))
 
   useEffect(() => {
@@ -1280,6 +1327,7 @@ function RobotBasicConfigPanel({
         credentials: getEditableRobotCredentials(robot, platform),
         replyMessageTypes: getRobotReplyMessageTypes(robot),
         mentionMatchMode: getRobotMentionMatchMode(robot),
+        replyContextWindowSeconds: String(getRobotReplyContextWindowSeconds(robot)),
       })
     }
   }, [isEditing, platform, robot])
@@ -1295,10 +1343,19 @@ function RobotBasicConfigPanel({
       platform,
       form.credentials,
     )
+    const replyContextWindowSeconds = parseReplyContextWindowSeconds(
+      form.replyContextWindowSeconds,
+    )
+    if (replyContextWindowSeconds === null) {
+      showErrorToast(copy.replyWindowInvalid)
+      return
+    }
+
     const options = { ...(robot.config?.options ?? {}) }
     delete options.route_key
     options.reply_message_types = form.replyMessageTypes
     options.mention_match_mode = form.mentionMatchMode
+    options.reply_context_window_seconds = replyContextWindowSeconds
 
     setIsSaving(true)
     try {
@@ -1454,6 +1511,28 @@ function RobotBasicConfigPanel({
                   </SelectContent>
                 </Select>
               </div>
+              <div className="grid gap-2">
+                <Label htmlFor="robot-edit-reply-window">
+                  {copy.replyWindowTitle}
+                </Label>
+                <Input
+                  id="robot-edit-reply-window"
+                  type="number"
+                  min={MIN_REPLY_CONTEXT_WINDOW_SECONDS}
+                  max={MAX_REPLY_CONTEXT_WINDOW_SECONDS}
+                  step={1}
+                  value={form.replyContextWindowSeconds}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      replyContextWindowSeconds: event.target.value,
+                    }))
+                  }
+                />
+                <div className="text-xs text-muted-foreground">
+                  {copy.replyWindowDescription}
+                </div>
+              </div>
             </div>
             <div className="grid gap-3">
               <div className="text-sm font-medium">{copy.credentials}</div>
@@ -1505,6 +1584,12 @@ function RobotBasicConfigPanel({
               value={getMentionMatchModeLabel(
                 copy,
                 getRobotMentionMatchMode(robot),
+              )}
+            />
+            <RobotKeyValue
+              label={copy.replyWindowTitle}
+              value={copy.replyWindowValue(
+                getRobotReplyContextWindowSeconds(robot),
               )}
             />
           </div>

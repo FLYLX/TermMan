@@ -1,9 +1,10 @@
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from app.api.deps import CurrentUser, SessionDep
@@ -46,6 +47,24 @@ class MemorySearch(BaseModel):
 
 class MemoryStatusUpdate(BaseModel):
     status: Literal["active", "completed", "resolved"]
+
+
+MAX_MEMORY_IMPORT_ITEMS = 1000
+
+
+class MemoryExportItem(BaseModel):
+    id: str | None = None
+    content: str = Field(..., min_length=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MemoryImportRequest(BaseModel):
+    version: int | None = None
+    memories: list[MemoryExportItem] = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_MEMORY_IMPORT_ITEMS,
+    )
 
 
 def _get_accessible_item(
@@ -139,6 +158,27 @@ def _get_item_memory_or_404(item_id: uuid.UUID, memory_id: str) -> dict[str, Any
         raise HTTPException(status_code=404, detail="Memory not found")
 
     return memory
+
+
+def _coerce_memory_type(value: Any) -> MemoryType:
+    memory_type = str(value or "fact")
+    if memory_type not in MEMORY_TYPES:
+        return "fact"
+    return memory_type  # type: ignore[return-value]
+
+
+def _sanitize_import_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
+    clean_metadata: dict[str, Any] = {}
+    for key, value in dict(metadata or {}).items():
+        if key in {"item_id", "memory_type", "distance"}:
+            continue
+        if value is None:
+            continue
+        if isinstance(value, (str, int, float, bool)):
+            clean_metadata[key] = value
+        else:
+            clean_metadata[key] = str(value)
+    return clean_metadata
 
 
 @router.get("/{item_id}/session", response_model=ItemChatSessionPublic)
@@ -268,6 +308,82 @@ def get_all_memories(
         "offset": offset,
         "limit": limit,
         "has_more": offset + len(page_memories) < len(sorted_memories),
+    }
+
+
+@router.get("/{item_id}/memories/export")
+def export_memories(
+    item_id: uuid.UUID,
+    memory_type: MemoryType | None = None,
+    session: SessionDep = None,
+    current_user: CurrentUser = None,
+) -> Any:
+    _get_accessible_item(item_id, session, current_user)
+
+    memories = vector_store.get_all_memories(
+        item_id=str(item_id),
+        memory_type=memory_type,
+    )
+    sorted_memories = _sort_memories(memories)
+    return {
+        "version": 1,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "item_id": str(item_id),
+        "count": len(sorted_memories),
+        "memories": sorted_memories,
+    }
+
+
+@router.post("/{item_id}/memories/import")
+def import_memories(
+    item_id: uuid.UUID,
+    request: MemoryImportRequest,
+    session: SessionDep = None,
+    current_user: CurrentUser = None,
+) -> Any:
+    _get_accessible_item(item_id, session, current_user)
+
+    imported_ids: list[str] = []
+    skipped = 0
+    errors: list[str] = []
+    imported_at = datetime.now(timezone.utc).isoformat()
+
+    for index, memory in enumerate(request.memories):
+        content = memory.content.strip()
+        if not content:
+            skipped += 1
+            errors.append(f"memories[{index}]: empty content")
+            continue
+
+        metadata = _sanitize_import_metadata(memory.metadata)
+        metadata["imported_at"] = imported_at
+        if memory.id:
+            metadata["imported_from_memory_id"] = memory.id
+
+        try:
+            memory_id = vector_store.add_memory(
+                item_id=str(item_id),
+                content=content,
+                memory_type=_coerce_memory_type(memory.metadata.get("memory_type")),
+                metadata=metadata,
+            )
+        except Exception as e:
+            logger.warning("[Memory] Failed to import memory %s: %s", index, e)
+            skipped += 1
+            errors.append(f"memories[{index}]: {e}")
+            continue
+
+        if memory_id is None:
+            skipped += 1
+            continue
+        imported_ids.append(memory_id)
+
+    return {
+        "message": f"Imported {len(imported_ids)} memories",
+        "imported": len(imported_ids),
+        "skipped": skipped,
+        "errors": errors,
+        "memory_ids": imported_ids,
     }
 
 

@@ -451,9 +451,9 @@ def test_robot_context_uses_optional_robot_plugin_prompt(monkeypatch) -> None:
         message="你好",
     )
 
-    assert "Robot Messaging Skill" in messages[0]["content"]
-    assert "QQ Context From History" in messages[0]["content"]
-    assert "QQ Reply Reflection" not in messages[0]["content"]
+    assert "QQ MCP Skill" in messages[0]["content"]
+    assert "历史中的 QQ 上下文" in messages[0]["content"]
+    assert "QQ 回复反思" not in messages[0]["content"]
     assert "mcp_robot_send_message" in messages[0]["content"]
 
 
@@ -486,7 +486,7 @@ def test_non_robot_context_does_not_include_robot_plugin_prompt(monkeypatch) -> 
         message="hello",
     )
 
-    assert "Robot Messaging Skill" not in messages[0]["content"]
+    assert "QQ MCP Skill" not in messages[0]["content"]
     assert "mcp_robot_send_message" not in messages[0]["content"]
 
 
@@ -529,7 +529,7 @@ def test_robot_history_context_does_not_inject_prompt_without_robot_skill(monkey
         message="hello",
     )
 
-    assert "Robot Messaging Skill" not in messages[0]["content"]
+    assert "QQ MCP Skill" not in messages[0]["content"]
     assert "mcp_robot_send_message" not in messages[0]["content"]
 
 
@@ -623,8 +623,8 @@ def test_robot_delivery_retry_triggers_when_model_returns_plain_reply() -> None:
 
     correction = integration.delivery_correction_message("你好呀~")
     assert correction["role"] == "system"
-    assert "Robot message delivery reflection" in correction["content"]
-    assert "Re-evaluate whether QQ should receive that text" in correction["content"]
+    assert "QQ 消息发送反思" in correction["content"]
+    assert "重新判断 QQ 是否应该收到这段文本" in correction["content"]
     assert "mcp_robot_send_message" in correction["content"]
     assert "你好呀~" in correction["content"]
 
@@ -884,6 +884,73 @@ def test_robot_collect_response_does_not_return_send_tool_trace(
     assert result.robot_message_sent is True
 
 
+def test_robot_collect_response_suppresses_final_after_send_tool_result(
+    monkeypatch,
+) -> None:
+    class FakeAgent:
+        def setup_context(self, agent, context: dict) -> None:
+            return None
+
+        async def ensure_tools(self, agent, context: dict) -> None:
+            return None
+
+        def clear_context(self, agent, context: dict) -> None:
+            return None
+
+    async def fake_prepare_chat_agent(*_args, **_kwargs):
+        return SimpleNamespace(name="handler"), SimpleNamespace(id="item-1"), FakeAgent()
+
+    def fake_generate_stream(**_kwargs):
+        yield (
+            'data: {"type": "agent_tool_result", '
+            '"content": "Message sent to current robot conversation."}\n\n'
+        )
+        yield (
+            'data: {"type": "agent_response", '
+            '"content": "联网查到啦～现在是北京时间 2026年7月3日 周五 上午 11:17"}\n\n'
+        )
+        yield 'data: {"done": true}\n\n'
+
+    monkeypatch.setattr(chat_runtime, "prepare_chat_agent", fake_prepare_chat_agent)
+    monkeypatch.setattr("app.api.routes.chat.generate_stream", fake_generate_stream)
+    sent: list[str] = []
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        lambda _robot_id, _target, text: sent.append(text),
+    )
+    integration = get_robot_agent_integration()
+    monkeypatch.setattr(
+        "app.services.agent.integrations.hooks.get_agent_integration",
+        lambda name: integration if name == "robot" else None,
+    )
+    monkeypatch.setattr(
+        "app.services.agent.integrations.hooks.get_agent_integrations",
+        lambda: [integration],
+    )
+
+    result = asyncio.run(
+        collect_chat_response(
+            session=SimpleNamespace(),
+            item_id="item-1",
+            current_user=SimpleNamespace(),
+            message="现在几点",
+            robot_id="robot-1",
+            robot_sender_key="onebot_v11:group:123456:u1",
+            robot_reply_target=RobotReplyTarget(
+                target_type="group",
+                target_id="123456",
+                metadata={"mentioned_bot": True},
+            ),
+            return_result=True,
+        )
+    )
+
+    assert isinstance(result, ChatResponseResult)
+    assert result.content == ""
+    assert result.robot_message_sent is True
+    assert sent == []
+
+
 def test_robot_collect_response_sanitizes_mixed_send_tool_trace(
     monkeypatch,
 ) -> None:
@@ -1004,9 +1071,9 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     assert "最终 assistant 文本是 TermMan 内部回复" in prompt
     assert "mcp_robot_send_message" in prompt
     assert "当前 QQ 会话" in prompt
-    assert "call `mcp_robot_send_message` with only `text` or `messages`" in prompt
-    assert "not put blank lines or paragraph breaks inside one QQ message" in prompt
-    assert "QQ Reply Reflection" not in prompt
+    assert "只调用 `mcp_robot_send_message` 并只传 `text` 或 `messages`" in prompt
+    assert "不要在单条 QQ 消息里写空行" in prompt
+    assert "QQ 回复反思" not in prompt
 
 
 def test_robot_plugin_prompt_can_be_disabled(monkeypatch) -> None:

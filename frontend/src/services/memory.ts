@@ -76,6 +76,33 @@ export interface MemoryListResponse {
   has_more: boolean
 }
 
+export interface MemoryExportPayload {
+  version: number
+  exported_at: string
+  item_id: string
+  count: number
+  memories: Memory[]
+}
+
+export interface MemoryImportItem {
+  id?: string | null
+  content: string
+  metadata?: Record<string, unknown>
+}
+
+export interface MemoryImportRequest {
+  version?: number
+  memories: MemoryImportItem[]
+}
+
+export interface MemoryImportResponse {
+  message: string
+  imported: number
+  skipped: number
+  errors: string[]
+  memory_ids: string[]
+}
+
 export const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
   fact: "事实",
   preference: "偏好",
@@ -128,6 +155,31 @@ export class MemoryService {
       url: "/api/v1/memory/{item_id}/memories",
       path: { item_id: itemId },
       query: Object.keys(query).length > 0 ? query : undefined,
+    })
+  }
+
+  public static exportMemories(
+    itemId: string,
+    memoryType?: MemoryType,
+  ): CancelablePromise<MemoryExportPayload> {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/memory/{item_id}/memories/export",
+      path: { item_id: itemId },
+      query: memoryType ? { memory_type: memoryType } : undefined,
+    })
+  }
+
+  public static importMemories(
+    itemId: string,
+    request: MemoryImportRequest,
+  ): CancelablePromise<MemoryImportResponse> {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/memory/{item_id}/memories/import",
+      path: { item_id: itemId },
+      body: request,
+      mediaType: "application/json",
     })
   }
 

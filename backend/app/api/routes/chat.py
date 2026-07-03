@@ -29,6 +29,7 @@ from app.services.agent.history.chat import (
 )
 from app.services.agent.integrations import (
     extract_integration_context_targets,
+    fallback_is_delivery_result,
     get_delivery_retry_decision,
     record_integration_context_targets,
     record_integration_delivery_correction,
@@ -261,6 +262,12 @@ def _format_tool_result(result: Any) -> str:
         return f"Error: {result.get('error', 'Unknown error')}"
 
     return str(result)
+
+
+
+def _has_active_robot_chat_context(agent: Any) -> bool:
+    context = getattr(agent, "_context", None)
+    return bool(str(getattr(context, "robot_id", "") or "").strip())
 
 
 def _run_async_from_sync(coro_factory):
@@ -759,6 +766,7 @@ def generate_stream(
     tool_call_history: list[tuple[str, str]] = []
     final_response = ""
     tool_called_this_turn = False
+    delivery_tool_sent_by_integration = False
     delivery_retry_used_by_integration: dict[str, bool] = {}
 
     try:
@@ -899,13 +907,15 @@ def generate_stream(
                     iteration_content,
                     tool_called=tool_called_this_turn,
                 )
-                delivery_retry_decision = get_delivery_retry_decision(
-                    agent=agent,
-                    messages=messages,
-                    tools=tools,
-                    final_response=final_response,
-                    retry_used_by_integration=delivery_retry_used_by_integration,
-                )
+                delivery_retry_decision = None
+                if not delivery_tool_sent_by_integration:
+                    delivery_retry_decision = get_delivery_retry_decision(
+                        agent=agent,
+                        messages=messages,
+                        tools=tools,
+                        final_response=final_response,
+                        retry_used_by_integration=delivery_retry_used_by_integration,
+                    )
                 if delivery_retry_decision is not None:
                     record_integration_delivery_correction(
                         agent,
@@ -917,6 +927,14 @@ def generate_stream(
                     continue
 
                 if final_response:
+                    if delivery_tool_sent_by_integration and _has_active_robot_chat_context(agent):
+                        logger.info(
+                            "[Chat] Suppressed final response after robot delivery tool sent for item %s",
+                            item_id,
+                        )
+                        yield _to_sse({"done": True})
+                        return
+
                     _complete_agent_task_plan(planned_task_runtime)
                     response_event = _persist_and_broadcast_event(
                         item_id,
@@ -1022,6 +1040,8 @@ def generate_stream(
                 )
                 tool_called_this_turn = True
                 result_text = _format_tool_result(result)
+                if result_text and fallback_is_delivery_result(result_text):
+                    delivery_tool_sent_by_integration = True
 
                 if result_text:
                     if hide_tool_details:

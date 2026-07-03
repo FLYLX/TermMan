@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Clock,
   Copy,
+  Download,
   Filter,
   Loader2,
   Minimize2,
@@ -17,9 +18,10 @@ import {
   RotateCcw,
   Search,
   Trash2,
+  Upload,
   X,
 } from "lucide-react"
-import { useState } from "react"
+import { type ChangeEvent, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -48,6 +50,7 @@ import {
   MEMORY_TYPE_COLORS,
   MEMORY_TYPE_LABELS,
   type Memory,
+  type MemoryImportRequest,
   MemoryService,
   type MemoryType,
 } from "@/services/memory"
@@ -57,6 +60,42 @@ interface MemoryManagerProps {
 }
 
 const MEMORY_PAGE_SIZE = 10
+
+function buildMemoryImportRequest(payload: unknown): MemoryImportRequest {
+  const source = Array.isArray(payload) ? { memories: payload } : payload
+  if (!source || typeof source !== "object") {
+    throw new Error("invalid memory import payload")
+  }
+
+  const record = source as { version?: unknown; memories?: unknown }
+  if (!Array.isArray(record.memories)) {
+    throw new Error("memory import payload missing memories")
+  }
+
+  return {
+    version: typeof record.version === "number" ? record.version : undefined,
+    memories: record.memories.map((entry, index) => {
+      if (!entry || typeof entry !== "object") {
+        throw new Error(`invalid memory at index ${index}`)
+      }
+      const memory = entry as Record<string, unknown>
+      if (typeof memory.content !== "string" || !memory.content.trim()) {
+        throw new Error(`invalid memory content at index ${index}`)
+      }
+
+      return {
+        id: typeof memory.id === "string" ? memory.id : undefined,
+        content: memory.content,
+        metadata:
+          memory.metadata &&
+          typeof memory.metadata === "object" &&
+          !Array.isArray(memory.metadata)
+            ? (memory.metadata as Record<string, unknown>)
+            : {},
+      }
+    }),
+  }
+}
 
 export function MemoryManager({ itemId }: MemoryManagerProps) {
   const queryClient = useQueryClient()
@@ -73,6 +112,7 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
   const [newMemoryType, setNewMemoryType] = useState<MemoryType>("fact")
   const [newMemoryTtl, setNewMemoryTtl] = useState(30)
   const [isMemoryListOpen, setIsMemoryListOpen] = useState(true)
+  const importInputRef = useRef<HTMLInputElement | null>(null)
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["memory-stats", itemId],
@@ -227,9 +267,60 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
     onError: () => showErrorToast("压缩记忆失败"),
   })
 
+  const exportMemoriesMutation = useMutation({
+    mutationFn: () => MemoryService.exportMemories(itemId),
+    onSuccess: (payload) => {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: "application/json",
+      })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")
+      link.href = url
+      link.download = `termman-memory-${itemId}-${timestamp}.json`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 0)
+      showSuccessToast(`已导出 ${payload.count} 条记忆`)
+    },
+    onError: () => showErrorToast("导出记忆失败"),
+  })
+
+  const importMemoriesMutation = useMutation({
+    mutationFn: (request: MemoryImportRequest) =>
+      MemoryService.importMemories(itemId, request),
+    onSuccess: (result) => {
+      showSuccessToast(
+        `已导入 ${result.imported} 条，跳过 ${result.skipped} 条`,
+      )
+      refreshMemoryViews()
+    },
+    onError: () => showErrorToast("导入记忆失败"),
+  })
+
   const handleSearch = () => {
     if (searchQuery.trim()) {
       performSearch()
+    }
+  }
+
+  const handleImportMemoryFile = async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) {
+      return
+    }
+
+    try {
+      const payload = buildMemoryImportRequest(JSON.parse(await file.text()))
+      importMemoriesMutation.mutate(payload)
+    } catch {
+      showErrorToast("导入文件格式不对")
+    } finally {
+      input.value = ""
     }
   }
 
@@ -308,6 +399,13 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
 
   return (
     <div className="space-y-4">
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={handleImportMemoryFile}
+      />
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -388,6 +486,34 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                 onClick={() => setIsMemoryListOpen((current) => !current)}
               >
                 {isMemoryListOpen ? "收起列表" : "展开列表"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => exportMemoriesMutation.mutate()}
+                disabled={
+                  exportMemoriesMutation.isPending || clearableMemoryCount === 0
+                }
+              >
+                {exportMemoriesMutation.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Download className="size-4" />
+                )}
+                导出
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => importInputRef.current?.click()}
+                disabled={importMemoriesMutation.isPending}
+              >
+                {importMemoriesMutation.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Upload className="size-4" />
+                )}
+                导入
               </Button>
               {isMemoryListOpen ? (
                 <>

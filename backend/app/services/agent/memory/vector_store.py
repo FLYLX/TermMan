@@ -204,14 +204,15 @@ class VectorStoreService:
         if embedding is None:
             return None
 
+        now = datetime.now()
         ttl = ttl_days or DEFAULT_MEMORY_TTL_DAYS
-        expires_at = (datetime.now() + timedelta(days=ttl)).isoformat()
+        expires_at = (now + timedelta(days=ttl)).isoformat()
 
-        meta = metadata or {}
+        meta = dict(metadata or {})
         meta["item_id"] = item_id
         meta["memory_type"] = memory_type
-        meta["created_at"] = datetime.now().isoformat()
-        meta["expires_at"] = expires_at
+        meta.setdefault("created_at", now.isoformat())
+        meta.setdefault("expires_at", expires_at)
 
         self._collection.add(
             ids=[memory_id],

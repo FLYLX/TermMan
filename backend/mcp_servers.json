@@ -10,7 +10,7 @@
       "command": "python",
       "args": ["-m", "app.services.agent.mcp.robot_server"],
       "enabled": false,
-      "description": "Robot messaging - send messages to current or explicit NoneBot/NapCat QQ conversations"
+      "description": "QQ 接入消息工具 - 仅在机器人会话需要时动态启用"
     }
   }
 }

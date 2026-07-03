@@ -15,6 +15,7 @@ export type RobotConfig = {
   options?: Record<string, unknown> & {
     reply_message_types?: RobotReplyMessageType[]
     mention_match_mode?: RobotMentionMatchMode
+    reply_context_window_seconds?: number
   }
 }
 

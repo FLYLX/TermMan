@@ -182,6 +182,12 @@ async def collect_chat_response(
     if integration_contexts and content:
         content = _sanitize_integration_response(content)
     robot_message_sent = bool(integration_contexts) and integration_message_sent(tool_results)
+    if robot_message_sent and content.strip():
+        logger.info(
+            "[ChatRuntime] Suppressed final response after robot delivery tool sent for item %s",
+            item_id,
+        )
+        content = ""
     if content.strip() and not robot_message_sent:
         robot_message_sent = send_integration_final_response_fallback(
             integration_contexts,
