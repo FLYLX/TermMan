@@ -233,6 +233,12 @@ def test_event_mentions_bot_ignores_other_at_segment() -> None:
     assert _event_mentions_bot(_FakeBot(), event) is False
 
 
+def test_event_mentions_bot_ignores_other_at_even_when_to_me_flag_is_set() -> None:
+    event = _FakeEvent([_FakeSegment("at", {"qq": "10002"})], to_me=True)
+
+    assert _event_mentions_bot(_FakeBot(), event) is False
+
+
 def test_extract_event_mentions_reads_onebot_at_segments() -> None:
     event = _FakeEvent(
         [
@@ -1046,7 +1052,7 @@ def test_reply_message_type_filter_ignores_at_target_by_default_when_only_mentio
     assert response.reply_chunks == []
 
 
-def test_reply_message_type_filter_allows_at_target_when_mention_match_mode_is_any(
+def test_reply_message_type_filter_ignores_at_target_even_when_mention_match_mode_is_any(
     db: Session,
     monkeypatch,
 ) -> None:
@@ -1072,32 +1078,34 @@ def test_reply_message_type_filter_allows_at_target_when_mention_match_mode_is_a
     )
     db.commit()
 
-    captured = _capture_queued_chat(monkeypatch)
+    def fail_enqueue_chat_job(_job):
+        raise AssertionError("@ target should not wake this robot")
+
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fail_enqueue_chat_job)
 
     response = robot_service.handle_inbound_message(
         db,
         robot,
         _message(
-            "这个人是小男娘",
+            "hello other mention",
             sender={
                 "user_id": "2537134688",
-                "display_name": "只有白龙马知道唐三藏动了情",
+                "display_name": "Alice",
             },
             conversation={"type": "group", "id": "369040885"},
             mentions=[
                 {
                     "id": "1512220570",
                     "qq": "1512220570",
-                    "name": "她喜欢我才钓着我",
+                    "name": "Bob",
                 }
             ],
         ),
     )
 
     assert response.success is True
-    assert response.ignored is False
-    assert "trigger=mention_any" in captured["job"].message
-    assert "mentions=她喜欢我才钓着我 (1512220570)" in captured["job"].message
+    assert response.ignored is True
+    assert response.reason == "reply_message_type_disabled"
     assert response.reply_chunks == []
 
 
@@ -1295,11 +1303,91 @@ def test_reply_context_window_is_scoped_to_current_conversation(
         ),
     )
     assert same_group.ignored is False
-    assert [job.message for job in queued_jobs] == [
-        "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1)]\nhello mention",
-        "[Robot message; conversation=group:g1; trigger=active_chat_window; sender=Carol (u3)]\nplain in same group",
-    ]
+    assert queued_jobs[0].message == (
+        "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1)]\nhello mention"
+    )
+    assert "[Recent QQ conversation context" in queued_jobs[1].message
+    assert "- Alice (u1): hello mention" in queued_jobs[1].message
+    assert "plain in another group" not in queued_jobs[1].message
+    assert "plain in private" not in queued_jobs[1].message
+    assert "[Current QQ message]\nplain in same group" in queued_jobs[1].message
 
+def test_direct_wakeup_agent_message_includes_recent_same_conversation_context(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "reply_context_window_seconds": 15,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+
+    def fake_enqueue_chat_job(job) -> bool:
+        queued_jobs.append(job)
+        return True
+
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+
+    same_group_plain = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "plain before",
+            sender_key="onebot_v11:group:g1:u1",
+            target={"id": "g1"},
+            sender={"user_id": "u1", "display_name": "Alice"},
+        ),
+    )
+    assert same_group_plain.ignored is True
+
+    other_group_plain = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "plain in another group",
+            sender_key="onebot_v11:group:g2:u2",
+            target={"id": "g2"},
+            sender={"user_id": "u2", "display_name": "Eve"},
+        ),
+    )
+    assert other_group_plain.ignored is True
+
+    mentioned = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "hello mention",
+            sender_key="onebot_v11:group:g1:u3",
+            target={"id": "g1"},
+            sender={"user_id": "u3", "display_name": "Bob"},
+            mentioned_bot=True,
+        ),
+    )
+
+    assert mentioned.ignored is False
+    assert len(queued_jobs) == 1
+    assert "[Recent QQ conversation context" in queued_jobs[0].message
+    assert "- Alice (u1): plain before" in queued_jobs[0].message
+    assert "plain in another group" not in queued_jobs[0].message
+    assert "[Current QQ message]\nhello mention" in queued_jobs[0].message
 
 def test_reply_context_uses_onebot_group_id_before_universal_target_id(
     db: Session,
@@ -1397,6 +1485,97 @@ def test_reply_context_uses_onebot_group_id_before_universal_target_id(
     assert other_group.reason == "reply_message_type_disabled"
     assert [job.conversation_key for job in queued_jobs] == ["group:g1"]
 
+
+def test_conversation_controller_rejects_stale_generation_after_sleep(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "reply_context_window_seconds": 15,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+
+    def fake_enqueue_chat_job(job) -> bool:
+        queued_jobs.append(job)
+        return True
+
+    now = robot_service._now()
+    current_time = {"value": now}
+    monkeypatch.setattr(robot_service, "_now", lambda: current_time["value"])
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+
+    first = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("hello mention", target={"id": "g1"}, mentioned_bot=True),
+    )
+    assert first.ignored is False
+    first_job = queued_jobs[-1]
+    first_generation = first_job.conversation_generation
+    assert first_job.reply_requires_awake is True
+    assert first_generation > 0
+    assert robot_service.conversation_controller_allows_reply(
+        robot.id,
+        first_job.conversation_key,
+        first_generation,
+        requires_awake=True,
+    )
+
+    robot_service._apply_reply_context_result(
+        robot,
+        first_job.conversation_key,
+        robot_message_sent=True,
+        reply_target=first_job.reply_target,
+        conversation_generation=first_generation,
+    )
+    current_time["value"] = now + timedelta(seconds=16)
+
+    assert not robot_service.conversation_controller_allows_reply(
+        robot.id,
+        first_job.conversation_key,
+        first_generation,
+        requires_awake=True,
+    )
+
+    second = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("hello again", target={"id": "g1"}, mentioned_bot=True),
+    )
+    assert second.ignored is False
+    second_job = queued_jobs[-1]
+    assert second_job.conversation_generation > first_generation
+    assert not robot_service.conversation_controller_allows_reply(
+        robot.id,
+        first_job.conversation_key,
+        first_generation,
+        requires_awake=True,
+    )
+    assert robot_service.conversation_controller_allows_reply(
+        robot.id,
+        second_job.conversation_key,
+        second_job.conversation_generation,
+        requires_awake=True,
+    )
 
 def test_reply_to_bot_only_keeps_context_active_after_agent_sends_qq_message(
     db: Session,

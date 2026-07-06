@@ -201,7 +201,7 @@ function getRobotReplyMessageTypes(robot: RobotRecord): ReplyMessageType[] {
   return REPLY_MESSAGE_TYPES.filter((type) => selectedTypes.includes(type))
 }
 
-const MENTION_MATCH_MODES = ["bot", "any"] as const
+const MENTION_MATCH_MODES = ["bot"] as const
 type MentionMatchMode = (typeof MENTION_MATCH_MODES)[number]
 
 const DEFAULT_MENTION_MATCH_MODE: MentionMatchMode = "bot"
@@ -306,8 +306,6 @@ function getMentionMatchModeLabel(
   switch (mode) {
     case "bot":
       return copy.mentionModeBot
-    case "any":
-      return copy.mentionModeAny
   }
 }
 

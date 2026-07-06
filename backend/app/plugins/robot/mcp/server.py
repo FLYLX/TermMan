@@ -574,6 +574,27 @@ class RobotMCPServer:
             return error
         return ""
 
+    def _active_context_delivery_error(self, context: Any) -> str:
+        if context is None or not bool(getattr(context, "reply_requires_awake", False)):
+            return ""
+        try:
+            conversation_generation = int(
+                getattr(context, "conversation_generation", 0) or 0
+            )
+        except (TypeError, ValueError):
+            conversation_generation = 0
+
+        from app.plugins.robot.service import robot_service
+
+        if robot_service.conversation_controller_allows_reply(
+            getattr(context, "robot_id", ""),
+            getattr(context, "conversation_key", ""),
+            conversation_generation,
+            requires_awake=True,
+        ):
+            return ""
+        return "Message not sent: current QQ conversation is sleeping or superseded."
+
     def _get_accessible_robot_id(
         self,
         args: dict,
@@ -1036,6 +1057,9 @@ class RobotMCPServer:
         )
         if active_context_override_error:
             return [{"type": "text", "text": active_context_override_error}]
+        active_context_delivery_error = self._active_context_delivery_error(context)
+        if active_context_delivery_error:
+            return [{"type": "text", "text": active_context_delivery_error}]
         if context is not None:
             explicit_target = None
             context_reference = ""

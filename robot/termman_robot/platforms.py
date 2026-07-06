@@ -472,6 +472,16 @@ def _event_replies_to_bot(bot: Any, event: Any) -> bool:
 
 
 def _event_mentions_bot(bot: Any, event: Any) -> bool:
+    self_ids = _bot_self_ids(bot, event)
+    explicit_mentions = _extract_event_mentions(event)
+    if explicit_mentions:
+        if not self_ids:
+            return False
+        return any(
+            str(mention.get("id") or mention.get("qq") or "").strip() in self_ids
+            for mention in explicit_mentions
+        )
+
     to_me = getattr(event, "to_me", False)
     if callable(to_me):
         try:
@@ -481,17 +491,8 @@ def _event_mentions_bot(bot: Any, event: Any) -> bool:
     if bool(to_me):
         return True
 
-    self_ids = _bot_self_ids(bot, event)
     if not self_ids:
         return False
-
-    for segment in _event_message_segments(event):
-        if _segment_type(segment) != "at":
-            continue
-        mention_id = _segment_data(segment).get("qq")
-        if str(mention_id or "").strip() in self_ids:
-            return True
-
     return _raw_message_mentions_bot(event, self_ids)
 
 

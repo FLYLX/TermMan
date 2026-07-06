@@ -101,6 +101,13 @@ def _reply_target_is_direct_wakeup(robot_reply_target: RobotReplyTarget | None) 
     return bool(metadata.get("mentioned_bot") or metadata.get("replied_to_bot"))
 
 
+def _int_context_value(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _should_send_final_response_fallback(
     *,
     robot_id: str | None,
@@ -290,17 +297,22 @@ class RobotAgentIntegration:
             return False
 
         self.clear_chat_context(agent, context)
+        conversation_key = str(context.get("conversation_key") or "").strip()
+        if not conversation_key:
+            conversation_key = _robot_conversation_key(reply_target, sender_key)
+        conversation_generation = _int_context_value(context.get("conversation_generation"))
+        reply_requires_awake = bool(context.get("reply_requires_awake"))
         mcp_context = RobotMCPContext(
             robot_id=robot_id,
             sender_key=sender_key,
             reply_target=reply_target.model_copy(deep=True),
+            conversation_key=conversation_key,
+            conversation_generation=conversation_generation,
+            reply_requires_awake=reply_requires_awake,
         )
         agent_context.robot_id = robot_id
         agent_context.robot_sender_key = sender_key
-        agent_context.robot_conversation_key = _robot_conversation_key(
-            reply_target,
-            sender_key,
-        )
+        agent_context.robot_conversation_key = conversation_key
         agent_context.robot_context_token = register_robot_mcp_context(mcp_context)
         agent_context.robot_reply_context_summary = build_robot_reply_context_summary(
             reply_target,
@@ -543,6 +555,35 @@ class RobotAgentIntegration:
             robot_message_sent=message_sent,
         ):
             return False
+
+        conversation_key = str(context.get("conversation_key") or "").strip()
+        if not conversation_key:
+            conversation_key = _robot_conversation_key(
+                robot_reply_target,
+                str(context.get("sender_key") or "").strip(),
+            )
+        conversation_generation = _int_context_value(context.get("conversation_generation"))
+        if bool(context.get("reply_requires_awake")):
+            from app.plugins.robot.debug_log import preview_text, record_robot_event
+            from app.plugins.robot.service import robot_service
+
+            if not robot_service.conversation_controller_allows_reply(
+                robot_id,
+                conversation_key,
+                conversation_generation,
+                requires_awake=True,
+            ):
+                record_robot_event(
+                    robot_id,
+                    direction="agent_internal",
+                    event="agent_final_response_dropped_sleeping_conversation",
+                    message=preview_text(text),
+                    payload={
+                        "conversation": conversation_key,
+                        "generation": conversation_generation,
+                    },
+                )
+                return False
 
         from app.plugins.robot.bridge_client import robot_bridge_client
 

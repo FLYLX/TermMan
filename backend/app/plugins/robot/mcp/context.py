@@ -15,6 +15,9 @@ class RobotMCPContext:
     robot_id: str
     sender_key: str
     reply_target: RobotReplyTarget
+    conversation_key: str = ""
+    conversation_generation: int = 0
+    reply_requires_awake: bool = False
 
 
 ROBOT_MESSAGE_STAMP_RE = re.compile(r"\[Robot message; (?P<body>[^\]]+)\]")

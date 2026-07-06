@@ -116,6 +116,9 @@ async def collect_chat_response(
     robot_id: str | None = None,
     robot_sender_key: str | None = None,
     robot_reply_target: Any | None = None,
+    robot_conversation_key: str | None = None,
+    robot_conversation_generation: int = 0,
+    robot_reply_requires_awake: bool = False,
     return_result: bool = False,
 ) -> str | ChatResponseResult:
     from app.api.routes.chat import generate_stream
@@ -128,6 +131,9 @@ async def collect_chat_response(
             "robot_id": robot_id,
             "sender_key": robot_sender_key,
             "reply_target": robot_reply_target,
+            "conversation_key": robot_conversation_key or "",
+            "conversation_generation": robot_conversation_generation,
+            "reply_requires_awake": robot_reply_requires_awake,
         }
         setup_integration_chat_contexts(agent, integration_contexts)
         await ensure_integration_chat_context_tools(agent, integration_contexts)

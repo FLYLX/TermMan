@@ -234,6 +234,15 @@ function readSseData(eventChunk: string): string | null {
   return dataLines.join("\n")
 }
 
+function isTerminalStreamEvent(event: unknown): boolean {
+  if (!event || typeof event !== "object") {
+    return false
+  }
+
+  const data = event as { done?: unknown; type?: unknown }
+  return data.done === true || data.type === "aborted" || data.type === "error"
+}
+
 function buildRequestHistory(
   messages: ChatMessage[],
 ): Array<{ role: "user" | "assistant"; content: string }> {
@@ -690,7 +699,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
           try {
             const data = JSON.parse(rawEvent)
             handleIncomingEvent(data)
-            if (data.done || data.type === "aborted" || data.type === "error") {
+            if (isTerminalStreamEvent(data)) {
               shouldStop = true
             }
           } catch (error) {
@@ -700,6 +709,15 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
 
         if (shouldStop) {
           break
+        }
+      }
+
+      const trailingEvent = readSseData(buffer)
+      if (trailingEvent) {
+        try {
+          handleIncomingEvent(JSON.parse(trailingEvent))
+        } catch (error) {
+          console.error("[Chat] Failed to parse trailing stream payload:", error)
         }
       }
     } catch (error) {
@@ -717,6 +735,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
     } finally {
       streamReaderRef.current = null
       streamAbortRef.current = null
+      setAgentStatus(null)
       setIsLoading(false)
     }
   }

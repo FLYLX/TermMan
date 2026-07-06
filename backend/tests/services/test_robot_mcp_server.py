@@ -487,6 +487,53 @@ def test_robot_mcp_send_message_uses_registered_context(monkeypatch) -> None:
     assert sent["reply_target"].target_id == "group-1"
 
 
+def test_robot_mcp_send_message_blocks_sleeping_active_context(monkeypatch) -> None:
+    server = RobotMCPServer()
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="current-group",
+        metadata={"target": {"id": "current-group"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:current-group:user-1",
+            reply_target=target,
+            conversation_key="group:current-group",
+            conversation_generation=99,
+            reply_requires_awake=True,
+        )
+    )
+    sent: list[tuple[str, RobotReplyTarget, str]] = []
+
+    def fake_send_message(robot_id, reply_target, text):
+        sent.append((robot_id, reply_target, text))
+
+    monkeypatch.setattr(
+        "app.plugins.robot.service.robot_service.conversation_controller_allows_reply",
+        lambda *args, **kwargs: False,
+    )
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+
+    try:
+        result = server.call_tool(
+            "send_message",
+            {"text": "late reply", "_robot_context_token": token},
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert result == [
+        {
+            "type": "text",
+            "text": "Message not sent: current QQ conversation is sleeping or superseded.",
+        }
+    ]
+    assert sent == []
+
 def test_robot_mcp_reads_registered_context_conversation_memory(
     monkeypatch,
     tmp_path,
