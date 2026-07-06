@@ -193,6 +193,22 @@ class RobotMCPServer:
             handler=self._read_conversation_memory,
             skip_memory=True,
         )
+        self.register_tool(
+            name="sleep_conversation",
+            description=(
+                "Put the current QQ conversation to sleep. Use this only in an "
+                "incoming QQ-triggered context when the current sender asks the "
+                "bot to sleep, stop replying, be quiet, or not answer this chat. "
+                "It closes the robot controller for this group/private chat until "
+                "someone wakes the bot again by mentioning or replying to it."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {},
+            },
+            handler=self._sleep_conversation,
+            skip_memory=True,
+        )
 
     def _normalize_target_type(self, value: Any) -> str:
         raw = str(value or "").strip().lower()
@@ -828,6 +844,41 @@ class RobotMCPServer:
             "incoming QQ message turn."
         )
 
+    def _sleep_conversation(self, args: dict) -> list[dict[str, str]]:
+        context_token = str(args.get("_robot_context_token") or "").strip()
+        context = get_robot_mcp_context(context_token)
+        if context is None:
+            return [
+                {
+                    "type": "text",
+                    "text": "Error: sleep_conversation requires an active QQ context.",
+                }
+            ]
+        active_target = self._context_target_from_active_context(context)
+        conversation_key = str(getattr(context, "conversation_key", "") or "").strip()
+        if not conversation_key and active_target is not None:
+            conversation_key = active_target["conversation"]
+        if not conversation_key:
+            return [
+                {
+                    "type": "text",
+                    "text": "Error: current QQ conversation is unavailable.",
+                }
+            ]
+
+        from app.plugins.robot.service import robot_service
+
+        robot_service.sleep_conversation_controller(
+            getattr(context, "robot_id", ""),
+            conversation_key,
+            reason="mcp_sleep_conversation",
+        )
+        return [
+            {
+                "type": "text",
+                "text": "No QQ message sent: current conversation is sleeping.",
+            }
+        ]
     def _read_conversation_memory(self, args: dict) -> list[dict[str, str]]:
         context_token = str(args.get("_robot_context_token") or "").strip()
         context = get_robot_mcp_context(context_token)

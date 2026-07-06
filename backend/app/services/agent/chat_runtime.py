@@ -151,6 +151,7 @@ async def collect_chat_response(
             item_id=item_id,
             agent=agent,
             include_hidden_tool_results=True,
+            latest_only_context=bool(integration_contexts),
         ):
             if not chunk.startswith("data: "):
                 continue

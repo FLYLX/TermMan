@@ -534,11 +534,12 @@ def build_chat_turn_messages(
     item_id: str,
     message: str,
     query: str = "",
+    latest_only_context: bool = False,
 ) -> list[dict[str, str]]:
     effective_query = query or message
     policy = resolve_prompt_memory_policy(PromptTurnType.CHAT)
     recent_context_messages: list[dict[str, str]] = []
-    if policy.include_recent_history:
+    if not latest_only_context and policy.include_recent_history:
         recent_context_messages = _collect_recent_context_messages(
             agent,
             item_id,
@@ -546,13 +547,14 @@ def build_chat_turn_messages(
         )
 
     extra_prompt_parts: list[str] = []
-    integration_prompt = build_integration_history_prompt(
-        agent,
-        message=message,
-        context_messages=recent_context_messages,
-    )
-    if integration_prompt:
-        extra_prompt_parts.append(integration_prompt)
+    if not latest_only_context:
+        integration_prompt = build_integration_history_prompt(
+            agent,
+            message=message,
+            context_messages=recent_context_messages,
+        )
+        if integration_prompt:
+            extra_prompt_parts.append(integration_prompt)
 
     prompt_messages: list[dict[str, str]] = [
         {
@@ -565,17 +567,17 @@ def build_chat_turn_messages(
         }
     ]
 
-    if policy.include_session_summary:
+    if not latest_only_context and policy.include_session_summary:
         summary = get_latest_session_summary(item_id)
         if summary and summary.get("content"):
             prompt_messages.append(
                 {"role": "system", "content": f"{SESSION_SUMMARY_LABEL}:\n{summary['content']}"}
             )
 
-    if policy.include_recent_history:
+    if not latest_only_context and policy.include_recent_history:
         prompt_messages.extend(recent_context_messages)
 
-    if policy.include_long_term:
+    if not latest_only_context and policy.include_long_term:
         memories = _collect_long_term_memories(
             item_id,
             effective_query,
@@ -587,13 +589,14 @@ def build_chat_turn_messages(
                 {"role": "system", "content": f"{LONG_TERM_MEMORY_LABEL}:\n{memories}"}
             )
 
-    knowledge = _collect_handler_knowledge(
-        agent,
-        effective_query,
-        n_results=4,
-    )
-    if knowledge:
-        prompt_messages.append({"role": "system", "content": f"Relevant knowledge files:\n{knowledge}"})
+    if not latest_only_context:
+        knowledge = _collect_handler_knowledge(
+            agent,
+            effective_query,
+            n_results=4,
+        )
+        if knowledge:
+            prompt_messages.append({"role": "system", "content": f"Relevant knowledge files:\n{knowledge}"})
 
     prompt_messages.append({"role": "user", "content": message.strip()})
     return _dedupe_adjacent_messages(prompt_messages)

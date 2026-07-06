@@ -534,6 +534,50 @@ def test_robot_mcp_send_message_blocks_sleeping_active_context(monkeypatch) -> N
     ]
     assert sent == []
 
+def test_robot_mcp_sleep_conversation_uses_active_context(monkeypatch) -> None:
+    server = RobotMCPServer()
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="current-group",
+        metadata={"target": {"id": "current-group"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:current-group:user-1",
+            reply_target=target,
+            conversation_key="group:current-group",
+            conversation_generation=99,
+            reply_requires_awake=True,
+        )
+    )
+    calls: list[tuple[str, str, str]] = []
+
+    def fake_sleep(robot_id, conversation_key, *, reason):
+        calls.append((robot_id, conversation_key, reason))
+        return True
+
+    monkeypatch.setattr(
+        "app.plugins.robot.service.robot_service.sleep_conversation_controller",
+        fake_sleep,
+    )
+
+    try:
+        result = server.call_tool(
+            "sleep_conversation",
+            {"_robot_context_token": token},
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert result == [
+        {
+            "type": "text",
+            "text": "No QQ message sent: current conversation is sleeping.",
+        }
+    ]
+    assert calls == [("robot-current", "group:current-group", "mcp_sleep_conversation")]
+
 def test_robot_mcp_reads_registered_context_conversation_memory(
     monkeypatch,
     tmp_path,

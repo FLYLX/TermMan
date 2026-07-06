@@ -6,7 +6,7 @@ import queue
 import re
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
@@ -31,8 +31,6 @@ logger = logging.getLogger(__name__)
 
 CONVERSATION_TTL = timedelta(hours=6)
 DEFAULT_MAX_MESSAGE_LENGTH = 1200
-RECENT_CONTROLLER_MESSAGE_LIMIT = 20
-RECENT_AGENT_CONTEXT_LIMIT = 8
 REPLY_MESSAGE_TYPE_PRIVATE = "private"
 REPLY_MESSAGE_TYPE_GROUP = "group"
 REPLY_MESSAGE_TYPE_CHANNEL = "channel"
@@ -71,25 +69,18 @@ class ConversationState:
 
 
 @dataclass
-class RobotConversationRecentMessage:
-    timestamp: datetime
-    sender_label: str
-    text: str
-
-
-@dataclass
 class RobotConversationController:
     generation: int
     updated_at: datetime
     expires_at: datetime | None = None
-    recent_messages: list[RobotConversationRecentMessage] = field(default_factory=list)
+    sleeping: bool = False
 
 
 @dataclass(frozen=True)
 class RobotConversationGate:
     active: bool
     generation: int
-    recent_messages: list[RobotConversationRecentMessage]
+    sleeping: bool = False
 
 
 @dataclass
@@ -430,6 +421,7 @@ class RobotService:
             message,
             conversation_key,
             text,
+            direct_reply_trigger=direct_reply_trigger,
         )
         reply_context_active = controller_gate.active
         command_parse_text = self._strip_leading_bot_mentions_for_command(message, text)
@@ -437,6 +429,47 @@ class RobotService:
         if command.mode == "chat" and command.target is None:
             command = RobotCommand(mode="chat", target=None, text=text)
         self._remember_inbound_conversation_memory(robot, message, conversation_key, text)
+        if self._message_requests_conversation_sleep(command_parse_text) and (
+            direct_reply_trigger or reply_context_active or controller_gate.sleeping
+        ):
+            self.sleep_conversation_controller(
+                robot.id,
+                conversation_key,
+                reason="user_sleep_command",
+            )
+            record_robot_event(
+                str(robot.id),
+                direction="backend",
+                event="message_ignored",
+                status="ignored",
+                message=message.text,
+                payload={
+                    "reason": "sleep_command",
+                    "conversation": conversation_key,
+                },
+            )
+            return RobotDispatchResponse(
+                success=True,
+                ignored=True,
+                reason="sleep_command",
+            )
+        if controller_gate.sleeping and not direct_reply_trigger:
+            record_robot_event(
+                str(robot.id),
+                direction="backend",
+                event="message_ignored",
+                status="ignored",
+                message=message.text,
+                payload={
+                    "reason": "conversation_sleeping",
+                    "conversation": conversation_key,
+                },
+            )
+            return RobotDispatchResponse(
+                success=True,
+                ignored=True,
+                reason="conversation_sleeping",
+            )
         mention_match_mode = self._mention_match_mode(robot)
         reply_categories = self._reply_message_categories(
             message,
@@ -545,9 +578,6 @@ class RobotService:
                         reply_context_active=reply_context_active,
                         mention_match_mode=mention_match_mode,
                     ),
-                    recent_messages=controller_gate.recent_messages
-                    if direct_reply_trigger or reply_context_active
-                    else [],
                 ),
                 sender_key=message.sender_key,
                 reply_target=message.reply_target.model_copy(deep=True),
@@ -1131,10 +1161,13 @@ class RobotService:
         controller: RobotConversationController,
         now: datetime,
     ) -> bool:
+        if controller.sleeping:
+            return False
         if controller.expires_at is None:
             return False
         if controller.expires_at <= now:
             controller.expires_at = None
+            controller.sleeping = True
             controller.generation += 1
             controller.updated_at = now
             return False
@@ -1159,6 +1192,8 @@ class RobotService:
         message: RobotInboundMessage,
         conversation_key: str,
         message_text: str,
+        *,
+        direct_reply_trigger: bool = False,
     ) -> RobotConversationGate:
         now = self._now()
         with self._lock:
@@ -1168,23 +1203,15 @@ class RobotService:
                 conversation_key,
                 now,
             )
+            if direct_reply_trigger and controller.sleeping:
+                controller.sleeping = False
+                controller.generation += 1
             active = self._controller_is_awake_locked(controller, now)
-            recent_messages = list(controller.recent_messages[-RECENT_AGENT_CONTEXT_LIMIT:])
-            if message_text.strip():
-                controller.recent_messages.append(
-                    RobotConversationRecentMessage(
-                        timestamp=now,
-                        sender_label=self._sender_memory_label(message),
-                        text=message_text.strip(),
-                    )
-                )
-                if len(controller.recent_messages) > RECENT_CONTROLLER_MESSAGE_LIMIT:
-                    del controller.recent_messages[:-RECENT_CONTROLLER_MESSAGE_LIMIT]
             controller.updated_at = now
             return RobotConversationGate(
                 active=active,
                 generation=controller.generation,
-                recent_messages=recent_messages,
+                sleeping=controller.sleeping,
             )
 
     def _begin_reply_context_dispatch(
@@ -1205,6 +1232,7 @@ class RobotService:
                 now,
             )
             controller.generation += 1
+            controller.sleeping = False
             controller.expires_at = expires_at
             controller.updated_at = now
             generation = controller.generation
@@ -1275,6 +1303,7 @@ class RobotService:
             if expected_generation is not None and controller.generation != expected_generation:
                 return
             controller.expires_at = expires_at
+            controller.sleeping = False
             controller.updated_at = now
             generation = controller.generation
         metadata = metadata or {}
@@ -1299,9 +1328,9 @@ class RobotService:
         *,
         reason: str,
         expected_generation: int | None = None,
-    ) -> None:
+    ) -> bool:
         if not conversation_key:
-            return
+            return False
 
         key = self._conversation_controller_key(robot_id, conversation_key)
         with self._lock:
@@ -1326,6 +1355,44 @@ class RobotService:
                     "reason": reason,
                 },
             )
+        return removed
+
+    def sleep_conversation_controller(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+        *,
+        reason: str,
+    ) -> bool:
+        if not conversation_key:
+            return False
+
+        now = self._now()
+        with self._lock:
+            self._prune_conversation_controllers_locked(now)
+            controller = self._get_or_create_controller_locked(
+                robot_id,
+                conversation_key,
+                now,
+            )
+            changed = bool(controller.expires_at is not None or not controller.sleeping)
+            controller.expires_at = None
+            controller.sleeping = True
+            controller.generation += 1
+            controller.updated_at = now
+            generation = controller.generation
+        record_robot_event(
+            str(robot_id),
+            direction="backend",
+            event="conversation_controller_sleeping",
+            payload={
+                "conversation": conversation_key,
+                "generation": generation,
+                "reason": reason,
+                "changed": changed,
+            },
+        )
+        return True
 
     def _apply_reply_context_result(
         self,
@@ -1420,13 +1487,45 @@ class RobotService:
             for mention in mentions
         )
 
+    def _message_requests_conversation_sleep(self, text: str) -> bool:
+        normalized = (text or "").strip().casefold()
+        if not normalized:
+            return False
+        compact = re.sub(
+            r"[\s\uFF0C\u3002\uFF01\uFF1F!,.\u3001~\uFF5E\u2026]+",
+            "",
+            normalized,
+        )
+        return compact in {
+            "/sleep",
+            "sleep",
+            "gosleep",
+            "stopreplying",
+            "shutup",
+            "\u4f11\u7720",
+            "\u4f11\u7720\u53bb",
+            "\u53bb\u4f11\u7720",
+            "\u7761\u89c9",
+            "\u7761\u89c9\u53bb",
+            "\u95ed\u5634",
+            "\u522b\u8bf4\u8bdd",
+            "\u522b\u56de\u4e86",
+            "\u522b\u56de\u590d\u4e86",
+            "\u4e0d\u7528\u56de\u4e86",
+            "\u4e0d\u8981\u56de\u4e86",
+            "\u505c\u6b62\u56de\u590d",
+            "\u505c\u4e00\u4e0b",
+            "\u5148\u522b\u56de",
+            "\u5148\u522b\u56de\u590d",
+            "\u5b89\u9759",
+        }
+
     def _agent_message_with_context(
         self,
         inbound_message: RobotInboundMessage,
         message_text: str,
         *,
         trigger_reason: str = "",
-        recent_messages: list[RobotConversationRecentMessage] | None = None,
     ) -> str:
         prefix = self._agent_message_context_prefix(
             inbound_message,
@@ -1434,38 +1533,7 @@ class RobotService:
         )
         if not prefix:
             return message_text
-        recent_context = self._format_recent_conversation_context(recent_messages or [])
-        if not recent_context:
-            return f"{prefix}\n{message_text}"
-        return "\n".join(
-            [
-                prefix,
-                recent_context,
-                f"[Current QQ message]\n{message_text}",
-            ]
-        )
-
-    def _format_recent_conversation_context(
-        self,
-        recent_messages: list[RobotConversationRecentMessage],
-    ) -> str:
-        if not recent_messages:
-            return ""
-        lines = []
-        for entry in recent_messages[-RECENT_AGENT_CONTEXT_LIMIT:]:
-            sender_label = entry.sender_label or "unknown"
-            text = " ".join(entry.text.split())
-            if not text:
-                continue
-            lines.append(f"- {sender_label}: {text}")
-        if not lines:
-            return ""
-        return "\n".join(
-            [
-                "[Recent QQ conversation context; background only, do not answer old lines]",
-                *lines,
-            ]
-        )
+        return f"{prefix}\n[Current QQ message]\n{message_text}"
 
     def _agent_trigger_reason(
         self,

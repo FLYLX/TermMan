@@ -730,6 +730,7 @@ def generate_stream(
     item_id: str,
     agent: "Agent" = None,
     include_hidden_tool_results: bool = False,
+    latest_only_context: bool = False,
 ) -> Generator[str, None, None]:
     if agent is None:
         agent = agent_manager.get_or_create(handler)
@@ -739,6 +740,7 @@ def generate_stream(
         item_id=item_id,
         message=message,
         query=message,
+        latest_only_context=latest_only_context,
     )
     extract_integration_context_targets(agent, messages)
     record_integration_context_targets(agent, item_id)

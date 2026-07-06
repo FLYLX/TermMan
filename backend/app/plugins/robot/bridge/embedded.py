@@ -46,6 +46,8 @@ _seen_connected_robot_ids: set[str] = set()
 _last_platform_event_at_by_robot_id: dict[str, str] = {}
 _last_message_event_at_by_robot_id: dict[str, str] = {}
 _onebot_socket_status_by_robot_id: dict[str, dict[str, Any]] = {}
+_bridge_started_at_epoch = time.time()
+_stale_onebot_message_grace_seconds = 1.0
 _initialized = False
 _connection_errors: dict[str, dict[str, str]] = {}
 _error_file_path: str = "/tmp/robot_bridge_errors.json"
@@ -550,6 +552,45 @@ def _is_onebot_heartbeat_event(event: Any) -> bool:
         str(payload.get("post_type") or "").strip().lower() == "meta_event"
         and str(payload.get("meta_event_type") or "").strip().lower() == "heartbeat"
     )
+
+
+def _coerce_unix_event_time(value: Any) -> float | None:
+    try:
+        event_time = float(value)
+    except (TypeError, ValueError):
+        return None
+    if event_time <= 0:
+        return None
+    if event_time > 10_000_000_000:
+        event_time = event_time / 1000
+    return event_time
+
+
+def _onebot_event_time(event: Any, payload: dict[str, Any]) -> float | None:
+    event_time = _coerce_unix_event_time(payload.get("time"))
+    if event_time is not None:
+        return event_time
+    return _coerce_unix_event_time(getattr(event, "time", None))
+
+
+def _stale_onebot_message_event_payload(
+    event: Any,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    if str(payload.get("post_type") or "").strip().lower() != "message":
+        return None
+    event_time = _onebot_event_time(event, payload)
+    if event_time is None:
+        return None
+    cutoff = _bridge_started_at_epoch - _stale_onebot_message_grace_seconds
+    if event_time >= cutoff:
+        return None
+    return {
+        "event_time": event_time,
+        "bridge_started_at": _bridge_started_at_epoch,
+        "grace_seconds": _stale_onebot_message_grace_seconds,
+        "event_summary": _summarize_platform_event(event),
+    }
 
 
 def _decode_websocket_body(message: dict[str, Any]) -> tuple[str | None, int | None]:
@@ -1321,6 +1362,22 @@ def init_embedded_bridge() -> APIRouter | None:
                 return
 
             _seen_connected_robot_ids.add(robot_id)
+            if platform_id == "onebot_v11":
+                event_payload = _serialize_event_payload(event)
+                stale_payload = _stale_onebot_message_event_payload(event, event_payload)
+                if stale_payload is not None:
+                    _record_bridge_event(
+                        robot_id,
+                        direction="platform_to_bridge",
+                        event="stale_message_ignored",
+                        status="ignored",
+                        message=event.__class__.__name__,
+                        payload={
+                            "platform": platform_id,
+                            **stale_payload,
+                        },
+                    )
+                    return
             inbound = build_inbound_message(platform_id, bot, event)
             if inbound is None:
                 record_robot_event(

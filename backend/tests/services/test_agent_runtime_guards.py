@@ -457,6 +457,56 @@ def test_robot_context_uses_optional_robot_plugin_prompt(monkeypatch) -> None:
     assert "mcp_robot_send_message" in messages[0]["content"]
 
 
+
+
+def test_latest_only_chat_prompt_skips_stored_context(monkeypatch) -> None:
+    def fail_context_read(*_args, **_kwargs):
+        raise AssertionError("stored context should not be read")
+
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(robot_id="robot-1", robot_reply_context_summary="current qq"),
+        get_skills=lambda: [],
+        get_mcp_servers=lambda: [],
+        get_tools_for_litellm=lambda: [],
+        match_skills=lambda query: [],
+        enabled_knowledge_files=["ops.md"],
+    )
+    monkeypatch.setattr(prompt_builder, "get_system_prompt", lambda agent: "system prompt")
+    monkeypatch.setattr(
+        prompt_builder,
+        "resolve_prompt_memory_policy",
+        lambda turn_type: SimpleNamespace(
+            include_session_summary=True,
+            include_recent_history=True,
+            max_recent_messages=10,
+            include_long_term=True,
+            allowed_long_term_types=("fact", "preference"),
+            max_long_term_memories=5,
+        ),
+    )
+    monkeypatch.setattr(prompt_builder, "get_chat_messages", fail_context_read)
+    monkeypatch.setattr(prompt_builder, "get_latest_session_summary", fail_context_read)
+    monkeypatch.setattr(prompt_builder, "build_integration_history_prompt", fail_context_read)
+    monkeypatch.setattr(prompt_builder, "_collect_long_term_memories", fail_context_read)
+    monkeypatch.setattr(prompt_builder, "_collect_handler_knowledge", fail_context_read)
+
+    message = (
+        "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Bob (u1)]\n"
+        "[Current QQ message]\nhello"
+    )
+    messages = prompt_builder.build_chat_turn_messages(
+        agent,
+        item_id="item-1",
+        message=message,
+        latest_only_context=True,
+    )
+
+    assert len(messages) == 2
+    assert messages[-1] == {"role": "user", "content": message}
+    combined = "\n".join(entry["content"] for entry in messages)
+    assert "old" not in combined
+    assert "Relevant knowledge files" not in combined
+
 def test_non_robot_context_does_not_include_robot_plugin_prompt(monkeypatch) -> None:
     agent = SimpleNamespace(
         _context=SimpleNamespace(robot_id="", robot_reply_context_summary=""),

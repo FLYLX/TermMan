@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -66,6 +67,8 @@ LAST_PLATFORM_EVENT_AT_BY_ROBOT_ID: dict[str, str] = {}
 LAST_MESSAGE_EVENT_AT_BY_ROBOT_ID: dict[str, str] = {}
 ONEBOT_SOCKET_STATUS_BY_ROBOT_ID: dict[str, dict[str, Any]] = {}
 ONEBOT_ACTIVE_CONNECTIONS: dict[str, dict[str, Any]] = {}
+ROBOT_BRIDGE_STARTED_AT_EPOCH = time.time()
+STALE_ONEBOT_MESSAGE_GRACE_SECONDS = 1.0
 ROBOT_DISPATCH_QUEUE: asyncio.Queue[RobotDispatchJob] | None = None
 ROBOT_DISPATCH_QUEUE_LOOP: asyncio.AbstractEventLoop | None = None
 ROBOT_DISPATCH_WORKER_TASKS: list[asyncio.Task[None]] = []
@@ -434,6 +437,45 @@ def _is_onebot_heartbeat_payload(payload: dict[str, Any]) -> bool:
         str(payload.get("post_type") or "").strip().lower() == "meta_event"
         and str(payload.get("meta_event_type") or "").strip().lower() == "heartbeat"
     )
+
+
+def _coerce_unix_event_time(value: Any) -> float | None:
+    try:
+        event_time = float(value)
+    except (TypeError, ValueError):
+        return None
+    if event_time <= 0:
+        return None
+    if event_time > 10_000_000_000:
+        event_time = event_time / 1000
+    return event_time
+
+
+def _onebot_event_time(event: Event, payload: dict[str, Any]) -> float | None:
+    event_time = _coerce_unix_event_time(payload.get("time"))
+    if event_time is not None:
+        return event_time
+    return _coerce_unix_event_time(getattr(event, "time", None))
+
+
+def _stale_onebot_message_event_payload(
+    event: Event,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    if str(payload.get("post_type") or "").strip().lower() != "message":
+        return None
+    event_time = _onebot_event_time(event, payload)
+    if event_time is None:
+        return None
+    cutoff = ROBOT_BRIDGE_STARTED_AT_EPOCH - STALE_ONEBOT_MESSAGE_GRACE_SECONDS
+    if event_time >= cutoff:
+        return None
+    return {
+        "event_time": event_time,
+        "bridge_started_at": ROBOT_BRIDGE_STARTED_AT_EPOCH,
+        "grace_seconds": STALE_ONEBOT_MESSAGE_GRACE_SECONDS,
+        "event_summary": _summarize_event_payload(payload),
+    }
 
 
 def _is_onebot_websocket_scope(scope: dict[str, Any]) -> bool:
@@ -1139,6 +1181,20 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
             event_name=event.__class__.__name__,
             payload=event_payload,
         )
+        stale_payload = _stale_onebot_message_event_payload(event, event_payload)
+        if stale_payload is not None:
+            _record_bridge_event(
+                robot_id,
+                direction="platform_to_bridge",
+                event="stale_message_ignored",
+                status="ignored",
+                message=event.__class__.__name__,
+                payload={
+                    "platform": platform_id,
+                    **stale_payload,
+                },
+            )
+            return
     inbound = build_inbound_message(platform_id, bot, event)
     if inbound is None:
         return

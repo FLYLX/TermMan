@@ -136,3 +136,65 @@ def test_idle_bridge_reload_with_missing_owner_does_not_restart_proxy_worker(
     assert response.json()["success"] is False
     assert "owner is not available" in response.json()["detail"]
     assert scheduled_reasons == []
+
+
+def test_stale_onebot_message_event_payload_ignores_startup_history(monkeypatch) -> None:
+    monkeypatch.setattr(embedded, "_bridge_started_at_epoch", 1000.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_grace_seconds", 1.0)
+    event = SimpleNamespace(
+        model_dump=lambda: {
+            "post_type": "message",
+            "time": 998,
+            "message_type": "group",
+            "raw_message": "old cached message",
+        }
+    )
+
+    stale_payload = embedded._stale_onebot_message_event_payload(
+        event,
+        embedded._serialize_event_payload(event),
+    )
+
+    assert stale_payload is not None
+    assert stale_payload["event_time"] == 998.0
+
+
+def test_stale_onebot_message_event_payload_allows_realtime_message(monkeypatch) -> None:
+    monkeypatch.setattr(embedded, "_bridge_started_at_epoch", 1000.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_grace_seconds", 1.0)
+    event = SimpleNamespace(
+        model_dump=lambda: {
+            "post_type": "message",
+            "time": 1000,
+            "message_type": "group",
+            "raw_message": "live message",
+        }
+    )
+
+    assert (
+        embedded._stale_onebot_message_event_payload(
+            event,
+            embedded._serialize_event_payload(event),
+        )
+        is None
+    )
+
+
+def test_stale_onebot_message_event_payload_ignores_non_message_events(monkeypatch) -> None:
+    monkeypatch.setattr(embedded, "_bridge_started_at_epoch", 1000.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_grace_seconds", 1.0)
+    event = SimpleNamespace(
+        model_dump=lambda: {
+            "post_type": "meta_event",
+            "meta_event_type": "heartbeat",
+            "time": 1,
+        }
+    )
+
+    assert (
+        embedded._stale_onebot_message_event_payload(
+            event,
+            embedded._serialize_event_payload(event),
+        )
+        is None
+    )
