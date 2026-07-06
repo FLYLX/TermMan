@@ -684,6 +684,13 @@ def test_robot_plain_reply_bridge_fallback_requires_direct_wakeup() -> None:
         content="pong",
         robot_message_sent=False,
     )
+    assert _should_send_final_response_fallback(
+        robot_id="robot-1",
+        robot_reply_target=passive_target,
+        content="pong",
+        robot_message_sent=False,
+        reply_requires_awake=True,
+    )
     assert not _should_send_final_response_fallback(
         robot_id=None,
         robot_reply_target=direct_target,
@@ -732,6 +739,59 @@ def test_robot_plain_reply_bridge_fallback_skips_no_reply_intent(monkeypatch) ->
     assert delivered is False
     assert sent == []
 
+
+def test_robot_plain_reply_bridge_fallback_sends_active_window_reply(monkeypatch) -> None:
+    sent: dict[str, object] = {}
+    allowed_calls: list[tuple[str, str, int, bool]] = []
+
+    def fake_send_message(robot_id, target, text) -> None:
+        sent["robot_id"] = robot_id
+        sent["target"] = target
+        sent["text"] = text
+
+    def fake_allows_reply(robot_id, conversation_key, generation, *, requires_awake):
+        allowed_calls.append((robot_id, conversation_key, generation, requires_awake))
+        return True
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+    monkeypatch.setattr(
+        "app.plugins.robot.service.robot_service.conversation_controller_allows_reply",
+        fake_allows_reply,
+    )
+    monkeypatch.setattr(
+        "app.plugins.robot.conversation_memory.robot_conversation_memory.append_assistant_message",
+        lambda *_args, **_kwargs: None,
+    )
+
+    reply_target = RobotReplyTarget(
+        target_type="group",
+        target_id="123456",
+        metadata={"target": {"id": "123456"}},
+    )
+
+    delivered = get_robot_agent_integration().send_final_response_fallback(
+        {
+            "robot_id": "robot-1",
+            "sender_key": "onebot_v11:group:123456:u1",
+            "reply_target": reply_target,
+            "conversation_key": "group:123456",
+            "conversation_generation": 7,
+            "reply_requires_awake": True,
+        },
+        content="pong",
+        message_sent=False,
+    )
+
+    assert delivered is True
+    assert sent == {
+        "robot_id": "robot-1",
+        "target": reply_target,
+        "text": "pong",
+    }
+    assert allowed_calls == [("robot-1", "group:123456", 7, True)]
 
 def test_robot_collect_response_sends_plain_final_reply_for_direct_mention(
     monkeypatch,

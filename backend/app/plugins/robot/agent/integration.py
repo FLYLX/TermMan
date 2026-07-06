@@ -114,13 +114,17 @@ def _should_send_final_response_fallback(
     robot_reply_target: RobotReplyTarget | None,
     content: str,
     robot_message_sent: bool,
+    reply_requires_awake: bool = False,
 ) -> bool:
     return (
         bool(robot_id)
         and robot_reply_target is not None
         and bool(content.strip())
         and not robot_message_sent
-        and _reply_target_is_direct_wakeup(robot_reply_target)
+        and (
+            _reply_target_is_direct_wakeup(robot_reply_target)
+            or reply_requires_awake
+        )
     )
 
 
@@ -548,11 +552,13 @@ class RobotAgentIntegration:
                     payload={"reason": "no_reply_intent"},
                 )
             return False
+        reply_requires_awake = bool(context.get("reply_requires_awake"))
         if not _should_send_final_response_fallback(
             robot_id=robot_id,
             robot_reply_target=robot_reply_target,
             content=text,
             robot_message_sent=message_sent,
+            reply_requires_awake=reply_requires_awake,
         ):
             return False
 
@@ -563,7 +569,7 @@ class RobotAgentIntegration:
                 str(context.get("sender_key") or "").strip(),
             )
         conversation_generation = _int_context_value(context.get("conversation_generation"))
-        if bool(context.get("reply_requires_awake")):
+        if reply_requires_awake:
             from app.plugins.robot.debug_log import preview_text, record_robot_event
             from app.plugins.robot.service import robot_service
 
