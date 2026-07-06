@@ -8,14 +8,17 @@ import {
   ChevronRight,
   CirclePlus,
   Copy,
+  Download,
+  FileText,
   Loader2,
   MessageSquare,
   RefreshCw,
   Save,
   Send,
   Trash2,
+  Upload,
 } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
 
 import { type ItemPublic, ItemsService } from "@/client"
 import { useI18n } from "@/components/locale-provider"
@@ -69,22 +72,28 @@ import {
   getRobotConnectionQueryKey,
   getRobotConnectionStatus,
   getRobotDebug,
+  getRobotConversationMemoryQueryKey,
   getRobotDebugQueryKey,
   getRobotPlatformsQueryKey,
   getRobotQueryKey,
   getRobotsQueryKey,
+  importRobotConversationMemory,
   listRobotBindings,
+  listRobotConversationMemory,
   listRobotPlatforms,
   type RobotBindingRecord,
   type RobotConnectionStatus,
   type RobotDebugEvent,
+  type RobotConversationMemoryEntry,
   type RobotDebugInfo,
   type RobotPlatformRecord,
   type RobotRecord,
   readRobot,
+  readRobotConversationMemory,
   reloadRobotBridge,
   sendRobotDebugMessage,
   sendRobotManualMessage,
+  downloadRobotConversationMemory,
   type RobotManualMessageTargetType,
   updateRobot,
   updateRobotBinding,
@@ -169,7 +178,11 @@ const REPLY_MESSAGE_TYPES = [
 ] as const
 type ReplyMessageType = (typeof REPLY_MESSAGE_TYPES)[number]
 
-const DEFAULT_REPLY_MESSAGE_TYPES: ReplyMessageType[] = [...REPLY_MESSAGE_TYPES]
+const DEFAULT_REPLY_MESSAGE_TYPES: ReplyMessageType[] = [
+  "private",
+  "command",
+  "mention",
+]
 
 function isReplyMessageType(value: unknown): value is ReplyMessageType {
   return (
@@ -515,6 +528,7 @@ function useRobotDetailUiCopy() {
           tabConnection: "连接",
           tabBindings: "绑定",
           tabDebug: "调试",
+          tabMemory: "记忆",
           tabSettings: "设置",
           bindingDescription: "管理这个机器人 Server 可以收发消息的终端。",
           copied: "已复制",
@@ -563,6 +577,24 @@ function useRobotDetailUiCopy() {
             seconds > 0 ? `${seconds} 秒` : "不保持",
           keepCurrentSecret: "留空则保留当前值",
           connectorMode: "OneBot V11 反向 WebSocket",
+          memoryTitle: "聊天记忆",
+          memoryDescription: "按 QQ 会话导出或导入机器人聊天 .log 记忆。",
+          memoryEmpty: "暂无聊天记忆。机器人和 QQ 会话聊过后这里会出现记录。",
+          memoryConversation: "会话",
+          memoryUpdated: "更新时间",
+          memorySize: "大小",
+          memoryExport: "导出",
+          memoryImport: "导入",
+          memoryImportKey: "导入到会话",
+          memoryImportKeyPlaceholder: "例如 group:123456 或 private:10001",
+          memoryImportRequired: "请填写会话 key",
+          memoryImportSuccess: "聊天记忆已导入",
+          memoryImportFailed: "导入聊天记忆失败",
+          memoryExportFailed: "导出聊天记忆失败",
+          memoryPreview: "预览",
+          memoryPreviewEmpty: "选择一个会话查看内容",
+          memoryLoading: "正在读取记忆...",
+          memoryLoadFailed: "读取聊天记忆失败",
           debugTitle: "运行调试",
           debugDescription: "查看机器人 Server 连接、QQ 接入端事件、最近收发和错误。",
           reload: "重载 Server",
@@ -594,6 +626,7 @@ function useRobotDetailUiCopy() {
           tabConnection: "Connection",
           tabBindings: "Bindings",
           tabDebug: "Debug",
+          tabMemory: "Memory",
           tabSettings: "Settings",
           bindingDescription:
             "Manage the terminals this robot server can send messages to and receive output from.",
@@ -647,6 +680,24 @@ function useRobotDetailUiCopy() {
             seconds > 0 ? `${seconds}s` : "Off",
           keepCurrentSecret: "Leave blank to keep current value",
           connectorMode: "OneBot V11 reverse WebSocket",
+          memoryTitle: "Chat memory",
+          memoryDescription: "Export or import robot conversation .log memory by QQ conversation.",
+          memoryEmpty: "No chat memory yet. Records appear after QQ conversations reach this robot server.",
+          memoryConversation: "Conversation",
+          memoryUpdated: "Updated",
+          memorySize: "Size",
+          memoryExport: "Export",
+          memoryImport: "Import",
+          memoryImportKey: "Import to conversation",
+          memoryImportKeyPlaceholder: "e.g. group:123456 or private:10001",
+          memoryImportRequired: "Enter a conversation key",
+          memoryImportSuccess: "Chat memory imported",
+          memoryImportFailed: "Failed to import chat memory",
+          memoryExportFailed: "Failed to export chat memory",
+          memoryPreview: "Preview",
+          memoryPreviewEmpty: "Select a conversation to preview",
+          memoryLoading: "Loading memory...",
+          memoryLoadFailed: "Failed to load chat memory",
           debugTitle: "Runtime debug",
           debugDescription:
             "Inspect robot server connectivity, QQ connector events, recent traffic, and errors.",
@@ -1599,6 +1650,243 @@ function RobotBasicConfigPanel({
   )
 }
 
+function formatRobotMemorySize(sizeBytes: number) {
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`
+  }
+  if (sizeBytes < 1024 * 1024) {
+    return `${(sizeBytes / 1024).toFixed(1)} KB`
+  }
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function RobotConversationMemoryPanel({ robotId }: { robotId: string }) {
+  const copy = useRobotDetailUiCopy()
+  const queryClient = useQueryClient()
+  const { showErrorToast, showSuccessToast } = useCustomToast()
+  const importInputRef = useRef<HTMLInputElement | null>(null)
+  const [selectedConversationKey, setSelectedConversationKey] = useState("")
+  const [importConversationKey, setImportConversationKey] = useState("")
+  const [isImporting, setIsImporting] = useState(false)
+  const [exportingConversationKey, setExportingConversationKey] = useState("")
+
+  const memoryQuery = useQuery({
+    queryKey: getRobotConversationMemoryQueryKey(robotId),
+    queryFn: () => listRobotConversationMemory(robotId),
+  })
+
+  const previewQuery = useQuery({
+    queryKey: [
+      ...getRobotConversationMemoryQueryKey(robotId),
+      selectedConversationKey,
+    ],
+    queryFn: () => readRobotConversationMemory(robotId, selectedConversationKey),
+    enabled: Boolean(selectedConversationKey),
+  })
+
+  const entries = memoryQuery.data?.data ?? []
+
+  const refreshMemory = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: getRobotConversationMemoryQueryKey(robotId),
+    })
+    if (selectedConversationKey) {
+      await queryClient.invalidateQueries({
+        queryKey: [
+          ...getRobotConversationMemoryQueryKey(robotId),
+          selectedConversationKey,
+        ],
+      })
+    }
+  }
+
+  const handleSelectEntry = (entry: RobotConversationMemoryEntry) => {
+    setSelectedConversationKey(entry.conversation_key)
+    setImportConversationKey(entry.conversation_key)
+  }
+
+  const handleExport = async (entry: RobotConversationMemoryEntry) => {
+    setExportingConversationKey(entry.conversation_key)
+    try {
+      await downloadRobotConversationMemory(robotId, entry)
+    } catch (error) {
+      showErrorToast(
+        error instanceof Error ? error.message : copy.memoryExportFailed,
+      )
+    } finally {
+      setExportingConversationKey("")
+    }
+  }
+
+  const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) {
+      return
+    }
+
+    const conversationKey = importConversationKey.trim()
+    if (!conversationKey) {
+      showErrorToast(copy.memoryImportRequired)
+      input.value = ""
+      return
+    }
+
+    setIsImporting(true)
+    try {
+      await importRobotConversationMemory(robotId, conversationKey, {
+        content: await file.text(),
+        append: false,
+      })
+      setSelectedConversationKey(conversationKey)
+      showSuccessToast(copy.memoryImportSuccess)
+      await refreshMemory()
+    } catch (error) {
+      showErrorToast(
+        error instanceof Error ? error.message : copy.memoryImportFailed,
+      )
+    } finally {
+      input.value = ""
+      setIsImporting(false)
+    }
+  }
+
+  return (
+    <Card className="rounded-3xl border bg-card shadow-sm">
+      <CardHeader className="flex flex-col gap-3 pb-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <CardTitle>{copy.memoryTitle}</CardTitle>
+          <CardDescription>{copy.memoryDescription}</CardDescription>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".log,text/plain"
+            className="hidden"
+            onChange={handleImportFile}
+          />
+          <div className="grid gap-1.5">
+            <Label htmlFor="robot-memory-import-key" className="text-xs">
+              {copy.memoryImportKey}
+            </Label>
+            <Input
+              id="robot-memory-import-key"
+              className="h-9 min-w-64"
+              value={importConversationKey}
+              onChange={(event) => setImportConversationKey(event.target.value)}
+              placeholder={copy.memoryImportKeyPlaceholder}
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 rounded-xl px-3.5"
+            onClick={() => importInputRef.current?.click()}
+            disabled={isImporting}
+          >
+            {isImporting ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <Upload className="mr-2 size-4" />
+            )}
+            {copy.memoryImport}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+        <div className="space-y-2">
+          {memoryQuery.isLoading ? (
+            <div className="flex items-center gap-2 rounded-2xl border border-dashed bg-muted/10 px-4 py-6 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              {copy.memoryLoading}
+            </div>
+          ) : entries.length === 0 ? (
+            <div className="rounded-2xl border border-dashed bg-muted/10 px-6 py-10 text-center text-sm text-muted-foreground">
+              {copy.memoryEmpty}
+            </div>
+          ) : (
+            entries.map((entry) => {
+              const selected = selectedConversationKey === entry.conversation_key
+              return (
+                <div
+                  key={entry.conversation_key}
+                  className={`grid gap-3 rounded-2xl border bg-muted/10 p-3 md:grid-cols-[1fr_auto] md:items-center ${
+                    selected ? "border-primary/40 bg-primary/5" : ""
+                  }`}
+                >
+                  <button
+                    type="button"
+                    className="min-w-0 text-left"
+                    onClick={() => handleSelectEntry(entry)}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <FileText className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="truncate font-mono text-sm">
+                        {entry.conversation_key}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                      <span>
+                        {copy.memorySize}: {formatRobotMemorySize(entry.size_bytes)}
+                      </span>
+                      <span>
+                        {copy.memoryUpdated}: {entry.updated_at ? new Date(entry.updated_at).toLocaleString() : "-"}
+                      </span>
+                    </div>
+                  </button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 rounded-xl px-3.5"
+                    onClick={() => void handleExport(entry)}
+                    disabled={exportingConversationKey === entry.conversation_key}
+                  >
+                    {exportingConversationKey === entry.conversation_key ? (
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 size-4" />
+                    )}
+                    {copy.memoryExport}
+                  </Button>
+                </div>
+              )
+            })
+          )}
+        </div>
+
+        <div className="rounded-2xl border bg-muted/10 p-3">
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+            <FileText className="size-4" />
+            {copy.memoryPreview}
+          </div>
+          {!selectedConversationKey ? (
+            <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+              {copy.memoryPreviewEmpty}
+            </div>
+          ) : previewQuery.isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              {copy.memoryLoading}
+            </div>
+          ) : previewQuery.error ? (
+            <div className="text-sm text-destructive">
+              {copy.memoryLoadFailed}
+            </div>
+          ) : (
+            <Textarea
+              readOnly
+              className="min-h-80 resize-y font-mono text-xs"
+              value={previewQuery.data?.memory ?? ""}
+            />
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 function RobotDebugPanel({
   robotId,
   debug,
@@ -2230,10 +2518,11 @@ export function RobotDetail({ robotId }: { robotId: string }) {
       </section>
 
       <Tabs value={activeTab} onValueChange={activateTab} className="gap-4">
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl p-1 sm:grid-cols-4 lg:w-fit">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl p-1 sm:grid-cols-5 lg:w-fit">
           <TabsTrigger value="connection">{copy.tabConnection}</TabsTrigger>
           <TabsTrigger value="bindings">{copy.tabBindings}</TabsTrigger>
           <TabsTrigger value="debug">{copy.tabDebug}</TabsTrigger>
+          <TabsTrigger value="memory">{copy.tabMemory}</TabsTrigger>
           <TabsTrigger value="settings">{copy.tabSettings}</TabsTrigger>
         </TabsList>
 
@@ -2286,6 +2575,12 @@ export function RobotDetail({ robotId }: { robotId: string }) {
               debug={debugQuery.data as RobotDebugInfo | undefined}
               isLoading={debugQuery.isLoading}
             />
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="memory" className="mt-0">
+          {hasVisitedTab("memory") ? (
+            <RobotConversationMemoryPanel robotId={robotId} />
           ) : null}
         </TabsContent>
 

@@ -64,6 +64,7 @@ def _message(
     mentions: list[dict[str, Any]] | None = None,
     mentioned_bot: bool = False,
     replied_to_bot: bool = False,
+    bot_self_ids: list[str] | None = None,
 ) -> RobotInboundMessage:
     metadata: dict[str, Any] = {}
     if target is not None:
@@ -78,6 +79,8 @@ def _message(
         metadata["mentioned_bot"] = True
     if replied_to_bot:
         metadata["replied_to_bot"] = True
+    if bot_self_ids is not None:
+        metadata["bot_self_ids"] = bot_self_ids
 
     return RobotInboundMessage(
         sender_key=sender_key,
@@ -290,9 +293,46 @@ def test_build_inbound_message_keeps_empty_bot_mention(monkeypatch) -> None:
     inbound = build_inbound_message("onebot_v11", _FakeBot(), event)
 
     assert inbound is not None
-    assert inbound.text == "[mention_bot]"
+    assert inbound.text == "[CQ:at,qq=10001]"
     assert inbound.reply_target.metadata["mentioned_bot"] is True
+    assert inbound.reply_target.metadata["bot_self_ids"] == ["10001"]
+    assert inbound.reply_target.metadata["message"]["segments"] == [
+        {"type": "at", "data": {"qq": "10001"}}
+    ]
     assert inbound.reply_target.metadata["conversation"]["id"] == "123456"
+
+
+def test_build_inbound_message_preserves_onebot_at_in_text(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "nonebot_plugin_alconna.get_message_id",
+        lambda event, bot: "message-1",
+    )
+    monkeypatch.setattr(
+        "nonebot_plugin_alconna.get_target",
+        lambda event, bot: _FakeAlconnaTarget(),
+    )
+    event = _FakeEvent(
+        [
+            _FakeSegment("at", {"qq": "20002"}),
+            _FakeSegment("text", {"text": " hello"}),
+        ],
+        user_id="10002",
+        message_type="group",
+        group_id="123456",
+    )
+
+    inbound = build_inbound_message("onebot_v11", _FakeBot(), event)
+
+    assert inbound is not None
+    assert inbound.text == "[CQ:at,qq=20002] hello"
+    assert inbound.reply_target.metadata["mentions"] == [
+        {"id": "20002", "qq": "20002"}
+    ]
+    assert inbound.reply_target.metadata["message"]["plain_text"] == "hello"
+    assert inbound.reply_target.metadata["message"]["segments"] == [
+        {"type": "at", "data": {"qq": "20002"}},
+        {"type": "text", "data": {"text": " hello"}},
+    ]
 
 
 def test_build_inbound_message_drops_empty_non_mention(monkeypatch) -> None:
@@ -644,6 +684,77 @@ def test_term_command_routes_to_named_item_agent(
     assert isinstance(captured["job"].reply_target, RobotReplyTarget)
     assert response.reply_chunks == []
 
+
+def test_bot_at_prefix_does_not_break_term_command(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=False,
+        )
+    )
+    db.commit()
+
+    captured = _capture_queued_chat(monkeypatch)
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "[CQ:at,qq=10001] /term alpha status?",
+            mentioned_bot=True,
+            bot_self_ids=["10001"],
+        ),
+    )
+
+    assert response.success is True
+    assert response.item_id == str(item.id)
+    assert response.route_key == "alpha"
+    assert captured["job"].message == "status?"
+    assert response.reply_chunks == []
+
+
+def test_bot_at_prefix_is_preserved_for_chat_message(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    captured = _capture_queued_chat(monkeypatch)
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "[CQ:at,qq=10001] hello",
+            mentioned_bot=True,
+            bot_self_ids=["10001"],
+        ),
+    )
+
+    assert response.success is True
+    assert captured["job"].message == "[CQ:at,qq=10001] hello"
+    assert response.reply_chunks == []
 
 def test_reply_message_type_filter_ignores_unselected_group_message(
     db: Session,

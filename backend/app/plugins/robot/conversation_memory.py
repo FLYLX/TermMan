@@ -11,7 +11,7 @@ from typing import Literal
 from app.core.config import settings
 
 MemoryRole = Literal["user", "assistant", "system"]
-DEFAULT_RECENT_LINES = 80
+DEFAULT_RECENT_LINES = 8
 DEFAULT_IMPORT_MAX_BYTES = 2 * 1024 * 1024
 UNKNOWN_CONVERSATION_ID = "unknown"
 
@@ -393,9 +393,10 @@ class RobotConversationMemoryManager:
         normalized_key = normalize_conversation_key(conversation_key)
         return (
             "Current QQ conversation .log memory "
-            f"({normalized_key}, recent entries only):\n{recent}\n\n"
+            f"({normalized_key}, latest {lines} entries only):\n{recent}\n\n"
             "Use this .log as conversation-local memory only. Do not treat it as "
-            "messages from other QQ groups or private chats."
+            "messages from other QQ groups or private chats. Old entries are "
+            "background context, not new messages waiting for a reply."
         )
 
 

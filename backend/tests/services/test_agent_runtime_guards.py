@@ -1143,7 +1143,7 @@ def test_builtin_skills_are_terminal_qq_mcp_and_personas() -> None:
     assert "尽量不要句号" in (yui.action.prompt or "")
 
 
-def test_robot_plain_group_message_does_not_wake_even_if_group_type_allowed() -> None:
+def test_robot_plain_group_message_is_group_category_not_mention() -> None:
     service = RobotService()
     message = RobotInboundMessage(
         sender_key="onebot_v11:group:770362397:user:10001",
@@ -1161,11 +1161,11 @@ def test_robot_plain_group_message_does_not_wake_even_if_group_type_allowed() ->
 
     categories = service._reply_message_categories(message, command)
 
-    assert REPLY_MESSAGE_TYPE_GROUP not in categories
+    assert REPLY_MESSAGE_TYPE_GROUP in categories
     assert REPLY_MESSAGE_TYPE_MENTION not in categories
 
 
-def test_robot_empty_direct_wakeup_is_mention_category() -> None:
+def test_robot_empty_direct_wakeup_is_group_and_mention_category() -> None:
     service = RobotService()
     message = RobotInboundMessage(
         sender_key="onebot_v11:group:770362397:user:10001",
@@ -1188,9 +1188,27 @@ def test_robot_empty_direct_wakeup_is_mention_category() -> None:
         direct_reply_trigger=service._message_directly_addresses_bot(message),
     )
 
+    assert REPLY_MESSAGE_TYPE_GROUP in categories
     assert REPLY_MESSAGE_TYPE_MENTION in categories
-    assert REPLY_MESSAGE_TYPE_GROUP not in categories
 
+
+def test_robot_conversation_memory_prompt_defaults_to_latest_entries(tmp_path: Path) -> None:
+    manager = RobotConversationMemoryManager(base_dir=tmp_path, max_bytes=4096)
+    for index in range(12):
+        manager.append_user_message(
+            "robot-1",
+            "group:770362397",
+            f"message-{index:02d}",
+            sender="Alice",
+        )
+
+    prompt = manager.format_prompt_memory("robot-1", "group:770362397")
+
+    assert "latest 8 entries only" in prompt
+    assert "message-03" not in prompt
+    assert "message-04" in prompt
+    assert "message-11" in prompt
+    assert "not new messages waiting for a reply" in prompt
 
 def test_log_manager_reads_legacy_log_when_primary_missing(tmp_path) -> None:
     primary_dir = tmp_path / ".runtime" / "item_logs"

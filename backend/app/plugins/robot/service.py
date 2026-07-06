@@ -360,7 +360,10 @@ class RobotService:
             return RobotDispatchResponse(success=True, ignored=True, reason="empty_message")
         if not text and direct_reply_trigger:
             text = "[empty robot wakeup]"
-        command = self._parse_robot_command(text)
+        command_parse_text = self._strip_leading_bot_mentions_for_command(message, text)
+        command = self._parse_robot_command(command_parse_text)
+        if command.mode == "chat" and command.target is None:
+            command = RobotCommand(mode="chat", target=None, text=text)
         self._remember_inbound_conversation_memory(robot, message, conversation_key, text)
         mention_match_mode = self._mention_match_mode(robot)
         reply_categories = self._reply_message_categories(
@@ -803,6 +806,42 @@ class RobotService:
 
         return None, normalized
 
+    def _bot_self_ids_from_message(self, message: RobotInboundMessage) -> set[str]:
+        metadata = message.reply_target.metadata
+        raw_ids = metadata.get("bot_self_ids")
+        if not isinstance(raw_ids, list):
+            return set()
+        return {str(value).strip() for value in raw_ids if str(value or "").strip()}
+
+    def _strip_leading_bot_mentions_for_command(
+        self,
+        message: RobotInboundMessage,
+        text: str,
+    ) -> str:
+        normalized = (text or "").strip()
+        bot_self_ids = self._bot_self_ids_from_message(message)
+        if not normalized or not bot_self_ids:
+            return normalized
+
+        while True:
+            match = re.match(r"^\[CQ:at,([^\]]+)\]\s*", normalized)
+            if not match:
+                return normalized
+            params = self._parse_cq_params(match.group(1))
+            mention_id = str(
+                params.get("qq") or params.get("id") or params.get("user_id") or ""
+            ).strip()
+            if mention_id not in bot_self_ids:
+                return normalized
+            normalized = normalized[match.end():].lstrip()
+
+    def _parse_cq_params(self, raw_params: str) -> dict[str, str]:
+        params: dict[str, str] = {}
+        for part in raw_params.split(","):
+            key, separator, value = part.partition("=")
+            if separator:
+                params[key.strip()] = value.strip()
+        return params
     def _parse_robot_command(self, text: str) -> RobotCommand:
         normalized = (text or "").strip()
         if not normalized:
@@ -1109,6 +1148,10 @@ class RobotService:
         categories: set[str] = set()
         if message_type == REPLY_MESSAGE_TYPE_PRIVATE:
             categories.add(REPLY_MESSAGE_TYPE_PRIVATE)
+        elif message_type == REPLY_MESSAGE_TYPE_GROUP:
+            categories.add(REPLY_MESSAGE_TYPE_GROUP)
+        elif message_type == REPLY_MESSAGE_TYPE_CHANNEL:
+            categories.add(REPLY_MESSAGE_TYPE_CHANNEL)
         if command.mode != "chat" or command.target:
             categories.add(REPLY_MESSAGE_TYPE_COMMAND)
         if direct_reply_trigger or reply_context_active:

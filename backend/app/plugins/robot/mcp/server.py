@@ -20,6 +20,9 @@ from app.plugins.robot.reply_intent import is_no_reply_intent
 logger = logging.getLogger(__name__)
 
 MAX_GROUP_SINGLE_TEXT_CHARS = 36
+DEFAULT_MEMORY_RECENT_LINES = 8
+ACTIVE_CONTEXT_MEMORY_MAX_LINES = 12
+GENERAL_MEMORY_MAX_LINES = 500
 
 
 class RobotMCPServer:
@@ -175,7 +178,11 @@ class RobotMCPServer:
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 500,
-                        "description": "Maximum recent or matching log lines to return.",
+                        "description": (
+                            "Maximum recent or matching log lines to return. "
+                            "Default is 8; active QQ-triggered context is "
+                            "capped to the latest 12 lines."
+                        ),
                     },
                     "query": {
                         "type": "string",
@@ -759,13 +766,21 @@ class RobotMCPServer:
         )
 
     @staticmethod
-    def _memory_line_limit(args: dict) -> int:
-        raw_value = args.get("lines") or args.get("limit") or 80
+    def _memory_line_limit(
+        args: dict,
+        *,
+        max_lines: int = GENERAL_MEMORY_MAX_LINES,
+    ) -> int:
+        raw_value = (
+            args.get("lines")
+            or args.get("limit")
+            or DEFAULT_MEMORY_RECENT_LINES
+        )
         try:
             value = int(raw_value)
         except (TypeError, ValueError):
-            value = 80
-        return max(1, min(500, value))
+            value = DEFAULT_MEMORY_RECENT_LINES
+        return max(1, min(max_lines, value))
 
     @staticmethod
     def _filter_memory_lines(content: str, query: str, *, lines: int) -> str:
@@ -878,7 +893,12 @@ class RobotMCPServer:
 
             conversation_key = conversation_key_from_reply_target(target)
 
-        lines = self._memory_line_limit(args)
+        line_cap = (
+            ACTIVE_CONTEXT_MEMORY_MAX_LINES
+            if context is not None
+            else GENERAL_MEMORY_MAX_LINES
+        )
+        lines = self._memory_line_limit(args, max_lines=line_cap)
         query = str(args.get("query") or "").strip()
         from app.plugins.robot.conversation_memory import (
             normalize_conversation_key,

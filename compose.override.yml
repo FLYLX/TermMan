@@ -190,6 +190,9 @@ services:
         - path: ./daemon/src
           action: sync
           target: /app/src
+          ignore:
+            - ./daemon/src/workdir
+            - ./daemon/src/data
         - path: ./daemon/pyproject.toml
           action: rebuild
 

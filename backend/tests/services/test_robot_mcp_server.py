@@ -543,6 +543,51 @@ def test_robot_mcp_reads_registered_context_conversation_memory(
     assert "active QQ-triggered context is locked to group:current-group" in blocked[0]["text"]
 
 
+def test_robot_mcp_read_memory_active_context_caps_requested_lines(
+    monkeypatch,
+) -> None:
+    server = RobotMCPServer()
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "base_dir",
+        _test_memory_dir("robot-mcp-read-memory-cap"),
+    )
+    robot_conversation_memory.replace(
+        "robot-current",
+        "group:current-group",
+        "".join(
+            f"[2026-01-01T00:00:{index:02d}+00:00] user Alice: message-{index:02d}\n"
+            for index in range(30)
+        ),
+    )
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="current-group",
+        metadata={"target": {"id": "current-group"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:current-group:user-1",
+            reply_target=target,
+        )
+    )
+
+    try:
+        result = server.call_tool(
+            "read_conversation_memory",
+            {"_robot_context_token": token, "lines": 500},
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    text = result[0]["text"]
+    assert "recent 12 line(s)" in text
+    assert "message-17" not in text
+    assert "message-18" in text
+    assert "message-29" in text
+
+
 def test_robot_mcp_read_memory_sanitizes_old_internal_trace(
     monkeypatch,
 ) -> None:

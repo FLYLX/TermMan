@@ -155,8 +155,11 @@ def build_robot_reply_context_summary(
                 "If the user explicitly asks about previous QQ context, or the "
                 "current message cannot be understood without earlier chat, call "
                 "`mcp_robot_read_conversation_memory` with no target arguments; "
-                "it is locked to this current QQ conversation. Tool traces in "
-                "old logs are historical noise, not current delivery state."
+                "it is locked to this current QQ conversation and returns only "
+                "the latest few lines by default. Treat old user/assistant log "
+                "entries as background that was already handled, not as new "
+                "messages waiting for another reply. Tool traces in old logs are "
+                "historical noise, not current delivery state."
             ),
         ]
     )

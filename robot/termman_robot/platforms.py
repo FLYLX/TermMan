@@ -91,7 +91,7 @@ def resolve_bot_identity(bot: Any) -> str:
     return _credential_identity(platform_id, _bot_self_id(bot))
 
 
-def _extract_event_text(event: Any) -> str:
+def _extract_event_plain_text(event: Any) -> str:
     get_plaintext = getattr(event, "get_plaintext", None)
     if callable(get_plaintext):
         return str(get_plaintext() or "").strip()
@@ -106,6 +106,52 @@ def _extract_event_text(event: Any) -> str:
 
     return str(getattr(event, "message", "") or "").strip()
 
+
+def _cq_escape(value: Any) -> str:
+    return (
+        str(value or "")
+        .replace("&", "&amp;")
+        .replace("[", "&#91;")
+        .replace("]", "&#93;")
+        .replace(",", "&#44;")
+    )
+
+
+def _segment_to_onebot_text(segment: Any) -> str:
+    segment_type = _segment_type(segment)
+    data = _segment_data(segment)
+    if not segment_type:
+        return str(segment or "")
+    if segment_type == "text":
+        return str(data.get("text") or "")
+
+    params = ",".join(
+        f"{key}={_cq_escape(value)}"
+        for key, value in data.items()
+        if value not in (None, "")
+    )
+    if params:
+        return f"[CQ:{segment_type},{params}]"
+    return f"[CQ:{segment_type}]"
+
+
+def _event_message_as_onebot_text(event: Any) -> str:
+    return "".join(
+        _segment_to_onebot_text(segment)
+        for segment in _event_message_segments(event)
+    ).strip()
+
+
+def _extract_event_text(event: Any) -> str:
+    raw_message = str(getattr(event, "raw_message", "") or "").strip()
+    if raw_message:
+        return raw_message
+
+    segment_text = _event_message_as_onebot_text(event)
+    if segment_text:
+        return segment_text
+
+    return _extract_event_plain_text(event)
 
 def _event_attr_text(event: Any, name: str) -> str:
     return str(getattr(event, name, "") or "").strip()
@@ -312,6 +358,16 @@ def _segment_data(segment: Any) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _serialize_event_message_segments(event: Any) -> list[dict[str, Any]]:
+    segments: list[dict[str, Any]] = []
+    for segment in _event_message_segments(event):
+        segment_type = _segment_type(segment)
+        data = _segment_data(segment)
+        if not segment_type and not data:
+            continue
+        segments.append({"type": segment_type, "data": dict(data)})
+    return segments
+
 def _clean_mention_value(value: Any) -> str:
     return str(value or "").strip()
 
@@ -470,6 +526,19 @@ def build_inbound_message(
         "sender": _extract_sender_metadata(platform_id, event),
         "conversation": conversation_data,
     }
+    native_message = _clean_mapping(
+        {
+            "format": platform_id,
+            "raw_message": str(getattr(event, "raw_message", "") or "").strip(),
+            "plain_text": _extract_event_plain_text(event),
+            "segments": _serialize_event_message_segments(event),
+        }
+    )
+    if native_message:
+        metadata["message"] = native_message
+    bot_self_ids = sorted(_bot_self_ids(bot, event))
+    if bot_self_ids:
+        metadata["bot_self_ids"] = bot_self_ids
     mentions = _extract_event_mentions(event)
     if mentions:
         metadata["mentions"] = mentions
