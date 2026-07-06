@@ -46,8 +46,9 @@ _seen_connected_robot_ids: set[str] = set()
 _last_platform_event_at_by_robot_id: dict[str, str] = {}
 _last_message_event_at_by_robot_id: dict[str, str] = {}
 _onebot_socket_status_by_robot_id: dict[str, dict[str, Any]] = {}
-_bridge_started_at_epoch = time.time()
-_stale_onebot_message_grace_seconds = 1.0
+_stale_onebot_message_max_age_seconds = 60.0
+_stale_onebot_message_future_grace_seconds = 300.0
+_onebot_message_timezone_offset_candidates_seconds = (8 * 3600,)
 _initialized = False
 _connection_errors: dict[str, dict[str, str]] = {}
 _error_file_path: str = "/tmp/robot_bridge_errors.json"
@@ -582,13 +583,35 @@ def _stale_onebot_message_event_payload(
     event_time = _onebot_event_time(event, payload)
     if event_time is None:
         return None
-    cutoff = _bridge_started_at_epoch - _stale_onebot_message_grace_seconds
-    if event_time >= cutoff:
-        return None
+
+    received_at = time.time()
+    event_age_seconds = received_at - event_time
+    age_candidates = [(event_age_seconds, 0)]
+    age_candidates.extend(
+        (event_age_seconds - offset_seconds, offset_seconds)
+        for offset_seconds in _onebot_message_timezone_offset_candidates_seconds
+    )
+
+    for adjusted_age_seconds, _offset_seconds in age_candidates:
+        if (
+            -_stale_onebot_message_future_grace_seconds
+            <= adjusted_age_seconds
+            <= _stale_onebot_message_max_age_seconds
+        ):
+            return None
+
+    adjusted_age_seconds, timezone_offset_seconds = min(
+        age_candidates,
+        key=lambda candidate: abs(candidate[0]),
+    )
     return {
         "event_time": event_time,
-        "bridge_started_at": _bridge_started_at_epoch,
-        "grace_seconds": _stale_onebot_message_grace_seconds,
+        "received_at": received_at,
+        "event_age_seconds": event_age_seconds,
+        "adjusted_event_age_seconds": adjusted_age_seconds,
+        "timezone_offset_seconds": timezone_offset_seconds,
+        "max_age_seconds": _stale_onebot_message_max_age_seconds,
+        "future_grace_seconds": _stale_onebot_message_future_grace_seconds,
         "event_summary": _summarize_platform_event(event),
     }
 

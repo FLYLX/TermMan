@@ -138,13 +138,14 @@ def test_idle_bridge_reload_with_missing_owner_does_not_restart_proxy_worker(
     assert scheduled_reasons == []
 
 
-def test_stale_onebot_message_event_payload_ignores_startup_history(monkeypatch) -> None:
-    monkeypatch.setattr(embedded, "_bridge_started_at_epoch", 1000.0)
-    monkeypatch.setattr(embedded, "_stale_onebot_message_grace_seconds", 1.0)
+def test_stale_onebot_message_event_payload_ignores_cached_message(monkeypatch) -> None:
+    monkeypatch.setattr(embedded, "_stale_onebot_message_max_age_seconds", 60.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 300.0)
+    monkeypatch.setattr(embedded.time, "time", lambda: 1000.0)
     event = SimpleNamespace(
         model_dump=lambda: {
             "post_type": "message",
-            "time": 998,
+            "time": 900,
             "message_type": "group",
             "raw_message": "old cached message",
         }
@@ -156,16 +157,18 @@ def test_stale_onebot_message_event_payload_ignores_startup_history(monkeypatch)
     )
 
     assert stale_payload is not None
-    assert stale_payload["event_time"] == 998.0
+    assert stale_payload["event_time"] == 900.0
+    assert stale_payload["adjusted_event_age_seconds"] == 100.0
 
 
 def test_stale_onebot_message_event_payload_allows_realtime_message(monkeypatch) -> None:
-    monkeypatch.setattr(embedded, "_bridge_started_at_epoch", 1000.0)
-    monkeypatch.setattr(embedded, "_stale_onebot_message_grace_seconds", 1.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_max_age_seconds", 60.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 300.0)
+    monkeypatch.setattr(embedded.time, "time", lambda: 1000.0)
     event = SimpleNamespace(
         model_dump=lambda: {
             "post_type": "message",
-            "time": 1000,
+            "time": 995,
             "message_type": "group",
             "raw_message": "live message",
         }
@@ -180,9 +183,82 @@ def test_stale_onebot_message_event_payload_allows_realtime_message(monkeypatch)
     )
 
 
+def test_stale_onebot_message_event_payload_ignores_one_hour_old_message(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(embedded, "_stale_onebot_message_max_age_seconds", 60.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 300.0)
+    monkeypatch.setattr(embedded.time, "time", lambda: 4_600.0)
+    event = SimpleNamespace(
+        model_dump=lambda: {
+            "post_type": "message",
+            "time": 1_000,
+            "message_type": "group",
+            "raw_message": "one hour old cached message",
+        }
+    )
+
+    stale_payload = embedded._stale_onebot_message_event_payload(
+        event,
+        embedded._serialize_event_payload(event),
+    )
+
+    assert stale_payload is not None
+    assert stale_payload["adjusted_event_age_seconds"] == 3_600.0
+
+
+def test_stale_onebot_message_event_payload_allows_timezone_skewed_realtime_message(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(embedded, "_stale_onebot_message_max_age_seconds", 60.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 300.0)
+    monkeypatch.setattr(embedded.time, "time", lambda: 29_000.0)
+    event = SimpleNamespace(
+        model_dump=lambda: {
+            "post_type": "message",
+            "time": 200,
+            "message_type": "group",
+            "raw_message": "live message with timezone-skewed timestamp",
+        }
+    )
+
+    assert (
+        embedded._stale_onebot_message_event_payload(
+            event,
+            embedded._serialize_event_payload(event),
+        )
+        is None
+    )
+
+
+def test_stale_onebot_message_event_payload_ignores_timezone_skewed_cached_message(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(embedded, "_stale_onebot_message_max_age_seconds", 60.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 300.0)
+    monkeypatch.setattr(embedded.time, "time", lambda: 29_000.0)
+    event = SimpleNamespace(
+        model_dump=lambda: {
+            "post_type": "message",
+            "time": 100,
+            "message_type": "group",
+            "raw_message": "cached message with timezone-skewed timestamp",
+        }
+    )
+
+    stale_payload = embedded._stale_onebot_message_event_payload(
+        event,
+        embedded._serialize_event_payload(event),
+    )
+
+    assert stale_payload is not None
+    assert stale_payload["adjusted_event_age_seconds"] == 100.0
+    assert stale_payload["timezone_offset_seconds"] == 28800
+
+
 def test_stale_onebot_message_event_payload_ignores_non_message_events(monkeypatch) -> None:
-    monkeypatch.setattr(embedded, "_bridge_started_at_epoch", 1000.0)
-    monkeypatch.setattr(embedded, "_stale_onebot_message_grace_seconds", 1.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_max_age_seconds", 60.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 300.0)
     event = SimpleNamespace(
         model_dump=lambda: {
             "post_type": "meta_event",

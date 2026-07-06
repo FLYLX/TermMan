@@ -67,8 +67,9 @@ LAST_PLATFORM_EVENT_AT_BY_ROBOT_ID: dict[str, str] = {}
 LAST_MESSAGE_EVENT_AT_BY_ROBOT_ID: dict[str, str] = {}
 ONEBOT_SOCKET_STATUS_BY_ROBOT_ID: dict[str, dict[str, Any]] = {}
 ONEBOT_ACTIVE_CONNECTIONS: dict[str, dict[str, Any]] = {}
-ROBOT_BRIDGE_STARTED_AT_EPOCH = time.time()
-STALE_ONEBOT_MESSAGE_GRACE_SECONDS = 1.0
+STALE_ONEBOT_MESSAGE_MAX_AGE_SECONDS = 60.0
+STALE_ONEBOT_MESSAGE_FUTURE_GRACE_SECONDS = 300.0
+ONEBOT_MESSAGE_TIMEZONE_OFFSET_CANDIDATES_SECONDS = (8 * 3600,)
 ROBOT_DISPATCH_QUEUE: asyncio.Queue[RobotDispatchJob] | None = None
 ROBOT_DISPATCH_QUEUE_LOOP: asyncio.AbstractEventLoop | None = None
 ROBOT_DISPATCH_WORKER_TASKS: list[asyncio.Task[None]] = []
@@ -467,16 +468,37 @@ def _stale_onebot_message_event_payload(
     event_time = _onebot_event_time(event, payload)
     if event_time is None:
         return None
-    cutoff = ROBOT_BRIDGE_STARTED_AT_EPOCH - STALE_ONEBOT_MESSAGE_GRACE_SECONDS
-    if event_time >= cutoff:
-        return None
+
+    received_at = time.time()
+    event_age_seconds = received_at - event_time
+    age_candidates = [(event_age_seconds, 0)]
+    age_candidates.extend(
+        (event_age_seconds - offset_seconds, offset_seconds)
+        for offset_seconds in ONEBOT_MESSAGE_TIMEZONE_OFFSET_CANDIDATES_SECONDS
+    )
+
+    for adjusted_age_seconds, _offset_seconds in age_candidates:
+        if (
+            -STALE_ONEBOT_MESSAGE_FUTURE_GRACE_SECONDS
+            <= adjusted_age_seconds
+            <= STALE_ONEBOT_MESSAGE_MAX_AGE_SECONDS
+        ):
+            return None
+
+    adjusted_age_seconds, timezone_offset_seconds = min(
+        age_candidates,
+        key=lambda candidate: abs(candidate[0]),
+    )
     return {
         "event_time": event_time,
-        "bridge_started_at": ROBOT_BRIDGE_STARTED_AT_EPOCH,
-        "grace_seconds": STALE_ONEBOT_MESSAGE_GRACE_SECONDS,
+        "received_at": received_at,
+        "event_age_seconds": event_age_seconds,
+        "adjusted_event_age_seconds": adjusted_age_seconds,
+        "timezone_offset_seconds": timezone_offset_seconds,
+        "max_age_seconds": STALE_ONEBOT_MESSAGE_MAX_AGE_SECONDS,
+        "future_grace_seconds": STALE_ONEBOT_MESSAGE_FUTURE_GRACE_SECONDS,
         "event_summary": _summarize_event_payload(payload),
     }
-
 
 def _is_onebot_websocket_scope(scope: dict[str, Any]) -> bool:
     if scope.get("type") != "websocket":
