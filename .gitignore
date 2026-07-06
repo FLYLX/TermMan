@@ -18,3 +18,5 @@ node_modules/
 /playwright/.cache/
 /workdir/*
 !/workdir/.gitkeep
+/daemon/workdir/*
+!/daemon/workdir/.gitkeep

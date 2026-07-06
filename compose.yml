@@ -204,7 +204,7 @@ services:
       - BACKEND_URL=${DAEMON_BACKEND_URL:-http://backend:8000}
     volumes:
       - ./daemon/log:/app/log
-      - ./workdir:/app/src/workdir
+      - ./daemon/workdir:/app/src/workdir
       - ./daemon/src/data:/app/src/data
 
 volumes:
