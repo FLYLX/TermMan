@@ -1180,6 +1180,8 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     assert "sender: Alice (u1)" in prompt
     assert "最终 assistant 文本是 TermMan 内部回复" in prompt
     assert "mcp_robot_send_message" in prompt
+    assert "mcp_robot_sleep_conversation" in prompt
+    assert "trigger=active_chat_window" in prompt
     assert "当前 QQ 会话" in prompt
     assert "只调用 `mcp_robot_send_message` 并只传 `text` 或 `messages`" in prompt
     assert "不要在单条 QQ 消息里写空行" in prompt

@@ -17,6 +17,15 @@ NO_QQ_REPLY_INSTRUCTION = (
     "内部最终回复只返回 `[no_qq_reply]`。"
 )
 
+ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION = (
+    "- For a QQ `trigger=active_chat_window` turn, this group/private chat is "
+    "only in a short judgement window after the bot was woken. If the current "
+    "message is ordinary group chatter, is aimed at someone else, or is not "
+    "continuing the bot conversation, call `mcp_robot_sleep_conversation` with "
+    "no arguments. Do not call `mcp_robot_send_message`, and do not answer with "
+    "a visible explanation. This closes the current robot conversation "
+    "controller until someone wakes the bot again by @ or reply.\n"
+)
 ROBOT_MESSAGING_PROMPT = (
     "QQ MCP Skill：\n\n"
     "这个 skill 提供 QQ 机器人 MCP 能力，不提供人格。\n"
@@ -48,6 +57,7 @@ ROBOT_ACTIVE_CONTEXT_PROMPT = (
     "- 历史或 .log 里的 `Executing tool`、`Message sent`、`[no_qq_reply]` 只可能是旧内部轨迹，不是本轮发送结果。\n"
     "- 历史或 .log 里的旧 assistant/user 轮次都已经处理过，不要因为看见它们再次发送相同回复。\n"
     "- 不要回复普通群聊闲聊或发给别人的消息。不要发送隐藏推理、工具轨迹、原始日志或长摘要。\n"
+    f"{ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION}"
     f"{NO_QQ_REPLY_INSTRUCTION}"
 )
 
@@ -63,6 +73,7 @@ ROBOT_REFLECTION_PROMPT = (
     "QQ 回复反思：\n"
     "- 调用 `mcp_robot_send_message` 前，先静默判断 QQ 是否真的需要收到回复。\n"
     "- @、回复机器人、活跃窗口触发只是候选延续，不等于自动允许发送。\n"
+    f"{ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION}"
     f"{NO_QQ_REPLY_INSTRUCTION}"
 )
 
@@ -156,7 +167,9 @@ def build_robot_delivery_reflection_prompt(final_response: str) -> str:
         "如果当前 QQ 消息确实在叫机器人、延续/纠正机器人对话、请求有用回复，"
         "或显式唤醒机器人，就调用 `mcp_robot_send_message` 发送到锁定的当前 QQ 会话。"
         "如果只是普通群聊、发给别人、或 QQ 侧无需回复，不要调用工具；"
-        "内部最终回复只返回 `[no_qq_reply]`。不要输出这段反思本身。"
+        "内部最终回复只返回 `[no_qq_reply]`。不要输出这段反思本身。\n"
+        "For `trigger=active_chat_window`, if this is ordinary group chatter or not for the bot, "
+        "call `mcp_robot_sleep_conversation` with no arguments instead of returning only `[no_qq_reply]`."
     )
 
 

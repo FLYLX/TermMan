@@ -651,8 +651,11 @@ def test_private_robot_message_passes_context_stamp_to_agent(
 
     assert response.success is True
     assert captured["job"].message == (
-        "[Robot message; conversation=private:u1; trigger=plain; sender=Alice (u1)]\nhello"
+        "[Robot message; conversation=private:u1; trigger=private_chat; sender=Alice (u1)]\n[Current QQ message]\nhello"
     )
+    assert captured["job"].direct_reply_trigger is True
+    assert captured["job"].reply_requires_awake is True
+    assert captured["job"].conversation_generation > 0
     assert response.reply_chunks == []
 
 
@@ -1586,6 +1589,92 @@ def test_conversation_controller_rejects_stale_generation_after_sleep(
     )
 
 
+def test_private_message_wakes_its_conversation_controller(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["private"],
+            "reply_context_window_seconds": 10,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+
+    def fake_enqueue_chat_job(job) -> bool:
+        queued_jobs.append(job)
+        return True
+
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+
+    first = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "hello private",
+            sender_key="onebot_v11:private:u1",
+            target={"id": "u1", "private": True},
+            sender={"user_id": "u1", "display_name": "Alice"},
+        ),
+    )
+    assert first.ignored is False
+    first_job = queued_jobs[-1]
+    assert first_job.conversation_key == "private:u1"
+    assert first_job.direct_reply_trigger is True
+    assert first_job.reply_requires_awake is True
+    assert first_job.conversation_generation > 0
+
+    robot_service._apply_reply_context_result(
+        robot,
+        first_job.conversation_key,
+        robot_message_sent=True,
+        reply_target=first_job.reply_target,
+        conversation_generation=first_job.conversation_generation,
+    )
+
+    robot_service.sleep_conversation_controller(
+        robot.id,
+        first_job.conversation_key,
+        reason="test_private_sleep",
+    )
+    assert not robot_service.conversation_controller_allows_reply(
+        robot.id,
+        first_job.conversation_key,
+        first_job.conversation_generation,
+        requires_awake=True,
+    )
+
+    wake = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "hello again",
+            sender_key="onebot_v11:private:u1",
+            target={"id": "u1", "private": True},
+            sender={"user_id": "u1", "display_name": "Alice"},
+        ),
+    )
+    assert wake.ignored is False
+    assert len(queued_jobs) == 2
+    assert queued_jobs[-1].conversation_generation > first_job.conversation_generation
+
+
 def test_reply_context_expiry_sleeps_group_conversation_until_direct_wakeup(
     db: Session,
     monkeypatch,
@@ -1658,6 +1747,99 @@ def test_reply_context_expiry_sleeps_group_conversation_until_direct_wakeup(
     assert queued_jobs[-1].conversation_generation > queued_jobs[0].conversation_generation
 
 
+def test_active_chat_window_no_reply_sleeps_group_controller_until_direct_wakeup(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["group", "mention"],
+            "reply_context_window_seconds": 10,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+
+    def fake_enqueue_chat_job(job) -> bool:
+        queued_jobs.append(job)
+        return True
+
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+
+    first = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("hello mention", target={"id": "g1"}, mentioned_bot=True),
+    )
+    assert first.ignored is False
+    first_job = queued_jobs[-1]
+    robot_service._apply_reply_context_result(
+        robot,
+        first_job.conversation_key,
+        robot_message_sent=True,
+        reply_target=first_job.reply_target,
+        conversation_generation=first_job.conversation_generation,
+    )
+
+    active_plain = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("ordinary group chatter", target={"id": "g1"}),
+    )
+    assert active_plain.ignored is False
+    assert len(queued_jobs) == 2
+    active_job = queued_jobs[-1]
+    assert active_job.reply_context_active is True
+    assert active_job.direct_reply_trigger is False
+
+    robot_service._apply_reply_context_result(
+        robot,
+        active_job.conversation_key,
+        robot_message_sent=False,
+        reply_target=active_job.reply_target,
+        conversation_generation=active_job.conversation_generation,
+        sleep_when_no_reply=True,
+    )
+
+    sleeping_plain = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("more ordinary group chatter", target={"id": "g1"}),
+    )
+    assert sleeping_plain.success is True
+    assert sleeping_plain.ignored is True
+    assert sleeping_plain.reason == "conversation_sleeping"
+    assert len(queued_jobs) == 2
+    assert not robot_service.conversation_controller_allows_reply(
+        robot.id,
+        active_job.conversation_key,
+        active_job.conversation_generation,
+        requires_awake=True,
+    )
+
+    wake = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("wake again", target={"id": "g1"}, mentioned_bot=True),
+    )
+    assert wake.ignored is False
+    assert len(queued_jobs) == 3
+    assert queued_jobs[-1].conversation_generation > active_job.conversation_generation
 def test_sleep_command_blocks_group_messages_until_direct_wakeup(
     db: Session,
     monkeypatch,

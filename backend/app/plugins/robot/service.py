@@ -253,6 +253,7 @@ class RobotService:
                     robot_message_sent=response.robot_message_sent,
                     reply_target=job.reply_target,
                     conversation_generation=job.conversation_generation or None,
+                    sleep_when_no_reply=job.reply_context_active and not job.direct_reply_trigger,
                 )
                 response_text = response.content
             except RobotServiceError as exc:
@@ -1036,6 +1037,7 @@ class RobotService:
         return bool(
             message.reply_target.metadata.get("mentioned_bot")
             or message.reply_target.metadata.get("replied_to_bot")
+            or self._conversation_message_type(message) == REPLY_MESSAGE_TYPE_PRIVATE
         )
 
     def _reply_context_key(
@@ -1402,6 +1404,7 @@ class RobotService:
         robot_message_sent: bool,
         reply_target: RobotReplyTarget,
         conversation_generation: int | None = None,
+        sleep_when_no_reply: bool = False,
     ) -> None:
         if robot_message_sent:
             self._remember_reply_context_window_for_key(
@@ -1409,6 +1412,14 @@ class RobotService:
                 conversation_key,
                 metadata=reply_target.metadata,
                 expected_generation=conversation_generation,
+            )
+            return
+
+        if sleep_when_no_reply:
+            self.sleep_conversation_controller(
+                robot.id,
+                conversation_key,
+                reason="agent_no_reply_active_chat_window",
             )
             return
 
@@ -1547,6 +1558,8 @@ class RobotService:
             return "reply_to_bot"
         if bool(message.reply_target.metadata.get("mentioned_bot")):
             return "mention_bot"
+        if self._conversation_message_type(message) == REPLY_MESSAGE_TYPE_PRIVATE:
+            return "private_chat"
         if reply_context_active and not direct_reply_trigger:
             return "active_chat_window"
         return "plain"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 ROBOT_SEND_TOOL_NAME = "mcp_robot_send_message"
+ROBOT_SLEEP_TOOL_NAME = "mcp_robot_sleep_conversation"
 NO_QQ_REPLY_MARKER = "[no_qq_reply]"
 
 
@@ -34,6 +35,11 @@ def _contains_robot_send_tool_execution(line: str) -> bool:
     )
 
 
+def _contains_robot_sleep_tool_execution(line: str) -> bool:
+    return ROBOT_SLEEP_TOOL_NAME in line and (
+        "Executing tool:" in line or "鎵ц宸ュ叿:" in line
+    )
+
 def _is_robot_send_success_line(line: str) -> bool:
     return (
         line.startswith("Message sent to QQ ")
@@ -57,6 +63,7 @@ def _is_no_qq_reply_marker_line(line: str) -> bool:
 def _is_internal_send_trace_line(line: str) -> bool:
     return (
         _contains_robot_send_tool_execution(line)
+        or _contains_robot_sleep_tool_execution(line)
         or _contains_robot_send_success(line)
         or _is_no_qq_reply_marker_line(line)
         or "No QQ message sent:" in line

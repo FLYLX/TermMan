@@ -198,7 +198,9 @@ class RobotMCPServer:
             description=(
                 "Put the current QQ conversation to sleep. Use this only in an "
                 "incoming QQ-triggered context when the current sender asks the "
-                "bot to sleep, stop replying, be quiet, or not answer this chat. "
+                "bot to sleep, stop replying, be quiet, or not answer this chat, "
+                "or when a `trigger=active_chat_window` message is ordinary "
+                "group chatter not addressed to the bot. "
                 "It closes the robot controller for this group/private chat until "
                 "someone wakes the bot again by mentioning or replying to it."
             ),
