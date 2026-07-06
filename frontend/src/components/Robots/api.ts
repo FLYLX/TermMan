@@ -67,6 +67,37 @@ export type RobotBindingRecord = {
   is_default_target: boolean
 }
 
+export type RobotConversationControllerStatus = {
+  robot_id: string
+  conversation_key: string
+  conversation_type: string
+  conversation_id: string
+  item_id: string | null
+  status: "awake" | "sleeping"
+  awake: boolean
+  sleeping: boolean
+  generation: number
+  expires_at: string | null
+  updated_at: string
+  seconds_remaining: number
+}
+
+export type ItemRobotControllerStatusRecord = {
+  robot_id: string
+  robot_name: string
+  is_enabled: boolean
+  allow_chat: boolean
+  route_key: string
+  reply_context_window_seconds: number
+  conversation_controllers: RobotConversationControllerStatus[]
+}
+
+export type ItemRobotControllerStatusResponse = {
+  item_id: string
+  robots: ItemRobotControllerStatusRecord[]
+  count: number
+}
+
 export type RobotPlatformField = {
   key: string
   label: string
@@ -113,6 +144,10 @@ export function getRobotBindingsQueryKey(robotId: string) {
   return ["robot-bindings", robotId] as const
 }
 
+export function getItemRobotControllerStatusQueryKey(itemId: string) {
+  return ["item-robot-controller-status", itemId] as const
+}
+
 export async function listRobots() {
   return apiRequest<RobotListResponse>("/api/v1/robots/")
 }
@@ -123,6 +158,12 @@ export async function readRobot(robotId: string) {
 
 export async function listRobotPlatforms() {
   return apiRequest<RobotPlatformRecord[]>("/api/v1/robots/platforms")
+}
+
+export async function getItemRobotControllerStatus(itemId: string) {
+  return apiRequest<ItemRobotControllerStatusResponse>(
+    `/api/v1/robots/items/${itemId}/conversation-controllers`,
+  )
 }
 
 export async function createRobot(payload: CreateRobotPayload) {

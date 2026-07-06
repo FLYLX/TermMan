@@ -8,6 +8,7 @@ import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from math import ceil
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
@@ -1395,6 +1396,66 @@ class RobotService:
             },
         )
         return True
+
+    def reply_context_window_seconds(self, robot: Robot) -> int:
+        return self._reply_context_window_seconds(robot)
+
+    def conversation_controller_snapshots(
+        self,
+        robot_ids: set[uuid.UUID | str] | None = None,
+        item_ids: set[uuid.UUID | str] | None = None,
+    ) -> list[dict[str, object]]:
+        allowed_robot_ids = (
+            {str(robot_id) for robot_id in robot_ids} if robot_ids else None
+        )
+        allowed_item_ids = {str(item_id) for item_id in item_ids} if item_ids else None
+        now = self._now()
+        snapshots: list[dict[str, object]] = []
+        with self._lock:
+            self._prune_conversation_controllers_locked(now)
+            for (
+                robot_id,
+                conversation_key,
+            ), controller in self._conversation_controllers.items():
+                if allowed_robot_ids is not None and robot_id not in allowed_robot_ids:
+                    continue
+                route_state = self._conversation_routes.get((robot_id, conversation_key))
+                route_item_id = route_state.item_id if route_state else None
+                if (
+                    allowed_item_ids is not None
+                    and str(route_item_id or "") not in allowed_item_ids
+                ):
+                    continue
+                awake = self._controller_is_awake_locked(controller, now)
+                expires_at = controller.expires_at
+                seconds_remaining = (
+                    max(0, ceil((expires_at - now).total_seconds()))
+                    if expires_at is not None
+                    else 0
+                )
+                conversation_type, _, conversation_id = conversation_key.partition(":")
+                snapshots.append(
+                    {
+                        "robot_id": robot_id,
+                        "conversation_key": conversation_key,
+                        "conversation_type": conversation_type,
+                        "conversation_id": conversation_id,
+                        "item_id": str(route_item_id) if route_item_id else None,
+                        "status": "awake" if awake else "sleeping",
+                        "awake": awake,
+                        "sleeping": not awake,
+                        "generation": controller.generation,
+                        "expires_at": expires_at.isoformat() if expires_at else None,
+                        "updated_at": controller.updated_at.isoformat(),
+                        "seconds_remaining": seconds_remaining,
+                    }
+                )
+
+        snapshots.sort(
+            key=lambda item: str(item.get("updated_at") or ""),
+            reverse=True,
+        )
+        return snapshots
 
     def _apply_reply_context_result(
         self,

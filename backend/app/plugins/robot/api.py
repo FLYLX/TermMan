@@ -284,6 +284,57 @@ def read_robots(
     return RobotsPublic(data=robots, count=len(robots))
 
 
+@router.get("/items/{item_id}/conversation-controllers")
+def get_item_robot_conversation_controllers(
+    session: SessionDep,
+    current_user: CurrentUser,
+    item_id: uuid.UUID,
+) -> dict:
+    item = get_item_or_404(session, item_id)
+    assert_item_permission(item, current_user)
+
+    bindings = session.exec(
+        select(RobotItem).where(RobotItem.item_id == item_id)
+    ).all()
+    visible_bindings: list[tuple[RobotItem, Robot]] = []
+    robot_ids: set[uuid.UUID] = set()
+    for binding in bindings:
+        robot = session.get(Robot, binding.robot_id)
+        if not robot:
+            continue
+        if not current_user.is_superuser and robot.owner_id != current_user.id:
+            continue
+        visible_bindings.append((binding, robot))
+        robot_ids.add(robot.id)
+
+    snapshots_by_robot: dict[str, list[dict[str, object]]] = {}
+    for snapshot in robot_service.conversation_controller_snapshots(
+        robot_ids,
+        item_ids={item.id},
+    ):
+        snapshots_by_robot.setdefault(str(snapshot.get("robot_id") or ""), []).append(
+            snapshot
+        )
+
+    robots: list[dict[str, object]] = []
+    for binding, robot in visible_bindings:
+        robots.append(
+            {
+                "robot_id": str(robot.id),
+                "robot_name": robot.name,
+                "is_enabled": robot.is_enabled,
+                "allow_chat": binding.allow_chat,
+                "route_key": robot_service.build_route_key(item, binding),
+                "reply_context_window_seconds": robot_service.reply_context_window_seconds(
+                    robot
+                ),
+                "conversation_controllers": snapshots_by_robot.get(str(robot.id), []),
+            }
+        )
+
+    return {"item_id": str(item.id), "robots": robots, "count": len(robots)}
+
+
 @router.get("/{id}", response_model=RobotPublic)
 def read_robot(
     session: SessionDep,

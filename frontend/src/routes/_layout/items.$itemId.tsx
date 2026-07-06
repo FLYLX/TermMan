@@ -2,11 +2,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   AlertCircle,
+  Bot,
   Check,
   ChevronRight,
   Copy,
   Filter,
   Loader2,
+  Moon,
   Play,
   Plug,
   RefreshCw,
@@ -15,6 +17,7 @@ import {
   Shield,
   Square,
   Terminal,
+  Timer,
   Trash2,
   Users,
   WifiOff,
@@ -34,6 +37,13 @@ import {
   FilterRuleEditor,
 } from "@/components/Items/FilterRuleEditor"
 import { ItemFilesPanel } from "@/components/Items/ItemFilesPanel"
+import {
+  getItemRobotControllerStatus,
+  getItemRobotControllerStatusQueryKey,
+  type ItemRobotControllerStatusRecord,
+  type ItemRobotControllerStatusResponse,
+  type RobotConversationControllerStatus,
+} from "@/components/Robots/api"
 import ItemHandlersList from "@/components/Items/ItemHandlersList"
 import {
   createFallbackItem,
@@ -464,6 +474,186 @@ function StatusBadge({
   }
 }
 
+type RobotControllerRow = {
+  robot: ItemRobotControllerStatusRecord
+  controller: RobotConversationControllerStatus
+}
+
+function getRobotControllerRows(
+  data: ItemRobotControllerStatusResponse | undefined,
+): RobotControllerRow[] {
+  if (!data) {
+    return []
+  }
+
+  return data.robots
+    .filter((robot) => robot.is_enabled && robot.allow_chat)
+    .flatMap((robot) =>
+      robot.conversation_controllers.map((controller) => ({
+        robot,
+        controller,
+      })),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(right.controller.updated_at || "") -
+        Date.parse(left.controller.updated_at || ""),
+    )
+}
+
+function getEnabledRobotCount(
+  data: ItemRobotControllerStatusResponse | undefined,
+) {
+  return (data?.robots || []).filter(
+    (robot) => robot.is_enabled && robot.allow_chat,
+  ).length
+}
+
+function getLatestRobotControllerRow(
+  data: ItemRobotControllerStatusResponse | undefined,
+) {
+  const rows = getRobotControllerRows(data)
+  return rows.find((row) => row.controller.awake) || rows[0] || null
+}
+
+function formatRobotSleepCountdown(seconds: number | null | undefined) {
+  const safeSeconds = Math.max(0, Math.ceil(Number(seconds || 0)))
+  if (safeSeconds < 60) {
+    return `${safeSeconds}s`
+  }
+
+  const minutes = Math.floor(safeSeconds / 60)
+  const remainder = safeSeconds % 60
+  return remainder > 0 ? `${minutes}m ${remainder}s` : `${minutes}m`
+}
+
+function getRobotConversationLabel(
+  controller: RobotConversationControllerStatus,
+) {
+  return (
+    controller.conversation_key ||
+    `${controller.conversation_type}:${controller.conversation_id}`
+  )
+}
+
+function RobotSleepStatusBadge({
+  data,
+  isFetching,
+}: {
+  data: ItemRobotControllerStatusResponse | undefined
+  isFetching: boolean
+}) {
+  const { t } = useI18n()
+  if (!data || data.count === 0) {
+    return null
+  }
+
+  const enabledRobotCount = getEnabledRobotCount(data)
+  if (enabledRobotCount === 0) {
+    return (
+      <Badge variant="outline" className="border-slate-500/40 text-slate-500">
+        <Bot className="mr-1 size-3" />
+        {t("items.detail.qqDisabled")}
+      </Badge>
+    )
+  }
+
+  const latest = getLatestRobotControllerRow(data)
+  const isAwake = Boolean(latest?.controller.awake)
+  const label = isAwake
+    ? t("items.detail.qqAwakeCountdown", {
+        time: formatRobotSleepCountdown(
+          latest?.controller.seconds_remaining || 0,
+        ),
+      })
+    : latest
+      ? t("items.detail.qqSleeping")
+      : t("items.detail.qqWaitingWake")
+
+  return (
+    <Badge
+      variant="outline"
+      className={
+        isAwake
+          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+          : "border-slate-500/40 bg-slate-500/10 text-slate-600 dark:text-slate-300"
+      }
+    >
+      {isAwake ? (
+        <Timer className="mr-1 size-3" />
+      ) : (
+        <Moon className="mr-1 size-3" />
+      )}
+      {label}
+      {isFetching && <Loader2 className="ml-1 size-3 animate-spin" />}
+    </Badge>
+  )
+}
+
+function RobotSleepTerminalLine({
+  data,
+  isFetching,
+}: {
+  data: ItemRobotControllerStatusResponse | undefined
+  isFetching: boolean
+}) {
+  const { t } = useI18n()
+  if (!data || data.count === 0) {
+    return null
+  }
+
+  const enabledRobotCount = getEnabledRobotCount(data)
+  const latest = getLatestRobotControllerRow(data)
+  const fallbackRobot = data.robots.find(
+    (robot) => robot.is_enabled && robot.allow_chat,
+  )
+  const isAwake = Boolean(latest?.controller.awake)
+  const statusText =
+    enabledRobotCount === 0
+      ? t("items.detail.qqDisabled")
+      : isAwake
+        ? t("items.detail.qqAwake")
+        : latest
+          ? t("items.detail.qqSleeping")
+          : t("items.detail.qqWaitingWake")
+
+  return (
+    <div className="mb-3 flex min-h-9 flex-wrap items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs text-slate-300">
+      <Bot className="size-3.5 text-cyan-300" />
+      <span className="font-medium text-slate-200">
+        {latest?.robot.robot_name || fallbackRobot?.robot_name || "QQ"}
+      </span>
+      <span
+        className={`rounded-full px-2 py-0.5 font-medium ${
+          isAwake
+            ? "bg-emerald-500/15 text-emerald-300"
+            : "bg-slate-700/70 text-slate-300"
+        }`}
+      >
+        {statusText}
+      </span>
+      {latest ? (
+        <span className="font-mono text-slate-400">
+          {getRobotConversationLabel(latest.controller)}
+        </span>
+      ) : null}
+      {isAwake ? (
+        <span className="inline-flex items-center gap-1 font-mono text-emerald-300">
+          <Timer className="size-3" />
+          {t("items.detail.qqSleepIn", {
+            time: formatRobotSleepCountdown(
+              latest?.controller.seconds_remaining || 0,
+            ),
+          })}
+        </span>
+      ) : null}
+      {isFetching && (
+        <Loader2 className="ml-auto size-3 animate-spin text-slate-500" />
+      )}
+    </div>
+  )
+}
+
 function ItemDetailPage({
   item,
   isUsingFallback,
@@ -485,6 +675,17 @@ function ItemDetailPage({
     plugins,
     "termman.terminal_ws",
   )
+  const robotPluginEnabled = isPluginEnabled(plugins, "termman.robot")
+  const {
+    data: robotControllerStatus,
+    isFetching: isFetchingRobotControllerStatus,
+  } = useQuery({
+    queryKey: getItemRobotControllerStatusQueryKey(item.id),
+    queryFn: () => getItemRobotControllerStatus(item.id),
+    enabled: Boolean(item.id && robotPluginEnabled),
+    refetchInterval: 1000,
+    retry: false,
+  })
   const [command, setCommand] = useState("")
   const [activeTab, setActiveTab] = useState<ItemDetailTab>("terminal")
   const [visitedTabs, setVisitedTabs] = useState<Set<ItemDetailTab>>(
@@ -1547,6 +1748,10 @@ function ItemDetailPage({
                               {t("common.disconnected")}
                             </Badge>
                           )}
+                          <RobotSleepStatusBadge
+                            data={robotControllerStatus}
+                            isFetching={isFetchingRobotControllerStatus}
+                          />
                         </div>
                       </div>
 
@@ -1559,6 +1764,10 @@ function ItemDetailPage({
                             {t("items.detail.terminal")} - {item.title}
                           </span>
                         </div>
+                        <RobotSleepTerminalLine
+                          data={robotControllerStatus}
+                          isFetching={isFetchingRobotControllerStatus}
+                        />
 
                         {isConnecting ? (
                           <div className="h-[34rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] flex flex-col items-center justify-center gap-4 px-4 py-8">
