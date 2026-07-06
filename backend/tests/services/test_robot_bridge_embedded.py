@@ -140,7 +140,7 @@ def test_idle_bridge_reload_with_missing_owner_does_not_restart_proxy_worker(
 
 def test_stale_onebot_message_event_payload_ignores_cached_message(monkeypatch) -> None:
     monkeypatch.setattr(embedded, "_stale_onebot_message_max_age_seconds", 60.0)
-    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 300.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 900.0)
     monkeypatch.setattr(embedded.time, "time", lambda: 1000.0)
     event = SimpleNamespace(
         model_dump=lambda: {
@@ -163,7 +163,7 @@ def test_stale_onebot_message_event_payload_ignores_cached_message(monkeypatch) 
 
 def test_stale_onebot_message_event_payload_allows_realtime_message(monkeypatch) -> None:
     monkeypatch.setattr(embedded, "_stale_onebot_message_max_age_seconds", 60.0)
-    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 300.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 900.0)
     monkeypatch.setattr(embedded.time, "time", lambda: 1000.0)
     event = SimpleNamespace(
         model_dump=lambda: {
@@ -187,7 +187,7 @@ def test_stale_onebot_message_event_payload_ignores_one_hour_old_message(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(embedded, "_stale_onebot_message_max_age_seconds", 60.0)
-    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 300.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 900.0)
     monkeypatch.setattr(embedded.time, "time", lambda: 4_600.0)
     event = SimpleNamespace(
         model_dump=lambda: {
@@ -211,7 +211,7 @@ def test_stale_onebot_message_event_payload_allows_timezone_skewed_realtime_mess
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(embedded, "_stale_onebot_message_max_age_seconds", 60.0)
-    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 300.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 900.0)
     monkeypatch.setattr(embedded.time, "time", lambda: 29_000.0)
     event = SimpleNamespace(
         model_dump=lambda: {
@@ -231,11 +231,35 @@ def test_stale_onebot_message_event_payload_allows_timezone_skewed_realtime_mess
     )
 
 
+def test_stale_onebot_message_event_payload_allows_timezone_skewed_realtime_clock_drift(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(embedded, "_stale_onebot_message_max_age_seconds", 60.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 900.0)
+    monkeypatch.setattr(embedded.time, "time", lambda: 29_000.0)
+    event = SimpleNamespace(
+        model_dump=lambda: {
+            "post_type": "message",
+            "time": 701,
+            "message_type": "private",
+            "raw_message": "live message with timezone and clock skew",
+        }
+    )
+
+    assert (
+        embedded._stale_onebot_message_event_payload(
+            event,
+            embedded._serialize_event_payload(event),
+        )
+        is None
+    )
+
+
 def test_stale_onebot_message_event_payload_ignores_timezone_skewed_cached_message(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(embedded, "_stale_onebot_message_max_age_seconds", 60.0)
-    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 300.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 900.0)
     monkeypatch.setattr(embedded.time, "time", lambda: 29_000.0)
     event = SimpleNamespace(
         model_dump=lambda: {
@@ -258,7 +282,7 @@ def test_stale_onebot_message_event_payload_ignores_timezone_skewed_cached_messa
 
 def test_stale_onebot_message_event_payload_ignores_non_message_events(monkeypatch) -> None:
     monkeypatch.setattr(embedded, "_stale_onebot_message_max_age_seconds", 60.0)
-    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 300.0)
+    monkeypatch.setattr(embedded, "_stale_onebot_message_future_grace_seconds", 900.0)
     event = SimpleNamespace(
         model_dump=lambda: {
             "post_type": "meta_event",

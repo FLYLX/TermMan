@@ -18,6 +18,7 @@ from app.plugins.robot.platforms import (
     send_text_with_bot,
 )
 from app.plugins.robot.service import robot_service
+from app.services.agent.chat_runtime import ChatResponseResult
 from tests.utils.item import create_random_item
 from tests.utils.robot import create_random_robot
 
@@ -1292,8 +1293,10 @@ def test_reply_context_window_is_scoped_to_current_conversation(
             sender={"user_id": "u2", "display_name": "Bob"},
         ),
     )
-    assert other_private.ignored is True
-    assert other_private.reason == "reply_message_type_disabled"
+    assert other_private.ignored is False
+    assert queued_jobs[-1].conversation_key == "private:u2"
+    assert queued_jobs[-1].direct_reply_trigger is True
+    assert queued_jobs[-1].reply_requires_awake is True
 
     same_group = robot_service.handle_inbound_message(
         db,
@@ -1306,18 +1309,23 @@ def test_reply_context_window_is_scoped_to_current_conversation(
         ),
     )
     assert same_group.ignored is False
+    same_group_job = queued_jobs[-1]
     assert queued_jobs[0].message == (
         "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1)]\n"
         "[Current QQ message]\nhello mention"
     )
-    assert "[Recent QQ conversation context" not in queued_jobs[1].message
-    assert "- Alice (u1): hello mention" not in queued_jobs[1].message
-    assert "plain in another group" not in queued_jobs[1].message
-    assert "plain in private" not in queued_jobs[1].message
-    assert queued_jobs[1].message == (
+    assert same_group_job.conversation_key == "group:g1"
+    assert same_group_job.reply_context_active is True
+    assert same_group_job.direct_reply_trigger is False
+    assert "[Recent QQ conversation context" not in same_group_job.message
+    assert "- Alice (u1): hello mention" not in same_group_job.message
+    assert "plain in another group" not in same_group_job.message
+    assert "plain in private" not in same_group_job.message
+    assert same_group_job.message == (
         "[Robot message; conversation=group:g1; trigger=active_chat_window; sender=Carol (u3)]\n"
         "[Current QQ message]\nplain in same group"
     )
+
 
 def test_direct_wakeup_agent_message_only_includes_current_message(
     db: Session,
@@ -1673,6 +1681,67 @@ def test_private_message_wakes_its_conversation_controller(
     assert wake.ignored is False
     assert len(queued_jobs) == 2
     assert queued_jobs[-1].conversation_generation > first_job.conversation_generation
+
+
+def test_direct_wakeup_job_reaches_agent_even_if_controller_window_expires(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "reply_context_window_seconds": 10,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+
+    def fake_enqueue_chat_job(job) -> bool:
+        queued_jobs.append(job)
+        return True
+
+    now = robot_service._now()
+    current_time = {"value": now}
+    monkeypatch.setattr(robot_service, "_now", lambda: current_time["value"])
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("wake after delay", target={"id": "g1"}, mentioned_bot=True),
+    )
+    assert response.ignored is False
+    job = queued_jobs[-1]
+    assert job.direct_reply_trigger is True
+    assert job.reply_requires_awake is True
+
+    current_time["value"] = now + timedelta(seconds=11)
+    captured_messages: list[str] = []
+
+    async def fake_chat_with_item(**kwargs):
+        captured_messages.append(str(kwargs["message"]))
+        return ChatResponseResult(content="", robot_message_sent=False)
+
+    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
+
+    robot_service._process_chat_job(job)
+
+    assert captured_messages == [job.message]
 
 
 def test_reply_context_expiry_sleeps_group_conversation_until_direct_wakeup(

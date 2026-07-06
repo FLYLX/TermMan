@@ -215,11 +215,14 @@ class RobotService:
                 return
 
             try:
+                dispatch_requires_awake = (
+                    job.reply_requires_awake and not job.direct_reply_trigger
+                )
                 if not self.conversation_controller_allows_reply(
                     job.robot_id,
                     job.conversation_key,
                     job.conversation_generation,
-                    requires_awake=job.reply_requires_awake,
+                    requires_awake=dispatch_requires_awake,
                 ):
                     record_robot_event(
                         str(job.robot_id),
