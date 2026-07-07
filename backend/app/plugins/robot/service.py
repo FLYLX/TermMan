@@ -75,6 +75,7 @@ class RobotConversationController:
     updated_at: datetime
     expires_at: datetime | None = None
     sleeping: bool = False
+    processing: bool = False
 
 
 @dataclass(frozen=True)
@@ -1169,6 +1170,8 @@ class RobotService:
     ) -> bool:
         if controller.sleeping:
             return False
+        if controller.processing:
+            return True
         if controller.expires_at is None:
             return False
         if controller.expires_at <= now:
@@ -1227,9 +1230,7 @@ class RobotService:
         *,
         metadata: dict[str, object] | None = None,
     ) -> int:
-        window_seconds = self._reply_context_window_seconds(robot)
         now = self._now()
-        expires_at = now + timedelta(seconds=window_seconds) if window_seconds > 0 else None
         with self._lock:
             self._prune_conversation_controllers_locked(now)
             controller = self._get_or_create_controller_locked(
@@ -1239,24 +1240,22 @@ class RobotService:
             )
             controller.generation += 1
             controller.sleeping = False
-            controller.expires_at = expires_at
+            controller.processing = True
+            controller.expires_at = None
             controller.updated_at = now
             generation = controller.generation
-        if expires_at is not None:
-            metadata = metadata or {}
-            record_robot_event(
-                str(robot.id),
-                direction="backend",
-                event="reply_context_window_refreshed",
-                payload={
-                    "conversation": conversation_key,
-                    "generation": generation,
-                    "window_seconds": window_seconds,
-                    "expires_at": expires_at.isoformat(),
-                    "mentioned_bot": bool(metadata.get("mentioned_bot")),
-                    "replied_to_bot": bool(metadata.get("replied_to_bot")),
-                },
-            )
+        metadata = metadata or {}
+        record_robot_event(
+            str(robot.id),
+            direction="backend",
+            event="conversation_controller_processing",
+            payload={
+                "conversation": conversation_key,
+                "generation": generation,
+                "mentioned_bot": bool(metadata.get("mentioned_bot")),
+                "replied_to_bot": bool(metadata.get("replied_to_bot")),
+            },
+        )
         return generation
 
     def _is_reply_context_active(
@@ -1294,6 +1293,12 @@ class RobotService:
     ) -> None:
         window_seconds = self._reply_context_window_seconds(robot)
         if window_seconds <= 0:
+            self._clear_reply_context_window_for_key(
+                robot.id,
+                conversation_key,
+                reason="reply_context_window_disabled",
+                expected_generation=expected_generation,
+            )
             return
 
         now = self._now()
@@ -1310,6 +1315,7 @@ class RobotService:
                 return
             controller.expires_at = expires_at
             controller.sleeping = False
+            controller.processing = False
             controller.updated_at = now
             generation = controller.generation
         metadata = metadata or {}
@@ -1346,8 +1352,9 @@ class RobotService:
             elif expected_generation is not None and controller.generation != expected_generation:
                 removed = False
             else:
-                was_awake = controller.expires_at is not None
+                was_awake = controller.expires_at is not None or controller.processing
                 controller.expires_at = None
+                controller.processing = False
                 controller.generation += 1
                 controller.updated_at = self._now()
                 removed = was_awake
@@ -1381,8 +1388,13 @@ class RobotService:
                 conversation_key,
                 now,
             )
-            changed = bool(controller.expires_at is not None or not controller.sleeping)
+            changed = bool(
+                controller.expires_at is not None
+                or controller.processing
+                or not controller.sleeping
+            )
             controller.expires_at = None
+            controller.processing = False
             controller.sleeping = True
             controller.generation += 1
             controller.updated_at = now
@@ -1430,6 +1442,7 @@ class RobotService:
                 ):
                     continue
                 awake = self._controller_is_awake_locked(controller, now)
+                processing = bool(controller.processing and not controller.sleeping)
                 expires_at = controller.expires_at
                 seconds_remaining = (
                     max(0, ceil((expires_at - now).total_seconds()))
@@ -1444,9 +1457,14 @@ class RobotService:
                         "conversation_type": conversation_type,
                         "conversation_id": conversation_id,
                         "item_id": str(route_item_id) if route_item_id else None,
-                        "status": "awake" if awake else "sleeping",
+                        "status": (
+                            "processing"
+                            if processing
+                            else "awake" if awake else "sleeping"
+                        ),
                         "awake": awake,
                         "sleeping": not awake,
+                        "processing": processing,
                         "generation": controller.generation,
                         "expires_at": expires_at.isoformat() if expires_at else None,
                         "updated_at": controller.updated_at.isoformat(),

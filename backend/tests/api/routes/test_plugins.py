@@ -49,3 +49,7 @@ def test_superuser_can_toggle_builtin_plugin(
     assert response.status_code == 200
     assert response.json()["enabled"] is False
     assert plugin_manager.get("termman.robot") not in plugin_manager.enabled_plugins()
+
+    from app.plugins.robot import is_robot_plugin_enabled
+
+    assert is_robot_plugin_enabled() is False

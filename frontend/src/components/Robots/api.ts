@@ -73,9 +73,10 @@ export type RobotConversationControllerStatus = {
   conversation_type: string
   conversation_id: string
   item_id: string | null
-  status: "awake" | "sleeping"
+  status: "awake" | "sleeping" | "processing"
   awake: boolean
   sleeping: boolean
+  processing?: boolean
   generation: number
   expires_at: string | null
   updated_at: string

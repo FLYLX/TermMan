@@ -1744,6 +1744,97 @@ def test_direct_wakeup_job_reaches_agent_even_if_controller_window_expires(
     assert captured_messages == [job.message]
 
 
+def test_direct_wakeup_countdown_starts_after_agent_result(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "reply_context_window_seconds": 10,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+
+    def fake_enqueue_chat_job(job) -> bool:
+        queued_jobs.append(job)
+        return True
+
+    now = robot_service._now()
+    current_time = {"value": now}
+    monkeypatch.setattr(robot_service, "_now", lambda: current_time["value"])
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("wake before countdown", target={"id": "g1"}, mentioned_bot=True),
+    )
+    assert response.ignored is False
+    job = queued_jobs[-1]
+    assert job.direct_reply_trigger is True
+    assert job.reply_requires_awake is True
+
+    processing_snapshot = robot_service.conversation_controller_snapshots({robot.id})[0]
+    assert processing_snapshot["conversation_key"] == "group:g1"
+    assert processing_snapshot["status"] == "processing"
+    assert processing_snapshot["awake"] is True
+    assert processing_snapshot["processing"] is True
+    assert processing_snapshot["expires_at"] is None
+    assert processing_snapshot["seconds_remaining"] == 0
+
+    current_time["value"] = now + timedelta(seconds=11)
+    assert robot_service.conversation_controller_allows_reply(
+        robot.id,
+        job.conversation_key,
+        job.conversation_generation,
+        requires_awake=True,
+    )
+
+    robot_service._apply_reply_context_result(
+        robot,
+        job.conversation_key,
+        robot_message_sent=True,
+        reply_target=job.reply_target,
+        conversation_generation=job.conversation_generation,
+    )
+
+    awake_snapshot = robot_service.conversation_controller_snapshots({robot.id})[0]
+    assert awake_snapshot["status"] == "awake"
+    assert awake_snapshot["awake"] is True
+    assert awake_snapshot["processing"] is False
+    assert awake_snapshot["expires_at"] is not None
+    assert awake_snapshot["seconds_remaining"] == 10
+
+    current_time["value"] = now + timedelta(seconds=22)
+    assert not robot_service.conversation_controller_allows_reply(
+        robot.id,
+        job.conversation_key,
+        job.conversation_generation,
+        requires_awake=True,
+    )
+    sleeping_snapshot = robot_service.conversation_controller_snapshots({robot.id})[0]
+    assert sleeping_snapshot["status"] == "sleeping"
+    assert sleeping_snapshot["awake"] is False
+    assert sleeping_snapshot["processing"] is False
+
+
 def test_reply_context_expiry_sleeps_group_conversation_until_direct_wakeup(
     db: Session,
     monkeypatch,
@@ -1909,6 +2000,7 @@ def test_active_chat_window_no_reply_sleeps_group_controller_until_direct_wakeup
     assert wake.ignored is False
     assert len(queued_jobs) == 3
     assert queued_jobs[-1].conversation_generation > active_job.conversation_generation
+
 
 def test_conversation_controller_snapshot_reports_awake_then_sleeping(
     db: Session,

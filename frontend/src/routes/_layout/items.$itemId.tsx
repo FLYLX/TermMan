@@ -559,33 +559,40 @@ function RobotSleepStatusBadge({
   }
 
   const latest = getLatestRobotControllerRow(data)
+  const isProcessing =
+    latest?.controller.status === "processing" ||
+    Boolean(latest?.controller.processing)
   const isAwake = Boolean(latest?.controller.awake)
-  const label = isAwake
-    ? t("items.detail.qqAwakeCountdown", {
-        time: formatRobotSleepCountdown(
-          latest?.controller.seconds_remaining || 0,
-        ),
-      })
-    : latest
-      ? t("items.detail.qqSleeping")
-      : t("items.detail.qqWaitingWake")
+  const label = isProcessing
+    ? t("items.detail.qqProcessing")
+    : isAwake
+      ? t("items.detail.qqAwakeCountdown", {
+          time: formatRobotSleepCountdown(
+            latest?.controller.seconds_remaining || 0,
+          ),
+        })
+      : latest
+        ? t("items.detail.qqSleeping")
+        : t("items.detail.qqWaitingWake")
+  const badgeClass = isProcessing
+    ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300"
+    : isAwake
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+      : "border-slate-500/40 bg-slate-500/10 text-slate-600 dark:text-slate-300"
 
   return (
-    <Badge
-      variant="outline"
-      className={
-        isAwake
-          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-          : "border-slate-500/40 bg-slate-500/10 text-slate-600 dark:text-slate-300"
-      }
-    >
-      {isAwake ? (
+    <Badge variant="outline" className={badgeClass}>
+      {isProcessing ? (
+        <Loader2 className="mr-1 size-3 animate-spin" />
+      ) : isAwake ? (
         <Timer className="mr-1 size-3" />
       ) : (
         <Moon className="mr-1 size-3" />
       )}
       {label}
-      {isFetching && <Loader2 className="ml-1 size-3 animate-spin" />}
+      {isFetching && !isProcessing && (
+        <Loader2 className="ml-1 size-3 animate-spin" />
+      )}
     </Badge>
   )
 }
@@ -607,15 +614,25 @@ function RobotSleepTerminalLine({
   const fallbackRobot = data.robots.find(
     (robot) => robot.is_enabled && robot.allow_chat,
   )
+  const isProcessing =
+    latest?.controller.status === "processing" ||
+    Boolean(latest?.controller.processing)
   const isAwake = Boolean(latest?.controller.awake)
   const statusText =
     enabledRobotCount === 0
       ? t("items.detail.qqDisabled")
-      : isAwake
-        ? t("items.detail.qqAwake")
-        : latest
-          ? t("items.detail.qqSleeping")
-          : t("items.detail.qqWaitingWake")
+      : isProcessing
+        ? t("items.detail.qqProcessing")
+        : isAwake
+          ? t("items.detail.qqAwake")
+          : latest
+            ? t("items.detail.qqSleeping")
+            : t("items.detail.qqWaitingWake")
+  const statusClass = isProcessing
+    ? "bg-cyan-500/15 text-cyan-300"
+    : isAwake
+      ? "bg-emerald-500/15 text-emerald-300"
+      : "bg-slate-700/70 text-slate-300"
 
   return (
     <div className="mb-3 flex min-h-9 flex-wrap items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs text-slate-300">
@@ -623,13 +640,7 @@ function RobotSleepTerminalLine({
       <span className="font-medium text-slate-200">
         {latest?.robot.robot_name || fallbackRobot?.robot_name || "QQ"}
       </span>
-      <span
-        className={`rounded-full px-2 py-0.5 font-medium ${
-          isAwake
-            ? "bg-emerald-500/15 text-emerald-300"
-            : "bg-slate-700/70 text-slate-300"
-        }`}
-      >
+      <span className={`rounded-full px-2 py-0.5 font-medium ${statusClass}`}>
         {statusText}
       </span>
       {latest ? (
@@ -637,7 +648,12 @@ function RobotSleepTerminalLine({
           {getRobotConversationLabel(latest.controller)}
         </span>
       ) : null}
-      {isAwake ? (
+      {isProcessing ? (
+        <span className="inline-flex items-center gap-1 font-mono text-cyan-300">
+          <Loader2 className="size-3 animate-spin" />
+          {t("items.detail.qqProcessing")}
+        </span>
+      ) : isAwake ? (
         <span className="inline-flex items-center gap-1 font-mono text-emerald-300">
           <Timer className="size-3" />
           {t("items.detail.qqSleepIn", {
@@ -647,7 +663,7 @@ function RobotSleepTerminalLine({
           })}
         </span>
       ) : null}
-      {isFetching && (
+      {isFetching && !isProcessing && (
         <Loader2 className="ml-auto size-3 animate-spin text-slate-500" />
       )}
     </div>
