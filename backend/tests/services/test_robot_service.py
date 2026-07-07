@@ -519,7 +519,7 @@ def test_plain_group_message_is_ignored_by_default(
 
     assert response.success is True
     assert response.ignored is True
-    assert response.reason == "reply_message_type_disabled"
+    assert response.reason == "conversation_sleeping"
     assert response.reply_chunks == []
     assert len(memory_calls) == 1
     assert str(memory_calls[0][0][0]) == str(robot.id)
@@ -1057,7 +1057,7 @@ def test_reply_message_type_filter_ignores_unselected_group_message(
     assert response.reply_chunks == []
 
 
-def test_reply_message_type_filter_allows_configured_group_message(
+def test_configured_group_message_still_requires_awake_controller(
     db: Session,
     monkeypatch,
 ) -> None:
@@ -1080,7 +1080,10 @@ def test_reply_message_type_filter_allows_configured_group_message(
     )
     db.commit()
 
-    captured = _capture_queued_chat(monkeypatch)
+    def fail_enqueue_chat_job(_job):
+        raise AssertionError("sleeping group chat must not reach the agent")
+
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fail_enqueue_chat_job)
 
     response = robot_service.handle_inbound_message(
         db,
@@ -1089,13 +1092,13 @@ def test_reply_message_type_filter_allows_configured_group_message(
     )
 
     assert response.success is True
-    assert response.ignored is False
-    assert response.item_id == str(item.id)
-    assert response.route_key == "alpha"
-    assert captured["job"].message == "hello group"
-    assert captured["job"].conversation_key == "group:g1"
-    assert captured["job"].sender_key == "onebot_v11:group:g1:u1"
+    assert response.ignored is True
+    assert response.reason == "conversation_sleeping"
     assert response.reply_chunks == []
+    snapshots = robot_service.conversation_controller_snapshots({robot.id})
+    assert len(snapshots) == 1
+    assert snapshots[0]["conversation_key"] == "group:g1"
+    assert snapshots[0]["status"] == "sleeping"
 
 
 def test_reply_message_type_filter_allows_configured_private_message(
@@ -1400,14 +1403,14 @@ def test_mention_only_keeps_context_active_after_agent_sends_qq_message(
     current_time = {"value": now}
     monkeypatch.setattr(robot_service, "_now", lambda: current_time["value"])
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
-
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
     before_activation = robot_service.handle_inbound_message(
         db,
         robot,
         _message("plain before", target={"id": "g1"}),
     )
     assert before_activation.ignored is True
-    assert before_activation.reason == "reply_message_type_disabled"
+    assert before_activation.reason == "conversation_sleeping"
 
     mentioned = robot_service.handle_inbound_message(
         db,
@@ -1507,6 +1510,7 @@ def test_reply_context_window_is_scoped_to_current_conversation(
         return True
 
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
 
     activated = robot_service.handle_inbound_message(
         db,
@@ -1538,7 +1542,7 @@ def test_reply_context_window_is_scoped_to_current_conversation(
         ),
     )
     assert other_group.ignored is True
-    assert other_group.reason == "reply_message_type_disabled"
+    assert other_group.reason == "conversation_sleeping"
 
     other_private = robot_service.handle_inbound_message(
         db,
@@ -1801,6 +1805,7 @@ def test_conversation_controller_rejects_stale_generation_after_sleep(
     current_time = {"value": now}
     monkeypatch.setattr(robot_service, "_now", lambda: current_time["value"])
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
 
     first = robot_service.handle_inbound_message(
         db,
@@ -1979,6 +1984,7 @@ def test_direct_wakeup_job_reaches_agent_even_if_controller_window_expires(
     current_time = {"value": now}
     monkeypatch.setattr(robot_service, "_now", lambda: current_time["value"])
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
 
     response = robot_service.handle_inbound_message(
         db,
@@ -2040,6 +2046,7 @@ def test_direct_wakeup_countdown_starts_after_agent_result(
     current_time = {"value": now}
     monkeypatch.setattr(robot_service, "_now", lambda: current_time["value"])
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
 
     response = robot_service.handle_inbound_message(
         db,
@@ -2307,6 +2314,7 @@ def test_processing_controller_timeout_sleeps_group_and_blocks_plain_message(
     current_time = {"value": now}
     monkeypatch.setattr(robot_service, "_now", lambda: current_time["value"])
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
 
     response = robot_service.handle_inbound_message(
         db,
@@ -2375,6 +2383,7 @@ def test_agent_no_reply_clears_controller_as_sleeping_gate(
         return True
 
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
 
     response = robot_service.handle_inbound_message(
         db,
@@ -2439,6 +2448,7 @@ def test_reply_context_expiry_sleeps_group_conversation_until_direct_wakeup(
     current_time = {"value": now}
     monkeypatch.setattr(robot_service, "_now", lambda: current_time["value"])
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
 
     first = robot_service.handle_inbound_message(
         db,
@@ -2508,6 +2518,7 @@ def test_active_chat_window_no_reply_sleeps_group_controller_until_direct_wakeup
         return True
 
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
 
     first = robot_service.handle_inbound_message(
         db,
@@ -2606,6 +2617,7 @@ def test_conversation_controller_snapshot_reports_awake_then_sleeping(
     current_time = {"value": now}
     monkeypatch.setattr(robot_service, "_now", lambda: current_time["value"])
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
 
     response = robot_service.handle_inbound_message(
         db,
@@ -2680,6 +2692,7 @@ def test_sleep_command_blocks_group_messages_until_direct_wakeup(
         return True
 
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
 
     first = robot_service.handle_inbound_message(
         db,

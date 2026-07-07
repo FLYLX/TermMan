@@ -493,7 +493,7 @@ class RobotService:
                 ignored=True,
                 reason="sleep_command",
             )
-        if controller_gate.sleeping and not direct_reply_trigger:
+        if command.mode == "chat" and not (direct_reply_trigger or reply_context_active):
             record_robot_event(
                 str(robot.id),
                 direction="backend",
@@ -503,6 +503,8 @@ class RobotService:
                 payload={
                     "reason": "conversation_sleeping",
                     "conversation": conversation_key,
+                    "direct_reply_trigger": direct_reply_trigger,
+                    "reply_context_active": reply_context_active,
                 },
             )
             return RobotDispatchResponse(
@@ -1682,6 +1684,8 @@ class RobotService:
                 controller.sleeping = False
                 controller.generation += 1
             active = self._controller_is_awake_locked(controller, now)
+            if not active and not direct_reply_trigger:
+                controller.sleeping = True
             controller.updated_at = now
             return RobotConversationGate(
                 active=active,
