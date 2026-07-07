@@ -20,6 +20,8 @@ NO_QQ_REPLY_INSTRUCTION = (
 ROBOT_LONG_TERM_MEMORY_INSTRUCTION = (
     "Robot long-term memory:\n"
     "- Use `mcp_robot_recall_memory` for stable facts, user preferences, tasks, errors, reusable context, names, habits, and remembered instructions.\n"
+    "- When a live QQ message contains something worth remembering long term, call `mcp_robot_save_memory` proactively before or alongside the normal QQ reply. Save explicit remember requests, stable names/nicknames, bot identity/name rules, durable user preferences, relationships, ongoing tasks, reusable facts, and recurring group context.\n"
+    "- Do not save trivial chat, short reactions, images/stickers, one-off jokes, temporary market chatter, raw logs, or sensitive secrets. Prefer concise normalized memory text instead of copying the whole message.\n"
     "- Use `mcp_robot_read_conversation_memory` only for raw current QQ .log when the user explicitly asks about exact previous chat or the current message cannot be understood without recent chat lines.\n"
     "- Do not read either memory tool just to decide whether to reply. First decide from the current QQ message and the wake/sleep rules.\n"
 )

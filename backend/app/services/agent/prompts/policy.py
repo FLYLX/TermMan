@@ -80,6 +80,12 @@ EXPLICIT_MEMORY_CUES = (
     "请保存",
     "remember this",
     "save this",
+    "记一下",
+    "帮我记",
+    "帮我记住",
+    "你记住",
+    "记得",
+    "以后记得",
 )
 
 PREFERENCE_MEMORY_CUES = (
@@ -116,6 +122,8 @@ ERROR_MEMORY_CUES = (
 )
 
 EXPLICIT_MEMORY_PATTERNS = (
+    r"(?:帮我|给我)?\s*记(?:一下|下|住|着)?(?:这[个件条])?[:：,，\s]*(.+)$",
+    r"(?:你\s*)?记得[:：,，\s]*(.+)$",
     r"(?:请\s*)?记住(?:这[个件条])?[:：,，\s]*(.+)$",
     r"(?:请\s*)?记下来(?:这[个件条])?[:：,，\s]*(.+)$",
     r"(?:请\s*)?保存(?:这个|这条|这段)?[:：,，\s]*(.+)$",
@@ -265,6 +273,18 @@ AUTO_PROFILE_PATTERNS = (
 AUTO_IDENTITY_PATTERNS = (
     r"(?:我是|我现在是|我主要是|我这边是)\s*[^？?。!！]{2,60}",
     r"\b(?:i am|i'm|i work as|i mainly)\b\s+.{2,80}",
+)
+AUTO_ASSISTANT_IDENTITY_PATTERNS = (
+    r"(?:你叫|你的名字是|以后\s*(?:你)?叫|叫你|称呼你)\s*[^\s，。,.!?！？]{1,32}",
+    r"(?:你是)\s*[^，。,.!?！？]{1,48}",
+    r"\b(?:your name is|you are called|i will call you)\b\s+.{1,48}",
+)
+AUTO_NAMED_PERSON_ALIAS_PATTERNS = (
+    r"^[\u4e00-\u9fffA-Za-z0-9_\u00b7.-]{1,24}\s*(?:叫|的名字是)\s*[^\s，。,.!?！？]{1,48}$",
+    r"^[\u4e00-\u9fffA-Za-z0-9_\u00b7.-]{1,24}\s*(?:is called|name is)\s+.{1,48}$",
+)
+AUTO_STABLE_PERSON_FACT_PATTERNS = (
+    r"^[\u4e00-\u9fffA-Za-z0-9_\u00b7.-]{1,24}\s*(?:是|住在|来自|在|喜欢|不喜欢|讨厌)\s*[^，。,.!?！？]{2,80}$",
 )
 AUTO_PREFERENCE_CUES = (
     "我喜欢",
@@ -610,6 +630,15 @@ def _auto_memory_base_score(payload: str) -> tuple[str, float] | None:
     memory_type = "context"
     score = 0.0
 
+    if _matches_any(normalized, AUTO_ASSISTANT_IDENTITY_PATTERNS):
+        memory_type = "fact"
+        score = max(score, 0.90)
+    if _matches_any(normalized, AUTO_NAMED_PERSON_ALIAS_PATTERNS):
+        memory_type = "fact"
+        score = max(score, 0.84)
+    if _matches_any(normalized, AUTO_STABLE_PERSON_FACT_PATTERNS):
+        memory_type = "fact"
+        score = max(score, 0.68)
     if _matches_any(normalized, AUTO_PROFILE_PATTERNS):
         memory_type = "preference"
         score = max(score, 0.86)

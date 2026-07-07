@@ -482,18 +482,20 @@ def _event_mentions_bot(bot: Any, event: Any) -> bool:
             for mention in explicit_mentions
         )
 
+    if self_ids and _raw_message_mentions_bot(event, self_ids):
+        return True
+
     to_me = getattr(event, "to_me", False)
     if callable(to_me):
         try:
             to_me = to_me()
         except Exception:
             to_me = False
-    if bool(to_me):
+    message_type = str(getattr(event, "message_type", "") or "").strip().lower()
+    if bool(to_me) and message_type not in {"group", "guild", "channel"}:
         return True
 
-    if not self_ids:
-        return False
-    return _raw_message_mentions_bot(event, self_ids)
+    return False
 
 
 def build_inbound_message(

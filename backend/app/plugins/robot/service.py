@@ -1447,6 +1447,66 @@ class RobotService:
             return set()
         return {str(value).strip() for value in raw_ids if str(value or "").strip()}
 
+    def _message_mentions_bot_self_id(self, message: RobotInboundMessage) -> bool:
+        metadata = message.reply_target.metadata
+        bot_self_ids = self._bot_self_ids_from_message(message)
+        if not bot_self_ids:
+            return bool(metadata.get("mentioned_bot"))
+
+        mention_ids: set[str] = set()
+        mentions = metadata.get("mentions")
+        if isinstance(mentions, list):
+            for mention in mentions:
+                if not isinstance(mention, dict):
+                    continue
+                mention_id = str(
+                    mention.get("qq") or mention.get("id") or mention.get("user_id") or ""
+                ).strip()
+                if mention_id:
+                    mention_ids.add(mention_id)
+
+        native_message = metadata.get("message")
+        if isinstance(native_message, dict):
+            segments = native_message.get("segments")
+            if isinstance(segments, list):
+                for segment in segments:
+                    if not isinstance(segment, dict):
+                        continue
+                    if str(segment.get("type") or "").strip().lower() != "at":
+                        continue
+                    data = segment.get("data")
+                    if not isinstance(data, dict):
+                        continue
+                    mention_id = str(
+                        data.get("qq") or data.get("id") or data.get("user_id") or ""
+                    ).strip()
+                    if mention_id:
+                        mention_ids.add(mention_id)
+            raw_message = str(native_message.get("raw_message") or "")
+            for match in re.finditer(r"\[CQ:at,([^\]]+)\]", raw_message):
+                params = self._parse_cq_params(match.group(1))
+                mention_id = str(
+                    params.get("qq") or params.get("id") or params.get("user_id") or ""
+                ).strip()
+                if mention_id:
+                    mention_ids.add(mention_id)
+
+        for match in re.finditer(r"\[CQ:at,([^\]]+)\]", message.text or ""):
+            params = self._parse_cq_params(match.group(1))
+            mention_id = str(
+                params.get("qq") or params.get("id") or params.get("user_id") or ""
+            ).strip()
+            if mention_id:
+                mention_ids.add(mention_id)
+
+        if mention_ids:
+            return bool(mention_ids.intersection(bot_self_ids))
+
+        return self._conversation_message_type(message) not in {
+            REPLY_MESSAGE_TYPE_GROUP,
+            REPLY_MESSAGE_TYPE_CHANNEL,
+        } and bool(metadata.get("mentioned_bot"))
+
     def _strip_leading_bot_mentions_for_command(
         self,
         message: RobotInboundMessage,
@@ -1545,11 +1605,11 @@ class RobotService:
             return max(0, DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS)
 
     def _message_directly_addresses_bot(self, message: RobotInboundMessage) -> bool:
-        return bool(
-            message.reply_target.metadata.get("mentioned_bot")
-            or message.reply_target.metadata.get("replied_to_bot")
-            or self._conversation_message_type(message) == REPLY_MESSAGE_TYPE_PRIVATE
-        )
+        if self._conversation_message_type(message) == REPLY_MESSAGE_TYPE_PRIVATE:
+            return True
+        if bool(message.reply_target.metadata.get("replied_to_bot")):
+            return True
+        return self._message_mentions_bot_self_id(message)
 
     def _reply_context_key(
         self,

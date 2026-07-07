@@ -241,6 +241,42 @@ def test_event_mentions_bot_ignores_other_at_even_when_to_me_flag_is_set() -> No
     assert _event_mentions_bot(_FakeBot(), event) is False
 
 
+def test_event_mentions_bot_ignores_group_to_me_without_self_at() -> None:
+    event = _FakeEvent(
+        [_FakeSegment("text", {"text": "hello"})],
+        to_me=True,
+        message_type="group",
+        raw_message="[CQ:at,qq=10002] hello",
+    )
+
+    assert _event_mentions_bot(_FakeBot(), event) is False
+
+
+def test_service_direct_trigger_requires_bot_self_id_mention() -> None:
+    message = _message(
+        "[CQ:at,qq=20002] hello",
+        sender_key="onebot_v11:group:g1:u1",
+        target={"id": "g1", "message_type": "group", "group_id": "g1"},
+        mentioned_bot=True,
+        bot_self_ids=["10001"],
+        mentions=[{"id": "20002", "qq": "20002"}],
+    )
+
+    assert robot_service._message_directly_addresses_bot(message) is False
+
+
+def test_service_direct_trigger_accepts_bot_self_id_mention() -> None:
+    message = _message(
+        "[CQ:at,qq=10001] hello",
+        sender_key="onebot_v11:group:g1:u1",
+        target={"id": "g1", "message_type": "group", "group_id": "g1"},
+        mentioned_bot=True,
+        bot_self_ids=["10001"],
+        mentions=[{"id": "10001", "qq": "10001"}],
+    )
+
+    assert robot_service._message_directly_addresses_bot(message) is True
+
 def test_extract_event_mentions_reads_onebot_at_segments() -> None:
     event = _FakeEvent(
         [

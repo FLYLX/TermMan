@@ -663,6 +663,72 @@ def test_robot_mcp_recalls_long_term_memory_scoped_to_active_context(monkeypatch
     assert "other robot memory" not in text
     assert text.index("nickname is XiaoChai") < text.index("general robot preference")
 
+
+def test_robot_mcp_save_memory_persists_scoped_long_term_memory(monkeypatch) -> None:
+    server = RobotMCPServer()
+    tools = {tool["name"]: tool for tool in server.list_tools()}
+    assert "save_memory" in tools
+    assert tools["save_memory"]["skip_memory"] is True
+
+    captured: dict[str, object] = {}
+
+    def fake_get_all_memories(item_id: str, memory_type: str | None = None):
+        captured["existing_item_id"] = item_id
+        captured["existing_memory_type"] = memory_type
+        return []
+
+    def fake_add_memory(**kwargs):
+        captured.update(kwargs)
+        return "memory-123456"
+
+    monkeypatch.setattr(vector_store, "get_all_memories", fake_get_all_memories)
+    monkeypatch.setattr(vector_store, "add_memory", fake_add_memory)
+
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="current-group",
+        metadata={"target": {"id": "current-group"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:current-group:user-1",
+            reply_target=target,
+            conversation_key="group:current-group",
+        )
+    )
+
+    try:
+        result = server.call_tool(
+            "save_memory",
+            {
+                "_robot_context_token": token,
+                "_termman_item_id": "item-1",
+                "content": "\u4f60\u53eb\u5927\u72d7",
+                "memory_type": "fact",
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert result[0]["type"] == "text"
+    assert "Memory saved" in result[0]["text"]
+    assert captured["existing_item_id"] == "item-1"
+    assert captured["existing_memory_type"] == "fact"
+    assert captured["item_id"] == "item-1"
+    assert captured["content"] == "\u4f60\u53eb\u5927\u72d7"
+    assert captured["memory_type"] == "fact"
+    metadata = captured["metadata"]
+    assert metadata["type"] == "robot_agent_saved"
+    assert metadata["source"] == "qq_robot_agent"
+    assert metadata["verified"] is False
+    assert metadata["robot_id"] == "robot-current"
+    assert metadata["robot_conversation_key"] == "group:current-group"
+    assert metadata["conversation_key"] == "group:current-group"
+    assert metadata["speaker_key"] == "onebot_v11:group:current-group:user-1"
+    assert metadata["content_hash"]
+
+
 def test_robot_mcp_reads_registered_context_conversation_memory(
     monkeypatch,
     tmp_path,

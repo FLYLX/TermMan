@@ -90,6 +90,54 @@ def test_build_auto_conversation_memory_candidate_skips_noise_and_questions() ->
     assert build_auto_conversation_memory_candidate("666") is None
     assert build_auto_conversation_memory_candidate("要是跌了能不能再入一点？") is None
     assert build_auto_conversation_memory_candidate("[CQ:image,file=a.jpg]") is None
+
+
+def test_build_conversation_memory_candidate_accepts_remember_variants() -> None:
+    candidate = build_conversation_memory_candidate(
+        "\u8bb0\u4e00\u4e0b\u4f60\u53eb\u5927\u72d7",
+        "recorded",
+    )
+
+    assert candidate is not None
+    assert candidate.memory_type == "fact"
+    assert candidate.content == "\u4f60\u53eb\u5927\u72d7"
+
+
+def test_build_auto_conversation_memory_candidate_for_bot_identity() -> None:
+    candidate = build_auto_conversation_memory_candidate("\u4f60\u53eb\u5927\u72d7")
+
+    assert candidate is not None
+    assert candidate.confidence >= 0.74
+    assert candidate.candidate.memory_type == "fact"
+    assert candidate.candidate.content == "\u4f60\u53eb\u5927\u72d7"
+
+
+def test_build_auto_conversation_memory_candidate_for_named_person_alias() -> None:
+    candidate = build_auto_conversation_memory_candidate(
+        "\u82b1\u7cd5\u53eb\u5c0f\u82b1",
+        speaker_label="FLY (u1)",
+        speaker_key="onebot_v11:group:g1:u1",
+        conversation_key="group:g1",
+    )
+
+    assert candidate is not None
+    assert candidate.confidence >= 0.74
+    assert candidate.candidate.memory_type == "fact"
+    assert "\u82b1\u7cd5\u53eb\u5c0f\u82b1" in candidate.candidate.content
+
+
+def test_build_auto_conversation_memory_candidate_promotes_stable_person_fact_after_repeats() -> None:
+    candidate = build_auto_conversation_memory_candidate("\u82b1\u7cd5\u662f\u7fa4\u7ba1\u7406\u5458")
+
+    assert candidate is not None
+    assert 0.45 <= candidate.confidence < 0.74
+    assert candidate.candidate.memory_type == "fact"
+
+
+def test_build_auto_conversation_memory_candidate_skips_uncertain_stable_fact_question() -> None:
+    assert build_auto_conversation_memory_candidate("\u82b1\u7cd5\u662f\u7fa4\u7ba1\u7406\u5458\u5417\uff1f") is None
+
+
 def test_persist_memory_candidate_skips_duplicate_hash() -> None:
     candidate = MemoryCandidate(
         content="用户偏好：以后回复简洁",

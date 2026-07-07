@@ -233,6 +233,41 @@ class RobotMCPServer:
             skip_memory=True,
         )
         self.register_tool(
+            name="save_memory",
+            description=(
+                "Save concise, durable information from the current QQ chat into "
+                "TermMan long-term memory for the bound terminal item. Use this "
+                "when the live QQ message contains an explicit remember request, "
+                "stable names/nicknames, bot identity/name rules, durable user "
+                "preferences, relationships, ongoing tasks, reusable facts, or "
+                "recurring group context. Do not save trivial chat, images, short "
+                "reactions, temporary chatter, raw logs, or sensitive secrets."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "Concise normalized memory text to save.",
+                    },
+                    "memory_type": {
+                        "type": "string",
+                        "enum": sorted(LONG_TERM_MEMORY_TYPES),
+                        "description": "Memory type. Default is fact.",
+                    },
+                    "ttl_days": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3650,
+                        "description": "Optional retention days; defaults by memory type.",
+                    },
+                },
+                "required": ["content"],
+            },
+            handler=self._save_memory,
+            skip_memory=True,
+        )
+        self.register_tool(
             name="sleep_conversation",
             description=(
                 "Put the current QQ conversation to sleep. Use this only in an "
@@ -970,6 +1005,96 @@ class RobotMCPServer:
         if memory_robot_id:
             return 2
         return 1
+
+    def _save_memory(self, args: dict) -> list[dict[str, str]]:
+        content = sanitize_robot_visible_text(str(args.get("content") or "")).strip()
+        if not content:
+            return [{"type": "text", "text": "Error: content required"}]
+
+        memory_type = str(args.get("memory_type") or "fact").strip() or "fact"
+        if memory_type not in LONG_TERM_MEMORY_TYPES:
+            return [{"type": "text", "text": f"Error: invalid memory_type: {memory_type}"}]
+
+        item_id = str(args.get("_termman_item_id") or args.get("item_id") or "").strip()
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id unavailable"}]
+
+        try:
+            from app.services.agent.prompts import policy as memory_policy
+
+            if memory_policy.should_reject_long_term_memory(content):
+                return [
+                    {
+                        "type": "text",
+                        "text": "Memory not saved: content is too long, noisy, sensitive, or empty.",
+                    }
+                ]
+
+            default_ttl_days = memory_policy.resolve_memory_ttl_days(memory_type)
+            raw_ttl_days = args.get("ttl_days")
+            if raw_ttl_days in (None, ""):
+                ttl_days = default_ttl_days
+            else:
+                ttl_days = int(raw_ttl_days)
+            ttl_days = max(1, min(3650, ttl_days))
+
+            context_token = str(args.get("_robot_context_token") or "").strip()
+            context = get_robot_mcp_context(context_token)
+            active_target = self._context_target_from_active_context(context)
+            conversation_key = ""
+            robot_id = ""
+            sender_key = ""
+            if context is not None:
+                robot_id = str(context.robot_id or "").strip()
+                sender_key = str(context.sender_key or "").strip()
+                conversation_key = str(
+                    getattr(context, "conversation_key", "")
+                    or (active_target or {}).get("conversation")
+                    or ""
+                ).strip()
+
+            metadata: dict[str, Any] = {
+                "type": "robot_agent_saved",
+                "source": "qq_robot_agent",
+                "verified": False,
+                "content_hash": memory_policy._build_content_hash(content),
+            }
+            memory_key = memory_policy.infer_memory_key(content, memory_type)
+            if memory_key:
+                metadata["memory_key"] = memory_key
+            if robot_id:
+                metadata["robot_id"] = robot_id
+            if conversation_key:
+                metadata["robot_conversation_key"] = conversation_key
+                metadata["conversation_key"] = conversation_key
+            if sender_key:
+                metadata["speaker_key"] = sender_key
+
+            candidate = memory_policy.MemoryCandidate(
+                content=content,
+                memory_type=memory_type,
+                ttl_days=ttl_days,
+                metadata=metadata,
+            )
+
+            from app.services.agent.memory.vector_store import vector_store
+
+            memory_id = memory_policy.persist_memory_candidate(
+                item_id,
+                candidate,
+                store=vector_store,
+            )
+        except Exception as exc:
+            return [{"type": "text", "text": f"Error: {exc}"}]
+
+        if not memory_id:
+            return [{"type": "text", "text": "Memory not saved: duplicate or rejected."}]
+        return [
+            {
+                "type": "text",
+                "text": f"Memory saved to TermMan long-term memory (ID: {str(memory_id)[:8]}...).",
+            }
+        ]
 
     def _recall_memory(self, args: dict) -> list[dict[str, str]]:
         query = str(args.get("query") or "").strip()

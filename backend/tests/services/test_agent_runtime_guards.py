@@ -1180,6 +1180,7 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     assert "sender: Alice (u1)" in prompt
     assert "最终 assistant 文本是 TermMan 内部回复" in prompt
     assert "mcp_robot_send_message" in prompt
+    assert "mcp_robot_save_memory" in prompt
     assert "mcp_robot_sleep_conversation" in prompt
     assert "trigger=active_chat_window" in prompt
     assert "当前 QQ 会话" in prompt
@@ -1202,6 +1203,7 @@ def test_robot_plugin_registers_builtin_skill() -> None:
     assert skill.category == "mcp"
     assert skill.mcp_servers == ["robot"]
     assert "mcp_robot_send_message" in (skill.action.prompt or "")
+    assert "mcp_robot_save_memory" in (skill.action.prompt or "")
 
 
 def test_builtin_skills_are_terminal_qq_mcp_and_personas() -> None:

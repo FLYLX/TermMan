@@ -156,9 +156,13 @@ def build_robot_reply_context_summary(
                 "wrong group/private chat."
             ),
             (
-                "- long-term memory rule: call `mcp_robot_recall_memory` for "
-                "stable facts, preferences, tasks, errors, reusable context, "
-                "names, habits, or remembered instructions. Use "
+                "- long-term memory rule: call `mcp_robot_save_memory` when "
+                "the live QQ message contains durable information worth "
+                "remembering, such as explicit remember requests, stable "
+                "names, preferences, relationships, reusable facts, tasks, "
+                "or recurring group context. Call `mcp_robot_recall_memory` "
+                "for stable facts, preferences, tasks, errors, reusable "
+                "context, names, habits, or remembered instructions. Use "
                 "`mcp_robot_read_conversation_memory` only for raw recent QQ "
                 ".log lines when exact previous chat is needed."
             ),
