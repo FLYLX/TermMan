@@ -1,3 +1,4 @@
+import uuid
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
@@ -5,6 +6,7 @@ from app.core.config import settings
 from app.models import Robot
 from app.plugins.robot.bridge_client import robot_bridge_client
 from app.plugins.robot.conversation_memory import robot_conversation_memory
+from app.plugins.robot.platforms import DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS
 from app.plugins.robot.service import robot_service
 from tests.utils.item import create_random_item
 
@@ -28,6 +30,7 @@ def test_list_robot_platforms(
 def test_create_robot_normalizes_legacy_platform_alias(
     client: TestClient,
     superuser_token_headers: dict[str, str],
+    db: Session,
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(robot_bridge_client, "notify_reload", lambda: None)
@@ -62,7 +65,16 @@ def test_create_robot_normalizes_legacy_platform_alias(
     assert content["use_websocket"] is False
     assert content["config"]["credentials"]["self_id"] == "1024"
     assert content["config"]["credentials"]["access_token"]
-
+    assert (
+        content["config"]["options"]["reply_context_window_seconds"]
+        == DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS
+    )
+    robot = db.get(Robot, uuid.UUID(content["id"]))
+    assert robot is not None
+    assert (
+        robot.config["options"]["reply_context_window_seconds"]
+        == DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS
+    )
 
 def test_create_robot_keeps_custom_access_token(
     client: TestClient,
@@ -173,6 +185,7 @@ def test_update_robot_persists_reply_message_types(
                 "options": {
                     "reply_message_types": ["private", "mention", "command"],
                     "mention_match_mode": "any",
+                    "reply_context_window_seconds": 25,
                 },
             },
         },
@@ -187,7 +200,7 @@ def test_update_robot_persists_reply_message_types(
         "command",
     ]
     assert config["options"]["mention_match_mode"] == "any"
-
+    assert config["options"]["reply_context_window_seconds"] == 25
 
 def test_create_unsupported_robot_platform_is_rejected(
     client: TestClient,
@@ -214,7 +227,7 @@ def test_create_unsupported_robot_platform_is_rejected(
     )
 
     assert response.status_code == 400
-    assert "Only NapCat OneBot V11 is currently supported" in response.json()["detail"]
+    assert "Only OneBot V11 QQ connectors are currently supported" in response.json()["detail"]
 
 
 def test_bind_item_to_robot(

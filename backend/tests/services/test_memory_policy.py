@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from app.services.agent.prompts.policy import (
     MemoryCandidate,
     PromptTurnType,
+    build_auto_conversation_memory_candidate,
     build_confirmation_memory_candidate,
     build_conversation_memory_candidate,
     build_manual_status_update,
@@ -66,6 +67,29 @@ def test_build_conversation_memory_candidate_rejects_generic_or_log_noise() -> N
     assert should_reject_long_term_memory("[no_qq_reply]") is True
 
 
+
+def test_build_auto_conversation_memory_candidate_for_preference() -> None:
+    candidate = build_auto_conversation_memory_candidate(
+        "我喜欢短回复",
+        speaker_label="Alice (u1)",
+        speaker_key="onebot_v11:group:g1:u1",
+        conversation_key="group:g1",
+    )
+
+    assert candidate is not None
+    assert candidate.confidence >= 0.74
+    assert candidate.candidate.memory_type == "preference"
+    assert "Alice (u1)" in candidate.candidate.content
+    assert "我喜欢短回复" in candidate.candidate.content
+    assert candidate.candidate.metadata["source"] == "chat_user_auto"
+    assert candidate.candidate.metadata["conversation_key"] == "group:g1"
+    assert candidate.candidate.metadata["speaker_key"] == "onebot_v11:group:g1:u1"
+
+
+def test_build_auto_conversation_memory_candidate_skips_noise_and_questions() -> None:
+    assert build_auto_conversation_memory_candidate("666") is None
+    assert build_auto_conversation_memory_candidate("要是跌了能不能再入一点？") is None
+    assert build_auto_conversation_memory_candidate("[CQ:image,file=a.jpg]") is None
 def test_persist_memory_candidate_skips_duplicate_hash() -> None:
     candidate = MemoryCandidate(
         content="用户偏好：以后回复简洁",

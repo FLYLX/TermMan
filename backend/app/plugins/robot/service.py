@@ -23,6 +23,7 @@ from .contracts import RobotDispatchResponse, RobotInboundMessage, RobotReplyTar
 from .debug_log import preview_text, record_robot_event
 from .message_chunks import is_group_reply_target, split_robot_message_for_target
 from .platforms import (
+    DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS,
     get_robot_platform,
     get_robot_runtime_config,
     normalize_robot_platform_id,
@@ -33,6 +34,8 @@ logger = logging.getLogger(__name__)
 CONVERSATION_TTL = timedelta(hours=6)
 CONVERSATION_PROCESSING_MIN_TIMEOUT_SECONDS = 120
 CONVERSATION_PROCESSING_MAX_TIMEOUT_SECONDS = 600
+PENDING_CHAT_QUEUE_LIMIT = 5
+RECENT_LIVE_CONTEXT_LINES = 8
 DEFAULT_MAX_MESSAGE_LENGTH = 1200
 REPLY_MESSAGE_TYPE_PRIVATE = "private"
 REPLY_MESSAGE_TYPE_GROUP = "group"
@@ -86,6 +89,7 @@ class RobotConversationGate:
     active: bool
     generation: int
     sleeping: bool = False
+    processing: bool = False
 
 
 @dataclass
@@ -100,6 +104,26 @@ class RobotCommand:
     mode: str
     target: str | None
     text: str
+
+
+@dataclass
+class PendingRobotMemoryCandidate:
+    candidate: object
+    confidence: float
+    observations: int
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class PendingRobotChatInput:
+    item_id: uuid.UUID
+    route_key: str
+    message_text: str
+    sender_key: str
+    sender_label: str
+    trigger_reason: str
+    reply_target: RobotReplyTarget
+    enqueued_at: datetime
 
 
 @dataclass(frozen=True)
@@ -130,6 +154,8 @@ class RobotService:
     def __init__(self) -> None:
         self._conversation_routes: dict[tuple[str, str], ConversationState] = {}
         self._conversation_controllers: dict[tuple[str, str], RobotConversationController] = {}
+        self._pending_memory_candidates: dict[tuple[str, str, str], PendingRobotMemoryCandidate] = {}
+        self._pending_chat_inputs: dict[tuple[str, str], list[PendingRobotChatInput]] = {}
         self._item_chat_locks: dict[str, threading.Lock] = {}
         self._lock = threading.RLock()
         self._dispatch_queue: queue.Queue[QueuedRobotChatJob] = queue.Queue(
@@ -263,6 +289,11 @@ class RobotService:
                     conversation_generation=job.conversation_generation or None,
                     sleep_when_no_reply=job.reply_context_active and not job.direct_reply_trigger,
                 )
+                if response.robot_message_sent:
+                    self._enqueue_pending_chat_followup(
+                        robot=robot,
+                        conversation_key=job.conversation_key,
+                    )
                 response_text = response.content
             except RobotServiceError as exc:
                 self._record_and_send_job_error(job, exc.message)
@@ -512,12 +543,6 @@ class RobotService:
             and self._reply_context_window_seconds(robot) > 0
         )
         conversation_generation = 0
-        if direct_reply_trigger or reply_context_active:
-            conversation_generation = self._begin_reply_context_dispatch(
-                robot,
-                conversation_key,
-                metadata=message.reply_target.metadata,
-            )
 
         try:
             resolved_binding, message_text = self._resolve_chat_binding(
@@ -535,6 +560,7 @@ class RobotService:
             self._persist_inbound_long_term_memory(
                 item_id=resolved_binding.item.id,
                 robot=robot,
+                message=message,
                 conversation_key=conversation_key,
                 message_text=message_text,
             )
@@ -579,6 +605,55 @@ class RobotService:
                     reply_chunks=reply_chunks,
                 )
 
+            trigger_reason = self._agent_trigger_reason(
+                message,
+                direct_reply_trigger=direct_reply_trigger,
+                reply_context_active=reply_context_active,
+                mention_match_mode=mention_match_mode,
+            )
+            if (
+                command.mode == "chat"
+                and controller_gate.processing
+                and (direct_reply_trigger or reply_context_active)
+            ):
+                pending_size = self._record_pending_chat_input(
+                    robot=robot,
+                    conversation_key=conversation_key,
+                    item_id=resolved_binding.item.id,
+                    route_key=resolved_binding.route_key,
+                    message_text=message_text,
+                    sender_key=message.sender_key,
+                    sender_label=self._sender_memory_label(message),
+                    trigger_reason=trigger_reason,
+                    reply_target=message.reply_target,
+                )
+                record_robot_event(
+                    str(robot.id),
+                    direction="backend_queue",
+                    event="dispatch_deferred_pending_chat",
+                    payload={
+                        "item_id": str(resolved_binding.item.id),
+                        "route_key": resolved_binding.route_key,
+                        "conversation": conversation_key,
+                        "pending_size": pending_size,
+                    },
+                )
+                return RobotDispatchResponse(
+                    success=True,
+                    ignored=False,
+                    item_id=str(resolved_binding.item.id),
+                    route_key=resolved_binding.route_key,
+                    reason="queued_pending",
+                    reply_chunks=[],
+                )
+
+            if direct_reply_trigger or reply_context_active:
+                conversation_generation = self._begin_reply_context_dispatch(
+                    robot,
+                    conversation_key,
+                    metadata=message.reply_target.metadata,
+                )
+
             queued_job = QueuedRobotChatJob(
                 robot_id=robot.id,
                 robot_owner_id=robot.owner_id,
@@ -587,11 +662,15 @@ class RobotService:
                 message=self._agent_message_with_context(
                     message,
                     message_text,
-                    trigger_reason=self._agent_trigger_reason(
-                        message,
-                        direct_reply_trigger=direct_reply_trigger,
-                        reply_context_active=reply_context_active,
-                        mention_match_mode=mention_match_mode,
+                    trigger_reason=trigger_reason,
+                    impression_card=self._conversation_impression_card(
+                        item_id=resolved_binding.item.id,
+                        robot=robot,
+                        conversation_key=conversation_key,
+                    ),
+                    live_context_card=self._recent_live_context_card(
+                        robot=robot,
+                        conversation_key=conversation_key,
                     ),
                 ),
                 sender_key=message.sender_key,
@@ -752,6 +831,216 @@ class RobotService:
             item_id,
         )
 
+    def _pending_chat_key(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+    ) -> tuple[str, str]:
+        return (str(robot_id), conversation_key)
+
+    def _record_pending_chat_input(
+        self,
+        *,
+        robot: Robot,
+        conversation_key: str,
+        item_id: uuid.UUID,
+        route_key: str,
+        message_text: str,
+        sender_key: str,
+        sender_label: str,
+        trigger_reason: str,
+        reply_target: RobotReplyTarget,
+    ) -> int:
+        entry = PendingRobotChatInput(
+            item_id=item_id,
+            route_key=route_key,
+            message_text=message_text,
+            sender_key=sender_key,
+            sender_label=sender_label or sender_key,
+            trigger_reason=trigger_reason or "active_chat_window",
+            reply_target=reply_target.model_copy(deep=True),
+            enqueued_at=self._now(),
+        )
+        key = self._pending_chat_key(robot.id, conversation_key)
+        with self._lock:
+            queue_items = list(self._pending_chat_inputs.get(key) or [])
+            queue_items.append(entry)
+            evicted_count = max(0, len(queue_items) - PENDING_CHAT_QUEUE_LIMIT)
+            if evicted_count:
+                queue_items = queue_items[-PENDING_CHAT_QUEUE_LIMIT:]
+            self._pending_chat_inputs[key] = queue_items
+            pending_size = len(queue_items)
+
+        if evicted_count:
+            record_robot_event(
+                str(robot.id),
+                direction="backend_queue",
+                event="pending_chat_evicted",
+                status="ignored",
+                payload={
+                    "conversation": conversation_key,
+                    "evicted_count": evicted_count,
+                    "pending_size": pending_size,
+                },
+            )
+        return pending_size
+
+    def _drain_pending_chat_inputs(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+    ) -> list[PendingRobotChatInput]:
+        key = self._pending_chat_key(robot_id, conversation_key)
+        with self._lock:
+            entries = list(self._pending_chat_inputs.pop(key, []) or [])
+        return entries
+
+    def _prepend_pending_chat_inputs(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+        entries: list[PendingRobotChatInput],
+    ) -> None:
+        if not entries:
+            return
+        key = self._pending_chat_key(robot_id, conversation_key)
+        with self._lock:
+            queue_items = list(entries) + list(self._pending_chat_inputs.get(key) or [])
+            self._pending_chat_inputs[key] = queue_items[-PENDING_CHAT_QUEUE_LIMIT:]
+
+    def _pending_chat_batch_text(self, entries: list[PendingRobotChatInput]) -> str:
+        lines = [
+            "[Pending QQ messages; answer each unanswered item in order]",
+            "These messages arrived while the bot was already thinking. Treat them as current live QQ messages, not old log history.",
+        ]
+        for index, entry in enumerate(entries[:PENDING_CHAT_QUEUE_LIMIT], start=1):
+            text = re.sub(r"\s+", " ", entry.message_text).strip()
+            if len(text) > 220:
+                text = f"{text[:217]}..."
+            lines.append(
+                f"{index}. sender={entry.sender_label}; trigger={entry.trigger_reason}: {text}"
+            )
+        lines.append(
+            "Reply in the current QQ conversation. If multiple people asked, answer them one by one in the same order."
+        )
+        return "\n".join(lines)
+
+    def _enqueue_pending_chat_followup(
+        self,
+        *,
+        robot: Robot,
+        conversation_key: str,
+    ) -> bool:
+        entries = self._drain_pending_chat_inputs(robot.id, conversation_key)
+        if not entries:
+            return False
+
+        latest = entries[-1]
+        synthetic_message = RobotInboundMessage(
+            sender_key=latest.sender_key,
+            text=latest.message_text,
+            reply_target=latest.reply_target.model_copy(deep=True),
+        )
+        conversation_generation = self._begin_reply_context_dispatch(
+            robot,
+            conversation_key,
+            metadata=latest.reply_target.metadata,
+        )
+        queued_job = QueuedRobotChatJob(
+            robot_id=robot.id,
+            robot_owner_id=robot.owner_id,
+            item_id=latest.item_id,
+            route_key=latest.route_key,
+            message=self._agent_message_with_context(
+                synthetic_message,
+                self._pending_chat_batch_text(entries),
+                trigger_reason="pending_queue",
+                impression_card=self._conversation_impression_card(
+                    item_id=latest.item_id,
+                    robot=robot,
+                    conversation_key=conversation_key,
+                ),
+                live_context_card="",
+            ),
+            sender_key=latest.sender_key,
+            reply_target=latest.reply_target.model_copy(deep=True),
+            conversation_key=conversation_key,
+            direct_reply_trigger=False,
+            reply_context_active=True,
+            conversation_generation=conversation_generation,
+            reply_requires_awake=self._reply_context_window_seconds(robot) > 0,
+            enqueued_at=self._now(),
+        )
+        if not self._enqueue_chat_job(queued_job):
+            self._prepend_pending_chat_inputs(robot.id, conversation_key, entries)
+            self._clear_reply_context_window_for_key(
+                robot.id,
+                conversation_key,
+                reason="pending_dispatch_queue_full",
+                expected_generation=conversation_generation or None,
+            )
+            record_robot_event(
+                str(robot.id),
+                direction="backend_queue",
+                event="pending_dispatch_dropped_queue_full",
+                status="ignored",
+                payload={
+                    "item_id": str(latest.item_id),
+                    "route_key": latest.route_key,
+                    "conversation": conversation_key,
+                    "pending_size": len(entries),
+                    "queue": self.dispatch_queue_snapshot(),
+                },
+            )
+            return False
+
+        record_robot_event(
+            str(robot.id),
+            direction="backend_queue",
+            event="pending_dispatch_queued",
+            payload={
+                "item_id": str(latest.item_id),
+                "route_key": latest.route_key,
+                "conversation": conversation_key,
+                "pending_size": len(entries),
+                "queue": self.dispatch_queue_snapshot(),
+            },
+        )
+        return True
+
+    def _recent_live_context_card(
+        self,
+        *,
+        robot: Robot,
+        conversation_key: str,
+        lines: int = RECENT_LIVE_CONTEXT_LINES,
+    ) -> str:
+        if not conversation_key:
+            return ""
+        try:
+            from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+
+            recent = sanitize_robot_visible_text(
+                robot_conversation_memory.read_recent(
+                    robot.id,
+                    conversation_key,
+                    lines=lines,
+                )
+            ).strip()
+        except Exception:
+            logger.debug(
+                "[RobotService] Failed to read recent live context robot=%s conversation=%s",
+                robot.id,
+                conversation_key,
+                exc_info=True,
+            )
+            return ""
+        if not recent:
+            return ""
+        return (
+            "[Recent QQ live context; background only, answer only current/pending messages]\n"
+            f"{recent}"
+        )
     def _remember_assistant_conversation_memory(
         self,
         robot_id: uuid.UUID | str,
@@ -804,6 +1093,7 @@ class RobotService:
         *,
         item_id: uuid.UUID | str,
         robot: Robot,
+        message: RobotInboundMessage,
         conversation_key: str,
         message_text: str,
     ) -> None:
@@ -813,23 +1103,64 @@ class RobotService:
             from app.services.agent.memory.vector_store import vector_store
             from app.services.agent.prompts import policy as memory_policy
 
-            candidate = memory_policy.build_conversation_memory_candidate(
+            explicit_candidate = memory_policy.build_conversation_memory_candidate(
                 message_text,
                 "recorded",
             )
-            if candidate is None:
+            if explicit_candidate is not None:
+                self._persist_scoped_memory_candidate(
+                    item_id=item_id,
+                    robot=robot,
+                    conversation_key=conversation_key,
+                    candidate=explicit_candidate,
+                    store=vector_store,
+                    source="qq_robot",
+                )
                 return
-            metadata = {
-                **candidate.metadata,
-                "source": "qq_robot",
-                "robot_id": str(robot.id),
-                "robot_conversation_key": conversation_key,
-                "conversation_key": conversation_key,
-            }
-            memory_policy.persist_memory_candidate(
-                str(item_id),
-                replace(candidate, metadata=metadata),
+
+            scored_candidate = memory_policy.build_auto_conversation_memory_candidate(
+                message_text,
+                "recorded",
+                speaker_label=self._sender_memory_label(message),
+                speaker_key=message.sender_key,
+                conversation_key=conversation_key,
+            )
+            if scored_candidate is None:
+                return
+
+            if scored_candidate.confidence >= memory_policy.AUTO_MEMORY_DIRECT_THRESHOLD:
+                self._persist_scoped_memory_candidate(
+                    item_id=item_id,
+                    robot=robot,
+                    conversation_key=conversation_key,
+                    candidate=scored_candidate.candidate,
+                    store=vector_store,
+                    source="qq_robot_auto",
+                    extra_metadata={"type": "conversation_auto", "observations": 1},
+                )
+                return
+
+            promoted_candidate, observations = self._record_pending_memory_candidate(
+                robot=robot,
+                conversation_key=conversation_key,
+                scored_candidate=scored_candidate,
+                repeat_threshold=memory_policy.AUTO_MEMORY_REPEAT_THRESHOLD,
+            )
+            if promoted_candidate is None:
+                return
+
+            self._persist_scoped_memory_candidate(
+                item_id=item_id,
+                robot=robot,
+                conversation_key=conversation_key,
+                candidate=promoted_candidate,
                 store=vector_store,
+                source="qq_robot_auto_promoted",
+                extra_metadata={
+                    "type": "conversation_auto_promoted",
+                    "observations": observations,
+                    "verified": False,
+                },
             )
         except Exception:
             logger.exception(
@@ -837,6 +1168,80 @@ class RobotService:
                 robot.id,
                 conversation_key,
             )
+
+    def _persist_scoped_memory_candidate(
+        self,
+        *,
+        item_id: uuid.UUID | str,
+        robot: Robot,
+        conversation_key: str,
+        candidate: object,
+        store: object,
+        source: str,
+        extra_metadata: dict[str, object] | None = None,
+    ) -> str | None:
+        from app.services.agent.prompts import policy as memory_policy
+
+        metadata = {
+            **dict(getattr(candidate, "metadata", {}) or {}),
+            "source": source,
+            "robot_id": str(robot.id),
+            "robot_conversation_key": conversation_key,
+            "conversation_key": conversation_key,
+        }
+        if extra_metadata:
+            metadata.update(extra_metadata)
+        return memory_policy.persist_memory_candidate(
+            str(item_id),
+            replace(candidate, metadata=metadata),
+            store=store,
+        )
+
+    def _record_pending_memory_candidate(
+        self,
+        *,
+        robot: Robot,
+        conversation_key: str,
+        scored_candidate: object,
+        repeat_threshold: int,
+    ) -> tuple[object | None, int]:
+        now = self._now()
+        promotion_key = str(getattr(scored_candidate, "promotion_key", "") or "").strip()
+        if not promotion_key:
+            return None, 0
+
+        key = (str(robot.id), conversation_key, promotion_key)
+        with self._lock:
+            self._prune_pending_memory_candidates_locked(now)
+            existing = self._pending_memory_candidates.get(key)
+            observations = (existing.observations + 1) if existing is not None else 1
+            confidence = max(
+                float(getattr(scored_candidate, "confidence", 0.0) or 0.0),
+                existing.confidence if existing is not None else 0.0,
+            )
+            candidate = getattr(scored_candidate, "candidate", None)
+            if candidate is None:
+                return None, observations
+            if observations < max(2, repeat_threshold):
+                self._pending_memory_candidates[key] = PendingRobotMemoryCandidate(
+                    candidate=candidate,
+                    confidence=confidence,
+                    observations=observations,
+                    updated_at=now,
+                )
+                return None, observations
+            self._pending_memory_candidates.pop(key, None)
+            return candidate, observations
+
+    def _prune_pending_memory_candidates_locked(self, now: datetime) -> None:
+        expired_after = now - CONVERSATION_TTL
+        expired_keys = [
+            key
+            for key, candidate in self._pending_memory_candidates.items()
+            if candidate.updated_at < expired_after
+        ]
+        for key in expired_keys:
+            self._pending_memory_candidates.pop(key, None)
 
     def _sender_memory_label(self, message: RobotInboundMessage) -> str:
         sender_data = message.reply_target.metadata.get("sender")
@@ -1082,9 +1487,9 @@ class RobotService:
         options = config.get("options") if isinstance(config.get("options"), dict) else {}
         raw_value = options.get("reply_context_window_seconds")
         try:
-            return max(0, int(raw_value if raw_value is not None else settings.ROBOT_REPLY_CONTEXT_WINDOW_SECONDS))
+            return max(0, int(raw_value if raw_value is not None else DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS))
         except (TypeError, ValueError):
-            return max(0, settings.ROBOT_REPLY_CONTEXT_WINDOW_SECONDS)
+            return max(0, DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS)
 
     def _message_directly_addresses_bot(self, message: RobotInboundMessage) -> bool:
         return bool(
@@ -1282,6 +1687,7 @@ class RobotService:
                 active=active,
                 generation=controller.generation,
                 sleeping=controller.sleeping,
+                processing=bool(controller.processing and not controller.sleeping),
             )
 
     def _begin_reply_context_dispatch(
@@ -1660,6 +2066,151 @@ class RobotService:
             for mention in mentions
         )
 
+    @staticmethod
+    def _memory_timestamp_label(memory: dict[str, object]) -> str:
+        metadata = memory.get("metadata") if isinstance(memory, dict) else {}
+        if not isinstance(metadata, dict):
+            return ""
+        return str(metadata.get("updated_at") or metadata.get("created_at") or "")
+
+    @staticmethod
+    def _memory_expired(memory: dict[str, object]) -> bool:
+        metadata = memory.get("metadata") if isinstance(memory, dict) else {}
+        if not isinstance(metadata, dict):
+            return False
+        expires_at = metadata.get("expires_at")
+        if not expires_at:
+            return False
+        try:
+            parsed = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        now = datetime.now(parsed.tzinfo) if parsed.tzinfo else datetime.now()
+        return parsed < now
+
+    @staticmethod
+    def _memory_inactive(memory: dict[str, object]) -> bool:
+        metadata = memory.get("metadata") if isinstance(memory, dict) else {}
+        if not isinstance(metadata, dict):
+            return False
+        memory_type = str(metadata.get("memory_type") or "")
+        status = str(metadata.get("status") or "").lower()
+        return (
+            (memory_type == "task" and status == "completed")
+            or (memory_type == "error" and status == "resolved")
+        )
+
+    @staticmethod
+    def _memory_matches_robot_conversation(
+        memory: dict[str, object],
+        *,
+        robot: Robot,
+        conversation_key: str,
+    ) -> bool:
+        metadata = memory.get("metadata") if isinstance(memory, dict) else {}
+        if not isinstance(metadata, dict) or not conversation_key:
+            return False
+        memory_robot_id = str(metadata.get("robot_id") or "").strip()
+        if memory_robot_id and memory_robot_id != str(robot.id):
+            return False
+        memory_conversation = str(
+            metadata.get("robot_conversation_key")
+            or metadata.get("conversation_key")
+            or ""
+        ).strip()
+        return memory_conversation == conversation_key
+
+    @staticmethod
+    def _impression_memory_sort_key(memory: dict[str, object]) -> tuple[int, int, str]:
+        metadata = memory.get("metadata") if isinstance(memory, dict) else {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        memory_type = str(metadata.get("memory_type") or "fact")
+        type_rank = {
+            "preference": 5,
+            "fact": 4,
+            "context": 3,
+            "task": 2,
+            "error": 2,
+        }.get(memory_type, 1)
+        verified_rank = 1 if metadata.get("verified") is True else 0
+        updated_at = str(metadata.get("updated_at") or metadata.get("created_at") or "")
+        return type_rank, verified_rank, updated_at
+
+    def _conversation_impression_card(
+        self,
+        *,
+        item_id: uuid.UUID | str,
+        robot: Robot,
+        conversation_key: str,
+        limit: int = 6,
+    ) -> str:
+        if not conversation_key:
+            return ""
+        try:
+            from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+            from app.services.agent.memory.vector_store import vector_store
+        except Exception:
+            logger.debug("[RobotService] Robot impression card dependencies unavailable")
+            return ""
+
+        memories: list[dict[str, object]] = []
+        for memory_type in ("preference", "fact", "context", "task", "error"):
+            try:
+                typed_memories = vector_store.get_all_memories(
+                    str(item_id),
+                    memory_type=memory_type,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "[RobotService] Failed to load robot impression memories item=%s type=%s: %s",
+                    item_id,
+                    memory_type,
+                    exc,
+                )
+                continue
+            for memory in typed_memories:
+                if not isinstance(memory, dict):
+                    continue
+                if self._memory_expired(memory) or self._memory_inactive(memory):
+                    continue
+                if not self._memory_matches_robot_conversation(
+                    memory,
+                    robot=robot,
+                    conversation_key=conversation_key,
+                ):
+                    continue
+                memories.append(memory)
+
+        if not memories:
+            return ""
+
+        memories.sort(key=self._impression_memory_sort_key, reverse=True)
+        lines = [
+            "[Current QQ conversation impression card; background only, do not answer old items]"
+        ]
+        seen_content: set[str] = set()
+        for memory in memories:
+            if len(lines) > limit:
+                break
+            metadata = memory.get("metadata") if isinstance(memory, dict) else {}
+            if not isinstance(metadata, dict):
+                metadata = {}
+            content = sanitize_robot_visible_text(str(memory.get("content") or "")).strip()
+            content = re.sub(r"\s+", " ", content)
+            if not content or content in seen_content:
+                continue
+            seen_content.add(content)
+            if len(content) > 160:
+                content = f"{content[:157]}..."
+            tags = [str(metadata.get("memory_type") or "fact")]
+            status = str(metadata.get("status") or "").strip()
+            if status:
+                tags.append(status)
+            lines.append(f"- [{', '.join(tags)}] {content}")
+        if len(lines) == 1:
+            return ""
+        return "\n".join(lines)
     def _message_requests_conversation_sleep(self, text: str) -> bool:
         normalized = (text or "").strip().casefold()
         if not normalized:
@@ -1699,6 +2250,8 @@ class RobotService:
         message_text: str,
         *,
         trigger_reason: str = "",
+        impression_card: str = "",
+        live_context_card: str = "",
     ) -> str:
         prefix = self._agent_message_context_prefix(
             inbound_message,
@@ -1706,7 +2259,13 @@ class RobotService:
         )
         if not prefix:
             return message_text
-        return f"{prefix}\n[Current QQ message]\n{message_text}"
+        parts = [prefix]
+        if impression_card.strip():
+            parts.append(impression_card.strip())
+        if live_context_card.strip():
+            parts.append(live_context_card.strip())
+        parts.append(f"[Current QQ message]\n{message_text}")
+        return "\n".join(parts)
 
     def _agent_trigger_reason(
         self,

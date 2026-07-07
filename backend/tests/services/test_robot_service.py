@@ -19,6 +19,7 @@ from app.plugins.robot.platforms import (
 )
 from app.plugins.robot.service import robot_service
 from app.services.agent.chat_runtime import ChatResponseResult
+from app.services.agent.memory.vector_store import vector_store
 from tests.utils.item import create_random_item
 from tests.utils.robot import create_random_robot
 
@@ -628,6 +629,195 @@ def test_robot_explicit_memory_is_persisted_with_conversation_scope(
     assert candidate.metadata["conversation_key"] == "group:g1"
     assert candidate.metadata["robot_conversation_key"] == "group:g1"
 
+
+def test_robot_auto_memory_high_confidence_is_persisted_with_sender_scope(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    _capture_queued_chat(monkeypatch)
+    monkeypatch.setattr(vector_store, "get_all_memories", lambda *args, **kwargs: [])
+    persisted: list[tuple[str, object, object]] = []
+
+    def fake_persist_memory_candidate(item_id, candidate, store):
+        persisted.append((item_id, candidate, store))
+        return "memory-auto"
+
+    monkeypatch.setattr(
+        "app.services.agent.prompts.policy.persist_memory_candidate",
+        fake_persist_memory_candidate,
+    )
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "我喜欢短回复",
+            target={"id": "g1"},
+            sender={"user_id": "u1", "display_name": "Alice"},
+            mentioned_bot=True,
+        ),
+    )
+
+    assert response.success is True
+    assert response.ignored is False
+    assert len(persisted) == 1
+    candidate = persisted[0][1]
+    assert persisted[0][0] == str(item.id)
+    assert candidate.memory_type == "preference"
+    assert "Alice (u1)" in candidate.content
+    assert "我喜欢短回复" in candidate.content
+    assert candidate.metadata["source"] == "qq_robot_auto"
+    assert candidate.metadata["robot_id"] == str(robot.id)
+    assert candidate.metadata["conversation_key"] == "group:g1"
+    assert candidate.metadata["robot_conversation_key"] == "group:g1"
+    assert candidate.metadata["speaker"] == "Alice (u1)"
+    assert candidate.metadata["observations"] == 1
+
+
+def test_robot_auto_memory_low_confidence_promotes_after_repeat(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    _capture_queued_chat(monkeypatch)
+    monkeypatch.setattr(vector_store, "get_all_memories", lambda *args, **kwargs: [])
+    persisted: list[object] = []
+
+    def fake_persist_memory_candidate(_item_id, candidate, store):
+        persisted.append(candidate)
+        return f"memory-{len(persisted)}"
+
+    monkeypatch.setattr(
+        "app.services.agent.prompts.policy.persist_memory_candidate",
+        fake_persist_memory_candidate,
+    )
+
+    first = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "最近在研究股票",
+            target={"id": "g1"},
+            sender={"user_id": "u1", "display_name": "Alice"},
+            mentioned_bot=True,
+        ),
+    )
+    assert first.success is True
+    assert persisted == []
+
+    second = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "最近在研究股票",
+            target={"id": "g1"},
+            sender={"user_id": "u1", "display_name": "Alice"},
+            mentioned_bot=True,
+        ),
+    )
+    assert second.success is True
+    assert len(persisted) == 1
+    candidate = persisted[0]
+    assert candidate.memory_type == "context"
+    assert "最近在研究股票" in candidate.content
+    assert candidate.metadata["source"] == "qq_robot_auto_promoted"
+    assert candidate.metadata["observations"] == 2
+    assert candidate.metadata["conversation_key"] == "group:g1"
+
+
+def test_robot_message_includes_current_conversation_impression_card(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    captured = _capture_queued_chat(monkeypatch)
+
+    def fake_get_all_memories(item_id, memory_type=None):
+        assert item_id == str(item.id)
+        if memory_type != "preference":
+            return []
+        return [
+            {
+                "id": "current",
+                "content": "用户偏好：Alice 喜欢短回复",
+                "metadata": {
+                    "memory_type": "preference",
+                    "robot_id": str(robot.id),
+                    "robot_conversation_key": "group:g1",
+                    "updated_at": "2026-07-07T00:00:00",
+                },
+            },
+            {
+                "id": "other-group",
+                "content": "other group secret",
+                "metadata": {
+                    "memory_type": "preference",
+                    "robot_id": str(robot.id),
+                    "robot_conversation_key": "group:g2",
+                    "updated_at": "2026-07-07T00:00:00",
+                },
+            },
+        ]
+
+    monkeypatch.setattr(vector_store, "get_all_memories", fake_get_all_memories)
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "hello",
+            target={"id": "g1"},
+            sender={"user_id": "u1", "display_name": "Alice"},
+            mentioned_bot=True,
+        ),
+    )
+
+    assert response.success is True
+    text = captured["job"].message
+    assert "Current QQ conversation impression card" in text
+    assert "Alice 喜欢短回复" in text
+    assert "other group secret" not in text
+    assert text.endswith("[Current QQ message]\nhello")
 def test_robot_message_passes_sender_prefix_to_agent(
     db: Session,
     monkeypatch,
@@ -663,10 +853,13 @@ def test_robot_message_passes_sender_prefix_to_agent(
     )
 
     assert response.success is True
-    assert captured["job"].message == (
+    text = captured["job"].message
+    assert text.startswith(
         "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1)]\n"
-        "[Current QQ message]\nhello"
     )
+    assert "[Recent QQ live context; background only" in text
+    assert "Alice (u1): hello" in text
+    assert text.endswith("[Current QQ message]\nhello")
     assert response.reply_chunks == []
 
 
@@ -705,9 +898,13 @@ def test_private_robot_message_passes_context_stamp_to_agent(
     )
 
     assert response.success is True
-    assert captured["job"].message == (
-        "[Robot message; conversation=private:u1; trigger=private_chat; sender=Alice (u1)]\n[Current QQ message]\nhello"
+    text = captured["job"].message
+    assert text.startswith(
+        "[Robot message; conversation=private:u1; trigger=private_chat; sender=Alice (u1)]\n"
     )
+    assert "[Recent QQ live context; background only" in text
+    assert "Alice (u1): hello" in text
+    assert text.endswith("[Current QQ message]\nhello")
     assert captured["job"].direct_reply_trigger is True
     assert captured["job"].reply_requires_awake is True
     assert captured["job"].conversation_generation > 0
@@ -1370,10 +1567,11 @@ def test_reply_context_window_is_scoped_to_current_conversation(
     )
     assert same_group.ignored is False
     same_group_job = queued_jobs[-1]
-    assert queued_jobs[0].message == (
+    assert queued_jobs[0].message.startswith(
         "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1)]\n"
-        "[Current QQ message]\nhello mention"
     )
+    assert "Alice (u1): hello mention" in queued_jobs[0].message
+    assert queued_jobs[0].message.endswith("[Current QQ message]\nhello mention")
     assert same_group_job.conversation_key == "group:g1"
     assert same_group_job.reply_context_active is True
     assert same_group_job.direct_reply_trigger is False
@@ -1381,13 +1579,15 @@ def test_reply_context_window_is_scoped_to_current_conversation(
     assert "- Alice (u1): hello mention" not in same_group_job.message
     assert "plain in another group" not in same_group_job.message
     assert "plain in private" not in same_group_job.message
-    assert same_group_job.message == (
+    assert same_group_job.message.startswith(
         "[Robot message; conversation=group:g1; trigger=active_chat_window; sender=Carol (u3)]\n"
-        "[Current QQ message]\nplain in same group"
     )
+    assert "Alice (u1): hello mention" in same_group_job.message
+    assert "Carol (u3): plain in same group" in same_group_job.message
+    assert same_group_job.message.endswith("[Current QQ message]\nplain in same group")
 
 
-def test_direct_wakeup_agent_message_only_includes_current_message(
+def test_direct_wakeup_agent_message_includes_recent_same_conversation_context(
     db: Session,
     monkeypatch,
 ) -> None:
@@ -1460,13 +1660,13 @@ def test_direct_wakeup_agent_message_only_includes_current_message(
     assert mentioned.ignored is False
     assert len(queued_jobs) == 1
     assert "[Recent QQ conversation context" not in queued_jobs[0].message
-    assert "- Alice (u1): plain before" not in queued_jobs[0].message
-    assert "plain before" not in queued_jobs[0].message
+    assert "[Recent QQ live context; background only" in queued_jobs[0].message
+    assert "Alice (u1): plain before" in queued_jobs[0].message
     assert "plain in another group" not in queued_jobs[0].message
-    assert queued_jobs[0].message == (
+    assert queued_jobs[0].message.startswith(
         "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Bob (u3)]\n"
-        "[Current QQ message]\nhello mention"
     )
+    assert queued_jobs[0].message.endswith("[Current QQ message]\nhello mention")
 
 def test_reply_context_uses_onebot_group_id_before_universal_target_id(
     db: Session,
@@ -1896,6 +2096,181 @@ def test_direct_wakeup_countdown_starts_after_agent_result(
 
 
 
+
+def test_messages_arriving_while_processing_are_batched_in_pending_queue(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "reply_context_window_seconds": 15,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+
+    def fake_enqueue_chat_job(job) -> bool:
+        queued_jobs.append(job)
+        return True
+
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+
+    first = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "第一个问题",
+            sender_key="onebot_v11:group:g1:u1",
+            target={"id": "g1"},
+            sender={"user_id": "u1", "display_name": "Alice"},
+            mentioned_bot=True,
+        ),
+    )
+    assert first.ignored is False
+    first_job = queued_jobs[-1]
+
+    second = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "第二个人也问",
+            sender_key="onebot_v11:group:g1:u2",
+            target={"id": "g1"},
+            sender={"user_id": "u2", "display_name": "Bob"},
+            mentioned_bot=True,
+        ),
+    )
+    third = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "第三个人继续问",
+            sender_key="onebot_v11:group:g1:u3",
+            target={"id": "g1"},
+            sender={"user_id": "u3", "display_name": "Carol"},
+            mentioned_bot=True,
+        ),
+    )
+
+    assert second.reason == "queued_pending"
+    assert third.reason == "queued_pending"
+    assert len(queued_jobs) == 1
+
+    robot_service._apply_reply_context_result(
+        robot,
+        first_job.conversation_key,
+        robot_message_sent=True,
+        reply_target=first_job.reply_target,
+        conversation_generation=first_job.conversation_generation,
+    )
+    assert robot_service._enqueue_pending_chat_followup(
+        robot=robot,
+        conversation_key=first_job.conversation_key,
+    ) is True
+
+    assert len(queued_jobs) == 2
+    pending_job = queued_jobs[-1]
+    assert pending_job.reply_context_active is True
+    assert pending_job.direct_reply_trigger is False
+    assert "trigger=pending_queue" in pending_job.message
+    assert "[Pending QQ messages; answer each unanswered item in order]" in pending_job.message
+    assert "1. sender=Bob (u2); trigger=mention_bot: 第二个人也问" in pending_job.message
+    assert "2. sender=Carol (u3); trigger=mention_bot: 第三个人继续问" in pending_job.message
+    assert pending_job.message.index("第二个人也问") < pending_job.message.index("第三个人继续问")
+
+
+def test_pending_chat_queue_keeps_latest_five_messages(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "reply_context_window_seconds": 15,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", lambda job: queued_jobs.append(job) or True)
+
+    first = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "正在处理的第一条",
+            sender_key="onebot_v11:group:g1:u0",
+            target={"id": "g1"},
+            sender={"user_id": "u0", "display_name": "User0"},
+            mentioned_bot=True,
+        ),
+    )
+    assert first.ignored is False
+    first_job = queued_jobs[-1]
+
+    for index in range(1, 8):
+        response = robot_service.handle_inbound_message(
+            db,
+            robot,
+            _message(
+                f"pending {index}",
+                sender_key=f"onebot_v11:group:g1:u{index}",
+                target={"id": "g1"},
+                sender={"user_id": f"u{index}", "display_name": f"User{index}"},
+                mentioned_bot=True,
+            ),
+        )
+        assert response.reason == "queued_pending"
+
+    robot_service._apply_reply_context_result(
+        robot,
+        first_job.conversation_key,
+        robot_message_sent=True,
+        reply_target=first_job.reply_target,
+        conversation_generation=first_job.conversation_generation,
+    )
+    assert robot_service._enqueue_pending_chat_followup(
+        robot=robot,
+        conversation_key=first_job.conversation_key,
+    ) is True
+
+    assert len(queued_jobs) == 2
+    message = queued_jobs[-1].message
+    assert "pending 1" not in message
+    assert "pending 2" not in message
+    for index in range(3, 8):
+        assert f"pending {index}" in message
+    assert message.count("trigger=mention_bot: pending") == 5
 def test_processing_controller_timeout_sleeps_group_and_blocks_plain_message(
     db: Session,
     monkeypatch,

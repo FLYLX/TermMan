@@ -12,6 +12,10 @@ from app.models import Robot
 
 from .contracts import RobotInboundMessage, RobotReplyTarget
 
+DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS = 50
+MIN_REPLY_CONTEXT_WINDOW_SECONDS = 0
+MAX_REPLY_CONTEXT_WINDOW_SECONDS = 3600
+
 
 class RobotPlatformFieldPublic(BaseModel):
     key: str
@@ -940,6 +944,19 @@ def normalize_robot_config(
 
     options = dict(raw_options)
     options.pop("route_key", None)
+    raw_reply_context_window_seconds = options.get("reply_context_window_seconds")
+    try:
+        reply_context_window_seconds = int(
+            raw_reply_context_window_seconds
+            if raw_reply_context_window_seconds is not None
+            else DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS
+        )
+    except (TypeError, ValueError):
+        reply_context_window_seconds = DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS
+    options["reply_context_window_seconds"] = min(
+        MAX_REPLY_CONTEXT_WINDOW_SECONDS,
+        max(MIN_REPLY_CONTEXT_WINDOW_SECONDS, reply_context_window_seconds),
+    )
 
     return {
         "credentials": credentials,

@@ -66,6 +66,13 @@ class MemoryCandidate:
     metadata: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class ScoredMemoryCandidate:
+    candidate: MemoryCandidate
+    confidence: float
+    promotion_key: str
+
+
 EXPLICIT_MEMORY_CUES = (
     "记住",
     "记下来",
@@ -226,6 +233,114 @@ STATUS_BY_MEMORY_TYPE: dict[str, tuple[str, ...]] = {
     "task": ("active", "completed"),
     "error": ("active", "resolved"),
 }
+
+AUTO_MEMORY_DIRECT_THRESHOLD = 0.74
+AUTO_MEMORY_PROMOTION_THRESHOLD = 0.45
+AUTO_MEMORY_REPEAT_THRESHOLD = 2
+AUTO_MEMORY_MAX_PAYLOAD_LENGTH = 140
+
+AUTO_MEMORY_SHORT_REACTIONS = {
+    "6",
+    "66",
+    "666",
+    "草",
+    "卧槽",
+    "我草",
+    "确实",
+    "是啊",
+    "对",
+    "嗯",
+    "行",
+    "好",
+    "ok",
+    "lol",
+    "哈哈",
+    "哈哈哈",
+}
+
+AUTO_PROFILE_PATTERNS = (
+    r"(?:我叫|叫我|喊我|称呼我|我的名字是)\s*[^\s，。,.!?！？]{1,32}",
+    r"\b(?:call me|my name is|i am called)\b\s+.{1,48}",
+)
+AUTO_IDENTITY_PATTERNS = (
+    r"(?:我是|我现在是|我主要是|我这边是)\s*[^？?。!！]{2,60}",
+    r"\b(?:i am|i'm|i work as|i mainly)\b\s+.{2,80}",
+)
+AUTO_PREFERENCE_CUES = (
+    "我喜欢",
+    "我不喜欢",
+    "我讨厌",
+    "我习惯",
+    "我的习惯",
+    "我一般",
+    "我通常",
+    "以后都",
+    "以后别",
+    "以后不要",
+    "默认",
+    "偏好",
+    "人设",
+    "语气",
+    "口癖",
+    "说话方式",
+    "prefer",
+    "preference",
+    "like",
+    "hate",
+    "usually",
+    "always",
+    "default",
+    "tone",
+    "style",
+)
+AUTO_TASK_CUES = (
+    "待办",
+    "任务",
+    "计划",
+    "准备",
+    "接下来",
+    "之后要",
+    "等下要",
+    "明天要",
+    "我要做",
+    "我想做",
+    "正在做",
+    "todo",
+    "plan to",
+    "need to",
+)
+AUTO_ERROR_CUES = (
+    "报错",
+    "错误",
+    "异常",
+    "bug",
+    "坏了",
+    "失败",
+    "打不开",
+    "进不去",
+    "用不了",
+    "不能用",
+    "error",
+    "failed",
+    "broken",
+)
+AUTO_GROUP_CONTEXT_CUES = (
+    "这个群",
+    "群里",
+    "我们群",
+    "这群",
+    "大家一般",
+    "经常聊",
+    "常聊",
+    "最近在",
+    "一直在",
+    "主要聊",
+)
+AUTO_TRANSIENT_PREFIXES = (
+    "/",
+    "#",
+    "!",
+)
 
 
 def resolve_memory_ttl_days(memory_type: str) -> int:
@@ -455,6 +570,197 @@ def infer_explicit_memory_type(user_message: str) -> str:
     if any(cue in user_message or cue in normalized for cue in ERROR_MEMORY_CUES):
         return "error"
     return "fact"
+
+
+def _contains_any(value: str, cues: tuple[str, ...]) -> bool:
+    normalized = (value or "").casefold()
+    return any(cue.casefold() in normalized for cue in cues)
+
+
+def _matches_any(value: str, patterns: tuple[str, ...]) -> bool:
+    return any(re.search(pattern, value, flags=re.IGNORECASE) for pattern in patterns)
+
+
+def _looks_like_auto_memory_noise(value: str) -> bool:
+    normalized = _normalize_text(value)
+    lowered = normalized.casefold().strip(" .,，。!！?？~～…")
+    if not lowered:
+        return True
+    if len(lowered) <= 1:
+        return True
+    if lowered in AUTO_MEMORY_SHORT_REACTIONS:
+        return True
+    if len(lowered) <= 3 and re.fullmatch(r"[\w\u4e00-\u9fff]+", lowered):
+        return True
+    if normalized.startswith(AUTO_TRANSIENT_PREFIXES):
+        return True
+    if "[CQ:" in normalized:
+        return True
+    if re.fullmatch(r"[\W_]+", normalized):
+        return True
+    return False
+
+
+def _auto_memory_base_score(payload: str) -> tuple[str, float] | None:
+    normalized = _normalize_text(payload)
+    lowered = normalized.casefold()
+    if _looks_like_auto_memory_noise(normalized):
+        return None
+
+    memory_type = "context"
+    score = 0.0
+
+    if _matches_any(normalized, AUTO_PROFILE_PATTERNS):
+        memory_type = "preference"
+        score = max(score, 0.86)
+    if _matches_any(normalized, AUTO_IDENTITY_PATTERNS):
+        memory_type = "fact"
+        score = max(score, 0.78)
+    if _contains_any(normalized, AUTO_PREFERENCE_CUES):
+        memory_type = "preference"
+        score = max(score, 0.80)
+    if _contains_any(normalized, AUTO_TASK_CUES):
+        memory_type = "task"
+        score = max(score, 0.72)
+    if _contains_any(normalized, AUTO_ERROR_CUES):
+        memory_type = "error"
+        score = max(score, 0.76)
+    if _contains_any(normalized, AUTO_GROUP_CONTEXT_CUES):
+        memory_type = "context"
+        group_score = 0.76 if any(cue in normalized for cue in ("这个群", "我们群", "这群", "主要聊")) else 0.58
+        score = max(score, group_score)
+
+    if score <= 0:
+        return None
+    if ("?" in lowered or "？" in normalized) and score < 0.80:
+        return None
+    if len(normalized) > AUTO_MEMORY_MAX_PAYLOAD_LENGTH:
+        score -= 0.12
+    if len(normalized) < 6:
+        score -= 0.10
+    if score < AUTO_MEMORY_PROMOTION_THRESHOLD:
+        return None
+    return memory_type, max(0.0, min(1.0, score))
+
+
+def _scope_memory_payload(
+    payload: str,
+    *,
+    speaker_label: str = "",
+    conversation_key: str = "",
+) -> str:
+    normalized = _normalize_text(payload)
+    if not normalized:
+        return ""
+    if _contains_any(normalized, AUTO_GROUP_CONTEXT_CUES) and conversation_key:
+        return f"{conversation_key}: {normalized}"
+    if speaker_label:
+        return f"{speaker_label}: {normalized}"
+    return normalized
+
+
+def _build_auto_memory_promotion_key(
+    content: str,
+    memory_type: str,
+    *,
+    speaker_key: str = "",
+    speaker_label: str = "",
+    conversation_key: str = "",
+) -> str:
+    scope = conversation_key if memory_type == "context" and conversation_key else (speaker_key or speaker_label or conversation_key or "global")
+    memory_key = infer_memory_key(content, memory_type)
+    subject = memory_key or _normalize_memory_key_fragment(content)
+    return ".".join(
+        part
+        for part in (
+            "auto",
+            memory_type,
+            _normalize_memory_key_fragment(scope),
+            _normalize_memory_key_fragment(subject),
+        )
+        if part
+    )
+
+
+def build_auto_conversation_memory_candidate(
+    user_message: str,
+    assistant_message: str = "",
+    *,
+    speaker_label: str = "",
+    speaker_key: str = "",
+    conversation_key: str = "",
+    matched_skills: list[Any] | None = None,
+) -> ScoredMemoryCandidate | None:
+    payload = _normalize_text(user_message)
+    if not payload:
+        return None
+    if should_auto_persist_conversation_memory(user_message, assistant_message or "recorded"):
+        return None
+
+    scored_type = _auto_memory_base_score(payload)
+    if scored_type is None:
+        return None
+    memory_type, confidence = scored_type
+
+    content = _build_memory_content(
+        _scope_memory_payload(
+            payload,
+            speaker_label=speaker_label,
+            conversation_key=conversation_key,
+        ),
+        memory_type,
+    )
+    if should_reject_long_term_memory(content):
+        logger.debug("[MemoryPolicy] Skip auto memory candidate: rejected by policy")
+        return None
+
+    metadata: dict[str, Any] = {
+        "type": "conversation_auto_candidate",
+        "source": "chat_user_auto",
+        "verified": False,
+        "confidence": round(confidence, 3),
+        "content_hash": _build_content_hash(content),
+    }
+    if speaker_label:
+        metadata["speaker"] = speaker_label
+    if speaker_key:
+        metadata["speaker_key"] = speaker_key
+    if conversation_key:
+        metadata["conversation_key"] = conversation_key
+    if memory_type in {"task", "error"}:
+        metadata["status"] = "active"
+    if matched_skills:
+        skill_ids = [
+            skill.skill_id
+            for skill in matched_skills
+            if getattr(skill, "skill_id", None)
+        ]
+        if skill_ids:
+            metadata["skills"] = skill_ids
+
+    memory_key = infer_memory_key(content, memory_type)
+    if memory_key:
+        metadata["memory_key"] = memory_key
+
+    promotion_key = _build_auto_memory_promotion_key(
+        content,
+        memory_type,
+        speaker_key=speaker_key,
+        speaker_label=speaker_label,
+        conversation_key=conversation_key,
+    )
+    metadata["promotion_key"] = promotion_key
+
+    return ScoredMemoryCandidate(
+        candidate=MemoryCandidate(
+            content=content,
+            memory_type=memory_type,
+            ttl_days=resolve_memory_ttl_days(memory_type),
+            metadata=metadata,
+        ),
+        confidence=confidence,
+        promotion_key=promotion_key,
+    )
 
 
 def _extract_memory_tokens(value: str) -> set[str]:
