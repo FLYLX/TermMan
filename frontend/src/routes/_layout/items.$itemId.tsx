@@ -80,6 +80,7 @@ type ItemsResponse = {
 type ItemDetailTab =
   | "terminal"
   | "websocket"
+  | "qq-debug"
   | "files"
   | "handlers"
   | "filters"
@@ -521,6 +522,27 @@ function isRobotControllerProcessing(
     controller?.status === "processing" || Boolean(controller?.processing)
   )
 }
+function getRobotControllerProcessingSecondsRemaining(
+  controller: RobotConversationControllerStatus | undefined,
+) {
+  if (!controller?.processing_expires_at) {
+    return 0
+  }
+  const expiresAt = Date.parse(controller.processing_expires_at)
+  if (!Number.isFinite(expiresAt)) {
+    return 0
+  }
+  return Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000))
+}
+
+function getRobotControllerDisplaySeconds(
+  controller: RobotConversationControllerStatus | undefined,
+) {
+  if (isRobotControllerProcessing(controller)) {
+    return getRobotControllerProcessingSecondsRemaining(controller)
+  }
+  return getRobotControllerSecondsRemaining(controller)
+}
 
 function isRobotControllerAwake(
   controller: RobotConversationControllerStatus | undefined,
@@ -737,6 +759,122 @@ function RobotSleepTerminalLine({
           })}
         </span>
       ) : null}
+    </div>
+  )
+}
+
+
+function RobotConversationDebugTable({
+  data,
+  isFetching,
+}: {
+  data: ItemRobotControllerStatusResponse | undefined
+  isFetching: boolean
+}) {
+  const { t } = useI18n()
+  const rows = getRobotControllerRows(data)
+
+  return (
+    <div className="mb-3 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/70 text-xs text-slate-300">
+      <div className="flex h-9 items-center justify-between border-b border-zinc-800 px-3">
+        <div className="flex min-w-0 items-center gap-2 font-medium text-slate-200">
+          <Bot className="size-3.5 shrink-0 text-cyan-300" />
+          <span className="truncate">{t("items.detail.qqConversationDebug")}</span>
+        </div>
+        {isFetching ? (
+          <RefreshCw className="size-3 animate-spin text-slate-500" />
+        ) : null}
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-3 py-2 font-mono text-[11px] text-slate-500">
+          {t("items.detail.qqNoConversations")}
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[34rem] table-fixed border-collapse text-left font-mono text-[11px]">
+            <thead className="bg-zinc-900/80 text-[10px] uppercase tracking-[0.08em] text-slate-500">
+              <tr>
+                <th className="w-[9rem] px-3 py-2 font-medium">
+                  {t("robots.pageTitle")}
+                </th>
+                <th className="px-3 py-2 font-medium">
+                  {t("items.detail.qqConversation")}
+                </th>
+                <th className="w-[7rem] px-3 py-2 font-medium">
+                  {t("common.status")}
+                </th>
+                <th className="w-[8rem] px-3 py-2 font-medium">
+                  {t("items.detail.qqCountdown")}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ robot, controller }) => {
+                const isProcessing = isRobotControllerProcessing(controller)
+                const isAwake = isRobotControllerAwake(controller)
+                const displaySeconds = getRobotControllerDisplaySeconds(controller)
+                const statusLabel = isProcessing
+                  ? t("items.detail.qqProcessing")
+                  : isAwake
+                    ? t("items.detail.qqAwake")
+                    : t("items.detail.qqSleeping")
+                const statusClass = isProcessing
+                  ? "bg-cyan-500/15 text-cyan-300"
+                  : isAwake
+                    ? "bg-emerald-500/15 text-emerald-300"
+                    : "bg-slate-700/70 text-slate-300"
+
+                return (
+                  <tr
+                    key={`${robot.robot_id}:${controller.conversation_key}`}
+                    className="border-t border-zinc-900/90"
+                  >
+                    <td className="truncate px-3 py-2 text-slate-300">
+                      {robot.robot_name}
+                    </td>
+                    <td className="truncate px-3 py-2 text-slate-400">
+                      {getRobotConversationLabel(controller)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={`inline-flex h-6 min-w-20 items-center justify-center rounded-full px-2 font-sans text-[11px] font-medium ${statusClass}`}
+                      >
+                        {isProcessing ? (
+                          <Loader2 className="mr-1 size-3 animate-spin" />
+                        ) : isAwake ? (
+                          <Check className="mr-1 size-3" />
+                        ) : (
+                          <Moon className="mr-1 size-3" />
+                        )}
+                        {statusLabel}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-slate-400">
+                      <span className="inline-flex h-6 items-center gap-1.5">
+                        {isAwake ? (
+                          <RobotSleepCountdownRing
+                            seconds={displaySeconds}
+                            totalSeconds={robot.reply_context_window_seconds}
+                          />
+                        ) : isProcessing ? (
+                          <Loader2 className="size-3 animate-spin text-cyan-300" />
+                        ) : (
+                          <Moon className="size-3 text-slate-500" />
+                        )}
+                        <span>
+                          {isAwake || isProcessing
+                            ? formatRobotSleepCountdown(displaySeconds)
+                            : "0s"}
+                        </span>
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
@@ -1504,6 +1642,11 @@ function ItemDetailPage({
                     WebSocket Server
                   </TabsTrigger>
                 )}
+                {robotPluginEnabled && (
+                  <TabsTrigger value="qq-debug">
+                    {t("items.detail.qqConversationDebug")}
+                  </TabsTrigger>
+                )}
                 <TabsTrigger value="files">
                   {t("items.detail.files")}
                 </TabsTrigger>
@@ -2043,6 +2186,19 @@ function ItemDetailPage({
                 </div>
               </section>
             </TabsContent>
+
+            {robotPluginEnabled && (
+              <TabsContent value="qq-debug" className="space-y-4">
+                {hasVisitedTab("qq-debug") ? (
+                  <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                    <RobotConversationDebugTable
+                      data={robotControllerStatus}
+                      isFetching={isFetchingRobotControllerStatus}
+                    />
+                  </section>
+                ) : null}
+              </TabsContent>
+            )}
 
             <TabsContent value="files">
               {hasVisitedTab("files") ? (
