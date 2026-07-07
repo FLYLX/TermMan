@@ -2137,7 +2137,8 @@ def test_messages_arriving_while_processing_are_batched_in_pending_queue(
         return True
 
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
-
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
+    monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
     first = robot_service.handle_inbound_message(
         db,
         robot,
@@ -2202,6 +2203,140 @@ def test_messages_arriving_while_processing_are_batched_in_pending_queue(
     assert pending_job.message.index("第二个人也问") < pending_job.message.index("第三个人继续问")
 
 
+def test_pure_qq_image_message_is_ignored_before_agent_dispatch(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", lambda job: queued_jobs.append(job) or True)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "[CQ:image,summary=&#91;animation&#93;,file=emoji.jpg,url=https://example.test/a.jpg]",
+            target={"id": "g-image-only"},
+            sender={"user_id": "u1", "display_name": "Alice"},
+            mentioned_bot=True,
+        ),
+    )
+
+    assert response.success is True
+    assert response.ignored is True
+    assert response.reason == "media_message_ignored"
+    assert queued_jobs == []
+
+
+def test_qq_image_segments_are_removed_from_agent_and_pending_messages(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "reply_context_window_seconds": 15,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", lambda job: queued_jobs.append(job) or True)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
+    monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
+
+    first = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "[CQ:at,qq=10001] first [CQ:image,file=first.jpg,url=https://example.test/first.jpg] question",
+            sender_key="onebot_v11:group:g-image-mixed:u1",
+            target={"id": "g-image-mixed"},
+            sender={"user_id": "u1", "display_name": "Alice"},
+            mentioned_bot=True,
+            bot_self_ids=["10001"],
+        ),
+    )
+    assert first.ignored is False
+    assert len(queued_jobs) == 1
+    first_job = queued_jobs[-1]
+    assert "[CQ:image" not in first_job.message
+    assert first_job.message.endswith(
+        "[Current QQ message]\n[CQ:at,qq=10001] first question"
+    )
+
+    image_only = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "[CQ:image,summary=&#91;animation&#93;,file=emoji.jpg,url=https://example.test/emoji.jpg]",
+            sender_key="onebot_v11:group:g-image-mixed:u2",
+            target={"id": "g-image-mixed"},
+            sender={"user_id": "u2", "display_name": "Bob"},
+        ),
+    )
+    assert image_only.ignored is True
+    assert image_only.reason == "media_message_ignored"
+    assert len(queued_jobs) == 1
+
+    mixed_pending = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "look [CQ:image,file=pending.jpg,url=https://example.test/pending.jpg] now",
+            sender_key="onebot_v11:group:g-image-mixed:u3",
+            target={"id": "g-image-mixed"},
+            sender={"user_id": "u3", "display_name": "Carol"},
+        ),
+    )
+    assert mixed_pending.reason == "queued_pending"
+
+    robot_service._apply_reply_context_result(
+        robot,
+        first_job.conversation_key,
+        robot_message_sent=True,
+        reply_target=first_job.reply_target,
+        conversation_generation=first_job.conversation_generation,
+    )
+    assert robot_service._enqueue_pending_chat_followup(
+        robot=robot,
+        conversation_key=first_job.conversation_key,
+    ) is True
+
+    assert len(queued_jobs) == 2
+    pending_message = queued_jobs[-1].message
+    assert "[CQ:image" not in pending_message
+    assert "1. sender=Carol (u3); trigger=active_chat_window: look now" in pending_message
+
+
 def test_pending_chat_queue_keeps_latest_five_messages(
     db: Session,
     monkeypatch,
@@ -2230,7 +2365,8 @@ def test_pending_chat_queue_keeps_latest_five_messages(
 
     queued_jobs: list[Any] = []
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", lambda job: queued_jobs.append(job) or True)
-
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
+    monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
     first = robot_service.handle_inbound_message(
         db,
         robot,

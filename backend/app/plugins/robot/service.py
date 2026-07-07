@@ -61,6 +61,8 @@ ALLOWED_REPLY_MESSAGE_TYPES = frozenset(
 REPLY_MESSAGE_TYPE_DISABLED_REASON = "reply_message_type_disabled"
 MENTION_MATCH_MODE_BOT = "bot"
 DEFAULT_MENTION_MATCH_MODE = MENTION_MATCH_MODE_BOT
+QQ_AGENT_IGNORED_CQ_TYPES = frozenset({"image"})
+CQ_CODE_PATTERN = re.compile(r"\[CQ:([A-Za-z0-9_]+)(?:,[^\]]*)?\]")
 ALLOWED_MENTION_MATCH_MODES = frozenset(
     {
         MENTION_MATCH_MODE_BOT,
@@ -468,7 +470,12 @@ class RobotService:
         command = self._parse_robot_command(command_parse_text)
         if command.mode == "chat" and command.target is None:
             command = RobotCommand(mode="chat", target=None, text=text)
-        self._remember_inbound_conversation_memory(robot, message, conversation_key, text)
+        self._remember_inbound_conversation_memory(
+            robot,
+            message,
+            conversation_key,
+            self._agent_visible_message_text(text),
+        )
         if self._message_requests_conversation_sleep(command_parse_text) and (
             direct_reply_trigger or reply_context_active or controller_gate.sleeping
         ):
@@ -554,6 +561,25 @@ class RobotService:
                 conversation_key,
                 fallback_sender_key=message.sender_key,
             )
+            if command.mode != "send":
+                message_text = self._agent_visible_message_text(message_text)
+                if not message_text:
+                    record_robot_event(
+                        str(robot.id),
+                        direction="backend",
+                        event="message_ignored",
+                        status="ignored",
+                        message=message.text,
+                        payload={
+                            "reason": "media_message_ignored",
+                            "conversation": conversation_key,
+                        },
+                    )
+                    return RobotDispatchResponse(
+                        success=True,
+                        ignored=True,
+                        reason="media_message_ignored",
+                    )
             self._remember_conversation(
                 robot.id,
                 conversation_key,
@@ -910,18 +936,36 @@ class RobotService:
             queue_items = list(entries) + list(self._pending_chat_inputs.get(key) or [])
             self._pending_chat_inputs[key] = queue_items[-PENDING_CHAT_QUEUE_LIMIT:]
 
+    def _agent_visible_message_text(self, message_text: str) -> str:
+        def replace_ignored_cq(match: re.Match[str]) -> str:
+            cq_type = match.group(1).strip().lower()
+            if cq_type in QQ_AGENT_IGNORED_CQ_TYPES:
+                return " "
+            return match.group(0)
+
+        sanitized = CQ_CODE_PATTERN.sub(replace_ignored_cq, message_text or "")
+        sanitized = re.sub(r"[ \t\r\f\v]+", " ", sanitized)
+        sanitized = re.sub(r"\n{3,}", "\n\n", sanitized)
+        return sanitized.strip()
+
     def _pending_chat_batch_text(self, entries: list[PendingRobotChatInput]) -> str:
         lines = [
             "[Pending QQ messages; answer each unanswered item in order]",
             "These messages arrived while the bot was already thinking. Treat them as current live QQ messages, not old log history.",
         ]
-        for index, entry in enumerate(entries[:PENDING_CHAT_QUEUE_LIMIT], start=1):
-            text = re.sub(r"\s+", " ", entry.message_text).strip()
+        index = 1
+        for entry in entries[:PENDING_CHAT_QUEUE_LIMIT]:
+            text = re.sub(
+                r"\s+", " ", self._agent_visible_message_text(entry.message_text)
+            ).strip()
+            if not text:
+                continue
             if len(text) > 220:
                 text = f"{text[:217]}..."
             lines.append(
                 f"{index}. sender={entry.sender_label}; trigger={entry.trigger_reason}: {text}"
             )
+            index += 1
         lines.append(
             "Reply in the current QQ conversation. If multiple people asked, answer them one by one in the same order."
         )
@@ -933,7 +977,12 @@ class RobotService:
         robot: Robot,
         conversation_key: str,
     ) -> bool:
-        entries = self._drain_pending_chat_inputs(robot.id, conversation_key)
+        entries = [
+            replace(entry, message_text=visible_text)
+            for entry in self._drain_pending_chat_inputs(robot.id, conversation_key)
+            for visible_text in [self._agent_visible_message_text(entry.message_text)]
+            if visible_text
+        ]
         if not entries:
             return False
 
@@ -1022,11 +1071,13 @@ class RobotService:
         try:
             from app.plugins.robot.internal_trace import sanitize_robot_visible_text
 
-            recent = sanitize_robot_visible_text(
-                robot_conversation_memory.read_recent(
-                    robot.id,
-                    conversation_key,
-                    lines=lines,
+            recent = self._agent_visible_message_text(
+                sanitize_robot_visible_text(
+                    robot_conversation_memory.read_recent(
+                        robot.id,
+                        conversation_key,
+                        lines=lines,
+                    )
                 )
             ).strip()
         except Exception:

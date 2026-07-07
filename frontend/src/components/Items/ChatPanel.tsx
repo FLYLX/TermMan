@@ -68,6 +68,10 @@ const TERMINAL_STATUS_DONE_STATES = new Set([
   "interrupted",
 ])
 
+const ROBOT_CURRENT_MESSAGE_RE = /\[Current QQ message\]\r?\n([\s\S]*)$/
+const ROBOT_PENDING_LINE_RE =
+  /^(\d+)\.\s+sender=([^;]+);\s+trigger=[^:]+:\s*(.*)$/
+
 async function getChatSession(
   itemId: string,
 ): Promise<{ messages: ChatMessage[] }> {
@@ -165,6 +169,35 @@ function normalizeMessage(message: {
 
 function shouldRenderMessage(message: ChatMessage): boolean {
   return !STATUS_ONLY_TYPES.has(message.type ?? "")
+}
+
+function getVisibleChatContent(message: ChatMessage): string {
+  if (message.role !== "user" || !message.content.includes("[Robot message;")) {
+    return message.content
+  }
+
+  const currentMatch = message.content.match(ROBOT_CURRENT_MESSAGE_RE)
+  if (!currentMatch) {
+    return message.content
+  }
+
+  const current = currentMatch[1].trim()
+  if (!current.startsWith("[Pending QQ messages;")) {
+    return current || message.content
+  }
+
+  const pendingLines = current
+    .split(/\r?\n/)
+    .map((line) => {
+      const match = line.match(ROBOT_PENDING_LINE_RE)
+      if (!match) {
+        return null
+      }
+      return `${match[1]}. ${match[2]}: ${match[3]}`
+    })
+    .filter((line): line is string => Boolean(line))
+
+  return pendingLines.length > 0 ? pendingLines.join("\n") : current
 }
 
 function getTransientStatus(message: ChatMessage): AgentStatusState | null {
@@ -853,6 +886,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
 
           {messages.map((message, index) => {
             const label = getMessageLabel(message)
+            const visibleContent = getVisibleChatContent(message)
             return (
               <div
                 key={`${message.timestamp ?? "msg"}-${index}`}
@@ -871,7 +905,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
                       message.role === "terminal" ? "font-mono" : "font-sans"
                     }`}
                   >
-                    {message.content}
+                    {visibleContent}
                   </div>
                 </div>
               </div>
