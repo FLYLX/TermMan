@@ -79,6 +79,7 @@ export type RobotConversationControllerStatus = {
   processing?: boolean
   generation: number
   expires_at: string | null
+  processing_expires_at?: string | null
   updated_at: string
   seconds_remaining: number
 }

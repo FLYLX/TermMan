@@ -6,7 +6,7 @@ import queue
 import re
 import threading
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from math import ceil
 
@@ -31,6 +31,8 @@ from .platforms import (
 logger = logging.getLogger(__name__)
 
 CONVERSATION_TTL = timedelta(hours=6)
+CONVERSATION_PROCESSING_MIN_TIMEOUT_SECONDS = 120
+CONVERSATION_PROCESSING_MAX_TIMEOUT_SECONDS = 600
 DEFAULT_MAX_MESSAGE_LENGTH = 1200
 REPLY_MESSAGE_TYPE_PRIVATE = "private"
 REPLY_MESSAGE_TYPE_GROUP = "group"
@@ -74,6 +76,7 @@ class RobotConversationController:
     generation: int
     updated_at: datetime
     expires_at: datetime | None = None
+    processing_expires_at: datetime | None = None
     sleeping: bool = False
     processing: bool = False
 
@@ -529,6 +532,12 @@ class RobotService:
                 conversation_key,
                 resolved_binding.item.id,
             )
+            self._persist_inbound_long_term_memory(
+                item_id=resolved_binding.item.id,
+                robot=robot,
+                conversation_key=conversation_key,
+                message_text=message_text,
+            )
 
             if command.mode == "send":
                 success = self._write_to_item_terminal(resolved_binding.item.id, message_text)
@@ -786,6 +795,45 @@ class RobotService:
         except Exception:
             logger.exception(
                 "[RobotService] Failed to write conversation memory robot=%s conversation=%s",
+                robot.id,
+                conversation_key,
+            )
+
+    def _persist_inbound_long_term_memory(
+        self,
+        *,
+        item_id: uuid.UUID | str,
+        robot: Robot,
+        conversation_key: str,
+        message_text: str,
+    ) -> None:
+        if not message_text.strip():
+            return
+        try:
+            from app.services.agent.memory.vector_store import vector_store
+            from app.services.agent.prompts import policy as memory_policy
+
+            candidate = memory_policy.build_conversation_memory_candidate(
+                message_text,
+                "recorded",
+            )
+            if candidate is None:
+                return
+            metadata = {
+                **candidate.metadata,
+                "source": "qq_robot",
+                "robot_id": str(robot.id),
+                "robot_conversation_key": conversation_key,
+                "conversation_key": conversation_key,
+            }
+            memory_policy.persist_memory_candidate(
+                str(item_id),
+                replace(candidate, metadata=metadata),
+                store=vector_store,
+            )
+        except Exception:
+            logger.exception(
+                "[RobotService] Failed to write long-term robot memory robot=%s conversation=%s",
                 robot.id,
                 conversation_key,
             )
@@ -1171,11 +1219,24 @@ class RobotService:
         if controller.sleeping:
             return False
         if controller.processing:
+            processing_expires_at = controller.processing_expires_at or (
+                controller.updated_at
+                + timedelta(seconds=CONVERSATION_PROCESSING_MAX_TIMEOUT_SECONDS)
+            )
+            if processing_expires_at <= now:
+                controller.expires_at = None
+                controller.processing_expires_at = None
+                controller.processing = False
+                controller.sleeping = True
+                controller.generation += 1
+                controller.updated_at = now
+                return False
             return True
         if controller.expires_at is None:
             return False
         if controller.expires_at <= now:
             controller.expires_at = None
+            controller.processing_expires_at = None
             controller.sleeping = True
             controller.generation += 1
             controller.updated_at = now
@@ -1241,6 +1302,9 @@ class RobotService:
             controller.generation += 1
             controller.sleeping = False
             controller.processing = True
+            controller.processing_expires_at = now + timedelta(
+                seconds=self._controller_processing_timeout_seconds(robot)
+            )
             controller.expires_at = None
             controller.updated_at = now
             generation = controller.generation
@@ -1314,6 +1378,7 @@ class RobotService:
             if expected_generation is not None and controller.generation != expected_generation:
                 return
             controller.expires_at = expires_at
+            controller.processing_expires_at = None
             controller.sleeping = False
             controller.processing = False
             controller.updated_at = now
@@ -1354,7 +1419,9 @@ class RobotService:
             else:
                 was_awake = controller.expires_at is not None or controller.processing
                 controller.expires_at = None
+                controller.processing_expires_at = None
                 controller.processing = False
+                controller.sleeping = True
                 controller.generation += 1
                 controller.updated_at = self._now()
                 removed = was_awake
@@ -1394,6 +1461,7 @@ class RobotService:
                 or not controller.sleeping
             )
             controller.expires_at = None
+            controller.processing_expires_at = None
             controller.processing = False
             controller.sleeping = True
             controller.generation += 1
@@ -1467,6 +1535,11 @@ class RobotService:
                         "processing": processing,
                         "generation": controller.generation,
                         "expires_at": expires_at.isoformat() if expires_at else None,
+                        "processing_expires_at": (
+                            controller.processing_expires_at.isoformat()
+                            if controller.processing_expires_at
+                            else None
+                        ),
                         "updated_at": controller.updated_at.isoformat(),
                         "seconds_remaining": seconds_remaining,
                     }
@@ -1533,6 +1606,13 @@ class RobotService:
             if controller is None or controller.generation != conversation_generation:
                 return False
             return self._controller_is_awake_locked(controller, now)
+
+    def _controller_processing_timeout_seconds(self, robot: Robot) -> int:
+        window_seconds = max(0, self._reply_context_window_seconds(robot))
+        return max(
+            CONVERSATION_PROCESSING_MIN_TIMEOUT_SECONDS,
+            min(CONVERSATION_PROCESSING_MAX_TIMEOUT_SECONDS, window_seconds * 12),
+        )
 
     def _prune_conversation_controllers_locked(self, now: datetime) -> None:
         expired_after = now - CONVERSATION_TTL

@@ -17,7 +17,6 @@ import {
   Shield,
   Square,
   Terminal,
-  Timer,
   Trash2,
   Users,
   WifiOff,
@@ -509,11 +508,38 @@ function getEnabledRobotCount(
   ).length
 }
 
+function getRobotControllerSecondsRemaining(
+  controller: RobotConversationControllerStatus | undefined,
+) {
+  return Math.max(0, Math.ceil(Number(controller?.seconds_remaining || 0)))
+}
+
+function isRobotControllerProcessing(
+  controller: RobotConversationControllerStatus | undefined,
+) {
+  return (
+    controller?.status === "processing" || Boolean(controller?.processing)
+  )
+}
+
+function isRobotControllerAwake(
+  controller: RobotConversationControllerStatus | undefined,
+) {
+  return Boolean(
+    controller?.awake && getRobotControllerSecondsRemaining(controller) > 0,
+  )
+}
+
 function getLatestRobotControllerRow(
   data: ItemRobotControllerStatusResponse | undefined,
 ) {
   const rows = getRobotControllerRows(data)
-  return rows.find((row) => row.controller.awake) || rows[0] || null
+  return (
+    rows.find((row) => isRobotControllerProcessing(row.controller)) ||
+    rows.find((row) => isRobotControllerAwake(row.controller)) ||
+    rows[0] ||
+    null
+  )
 }
 
 function formatRobotSleepCountdown(seconds: number | null | undefined) {
@@ -527,6 +553,58 @@ function formatRobotSleepCountdown(seconds: number | null | undefined) {
   return remainder > 0 ? `${minutes}m ${remainder}s` : `${minutes}m`
 }
 
+function RobotSleepCountdownRing({
+  seconds,
+  totalSeconds,
+  className = "",
+}: {
+  seconds: number | null | undefined
+  totalSeconds: number | null | undefined
+  className?: string
+}) {
+  const safeSeconds = Math.max(0, Math.ceil(Number(seconds || 0)))
+  const safeTotal = Math.max(
+    1,
+    Math.ceil(Number(totalSeconds || safeSeconds || 1)),
+  )
+  const progress = Math.min(1, safeSeconds / safeTotal)
+  const radius = 7
+  const circumference = 2 * Math.PI * radius
+  const dashOffset = circumference * (1 - progress)
+
+  return (
+    <span
+      className={`relative inline-flex size-6 shrink-0 items-center justify-center ${className}`}
+      aria-hidden="true"
+    >
+      <svg viewBox="0 0 20 20" className="absolute inset-0 -rotate-90">
+        <circle
+          cx="10"
+          cy="10"
+          r={radius}
+          fill="none"
+          strokeWidth="2.2"
+          className="stroke-current opacity-20"
+        />
+        <circle
+          cx="10"
+          cy="10"
+          r={radius}
+          fill="none"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          className="stroke-current transition-[stroke-dashoffset] duration-700 ease-linear"
+          style={{
+            strokeDasharray: circumference,
+            strokeDashoffset: dashOffset,
+          }}
+        />
+      </svg>
+      <span className="font-mono text-[9px] leading-none">{safeSeconds}</span>
+    </span>
+  )
+}
+
 function getRobotConversationLabel(
   controller: RobotConversationControllerStatus,
 ) {
@@ -538,7 +616,6 @@ function getRobotConversationLabel(
 
 function RobotSleepStatusBadge({
   data,
-  isFetching,
 }: {
   data: ItemRobotControllerStatusResponse | undefined
   isFetching: boolean
@@ -559,17 +636,14 @@ function RobotSleepStatusBadge({
   }
 
   const latest = getLatestRobotControllerRow(data)
-  const isProcessing =
-    latest?.controller.status === "processing" ||
-    Boolean(latest?.controller.processing)
-  const isAwake = Boolean(latest?.controller.awake)
+  const remainingSeconds = getRobotControllerSecondsRemaining(latest?.controller)
+  const isProcessing = isRobotControllerProcessing(latest?.controller)
+  const isAwake = isRobotControllerAwake(latest?.controller)
   const label = isProcessing
     ? t("items.detail.qqProcessing")
     : isAwake
       ? t("items.detail.qqAwakeCountdown", {
-          time: formatRobotSleepCountdown(
-            latest?.controller.seconds_remaining || 0,
-          ),
+          time: formatRobotSleepCountdown(remainingSeconds),
         })
       : latest
         ? t("items.detail.qqSleeping")
@@ -585,21 +659,21 @@ function RobotSleepStatusBadge({
       {isProcessing ? (
         <Loader2 className="mr-1 size-3 animate-spin" />
       ) : isAwake ? (
-        <Timer className="mr-1 size-3" />
+        <RobotSleepCountdownRing
+          className="mr-1"
+          seconds={remainingSeconds}
+          totalSeconds={latest?.robot.reply_context_window_seconds}
+        />
       ) : (
         <Moon className="mr-1 size-3" />
       )}
       {label}
-      {isFetching && !isProcessing && (
-        <Loader2 className="ml-1 size-3 animate-spin" />
-      )}
     </Badge>
   )
 }
 
 function RobotSleepTerminalLine({
   data,
-  isFetching,
 }: {
   data: ItemRobotControllerStatusResponse | undefined
   isFetching: boolean
@@ -614,10 +688,9 @@ function RobotSleepTerminalLine({
   const fallbackRobot = data.robots.find(
     (robot) => robot.is_enabled && robot.allow_chat,
   )
-  const isProcessing =
-    latest?.controller.status === "processing" ||
-    Boolean(latest?.controller.processing)
-  const isAwake = Boolean(latest?.controller.awake)
+  const remainingSeconds = getRobotControllerSecondsRemaining(latest?.controller)
+  const isProcessing = isRobotControllerProcessing(latest?.controller)
+  const isAwake = isRobotControllerAwake(latest?.controller)
   const statusText =
     enabledRobotCount === 0
       ? t("items.detail.qqDisabled")
@@ -655,17 +728,15 @@ function RobotSleepTerminalLine({
         </span>
       ) : isAwake ? (
         <span className="inline-flex items-center gap-1 font-mono text-emerald-300">
-          <Timer className="size-3" />
+          <RobotSleepCountdownRing
+            seconds={remainingSeconds}
+            totalSeconds={latest?.robot.reply_context_window_seconds}
+          />
           {t("items.detail.qqSleepIn", {
-            time: formatRobotSleepCountdown(
-              latest?.controller.seconds_remaining || 0,
-            ),
+            time: formatRobotSleepCountdown(remainingSeconds),
           })}
         </span>
       ) : null}
-      {isFetching && !isProcessing && (
-        <Loader2 className="ml-auto size-3 animate-spin text-slate-500" />
-      )}
     </div>
   )
 }

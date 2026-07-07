@@ -156,6 +156,13 @@ def build_robot_reply_context_summary(
                 "wrong group/private chat."
             ),
             (
+                "- long-term memory rule: call `mcp_robot_recall_memory` for "
+                "stable facts, preferences, tasks, errors, reusable context, "
+                "names, habits, or remembered instructions. Use "
+                "`mcp_robot_read_conversation_memory` only for raw recent QQ "
+                ".log lines when exact previous chat is needed."
+            ),
+            (
                 "- memory rule: robot-connected QQ messages are stored in "
                 "conversation-local .log files even when they do not wake the "
                 "agent. Do not read .log before a normal current reply just to "

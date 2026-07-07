@@ -575,6 +575,59 @@ def test_mentioned_group_message_routes_to_default_item_agent(
     assert memory_calls[0][1]["sender"] == "onebot_v11:group:g1:u1"
 
 
+def test_robot_explicit_memory_is_persisted_with_conversation_scope(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    captured = _capture_queued_chat(monkeypatch)
+    persisted: list[tuple[str, object, object]] = []
+
+    def fake_persist_memory_candidate(item_id, candidate, store):
+        persisted.append((item_id, candidate, store))
+        return "memory-1"
+
+    monkeypatch.setattr(
+        "app.services.agent.prompts.policy.persist_memory_candidate",
+        fake_persist_memory_candidate,
+    )
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "remember this: nickname is XiaoChai",
+            target={"id": "g1"},
+            mentioned_bot=True,
+        ),
+    )
+
+    assert response.success is True
+    assert response.ignored is False
+    assert captured["job"].conversation_key == "group:g1"
+    assert len(persisted) == 1
+    assert persisted[0][0] == str(item.id)
+    candidate = persisted[0][1]
+    assert candidate.content == "nickname is XiaoChai"
+    assert candidate.memory_type == "fact"
+    assert candidate.metadata["source"] == "qq_robot"
+    assert candidate.metadata["robot_id"] == str(robot.id)
+    assert candidate.metadata["conversation_key"] == "group:g1"
+    assert candidate.metadata["robot_conversation_key"] == "group:g1"
+
 def test_robot_message_passes_sender_prefix_to_agent(
     db: Session,
     monkeypatch,
@@ -611,7 +664,8 @@ def test_robot_message_passes_sender_prefix_to_agent(
 
     assert response.success is True
     assert captured["job"].message == (
-        "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1)]\nhello"
+        "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1)]\n"
+        "[Current QQ message]\nhello"
     )
     assert response.reply_chunks == []
 
@@ -1177,7 +1231,7 @@ def test_mention_only_keeps_context_active_after_agent_sends_qq_message(
         _message("plain after no tool reply", target={"id": "g1"}),
     )
     assert no_tool_reply.ignored is True
-    assert no_tool_reply.reason == "reply_message_type_disabled"
+    assert no_tool_reply.reason == "conversation_sleeping"
 
     mentioned_again = robot_service.handle_inbound_message(
         db,
@@ -1205,8 +1259,14 @@ def test_mention_only_keeps_context_active_after_agent_sends_qq_message(
         "hello mention again",
         "plain after mention",
     ]
+    robot_service._apply_reply_context_result(
+        robot,
+        queued_jobs[-1].conversation_key,
+        robot_message_sent=True,
+        reply_target=queued_jobs[-1].reply_target,
+    )
 
-    current_time["value"] = now + timedelta(seconds=16)
+    current_time["value"] = now + timedelta(seconds=30)
 
     expired = robot_service.handle_inbound_message(
         db,
@@ -1214,7 +1274,7 @@ def test_mention_only_keeps_context_active_after_agent_sends_qq_message(
         _message("plain expired", target={"id": "g1"}),
     )
     assert expired.ignored is True
-    assert expired.reason == "reply_message_type_disabled"
+    assert expired.reason == "conversation_sleeping"
 
 
 def test_reply_context_window_is_scoped_to_current_conversation(
@@ -1566,7 +1626,7 @@ def test_conversation_controller_rejects_stale_generation_after_sleep(
         reply_target=first_job.reply_target,
         conversation_generation=first_generation,
     )
-    current_time["value"] = now + timedelta(seconds=16)
+    current_time["value"] = now + timedelta(seconds=30)
 
     assert not robot_service.conversation_controller_allows_reply(
         robot.id,
@@ -1835,6 +1895,139 @@ def test_direct_wakeup_countdown_starts_after_agent_result(
     assert sleeping_snapshot["processing"] is False
 
 
+
+def test_processing_controller_timeout_sleeps_group_and_blocks_plain_message(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["group", "mention"],
+            "reply_context_window_seconds": 10,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+
+    def fake_enqueue_chat_job(job) -> bool:
+        queued_jobs.append(job)
+        return True
+
+    now = robot_service._now()
+    current_time = {"value": now}
+    monkeypatch.setattr(robot_service, "_now", lambda: current_time["value"])
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("wake and then stall", target={"id": "g1"}, mentioned_bot=True),
+    )
+    assert response.ignored is False
+    job = queued_jobs[-1]
+
+    processing_snapshot = robot_service.conversation_controller_snapshots({robot.id})[0]
+    assert processing_snapshot["status"] == "processing"
+    assert processing_snapshot["processing_expires_at"] is not None
+
+    current_time["value"] = now + timedelta(seconds=121)
+    plain = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("ordinary group chatter", target={"id": "g1"}),
+    )
+    assert plain.success is True
+    assert plain.ignored is True
+    assert plain.reason == "conversation_sleeping"
+    assert not robot_service.conversation_controller_allows_reply(
+        robot.id,
+        job.conversation_key,
+        job.conversation_generation,
+        requires_awake=True,
+    )
+
+    sleeping_snapshot = robot_service.conversation_controller_snapshots({robot.id})[0]
+    assert sleeping_snapshot["status"] == "sleeping"
+    assert sleeping_snapshot["awake"] is False
+    assert sleeping_snapshot["sleeping"] is True
+
+
+def test_agent_no_reply_clears_controller_as_sleeping_gate(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["group", "mention"],
+            "reply_context_window_seconds": 10,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+
+    def fake_enqueue_chat_job(job) -> bool:
+        queued_jobs.append(job)
+        return True
+
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("wake but no reply", target={"id": "g1"}, mentioned_bot=True),
+    )
+    assert response.ignored is False
+    job = queued_jobs[-1]
+
+    robot_service._apply_reply_context_result(
+        robot,
+        job.conversation_key,
+        robot_message_sent=False,
+        reply_target=job.reply_target,
+        conversation_generation=job.conversation_generation,
+    )
+
+    plain = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("ordinary group chatter", target={"id": "g1"}),
+    )
+    assert plain.success is True
+    assert plain.ignored is True
+    assert plain.reason == "conversation_sleeping"
+    assert len(queued_jobs) == 1
+
+
 def test_reply_context_expiry_sleeps_group_conversation_until_direct_wakeup(
     db: Session,
     monkeypatch,
@@ -1886,7 +2079,7 @@ def test_reply_context_expiry_sleeps_group_conversation_until_direct_wakeup(
         conversation_generation=queued_jobs[-1].conversation_generation,
     )
 
-    current_time["value"] = now + timedelta(seconds=16)
+    current_time["value"] = now + timedelta(seconds=30)
     stale_plain = robot_service.handle_inbound_message(
         db,
         robot,
@@ -2209,7 +2402,7 @@ def test_reply_to_bot_only_keeps_context_active_after_agent_sends_qq_message(
         _message("plain after reply without tool", target={"id": "g1"}),
     )
     assert no_tool_follow_up.ignored is True
-    assert no_tool_follow_up.reason == "reply_message_type_disabled"
+    assert no_tool_follow_up.reason == "conversation_sleeping"
 
     replied_again = robot_service.handle_inbound_message(
         db,

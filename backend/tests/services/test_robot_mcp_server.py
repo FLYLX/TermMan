@@ -11,6 +11,7 @@ from app.services.agent.mcp.robot_context import (
     unregister_robot_mcp_context,
 )
 from app.services.agent.mcp.robot_server import RobotMCPServer
+from app.services.agent.memory.vector_store import vector_store
 
 
 def _test_memory_dir(name: str) -> Path:
@@ -577,6 +578,90 @@ def test_robot_mcp_sleep_conversation_uses_active_context(monkeypatch) -> None:
         }
     ]
     assert calls == [("robot-current", "group:current-group", "mcp_sleep_conversation")]
+
+def test_robot_mcp_recalls_long_term_memory_scoped_to_active_context(monkeypatch) -> None:
+    server = RobotMCPServer()
+    calls: list[dict] = []
+
+    def fake_search_memories(**kwargs):
+        calls.append(kwargs)
+        return [
+            {
+                "id": "current",
+                "content": "nickname is XiaoChai",
+                "metadata": {
+                    "memory_type": "fact",
+                    "robot_id": "robot-current",
+                    "robot_conversation_key": "group:current-group",
+                    "verified": True,
+                },
+                "distance": 0.05,
+            },
+            {
+                "id": "other-group",
+                "content": "other group secret",
+                "metadata": {
+                    "memory_type": "fact",
+                    "robot_id": "robot-current",
+                    "robot_conversation_key": "group:other-group",
+                },
+                "distance": 0.01,
+            },
+            {
+                "id": "global",
+                "content": "general robot preference",
+                "metadata": {"memory_type": "preference"},
+                "distance": 0.1,
+            },
+            {
+                "id": "other-robot",
+                "content": "other robot memory",
+                "metadata": {
+                    "memory_type": "fact",
+                    "robot_id": "robot-other",
+                },
+                "distance": 0.02,
+            },
+        ]
+
+    monkeypatch.setattr(vector_store, "search_memories", fake_search_memories)
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="current-group",
+        metadata={"target": {"id": "current-group"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:current-group:user-1",
+            reply_target=target,
+            conversation_key="group:current-group",
+        )
+    )
+
+    try:
+        result = server.call_tool(
+            "recall_memory",
+            {
+                "_robot_context_token": token,
+                "_termman_item_id": "item-1",
+                "query": "nickname",
+                "n_results": 3,
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert calls[0]["item_id"] == "item-1"
+    assert calls[0]["query"] == "nickname"
+    assert calls[0]["n_results"] == 18
+    text = result[0]["text"]
+    assert "current QQ group:current-group" in text
+    assert "nickname is XiaoChai" in text
+    assert "general robot preference" in text
+    assert "other group secret" not in text
+    assert "other robot memory" not in text
+    assert text.index("nickname is XiaoChai") < text.index("general robot preference")
 
 def test_robot_mcp_reads_registered_context_conversation_memory(
     monkeypatch,

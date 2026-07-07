@@ -25,6 +25,7 @@ type TerminalSource = "filtered_output" | "raw_feedback"
 interface AgentStatusState {
   text: string
   source?: TerminalSource | null
+  autoClearMs?: number
 }
 
 interface ChatMessage {
@@ -53,6 +54,18 @@ const COMPLETION_TYPES = new Set([
   "chat_assistant",
   "agent_warning",
   "agent_error",
+])
+
+const LIVE_REPLY_STATUS_TIMEOUT_MS = 90_000
+const ACTIVE_AGENT_STATUS_TIMEOUT_MS = 180_000
+const TERMINAL_STATUS_DONE_STATES = new Set([
+  "idle",
+  "done",
+  "complete",
+  "completed",
+  "aborted",
+  "error",
+  "interrupted",
 ])
 
 async function getChatSession(
@@ -331,6 +344,18 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
   const canAbortSession =
     Boolean(handler) && (Boolean(agentStatus) || isLoading)
 
+  useEffect(() => {
+    if (!agentStatus?.autoClearMs) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setAgentStatus((current) => (current === agentStatus ? null : current))
+    }, agentStatus.autoClearMs)
+
+    return () => window.clearTimeout(timer)
+  }, [agentStatus])
+
   const appendLiveMessage = (message: ChatMessage) => {
     setMessages((prev) => {
       for (let index = prev.length - 1; index >= 0; index -= 1) {
@@ -386,20 +411,20 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
     }
 
     if (data.type === "agent_status") {
-      if (data.status === "idle") {
+      const status = typeof data.status === "string" ? data.status : ""
+      const content = typeof data.content === "string" ? data.content.trim() : ""
+      if (!content || TERMINAL_STATUS_DONE_STATES.has(status)) {
         setAgentStatus(null)
         return
       }
 
-      if (typeof data.content === "string" && data.content.trim()) {
-        setAgentStatus({
-          text: data.content,
-          source: getTerminalSource(data.terminal_source),
-        })
-      }
+      setAgentStatus({
+        text: content,
+        source: getTerminalSource(data.terminal_source),
+        autoClearMs: ACTIVE_AGENT_STATUS_TIMEOUT_MS,
+      })
       return
     }
-
     const normalizedMessage = normalizeMessage(event as Record<string, unknown>)
     if (!normalizedMessage) {
       return
@@ -407,12 +432,14 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
 
     const transientStatus = getTransientStatus(normalizedMessage)
     if (transientStatus) {
-      setAgentStatus(transientStatus)
+      setAgentStatus({
+        ...transientStatus,
+        autoClearMs: ACTIVE_AGENT_STATUS_TIMEOUT_MS,
+      })
       return
     }
-
     if (normalizedMessage.type === "chat_user") {
-      setAgentStatus({ text: "回复中" })
+      setAgentStatus({ text: "回复中", autoClearMs: LIVE_REPLY_STATUS_TIMEOUT_MS })
     } else if (
       COMPLETION_TYPES.has(normalizedMessage.type ?? "") ||
       normalizedMessage.role === "assistant"
@@ -618,6 +645,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       console.error("[Chat] Failed to abort:", error)
       setAgentStatus(null)
     } finally {
+      setAgentStatus(null)
       setIsLoading(false)
     }
   }
@@ -639,7 +667,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       },
     ])
     setInput("")
-    setAgentStatus({ text: "回复中" })
+    setAgentStatus({ text: "回复中", autoClearMs: LIVE_REPLY_STATUS_TIMEOUT_MS })
     setIsLoading(true)
 
     const token = localStorage.getItem("access_token") || ""
@@ -740,6 +768,8 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
     }
   }
 
+  const visibleAgentStatus =
+    agentStatus ?? (isLoading ? { text: "回复中" } : null)
   const hasConnectionIssue = historyError || liveError
 
   return (
@@ -851,16 +881,16 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       </div>
 
       <div className="shrink-0 border-t bg-background px-3 py-3">
-        {agentStatus && (
+        {visibleAgentStatus && (
           <div className="mb-2 flex items-center justify-between gap-3 rounded-md border bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
               <Loader2 className="size-3.5 animate-spin" />
-              <span>{agentStatus.text}</span>
-              {getTerminalSourceLabel(agentStatus.source) && (
+              <span>{visibleAgentStatus.text}</span>
+              {getTerminalSourceLabel(visibleAgentStatus.source) && (
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getTerminalSourceBadgeClass(agentStatus.source)}`}
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getTerminalSourceBadgeClass(visibleAgentStatus.source)}`}
                 >
-                  {getTerminalSourceLabel(agentStatus.source)}
+                  {getTerminalSourceLabel(visibleAgentStatus.source)}
                 </span>
               )}
             </div>

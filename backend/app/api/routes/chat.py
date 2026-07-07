@@ -243,6 +243,24 @@ def _persist_and_broadcast_event(
     return event
 
 
+def _broadcast_agent_status(
+    item_id: str,
+    status: str,
+    content: str = "",
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    event: dict[str, Any] = {
+        "type": "agent_status",
+        "status": status,
+        "content": content,
+        "timestamp": datetime.now().isoformat(),
+    }
+    if extra:
+        event.update(extra)
+    stream_manager.broadcast_chat_event(item_id, event)
+    return event
+
+
 def _should_hide_tool_details(tool_name: str) -> bool:
     return tool_name in SILENT_TOOL_NAMES
 
@@ -934,6 +952,7 @@ def generate_stream(
                             "[Chat] Suppressed final response after robot delivery tool sent for item %s",
                             item_id,
                         )
+                        _broadcast_agent_status(item_id, "idle")
                         yield _to_sse({"done": True})
                         return
 
@@ -951,6 +970,8 @@ def generate_stream(
                         assistant_message=final_response,
                         matched_skills=matched_skills,
                     )
+
+                _broadcast_agent_status(item_id, "idle")
 
                 yield _to_sse({"done": True})
                 return
@@ -997,6 +1018,7 @@ def generate_stream(
                         extra={"tool_name": tool_name},
                     )
                     yield _to_sse(warning_event)
+                    _broadcast_agent_status(item_id, "idle")
                     yield _to_sse({"done": True})
                     return
 
@@ -1106,6 +1128,7 @@ def generate_stream(
         )
         _mark_agent_task_plan_failed(planned_task_runtime)
         yield _to_sse(warning_event)
+        _broadcast_agent_status(item_id, "idle")
         yield _to_sse({"done": True})
     except Exception as exc:
         logger.exception("[Chat] Unexpected stream error for item %s", item_id)

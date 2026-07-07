@@ -370,6 +370,7 @@ class RobotAgentIntegration:
         args.pop("_robot_context_token", None)
         args.pop("_termman_user_id", None)
         args.pop("_termman_is_superuser", None)
+        args.pop("_termman_item_id", None)
         args.pop("_robot_known_targets", None)
 
         context = _robot_context(agent)
@@ -379,6 +380,8 @@ class RobotAgentIntegration:
         if getattr(context, "current_user_id", ""):
             args["_termman_user_id"] = context.current_user_id
             args["_termman_is_superuser"] = context.current_user_is_superuser
+        if getattr(context, "item_id", ""):
+            args["_termman_item_id"] = context.item_id
         if getattr(context, "robot_known_targets", None):
             args["_robot_known_targets"] = [
                 dict(target) for target in context.robot_known_targets

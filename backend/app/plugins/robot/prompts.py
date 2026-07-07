@@ -17,6 +17,12 @@ NO_QQ_REPLY_INSTRUCTION = (
     "内部最终回复只返回 `[no_qq_reply]`。"
 )
 
+ROBOT_LONG_TERM_MEMORY_INSTRUCTION = (
+    "Robot long-term memory:\n"
+    "- Use `mcp_robot_recall_memory` for stable facts, user preferences, tasks, errors, reusable context, names, habits, and remembered instructions.\n"
+    "- Use `mcp_robot_read_conversation_memory` only for raw current QQ .log when the user explicitly asks about exact previous chat or the current message cannot be understood without recent chat lines.\n"
+    "- Do not read either memory tool just to decide whether to reply. First decide from the current QQ message and the wake/sleep rules.\n"
+)
 ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION = (
     "- For a QQ `trigger=active_chat_window` turn, this group/private chat is "
     "only in a short judgement window after the bot was woken. If the current "
@@ -125,7 +131,7 @@ def build_robot_messaging_prompt(agent: Agent | None = None) -> str:
     if not is_robot_plugin_enabled():
         return ""
 
-    prompt_parts = [ROBOT_MESSAGING_PROMPT]
+    prompt_parts = [ROBOT_MESSAGING_PROMPT, ROBOT_LONG_TERM_MEMORY_INSTRUCTION]
     context = _robot_context(agent) if agent is not None else None
     reply_context_summary = str(
         getattr(context, "robot_reply_context_summary", "") or ""
@@ -152,7 +158,7 @@ def build_robot_history_prompt(agent: Agent, *, has_robot_context: bool) -> str:
         return ""
     if not _agent_has_robot_messaging_enabled(agent):
         return ""
-    return "\n\n".join([ROBOT_MESSAGING_PROMPT, ROBOT_BACKEND_CONTEXT_PROMPT])
+    return "\n\n".join([ROBOT_MESSAGING_PROMPT, ROBOT_LONG_TERM_MEMORY_INSTRUCTION, ROBOT_BACKEND_CONTEXT_PROMPT])
 
 
 def build_robot_delivery_reflection_prompt(final_response: str) -> str:
@@ -207,7 +213,7 @@ def build_robot_messaging_skill_definition():
                 "napcat",
             ],
         ),
-        action=ActionConfig(type="llm", prompt=ROBOT_MESSAGING_PROMPT),
+        action=ActionConfig(type="llm", prompt="\n\n".join([ROBOT_MESSAGING_PROMPT, ROBOT_LONG_TERM_MEMORY_INSTRUCTION])),
         safety=SafetyConfig(
             requires_approval=False,
             risk_level="medium",

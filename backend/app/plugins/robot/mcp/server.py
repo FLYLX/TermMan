@@ -23,6 +23,10 @@ MAX_GROUP_SINGLE_TEXT_CHARS = 36
 DEFAULT_MEMORY_RECENT_LINES = 8
 ACTIVE_CONTEXT_MEMORY_MAX_LINES = 12
 GENERAL_MEMORY_MAX_LINES = 500
+DEFAULT_LONG_TERM_MEMORY_RESULTS = 5
+MAX_LONG_TERM_MEMORY_RESULTS = 8
+LONG_TERM_MEMORY_CANDIDATE_MULTIPLIER = 6
+LONG_TERM_MEMORY_TYPES = {"fact", "preference", "task", "error", "context"}
 
 
 class RobotMCPServer:
@@ -191,6 +195,41 @@ class RobotMCPServer:
                 },
             },
             handler=self._read_conversation_memory,
+            skip_memory=True,
+        )
+        self.register_tool(
+            name="recall_memory",
+            description=(
+                "Search TermMan long-term memory for stable facts, user "
+                "preferences, tasks, errors, and reusable context. This is "
+                "not raw QQ .log history. In an incoming QQ-triggered turn, "
+                "use this when the current message asks what the bot remembers, "
+                "refers to a known preference/person/fact, or needs durable "
+                "context. Omit target arguments; results are scoped to the "
+                "current TermMan item and prefer the current QQ conversation."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query built from the current user message.",
+                    },
+                    "n_results": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": MAX_LONG_TERM_MEMORY_RESULTS,
+                        "description": "Maximum memories to return. Default is 5.",
+                    },
+                    "memory_type": {
+                        "type": "string",
+                        "enum": sorted(LONG_TERM_MEMORY_TYPES),
+                        "description": "Optional memory type filter.",
+                    },
+                },
+                "required": ["query"],
+            },
+            handler=self._recall_memory,
             skip_memory=True,
         )
         self.register_tool(
@@ -881,6 +920,146 @@ class RobotMCPServer:
                 "text": "No QQ message sent: current conversation is sleeping.",
             }
         ]
+    def _long_term_memory_limit(self, args: dict) -> int:
+        raw_value = args.get("n_results") or args.get("limit") or DEFAULT_LONG_TERM_MEMORY_RESULTS
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            value = DEFAULT_LONG_TERM_MEMORY_RESULTS
+        return max(1, min(MAX_LONG_TERM_MEMORY_RESULTS, value))
+
+    @staticmethod
+    def _memory_distance(memory: dict[str, Any]) -> float:
+        try:
+            return float(memory.get("distance"))
+        except (TypeError, ValueError):
+            return 1.0
+
+    @staticmethod
+    def _memory_similarity_label(memory: dict[str, Any]) -> str:
+        distance = memory.get("distance")
+        try:
+            similarity = max(0.0, min(1.0, 1.0 - float(distance)))
+        except (TypeError, ValueError):
+            return ""
+        return f", score {similarity:.2f}"
+
+    @staticmethod
+    def _memory_conversation_key(memory: dict[str, Any]) -> str:
+        metadata = memory.get("metadata") or {}
+        return str(
+            metadata.get("robot_conversation_key")
+            or metadata.get("conversation_key")
+            or ""
+        ).strip()
+
+    @staticmethod
+    def _memory_scope_rank(
+        memory: dict[str, Any],
+        *,
+        robot_id: str,
+        conversation_key: str,
+    ) -> int:
+        metadata = memory.get("metadata") or {}
+        memory_robot_id = str(metadata.get("robot_id") or "").strip()
+        memory_conversation_key = RobotMCPServer._memory_conversation_key(memory)
+        if memory_robot_id and robot_id and memory_robot_id != robot_id:
+            return -1
+        if memory_conversation_key:
+            return 3 if memory_conversation_key == conversation_key else -1
+        if memory_robot_id:
+            return 2
+        return 1
+
+    def _recall_memory(self, args: dict) -> list[dict[str, str]]:
+        query = str(args.get("query") or "").strip()
+        if not query:
+            return [{"type": "text", "text": "Error: query required"}]
+
+        memory_type = str(args.get("memory_type") or "").strip() or None
+        if memory_type is not None and memory_type not in LONG_TERM_MEMORY_TYPES:
+            return [{"type": "text", "text": f"Error: invalid memory_type: {memory_type}"}]
+
+        item_id = str(args.get("_termman_item_id") or args.get("item_id") or "").strip()
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id unavailable"}]
+
+        context_token = str(args.get("_robot_context_token") or "").strip()
+        context = get_robot_mcp_context(context_token)
+        active_target = self._context_target_from_active_context(context)
+        conversation_key = ""
+        robot_id = ""
+        if context is not None:
+            robot_id = str(context.robot_id or "").strip()
+            conversation_key = str(
+                getattr(context, "conversation_key", "")
+                or (active_target or {}).get("conversation")
+                or ""
+            ).strip()
+
+        limit = self._long_term_memory_limit(args)
+        try:
+            from app.services.agent.memory.vector_store import vector_store
+
+            memories = vector_store.search_memories(
+                item_id=item_id,
+                query=query,
+                n_results=limit * LONG_TERM_MEMORY_CANDIDATE_MULTIPLIER,
+                memory_type=memory_type,
+                include_expired=False,
+                active_only=True,
+            )
+        except Exception as exc:
+            return [{"type": "text", "text": f"Error: {exc}"}]
+
+        ranked: list[tuple[int, float, dict[str, Any]]] = []
+        for memory in memories:
+            scope_rank = self._memory_scope_rank(
+                memory,
+                robot_id=robot_id,
+                conversation_key=conversation_key,
+            )
+            if scope_rank < 0:
+                continue
+            ranked.append((scope_rank, self._memory_distance(memory), memory))
+
+        ranked.sort(key=lambda item: (-item[0], item[1]))
+        selected = [memory for _, _, memory in ranked[:limit]]
+        if not selected:
+            scope = f" for {conversation_key}" if conversation_key else ""
+            return [
+                {
+                    "type": "text",
+                    "text": f"No TermMan long-term memory matched {query!r}{scope}.",
+                }
+            ]
+
+        lines = [
+            "TermMan long-term memory "
+            f"({len(selected)} result(s)"
+        ]
+        if conversation_key:
+            lines[0] += f", current QQ {conversation_key}"
+        lines[0] += "):"
+        for memory in selected:
+            metadata = memory.get("metadata") or {}
+            tags = [str(metadata.get("memory_type") or "fact")]
+            status = str(metadata.get("status") or "").strip()
+            if status:
+                tags.append(status)
+            if metadata.get("verified") is True:
+                tags.append("verified")
+            memory_conversation_key = self._memory_conversation_key(memory)
+            if memory_conversation_key:
+                tags.append(memory_conversation_key)
+            content = sanitize_robot_visible_text(str(memory.get("content") or "")).strip()
+            if not content:
+                continue
+            lines.append(
+                f"- [{', '.join(tags)}{self._memory_similarity_label(memory)}] {content}"
+            )
+        return [{"type": "text", "text": "\n".join(lines)}]
+
     def _read_conversation_memory(self, args: dict) -> list[dict[str, str]]:
         context_token = str(args.get("_robot_context_token") or "").strip()
         context = get_robot_mcp_context(context_token)
