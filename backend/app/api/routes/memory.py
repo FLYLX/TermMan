@@ -49,6 +49,13 @@ class MemoryStatusUpdate(BaseModel):
     status: Literal["active", "completed", "resolved"]
 
 
+class ItemChatSessionPage(ItemChatSessionPublic):
+    total: int = 0
+    offset: int = 0
+    limit: int | None = None
+    has_more: bool = False
+
+
 MAX_MEMORY_IMPORT_ITEMS = 1000
 
 
@@ -181,11 +188,13 @@ def _sanitize_import_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]
     return clean_metadata
 
 
-@router.get("/{item_id}/session", response_model=ItemChatSessionPublic)
+@router.get("/{item_id}/session", response_model=ItemChatSessionPage)
 def get_chat_session(
     item_id: uuid.UUID,
     session: SessionDep,
     current_user: CurrentUser,
+    limit: int | None = Query(default=None, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
 ) -> Any:
     _get_accessible_item(item_id, session, current_user)
 
@@ -199,7 +208,32 @@ def get_chat_session(
         session.commit()
         session.refresh(chat_session)
 
-    return chat_session
+    all_messages = list(chat_session.messages or [])
+    total = len(all_messages)
+    if limit is None:
+        page_messages = all_messages
+        effective_offset = 0
+        effective_limit = total
+        has_more = False
+    else:
+        effective_offset = min(offset, total)
+        end = max(total - effective_offset, 0)
+        start = max(end - limit, 0)
+        page_messages = all_messages[start:end]
+        effective_limit = limit
+        has_more = start > 0
+
+    return ItemChatSessionPage(
+        id=chat_session.id,
+        item_id=chat_session.item_id,
+        created_at=chat_session.created_at,
+        updated_at=chat_session.updated_at,
+        messages=page_messages,
+        total=total,
+        offset=effective_offset,
+        limit=effective_limit,
+        has_more=has_more,
+    )
 
 
 @router.post("/{item_id}/session", response_model=ItemChatSessionPublic)

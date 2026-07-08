@@ -221,6 +221,64 @@ def test_append_chat_message_preserves_order_and_metadata(db: Session) -> None:
     assert chat_session.messages[1]["role"] == "assistant"
 
 
+def test_chat_session_endpoint_paginates_history_from_newest(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    item, _ = _create_linked_item_and_handler(db)
+    messages = [
+        {
+            "role": "user",
+            "content": f"message {index}",
+            "type": "chat_user",
+        }
+        for index in range(45)
+    ]
+    db.add(ItemChatSession(item_id=item.id, messages=messages))
+    db.commit()
+
+    latest_response = client.get(
+        f"{settings.API_V1_STR}/memory/{item.id}/session?limit=20&offset=0",
+        headers=superuser_token_headers,
+    )
+    assert latest_response.status_code == 200
+    latest_page = latest_response.json()
+    assert [message["content"] for message in latest_page["messages"]] == [
+        f"message {index}" for index in range(25, 45)
+    ]
+    assert latest_page["total"] == 45
+    assert latest_page["offset"] == 0
+    assert latest_page["limit"] == 20
+    assert latest_page["has_more"] is True
+
+    older_response = client.get(
+        f"{settings.API_V1_STR}/memory/{item.id}/session?limit=20&offset=20",
+        headers=superuser_token_headers,
+    )
+    assert older_response.status_code == 200
+    older_page = older_response.json()
+    assert [message["content"] for message in older_page["messages"]] == [
+        f"message {index}" for index in range(5, 25)
+    ]
+    assert older_page["total"] == 45
+    assert older_page["offset"] == 20
+    assert older_page["has_more"] is True
+
+    oldest_response = client.get(
+        f"{settings.API_V1_STR}/memory/{item.id}/session?limit=20&offset=40",
+        headers=superuser_token_headers,
+    )
+    assert oldest_response.status_code == 200
+    oldest_page = oldest_response.json()
+    assert [message["content"] for message in oldest_page["messages"]] == [
+        f"message {index}" for index in range(5)
+    ]
+    assert oldest_page["total"] == 45
+    assert oldest_page["offset"] == 40
+    assert oldest_page["has_more"] is False
+
+
 def test_append_chat_message_generates_session_summary_after_threshold(
     db: Session,
 ) -> None:

@@ -35,6 +35,11 @@ CONVERSATION_TTL = timedelta(hours=6)
 CONVERSATION_PROCESSING_MIN_TIMEOUT_SECONDS = 120
 CONVERSATION_PROCESSING_MAX_TIMEOUT_SECONDS = 600
 PENDING_CHAT_QUEUE_LIMIT = 5
+PENDING_DIRECT_WAKE_TRIGGER_REASONS = frozenset({
+    "mention_bot",
+    "reply_to_bot",
+    "private_chat",
+})
 RECENT_LIVE_CONTEXT_LINES = 8
 DEFAULT_MAX_MESSAGE_LENGTH = 1200
 REPLY_MESSAGE_TYPE_PRIVATE = "private"
@@ -295,6 +300,12 @@ class RobotService:
                     self._enqueue_pending_chat_followup(
                         robot=robot,
                         conversation_key=job.conversation_key,
+                    )
+                else:
+                    self._enqueue_pending_chat_followup(
+                        robot=robot,
+                        conversation_key=job.conversation_key,
+                        direct_wakeup_only=True,
                     )
                 response_text = response.content
             except RobotServiceError as exc:
@@ -945,6 +956,9 @@ class RobotService:
         sanitized = re.sub(r"\n{3,}", "\n\n", sanitized)
         return sanitized.strip()
 
+    def _pending_chat_entry_is_direct_wakeup(self, entry: PendingRobotChatInput) -> bool:
+        return entry.trigger_reason in PENDING_DIRECT_WAKE_TRIGGER_REASONS
+
     def _pending_chat_batch_text(self, entries: list[PendingRobotChatInput]) -> str:
         lines = [
             "[Pending QQ messages; answer each unanswered item in order]",
@@ -973,12 +987,14 @@ class RobotService:
         *,
         robot: Robot,
         conversation_key: str,
+        direct_wakeup_only: bool = False,
     ) -> bool:
         entries = [
             replace(entry, message_text=visible_text)
             for entry in self._drain_pending_chat_inputs(robot.id, conversation_key)
             for visible_text in [self._agent_visible_message_text(entry.message_text)]
             if visible_text
+            and (not direct_wakeup_only or self._pending_chat_entry_is_direct_wakeup(entry))
         ]
         if not entries:
             return False

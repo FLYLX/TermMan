@@ -30,6 +30,10 @@ from app.services.agent.prompts.builder import (
 )
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
+from app.services.agent.tool_arguments import (
+    ToolArgumentParseError,
+    parse_tool_arguments,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1151,9 +1155,13 @@ class AgentSession:
                 return None
 
             try:
-                tool_args = json.loads(tool_args_str) if tool_args_str else {}
-            except json.JSONDecodeError as exc:
-                logger.error(f"[AgentSession] Failed to parse tool args for {tool_name}: {exc}")
+                tool_args = parse_tool_arguments(tool_name, tool_args_str)
+            except ToolArgumentParseError:
+                logger.error(
+                    "[AgentSession] Failed to parse tool args for %s: %r",
+                    tool_name,
+                    tool_args_str,
+                )
                 self.emit_output(
                     f"工具参数解析失败: {tool_name}",
                     "agent_error",
@@ -1161,6 +1169,7 @@ class AgentSession:
                 )
                 return None
 
+            normalized_tool_args_str = json.dumps(tool_args, ensure_ascii=False)
             tool_args["item_id"] = self.item_id
             hide_tool_details = self._should_hide_tool_details(tool_name)
 
@@ -1191,7 +1200,7 @@ class AgentSession:
                     "type": "function",
                     "function": {
                         "name": tool_name,
-                        "arguments": tool_call.function.arguments,
+                        "arguments": normalized_tool_args_str,
                     },
                 }
             )

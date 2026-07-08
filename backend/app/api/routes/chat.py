@@ -46,6 +46,10 @@ from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.session import agent_session_manager
 from app.services.agent.stream_manager import stream_manager
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
+from app.services.agent.tool_arguments import (
+    ToolArgumentParseError,
+    parse_tool_arguments,
+)
 
 if TYPE_CHECKING:
     from app.services.agent.agent import Agent
@@ -1023,8 +1027,13 @@ def generate_stream(
                     return
 
                 try:
-                    tool_args = json.loads(tool_args_str) if tool_args_str else {}
-                except json.JSONDecodeError:
+                    tool_args = parse_tool_arguments(tool_name, tool_args_str)
+                except ToolArgumentParseError:
+                    logger.warning(
+                        "[Chat] Failed to parse tool arguments for %s: %r",
+                        tool_name,
+                        tool_args_str,
+                    )
                     _mark_agent_task_plan_failed(planned_task_runtime)
                     error_event = _persist_and_broadcast_event(
                         item_id,
@@ -1043,6 +1052,7 @@ def generate_stream(
                     )
                     return
 
+                normalized_tool_args_str = json.dumps(tool_args, ensure_ascii=False)
                 tool_args["item_id"] = item_id
                 hide_tool_details = _should_hide_tool_details(tool_name)
 
@@ -1105,7 +1115,7 @@ def generate_stream(
                         "type": "function",
                         "function": {
                             "name": tool_name,
-                            "arguments": tool_args_str,
+                            "arguments": normalized_tool_args_str,
                         },
                     }
                 )

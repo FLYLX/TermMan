@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import { ChevronDown, ExternalLink, Loader2, Send, Square, Trash2 } from "lucide-react"
+import { ChevronDown, ChevronUp, ExternalLink, Loader2, Send, Square, Trash2 } from "lucide-react"
 import { useEffect, useEffectEvent, useRef, useState } from "react"
 
 import type { ItemHandlerPublic } from "@/client"
@@ -58,6 +58,7 @@ const COMPLETION_TYPES = new Set([
 
 const LIVE_REPLY_STATUS_TIMEOUT_MS = 90_000
 const ACTIVE_AGENT_STATUS_TIMEOUT_MS = 180_000
+const CHAT_HISTORY_PAGE_SIZE = 20
 const TERMINAL_STATUS_DONE_STATES = new Set([
   "idle",
   "done",
@@ -75,12 +76,29 @@ const ROBOT_PENDING_LINE_RE =
 const CQ_REPLY_RE = /\[CQ:reply,id=([^\]]+)\]/g
 const CQ_AT_RE = /\[CQ:at,qq=([^,\]]+)(?:,[^\]]*)?\]/g
 
+type ChatSessionPage = {
+  messages: ChatMessage[]
+  total?: number
+  offset?: number
+  limit?: number | null
+  has_more?: boolean
+}
+
 async function getChatSession(
   itemId: string,
-): Promise<{ messages: ChatMessage[] }> {
+  options: { limit?: number; offset?: number } = {},
+): Promise<ChatSessionPage> {
   const token = localStorage.getItem("access_token") || ""
+  const params = new URLSearchParams()
+  if (typeof options.limit === "number") {
+    params.set("limit", String(options.limit))
+  }
+  if (typeof options.offset === "number") {
+    params.set("offset", String(options.offset))
+  }
+  const query = params.toString()
   const response = await fetch(
-    `${OpenAPI.BASE}/api/v1/memory/${itemId}/session`,
+    `${OpenAPI.BASE}/api/v1/memory/${itemId}/session${query ? `?${query}` : ""}`,
     {
       headers: { Authorization: `Bearer ${token}` },
     },
@@ -172,6 +190,26 @@ function normalizeMessage(message: {
 
 function shouldRenderMessage(message: ChatMessage): boolean {
   return !STATUS_ONLY_TYPES.has(message.type ?? "")
+}
+
+function normalizeRenderableMessages(
+  messages: ChatSessionPage["messages"] | undefined,
+): ChatMessage[] {
+  return (messages ?? [])
+    .map((message) => normalizeMessage(message))
+    .filter(
+      (message): message is ChatMessage =>
+        message !== null && shouldRenderMessage(message),
+    )
+}
+
+function getChatMessageKey(message: ChatMessage): string {
+  return [
+    message.role,
+    message.type ?? "",
+    message.timestamp ?? "",
+    message.content,
+  ].join("\u0001")
 }
 
 function getVisibleChatContent(message: ChatMessage): string {
@@ -672,8 +710,12 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [liveError, setLiveError] = useState<string | null>(null)
   const [agentStatus, setAgentStatus] = useState<AgentStatusState | null>(null)
+  const [historyHasMore, setHistoryHasMore] = useState(false)
+  const [historyTotal, setHistoryTotal] = useState(0)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  const suppressNextAutoScrollRef = useRef(false)
   const streamReaderRef =
     useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
   const streamAbortRef = useRef<AbortController | null>(null)
@@ -800,10 +842,13 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       setLiveError(null)
       setIsLoading(false)
       setAgentStatus(null)
+      setHistoryHasMore(false)
+      setHistoryTotal(0)
+      setIsLoadingHistory(false)
 
       const [handlersResult, sessionResult] = await Promise.allSettled([
         ItemHandlerAssociationsService.getHandlersForItem({ itemId }),
-        getChatSession(itemId),
+        getChatSession(itemId, { limit: CHAT_HISTORY_PAGE_SIZE, offset: 0 }),
       ])
 
       if (cancelled) {
@@ -820,13 +865,12 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       }
 
       if (sessionResult.status === "fulfilled") {
-        const normalizedMessages = (sessionResult.value.messages ?? [])
-          .map((message) => normalizeMessage(message))
-          .filter(
-            (message): message is ChatMessage =>
-              message !== null && shouldRenderMessage(message),
-          )
+        const normalizedMessages = normalizeRenderableMessages(
+          sessionResult.value.messages,
+        )
         setMessages(normalizedMessages)
+        setHistoryTotal(sessionResult.value.total ?? normalizedMessages.length)
+        setHistoryHasMore(Boolean(sessionResult.value.has_more))
       } else {
         const errorMessage =
           sessionResult.reason instanceof Error
@@ -847,6 +891,55 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
     }
   }, [itemId])
 
+  const loadOlderHistory = async () => {
+    if (isLoadingHistory || !historyHasMore) {
+      return
+    }
+
+    const scrollElement = scrollRef.current
+    const previousScrollHeight = scrollElement?.scrollHeight ?? 0
+    const previousScrollTop = scrollElement?.scrollTop ?? 0
+    const loadedPersistedMessages = messages.filter(
+      (message) => !message.localEcho,
+    ).length
+
+    setIsLoadingHistory(true)
+    try {
+      const page = await getChatSession(itemId, {
+        limit: CHAT_HISTORY_PAGE_SIZE,
+        offset: loadedPersistedMessages,
+      })
+      const olderMessages = normalizeRenderableMessages(page.messages)
+      setHistoryTotal(page.total ?? historyTotal)
+      setHistoryHasMore(Boolean(page.has_more))
+      suppressNextAutoScrollRef.current = true
+      setMessages((current) => {
+        const existingKeys = new Set(current.map((message) => getChatMessageKey(message)))
+        const uniqueOlderMessages = olderMessages.filter(
+          (message) => !existingKeys.has(getChatMessageKey(message)),
+        )
+        if (uniqueOlderMessages.length === 0) {
+          return current
+        }
+        return [...uniqueOlderMessages, ...current]
+      })
+      window.requestAnimationFrame(() => {
+        const nextScrollElement = scrollRef.current
+        if (!nextScrollElement) {
+          return
+        }
+        nextScrollElement.scrollTop =
+          nextScrollElement.scrollHeight - previousScrollHeight + previousScrollTop
+      })
+    } catch (error) {
+      console.error("[Chat] Failed to load older session history:", error)
+      setHistoryError(
+        `加载更早历史失败: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    } finally {
+      setIsLoadingHistory(false)
+    }
+  }
   useEffect(() => {
     if (!handler) {
       return
@@ -955,6 +1048,10 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
 
   useEffect(() => {
     const messageCount = messages.length
+    if (suppressNextAutoScrollRef.current) {
+      suppressNextAutoScrollRef.current = false
+      return
+    }
     if (scrollRef.current && messageCount >= 0) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
@@ -1151,6 +1248,8 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
                       setMessages([])
                       setHistoryError(null)
                       setAgentStatus(null)
+                      setHistoryHasMore(false)
+                      setHistoryTotal(0)
                     } catch (error) {
                       console.error(
                         "[Chat] Failed to clear chat session:",
@@ -1184,6 +1283,30 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
               {handler
                 ? "开始与 Agent 对话，或等待终端过滤事件写入时间线。"
                 : "关联 ItemHandler 后可启用对话与实时事件。"}
+            </div>
+          )}
+
+          {messages.length > 0 && historyHasMore && (
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => void loadOlderHistory()}
+                disabled={isLoadingHistory}
+                className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                title="向上加载更早的 20 条历史"
+              >
+                {isLoadingHistory ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <ChevronUp className="size-3.5" />
+                )}
+                <span>
+                  {isLoadingHistory ? "加载中" : "加载更早 20 条"}
+                  {historyTotal > 0 ? ` · ${messages.length}/${historyTotal}` : ""}
+                </span>
+              </Button>
             </div>
           )}
 

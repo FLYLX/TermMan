@@ -2253,6 +2253,109 @@ def test_messages_arriving_while_processing_are_batched_in_pending_queue(
     assert pending_job.message.index("第二个人也问") < pending_job.message.index("第三个人继续问")
 
 
+def test_direct_wakeup_pending_messages_continue_after_first_job_sends_no_reply(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "reply_context_window_seconds": 15,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", lambda job: queued_jobs.append(job) or True)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
+    monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
+
+    first = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "第一个唤醒",
+            sender_key="onebot_v11:group:g1:u1",
+            target={"id": "g1"},
+            sender={"user_id": "u1", "display_name": "Alice"},
+            mentioned_bot=True,
+        ),
+    )
+    assert first.ignored is False
+    first_job = queued_jobs[-1]
+
+    active_plain = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "旁边人闲聊一句",
+            sender_key="onebot_v11:group:g1:u2",
+            target={"id": "g1"},
+            sender={"user_id": "u2", "display_name": "Bob"},
+        ),
+    )
+    second_wakeup = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "第二个人也叫你",
+            sender_key="onebot_v11:group:g1:u3",
+            target={"id": "g1"},
+            sender={"user_id": "u3", "display_name": "Carol"},
+            mentioned_bot=True,
+        ),
+    )
+    third_wakeup = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "第三个人继续叫你",
+            sender_key="onebot_v11:group:g1:u4",
+            target={"id": "g1"},
+            sender={"user_id": "u4", "display_name": "Dave"},
+            mentioned_bot=True,
+        ),
+    )
+
+    assert active_plain.reason == "queued_pending"
+    assert second_wakeup.reason == "queued_pending"
+    assert third_wakeup.reason == "queued_pending"
+    assert len(queued_jobs) == 1
+
+    robot_service._apply_reply_context_result(
+        robot,
+        first_job.conversation_key,
+        robot_message_sent=False,
+        reply_target=first_job.reply_target,
+        conversation_generation=first_job.conversation_generation,
+    )
+    assert robot_service._enqueue_pending_chat_followup(
+        robot=robot,
+        conversation_key=first_job.conversation_key,
+        direct_wakeup_only=True,
+    ) is True
+
+    assert len(queued_jobs) == 2
+    pending_message = queued_jobs[-1].message
+    assert "trigger=pending_queue" in pending_message
+    assert "旁边人闲聊一句" not in pending_message
+    assert "1. sender=Carol (u3); trigger=mention_bot: 第二个人也叫你" in pending_message
+    assert "2. sender=Dave (u4); trigger=mention_bot: 第三个人继续叫你" in pending_message
+    assert pending_message.index("第二个人也叫你") < pending_message.index("第三个人继续叫你")
 def test_pure_qq_image_message_is_ignored_before_agent_dispatch(
     db: Session,
     monkeypatch,
