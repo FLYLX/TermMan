@@ -873,6 +873,7 @@ def test_robot_message_passes_sender_prefix_to_agent(
     db.commit()
 
     captured = _capture_queued_chat(monkeypatch)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
 
     response = robot_service.handle_inbound_message(
         db,
@@ -893,8 +894,8 @@ def test_robot_message_passes_sender_prefix_to_agent(
     assert text.startswith(
         "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1)]\n"
     )
-    assert "[Recent QQ live context; background only" in text
-    assert "Alice (u1): hello" in text
+    assert "[Recent QQ live context; background only" not in text
+    assert "Alice (u1): hello" not in text
     assert text.endswith("[Current QQ message]\nhello")
     assert response.reply_chunks == []
 
@@ -918,6 +919,7 @@ def test_private_robot_message_passes_context_stamp_to_agent(
     db.commit()
 
     captured = _capture_queued_chat(monkeypatch)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
 
     response = robot_service.handle_inbound_message(
         db,
@@ -938,8 +940,8 @@ def test_private_robot_message_passes_context_stamp_to_agent(
     assert text.startswith(
         "[Robot message; conversation=private:u1; trigger=private_chat; sender=Alice (u1)]\n"
     )
-    assert "[Recent QQ live context; background only" in text
-    assert "Alice (u1): hello" in text
+    assert "[Recent QQ live context; background only" not in text
+    assert "Alice (u1): hello" not in text
     assert text.endswith("[Current QQ message]\nhello")
     assert captured["job"].direct_reply_trigger is True
     assert captured["job"].reply_requires_awake is True
@@ -1610,7 +1612,7 @@ def test_reply_context_window_is_scoped_to_current_conversation(
     assert queued_jobs[0].message.startswith(
         "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1)]\n"
     )
-    assert "Alice (u1): hello mention" in queued_jobs[0].message
+    assert "Alice (u1): hello mention" not in queued_jobs[0].message
     assert queued_jobs[0].message.endswith("[Current QQ message]\nhello mention")
     assert same_group_job.conversation_key == "group:g1"
     assert same_group_job.reply_context_active is True
@@ -1622,12 +1624,11 @@ def test_reply_context_window_is_scoped_to_current_conversation(
     assert same_group_job.message.startswith(
         "[Robot message; conversation=group:g1; trigger=active_chat_window; sender=Carol (u3)]\n"
     )
-    assert "Alice (u1): hello mention" in same_group_job.message
-    assert "Carol (u3): plain in same group" in same_group_job.message
+
     assert same_group_job.message.endswith("[Current QQ message]\nplain in same group")
 
 
-def test_direct_wakeup_agent_message_includes_recent_same_conversation_context(
+def test_direct_wakeup_agent_message_excludes_recent_same_conversation_context(
     db: Session,
     monkeypatch,
 ) -> None:
@@ -1660,6 +1661,7 @@ def test_direct_wakeup_agent_message_includes_recent_same_conversation_context(
         return True
 
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
 
     same_group_plain = robot_service.handle_inbound_message(
         db,
@@ -1700,8 +1702,8 @@ def test_direct_wakeup_agent_message_includes_recent_same_conversation_context(
     assert mentioned.ignored is False
     assert len(queued_jobs) == 1
     assert "[Recent QQ conversation context" not in queued_jobs[0].message
-    assert "[Recent QQ live context; background only" in queued_jobs[0].message
-    assert "Alice (u1): plain before" in queued_jobs[0].message
+    assert "[Recent QQ live context; background only" not in queued_jobs[0].message
+    assert "Alice (u1): plain before" not in queued_jobs[0].message
     assert "plain in another group" not in queued_jobs[0].message
     assert queued_jobs[0].message.startswith(
         "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Bob (u3)]\n"

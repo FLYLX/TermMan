@@ -696,10 +696,7 @@ class RobotService:
                         robot=robot,
                         conversation_key=conversation_key,
                     ),
-                    live_context_card=self._recent_live_context_card(
-                        robot=robot,
-                        conversation_key=conversation_key,
-                    ),
+                    live_context_card="",
                 ),
                 sender_key=message.sender_key,
                 reply_target=message.reply_target.model_copy(deep=True),
