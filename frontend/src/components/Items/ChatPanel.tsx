@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import { ExternalLink, Loader2, Send, Square, Trash2 } from "lucide-react"
+import { ChevronDown, ExternalLink, Loader2, Send, Square, Trash2 } from "lucide-react"
 import { useEffect, useEffectEvent, useRef, useState } from "react"
 
 import type { ItemHandlerPublic } from "@/client"
@@ -419,8 +419,8 @@ function RobotMetaPill({
   }
 
   return (
-    <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-sky-200 bg-white/80 px-1.5 py-0.5 text-[10px] leading-4 text-sky-950">
-      <span className="shrink-0 text-sky-600">{label}</span>
+    <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] leading-4 text-foreground">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
       <span className="min-w-0 truncate font-medium">{value}</span>
     </span>
   )
@@ -433,37 +433,58 @@ function RobotMessageCard({
   display: RobotMessageDisplay
   timestamp?: string
 }) {
+  const triggerLabel = getTriggerLabel(display.trigger) ?? "消息"
+  const conversationLabel = display.conversationId
+    ? `${getConversationTypeLabel(display.conversationType)} ${display.conversationId}`
+    : getConversationTypeLabel(display.conversationType)
+
   return (
-    <div className="w-full overflow-hidden rounded-lg border border-sky-300 bg-sky-50 text-sky-950 shadow-sm">
-      <div className="border-b border-sky-200 bg-sky-100/80 px-2.5 py-2">
-        <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-semibold text-sky-700">
-          <span>QQ → Agent</span>
-          <span className="shrink-0 text-sky-600/80">
-            {getTriggerLabel(display.trigger) ?? "消息"}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          <RobotMetaPill label="时间" value={formatChatTimestamp(timestamp)} />
-          <RobotMetaPill
-            label={getConversationTypeLabel(display.conversationType)}
-            value={display.conversationId}
-          />
-          <RobotMetaPill label="触发" value={getTriggerLabel(display.trigger)} />
-          <RobotMetaPill label="发送者" value={display.senderName} />
-          <RobotMetaPill label="QQ" value={display.senderId} />
-          <RobotMetaPill label="回复ID" value={display.replyIds.join(", ")} />
-          <RobotMetaPill label="@" value={display.mentions.join(", ")} />
-        </div>
+    <div className="w-full overflow-hidden rounded-lg border border-border border-l-sky-500 bg-card text-card-foreground shadow-sm">
+      <div className="border-b border-border bg-muted/50 px-2.5 py-2">
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
+            <div className="flex min-w-0 items-center gap-2 text-[11px] font-semibold">
+              <span className="shrink-0 text-sky-600 dark:text-sky-400">
+                QQ → Agent
+              </span>
+              <span className="shrink-0 rounded-md bg-sky-500/10 px-1.5 py-0.5 text-sky-700 dark:text-sky-300">
+                {triggerLabel}
+              </span>
+              <span className="min-w-0 truncate text-muted-foreground">
+                {conversationLabel}
+                {display.senderName ? ` · ${display.senderName}` : ""}
+              </span>
+            </div>
+            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <RobotMetaPill label="时间" value={formatChatTimestamp(timestamp)} />
+            <RobotMetaPill
+              label={getConversationTypeLabel(display.conversationType)}
+              value={display.conversationId}
+            />
+            <RobotMetaPill label="触发" value={triggerLabel} />
+            <RobotMetaPill label="发送者" value={display.senderName} />
+            <RobotMetaPill label="QQ" value={display.senderId} />
+            <RobotMetaPill label="回复ID" value={display.replyIds.join(", ")} />
+            <RobotMetaPill label="@" value={display.mentions.join(", ")} />
+          </div>
+        </details>
       </div>
       <div className="px-3 py-2 text-sm leading-6">
         {display.pendingMessages.length > 0 ? (
-          <div className="divide-y divide-sky-100">
+          <div className="divide-y divide-border">
             {display.pendingMessages.map((pending) => (
-              <div key={`${pending.index}-${pending.sender}`} className="py-1.5 first:pt-0 last:pb-0">
-                <div className="mb-0.5 flex min-w-0 items-center gap-2 text-[11px] text-sky-700">
+              <div
+                key={`${pending.index}-${pending.sender}`}
+                className="py-1.5 first:pt-0 last:pb-0"
+              >
+                <div className="mb-0.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
                   <span className="shrink-0 font-mono">#{pending.index}</span>
-                  <span className="min-w-0 truncate font-medium">{pending.sender}</span>
-                  <span className="shrink-0 text-sky-600/80">
+                  <span className="min-w-0 truncate font-medium text-foreground">
+                    {pending.sender}
+                  </span>
+                  <span className="shrink-0">
                     {getTriggerLabel(pending.trigger) ?? pending.trigger}
                   </span>
                 </div>
