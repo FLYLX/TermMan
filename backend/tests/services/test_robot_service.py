@@ -404,6 +404,18 @@ def test_event_replies_to_bot_detects_reply_sender() -> None:
     assert _event_replies_to_bot(_FakeBot(), event) is True
 
 
+def test_event_replies_to_bot_ignores_reply_event_self_id() -> None:
+    event = _FakeEvent([], reply={"self_id": "10001", "message_id": "42"})
+
+    assert _event_replies_to_bot(_FakeBot(), event) is False
+
+
+def test_event_replies_to_bot_detects_reply_segment_sender_qq() -> None:
+    event = _FakeEvent([_FakeSegment("reply", {"qq": "10001"})])
+
+    assert _event_replies_to_bot(_FakeBot(), event) is True
+
+
 def test_event_replies_to_bot_ignores_other_sender() -> None:
     event = _FakeEvent([_FakeSegment("reply", {"user_id": "10002"})])
 

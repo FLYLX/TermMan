@@ -1370,13 +1370,13 @@ def _candidate_reply_sender_ids(reply_data: dict[str, Any]) -> set[str]:
     sender = reply_data.get("sender")
     sender_data = sender if isinstance(sender, dict) else _dump_mapping(sender)
     candidates = {
-        reply_data.get("self_id"),
         reply_data.get("sender_id"),
         reply_data.get("user_id"),
+        reply_data.get("qq"),
         reply_data.get("message_sender_id"),
-        sender_data.get("self_id"),
         sender_data.get("sender_id"),
         sender_data.get("user_id"),
+        sender_data.get("qq"),
         sender_data.get("id"),
     }
     return {str(value).strip() for value in candidates if str(value or "").strip()}
