@@ -54,9 +54,22 @@ COMMAND_TOOL_NAMES = {
     "mcp_local_execute_command",
     "mcp_local_interrupt_command",
 }
+COMMAND_DISPATCH_FAILURE_MESSAGE = "终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。"
+COMMAND_DISPATCH_FAILURE_MARKERS = (
+    "命令发送失败",
+    "终端未连接",
+    "终端未打开",
+    "终端未收到命令",
+)
 SILENT_TOOL_NAMES = {READ_LOG_TOOL_NAME, "mcp_robot_send_message", "mcp_robot_sleep_conversation", "mcp_robot_save_memory"}
 TERMINAL_SOURCE_FILTERED = "filtered_output"
 TERMINAL_SOURCE_RAW_FEEDBACK = "raw_feedback"
+
+
+def is_command_dispatch_failure_result(tool_name: str, result_text: str) -> bool:
+    if tool_name not in COMMAND_TOOL_NAMES:
+        return False
+    return any(marker in (result_text or "") for marker in COMMAND_DISPATCH_FAILURE_MARKERS)
 
 
 class SessionState(Enum):
@@ -1183,12 +1196,21 @@ class AgentSession:
             logger.info(f"[AgentSession] Tool {tool_name} executed")
 
             result_text = self._format_tool_result(result).strip()
+            command_dispatch_failed = is_command_dispatch_failure_result(tool_name, result_text)
             if result_text and not hide_tool_details:
                 self.emit_output(
                     result_text,
                     "agent_tool_result",
                     {"tool_name": tool_name},
                 )
+
+            if command_dispatch_failed:
+                self.emit_output(
+                    COMMAND_DISPATCH_FAILURE_MESSAGE,
+                    "agent_warning",
+                    {"tool_name": tool_name},
+                )
+                return None
 
             assistant_message["tool_calls"].append(
                 {

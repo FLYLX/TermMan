@@ -10,6 +10,9 @@ def debug_log(msg: str):
     print(msg, file=sys.stderr, flush=True)
 
 
+TERMINAL_NOT_CONNECTED_MESSAGE = "终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。"
+
+
 class LocalMCPServer:
     def __init__(self):
         self._tools: dict[str, dict] = {}
@@ -136,6 +139,8 @@ class LocalMCPServer:
             
             has_handler = input_center.has_handler(item_id)
             debug_log(f"[LocalMCPServer] has_handler={has_handler}")
+            if not has_handler:
+                return [{"type": "text", "text": TERMINAL_NOT_CONNECTED_MESSAGE}]
             
             if not command.endswith("\n"):
                 command = command + "\n"
@@ -149,7 +154,7 @@ class LocalMCPServer:
                     "text": (
                         f"命令已发送到终端，尚未确认执行结果: {command.strip()}"
                         if success
-                        else "命令发送失败，终端未收到命令"
+                        else TERMINAL_NOT_CONNECTED_MESSAGE
                     ),
                 }
             ]
@@ -171,6 +176,8 @@ class LocalMCPServer:
             
             has_handler = input_center.has_handler(item_id)
             debug_log(f"[LocalMCPServer] interrupt has_handler={has_handler}")
+            if not has_handler:
+                return [{"type": "text", "text": TERMINAL_NOT_CONNECTED_MESSAGE}]
             
             success = InputSDK().send(item_id, "\x03")
             debug_log(f"[LocalMCPServer] interrupt result: success={success}")

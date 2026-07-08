@@ -45,3 +45,34 @@ def test_system_prompt_forbids_claiming_command_success_without_confirmation() -
 
     assert "不代表命令已经执行成功" in prompt
     assert "命令已发送，等待终端结果确认" in prompt
+
+
+def test_execute_command_reports_disconnected_without_handler(monkeypatch) -> None:
+    import importlib
+
+    import app.services.socket_pool as socket_pool
+
+    input_center_module = importlib.import_module("app.services.socket_pool.input_center")
+
+    class FakeInputSDK:
+        def send(self, item_id: str, command: str) -> bool:
+            raise AssertionError("send should not be called without a terminal handler")
+
+    monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
+    monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: False)
+
+    server = LocalMCPServer()
+    result = server.call_tool(
+        "execute_command",
+        {
+            "item_id": "item-1",
+            "command": "echo 23231",
+        },
+    )
+
+    assert result == [
+        {
+            "type": "text",
+            "text": "终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。",
+        }
+    ]

@@ -1405,3 +1405,27 @@ def test_turn_guard_stops_repeated_unchanged_terminal_log_reads() -> None:
     stopped, reason = guard.after_tool(READ_LOG_TOOL_NAME, "same log content")
     assert stopped is True
     assert reason
+
+
+def test_command_dispatch_failure_result_detects_terminal_failure() -> None:
+    from app.services.agent.session import (
+        COMMAND_DISPATCH_FAILURE_MESSAGE,
+        is_command_dispatch_failure_result,
+    )
+
+    assert is_command_dispatch_failure_result(
+        "mcp_local_execute_command",
+        COMMAND_DISPATCH_FAILURE_MESSAGE,
+    )
+    assert is_command_dispatch_failure_result(
+        "mcp_local_interrupt_command",
+        "终端未收到命令",
+    )
+    assert not is_command_dispatch_failure_result(
+        "mcp_local_read_terminal_log",
+        COMMAND_DISPATCH_FAILURE_MESSAGE,
+    )
+    assert not is_command_dispatch_failure_result(
+        "mcp_local_execute_command",
+        "命令已发送到终端，尚未确认执行结果: java -version",
+    )

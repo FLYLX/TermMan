@@ -43,7 +43,11 @@ from app.services.agent.prompts.policy import (
     persist_memory_candidate,
 )
 from app.services.agent.prompts.system import get_system_prompt
-from app.services.agent.session import agent_session_manager
+from app.services.agent.session import (
+    COMMAND_DISPATCH_FAILURE_MESSAGE,
+    agent_session_manager,
+    is_command_dispatch_failure_result,
+)
 from app.services.agent.stream_manager import stream_manager
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 from app.services.agent.tool_arguments import (
@@ -1074,6 +1078,10 @@ def generate_stream(
                 )
                 tool_called_this_turn = True
                 result_text = _format_tool_result(result)
+                command_dispatch_failed = is_command_dispatch_failure_result(
+                    tool_name,
+                    result_text,
+                )
                 if result_text and fallback_is_delivery_result(result_text):
                     delivery_tool_sent_by_integration = True
 
@@ -1108,6 +1116,20 @@ def generate_stream(
                             extra={"tool_name": tool_name},
                         )
                         yield _to_sse(result_event)
+
+                if command_dispatch_failed:
+                    _mark_agent_task_plan_failed(planned_task_runtime)
+                    warning_event = _persist_and_broadcast_event(
+                        item_id,
+                        role="assistant",
+                        content=COMMAND_DISPATCH_FAILURE_MESSAGE,
+                        message_type="agent_warning",
+                        extra={"tool_name": tool_name},
+                    )
+                    yield _to_sse(warning_event)
+                    _broadcast_agent_status(item_id, "idle")
+                    yield _to_sse({"done": True})
+                    return
 
                 assistant_message["tool_calls"].append(
                     {
