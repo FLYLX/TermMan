@@ -68,9 +68,12 @@ const TERMINAL_STATUS_DONE_STATES = new Set([
   "interrupted",
 ])
 
+const ROBOT_HEADER_RE = /^\[Robot message;\s*([^\]]+)\]/
 const ROBOT_CURRENT_MESSAGE_RE = /\[Current QQ message\]\r?\n([\s\S]*)$/
 const ROBOT_PENDING_LINE_RE =
-  /^(\d+)\.\s+sender=([^;]+);\s+trigger=[^:]+:\s*(.*)$/
+  /^(\d+)\.\s+sender=([^;]+);\s+trigger=([^:]+):\s*(.*)$/
+const CQ_REPLY_RE = /\[CQ:reply,id=([^\]]+)\]/g
+const CQ_AT_RE = /\[CQ:at,qq=([^,\]]+)(?:,[^\]]*)?\]/g
 
 async function getChatSession(
   itemId: string,
@@ -193,13 +196,292 @@ function getVisibleChatContent(message: ChatMessage): string {
       if (!match) {
         return null
       }
-      return `${match[1]}. ${match[2]}: ${match[3]}`
+      return `${match[1]}. ${match[2]}: ${match[4]}`
     })
     .filter((line): line is string => Boolean(line))
 
   return pendingLines.length > 0 ? pendingLines.join("\n") : current
 }
 
+type RobotPendingMessage = {
+  index: string
+  sender: string
+  trigger: string
+  content: string
+}
+
+type RobotMessageDisplay = {
+  body: string
+  conversationType: string | null
+  conversationId: string | null
+  trigger: string | null
+  senderName: string | null
+  senderId: string | null
+  mentions: string[]
+  replyIds: string[]
+  pendingMessages: RobotPendingMessage[]
+}
+
+function parseRobotMetadata(content: string): Record<string, string> | null {
+  const match = content.match(ROBOT_HEADER_RE)
+  if (!match) {
+    return null
+  }
+
+  return match[1].split(";").reduce<Record<string, string>>((metadata, part) => {
+    const [rawKey, ...valueParts] = part.split("=")
+    const key = rawKey.trim()
+    const value = valueParts.join("=").trim()
+    if (key && value) {
+      metadata[key] = value
+    }
+    return metadata
+  }, {})
+}
+
+function parseConversation(value: string | undefined): {
+  type: string | null
+  id: string | null
+} {
+  if (!value) {
+    return { type: null, id: null }
+  }
+
+  const [type, ...idParts] = value.split(":")
+  return {
+    type: type || null,
+    id: idParts.join(":") || value,
+  }
+}
+
+function parseSender(value: string | undefined): {
+  name: string | null
+  id: string | null
+} {
+  if (!value) {
+    return { name: null, id: null }
+  }
+
+  const match = value.match(/^(.*?)\s*\(([^()]+)\)$/)
+  if (!match) {
+    return { name: value.trim() || null, id: null }
+  }
+
+  return {
+    name: match[1].trim() || null,
+    id: match[2].trim() || null,
+  }
+}
+
+function uniqueValues(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)))
+}
+
+function decodeRobotText(value: string): string {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&#91;/g, "[")
+    .replace(/&#93;/g, "]")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+}
+
+function cleanRobotQqContent(value: string): string {
+  return decodeRobotText(value)
+    .replace(CQ_REPLY_RE, "")
+    .replace(CQ_AT_RE, "@$1 ")
+    .replace(/\[CQ:image[^\]]*\]/g, "[图片]")
+    .replace(/\[CQ:record[^\]]*\]/g, "[语音]")
+    .replace(/\[CQ:video[^\]]*\]/g, "[视频]")
+    .replace(/\[CQ:face[^\]]*\]/g, "[表情]")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
+function parseRobotPendingMessages(current: string): RobotPendingMessage[] {
+  if (!current.startsWith("[Pending QQ messages;")) {
+    return []
+  }
+
+  return current
+    .split(/\r?\n/)
+    .map((line) => {
+      const match = line.match(ROBOT_PENDING_LINE_RE)
+      if (!match) {
+        return null
+      }
+      return {
+        index: match[1],
+        sender: match[2].trim(),
+        trigger: match[3].trim(),
+        content: cleanRobotQqContent(match[4]),
+      }
+    })
+    .filter((line): line is RobotPendingMessage => Boolean(line))
+}
+
+function getRobotMessageDisplay(message: ChatMessage): RobotMessageDisplay | null {
+  if (message.role !== "user" || !message.content.includes("[Robot message;")) {
+    return null
+  }
+
+  const metadata = parseRobotMetadata(message.content)
+  const currentMatch = message.content.match(ROBOT_CURRENT_MESSAGE_RE)
+  if (!metadata || !currentMatch) {
+    return null
+  }
+
+  const current = currentMatch[1].trim()
+  const pendingMessages = parseRobotPendingMessages(current)
+  const { type, id } = parseConversation(metadata.conversation)
+  const sender = parseSender(metadata.sender)
+  const body = pendingMessages.length > 0 ? "" : cleanRobotQqContent(current)
+  const mentionsFromHeader = (metadata.mentions ?? "")
+    .split(",")
+    .map((mention) => mention.trim())
+    .filter(Boolean)
+  const mentionsFromBody = Array.from(current.matchAll(CQ_AT_RE)).map(
+    (match) => match[1],
+  )
+
+  return {
+    body: body || current,
+    conversationType: type,
+    conversationId: id,
+    trigger: metadata.trigger ?? null,
+    senderName: sender.name,
+    senderId: sender.id,
+    mentions: uniqueValues([...mentionsFromHeader, ...mentionsFromBody]),
+    replyIds: uniqueValues(
+      Array.from(current.matchAll(CQ_REPLY_RE)).map((match) => match[1]),
+    ),
+    pendingMessages,
+  }
+}
+
+function getConversationTypeLabel(type: string | null): string {
+  if (type === "group") {
+    return "群号"
+  }
+
+  if (type === "private") {
+    return "私聊"
+  }
+
+  if (type === "channel") {
+    return "频道"
+  }
+
+  return "对话"
+}
+
+function getTriggerLabel(trigger: string | null): string | null {
+  if (!trigger) {
+    return null
+  }
+
+  const labels: Record<string, string> = {
+    active_chat_window: "已唤醒",
+    mention_bot: "@机器人",
+    pending_queue: "排队消息",
+    plain: "普通消息",
+    private: "私聊",
+    reply_to_bot: "回复机器人",
+  }
+
+  return labels[trigger] ?? trigger
+}
+
+function formatChatTimestamp(timestamp: string | undefined): string | null {
+  if (!timestamp) {
+    return null
+  }
+
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) {
+    return timestamp
+  }
+
+  return date.toLocaleString()
+}
+
+function RobotMetaPill({
+  label,
+  value,
+}: {
+  label: string
+  value: string | null | undefined
+}) {
+  if (!value) {
+    return null
+  }
+
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-sky-200 bg-white/80 px-1.5 py-0.5 text-[10px] leading-4 text-sky-950">
+      <span className="shrink-0 text-sky-600">{label}</span>
+      <span className="min-w-0 truncate font-medium">{value}</span>
+    </span>
+  )
+}
+
+function RobotMessageCard({
+  display,
+  timestamp,
+}: {
+  display: RobotMessageDisplay
+  timestamp?: string
+}) {
+  return (
+    <div className="w-full overflow-hidden rounded-lg border border-sky-300 bg-sky-50 text-sky-950 shadow-sm">
+      <div className="border-b border-sky-200 bg-sky-100/80 px-2.5 py-2">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-semibold text-sky-700">
+          <span>QQ → Agent</span>
+          <span className="shrink-0 text-sky-600/80">
+            {getTriggerLabel(display.trigger) ?? "消息"}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <RobotMetaPill label="时间" value={formatChatTimestamp(timestamp)} />
+          <RobotMetaPill
+            label={getConversationTypeLabel(display.conversationType)}
+            value={display.conversationId}
+          />
+          <RobotMetaPill label="触发" value={getTriggerLabel(display.trigger)} />
+          <RobotMetaPill label="发送者" value={display.senderName} />
+          <RobotMetaPill label="QQ" value={display.senderId} />
+          <RobotMetaPill label="回复ID" value={display.replyIds.join(", ")} />
+          <RobotMetaPill label="@" value={display.mentions.join(", ")} />
+        </div>
+      </div>
+      <div className="px-3 py-2 text-sm leading-6">
+        {display.pendingMessages.length > 0 ? (
+          <div className="divide-y divide-sky-100">
+            {display.pendingMessages.map((pending) => (
+              <div key={`${pending.index}-${pending.sender}`} className="py-1.5 first:pt-0 last:pb-0">
+                <div className="mb-0.5 flex min-w-0 items-center gap-2 text-[11px] text-sky-700">
+                  <span className="shrink-0 font-mono">#{pending.index}</span>
+                  <span className="min-w-0 truncate font-medium">{pending.sender}</span>
+                  <span className="shrink-0 text-sky-600/80">
+                    {getTriggerLabel(pending.trigger) ?? pending.trigger}
+                  </span>
+                </div>
+                <div className="whitespace-pre-wrap break-words">
+                  {pending.content || "[空消息]"}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="whitespace-pre-wrap break-words">
+            {display.body || "[空消息]"}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 function getTransientStatus(message: ChatMessage): AgentStatusState | null {
   if (message.type === "agent_thinking") {
     return { text: "思考中" }
@@ -886,28 +1168,41 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
 
           {messages.map((message, index) => {
             const label = getMessageLabel(message)
-            const visibleContent = getVisibleChatContent(message)
+            const robotDisplay = getRobotMessageDisplay(message)
+            const visibleContent = robotDisplay
+              ? ""
+              : getVisibleChatContent(message)
+            const alignment = message.role === "user" ? "justify-end" : "justify-start"
             return (
               <div
                 key={`${message.timestamp ?? "msg"}-${index}`}
-                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                className={`flex ${alignment}`}
               >
-                <div
-                  className={`max-w-[90%] rounded-lg px-3 py-2 text-sm ${getMessageClasses(message)}`}
-                >
-                  {label && (
-                    <div className="mb-1 border-b border-current/15 pb-1 text-[11px] uppercase tracking-wide opacity-70">
-                      {label}
-                    </div>
-                  )}
-                  <div
-                    className={`whitespace-pre-wrap break-words ${
-                      message.role === "terminal" ? "font-mono" : "font-sans"
-                    }`}
-                  >
-                    {visibleContent}
+                {robotDisplay ? (
+                  <div className="w-full max-w-[94%]">
+                    <RobotMessageCard
+                      display={robotDisplay}
+                      timestamp={message.timestamp}
+                    />
                   </div>
-                </div>
+                ) : (
+                  <div
+                    className={`max-w-[90%] rounded-lg px-3 py-2 text-sm ${getMessageClasses(message)}`}
+                  >
+                    {label && (
+                      <div className="mb-1 border-b border-current/15 pb-1 text-[11px] uppercase tracking-wide opacity-70">
+                        {label}
+                      </div>
+                    )}
+                    <div
+                      className={`whitespace-pre-wrap break-words ${
+                        message.role === "terminal" ? "font-mono" : "font-sans"
+                      }`}
+                    >
+                      {visibleContent}
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })}
