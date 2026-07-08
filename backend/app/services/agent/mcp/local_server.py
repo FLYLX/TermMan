@@ -124,6 +124,80 @@ class LocalMCPServer:
             "skip_memory": skip_memory
         }
     
+    def _restore_existing_terminal_input(self, item_id: str) -> bool:
+        try:
+            import uuid
+
+            from sqlmodel import Session
+
+            from app.core.db import engine
+            from app.models import Item
+            from app.services import DaemonConfig, connection_manager, socket_pool_facade
+            from app.services.terminal_service import TerminalService
+
+            try:
+                item_uuid = uuid.UUID(str(item_id))
+            except ValueError:
+                debug_log(f"[LocalMCPServer] invalid item_id for restore: {item_id}")
+                return False
+
+            with Session(engine) as db:
+                item = db.get(Item, item_uuid)
+                if not item:
+                    debug_log(f"[LocalMCPServer] item not found for restore: {item_id}")
+                    return False
+                if not item.socket_host or not item.socket_port or not item.api_key:
+                    debug_log(f"[LocalMCPServer] item missing daemon config for restore: {item_id}")
+                    return False
+
+                daemon_config = DaemonConfig(item.socket_host, item.socket_port, item.api_key)
+                owner_uuid = str(item.owner_id)
+
+            connection = connection_manager.get_or_create_connection(daemon_config)
+            if not connection.is_connected():
+                debug_log(f"[LocalMCPServer] daemon not connected for restore: {item_id}")
+                return False
+
+            status_result = connection.terminal_status_http(str(item_id))
+            if not status_result.get("success"):
+                debug_log(
+                    f"[LocalMCPServer] terminal status unavailable for restore: {item_id}, "
+                    f"error={status_result.get('error')}"
+                )
+                return False
+
+            status_data = status_result.get("data") or {}
+            terminal_status = str(status_data.get("status") or "")
+            token = status_data.get("token")
+            if terminal_status not in {"running", "waiting_backend"} or not token:
+                debug_log(
+                    f"[LocalMCPServer] terminal not active for restore: {item_id}, "
+                    f"status={terminal_status}, token={bool(token)}"
+                )
+                return False
+
+            terminal_service = TerminalService(connection_manager, socket_pool_facade)
+            restored = terminal_service.restore_terminal_session(
+                item_uuid=str(item_id),
+                owner_uuid=owner_uuid,
+                daemon_config=daemon_config,
+                token=str(token),
+            )
+            debug_log(f"[LocalMCPServer] terminal input restore result: item={item_id}, restored={restored}")
+            return bool(restored)
+        except Exception as exc:
+            debug_log(f"[LocalMCPServer] terminal input restore error for item={item_id}: {exc}")
+            return False
+
+    def _ensure_terminal_input_handler(self, item_id: str) -> bool:
+        from app.services.socket_pool.input_center import input_center
+
+        if input_center.has_handler(item_id):
+            return True
+        if self._restore_existing_terminal_input(item_id):
+            return input_center.has_handler(item_id)
+        return False
+
     def _execute_command(self, args: dict) -> list:
         command = args.get("command", "")
         item_id = args.get("item_id", "")
@@ -135,9 +209,7 @@ class LocalMCPServer:
         
         try:
             from app.services.socket_pool import InputSDK
-            from app.services.socket_pool.input_center import input_center
-            
-            has_handler = input_center.has_handler(item_id)
+            has_handler = self._ensure_terminal_input_handler(item_id)
             debug_log(f"[LocalMCPServer] has_handler={has_handler}")
             if not has_handler:
                 return [{"type": "text", "text": TERMINAL_NOT_CONNECTED_MESSAGE}]
@@ -172,9 +244,7 @@ class LocalMCPServer:
         
         try:
             from app.services.socket_pool import InputSDK
-            from app.services.socket_pool.input_center import input_center
-            
-            has_handler = input_center.has_handler(item_id)
+            has_handler = self._ensure_terminal_input_handler(item_id)
             debug_log(f"[LocalMCPServer] interrupt has_handler={has_handler}")
             if not has_handler:
                 return [{"type": "text", "text": TERMINAL_NOT_CONNECTED_MESSAGE}]

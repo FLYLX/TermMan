@@ -61,6 +61,89 @@ COMMAND_DISPATCH_FAILURE_MARKERS = (
     "终端未打开",
     "终端未收到命令",
 )
+EXECUTE_COMMAND_TOOL_NAME = "mcp_local_execute_command"
+TERMINAL_INPUT_MODE_BUSY = "busy"
+TERMINAL_INPUT_MODE_CONSOLE = "console"
+TERMINAL_INPUT_CONTEXT_TTL_SECONDS = 6 * 60 * 60
+TERMINAL_BUSY_COMMAND_PATTERNS = (
+    r"^(?:sudo\s+)?(?:apt|apt-get|aptitude)\s+(?:update|upgrade|full-upgrade|dist-upgrade|install|remove|autoremove)\b",
+    r"^(?:sudo\s+)?(?:dnf|yum)\s+(?:install|update|upgrade|remove|groupinstall)\b",
+    r"^(?:sudo\s+)?apk\s+(?:add|update|upgrade|del)\b",
+    r"^(?:sudo\s+)?pacman\s+-S(?:yu?)?\b",
+    r"^(?:sudo\s+)?zypper\s+(?:install|update|refresh|remove)\b",
+    r"^(?:python\d*(?:\.\d+)?\s+-m\s+pip|pip\d*|uv\s+pip)\s+install\b",
+    r"^uv\s+sync\b",
+    r"^(?:npm|pnpm|yarn|bun)\s+(?:install|ci|add|update|upgrade)\b",
+    r"^docker\s+(?:build|compose\s+build|compose\s+up)\b",
+    r"^(?:curl|wget)\b.*(?:https?://|ftp://)",
+    r"^git\s+(?:clone|pull|fetch|submodule\s+update)\b",
+    r"^(?:make|cmake\s+--build|cargo\s+(?:build|install)|go\s+(?:build|install)|mvn|gradle|\./gradlew)\b",
+)
+TERMINAL_CONSOLE_COMMAND_PATTERNS = (
+    r"\bjava\s+.*(?:-jar\s+\S*(?:server|paper|spigot|forge|fabric|bukkit|mohist|arclight|minecraft)\S*|nogui)\b",
+    r"\bbedrock_server\b",
+)
+MINECRAFT_CONSOLE_COMMANDS = frozenset(
+    {
+        "advancement",
+        "ban",
+        "ban-ip",
+        "banlist",
+        "clear",
+        "deop",
+        "difficulty",
+        "effect",
+        "enchant",
+        "execute",
+        "experience",
+        "fill",
+        "forceload",
+        "function",
+        "gamemode",
+        "gamerule",
+        "give",
+        "help",
+        "kick",
+        "kill",
+        "list",
+        "locate",
+        "me",
+        "msg",
+        "op",
+        "pardon",
+        "pardon-ip",
+        "particle",
+        "playsound",
+        "reload",
+        "save-all",
+        "save-off",
+        "save-on",
+        "say",
+        "schedule",
+        "scoreboard",
+        "seed",
+        "setblock",
+        "setidletimeout",
+        "setworldspawn",
+        "spawnpoint",
+        "spectate",
+        "spreadplayers",
+        "stop",
+        "summon",
+        "tag",
+        "team",
+        "teleport",
+        "tell",
+        "tellraw",
+        "time",
+        "title",
+        "tp",
+        "weather",
+        "whitelist",
+        "worldborder",
+        "xp",
+    }
+)
 SILENT_TOOL_NAMES = {READ_LOG_TOOL_NAME, "mcp_robot_send_message", "mcp_robot_sleep_conversation", "mcp_robot_save_memory"}
 TERMINAL_SOURCE_FILTERED = "filtered_output"
 TERMINAL_SOURCE_RAW_FEEDBACK = "raw_feedback"
@@ -70,6 +153,39 @@ def is_command_dispatch_failure_result(tool_name: str, result_text: str) -> bool
     if tool_name not in COMMAND_TOOL_NAMES:
         return False
     return any(marker in (result_text or "") for marker in COMMAND_DISPATCH_FAILURE_MARKERS)
+
+
+def _normalize_command_for_routing(command: str) -> str:
+    return " ".join((command or "").strip().split()).lower()
+
+
+def classify_terminal_input_mode(command: str) -> str | None:
+    normalized = _normalize_command_for_routing(command)
+    if not normalized:
+        return None
+    if any(re.search(pattern, normalized) for pattern in TERMINAL_CONSOLE_COMMAND_PATTERNS):
+        return TERMINAL_INPUT_MODE_CONSOLE
+    if any(re.search(pattern, normalized) for pattern in TERMINAL_BUSY_COMMAND_PATTERNS):
+        return TERMINAL_INPUT_MODE_BUSY
+    return None
+
+
+def _first_command_token(command: str) -> str:
+    normalized = _normalize_command_for_routing(command)
+    if not normalized:
+        return ""
+    if normalized.startswith("/"):
+        normalized = normalized[1:].strip()
+    return normalized.split(maxsplit=1)[0]
+
+
+def is_terminal_console_command(command: str) -> bool:
+    stripped = (command or "").strip()
+    if not stripped or "\n" in stripped or "\r" in stripped:
+        return False
+    if re.search(r"[;&|`$<>]", stripped):
+        return False
+    return _first_command_token(stripped) in MINECRAFT_CONSOLE_COMMANDS
 
 
 class SessionState(Enum):
@@ -181,6 +297,16 @@ class PendingCommand:
     dispatched_at: datetime = field(default_factory=datetime.now)
     echo_count: int = 0
     timeout_warned: bool = False
+    input_mode: str | None = None
+
+
+@dataclass
+class TerminalInputContext:
+    command: str
+    normalized_command: str
+    input_mode: str
+    created_at: datetime = field(default_factory=datetime.now)
+    last_seen_at: datetime = field(default_factory=datetime.now)
 
 
 @dataclass
@@ -205,6 +331,7 @@ class AgentSession:
         self._last_status_signature: tuple[str, str, str] | None = None
         self._pending_command: PendingCommand | None = None
         self._pending_command_recheck_timer: threading.Timer | None = None
+        self._terminal_input_context: TerminalInputContext | None = None
 
         logger.info(f"[AgentSession] Created session for item={item_id}, handler={handler_id}")
 
@@ -354,14 +481,94 @@ class AgentSession:
                 return value.strip()
         return f"{tool_name}: {json.dumps(tool_args, ensure_ascii=False, sort_keys=True)}"
 
+    def _short_command(self, command: str, *, max_length: int = 120) -> str:
+        compact = " ".join((command or "").strip().split())
+        if len(compact) <= max_length:
+            return compact
+        return compact[: max_length - 1] + "…"
+
+    def _set_terminal_input_context(self, command: str, input_mode: str | None) -> None:
+        if input_mode != TERMINAL_INPUT_MODE_CONSOLE:
+            return
+        context = TerminalInputContext(
+            command=command,
+            normalized_command=self._normalize_text(command),
+            input_mode=input_mode,
+        )
+        with self.lock:
+            self._terminal_input_context = context
+
+    def _clear_terminal_input_context_for_command(self, command: str) -> None:
+        normalized_command = self._normalize_text(command)
+        with self.lock:
+            context = self._terminal_input_context
+            if context and context.normalized_command == normalized_command:
+                self._terminal_input_context = None
+
+    def _get_terminal_input_context(self) -> TerminalInputContext | None:
+        with self.lock:
+            context = self._terminal_input_context
+            if not context:
+                return None
+            age_seconds = (datetime.now() - context.last_seen_at).total_seconds()
+            if age_seconds > TERMINAL_INPUT_CONTEXT_TTL_SECONDS:
+                self._terminal_input_context = None
+                return None
+            return context
+
+    def _validate_terminal_command_input(
+        self,
+        tool_name: str,
+        tool_args: dict[str, Any],
+    ) -> str | None:
+        if tool_name != EXECUTE_COMMAND_TOOL_NAME:
+            return None
+
+        command = self._extract_command_text(tool_name, tool_args)
+        context = self._get_terminal_input_context()
+        if context and context.input_mode == TERMINAL_INPUT_MODE_CONSOLE:
+            if is_terminal_console_command(command):
+                with self.lock:
+                    active_context = self._terminal_input_context
+                    if active_context:
+                        active_context.last_seen_at = datetime.now()
+                return None
+            return (
+                f"终端当前在 `{self._short_command(context.command)}` 的交互式控制台中。"
+                f"`{self._short_command(command)}` 看起来是 shell 命令，发送进去不会由 shell 执行，已拦截。"
+            )
+
+        pending = self._get_pending_command()
+        if not pending:
+            return None
+
+        if pending.input_mode == TERMINAL_INPUT_MODE_BUSY:
+            return (
+                f"终端正在执行 `{self._short_command(pending.command)}`，这个前台进程通常不接收新的 shell 命令。"
+                f"已拦截 `{self._short_command(command)}`，请等待当前任务结束或先中断。"
+            )
+
+        if pending.input_mode == TERMINAL_INPUT_MODE_CONSOLE:
+            if is_terminal_console_command(command):
+                return None
+            return (
+                f"终端正在启动 `{self._short_command(pending.command)}` 的交互式控制台。"
+                f"`{self._short_command(command)}` 看起来不是控制台命令，已拦截。"
+            )
+
+        return None
+
     def _set_pending_command(self, tool_name: str, tool_args: dict[str, Any]):
         command = self._extract_command_text(tool_name, tool_args)
+        input_mode = classify_terminal_input_mode(command)
         pending = PendingCommand(
             tool_name=tool_name,
             command=command,
             normalized_command=self._normalize_text(command),
             log_line_cursor=self._get_log_line_count(),
+            input_mode=input_mode,
         )
+        self._set_terminal_input_context(command, input_mode)
         with self.lock:
             self._pending_command = pending
         self._schedule_pending_command_recheck()
@@ -673,6 +880,12 @@ class AgentSession:
                 self.item_id,
                 pending.command,
             )
+            if pending.input_mode == TERMINAL_INPUT_MODE_BUSY:
+                if len(lines) > len(informative_lines):
+                    self._clear_pending_command()
+                return False, None, False
+            if pending.input_mode == TERMINAL_INPUT_MODE_CONSOLE:
+                self._set_terminal_input_context(pending.command, pending.input_mode)
             self._clear_pending_command()
             return False, None, False
 
@@ -1180,6 +1393,14 @@ class AgentSession:
 
             normalized_tool_args_str = json.dumps(tool_args, ensure_ascii=False)
             tool_args["item_id"] = self.item_id
+            terminal_input_error = self._validate_terminal_command_input(tool_name, tool_args)
+            if terminal_input_error:
+                self.emit_output(
+                    terminal_input_error,
+                    "agent_warning",
+                    {"tool_name": tool_name},
+                )
+                return None
             hide_tool_details = self._should_hide_tool_details(tool_name)
 
             if hide_tool_details:

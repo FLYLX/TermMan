@@ -62,6 +62,12 @@ def test_execute_command_reports_disconnected_without_handler(monkeypatch) -> No
     monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: False)
 
     server = LocalMCPServer()
+    restore_calls: list[str] = []
+    monkeypatch.setattr(
+        server,
+        "_restore_existing_terminal_input",
+        lambda item_id: restore_calls.append(item_id) or False,
+    )
     result = server.call_tool(
         "execute_command",
         {
@@ -74,5 +80,55 @@ def test_execute_command_reports_disconnected_without_handler(monkeypatch) -> No
         {
             "type": "text",
             "text": "终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。",
+        }
+    ]
+    assert restore_calls == ["item-1"]
+
+
+def test_execute_command_restores_existing_terminal_input_handler(monkeypatch) -> None:
+    import importlib
+
+    import app.services.socket_pool as socket_pool
+
+    input_center_module = importlib.import_module("app.services.socket_pool.input_center")
+
+    sent: dict[str, str] = {}
+    handler_checks = {"value": 0}
+    restore_calls: list[str] = []
+
+    class FakeInputSDK:
+        def send(self, item_id: str, command: str) -> bool:
+            sent["item_id"] = item_id
+            sent["command"] = command
+            return True
+
+    def fake_has_handler(item_id: str) -> bool:
+        handler_checks["value"] += 1
+        return handler_checks["value"] >= 2
+
+    monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
+    monkeypatch.setattr(input_center_module.input_center, "has_handler", fake_has_handler)
+
+    server = LocalMCPServer()
+    monkeypatch.setattr(
+        server,
+        "_restore_existing_terminal_input",
+        lambda item_id: restore_calls.append(item_id) or True,
+    )
+
+    result = server.call_tool(
+        "execute_command",
+        {
+            "item_id": "item-1",
+            "command": "echo restored",
+        },
+    )
+
+    assert restore_calls == ["item-1"]
+    assert sent == {"item_id": "item-1", "command": "echo restored\n"}
+    assert result == [
+        {
+            "type": "text",
+            "text": "命令已发送到终端，尚未确认执行结果: echo restored",
         }
     ]

@@ -1429,3 +1429,76 @@ def test_command_dispatch_failure_result_detects_terminal_failure() -> None:
         "mcp_local_execute_command",
         "命令已发送到终端，尚未确认执行结果: java -version",
     )
+
+
+def test_terminal_input_mode_classifies_busy_and_console_commands() -> None:
+    from app.services.agent.session import (
+        TERMINAL_INPUT_MODE_BUSY,
+        TERMINAL_INPUT_MODE_CONSOLE,
+        classify_terminal_input_mode,
+        is_terminal_console_command,
+    )
+
+    assert classify_terminal_input_mode("apt update") == TERMINAL_INPUT_MODE_BUSY
+    assert classify_terminal_input_mode("pip install fastapi") == TERMINAL_INPUT_MODE_BUSY
+    assert classify_terminal_input_mode("npm install") == TERMINAL_INPUT_MODE_BUSY
+    assert classify_terminal_input_mode("java -jar paper-server.jar nogui") == TERMINAL_INPUT_MODE_CONSOLE
+    assert classify_terminal_input_mode("java -version") is None
+    assert is_terminal_console_command("op Steve") is True
+    assert is_terminal_console_command("/say hello") is True
+    assert is_terminal_console_command("ls -la") is False
+    assert is_terminal_console_command("op Steve && ls") is False
+
+
+def test_busy_pending_terminal_command_blocks_new_shell_input() -> None:
+    from app.services.agent.session import AgentSession, EXECUTE_COMMAND_TOOL_NAME
+
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+
+    session._set_pending_command(EXECUTE_COMMAND_TOOL_NAME, {"command": "apt update"})
+
+    assert session._get_pending_command() is not None
+    warning = session._validate_terminal_command_input(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "ls -la"},
+    )
+
+    assert warning is not None
+    assert "apt update" in warning
+    assert "ls -la" in warning
+
+    should_hold, resolved, direct = session._maybe_hold_for_pending_terminal_feedback(
+        "[2026-07-08 10:00:00] Get:1 http://example.test stable InRelease"
+    )
+
+    assert (should_hold, resolved, direct) == (False, None, False)
+    assert session._get_pending_command() is not None
+
+
+def test_console_terminal_context_allows_console_input_but_blocks_shell_input() -> None:
+    from app.services.agent.session import AgentSession, EXECUTE_COMMAND_TOOL_NAME
+
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+
+    session._set_pending_command(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "java -jar paper-server.jar nogui"},
+    )
+
+    assert session._validate_terminal_command_input(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "op Steve"},
+    ) is None
+
+    warning = session._validate_terminal_command_input(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "ls -la"},
+    )
+
+    assert warning is not None
+    assert "paper-server.jar" in warning
+    assert "ls -la" in warning
