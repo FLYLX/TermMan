@@ -1539,7 +1539,7 @@ def test_terminal_session_stops_repeated_identical_log_reads(
 
     def fake_log_completion(**_kwargs):
         call_count["value"] += 1
-        if call_count["value"] > 2:
+        if call_count["value"] > 3:
             raise AssertionError("loop guard should stop repeated log reads")
 
         return SimpleNamespace(
@@ -1569,7 +1569,11 @@ def test_terminal_session_stops_repeated_identical_log_reads(
         "_get_relevant_memories",
         lambda self, query, n_results=3: "",
     )
-
+    monkeypatch.setattr(
+        session_module,
+        "build_terminal_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "error: boom"}],
+    )
     try:
         session = agent_session_manager.get_or_create_session(item_id, handler_id)
         session.add_output_callback(events.append)
@@ -1582,10 +1586,10 @@ def test_terminal_session_stops_repeated_identical_log_reads(
     finally:
         agent_session_manager.remove_session(item_id)
 
-    assert call_count["value"] == 2
+    assert call_count["value"] == 3
     assert _non_status_event_types(events) == ["terminal_output", "agent_warning"]
     assert events[-2]["type"] == "agent_warning"
-    assert "重复读取到相同日志结果" in events[-2]["content"]
+    assert "日志没有新内容" in events[-2]["content"]
 
 
 def test_abort_route_clears_pending_terminal_batch_before_flush(

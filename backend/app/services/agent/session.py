@@ -43,7 +43,7 @@ LOOP_DETECTION_WINDOW = 6
 LOOP_THRESHOLD = 3
 MAX_QUEUE_SIZE = 100
 MAX_TOOL_CALLS = 8
-MAX_READ_LOG_CALLS = 2
+MAX_REPEATED_LOG_READS = 2
 MAX_NO_PROGRESS_STEPS = 3
 MAX_TURN_DURATION_SECONDS = 45
 PENDING_COMMAND_TIMEOUT_SECONDS = 20
@@ -87,7 +87,6 @@ class TurnGuard:
     turn_id: str = field(default_factory=lambda: uuid4().hex[:8])
     started_at: datetime = field(default_factory=datetime.now)
     tool_call_count: int = 0
-    read_log_count: int = 0
     waiting_for_terminal_feedback: bool = False
     no_progress_steps: int = 0
     last_progress_token: str | None = None
@@ -111,18 +110,15 @@ class TurnGuard:
         if self.tool_call_count > MAX_TOOL_CALLS:
             return True, f"当前轮工具调用次数超过限制 ({MAX_TOOL_CALLS})，已停止"
 
-        normalized_args = (tool_args_str or "").strip().replace("\n", " ")[:256]
-        step_token = f"{tool_name}:{normalized_args}"
-        self.recent_steps.append(step_token)
-        if len(self.recent_steps) >= LOOP_THRESHOLD:
-            recent = list(self.recent_steps)[-LOOP_THRESHOLD:]
-            if all(token == step_token for token in recent):
-                return True, f"检测到重复动作循环: {tool_name}"
+        if tool_name != READ_LOG_TOOL_NAME:
+            normalized_args = (tool_args_str or "").strip().replace("\n", " ")[:256]
+            step_token = f"{tool_name}:{normalized_args}"
+            self.recent_steps.append(step_token)
+            if len(self.recent_steps) >= LOOP_THRESHOLD:
+                recent = list(self.recent_steps)[-LOOP_THRESHOLD:]
+                if all(token == step_token for token in recent):
+                    return True, f"检测到重复动作循环: {tool_name}"
 
-        if tool_name == READ_LOG_TOOL_NAME:
-            self.read_log_count += 1
-            if self.read_log_count > MAX_READ_LOG_CALLS:
-                return True, f"同一轮内读取日志次数过多 ({MAX_READ_LOG_CALLS})，已停止"
 
         return False, ""
 
@@ -155,8 +151,8 @@ class TurnGuard:
                 self.last_log_fingerprint = result_fingerprint
                 self.repeated_log_reads = 0
 
-            if self.repeated_log_reads >= 1:
-                return True, "重复读取到相同日志结果，当前轮已停止"
+            if self.repeated_log_reads >= MAX_REPEATED_LOG_READS:
+                return True, "日志没有新内容，当前轮已停止，请基于已有终端输出总结结果。"
 
             return self.record_progress(f"log:{result_fingerprint}")
 

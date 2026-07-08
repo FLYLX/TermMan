@@ -1367,3 +1367,41 @@ def test_robot_conversation_memory_uses_group_log_and_prompt(tmp_path: Path) -> 
     assert "Alice (10001)" in prompt
     assert "说话" in prompt
     assert "别的群" not in prompt
+
+
+def test_turn_guard_allows_multiple_distinct_terminal_log_reads() -> None:
+    from app.services.agent.session import READ_LOG_TOOL_NAME, TurnGuard
+
+    guard = TurnGuard()
+
+    for index in range(5):
+        stopped, reason = guard.before_tool(READ_LOG_TOOL_NAME, "{}")
+        assert stopped is False
+        assert reason == ""
+
+        stopped, reason = guard.after_tool(READ_LOG_TOOL_NAME, f"log content {index}")
+        assert stopped is False
+        assert reason == ""
+
+
+def test_turn_guard_stops_repeated_unchanged_terminal_log_reads() -> None:
+    from app.services.agent.session import READ_LOG_TOOL_NAME, TurnGuard
+
+    guard = TurnGuard()
+
+    for _ in range(2):
+        stopped, reason = guard.before_tool(READ_LOG_TOOL_NAME, "{}")
+        assert stopped is False
+        assert reason == ""
+
+        stopped, reason = guard.after_tool(READ_LOG_TOOL_NAME, "same log content")
+        assert stopped is False
+        assert reason == ""
+
+    stopped, reason = guard.before_tool(READ_LOG_TOOL_NAME, "{}")
+    assert stopped is False
+    assert reason == ""
+
+    stopped, reason = guard.after_tool(READ_LOG_TOOL_NAME, "same log content")
+    assert stopped is True
+    assert reason

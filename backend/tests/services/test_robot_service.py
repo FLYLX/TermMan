@@ -2107,6 +2107,73 @@ def test_direct_wakeup_job_reaches_agent_even_if_controller_window_expires(
     assert captured_messages == [job.message]
 
 
+
+def test_visible_agent_response_without_robot_tool_is_sent_to_qq(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "reply_context_window_seconds": 10,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+    sent_messages: list[tuple[Any, Any, str]] = []
+
+    def fake_enqueue_chat_job(job) -> bool:
+        queued_jobs.append(job)
+        return True
+
+    def fake_send_message(robot_id, target, text) -> None:
+        sent_messages.append((robot_id, target, text))
+
+    async def fake_chat_with_item(**_kwargs):
+        return ChatResponseResult(content="install done", robot_message_sent=False)
+
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
+    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("install done?", target={"id": "g1"}, mentioned_bot=True),
+    )
+    assert response.ignored is False
+    job = queued_jobs[-1]
+
+    robot_service._process_chat_job(job)
+
+    assert sent_messages == [(robot.id, job.reply_target, "install done")]
+    assert robot_service.conversation_controller_allows_reply(
+        robot.id,
+        job.conversation_key,
+        job.conversation_generation,
+        requires_awake=True,
+    )
+
+
 def test_direct_wakeup_countdown_starts_after_agent_result(
     db: Session,
     monkeypatch,

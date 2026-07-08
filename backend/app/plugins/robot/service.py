@@ -288,15 +288,23 @@ class RobotService:
                             reply_requires_awake=job.reply_requires_awake,
                         )
                     )
+                response_text = self._visible_agent_response_text(response)
+                robot_message_sent = response.robot_message_sent
+                if response_text and not robot_message_sent:
+                    robot_message_sent = self._send_visible_agent_response(
+                        job,
+                        response_text,
+                    )
                 self._apply_reply_context_result(
                     robot,
                     job.conversation_key,
-                    robot_message_sent=response.robot_message_sent,
+                    robot_message_sent=robot_message_sent,
                     reply_target=job.reply_target,
                     conversation_generation=job.conversation_generation or None,
-                    sleep_when_no_reply=job.reply_context_active and not job.direct_reply_trigger,
+                    sleep_when_no_reply=job.reply_context_active
+                    and not job.direct_reply_trigger,
                 )
-                if response.robot_message_sent:
+                if robot_message_sent:
                     self._enqueue_pending_chat_followup(
                         robot=robot,
                         conversation_key=job.conversation_key,
@@ -307,7 +315,6 @@ class RobotService:
                         conversation_key=job.conversation_key,
                         direct_wakeup_only=True,
                     )
-                response_text = response.content
             except RobotServiceError as exc:
                 self._record_and_send_job_error(job, exc.message)
                 return
@@ -328,7 +335,6 @@ class RobotService:
                 )
                 return
 
-        response_text = self._visible_agent_response_text(response)
         if not response_text:
             record_robot_event(
                 str(job.robot_id),
@@ -337,7 +343,7 @@ class RobotService:
                 payload={
                     "item_id": str(job.item_id),
                     "route_key": job.route_key,
-                    "robot_message_sent": response.robot_message_sent,
+                    "robot_message_sent": robot_message_sent,
                     "queue": self.dispatch_queue_snapshot(),
                 },
             )
@@ -346,7 +352,7 @@ class RobotService:
                 job.robot_id,
                 job.item_id,
                 job.route_key,
-                response.robot_message_sent,
+                robot_message_sent,
             )
             return
 
@@ -358,7 +364,10 @@ class RobotService:
             payload={
                 "item_id": str(job.item_id),
                 "route_key": job.route_key,
-                "reply_delivery": "mcp_tool",
+                "reply_delivery": "mcp_tool"
+                if response.robot_message_sent
+                else "service_fallback",
+                "robot_message_sent": robot_message_sent,
                 "queue": self.dispatch_queue_snapshot(),
             },
         )
@@ -369,6 +378,64 @@ class RobotService:
             job.route_key,
             preview_text(response_text),
         )
+
+    def _send_visible_agent_response(
+        self,
+        job: QueuedRobotChatJob,
+        response_text: str,
+    ) -> bool:
+        if not response_text.strip():
+            return False
+        if not self.conversation_controller_allows_reply(
+            job.robot_id,
+            job.conversation_key,
+            job.conversation_generation,
+            requires_awake=job.reply_requires_awake,
+        ):
+            record_robot_event(
+                str(job.robot_id),
+                direction="backend_to_bridge",
+                event="dispatch_visible_response_dropped_sleeping_conversation",
+                status="ignored",
+                message=preview_text(response_text),
+                payload={
+                    "item_id": str(job.item_id),
+                    "route_key": job.route_key,
+                    "conversation": job.conversation_key,
+                    "generation": job.conversation_generation,
+                },
+            )
+            return False
+
+        try:
+            from .bridge_client import robot_bridge_client
+
+            robot_bridge_client.send_message(job.robot_id, job.reply_target, response_text)
+        except Exception:
+            logger.exception(
+                "[RobotService] Failed to send visible agent response robot=%s",
+                job.robot_id,
+            )
+            record_robot_event(
+                str(job.robot_id),
+                direction="backend_to_bridge",
+                event="dispatch_visible_response_send_failed",
+                status="error",
+                message=preview_text(response_text),
+                payload={
+                    "item_id": str(job.item_id),
+                    "route_key": job.route_key,
+                    "conversation": job.conversation_key,
+                },
+            )
+            return False
+
+        self._remember_assistant_conversation_memory(
+            job.robot_id,
+            job.conversation_key,
+            response_text,
+        )
+        return True
 
     def _visible_agent_response_text(self, response: ChatResponseResult) -> str:
         text = (response.content or "").strip()
@@ -762,7 +829,6 @@ class RobotService:
                     "item_id": str(resolved_binding.item.id),
                     "route_key": resolved_binding.route_key,
                     "queue": self.dispatch_queue_snapshot(),
-                    "reply_delivery": "mcp_tool",
                     "conversation": conversation_key,
                     "direct_reply_trigger": direct_reply_trigger,
                     "reply_context_active": reply_context_active,
