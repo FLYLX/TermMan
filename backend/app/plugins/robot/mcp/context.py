@@ -111,6 +111,67 @@ def _robot_sender_label(reply_target: RobotReplyTarget, sender_key: str) -> str:
     return sender_key or "unknown"
 
 
+def _bot_self_ids_from_reply_target(reply_target: RobotReplyTarget) -> set[str]:
+    raw_ids = reply_target.metadata.get("bot_self_ids")
+    if not isinstance(raw_ids, list):
+        return set()
+    return {str(value).strip() for value in raw_ids if str(value or "").strip()}
+
+
+def _reply_target_mentions_bot_self(reply_target: RobotReplyTarget) -> bool:
+    bot_self_ids = _bot_self_ids_from_reply_target(reply_target)
+    if not bot_self_ids:
+        return bool(reply_target.metadata.get("mentioned_bot"))
+
+    mention_ids: set[str] = set()
+    mentions = reply_target.metadata.get("mentions")
+    if isinstance(mentions, list):
+        for mention in mentions:
+            if not isinstance(mention, dict):
+                continue
+            mention_id = str(
+                mention.get("id") or mention.get("qq") or mention.get("user_id") or ""
+            ).strip()
+            if mention_id:
+                mention_ids.add(mention_id)
+
+    if mention_ids:
+        return bool(mention_ids.intersection(bot_self_ids))
+    return bool(reply_target.metadata.get("mentioned_bot"))
+
+
+def _robot_identity_context_lines(
+    reply_target: RobotReplyTarget,
+    conversation_type: str,
+) -> list[str]:
+    bot_self_ids = sorted(_bot_self_ids_from_reply_target(reply_target))
+    if not bot_self_ids:
+        return []
+
+    mentioned_self = _reply_target_mentions_bot_self(reply_target)
+    replied_to_self = bool(reply_target.metadata.get("replied_to_bot"))
+    private_chat = conversation_type == "private"
+    addressed_to_bot = private_chat or mentioned_self or replied_to_self
+    if replied_to_self:
+        reason = "reply_to_bot"
+    elif mentioned_self:
+        reason = "mention_bot"
+    elif private_chat:
+        reason = "private_chat"
+    else:
+        reason = "none"
+
+    self_id_label = ", ".join(bot_self_ids)
+    return [
+        f"- bot_self_id: {self_id_label} (this QQ id is you, the bot)",
+        f"- addressed_to_bot: {str(addressed_to_bot).lower()}",
+        f"- direct_reason: {reason}",
+        f"- mentioned_self: {str(mentioned_self).lower()}",
+        f"- replied_to_self: {str(replied_to_self).lower()}",
+        "- identity rule: QQ mentions/replies to this self_id are addressing you.",
+    ]
+
+
 def build_robot_reply_context_summary(
     reply_target: RobotReplyTarget,
     sender_key: str,
@@ -130,6 +191,7 @@ def build_robot_reply_context_summary(
             f"- conversation: {conversation}",
             f"- sender: {sender_label}",
             f"- sender_key: {sender_key}",
+            *_robot_identity_context_lines(reply_target, conversation_type),
             (
                 "- send rule: call `mcp_robot_send_message` with only `text` or "
                 "`messages` to "

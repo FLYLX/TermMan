@@ -471,6 +471,53 @@ def test_agent_message_context_prefix_includes_mentioned_targets() -> None:
     assert "mentions=她喜欢我才钓着我 (1512220570)" in prefix
 
 
+def test_agent_message_context_marks_bot_self_mention_for_agent() -> None:
+    message = _message(
+        "[CQ:at,qq=10001] hello",
+        sender={"user_id": "u1", "display_name": "Alice"},
+        conversation={"type": "group", "id": "g1"},
+        mentions=[{"id": "10001", "qq": "10001", "name": "Bot"}],
+        mentioned_bot=True,
+        bot_self_ids=["10001"],
+    )
+
+    text = robot_service._agent_message_with_context(
+        message,
+        message.text,
+        trigger_reason="mention_bot",
+    )
+
+    assert "mentions=Bot (10001) (you)" in text
+    assert "[Robot identity; background only]" in text
+    assert "- self_id: 10001 (this QQ id is you, the bot)" in text
+    assert "- addressed_to_bot: true" in text
+    assert "- direct_reason: mention_bot" in text
+    assert "- mentioned_self: true" in text
+    assert "- replied_to_self: false" in text
+    assert "QQ mentions/replies to this self_id are addressing you" in text
+
+
+def test_robot_reply_context_summary_marks_reply_to_self() -> None:
+    from app.plugins.robot.mcp.context import build_robot_reply_context_summary
+
+    message = _message(
+        "continue",
+        sender={"user_id": "u1", "display_name": "Alice"},
+        conversation={"type": "group", "id": "g1"},
+        replied_to_bot=True,
+        bot_self_ids=["10001"],
+    )
+
+    summary = build_robot_reply_context_summary(message.reply_target, message.sender_key)
+
+    assert "- bot_self_id: 10001 (this QQ id is you, the bot)" in summary
+    assert "- addressed_to_bot: true" in summary
+    assert "- direct_reason: reply_to_bot" in summary
+    assert "- mentioned_self: false" in summary
+    assert "- replied_to_self: true" in summary
+    assert "QQ mentions/replies to this self_id are addressing you" in summary
+
+
 def test_onebot_conversation_metadata_uses_group_id() -> None:
     event = _FakeEvent(
         [],

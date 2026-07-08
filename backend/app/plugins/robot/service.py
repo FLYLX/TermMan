@@ -2388,12 +2388,56 @@ class RobotService:
         if not prefix:
             return message_text
         parts = [prefix]
+        identity_card = self._agent_identity_context_card(
+            inbound_message,
+            trigger_reason=trigger_reason,
+        )
+        if identity_card:
+            parts.append(identity_card)
         if impression_card.strip():
             parts.append(impression_card.strip())
         if live_context_card.strip():
             parts.append(live_context_card.strip())
         parts.append(f"[Current QQ message]\n{message_text}")
         return "\n".join(parts)
+
+    def _agent_identity_context_card(
+        self,
+        message: RobotInboundMessage,
+        *,
+        trigger_reason: str = "",
+    ) -> str:
+        bot_self_ids = sorted(self._bot_self_ids_from_message(message))
+        if not bot_self_ids:
+            return ""
+
+        mentioned_self = self._message_mentions_bot_self_id(message)
+        replied_to_self = bool(message.reply_target.metadata.get("replied_to_bot"))
+        private_chat = self._conversation_message_type(message) == REPLY_MESSAGE_TYPE_PRIVATE
+        addressed_to_bot = private_chat or mentioned_self or replied_to_self
+        if trigger_reason:
+            reason = trigger_reason
+        elif replied_to_self:
+            reason = "reply_to_bot"
+        elif mentioned_self:
+            reason = "mention_bot"
+        elif private_chat:
+            reason = "private_chat"
+        else:
+            reason = "none"
+
+        self_id_label = ", ".join(bot_self_ids)
+        return "\n".join(
+            [
+                "[Robot identity; background only]",
+                f"- self_id: {self_id_label} (this QQ id is you, the bot)",
+                f"- addressed_to_bot: {str(addressed_to_bot).lower()}",
+                f"- direct_reason: {reason}",
+                f"- mentioned_self: {str(mentioned_self).lower()}",
+                f"- replied_to_self: {str(replied_to_self).lower()}",
+                "- identity_rule: QQ mentions/replies to this self_id are addressing you.",
+            ]
+        )
 
     def _agent_trigger_reason(
         self,
@@ -2453,16 +2497,23 @@ class RobotService:
             parts.append(f"trigger={trigger_reason}")
         parts.append(f"sender={sender_label}")
         mentions_label = self._format_mentions_for_context(
-            message.reply_target.metadata.get("mentions")
+            message.reply_target.metadata.get("mentions"),
+            bot_self_ids=self._bot_self_ids_from_message(message),
         )
         if mentions_label:
             parts.append(f"mentions={mentions_label}")
         return f"[{'; '.join(parts)}]"
 
-    def _format_mentions_for_context(self, raw_mentions: object) -> str:
+    def _format_mentions_for_context(
+        self,
+        raw_mentions: object,
+        *,
+        bot_self_ids: set[str] | None = None,
+    ) -> str:
         if not isinstance(raw_mentions, list):
             return ""
 
+        bot_self_ids = bot_self_ids or set()
         labels: list[str] = []
         for raw_mention in raw_mentions[:8]:
             if not isinstance(raw_mention, dict):
@@ -2476,12 +2527,18 @@ class RobotService:
                 or raw_mention.get("nickname")
                 or ""
             ).strip()
+            is_self = bool(mention_id and mention_id in bot_self_ids)
             if name and mention_id and name != mention_id:
-                labels.append(f"{name} ({mention_id})")
+                label = f"{name} ({mention_id})"
             elif name:
-                labels.append(name)
+                label = name
             elif mention_id:
-                labels.append(mention_id)
+                label = mention_id
+            else:
+                continue
+            if is_self:
+                label = f"{label} (you)"
+            labels.append(label)
         return ", ".join(labels)
 
     def _write_to_item_terminal(self, item_id: uuid.UUID, command: str) -> bool:
