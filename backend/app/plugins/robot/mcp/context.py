@@ -218,6 +218,18 @@ def build_robot_reply_context_summary(
                 "wrong group/private chat."
             ),
             (
+                "- reference rule: when the current QQ text uses pronouns or "
+                "deictic phrases such as 'you', 'he/she/it', 'this/that', "
+                "or asks someone to operate, confirm, continue, or handle "
+                "something, first decide whether the referent is the bot by "
+                "using bot_self_id, mention/reply metadata, sender, this "
+                "conversation, and recent live context. Reply or call tools "
+                "only when it points to the bot or clearly continues the "
+                "woken bot conversation. If it points to someone/something "
+                "else or is ordinary group chatter, sleep this active window "
+                "instead of sending a visible explanation."
+            ),
+            (
                 "- long-term memory rule: call `mcp_robot_save_memory` when "
                 "the live QQ message contains durable information worth "
                 "remembering, such as explicit remember requests, stable "

@@ -648,7 +648,11 @@ def test_robot_mcp_recalls_long_term_memory_scoped_to_active_context(monkeypatch
             },
         ]
 
+    def fake_get_all_memories(item_id, memory_type=None):
+        return []
+
     monkeypatch.setattr(vector_store, "search_memories", fake_search_memories)
+    monkeypatch.setattr(vector_store, "get_all_memories", fake_get_all_memories)
     target = RobotReplyTarget(
         target_type="group",
         target_id="current-group",
@@ -689,6 +693,119 @@ def test_robot_mcp_recalls_long_term_memory_scoped_to_active_context(monkeypatch
     assert "other robot memory" not in text
     assert text.index("nickname is XiaoChai") < text.index("call this QQ user Master")
     assert text.index("call this QQ user Master") < text.index("general robot preference")
+
+
+def test_robot_mcp_recall_uses_scoped_memory_fallback(monkeypatch) -> None:
+    server = RobotMCPServer()
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_search_memories(**kwargs):
+        return [
+            {
+                "id": "other-vector",
+                "content": "other group has a server port",
+                "metadata": {
+                    "memory_type": "context",
+                    "robot_id": "robot-current",
+                    "robot_conversation_key": "group:other-group",
+                    "memory_scope": "conversation",
+                },
+                "distance": 0.01,
+            }
+        ]
+
+    scoped_by_type = {
+        "context": [
+            {
+                "id": "current-group-context",
+                "content": "current group server port is 28888",
+                "metadata": {
+                    "memory_type": "context",
+                    "robot_id": "robot-current",
+                    "robot_conversation_key": "group:current-group",
+                    "memory_scope": "conversation",
+                    "verified": True,
+                },
+            },
+            {
+                "id": "other-group-context",
+                "content": "other group server port is 19999",
+                "metadata": {
+                    "memory_type": "context",
+                    "robot_id": "robot-current",
+                    "robot_conversation_key": "group:other-group",
+                    "memory_scope": "conversation",
+                },
+            },
+        ],
+        "preference": [
+            {
+                "id": "same-speaker-preference",
+                "content": "call this QQ user Master",
+                "metadata": {
+                    "memory_type": "preference",
+                    "robot_id": "robot-current",
+                    "robot_conversation_key": "group:other-group",
+                    "speaker_global_key": "onebot_v11:user:user-1",
+                    "memory_scope": "speaker",
+                },
+            },
+            {
+                "id": "other-speaker-preference",
+                "content": "call another QQ user Boss",
+                "metadata": {
+                    "memory_type": "preference",
+                    "robot_id": "robot-current",
+                    "robot_conversation_key": "group:other-group",
+                    "speaker_global_key": "onebot_v11:user:user-2",
+                    "memory_scope": "speaker",
+                },
+            },
+        ],
+    }
+
+    def fake_get_all_memories(item_id, memory_type=None):
+        calls.append((item_id, memory_type))
+        return scoped_by_type.get(memory_type, [])
+
+    monkeypatch.setattr(vector_store, "search_memories", fake_search_memories)
+    monkeypatch.setattr(vector_store, "get_all_memories", fake_get_all_memories)
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="current-group",
+        metadata={"target": {"id": "current-group"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:current-group:user-1",
+            reply_target=target,
+            conversation_key="group:current-group",
+        )
+    )
+
+    try:
+        result = server.call_tool(
+            "recall_memory",
+            {
+                "_robot_context_token": token,
+                "_termman_item_id": "item-1",
+                "query": "server port",
+                "n_results": 3,
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert ("item-1", "context") in calls
+    assert ("item-1", "preference") in calls
+    text = result[0]["text"]
+    assert "current group server port is 28888" in text
+    assert "call this QQ user Master" in text
+    assert "other group has a server port" not in text
+    assert "other group server port is 19999" not in text
+    assert "call another QQ user Boss" not in text
+    assert text.index("current group server port is 28888") < text.index("call this QQ user Master")
 
 
 def test_robot_mcp_save_memory_persists_scoped_long_term_memory(monkeypatch) -> None:

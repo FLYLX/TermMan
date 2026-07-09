@@ -34,6 +34,15 @@ ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION = (
     "a visible explanation. This closes the current robot conversation "
     "controller until someone wakes the bot again by @ or reply.\n"
 )
+ROBOT_REFERENCE_RESOLUTION_INSTRUCTION = (
+    "- \u6307\u4ee3\u5224\u65ad\uff1a\u5f53 QQ \u6d88\u606f\u91cc\u51fa\u73b0\u201c\u4f60/\u4ed6/\u5979/\u5b83/\u8fd9\u4e2a/\u90a3\u4e2a/\u521a\u624d\u90a3\u4e2a/\u4e0a\u9762\u90a3\u4e2a\u201d\u3001"
+    "\u6216\u8005\u201c\u9700\u8981\u4eba\u64cd\u4f5c/\u786e\u8ba4/\u5904\u7406/\u7ee7\u7eed\u201d\u7b49\u9700\u8981\u4ea4\u4e92\u7684\u8bf4\u6cd5\u65f6\uff0c\u5148\u6839\u636e @/\u56de\u590d\u5bf9\u8c61\u3001"
+    "bot_self_id\u3001sender\u3001\u5f53\u524d QQ \u4f1a\u8bdd\u548c\u6700\u8fd1 live context \u5224\u65ad\u662f\u4e0d\u662f\u5728\u6307\u673a\u5668\u4eba\u81ea\u5df1\u3002"
+    "\u53ea\u6709\u80fd\u5224\u65ad\u662f\u6307\u673a\u5668\u4eba\uff0c\u6216\u5728\u5524\u9192\u540e\u7684\u8fde\u7eed\u5bf9\u8bdd\u91cc\u660e\u663e\u8ba9\u673a\u5668\u4eba\u5904\u7406\u65f6\uff0c\u624d\u56de\u590d\u6216\u8c03\u7528\u5de5\u5177\uff1b"
+    "\u5982\u679c\u660e\u663e\u6307\u522b\u4eba\u3001\u5176\u4ed6\u7a0b\u5e8f\u3001\u7ec8\u7aef\u8fdb\u7a0b\u6216\u666e\u901a\u7fa4\u804a\uff0c\u5c31\u4e0d\u8981\u63a5\u8bdd\uff0cactive_chat_window \u4e0b\u8c03\u7528 "
+    "`mcp_robot_sleep_conversation`\u3002\u5982\u679c\u65e0\u6cd5\u5224\u65ad\u4f46\u5bf9\u65b9\u76f4\u63a5 @/\u56de\u590d\u673a\u5668\u4eba\uff0c\u53ea\u80fd\u7b80\u77ed\u95ee\u4e00\u53e5\u6f84\u6e05\uff0c"
+    "\u4e0d\u8981\u64c5\u81ea\u6267\u884c\u3002\n"
+)
 ROBOT_MESSAGING_PROMPT = (
     "QQ MCP Skill：\n\n"
     "这个 skill 提供 QQ 机器人 MCP 能力，不提供人格。\n"
@@ -47,6 +56,7 @@ ROBOT_MESSAGING_PROMPT = (
     "群聊单条 `text` 不要超过 36 个字；更长就必须用 `messages` 自己分成几条自然消息。"
     "不要在单条 QQ 消息里写空行、回车段落或多个信息块；多个信息点用 `messages` 的多个元素。\n"
     "最终 assistant 文本是 TermMan 内部回复，不会自动发送到 QQ。"
+    f"\n{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
 )
 
 ROBOT_ACTIVE_CONTEXT_PROMPT = (
@@ -65,6 +75,7 @@ ROBOT_ACTIVE_CONTEXT_PROMPT = (
     "- 历史或 .log 里的 `Executing tool`、`Message sent`、`[no_qq_reply]` 只可能是旧内部轨迹，不是本轮发送结果。\n"
     "- 历史或 .log 里的旧 assistant/user 轮次都已经处理过，不要因为看见它们再次发送相同回复。\n"
     "- 不要回复普通群聊闲聊或发给别人的消息。不要发送隐藏推理、工具轨迹、原始日志或长摘要。\n"
+    f"{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
     f"{ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION}"
     f"{NO_QQ_REPLY_INSTRUCTION}"
 )
@@ -81,6 +92,7 @@ ROBOT_REFLECTION_PROMPT = (
     "QQ 回复反思：\n"
     "- 调用 `mcp_robot_send_message` 前，先静默判断 QQ 是否真的需要收到回复。\n"
     "- @、回复机器人、活跃窗口触发只是候选延续，不等于自动允许发送。\n"
+    f"{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
     f"{ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION}"
     f"{NO_QQ_REPLY_INSTRUCTION}"
 )
@@ -176,6 +188,7 @@ def build_robot_delivery_reflection_prompt(final_response: str) -> str:
         "或显式唤醒机器人，就调用 `mcp_robot_send_message` 发送到锁定的当前 QQ 会话。"
         "如果只是普通群聊、发给别人、或 QQ 侧无需回复，不要调用工具；"
         "内部最终回复只返回 `[no_qq_reply]`。不要输出这段反思本身。\n"
+        f"{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
         "For `trigger=active_chat_window`, if this is ordinary group chatter or not for the bot, "
         "call `mcp_robot_sleep_conversation` with no arguments instead of returning only `[no_qq_reply]`."
     )

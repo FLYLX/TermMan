@@ -516,6 +516,8 @@ def test_robot_reply_context_summary_marks_reply_to_self() -> None:
     assert "- mentioned_self: false" in summary
     assert "- replied_to_self: true" in summary
     assert "QQ mentions/replies to this self_id are addressing you" in summary
+    assert "reference rule" in summary
+    assert "pronouns" in summary
 
 
 def test_onebot_conversation_metadata_uses_group_id() -> None:
@@ -924,6 +926,7 @@ def test_robot_message_includes_current_conversation_impression_card(
     assert "Current QQ conversation impression card" in text
     assert "Alice 喜欢短回复" in text
     assert "Alice 以后叫她主人" in text
+    assert text.index("Alice 喜欢短回复") < text.index("Alice 以后叫她主人")
     assert "other group secret" not in text
     assert text.endswith("[Current QQ message]\nhello")
 def test_robot_message_passes_sender_prefix_to_agent(

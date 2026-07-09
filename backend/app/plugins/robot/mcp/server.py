@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import sys
 import uuid
+from datetime import datetime
 from typing import Any
 
 from app.plugins.robot.contracts import RobotReplyTarget
@@ -33,6 +35,14 @@ DEFAULT_LONG_TERM_MEMORY_RESULTS = 5
 MAX_LONG_TERM_MEMORY_RESULTS = 8
 LONG_TERM_MEMORY_CANDIDATE_MULTIPLIER = 6
 LONG_TERM_MEMORY_TYPES = {"fact", "preference", "task", "error", "context"}
+LONG_TERM_MEMORY_TYPE_ORDER = ("preference", "fact", "context", "task", "error")
+LONG_TERM_MEMORY_TYPE_RANK = {
+    "preference": 5,
+    "fact": 4,
+    "context": 3,
+    "task": 2,
+    "error": 2,
+}
 
 
 class RobotMCPServer:
@@ -986,6 +996,132 @@ class RobotMCPServer:
         return f", score {similarity:.2f}"
 
     @staticmethod
+    def _memory_metadata(memory: dict[str, Any]) -> dict[str, Any]:
+        metadata = memory.get("metadata") or {}
+        return metadata if isinstance(metadata, dict) else {}
+
+    @classmethod
+    def _memory_type(cls, memory: dict[str, Any]) -> str:
+        return str(cls._memory_metadata(memory).get("memory_type") or "fact")
+
+    @staticmethod
+    def _parse_memory_datetime(value: Any) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+    @classmethod
+    def _memory_timestamp(cls, memory: dict[str, Any]) -> float:
+        metadata = cls._memory_metadata(memory)
+        parsed = cls._parse_memory_datetime(
+            metadata.get("updated_at") or metadata.get("created_at")
+        )
+        if parsed is None:
+            return 0.0
+        try:
+            return parsed.timestamp()
+        except OSError:
+            return 0.0
+
+    @classmethod
+    def _memory_expired(cls, memory: dict[str, Any]) -> bool:
+        parsed = cls._parse_memory_datetime(
+            cls._memory_metadata(memory).get("expires_at")
+        )
+        if parsed is None:
+            return False
+        now = datetime.now(parsed.tzinfo) if parsed.tzinfo else datetime.now()
+        return parsed < now
+
+    @classmethod
+    def _memory_inactive(cls, memory: dict[str, Any]) -> bool:
+        metadata = cls._memory_metadata(memory)
+        memory_type = str(metadata.get("memory_type") or "")
+        status = str(metadata.get("status") or "").lower()
+        return (
+            (memory_type == "task" and status == "completed")
+            or (memory_type == "error" and status == "resolved")
+        )
+
+    @staticmethod
+    def _memory_tokens(value: str) -> set[str]:
+        return {
+            token.casefold()
+            for token in re.findall(r"[\u4e00-\u9fffA-Za-z0-9_./:-]+", value or "")
+            if len(token.strip()) > 1
+        }
+
+    @classmethod
+    def _memory_query_score(cls, memory: dict[str, Any], query: str) -> float:
+        query_tokens = cls._memory_tokens(query)
+        if not query_tokens:
+            return 0.0
+        content = str(memory.get("content") or "")
+        content_folded = content.casefold()
+        score = 0.0
+        normalized_query = query.casefold().strip()
+        if normalized_query and normalized_query in content_folded:
+            score += 3.0
+        content_tokens = cls._memory_tokens(content)
+        if content_tokens:
+            score += len(query_tokens & content_tokens) * 1.2
+        metadata = cls._memory_metadata(memory)
+        for key in ("memory_key", "speaker_key", "speaker_global_key", "conversation_key"):
+            value = str(metadata.get(key) or "")
+            if value and query.casefold() in value.casefold():
+                score += 0.8
+        return score
+
+    @classmethod
+    def _memory_recency_score(cls, memory: dict[str, Any]) -> float:
+        timestamp = cls._memory_timestamp(memory)
+        if timestamp <= 0:
+            return 0.0
+        try:
+            age_days = max(0.0, (datetime.now().timestamp() - timestamp) / 86400)
+        except OSError:
+            return 0.0
+        if age_days <= 7:
+            return 0.7
+        if age_days <= 30:
+            return 0.4
+        if age_days <= 90:
+            return 0.2
+        return 0.0
+
+    @classmethod
+    def _memory_hybrid_rank_score(
+        cls,
+        memory: dict[str, Any],
+        *,
+        query: str,
+        scope_rank: int,
+    ) -> float:
+        metadata = cls._memory_metadata(memory)
+        verified_bonus = 1.0 if metadata.get("verified") is True else 0.0
+        vector_score = max(0.0, 1.0 - cls._memory_distance(memory))
+        return (
+            scope_rank * 100.0
+            + cls._memory_query_score(memory, query) * 8.0
+            + LONG_TERM_MEMORY_TYPE_RANK.get(cls._memory_type(memory), 1) * 2.0
+            + verified_bonus
+            + cls._memory_recency_score(memory)
+            + vector_score
+        )
+
+    @classmethod
+    def _memory_usable(cls, memory: dict[str, Any]) -> bool:
+        return (
+            isinstance(memory, dict)
+            and bool(str(memory.get("content") or "").strip())
+            and not cls._memory_expired(memory)
+            and not cls._memory_inactive(memory)
+        )
+
+    @staticmethod
     def _memory_conversation_key(memory: dict[str, Any]) -> str:
         metadata = memory.get("metadata") or {}
         if not isinstance(metadata, dict):
@@ -1006,6 +1142,91 @@ class RobotMCPServer:
             conversation_key=conversation_key,
             speaker_global_key=speaker_global_key,
         )
+
+    def _collect_scoped_long_term_memory_candidates(
+        self,
+        *,
+        store: Any,
+        item_id: str,
+        memory_type: str | None,
+        robot_id: str,
+        conversation_key: str,
+        speaker_global_key: str,
+    ) -> list[dict[str, Any]]:
+        memory_types = (memory_type,) if memory_type else LONG_TERM_MEMORY_TYPE_ORDER
+        candidates: list[dict[str, Any]] = []
+        for current_type in memory_types:
+            try:
+                memories = store.get_all_memories(item_id, memory_type=current_type)
+            except Exception as exc:
+                logger.debug(
+                    "[RobotMCP] Failed to load scoped memory candidates item=%s type=%s: %s",
+                    item_id,
+                    current_type,
+                    exc,
+                )
+                continue
+            for memory in memories:
+                if not self._memory_usable(memory):
+                    continue
+                if self._memory_scope_rank(
+                    memory,
+                    robot_id=robot_id,
+                    conversation_key=conversation_key,
+                    speaker_global_key=speaker_global_key,
+                ) < 0:
+                    continue
+                candidates.append(memory)
+        return candidates
+
+    def _select_recalled_long_term_memories(
+        self,
+        *,
+        query: str,
+        limit: int,
+        memories: list[dict[str, Any]],
+        robot_id: str,
+        conversation_key: str,
+        speaker_global_key: str,
+    ) -> list[dict[str, Any]]:
+        by_key: dict[str, dict[str, Any]] = {}
+        for memory in memories:
+            if not self._memory_usable(memory):
+                continue
+            memory_id = str(memory.get("id") or "").strip()
+            content = str(memory.get("content") or "").strip()
+            key = memory_id or f"content:{content}"
+            existing = by_key.get(key)
+            if existing is None:
+                by_key[key] = memory
+                continue
+            if existing.get("distance") is None and memory.get("distance") is not None:
+                by_key[key] = {**existing, "distance": memory.get("distance")}
+
+        ranked: list[tuple[float, str, dict[str, Any]]] = []
+        for memory in by_key.values():
+            scope_rank = self._memory_scope_rank(
+                memory,
+                robot_id=robot_id,
+                conversation_key=conversation_key,
+                speaker_global_key=speaker_global_key,
+            )
+            if scope_rank < 0:
+                continue
+            ranked.append(
+                (
+                    self._memory_hybrid_rank_score(
+                        memory,
+                        query=query,
+                        scope_rank=scope_rank,
+                    ),
+                    str(memory.get("id") or ""),
+                    memory,
+                )
+            )
+
+        ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return [memory for _, _, memory in ranked[:limit]]
 
     def _save_memory(self, args: dict) -> list[dict[str, str]]:
         content = sanitize_robot_visible_text(str(args.get("content") or "")).strip()
@@ -1139,7 +1360,7 @@ class RobotMCPServer:
         try:
             from app.services.agent.memory.vector_store import vector_store
 
-            memories = vector_store.search_memories(
+            vector_memories = vector_store.search_memories(
                 item_id=item_id,
                 query=query,
                 n_results=limit * LONG_TERM_MEMORY_CANDIDATE_MULTIPLIER,
@@ -1147,23 +1368,25 @@ class RobotMCPServer:
                 include_expired=False,
                 active_only=True,
             )
-        except Exception as exc:
-            return [{"type": "text", "text": f"Error: {exc}"}]
-
-        ranked: list[tuple[int, float, dict[str, Any]]] = []
-        for memory in memories:
-            scope_rank = self._memory_scope_rank(
-                memory,
+            scoped_memories = self._collect_scoped_long_term_memory_candidates(
+                store=vector_store,
+                item_id=item_id,
+                memory_type=memory_type,
                 robot_id=robot_id,
                 conversation_key=conversation_key,
                 speaker_global_key=speaker_global_key,
             )
-            if scope_rank < 0:
-                continue
-            ranked.append((scope_rank, self._memory_distance(memory), memory))
+        except Exception as exc:
+            return [{"type": "text", "text": f"Error: {exc}"}]
 
-        ranked.sort(key=lambda item: (-item[0], item[1]))
-        selected = [memory for _, _, memory in ranked[:limit]]
+        selected = self._select_recalled_long_term_memories(
+            query=query,
+            limit=limit,
+            memories=[*vector_memories, *scoped_memories],
+            robot_id=robot_id,
+            conversation_key=conversation_key,
+            speaker_global_key=speaker_global_key,
+        )
         if not selected:
             scope = f" for {conversation_key}" if conversation_key else ""
             return [

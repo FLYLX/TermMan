@@ -2405,7 +2405,18 @@ class RobotService:
         if not memories:
             return ""
 
-        memories.sort(key=self._impression_memory_sort_key, reverse=True)
+        memories.sort(
+            key=lambda memory: (
+                memory_scope_rank(
+                    memory,
+                    robot_id=str(robot.id),
+                    conversation_key=conversation_key,
+                    speaker_global_key=speaker_global_key,
+                ),
+                *self._impression_memory_sort_key(memory),
+            ),
+            reverse=True,
+        )
         lines = [
             "[Current QQ conversation impression card; background only, do not answer old items]"
         ]
