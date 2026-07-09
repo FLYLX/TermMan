@@ -43,8 +43,14 @@ def test_system_prompt_forbids_claiming_command_success_without_confirmation() -
     skill_loader.reload()
     prompt = get_system_prompt()
 
-    assert "不代表命令已经执行成功" in prompt
+    assert "不代表命令执行成功" in prompt
     assert "命令已发送，等待终端结果确认" in prompt
+    assert "终端防卡死规则" in prompt
+    assert "终端打开不等于 shell 空闲" in prompt
+    assert "不要为了试探是否可输入而连续发送" in prompt
+    assert "mcp_local_interrupt_command" in prompt
+    assert "mcp_local_record_installed_software" in prompt
+    assert "mcp_local_remove_installed_software" in prompt
 
 
 def test_execute_command_reports_disconnected_without_handler(monkeypatch) -> None:
@@ -132,3 +138,72 @@ def test_execute_command_restores_existing_terminal_input_handler(monkeypatch) -
             "text": "命令已发送到终端，尚未确认执行结果: echo restored",
         }
     ]
+
+
+def test_installed_software_tools_record_list_remove(monkeypatch, tmp_path) -> None:
+    import app.services.agent.installed_software as installed_software
+
+    monkeypatch.setattr(installed_software, "_INSTALLED_SOFTWARE_DIR", tmp_path)
+
+    server = LocalMCPServer()
+    record_result = server.call_tool(
+        "record_installed_software",
+        {
+            "item_id": "item-1",
+            "name": "openjdk-21-jdk-headless",
+            "manager": "apt",
+            "version": "21",
+            "command": "apt-get install -y openjdk-21-jdk-headless",
+        },
+    )
+    assert "Recorded installed software" in record_result[0]["text"]
+
+    list_result = server.call_tool("list_installed_software", {"item_id": "item-1"})
+    assert "openjdk-21-jdk-headless" in list_result[0]["text"]
+    assert "version=21" in list_result[0]["text"]
+
+    remove_result = server.call_tool(
+        "remove_installed_software",
+        {"item_id": "item-1", "name": "openjdk-21-jdk-headless", "manager": "apt"},
+    )
+    assert "Removed 1 installed software record" in remove_result[0]["text"]
+
+    empty_result = server.call_tool("list_installed_software", {"item_id": "item-1"})
+    assert "none recorded" in empty_result[0]["text"]
+
+
+def test_chat_prompt_includes_installed_software_list(monkeypatch, tmp_path) -> None:
+    from types import SimpleNamespace
+
+    import app.services.agent.installed_software as installed_software
+    from app.services.agent.prompts import builder as prompt_builder
+
+    monkeypatch.setattr(installed_software, "_INSTALLED_SOFTWARE_DIR", tmp_path)
+    installed_software.record_installed_software(
+        "item-1",
+        name="openjdk-21-jdk-headless",
+        manager="apt",
+        version="21",
+    )
+
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            agent_profile={},
+            enabled_knowledge_files=[],
+            skill_revision=skill_loader.revision,
+        ),
+        get_skills=lambda: [],
+        match_skills=lambda query: [],
+        get_mcp_servers=lambda: ["local"],
+    )
+
+    messages = prompt_builder.build_chat_turn_messages(
+        agent,
+        item_id="item-1",
+        message="安装 java",
+        latest_only_context=True,
+    )
+
+    assert "Current installed software list" in messages[0]["content"]
+    assert "openjdk-21-jdk-headless" in messages[0]["content"]
+    assert "version=21" in messages[0]["content"]

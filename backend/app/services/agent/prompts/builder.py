@@ -8,6 +8,7 @@ from app.services.agent.history.chat import (
     get_chat_messages,
     get_latest_session_summary,
 )
+from app.services.agent.installed_software import build_installed_software_prompt
 from app.services.agent.integrations import (
     annotate_integration_history_events,
     build_integration_history_prompt,
@@ -519,6 +520,17 @@ def _collect_handler_knowledge(
     return "\n".join(lines)
 
 
+def _build_installed_software_context(item_id: str) -> str:
+    try:
+        return build_installed_software_prompt(item_id)
+    except Exception as exc:
+        logger.warning(
+            "[PromptBuilder] Failed to load installed software list for item=%s: %s",
+            item_id,
+            exc,
+        )
+        return ""
+
 def _dedupe_adjacent_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
     deduped: list[dict[str, str]] = []
     for message in messages:
@@ -547,6 +559,9 @@ def build_chat_turn_messages(
         )
 
     extra_prompt_parts: list[str] = []
+    installed_software_context = _build_installed_software_context(item_id)
+    if installed_software_context:
+        extra_prompt_parts.append(installed_software_context)
     if not latest_only_context:
         integration_prompt = build_integration_history_prompt(
             agent,
@@ -618,6 +633,10 @@ def build_terminal_turn_messages(
     )
     policy = resolve_prompt_memory_policy(turn_type)
     effective_query = query or terminal_content
+    extra_prompt_parts: list[str] = []
+    installed_software_context = _build_installed_software_context(item_id)
+    if installed_software_context:
+        extra_prompt_parts.append(installed_software_context)
     prompt_messages: list[dict[str, str]] = [
         {
             "role": "system",
@@ -627,6 +646,7 @@ def build_terminal_turn_messages(
                 force_skill_ids={TERMINAL_CRITICAL_ALERT_SKILL_ID}
                 if is_critical_terminal_event(terminal_content)
                 else None,
+                extra_prompt_parts=extra_prompt_parts,
             ),
         }
     ]

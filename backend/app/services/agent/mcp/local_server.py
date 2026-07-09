@@ -60,6 +60,51 @@ class LocalMCPServer:
         )
         
         self.register_tool(
+            name="list_installed_software",
+            description="List software that has been recorded as installed for the current terminal item.",
+            input_schema={
+                "type": "object",
+                "properties": {},
+                "required": []
+            },
+            handler=self._list_installed_software,
+            skip_memory=True
+        )
+
+        self.register_tool(
+            name="record_installed_software",
+            description="Record software as installed after terminal output confirms installation succeeded.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Software or package name"},
+                    "manager": {"type": "string", "description": "Package manager or source, such as apt, pip, npm, bun, manual"},
+                    "version": {"type": "string", "description": "Installed version if known"},
+                    "command": {"type": "string", "description": "Command that installed it"},
+                    "notes": {"type": "string", "description": "Short verification notes"}
+                },
+                "required": ["name"]
+            },
+            handler=self._record_installed_software,
+            skip_memory=True
+        )
+
+        self.register_tool(
+            name="remove_installed_software",
+            description="Remove software from the recorded installed list after uninstall is confirmed.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Software or package name"},
+                    "manager": {"type": "string", "description": "Package manager or source"},
+                    "reason": {"type": "string", "description": "Why it was removed from the list"}
+                },
+                "required": ["name"]
+            },
+            handler=self._remove_installed_software,
+            skip_memory=True
+        )
+        self.register_tool(
             name="save_memory",
             description="保存稳定、可复用、已验证的重要信息到长期记忆中。不要保存原生日志、命令回显、等待态消息或敏感信息。",
             input_schema={
@@ -284,6 +329,80 @@ class LocalMCPServer:
         except Exception as e:
             return [{"type": "text", "text": f"Error: {e}"}]
     
+    def _list_installed_software(self, args: dict) -> list:
+        item_id = args.get("item_id", "")
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id required"}]
+
+        try:
+            from app.services.agent.installed_software import (
+                format_installed_software,
+                list_installed_software,
+            )
+
+            items = list_installed_software(item_id)
+            return [
+                {
+                    "type": "text",
+                    "text": "Installed software list:\n" + format_installed_software(items),
+                }
+            ]
+        except Exception as e:
+            return [{"type": "text", "text": f"Error: {e}"}]
+
+    def _record_installed_software(self, args: dict) -> list:
+        item_id = args.get("item_id", "")
+        name = args.get("name", "")
+        if not item_id or not name:
+            return [{"type": "text", "text": "Error: item_id and name required"}]
+
+        try:
+            from app.services.agent.installed_software import record_installed_software
+
+            item = record_installed_software(
+                item_id,
+                name=name,
+                manager=args.get("manager", "unknown"),
+                version=args.get("version", ""),
+                command=args.get("command", ""),
+                notes=args.get("notes", ""),
+            )
+            manager = item.get("manager", "unknown")
+            version = item.get("version", "unknown")
+            return [
+                {
+                    "type": "text",
+                    "text": f"Recorded installed software: {item['name']} [{manager}], version={version}",
+                }
+            ]
+        except Exception as e:
+            return [{"type": "text", "text": f"Error: {e}"}]
+
+    def _remove_installed_software(self, args: dict) -> list:
+        item_id = args.get("item_id", "")
+        name = args.get("name", "")
+        if not item_id or not name:
+            return [{"type": "text", "text": "Error: item_id and name required"}]
+
+        try:
+            from app.services.agent.installed_software import remove_installed_software
+
+            result = remove_installed_software(
+                item_id,
+                name=name,
+                manager=args.get("manager", ""),
+                reason=args.get("reason", ""),
+            )
+            count = result.get("count", 0)
+            return [
+                {
+                    "type": "text",
+                    "text": f"Removed {count} installed software record(s) for: {name}",
+                }
+            ]
+        except Exception as e:
+            return [{"type": "text", "text": f"Error: {e}"}]
+
     def _save_memory(self, args: dict) -> list:
         content = args.get("content", "")
         memory_type = args.get("memory_type", "fact")
