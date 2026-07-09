@@ -253,6 +253,26 @@ class LocalMCPServer:
             return [{"type": "text", "text": "Error: command and item_id required"}]
         
         try:
+            try:
+                from app.services.agent.session import (
+                    EXECUTE_COMMAND_TOOL_NAME,
+                    agent_session_manager,
+                )
+
+                existing_session = agent_session_manager.get_session(str(item_id))
+                if existing_session:
+                    terminal_input_error = existing_session.validate_terminal_tool_input(
+                        EXECUTE_COMMAND_TOOL_NAME,
+                        {"item_id": str(item_id), "command": command},
+                    )
+                    if terminal_input_error:
+                        debug_log(
+                            f"[LocalMCPServer] command blocked before send: item={item_id}, command={command}"
+                        )
+                        return [{"type": "text", "text": terminal_input_error}]
+            except Exception as guard_error:
+                debug_log(f"[LocalMCPServer] terminal input guard error: {guard_error}")
+
             from app.services.socket_pool import InputSDK
             has_handler = self._ensure_terminal_input_handler(item_id)
             debug_log(f"[LocalMCPServer] has_handler={has_handler}")
@@ -288,6 +308,26 @@ class LocalMCPServer:
             return [{"type": "text", "text": "Error: item_id required"}]
         
         try:
+            try:
+                from app.services.agent.session import (
+                    EXECUTE_COMMAND_TOOL_NAME,
+                    agent_session_manager,
+                )
+
+                existing_session = agent_session_manager.get_session(str(item_id))
+                if existing_session:
+                    terminal_input_error = existing_session.validate_terminal_tool_input(
+                        EXECUTE_COMMAND_TOOL_NAME,
+                        {"item_id": str(item_id), "command": command},
+                    )
+                    if terminal_input_error:
+                        debug_log(
+                            f"[LocalMCPServer] command blocked before send: item={item_id}, command={command}"
+                        )
+                        return [{"type": "text", "text": terminal_input_error}]
+            except Exception as guard_error:
+                debug_log(f"[LocalMCPServer] terminal input guard error: {guard_error}")
+
             from app.services.socket_pool import InputSDK
             has_handler = self._ensure_terminal_input_handler(item_id)
             debug_log(f"[LocalMCPServer] interrupt has_handler={has_handler}")

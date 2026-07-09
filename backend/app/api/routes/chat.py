@@ -45,6 +45,7 @@ from app.services.agent.prompts.policy import (
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.session import (
     COMMAND_DISPATCH_FAILURE_MESSAGE,
+    COMMAND_TOOL_NAMES,
     agent_session_manager,
     is_command_dispatch_failure_result,
 )
@@ -1058,8 +1059,31 @@ def generate_stream(
 
                 normalized_tool_args_str = json.dumps(tool_args, ensure_ascii=False)
                 tool_args["item_id"] = item_id
-                hide_tool_details = _should_hide_tool_details(tool_name)
+                terminal_session = None
+                if tool_name in COMMAND_TOOL_NAMES:
+                    terminal_session = agent_session_manager.get_or_create_session(
+                        item_id,
+                        str(handler.id),
+                    )
+                    terminal_input_error = terminal_session.validate_terminal_tool_input(
+                        tool_name,
+                        tool_args,
+                    )
+                    if terminal_input_error:
+                        _mark_agent_task_plan_failed(planned_task_runtime)
+                        warning_event = _persist_and_broadcast_event(
+                            item_id,
+                            role="assistant",
+                            content=terminal_input_error,
+                            message_type="agent_warning",
+                            extra={"tool_name": tool_name},
+                        )
+                        yield _to_sse(warning_event)
+                        _broadcast_agent_status(item_id, "idle")
+                        yield _to_sse({"done": True})
+                        return
 
+                hide_tool_details = _should_hide_tool_details(tool_name)
                 if not hide_tool_details:
                     action_event = _persist_and_broadcast_event(
                         item_id,
@@ -1131,6 +1155,22 @@ def generate_stream(
                     yield _to_sse({"done": True})
                     return
 
+                if tool_name in COMMAND_TOOL_NAMES and result.get("success"):
+                    if terminal_session is None:
+                        terminal_session = agent_session_manager.get_or_create_session(
+                            item_id,
+                            str(handler.id),
+                        )
+                    terminal_session.mark_terminal_command_dispatched(tool_name, tool_args)
+                    waiting_event = _broadcast_agent_status(
+                        item_id,
+                        "waiting_terminal",
+                        "命令已发送，等待终端反馈",
+                        {"terminal_source": "raw_feedback", "tool_name": tool_name},
+                    )
+                    yield _to_sse(waiting_event)
+                    yield _to_sse({"done": True})
+                    return
                 assistant_message["tool_calls"].append(
                     {
                         "id": tool_call["id"],

@@ -39,6 +39,49 @@ def test_execute_command_only_reports_dispatch(monkeypatch) -> None:
     assert sent == {"item_id": "item-1", "command": "echo 23231\n"}
 
 
+def test_execute_command_blocks_when_busy_terminal_command_pending(monkeypatch) -> None:
+    import importlib
+
+    import app.services.socket_pool as socket_pool
+    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, agent_session_manager
+
+    input_center_module = importlib.import_module("app.services.socket_pool.input_center")
+    item_id = "item-busy"
+
+    class FakeInputSDK:
+        def send(self, item_id: str, command: str) -> bool:
+            raise AssertionError("blocked command should not be sent to terminal")
+
+    monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
+    monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: True)
+
+    agent_session_manager.remove_session(item_id)
+    session = agent_session_manager.get_or_create_session(item_id, "handler-1")
+    monkeypatch.setattr(session, "_schedule_pending_command_recheck", lambda *args, **kwargs: None)
+    monkeypatch.setattr(session, "_get_log_line_count", lambda: 0)
+    session.mark_terminal_command_dispatched(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "apt update"},
+    )
+
+    try:
+        server = LocalMCPServer()
+        result = server.call_tool(
+            "execute_command",
+            {
+                "item_id": item_id,
+                "command": "java -version",
+            },
+        )
+    finally:
+        agent_session_manager.remove_session(item_id)
+
+    assert len(result) == 1
+    assert result[0]["type"] == "text"
+    assert "apt update" in result[0]["text"]
+    assert "java -version" in result[0]["text"]
+    assert "命令未发送" in result[0]["text"]
+
 def test_system_prompt_forbids_claiming_command_success_without_confirmation() -> None:
     skill_loader.reload()
     prompt = get_system_prompt()

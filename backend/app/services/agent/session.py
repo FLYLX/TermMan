@@ -535,7 +535,7 @@ class AgentSession:
                 return None
             return (
                 f"终端当前在 `{self._short_command(context.command)}` 的交互式控制台中。"
-                f"`{self._short_command(command)}` 看起来是 shell 命令，发送进去不会由 shell 执行，已拦截。"
+                f"`{self._short_command(command)}` 看起来是 shell 命令，发送进去不会由 shell 执行，已拦截，命令未发送。"
             )
 
         pending = self._get_pending_command()
@@ -544,8 +544,8 @@ class AgentSession:
 
         if pending.input_mode == TERMINAL_INPUT_MODE_BUSY:
             return (
-                f"终端正在执行 `{self._short_command(pending.command)}`，这个前台进程通常不接收新的 shell 命令。"
-                f"已拦截 `{self._short_command(command)}`，请等待当前任务结束或先中断。"
+                f"终端正在执行 `{self._short_command(pending.command)}`，前台进程通常不接收新的 shell 命令。"
+                f"已拦截 `{self._short_command(command)}`，命令未发送；请等待当前任务结束，或明确要求中断。"
             )
 
         if pending.input_mode == TERMINAL_INPUT_MODE_CONSOLE:
@@ -553,10 +553,25 @@ class AgentSession:
                 return None
             return (
                 f"终端正在启动 `{self._short_command(pending.command)}` 的交互式控制台。"
-                f"`{self._short_command(command)}` 看起来不是控制台命令，已拦截。"
+                f"`{self._short_command(command)}` 看起来不是控制台命令，已拦截，命令未发送。"
             )
 
         return None
+
+    def validate_terminal_tool_input(
+        self,
+        tool_name: str,
+        tool_args: dict[str, Any],
+    ) -> str | None:
+        return self._validate_terminal_command_input(tool_name, tool_args)
+
+    def mark_terminal_command_dispatched(
+        self,
+        tool_name: str,
+        tool_args: dict[str, Any],
+    ) -> None:
+        self._set_pending_command(tool_name, tool_args)
+        self._emit_waiting_terminal_status(tool_name)
 
     def _set_pending_command(self, tool_name: str, tool_args: dict[str, Any]):
         command = self._extract_command_text(tool_name, tool_args)
