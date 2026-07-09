@@ -14,6 +14,12 @@ from app.plugins.robot.internal_trace import (
     sanitize_robot_visible_text,
 )
 from app.plugins.robot.mcp.context import get_robot_mcp_context
+from app.plugins.robot.memory_scope import (
+    memory_conversation_key as scoped_memory_conversation_key,
+    memory_scope_for_content,
+    memory_scope_rank as scoped_memory_scope_rank,
+    speaker_global_key_from_context,
+)
 from app.plugins.robot.message_chunks import is_group_reply_target
 from app.plugins.robot.reply_intent import is_no_reply_intent
 
@@ -982,11 +988,9 @@ class RobotMCPServer:
     @staticmethod
     def _memory_conversation_key(memory: dict[str, Any]) -> str:
         metadata = memory.get("metadata") or {}
-        return str(
-            metadata.get("robot_conversation_key")
-            or metadata.get("conversation_key")
-            or ""
-        ).strip()
+        if not isinstance(metadata, dict):
+            metadata = {}
+        return scoped_memory_conversation_key(metadata)
 
     @staticmethod
     def _memory_scope_rank(
@@ -994,17 +998,14 @@ class RobotMCPServer:
         *,
         robot_id: str,
         conversation_key: str,
+        speaker_global_key: str = "",
     ) -> int:
-        metadata = memory.get("metadata") or {}
-        memory_robot_id = str(metadata.get("robot_id") or "").strip()
-        memory_conversation_key = RobotMCPServer._memory_conversation_key(memory)
-        if memory_robot_id and robot_id and memory_robot_id != robot_id:
-            return -1
-        if memory_conversation_key:
-            return 3 if memory_conversation_key == conversation_key else -1
-        if memory_robot_id:
-            return 2
-        return 1
+        return scoped_memory_scope_rank(
+            memory,
+            robot_id=robot_id,
+            conversation_key=conversation_key,
+            speaker_global_key=speaker_global_key,
+        )
 
     def _save_memory(self, args: dict) -> list[dict[str, str]]:
         content = sanitize_robot_visible_text(str(args.get("content") or "")).strip()
@@ -1069,6 +1070,13 @@ class RobotMCPServer:
                 metadata["conversation_key"] = conversation_key
             if sender_key:
                 metadata["speaker_key"] = sender_key
+            speaker_global_key = speaker_global_key_from_context(
+                sender_key,
+                getattr(context, "reply_target", None) if context is not None else None,
+            )
+            if speaker_global_key:
+                metadata["speaker_global_key"] = speaker_global_key
+            metadata["memory_scope"] = memory_scope_for_content(content, memory_type)
 
             candidate = memory_policy.MemoryCandidate(
                 content=content,
@@ -1114,6 +1122,7 @@ class RobotMCPServer:
         active_target = self._context_target_from_active_context(context)
         conversation_key = ""
         robot_id = ""
+        speaker_global_key = ""
         if context is not None:
             robot_id = str(context.robot_id or "").strip()
             conversation_key = str(
@@ -1121,6 +1130,10 @@ class RobotMCPServer:
                 or (active_target or {}).get("conversation")
                 or ""
             ).strip()
+            speaker_global_key = speaker_global_key_from_context(
+                str(getattr(context, "sender_key", "") or ""),
+                getattr(context, "reply_target", None),
+            )
 
         limit = self._long_term_memory_limit(args)
         try:
@@ -1143,6 +1156,7 @@ class RobotMCPServer:
                 memory,
                 robot_id=robot_id,
                 conversation_key=conversation_key,
+                speaker_global_key=speaker_global_key,
             )
             if scope_rank < 0:
                 continue

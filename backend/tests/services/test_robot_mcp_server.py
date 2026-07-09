@@ -608,6 +608,30 @@ def test_robot_mcp_recalls_long_term_memory_scoped_to_active_context(monkeypatch
                 "distance": 0.01,
             },
             {
+                "id": "same-speaker-other-group",
+                "content": "call this QQ user Master",
+                "metadata": {
+                    "memory_type": "preference",
+                    "robot_id": "robot-current",
+                    "robot_conversation_key": "group:other-group",
+                    "speaker_global_key": "onebot_v11:user:user-1",
+                    "memory_scope": "speaker",
+                },
+                "distance": 0.03,
+            },
+            {
+                "id": "other-speaker-other-group",
+                "content": "call another user Boss",
+                "metadata": {
+                    "memory_type": "preference",
+                    "robot_id": "robot-current",
+                    "robot_conversation_key": "group:other-group",
+                    "speaker_global_key": "onebot_v11:user:user-2",
+                    "memory_scope": "speaker",
+                },
+                "distance": 0.01,
+            },
+            {
                 "id": "global",
                 "content": "general robot preference",
                 "metadata": {"memory_type": "preference"},
@@ -658,10 +682,13 @@ def test_robot_mcp_recalls_long_term_memory_scoped_to_active_context(monkeypatch
     text = result[0]["text"]
     assert "current QQ group:current-group" in text
     assert "nickname is XiaoChai" in text
+    assert "call this QQ user Master" in text
     assert "general robot preference" in text
     assert "other group secret" not in text
+    assert "call another user Boss" not in text
     assert "other robot memory" not in text
-    assert text.index("nickname is XiaoChai") < text.index("general robot preference")
+    assert text.index("nickname is XiaoChai") < text.index("call this QQ user Master")
+    assert text.index("call this QQ user Master") < text.index("general robot preference")
 
 
 def test_robot_mcp_save_memory_persists_scoped_long_term_memory(monkeypatch) -> None:
@@ -726,6 +753,8 @@ def test_robot_mcp_save_memory_persists_scoped_long_term_memory(monkeypatch) -> 
     assert metadata["robot_conversation_key"] == "group:current-group"
     assert metadata["conversation_key"] == "group:current-group"
     assert metadata["speaker_key"] == "onebot_v11:group:current-group:user-1"
+    assert metadata["speaker_global_key"] == "onebot_v11:user:user-1"
+    assert metadata["memory_scope"] == "robot"
     assert metadata["content_hash"]
 
 

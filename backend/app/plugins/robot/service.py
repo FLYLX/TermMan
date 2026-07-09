@@ -21,6 +21,11 @@ from app.services.agent.chat_runtime import ChatResponseResult, collect_chat_res
 
 from .contracts import RobotDispatchResponse, RobotInboundMessage, RobotReplyTarget
 from .debug_log import preview_text, record_robot_event
+from .memory_scope import (
+    memory_scope_for_content,
+    memory_scope_rank,
+    speaker_global_key_from_context,
+)
 from .message_chunks import is_group_reply_target, split_robot_message_for_target
 from .platforms import (
     DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS,
@@ -773,6 +778,8 @@ class RobotService:
                         item_id=resolved_binding.item.id,
                         robot=robot,
                         conversation_key=conversation_key,
+                        sender_key=message.sender_key,
+                        reply_target=message.reply_target,
                     ),
                     live_context_card="",
                 ),
@@ -1089,6 +1096,8 @@ class RobotService:
                     item_id=latest.item_id,
                     robot=robot,
                     conversation_key=conversation_key,
+                    sender_key=latest.sender_key,
+                    reply_target=latest.reply_target,
                 ),
                 live_context_card="",
             ),
@@ -1244,6 +1253,8 @@ class RobotService:
                     item_id=item_id,
                     robot=robot,
                     conversation_key=conversation_key,
+                    sender_key=message.sender_key,
+                    reply_target=message.reply_target,
                     candidate=explicit_candidate,
                     store=vector_store,
                     source="qq_robot",
@@ -1265,6 +1276,8 @@ class RobotService:
                     item_id=item_id,
                     robot=robot,
                     conversation_key=conversation_key,
+                    sender_key=message.sender_key,
+                    reply_target=message.reply_target,
                     candidate=scored_candidate.candidate,
                     store=vector_store,
                     source="qq_robot_auto",
@@ -1285,6 +1298,8 @@ class RobotService:
                 item_id=item_id,
                 robot=robot,
                 conversation_key=conversation_key,
+                sender_key=message.sender_key,
+                reply_target=message.reply_target,
                 candidate=promoted_candidate,
                 store=vector_store,
                 source="qq_robot_auto_promoted",
@@ -1307,6 +1322,8 @@ class RobotService:
         item_id: uuid.UUID | str,
         robot: Robot,
         conversation_key: str,
+        sender_key: str = "",
+        reply_target: RobotReplyTarget | None = None,
         candidate: object,
         store: object,
         source: str,
@@ -1314,13 +1331,21 @@ class RobotService:
     ) -> str | None:
         from app.services.agent.prompts import policy as memory_policy
 
+        memory_type = str(getattr(candidate, "memory_type", "") or "")
+        content = str(getattr(candidate, "content", "") or "")
+        speaker_global_key = speaker_global_key_from_context(sender_key, reply_target)
         metadata = {
             **dict(getattr(candidate, "metadata", {}) or {}),
             "source": source,
             "robot_id": str(robot.id),
             "robot_conversation_key": conversation_key,
             "conversation_key": conversation_key,
+            "memory_scope": memory_scope_for_content(content, memory_type),
         }
+        if sender_key:
+            metadata.setdefault("speaker_key", sender_key)
+        if speaker_global_key:
+            metadata["speaker_global_key"] = speaker_global_key
         if extra_metadata:
             metadata.update(extra_metadata)
         return memory_policy.persist_memory_candidate(
@@ -2300,19 +2325,16 @@ class RobotService:
         *,
         robot: Robot,
         conversation_key: str,
+        speaker_global_key: str = "",
     ) -> bool:
-        metadata = memory.get("metadata") if isinstance(memory, dict) else {}
-        if not isinstance(metadata, dict) or not conversation_key:
+        if not isinstance(memory, dict) or not conversation_key:
             return False
-        memory_robot_id = str(metadata.get("robot_id") or "").strip()
-        if memory_robot_id and memory_robot_id != str(robot.id):
-            return False
-        memory_conversation = str(
-            metadata.get("robot_conversation_key")
-            or metadata.get("conversation_key")
-            or ""
-        ).strip()
-        return memory_conversation == conversation_key
+        return memory_scope_rank(
+            memory,
+            robot_id=str(robot.id),
+            conversation_key=conversation_key,
+            speaker_global_key=speaker_global_key,
+        ) > 0
 
     @staticmethod
     def _impression_memory_sort_key(memory: dict[str, object]) -> tuple[int, int, str]:
@@ -2337,6 +2359,8 @@ class RobotService:
         item_id: uuid.UUID | str,
         robot: Robot,
         conversation_key: str,
+        sender_key: str = "",
+        reply_target: RobotReplyTarget | None = None,
         limit: int = 6,
     ) -> str:
         if not conversation_key:
@@ -2348,6 +2372,7 @@ class RobotService:
             logger.debug("[RobotService] Robot impression card dependencies unavailable")
             return ""
 
+        speaker_global_key = speaker_global_key_from_context(sender_key, reply_target)
         memories: list[dict[str, object]] = []
         for memory_type in ("preference", "fact", "context", "task", "error"):
             try:
@@ -2372,6 +2397,7 @@ class RobotService:
                     memory,
                     robot=robot,
                     conversation_key=conversation_key,
+                    speaker_global_key=speaker_global_key,
                 ):
                     continue
                 memories.append(memory)

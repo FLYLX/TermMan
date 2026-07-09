@@ -883,6 +883,18 @@ def test_robot_message_includes_current_conversation_impression_card(
                 },
             },
             {
+                "id": "same-speaker-other-group",
+                "content": "用户偏好：Alice 以后叫她主人",
+                "metadata": {
+                    "memory_type": "preference",
+                    "robot_id": str(robot.id),
+                    "robot_conversation_key": "group:g2",
+                    "speaker_global_key": "onebot_v11:user:u1",
+                    "memory_scope": "speaker",
+                    "updated_at": "2026-07-07T00:00:00",
+                },
+            },
+            {
                 "id": "other-group",
                 "content": "other group secret",
                 "metadata": {
@@ -911,6 +923,7 @@ def test_robot_message_includes_current_conversation_impression_card(
     text = captured["job"].message
     assert "Current QQ conversation impression card" in text
     assert "Alice 喜欢短回复" in text
+    assert "Alice 以后叫她主人" in text
     assert "other group secret" not in text
     assert text.endswith("[Current QQ message]\nhello")
 def test_robot_message_passes_sender_prefix_to_agent(
