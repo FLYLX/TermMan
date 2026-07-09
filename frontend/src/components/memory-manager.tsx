@@ -13,6 +13,8 @@ import {
   Filter,
   Loader2,
   Minimize2,
+  Package,
+  Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -44,6 +46,8 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
 import {
+  type InstalledSoftwareItem,
+  type InstalledSoftwareUpsertRequest,
   type ManagedMemoryStatus,
   MEMORY_STATUS_COLORS,
   MEMORY_STATUS_LABELS,
@@ -57,6 +61,56 @@ import {
 
 interface MemoryManagerProps {
   itemId: string
+}
+
+type InstalledSoftwareForm = {
+  name: string
+  manager: string
+  version: string
+  command: string
+  notes: string
+}
+
+const EMPTY_INSTALLED_SOFTWARE_FORM: InstalledSoftwareForm = {
+  name: "",
+  manager: "",
+  version: "",
+  command: "",
+  notes: "",
+}
+
+function buildInstalledSoftwareForm(
+  item?: InstalledSoftwareItem | null,
+): InstalledSoftwareForm {
+  if (!item) {
+    return { ...EMPTY_INSTALLED_SOFTWARE_FORM }
+  }
+  return {
+    name: item.name || "",
+    manager: item.manager || "",
+    version: item.version || "",
+    command: item.command || "",
+    notes: item.notes || "",
+  }
+}
+
+function buildInstalledSoftwarePayload(
+  form: InstalledSoftwareForm,
+): InstalledSoftwareUpsertRequest {
+  return {
+    name: form.name.trim(),
+    manager: form.manager.trim() || "manual",
+    version: form.version.trim() || undefined,
+    command: form.command.trim() || undefined,
+    notes: form.notes.trim() || undefined,
+  }
+}
+
+function getInstalledSoftwareKey(item: InstalledSoftwareItem | null) {
+  if (!item) {
+    return ""
+  }
+  return `${item.name.toLowerCase()}\u0000${(item.manager || "unknown").toLowerCase()}`
 }
 
 const MEMORY_PAGE_SIZE = 10
@@ -113,7 +167,15 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
   const [newMemoryTtl, setNewMemoryTtl] = useState(30)
   const [isMemoryListOpen, setIsMemoryListOpen] = useState(true)
   const importInputRef = useRef<HTMLInputElement | null>(null)
-
+  const [isInstalledDialogOpen, setIsInstalledDialogOpen] = useState(false)
+  const [editingInstalledSoftware, setEditingInstalledSoftware] =
+    useState<InstalledSoftwareItem | null>(null)
+  const [installedSoftwareForm, setInstalledSoftwareForm] =
+    useState<InstalledSoftwareForm>(EMPTY_INSTALLED_SOFTWARE_FORM)
+  const installedSoftwareQuery = useQuery({
+    queryKey: ["installed-software", itemId],
+    queryFn: () => MemoryService.getInstalledSoftware(itemId),
+  })
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["memory-stats", itemId],
     queryFn: () => MemoryService.getMemoryStats(itemId),
@@ -159,6 +221,51 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
     enabled: false,
   })
 
+  const refreshInstalledSoftware = () => {
+    queryClient.invalidateQueries({ queryKey: ["installed-software", itemId] })
+  }
+
+  const saveInstalledSoftwareMutation = useMutation({
+    mutationFn: async () => {
+      const payload = buildInstalledSoftwarePayload(installedSoftwareForm)
+      if (!payload.name) {
+        throw new Error("请输入软件名称")
+      }
+      const currentKey = getInstalledSoftwareKey(editingInstalledSoftware)
+      const nextKey = `${payload.name.toLowerCase()}\u0000${(payload.manager || "manual").toLowerCase()}`
+      if (editingInstalledSoftware && currentKey !== nextKey) {
+        await MemoryService.deleteInstalledSoftware(itemId, {
+          name: editingInstalledSoftware.name,
+          manager: editingInstalledSoftware.manager,
+          reason: "manual edit",
+        })
+      }
+      return MemoryService.saveInstalledSoftware(itemId, payload)
+    },
+    onSuccess: () => {
+      showSuccessToast("已安装列表已更新")
+      setIsInstalledDialogOpen(false)
+      setEditingInstalledSoftware(null)
+      setInstalledSoftwareForm({ ...EMPTY_INSTALLED_SOFTWARE_FORM })
+      refreshInstalledSoftware()
+    },
+    onError: (error) =>
+      showErrorToast(error instanceof Error ? error.message : "更新已安装列表失败"),
+  })
+
+  const deleteInstalledSoftwareMutation = useMutation({
+    mutationFn: (item: InstalledSoftwareItem) =>
+      MemoryService.deleteInstalledSoftware(itemId, {
+        name: item.name,
+        manager: item.manager,
+        reason: "manual delete",
+      }),
+    onSuccess: () => {
+      showSuccessToast("已安装记录已删除")
+      refreshInstalledSoftware()
+    },
+    onError: () => showErrorToast("删除已安装记录失败"),
+  })
   const refreshMemoryViews = () => {
     queryClient.invalidateQueries({ queryKey: ["memories", itemId] })
     queryClient.invalidateQueries({ queryKey: ["memory-stats", itemId] })
@@ -299,6 +406,25 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
     onError: () => showErrorToast("导入记忆失败"),
   })
 
+  const handleAddInstalledSoftware = () => {
+    setEditingInstalledSoftware(null)
+    setInstalledSoftwareForm({ ...EMPTY_INSTALLED_SOFTWARE_FORM })
+    setIsInstalledDialogOpen(true)
+  }
+
+  const handleEditInstalledSoftware = (item: InstalledSoftwareItem) => {
+    setEditingInstalledSoftware(item)
+    setInstalledSoftwareForm(buildInstalledSoftwareForm(item))
+    setIsInstalledDialogOpen(true)
+  }
+
+  const handleSaveInstalledSoftware = () => {
+    if (!installedSoftwareForm.name.trim()) {
+      showErrorToast("请输入软件名称")
+      return
+    }
+    saveInstalledSoftwareMutation.mutate()
+  }
   const handleSearch = () => {
     if (searchQuery.trim()) {
       performSearch()
@@ -406,6 +532,101 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
         className="hidden"
         onChange={handleImportMemoryFile}
       />
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Package className="size-5" />
+              已安装软件
+            </CardTitle>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => refreshInstalledSoftware()}
+                disabled={installedSoftwareQuery.isFetching}
+              >
+                {installedSoftwareQuery.isFetching ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
+                刷新
+              </Button>
+              <Button size="sm" onClick={handleAddInstalledSoftware}>
+                <Plus className="size-4" />
+                添加软件
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {installedSoftwareQuery.isLoading ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="size-6 animate-spin" />
+            </div>
+          ) : (installedSoftwareQuery.data?.items.length ?? 0) === 0 ? (
+            <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
+              暂无已安装软件记录。agent 确认安装成功后会写入，也可以手动添加。
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {installedSoftwareQuery.data?.items.map((item) => (
+                <div
+                  key={`${item.manager}:${item.name}`}
+                  className="grid gap-3 rounded-lg border bg-muted/20 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+                >
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate font-medium">{item.name}</span>
+                      <Badge variant="secondary">{item.manager || "unknown"}</Badge>
+                      {item.version ? (
+                        <Badge variant="outline" className="font-mono">
+                          {item.version}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    {item.command ? (
+                      <p className="truncate font-mono text-xs text-muted-foreground">
+                        {item.command}
+                      </p>
+                    ) : null}
+                    {item.notes ? (
+                      <p className="text-xs text-muted-foreground">{item.notes}</p>
+                    ) : null}
+                    <p className="text-[11px] text-muted-foreground">
+                      更新: {item.updated_at ? new Date(item.updated_at).toLocaleString() : "-"}
+                    </p>
+                  </div>
+                  <div className="flex justify-end gap-1">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-8"
+                      onClick={() => handleEditInstalledSoftware(item)}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-8 text-red-500 hover:text-red-400"
+                      onClick={() => {
+                        if (confirm(`删除已安装记录 ${item.name}？`)) {
+                          deleteInstalledSoftwareMutation.mutate(item)
+                        }
+                      }}
+                      disabled={deleteInstalledSoftwareMutation.isPending}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -835,6 +1056,114 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
         </CardContent>
       </Card>
 
+      <Dialog
+        open={isInstalledDialogOpen}
+        onOpenChange={(open) => {
+          setIsInstalledDialogOpen(open)
+          if (!open) {
+            setEditingInstalledSoftware(null)
+            setInstalledSoftwareForm({ ...EMPTY_INSTALLED_SOFTWARE_FORM })
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editingInstalledSoftware ? "编辑已安装软件" : "添加已安装软件"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>软件名称</Label>
+                <Input
+                  value={installedSoftwareForm.name}
+                  onChange={(e) =>
+                    setInstalledSoftwareForm((current) => ({
+                      ...current,
+                      name: e.target.value,
+                    }))
+                  }
+                  placeholder="openjdk-21-jdk-headless"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>来源</Label>
+                <Input
+                  value={installedSoftwareForm.manager}
+                  onChange={(e) =>
+                    setInstalledSoftwareForm((current) => ({
+                      ...current,
+                      manager: e.target.value,
+                    }))
+                  }
+                  placeholder="apt / pip / npm / manual"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>版本</Label>
+              <Input
+                value={installedSoftwareForm.version}
+                onChange={(e) =>
+                  setInstalledSoftwareForm((current) => ({
+                    ...current,
+                    version: e.target.value,
+                  }))
+                }
+                placeholder="21"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>安装命令</Label>
+              <Textarea
+                value={installedSoftwareForm.command}
+                onChange={(e) =>
+                  setInstalledSoftwareForm((current) => ({
+                    ...current,
+                    command: e.target.value,
+                  }))
+                }
+                rows={2}
+                className="font-mono text-xs"
+                placeholder="apt-get install -y openjdk-21-jdk-headless"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>备注</Label>
+              <Textarea
+                value={installedSoftwareForm.notes}
+                onChange={(e) =>
+                  setInstalledSoftwareForm((current) => ({
+                    ...current,
+                    notes: e.target.value,
+                  }))
+                }
+                rows={3}
+                placeholder="已通过 java -version 验证"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsInstalledDialogOpen(false)}
+              disabled={saveInstalledSoftwareMutation.isPending}
+            >
+              取消
+            </Button>
+            <Button
+              onClick={handleSaveInstalledSoftware}
+              disabled={saveInstalledSoftwareMutation.isPending}
+            >
+              {saveInstalledSoftwareMutation.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : null}
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent>
           <DialogHeader>

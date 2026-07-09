@@ -296,3 +296,66 @@ def test_update_memory_status_requires_memory_belongs_to_item(
     )
 
     assert response.status_code == 404
+
+
+def test_installed_software_api_allows_manual_edit(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    import app.services.agent.installed_software as installed_software
+
+    monkeypatch.setattr(installed_software, "_INSTALLED_SOFTWARE_DIR", tmp_path)
+    item = create_random_item(db)
+
+    create_response = client.post(
+        f"{settings.API_V1_STR}/memory/{item.id}/installed-software",
+        headers=superuser_token_headers,
+        json={
+            "name": "openjdk-21-jdk-headless",
+            "manager": "apt",
+            "version": "21",
+            "command": "apt-get install -y openjdk-21-jdk-headless",
+            "notes": "verified with java -version",
+        },
+    )
+    assert create_response.status_code == 200
+    assert create_response.json()["item"]["name"] == "openjdk-21-jdk-headless"
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/memory/{item.id}/installed-software",
+        headers=superuser_token_headers,
+    )
+    assert list_response.status_code == 200
+    payload = list_response.json()
+    assert payload["count"] == 1
+    assert payload["items"][0]["version"] == "21"
+
+    update_response = client.post(
+        f"{settings.API_V1_STR}/memory/{item.id}/installed-software",
+        headers=superuser_token_headers,
+        json={
+            "name": "openjdk-21-jdk-headless",
+            "manager": "apt",
+            "version": "21.0.1",
+        },
+    )
+    assert update_response.status_code == 200
+
+    delete_response = client.request(
+        "DELETE",
+        f"{settings.API_V1_STR}/memory/{item.id}/installed-software",
+        headers=superuser_token_headers,
+        json={"name": "openjdk-21-jdk-headless", "manager": "apt"},
+    )
+    assert delete_response.status_code == 200
+    assert delete_response.json()["count"] == 1
+
+    empty_response = client.get(
+        f"{settings.API_V1_STR}/memory/{item.id}/installed-software",
+        headers=superuser_token_headers,
+    )
+    assert empty_response.status_code == 200
+    assert empty_response.json()["items"] == []
