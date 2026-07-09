@@ -19,6 +19,9 @@ class AgentInputBridge:
     """
 
     def handle_stream(self, item_uuid: str, data: dict[str, object]) -> None:
+        if data.get("source") == "job":
+            logger.debug("[AgentInputBridge] Skipping daemon job stream for item %s", item_uuid)
+            return
         try:
             from app.services.agent import item_handler_context
             from app.services.agent.stream_manager import stream_manager

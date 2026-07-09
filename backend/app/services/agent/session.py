@@ -29,6 +29,7 @@ from app.services.agent.prompts.builder import (
     is_critical_terminal_event,
 )
 from app.services.agent.prompts.system import get_system_prompt
+from app.services.agent.terminal_noise import is_progress_noise_content
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 from app.services.agent.tool_arguments import (
     ToolArgumentParseError,
@@ -62,6 +63,7 @@ COMMAND_DISPATCH_FAILURE_MARKERS = (
     "终端未收到命令",
 )
 EXECUTE_COMMAND_TOOL_NAME = "mcp_local_execute_command"
+COMMAND_DISPATCH_PENDING_MARKER = "命令已发送到终端，尚未确认执行结果:"
 TERMINAL_INPUT_MODE_BUSY = "busy"
 TERMINAL_INPUT_MODE_CONSOLE = "console"
 TERMINAL_INPUT_CONTEXT_TTL_SECONDS = 6 * 60 * 60
@@ -155,6 +157,13 @@ def is_command_dispatch_failure_result(tool_name: str, result_text: str) -> bool
     return any(marker in (result_text or "") for marker in COMMAND_DISPATCH_FAILURE_MARKERS)
 
 
+def is_command_dispatch_pending_result(tool_name: str, result_text: str) -> bool:
+    return (
+        tool_name == EXECUTE_COMMAND_TOOL_NAME
+        and COMMAND_DISPATCH_PENDING_MARKER in (result_text or "")
+    )
+
+
 def _normalize_command_for_routing(command: str) -> str:
     return " ".join((command or "").strip().split()).lower()
 
@@ -168,6 +177,34 @@ def classify_terminal_input_mode(command: str) -> str | None:
     if any(re.search(pattern, normalized) for pattern in TERMINAL_BUSY_COMMAND_PATTERNS):
         return TERMINAL_INPUT_MODE_BUSY
     return None
+
+
+def _coerce_timeout_seconds(value: Any, default: int = PENDING_COMMAND_TIMEOUT_SECONDS) -> int:
+    if value is None or value == "":
+        return default
+    try:
+        timeout = int(float(value))
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(timeout, 600))
+
+
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return default
+
+
+def _normalize_optional_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def _first_command_token(command: str) -> str:
@@ -298,7 +335,20 @@ class PendingCommand:
     echo_count: int = 0
     timeout_warned: bool = False
     input_mode: str | None = None
+    expected_output: str = ""
+    expected_regex: str = ""
+    timeout_seconds: int = PENDING_COMMAND_TIMEOUT_SECONDS
+    auto_interrupt_on_timeout: bool = False
 
+    def has_expectation(self) -> bool:
+        return bool(self.expected_output or self.expected_regex)
+
+    def expectation_label(self) -> str:
+        if self.expected_output:
+            return self.expected_output
+        if self.expected_regex:
+            return f"regex:{self.expected_regex}"
+        return ""
 
 @dataclass
 class TerminalInputContext:
@@ -576,12 +626,27 @@ class AgentSession:
     def _set_pending_command(self, tool_name: str, tool_args: dict[str, Any]):
         command = self._extract_command_text(tool_name, tool_args)
         input_mode = classify_terminal_input_mode(command)
+        expected_output = _normalize_optional_text(tool_args.get("expected_output"))
+        expected_regex = _normalize_optional_text(tool_args.get("expected_regex"))
+        has_expectation = bool(expected_output or expected_regex)
+        timeout_seconds = _coerce_timeout_seconds(
+            tool_args.get("timeout_seconds"),
+            PENDING_COMMAND_TIMEOUT_SECONDS,
+        )
+        auto_interrupt_on_timeout = _coerce_bool(
+            tool_args.get("auto_interrupt_on_timeout"),
+            has_expectation,
+        )
         pending = PendingCommand(
             tool_name=tool_name,
             command=command,
             normalized_command=self._normalize_text(command),
             log_line_cursor=self._get_log_line_count(),
             input_mode=input_mode,
+            expected_output=expected_output,
+            expected_regex=expected_regex,
+            timeout_seconds=timeout_seconds,
+            auto_interrupt_on_timeout=auto_interrupt_on_timeout,
         )
         self._set_terminal_input_context(command, input_mode)
         with self.lock:
@@ -633,7 +698,62 @@ class AgentSession:
     def _build_missing_command_feedback(self, pending: PendingCommand) -> str:
         return (
             f"命令 `{pending.command}` 已发送，但在 "
-            f"{PENDING_COMMAND_TIMEOUT_SECONDS} 秒内没有读取到新的原生日志反馈。"
+            f"{pending.timeout_seconds} 秒内没有读取到新的原生日志反馈。"
+        )
+
+    def _pending_expectation_matches(
+        self,
+        pending: PendingCommand,
+        content: str,
+    ) -> bool:
+        if not content:
+            return False
+        if pending.expected_output and pending.expected_output in content:
+            return True
+        if not pending.expected_regex:
+            return False
+        try:
+            return re.search(pending.expected_regex, content, re.MULTILINE) is not None
+        except re.error as exc:
+            logger.warning(
+                "[AgentSession] Invalid pending command expected_regex for item=%s, command=%s, regex=%s, error=%s",
+                self.item_id,
+                pending.command,
+                pending.expected_regex,
+                exc,
+            )
+            return False
+
+    def _send_interrupt_for_pending_timeout(self, pending: PendingCommand) -> bool:
+        try:
+            from app.services.socket_pool import InputSDK
+
+            success = InputSDK().send(self.item_id, "\x03")
+            logger.info(
+                "[AgentSession] Auto interrupt sent for timed-out expected command item=%s, command=%s, success=%s",
+                self.item_id,
+                pending.command,
+                success,
+            )
+            return bool(success)
+        except Exception as exc:
+            logger.warning(
+                "[AgentSession] Failed to auto interrupt timed-out expected command item=%s, command=%s, error=%s",
+                self.item_id,
+                pending.command,
+                exc,
+            )
+            return False
+
+    def _build_expected_command_timeout_feedback(
+        self,
+        pending: PendingCommand,
+        interrupted: bool,
+    ) -> str:
+        interrupt_text = "已自动发送 Ctrl+C。" if interrupted else "未能自动发送 Ctrl+C。"
+        return (
+            f"命令 `{pending.command}` 在 {pending.timeout_seconds} 秒内没有匹配预期输出 "
+            f"`{pending.expectation_label()}`。{interrupt_text}"
         )
 
     def _run_pending_command_recheck(self, expected_command: str):
@@ -660,8 +780,28 @@ class AgentSession:
             and elapsed_seconds >= PENDING_COMMAND_STALLED_CONFIRM_SECONDS
         )
 
+        if pending.has_expectation() and elapsed_seconds >= pending.timeout_seconds:
+            recent_feedback = self._get_recent_pending_log_tail(64)
+            if not self._pending_expectation_matches(pending, recent_feedback):
+                logger.warning(
+                    "[AgentSession] Pending command timed out without expected output for item=%s, command=%s, expected=%s",
+                    self.item_id,
+                    pending.command,
+                    pending.expectation_label(),
+                )
+                self._clear_pending_command()
+                interrupted = False
+                if pending.auto_interrupt_on_timeout:
+                    interrupted = self._send_interrupt_for_pending_timeout(pending)
+                self.emit_output(
+                    self._build_expected_command_timeout_feedback(pending, interrupted),
+                    "agent_warning",
+                    {"tool_name": pending.tool_name},
+                )
+                return
+
         if not has_new_log_lines and not should_force_tail_check:
-            if elapsed_seconds >= PENDING_COMMAND_TIMEOUT_SECONDS:
+            if elapsed_seconds >= pending.timeout_seconds:
                 logger.warning(
                     "[AgentSession] Pending command timed out without raw feedback for item=%s, command=%s",
                     self.item_id,
@@ -735,6 +875,27 @@ class AgentSession:
 
         return delta
 
+    def discard_pending_terminal_feedback_delta(self) -> None:
+        pending = self._get_pending_command()
+        if not pending:
+            return
+        try:
+            new_cursor = self._get_log_line_count()
+        except Exception as exc:
+            logger.debug(
+                "[AgentSession] Failed to advance pending log cursor for item=%s: %s",
+                self.item_id,
+                exc,
+            )
+            return
+        with self.lock:
+            current_pending = self._pending_command
+            if current_pending and current_pending.normalized_command == pending.normalized_command:
+                current_pending.log_line_cursor = max(
+                    current_pending.log_line_cursor,
+                    new_cursor,
+                )
+        self._emit_waiting_terminal_status(pending.tool_name)
     def _get_recent_pending_log_tail(self, lines: int = 8) -> str:
         try:
             return self._get_log_manager().get_last_lines(self.item_id, lines) or ""
@@ -880,6 +1041,24 @@ class AgentSession:
 
         lines = [line for line in content.splitlines() if line.strip()]
         informative_lines = [line for line in lines if not self._is_prompt_only_line(line)]
+        if pending.has_expectation():
+            if self._pending_expectation_matches(pending, content):
+                logger.info(
+                    "[AgentSession] Pending command matched expected output for item=%s, command=%s, expected=%s",
+                    self.item_id,
+                    pending.command,
+                    pending.expectation_label(),
+                )
+                self._clear_pending_command()
+                return False, None, False
+            logger.info(
+                "[AgentSession] Holding pending command until expected output appears for item=%s, command=%s, expected=%s",
+                self.item_id,
+                pending.command,
+                pending.expectation_label(),
+            )
+            self._emit_waiting_terminal_status(pending.tool_name)
+            return True, None, False
         if not informative_lines:
             logger.info(
                 "[AgentSession] Prompt returned without command output for item=%s, command=%s",
@@ -898,7 +1077,14 @@ class AgentSession:
             if pending.input_mode == TERMINAL_INPUT_MODE_BUSY:
                 if len(lines) > len(informative_lines):
                     self._clear_pending_command()
-                return False, None, False
+                    return False, None, False
+                logger.info(
+                    "[AgentSession] Holding busy command feedback until prompt returns for item=%s, command=%s",
+                    self.item_id,
+                    pending.command,
+                )
+                self._emit_waiting_terminal_status(pending.tool_name)
+                return True, None, False
             if pending.input_mode == TERMINAL_INPUT_MODE_CONSOLE:
                 self._set_terminal_input_context(pending.command, pending.input_mode)
             self._clear_pending_command()
@@ -922,7 +1108,7 @@ class AgentSession:
                     and (
                         datetime.now() - current_pending.dispatched_at
                     ).total_seconds()
-                    > PENDING_COMMAND_TIMEOUT_SECONDS
+                    > current_pending.timeout_seconds
                 ):
                     current_pending.timeout_warned = True
                     warning_text = (
@@ -1133,10 +1319,10 @@ class AgentSession:
             self._process_chat_input(input_msg, agent)
 
     def _process_terminal_input(self, input_msg: InputMessage, agent: Agent):
-        if input_msg.content:
-            self.emit_output(input_msg.content, "terminal_output")
-
+        had_pending_command = self._get_pending_command() is not None
         analysis = self._resolve_terminal_analysis_content(input_msg)
+        if input_msg.content and not (had_pending_command and not analysis.content):
+            self.emit_output(input_msg.content, "terminal_output")
         if not analysis.content:
             return
         if analysis.direct_response:
@@ -1433,7 +1619,8 @@ class AgentSession:
 
             result_text = self._format_tool_result(result).strip()
             command_dispatch_failed = is_command_dispatch_failure_result(tool_name, result_text)
-            if result_text and not hide_tool_details:
+            command_dispatch_pending = is_command_dispatch_pending_result(tool_name, result_text)
+            if result_text and not hide_tool_details and not command_dispatch_pending:
                 self.emit_output(
                     result_text,
                     "agent_tool_result",

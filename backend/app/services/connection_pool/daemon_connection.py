@@ -2,6 +2,7 @@
 import logging
 import threading
 import uuid
+import httpx
 from datetime import datetime
 from typing import Any, Callable, Dict
 
@@ -326,6 +327,63 @@ class DaemonConnection:
             data["ip_address"] = ip_address
         
         return self._emit_and_wait_sync("connections/disconnect", data)
+
+    def run_job_http(
+        self,
+        *,
+        item_uuid: str,
+        user_uuid: str,
+        command: str,
+        working_directory: str | None = None,
+        timeout_seconds: int = 600,
+        tail_lines: int = 80,
+        env: dict[str, str] | None = None,
+    ) -> Dict[str, Any]:
+        url = f"{self.config.base_url}/api/internal/items/{item_uuid}/jobs/run"
+        payload: Dict[str, Any] = {
+            "user_uuid": user_uuid,
+            "command": command,
+            "working_directory": working_directory,
+            "timeout_seconds": timeout_seconds,
+            "tail_lines": tail_lines,
+            "env": env or {},
+        }
+        headers = {"X-API-Key": self.config.api_key}
+        request_timeout = max(float(timeout_seconds) + 15.0, 30.0)
+        logger.info(
+            "[DaemonConnection] Running daemon job over HTTP: url=%s item=%s timeout=%s command=%r",
+            url,
+            item_uuid,
+            timeout_seconds,
+            command,
+        )
+        try:
+            with httpx.Client(timeout=request_timeout) as client:
+                response = client.post(url, json=payload, headers=headers)
+            try:
+                result = response.json()
+            except ValueError:
+                return {
+                    "success": False,
+                    "error": f"Invalid daemon job response: HTTP {response.status_code}",
+                    "status_code": response.status_code,
+                    "body": response.text[:1000],
+                }
+            if response.status_code >= 400:
+                detail = result.get("detail") if isinstance(result, dict) else None
+                return {
+                    "success": False,
+                    "error": detail or f"Daemon job request failed: HTTP {response.status_code}",
+                    "status_code": response.status_code,
+                    "response": result,
+                }
+            return result
+        except httpx.TimeoutException:
+            logger.error("[DaemonConnection] Daemon job request timed out: item=%s command=%r", item_uuid, command)
+            return {"success": False, "error": "Daemon job request timed out"}
+        except httpx.HTTPError as exc:
+            logger.error("[DaemonConnection] Daemon job request failed: item=%s error=%s", item_uuid, exc)
+            return {"success": False, "error": f"Daemon job request failed: {exc}"}
 
     def get_item_subscribers_http(self, item_uuid: str) -> Dict[str, Any]:
         """

@@ -62,3 +62,14 @@ def test_subscription_center_runs_agent_bridge_after_stream_pipeline(monkeypatch
 
     assert delivered == 1
     assert call_order == ["pipeline", "bridge"]
+
+
+def test_agent_input_bridge_skips_daemon_job_stream(monkeypatch) -> None:
+    bridge = AgentInputBridge()
+
+    def fail_load_item(item_uuid: str):
+        raise AssertionError("job stream should not resolve agent state")
+
+    monkeypatch.setattr(bridge, "_load_item", fail_load_item)
+
+    bridge.handle_stream("item-1", {"source": "job", "stdout": "Downloading 50%\n"})

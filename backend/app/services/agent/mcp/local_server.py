@@ -21,15 +21,34 @@ class LocalMCPServer:
     def _register_builtin_tools(self):
         self.register_tool(
             name="execute_command",
-            description="在终端执行 shell 命令",
+            description="在终端执行一条 shell 命令。优先一次只发一条命令，不要默认用 &&、||、;、管道或换行拼接多步操作；多步操作应等待上一条终端反馈后再继续。可设置 expected_output/expected_regex 和 timeout_seconds，超时未匹配时自动 Ctrl+C。",
             input_schema={
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "要执行的命令"}
+                    "command": {"type": "string", "description": "要执行的一条 shell 命令；默认不要拼接 &&、||、;、管道或换行。"},
+                    "expected_output": {"type": "string", "description": "可选。预期在终端输出中出现的文本；设置后若超时未出现，可自动 Ctrl+C。"},
+                    "expected_regex": {"type": "string", "description": "可选。预期输出正则；比 expected_output 更灵活。"},
+                    "timeout_seconds": {"type": "integer", "description": "可选。等待预期输出的秒数，默认 20，范围 1-600。", "default": 20},
+                    "auto_interrupt_on_timeout": {"type": "boolean", "description": "可选。设置预期输出时默认 true；超时未匹配则发送 Ctrl+C。"}
                 },
                 "required": ["command"]
             },
             handler=self._execute_command,
+            skip_memory=True
+        )
+        self.register_tool(
+            name="run_job",
+            description="Run a non-interactive long-running shell job in an isolated daemon PTY. Use this for downloads, installs, builds, tests, and other commands that should report once after completion. Do not use for interactive shells, REPLs, Minecraft/server consoles, or long-lived services.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "Non-interactive shell command to run as a one-shot job."},
+                    "timeout_seconds": {"type": "integer", "description": "Maximum seconds before the job is terminated. Default 600, max 3600.", "default": 600},
+                    "tail_lines": {"type": "integer", "description": "Number of final output lines returned to the agent. Default 80, max 300.", "default": 80}
+                },
+                "required": ["command"]
+            },
+            handler=self._run_job,
             skip_memory=True
         )
         
@@ -243,6 +262,84 @@ class LocalMCPServer:
             return input_center.has_handler(item_id)
         return False
 
+    def _get_item_daemon_context(self, item_id: str):
+        import uuid
+
+        from sqlmodel import Session
+
+        from app.core.db import engine
+        from app.models import Item
+        from app.services import DaemonConfig, connection_manager
+
+        try:
+            item_uuid = uuid.UUID(str(item_id))
+        except ValueError:
+            raise ValueError(f"invalid item_id: {item_id}")
+
+        with Session(engine) as db:
+            item = db.get(Item, item_uuid)
+            if not item:
+                raise ValueError(f"item not found: {item_id}")
+            if not item.socket_host or not item.socket_port or not item.api_key:
+                raise ValueError(f"daemon is not configured for item: {item_id}")
+            daemon_config = DaemonConfig(item.socket_host, item.socket_port, item.api_key)
+            connection = connection_manager.get_or_create_connection(daemon_config)
+            return item, connection
+
+    def _coerce_job_int(self, value, default: int, minimum: int, maximum: int) -> int:
+        try:
+            coerced = int(float(value)) if value is not None and value != "" else default
+        except (TypeError, ValueError):
+            coerced = default
+        return max(minimum, min(coerced, maximum))
+
+    def _format_job_result(self, result: dict) -> str:
+        exit_code = result.get("exit_code")
+        timed_out = bool(result.get("timed_out"))
+        status = "timed out" if timed_out else ("succeeded" if exit_code == 0 else "failed")
+        output_tail = (result.get("output_tail") or "").strip() or "(no output)"
+        return (
+            f"Job {status}\n"
+            f"job_id: {result.get('job_id', '')}\n"
+            f"command: {result.get('command', '')}\n"
+            f"cwd: {result.get('cwd', '')}\n"
+            f"exit_code: {exit_code}\n"
+            f"timed_out: {timed_out}\n"
+            f"duration_seconds: {result.get('duration_seconds', '')}\n"
+            f"output_tail:\n{output_tail}"
+        )
+
+    def _run_job(self, args: dict) -> list:
+        command = (args.get("command") or "").strip()
+        item_id = args.get("item_id", "")
+        if not command or not item_id:
+            return [{"type": "text", "text": "Error: command and item_id required"}]
+
+        timeout_seconds = self._coerce_job_int(args.get("timeout_seconds"), 600, 1, 3600)
+        tail_lines = self._coerce_job_int(args.get("tail_lines"), 80, 1, 300)
+        debug_log(
+            f"[LocalMCPServer] _run_job: item={item_id}, timeout={timeout_seconds}, tail_lines={tail_lines}, command={command}"
+        )
+        try:
+            item, connection = self._get_item_daemon_context(str(item_id))
+            result = connection.run_job_http(
+                item_uuid=str(item_id),
+                user_uuid=str(item.owner_id),
+                command=command,
+                working_directory=item.working_directory,
+                timeout_seconds=timeout_seconds,
+                tail_lines=tail_lines,
+            )
+            debug_log(
+                f"[LocalMCPServer] run_job result: item={item_id}, success={result.get('success')}, exit_code={result.get('exit_code')}, timed_out={result.get('timed_out')}"
+            )
+            if not result.get("success"):
+                return [{"type": "text", "text": f"Error: {result.get('error', 'daemon job failed')}"}]
+            return [{"type": "text", "text": self._format_job_result(result)}]
+        except Exception as e:
+            debug_log(f"[LocalMCPServer] run_job error: {e}")
+            return [{"type": "text", "text": f"Error: {e}"}]
+
     def _execute_command(self, args: dict) -> list:
         command = args.get("command", "")
         item_id = args.get("item_id", "")
@@ -308,26 +405,6 @@ class LocalMCPServer:
             return [{"type": "text", "text": "Error: item_id required"}]
         
         try:
-            try:
-                from app.services.agent.session import (
-                    EXECUTE_COMMAND_TOOL_NAME,
-                    agent_session_manager,
-                )
-
-                existing_session = agent_session_manager.get_session(str(item_id))
-                if existing_session:
-                    terminal_input_error = existing_session.validate_terminal_tool_input(
-                        EXECUTE_COMMAND_TOOL_NAME,
-                        {"item_id": str(item_id), "command": command},
-                    )
-                    if terminal_input_error:
-                        debug_log(
-                            f"[LocalMCPServer] command blocked before send: item={item_id}, command={command}"
-                        )
-                        return [{"type": "text", "text": terminal_input_error}]
-            except Exception as guard_error:
-                debug_log(f"[LocalMCPServer] terminal input guard error: {guard_error}")
-
             from app.services.socket_pool import InputSDK
             has_handler = self._ensure_terminal_input_handler(item_id)
             debug_log(f"[LocalMCPServer] interrupt has_handler={has_handler}")

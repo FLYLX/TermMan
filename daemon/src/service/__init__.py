@@ -3,6 +3,7 @@ from .socket_service import SocketService
 from .auth_service import AuthService, auth_service
 from .file_service import FileService, file_service
 from .item_path_service import ItemPathError, ItemPathService, item_path_service
+from .job_runner import JobRunner, job_runner
 from .room_manager import room_manager, Subscriber
 
 __all__ = [
@@ -16,5 +17,7 @@ __all__ = [
     "item_path_service",
     "ItemPathError",
     "room_manager",
+    "JobRunner",
+    "job_runner",
     "Subscriber",
 ]

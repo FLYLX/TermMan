@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable
 
+from app.services.agent.terminal_noise import is_progress_noise_content
 from app.services.agent.session import (
     InputMessage,
     InputType,
@@ -310,12 +311,23 @@ class TerminalStreamManager:
             logger.debug("[StreamManager] No usable output for agent processing, skipping")
             return
 
+        waiting_for_command_feedback = session.has_pending_command()
+        progress_candidate = "\n".join(
+            part for part in (filtered_output, raw_output) if part and part.strip()
+        )
+        if waiting_for_command_feedback and is_progress_noise_content(progress_candidate):
+            logger.info(
+                "[StreamManager] Suppressed progress-only terminal batch for item=%s",
+                item_id,
+            )
+            session.discard_pending_terminal_feedback_delta()
+            return
+
         debounce_seconds = (
             WAITING_TERMINAL_BATCH_DEBOUNCE_SECONDS
-            if session.has_pending_command()
+            if waiting_for_command_feedback
             else TERMINAL_BATCH_DEBOUNCE_SECONDS
         )
-        waiting_for_command_feedback = session.has_pending_command()
         if session.is_running_turn():
             queued_terminal_source = (
                 "raw_feedback"

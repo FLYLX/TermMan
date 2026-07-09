@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from core import config
 from service.file_service import FileServiceError, file_service
+from service.job_runner import job_runner
 from service.terminal_manager import terminal_manager
 from runtime_monitor import collect_runtime_stats
 from utils.logger import logger
@@ -39,6 +40,15 @@ class InternalFileWriteRequest(InternalFileRequest):
 
 class InternalRenameRequest(InternalFileRequest):
     target_path: str
+
+
+class InternalJobRunRequest(BaseModel):
+    user_uuid: str
+    command: str
+    working_directory: Optional[str] = None
+    timeout_seconds: int = 600
+    tail_lines: int = 80
+    env: Optional[dict[str, str]] = None
 
 
 def _extract_bearer_token(request: Request) -> str:
@@ -110,6 +120,31 @@ async def runtime_stats(_api_key: Any = Depends(verify_api_key)):
         "terminal_count": len(terminal_manager.get_all_terminals())
     }
     return payload
+
+
+@router.post("/internal/items/{item_uuid}/jobs/run")
+def run_item_job(
+    item_uuid: str,
+    payload: InternalJobRunRequest,
+    _api_key: Any = Depends(verify_api_key),
+):
+    logger.info(
+        f"[JobHTTP] run request: item={item_uuid} user={payload.user_uuid} "
+        f"timeout={payload.timeout_seconds} tail_lines={payload.tail_lines} "
+        f"command={payload.command!r} cwd={payload.working_directory!r}"
+    )
+    result = job_runner.run_job(
+        user_uuid=payload.user_uuid,
+        item_uuid=item_uuid,
+        command=payload.command,
+        working_directory=payload.working_directory,
+        timeout_seconds=payload.timeout_seconds,
+        tail_lines=payload.tail_lines,
+        env=payload.env,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Job failed"))
+    return result
 
 
 @router.post("/internal/items/{item_uuid}/files/tree")

@@ -39,6 +39,8 @@ action:
     - `mcp_local_execute_command` 只代表命令已发送，不代表命令成功。
     - 判断命令是否成功，必须等待终端日志或工具结果。
     - 尽量不要拼接 shell 命令；不要默认使用 `&&`、`;`、`||`、管道 `|` 把多个动作塞进一次 `mcp_local_execute_command`。多步操作优先分多次发送单一命令，每一步都根据终端反馈决定下一步。
+    - 下载、安装依赖、构建、测试、解压等非交互式长任务优先用 `mcp_local_run_job`，它只在任务结束后返回最终结果和尾部日志；不要用普通终端输入接收持续进度条。
+    - 对容易卡住或需要明确完成信号的命令，调用 `mcp_local_execute_command` 时尽量带 `expected_output` 或 `expected_regex` 和 `timeout_seconds`；预期输出超时未出现时会自动 Ctrl+C。
     - 不要为了普通闲聊调用终端工具。
 safety:
   requires_approval: false
@@ -50,6 +52,7 @@ mcp_servers:
 tools:
   - mcp_local_read_terminal_log
   - mcp_local_execute_command
+  - mcp_local_run_job
   - mcp_local_list_installed_software
   - mcp_local_record_installed_software
   - mcp_local_remove_installed_software

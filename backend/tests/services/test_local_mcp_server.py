@@ -37,6 +37,16 @@ def test_execute_command_only_reports_dispatch(monkeypatch) -> None:
         }
     ]
     assert sent == {"item_id": "item-1", "command": "echo 23231\n"}
+    tool = next(tool for tool in server.list_tools() if tool["name"] == "execute_command")
+    props = tool["inputSchema"]["properties"]
+    assert "expected_output" in props
+    assert "expected_regex" in props
+    assert "timeout_seconds" in props
+    assert "auto_interrupt_on_timeout" in props
+    assert "不要默认用 &&" in tool["description"]
+    assert "一次只发一条命令" in tool["description"]
+    assert "默认不要拼接" in tool["inputSchema"]["properties"]["command"]["description"]
+
 
 
 def test_execute_command_blocks_when_busy_terminal_command_pending(monkeypatch) -> None:
@@ -94,6 +104,7 @@ def test_system_prompt_forbids_claiming_command_success_without_confirmation() -
     assert "不要拼接 shell 命令" in prompt
     assert "`&&`" in prompt
     assert "mcp_local_interrupt_command" in prompt
+    assert "mcp_local_run_job" in prompt
     assert "mcp_local_record_installed_software" in prompt
     assert "mcp_local_remove_installed_software" in prompt
 
@@ -252,3 +263,67 @@ def test_chat_prompt_includes_installed_software_list(monkeypatch, tmp_path) -> 
     assert "Current installed software list" in messages[0]["content"]
     assert "openjdk-21-jdk-headless" in messages[0]["content"]
     assert "version=21" in messages[0]["content"]
+
+def test_run_job_reports_final_daemon_result(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    server = LocalMCPServer()
+    captured: dict[str, object] = {}
+
+    class FakeConnection:
+        def run_job_http(self, **kwargs):
+            captured.update(kwargs)
+            return {
+                "success": True,
+                "job_id": "job-123",
+                "command": kwargs["command"],
+                "cwd": "/workspace/item",
+                "exit_code": 0,
+                "timed_out": False,
+                "duration_seconds": 1.25,
+                "output_tail": "download complete\nbuild complete",
+            }
+
+    monkeypatch.setattr(
+        server,
+        "_get_item_daemon_context",
+        lambda item_id: (
+            SimpleNamespace(owner_id="user-1", working_directory="/workspace/item"),
+            FakeConnection(),
+        ),
+    )
+
+    result = server.call_tool(
+        "run_job",
+        {
+            "item_id": "item-1",
+            "command": "bun install",
+            "timeout_seconds": 12,
+            "tail_lines": 5,
+        },
+    )
+
+    assert len(result) == 1
+    assert result[0]["type"] == "text"
+    text = result[0]["text"]
+    assert "Job succeeded" in text
+    assert "job_id: job-123" in text
+    assert "exit_code: 0" in text
+    assert "download complete" in text
+    assert captured == {
+        "item_uuid": "item-1",
+        "user_uuid": "user-1",
+        "command": "bun install",
+        "working_directory": "/workspace/item",
+        "timeout_seconds": 12,
+        "tail_lines": 5,
+    }
+
+
+def test_run_job_tool_is_registered_for_long_jobs() -> None:
+    server = LocalMCPServer()
+    tool = next(tool for tool in server.list_tools() if tool["name"] == "run_job")
+
+    assert "long-running shell job" in tool["description"]
+    assert tool["inputSchema"]["properties"]["timeout_seconds"]["default"] == 600
+    assert tool["skip_memory"] is True

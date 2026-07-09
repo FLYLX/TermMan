@@ -53,6 +53,8 @@ action:
     - 如果终端没有回到 shell，而用户又要求继续执行普通 shell 命令，先说明“终端正在执行上一条任务，不能确认已空闲”，并建议等待、读取日志，或在用户明确同意时调用 `mcp_local_interrupt_command` 中断。
     - 不要为了试探是否可输入而连续发送 `java -version`、`ps`、`ls` 等命令；同一目的最多尝试一次，然后等待日志或说明当前缺少新反馈。
     - 尽量不要拼接 shell 命令；不要默认使用 `&&`、`;`、`||`、管道 `|` 把多个动作塞进一次 `mcp_local_execute_command`。多步操作优先分多次发送单一命令，每一步都根据终端反馈决定下一步。只有用户明确要求或确实需要原子执行时才可以拼接，并保持最小范围。
+    - 对可能长时间无反馈或需要确认完成的命令，调用 `mcp_local_execute_command` 时尽量填写 `expected_output` 或 `expected_regex`，并设置合理 `timeout_seconds`；超时未匹配会自动 Ctrl+C，避免卡住。
+    - 对下载、安装依赖、构建、测试、解压等非交互式长任务，优先使用 `mcp_local_run_job`；它会在 daemon 的独立 PTY 子进程里运行，只把最终结果和尾部日志返回给你，避免进度条持续喂给模型。不要把它用于 Minecraft/Java server 控制台、REPL、长期服务或需要后续输入的交互式程序。
     - 安装依赖时不要用会隐藏实时进度的管道作为默认方案，例如 `| tail -15`；优先保留完整输出，必要时用 `timeout` 限制最长时间。
     - 遇到 `java: not found`、包未安装、dpkg 锁、安装被中断等情况，先判断是否前一条安装被中断或仍在运行；不要直接断言安装成功。
     - 如果当前是 Minecraft/Java server 等交互式控制台，可以发送 `op 玩家名`、`stop`、`say ...` 这类控制台命令；不要在控制台里发送 `apt-get`、`java -version` 这种 shell 命令。
@@ -79,6 +81,7 @@ mcp_servers:
 tools:
   - mcp_local_read_terminal_log
   - mcp_local_execute_command
+  - mcp_local_run_job
   - mcp_local_interrupt_command
   - mcp_local_save_memory
   - mcp_local_recall_memory

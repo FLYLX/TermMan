@@ -777,6 +777,11 @@ def test_terminal_output_broadcasts_to_all_subscribers_and_persists(
         "_get_relevant_memories",
         lambda self, query, n_results=3: "",
     )
+    monkeypatch.setattr(
+        session_module,
+        "build_terminal_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "terminal command"}],
+    )
 
     stream_manager.register_chat(item_id, subscriber_a.append)
     stream_manager.register_chat(item_id, subscriber_b.append)
@@ -851,6 +856,11 @@ def test_manual_chat_and_terminal_output_share_item_session_history(
         session_module.AgentSession,
         "_get_relevant_memories",
         lambda self, query, n_results=3: "",
+    )
+    monkeypatch.setattr(
+        session_module,
+        "build_terminal_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "terminal command"}],
     )
 
     stream_manager.process_stream(item_id, "error: boom", handler_id)
@@ -1111,6 +1121,11 @@ def test_terminal_output_batches_multiple_events_into_one_terminal_record(
         "_get_relevant_memories",
         lambda self, query, n_results=3: "",
     )
+    monkeypatch.setattr(
+        session_module,
+        "build_terminal_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "terminal command"}],
+    )
 
     stream_manager.register_chat(item_id, subscriber_events.append)
 
@@ -1309,6 +1324,11 @@ def test_terminal_session_stops_after_command_dispatch_and_waits_for_feedback(
         "_get_relevant_memories",
         lambda self, query, n_results=3: "",
     )
+    monkeypatch.setattr(
+        session_module,
+        "build_terminal_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "terminal command"}],
+    )
 
     try:
         session = agent_session_manager.get_or_create_session(item_id, handler_id)
@@ -1325,8 +1345,9 @@ def test_terminal_session_stops_after_command_dispatch_and_waits_for_feedback(
     assert _non_status_event_types(events) == [
         "terminal_output",
         "agent_action",
-        "agent_tool_result",
     ]
+    assert not any(event.get("type") == "agent_tool_result" for event in events)
+    assert not any("尚未确认执行结果" in event.get("content", "") for event in events)
     assert [event["status"] for event in events if event["type"] == "agent_status"] == [
         "running",
         "tool",
@@ -1406,6 +1427,11 @@ def test_command_echo_only_terminal_output_does_not_retrigger_command_dispatch(
         session_module.AgentSession,
         "_get_relevant_memories",
         lambda self, query, n_results=3: "",
+    )
+    monkeypatch.setattr(
+        session_module,
+        "build_terminal_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "terminal command"}],
     )
 
     stream_manager.register_chat(item_id, events.append)
@@ -1515,6 +1541,11 @@ def test_command_result_after_echo_resumes_next_terminal_turn(
         session_module.AgentSession,
         "_get_relevant_memories",
         lambda self, query, n_results=3: "",
+    )
+    monkeypatch.setattr(
+        session_module,
+        "build_terminal_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "terminal command"}],
     )
 
     stream_manager.register_chat(item_id, events.append)
@@ -1632,6 +1663,11 @@ def test_pending_command_uses_raw_log_feedback_when_filtered_output_is_empty(
         lambda self, query, n_results=3: "",
     )
     monkeypatch.setattr(
+        session_module,
+        "build_terminal_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "terminal command"}],
+    )
+    monkeypatch.setattr(
         session_module.AgentSession,
         "_consume_pending_log_delta",
         lambda self: "[2026-04-02 05:35:18] /app/src/cron_job.py\n",
@@ -1714,6 +1750,11 @@ def test_terminal_prompt_matches_relevant_skills_instead_of_loading_all_skills(m
         session_module.AgentSession,
         "_get_relevant_memories",
         lambda self, query, n_results=3: "",
+    )
+    monkeypatch.setattr(
+        session_module,
+        "build_terminal_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "terminal command"}],
     )
 
     session = session_module.AgentSession("item-1", "handler-1")
@@ -1838,6 +1879,11 @@ def test_terminal_session_stops_repeated_identical_log_reads(
         session_module.AgentSession,
         "_get_relevant_memories",
         lambda self, query, n_results=3: "",
+    )
+    monkeypatch.setattr(
+        session_module,
+        "build_terminal_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "terminal command"}],
     )
     monkeypatch.setattr(
         session_module,

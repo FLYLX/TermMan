@@ -1482,9 +1482,15 @@ def test_busy_pending_terminal_command_blocks_new_shell_input() -> None:
         "[2026-07-08 10:00:00] Get:1 http://example.test stable InRelease"
     )
 
-    assert (should_hold, resolved, direct) == (False, None, False)
+    assert (should_hold, resolved, direct) == (True, None, False)
     assert session._get_pending_command() is not None
 
+    should_hold, resolved, direct = session._maybe_hold_for_pending_terminal_feedback(
+        "[2026-07-08 10:00:01] Reading package lists... Done\nroot@test:/app#"
+    )
+
+    assert (should_hold, resolved, direct) == (False, None, False)
+    assert session._get_pending_command() is None
 
 def test_console_terminal_context_allows_console_input_but_blocks_shell_input() -> None:
     from app.services.agent.session import AgentSession, EXECUTE_COMMAND_TOOL_NAME
@@ -1511,3 +1517,148 @@ def test_console_terminal_context_allows_console_input_but_blocks_shell_input() 
     assert warning is not None
     assert "paper-server.jar" in warning
     assert "ls -la" in warning
+
+def test_expected_terminal_output_match_clears_pending_command() -> None:
+    from app.services.agent.session import AgentSession, EXECUTE_COMMAND_TOOL_NAME
+
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+
+    session._set_pending_command(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {
+            "command": "java -version",
+            "expected_output": "openjdk",
+            "timeout_seconds": 2,
+        },
+    )
+
+    should_hold, resolved, direct = session._maybe_hold_for_pending_terminal_feedback(
+        '[2026-07-09 10:00:00] openjdk version "21"'
+    )
+
+    assert (should_hold, resolved, direct) == (False, None, False)
+    assert session._get_pending_command() is None
+
+
+def test_expected_terminal_output_timeout_interrupts_command(monkeypatch) -> None:
+    from datetime import datetime, timedelta
+
+    import app.services.socket_pool as socket_pool
+    from app.services.agent.session import AgentSession, EXECUTE_COMMAND_TOOL_NAME
+
+    sent: list[tuple[str, str]] = []
+
+    class FakeInputSDK:
+        def send(self, item_id: str, command: str) -> bool:
+            sent.append((item_id, command))
+            return True
+
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+    session._get_recent_pending_log_tail = lambda lines=8: "still waiting"
+    events: list[dict] = []
+    session.add_output_callback(events.append)
+    monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
+
+    session._set_pending_command(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {
+            "command": "java -version",
+            "expected_output": "openjdk",
+            "timeout_seconds": 1,
+        },
+    )
+    pending = session._get_pending_command()
+    assert pending is not None
+    pending.dispatched_at = datetime.now() - timedelta(seconds=2)
+
+    session._run_pending_command_recheck(pending.normalized_command)
+
+    assert sent == [("item-1", "\x03")]
+    assert session._get_pending_command() is None
+    assert any(
+        event.get("type") == "agent_warning"
+        and "openjdk" in event.get("content", "")
+        and "Ctrl+C" in event.get("content", "")
+        for event in events
+    )
+
+def test_progress_noise_detection_ignores_download_meters() -> None:
+    from app.services.agent.terminal_noise import is_progress_noise_content
+
+    assert is_progress_noise_content(
+        " 42  100M   42 42.0M    0     0  10.0M      0  0:00:10  0:00:04  0:00:06 10.0M\r"
+    )
+    assert is_progress_noise_content(
+        "Downloading package: 64%|######4   | 64/100 [00:01<00:01, 32.0it/s]"
+    )
+    assert not is_progress_noise_content("ERROR: failed to download package")
+    assert not is_progress_noise_content("openjdk version 21.0.1")
+
+
+def test_pending_terminal_progress_feedback_is_not_sent_to_agent() -> None:
+    from app.services.agent.session import (
+        AgentSession,
+        EXECUTE_COMMAND_TOOL_NAME,
+        InputMessage,
+        InputType,
+    )
+
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+    progress = "Downloading package: 64%|######4   | 64/100 [00:01<00:01, 32.0it/s]"
+
+    session._set_pending_command(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "curl -O https://example.test/big.tar.gz"},
+    )
+    session._consume_pending_log_delta = lambda: progress
+
+    result = session._resolve_terminal_analysis_content(
+        InputMessage(input_type=InputType.TERMINAL, content=progress, raw_content=progress)
+    )
+
+    assert result.content is None
+    assert session._get_pending_command() is not None
+
+def test_pending_terminal_output_display_suppresses_pending_progress() -> None:
+    from app.services.agent.session import (
+        AgentSession,
+        EXECUTE_COMMAND_TOOL_NAME,
+        InputMessage,
+        InputType,
+        TerminalAnalysisResult,
+        TERMINAL_SOURCE_RAW_FEEDBACK,
+    )
+
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+    session._resolve_terminal_analysis_content = lambda input_msg: TerminalAnalysisResult(
+        content=None,
+        terminal_source=TERMINAL_SOURCE_RAW_FEEDBACK,
+    )
+    events: list[dict] = []
+    session.add_output_callback(events.append)
+    session._set_pending_command(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "curl -O https://example.test/big.tar.gz"},
+    )
+
+    session._process_terminal_input(
+        InputMessage(
+            input_type=InputType.TERMINAL,
+            content=(
+                "Downloading package: 64%|######4   | 64/100 [00:01<00:01, 32.0it/s]\n"
+                "ERROR: failed to download package"
+            ),
+        ),
+        object(),
+    )
+
+    terminal_events = [event for event in events if event.get("type") == "terminal_output"]
+    assert terminal_events == []

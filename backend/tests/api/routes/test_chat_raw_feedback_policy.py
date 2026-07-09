@@ -705,3 +705,45 @@ def test_running_terminal_queue_merges_consecutive_terminal_inputs() -> None:
     queued = session.input_queue.get_nowait()
     assert queued.content == "111\n222"
     assert queued.raw_content == "raw-111\nraw-222"
+
+def test_progress_only_pending_terminal_batch_does_not_queue_agent_turn(monkeypatch) -> None:
+    from app.services.agent import stream_manager as stream_module
+
+    item_id = "item-progress"
+    manager = stream_module.stream_manager
+    manager.clear_pending_stream(item_id)
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.discard_marks = 0
+            self.processed = []
+            self.input_queue = SimpleNamespace(qsize=lambda: 0)
+
+        def add_output_callback(self, callback):
+            return None
+
+        def has_pending_command(self) -> bool:
+            return True
+
+        def discard_pending_terminal_feedback_delta(self):
+            self.discard_marks += 1
+
+        def is_running_turn(self) -> bool:
+            return False
+
+        def process_input(self, input_msg):
+            self.processed.append(input_msg)
+
+    fake_session = FakeSession()
+    monkeypatch.setattr(
+        stream_module.agent_session_manager,
+        "get_or_create_session",
+        lambda item, handler: fake_session,
+    )
+
+    progress = " 42  100M   42 42.0M    0     0  10.0M      0  0:00:10  0:00:04  0:00:06 10.0M\r"
+    manager.process_stream(item_id, progress, "handler-1", raw_output=progress)
+
+    assert fake_session.discard_marks == 1
+    assert fake_session.processed == []
+    assert item_id not in manager._terminal_batches
