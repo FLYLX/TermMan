@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import { ChevronDown, ChevronUp, ExternalLink, Loader2, Send, Square, Trash2 } from "lucide-react"
+import { Activity, ChevronDown, ChevronUp, Download, ExternalLink, Loader2, Lock, Send, Square, Terminal, Trash2 } from "lucide-react"
 import { useEffect, useEffectEvent, useRef, useState } from "react"
 
 import type { ItemHandlerPublic } from "@/client"
@@ -21,10 +21,20 @@ import { Input } from "@/components/ui/input"
 
 type TimelineRole = "user" | "assistant" | "terminal"
 type TerminalSource = "filtered_output" | "raw_feedback"
+type AgentStatusKind =
+  | "replying"
+  | "thinking"
+  | "tool"
+  | "terminal_wait"
+  | "terminal_job"
+  | "terminal_analysis"
 
 interface AgentStatusState {
   text: string
   source?: TerminalSource | null
+  status?: string | null
+  toolName?: string | null
+  kind?: AgentStatusKind
   autoClearMs?: number
 }
 
@@ -68,6 +78,11 @@ const TERMINAL_STATUS_DONE_STATES = new Set([
   "error",
   "interrupted",
 ])
+const TERMINAL_COMMAND_TOOL_NAMES = new Set([
+  "mcp_local_execute_command",
+  "mcp_local_interrupt_command",
+])
+const TERMINAL_JOB_TOOL_NAMES = new Set(["mcp_local_run_job"])
 
 const ROBOT_HEADER_RE = /^\[Robot message;\s*([^\]]+)\]/
 const ROBOT_CURRENT_MESSAGE_RE = /\[Current QQ message\]\r?\n([\s\S]*)$/
@@ -541,24 +556,238 @@ function RobotMessageCard({
     </div>
   )
 }
+function getAgentStatusKind(options: {
+  status?: string | null
+  source?: TerminalSource | null
+  toolName?: string | null
+  text?: string
+}): AgentStatusKind {
+  const toolName = options.toolName ?? ""
+  const status = options.status ?? ""
+  const text = options.text ?? ""
+
+  if (TERMINAL_JOB_TOOL_NAMES.has(toolName)) {
+    return "terminal_job"
+  }
+
+  if (
+    status === "waiting_terminal" ||
+    TERMINAL_COMMAND_TOOL_NAMES.has(toolName) ||
+    (options.source === "raw_feedback" && text.includes("\u547d\u4ee4\u5df2\u53d1\u9001"))
+  ) {
+    return "terminal_wait"
+  }
+
+  if (options.source === "raw_feedback") {
+    return "terminal_analysis"
+  }
+
+  if (status === "thinking") {
+    return "thinking"
+  }
+
+  return "replying"
+}
+
+function isTerminalBusyStatus(status: AgentStatusState | null): boolean {
+  return (
+    status?.kind === "terminal_wait" ||
+    status?.kind === "terminal_job" ||
+    status?.kind === "terminal_analysis"
+  )
+}
+
+function getAgentStatusPresentation(status: AgentStatusState): {
+  title: string
+  description: string
+  icon: "activity" | "download" | "lock" | "terminal"
+  className: string
+  iconClassName: string
+  progressClassName: string
+} {
+  if (status.kind === "terminal_job") {
+    return {
+      title: "\u540e\u53f0\u4efb\u52a1\u8fd0\u884c\u4e2d",
+      description: "\u4e0b\u8f7d\u3001\u5b89\u88c5\u6216\u6784\u5efa\u5df2\u5728\u72ec\u7acb\u4efb\u52a1\u91cc\u6267\u884c\uff0c\u5b8c\u6210\u540e\u4e00\u6b21\u6027\u628a\u7ed3\u679c\u4ea4\u7ed9 Agent\u3002",
+      icon: "download",
+      className:
+        "border-sky-300 bg-sky-50 text-sky-950 dark:border-sky-500/40 dark:bg-sky-950/30 dark:text-sky-100",
+      iconClassName: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+      progressClassName: "bg-sky-500",
+    }
+  }
+
+  if (status.kind === "terminal_wait") {
+    return {
+      title: "\u7ec8\u7aef\u6267\u884c\u4e2d",
+      description: "\u5f53\u524d\u662f\u4e0d\u53ef\u4ea4\u4e92\u547d\u4ee4\u53cd\u9988\u7a97\u53e3\uff0c\u7ec8\u7aef\u8f93\u5165\u6682\u65f6\u9501\u5b9a\uff0c\u5148\u7b49\u7ed3\u679c\u56de\u6765\u518d\u7ee7\u7eed\u53d1 shell \u547d\u4ee4\u3002",
+      icon: "lock",
+      className:
+        "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-500/40 dark:bg-amber-950/30 dark:text-amber-100",
+      iconClassName: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+      progressClassName: "bg-amber-500",
+    }
+  }
+
+  if (status.kind === "terminal_analysis") {
+    return {
+      title: "\u5206\u6790\u7ec8\u7aef\u53cd\u9988",
+      description: "\u6b63\u5728\u8bfb\u53d6\u547d\u4ee4\u8f93\u51fa\u5e76\u5224\u65ad\u662f\u5426\u5b8c\u6210\uff0c\u671f\u95f4\u666e\u901a\u804a\u5929\u53ef\u7ee7\u7eed\uff0c\u7ec8\u7aef\u547d\u4ee4\u4f1a\u53d7\u4fdd\u62a4\u3002",
+      icon: "terminal",
+      className:
+        "border-cyan-300 bg-cyan-50 text-cyan-950 dark:border-cyan-500/40 dark:bg-cyan-950/30 dark:text-cyan-100",
+      iconClassName: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300",
+      progressClassName: "bg-cyan-500",
+    }
+  }
+
+  if (status.kind === "tool") {
+    return {
+      title: "\u5de5\u5177\u8c03\u7528\u4e2d",
+      description: "Agent \u6b63\u5728\u8c03\u7528\u5de5\u5177\u5e76\u6574\u7406\u8fd4\u56de\u7ed3\u679c\u3002",
+      icon: "activity",
+      className: "border-border bg-muted/60 text-foreground",
+      iconClassName: "bg-muted text-muted-foreground",
+      progressClassName: "bg-primary",
+    }
+  }
+
+  return {
+    title: status.kind === "thinking" ? "\u601d\u8003\u4e2d" : "\u56de\u590d\u4e2d",
+    description: "Agent \u6b63\u5728\u5904\u7406\u5f53\u524d\u8bf7\u6c42\u3002",
+    icon: "activity",
+    className: "border-border bg-muted/60 text-foreground",
+    iconClassName: "bg-muted text-muted-foreground",
+    progressClassName: "bg-primary",
+  }
+}
+
+function AgentStatusIcon({ icon }: { icon: "activity" | "download" | "lock" | "terminal" }) {
+  if (icon === "download") {
+    return <Download className="size-3.5" />
+  }
+  if (icon === "lock") {
+    return <Lock className="size-3.5" />
+  }
+  if (icon === "terminal") {
+    return <Terminal className="size-3.5" />
+  }
+  return <Activity className="size-3.5" />
+}
+
+function AgentStatusCard({
+  status,
+  canAbort,
+  onAbort,
+}: {
+  status: AgentStatusState
+  canAbort: boolean
+  onAbort: () => void
+}) {
+  const presentation = getAgentStatusPresentation(status)
+  const sourceLabel = getTerminalSourceLabel(status.source)
+  const terminalBusy = isTerminalBusyStatus(status)
+
+  return (
+    <div className={`mb-2 rounded-md border px-3 py-2 text-xs ${presentation.className}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 gap-2">
+          <div className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md ${presentation.iconClassName}`}>
+            <AgentStatusIcon icon={presentation.icon} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-medium">{presentation.title}</span>
+              {sourceLabel && (
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getTerminalSourceBadgeClass(status.source)}`}
+                >
+                  {sourceLabel}
+                </span>
+              )}
+              {status.toolName && (
+                <span className="max-w-full truncate rounded-full border border-current/15 px-1.5 py-0.5 font-mono text-[10px] opacity-80">
+                  {status.toolName}
+                </span>
+              )}
+            </div>
+            <div className="mt-1 break-words text-[11px] opacity-90">
+              {status.text}
+            </div>
+            <div className="mt-0.5 text-[11px] opacity-70">
+              {presentation.description}
+            </div>
+            {terminalBusy && (
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-current/10">
+                <div className={`h-full w-2/5 animate-pulse rounded-full ${presentation.progressClassName}`} />
+              </div>
+            )}
+          </div>
+        </div>
+        {canAbort && (
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={onAbort}
+            className="h-7 shrink-0 px-2 text-[11px]"
+            title="\u4e2d\u65ad\u672c\u6b21\u4f1a\u8bdd"
+          >
+            <Square className="mr-1 size-3" />
+            {"\u4e2d\u65ad"}
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function getTransientStatus(message: ChatMessage): AgentStatusState | null {
+  const toolName = message.tool_name ?? null
+
   if (message.type === "agent_thinking") {
-    return { text: "思考中" }
+    return { text: "\u601d\u8003\u4e2d", kind: "thinking" }
   }
 
   if (message.type === "agent_action") {
+    if (toolName && TERMINAL_JOB_TOOL_NAMES.has(toolName)) {
+      return {
+        text: "\u540e\u53f0\u4efb\u52a1\u5df2\u542f\u52a8\uff0c\u7b49\u5f85\u5b8c\u6210\u7ed3\u679c",
+        source: "raw_feedback",
+        toolName,
+        kind: "terminal_job",
+      }
+    }
+
+    if (toolName && TERMINAL_COMMAND_TOOL_NAMES.has(toolName)) {
+      return {
+        text: "\u547d\u4ee4\u6b63\u5728\u53d1\u9001\u5230\u4ea4\u4e92\u7ec8\u7aef",
+        source: "raw_feedback",
+        toolName,
+        kind: "terminal_wait",
+      }
+    }
+
     return {
-      text: message.tool_name
-        ? `调用工具中：${message.tool_name}`
-        : "调用工具中",
+      text: toolName ? `\u8c03\u7528\u5de5\u5177\u4e2d\uff1a${toolName}` : "\u8c03\u7528\u5de5\u5177\u4e2d",
+      toolName,
+      kind: "tool",
     }
   }
 
   if (message.type === "agent_tool_result") {
+    if (toolName && TERMINAL_JOB_TOOL_NAMES.has(toolName)) {
+      return {
+        text: "\u540e\u53f0\u4efb\u52a1\u5df2\u8fd4\u56de\uff0c\u6574\u7406\u7ed3\u679c\u4e2d",
+        source: "raw_feedback",
+        toolName,
+        kind: "terminal_analysis",
+      }
+    }
+
     return {
-      text: message.tool_name
-        ? `工具已返回，整理结果中：${message.tool_name}`
-        : "工具已返回，整理结果中",
+      text: toolName ? `\u5de5\u5177\u5df2\u8fd4\u56de\uff0c\u6574\u7406\u7ed3\u679c\u4e2d\uff1a${toolName}` : "\u5de5\u5177\u5df2\u8fd4\u56de\uff0c\u6574\u7406\u7ed3\u679c\u4e2d",
+      toolName,
+      kind: "tool",
     }
   }
 
@@ -776,6 +1005,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       status?: unknown
       content?: unknown
       terminal_source?: unknown
+      tool_name?: unknown
     }
 
     if (data.done === true) {
@@ -796,9 +1026,20 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
         return
       }
 
+      const terminalSource = getTerminalSource(data.terminal_source)
+      const toolName =
+        typeof data.tool_name === "string" ? data.tool_name : null
       setAgentStatus({
         text: content,
-        source: getTerminalSource(data.terminal_source),
+        status,
+        source: terminalSource,
+        toolName,
+        kind: getAgentStatusKind({
+          status,
+          source: terminalSource,
+          toolName,
+          text: content,
+        }),
         autoClearMs: ACTIVE_AGENT_STATUS_TIMEOUT_MS,
       })
       return
@@ -817,7 +1058,11 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       return
     }
     if (normalizedMessage.type === "chat_user") {
-      setAgentStatus({ text: "回复中", autoClearMs: LIVE_REPLY_STATUS_TIMEOUT_MS })
+      setAgentStatus({
+        text: "\u56de\u590d\u4e2d",
+        kind: "replying",
+        autoClearMs: LIVE_REPLY_STATUS_TIMEOUT_MS,
+      })
     } else if (
       COMPLETION_TYPES.has(normalizedMessage.type ?? "") ||
       normalizedMessage.role === "assistant"
@@ -1100,7 +1345,11 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       },
     ])
     setInput("")
-    setAgentStatus({ text: "回复中", autoClearMs: LIVE_REPLY_STATUS_TIMEOUT_MS })
+    setAgentStatus({
+        text: "\u56de\u590d\u4e2d",
+        kind: "replying",
+        autoClearMs: LIVE_REPLY_STATUS_TIMEOUT_MS,
+      })
     setIsLoading(true)
 
     const token = localStorage.getItem("access_token") || ""
@@ -1202,8 +1451,14 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
   }
 
   const visibleAgentStatus =
-    agentStatus ?? (isLoading ? { text: "回复中" } : null)
+    agentStatus ?? (isLoading ? { text: "\u56de\u590d\u4e2d", kind: "replying" as const } : null)
   const hasConnectionIssue = historyError || liveError
+  const terminalBusy = isTerminalBusyStatus(visibleAgentStatus)
+  const inputPlaceholder = terminalBusy
+    ? "\u7ec8\u7aef\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u7b49\u5f53\u524d\u4f1a\u8bdd\u7ed3\u675f\u540e\u7ee7\u7eed\u53d1\u9001"
+    : handler
+      ? "\u8f93\u5165\u6d88\u606f..."
+      : "\u8bf7\u5148\u5173\u8054 ItemHandler"
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -1355,31 +1610,11 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
 
       <div className="shrink-0 border-t bg-background px-3 py-3">
         {visibleAgentStatus && (
-          <div className="mb-2 flex items-center justify-between gap-3 rounded-md border bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <Loader2 className="size-3.5 animate-spin" />
-              <span>{visibleAgentStatus.text}</span>
-              {getTerminalSourceLabel(visibleAgentStatus.source) && (
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getTerminalSourceBadgeClass(visibleAgentStatus.source)}`}
-                >
-                  {getTerminalSourceLabel(visibleAgentStatus.source)}
-                </span>
-              )}
-            </div>
-            {canAbortSession && (
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={() => void abortChat()}
-                className="h-7 px-2 text-[11px]"
-                title="中断本次会话"
-              >
-                <Square className="mr-1 size-3" />
-                中断本次会话
-              </Button>
-            )}
-          </div>
+          <AgentStatusCard
+            status={visibleAgentStatus}
+            canAbort={canAbortSession}
+            onAbort={() => void abortChat()}
+          />
         )}
 
         <div className="flex gap-2">
@@ -1392,7 +1627,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
                 void sendMessage()
               }
             }}
-            placeholder={handler ? "输入消息..." : "请先关联 ItemHandler"}
+            placeholder={inputPlaceholder}
             disabled={isLoading || !handler}
             className="flex-1"
           />

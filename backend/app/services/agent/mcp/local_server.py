@@ -320,6 +320,37 @@ class LocalMCPServer:
         debug_log(
             f"[LocalMCPServer] _run_job: item={item_id}, timeout={timeout_seconds}, tail_lines={tail_lines}, command={command}"
         )
+        agent_session = None
+        try:
+            from app.services.agent.session import RUN_JOB_TOOL_NAME, agent_session_manager
+
+            agent_session = agent_session_manager.get_session(str(item_id))
+            if agent_session:
+                guard_error = agent_session.validate_terminal_tool_input(
+                    RUN_JOB_TOOL_NAME,
+                    {
+                        "item_id": str(item_id),
+                        "command": command,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+                if guard_error:
+                    debug_log(
+                        f"[LocalMCPServer] run_job blocked before start: item={item_id}, command={command}"
+                    )
+                    return [{"type": "text", "text": guard_error}]
+                agent_session.mark_terminal_job_started(
+                    RUN_JOB_TOOL_NAME,
+                    {
+                        "item_id": str(item_id),
+                        "command": command,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+        except Exception as guard_error:
+            debug_log(f"[LocalMCPServer] run_job guard error: {guard_error}")
+            agent_session = None
+
         try:
             item, connection = self._get_item_daemon_context(str(item_id))
             result = connection.run_job_http(
@@ -339,6 +370,9 @@ class LocalMCPServer:
         except Exception as e:
             debug_log(f"[LocalMCPServer] run_job error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
+        finally:
+            if agent_session:
+                agent_session.clear_terminal_job(command)
 
     def _execute_command(self, args: dict) -> list:
         command = args.get("command", "")

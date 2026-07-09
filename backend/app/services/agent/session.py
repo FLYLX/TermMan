@@ -63,6 +63,8 @@ COMMAND_DISPATCH_FAILURE_MARKERS = (
     "终端未收到命令",
 )
 EXECUTE_COMMAND_TOOL_NAME = "mcp_local_execute_command"
+RUN_JOB_TOOL_NAME = "mcp_local_run_job"
+TERMINAL_BUSY_GUARD_TOOL_NAMES = {EXECUTE_COMMAND_TOOL_NAME, RUN_JOB_TOOL_NAME}
 COMMAND_DISPATCH_PENDING_MARKER = "命令已发送到终端，尚未确认执行结果:"
 TERMINAL_INPUT_MODE_BUSY = "busy"
 TERMINAL_INPUT_MODE_CONSOLE = "console"
@@ -360,6 +362,15 @@ class TerminalInputContext:
 
 
 @dataclass
+class RunningTerminalJob:
+    tool_name: str
+    command: str
+    normalized_command: str
+    timeout_seconds: int = 600
+    started_at: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
 class TerminalAnalysisResult:
     content: str | None
     terminal_source: str
@@ -382,6 +393,7 @@ class AgentSession:
         self._pending_command: PendingCommand | None = None
         self._pending_command_recheck_timer: threading.Timer | None = None
         self._terminal_input_context: TerminalInputContext | None = None
+        self._running_terminal_job: RunningTerminalJob | None = None
 
         logger.info(f"[AgentSession] Created session for item={item_id}, handler={handler_id}")
 
@@ -566,15 +578,68 @@ class AgentSession:
                 return None
             return context
 
+    def _get_running_terminal_job(self) -> RunningTerminalJob | None:
+        with self.lock:
+            return self._running_terminal_job
+
+    def has_running_terminal_job(self) -> bool:
+        return self._get_running_terminal_job() is not None
+
+    def mark_terminal_job_started(
+        self,
+        tool_name: str,
+        tool_args: dict[str, Any],
+    ) -> None:
+        command = self._extract_command_text(tool_name, tool_args)
+        timeout_seconds = _coerce_timeout_seconds(
+            tool_args.get("timeout_seconds"),
+            default=600,
+        )
+        with self.lock:
+            self._running_terminal_job = RunningTerminalJob(
+                tool_name=tool_name,
+                command=command,
+                normalized_command=self._normalize_text(command),
+                timeout_seconds=timeout_seconds,
+            )
+
+    def clear_terminal_job(self, command: str | None = None) -> None:
+        normalized_command = self._normalize_text(command or "")
+        with self.lock:
+            running_job = self._running_terminal_job
+            if not running_job:
+                return
+            if normalized_command and running_job.normalized_command != normalized_command:
+                return
+            self._running_terminal_job = None
+
+    def _build_running_terminal_job_warning(
+        self,
+        running_job: RunningTerminalJob,
+        command: str,
+    ) -> str:
+        elapsed_seconds = int((datetime.now() - running_job.started_at).total_seconds())
+        return (
+            f"Background job is still running: `{self._short_command(running_job.command)}` "
+            f"(elapsed {elapsed_seconds}s). "
+            f"Blocked `{self._short_command(command)}`; command was not sent. "
+            "Wait for the current download/install/build job to finish before sending another terminal command."
+        )
+
     def _validate_terminal_command_input(
         self,
         tool_name: str,
         tool_args: dict[str, Any],
     ) -> str | None:
+        command = self._extract_command_text(tool_name, tool_args)
+
+        running_job = self._get_running_terminal_job()
+        if running_job and tool_name in TERMINAL_BUSY_GUARD_TOOL_NAMES:
+            return self._build_running_terminal_job_warning(running_job, command)
+
         if tool_name != EXECUTE_COMMAND_TOOL_NAME:
             return None
 
-        command = self._extract_command_text(tool_name, tool_args)
         context = self._get_terminal_input_context()
         if context and context.input_mode == TERMINAL_INPUT_MODE_CONSOLE:
             if is_terminal_console_command(command):

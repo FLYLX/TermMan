@@ -46,8 +46,10 @@ from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.session import (
     COMMAND_DISPATCH_FAILURE_MESSAGE,
     COMMAND_TOOL_NAMES,
+    RUN_JOB_TOOL_NAME,
     agent_session_manager,
     is_command_dispatch_failure_result,
+    is_command_dispatch_pending_result,
 )
 from app.services.agent.stream_manager import stream_manager
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
@@ -1060,7 +1062,7 @@ def generate_stream(
                 normalized_tool_args_str = json.dumps(tool_args, ensure_ascii=False)
                 tool_args["item_id"] = item_id
                 terminal_session = None
-                if tool_name in COMMAND_TOOL_NAMES:
+                if tool_name in COMMAND_TOOL_NAMES or tool_name == RUN_JOB_TOOL_NAME:
                     terminal_session = agent_session_manager.get_or_create_session(
                         item_id,
                         str(handler.id),
@@ -1106,10 +1108,14 @@ def generate_stream(
                     tool_name,
                     result_text,
                 )
+                command_dispatch_pending = is_command_dispatch_pending_result(
+                    tool_name,
+                    result_text,
+                )
                 if result_text and fallback_is_delivery_result(result_text):
                     delivery_tool_sent_by_integration = True
 
-                if result_text:
+                if result_text and not command_dispatch_pending:
                     if hide_tool_details:
                         if (
                             include_hidden_tool_results

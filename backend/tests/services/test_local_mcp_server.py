@@ -320,6 +320,66 @@ def test_run_job_reports_final_daemon_result(monkeypatch) -> None:
     }
 
 
+def test_run_job_marks_busy_and_blocks_nested_terminal_commands(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from app.services.agent.session import agent_session_manager
+
+    item_id = "item-running-job"
+    server = LocalMCPServer()
+    nested: dict[str, list] = {}
+
+    class FakeConnection:
+        def run_job_http(self, **kwargs):
+            session = agent_session_manager.get_session(item_id)
+            assert session is not None
+            assert session.has_running_terminal_job() is True
+            nested["execute"] = server.call_tool(
+                "execute_command",
+                {"item_id": item_id, "command": "java -version"},
+            )
+            nested["run_job"] = server.call_tool(
+                "run_job",
+                {"item_id": item_id, "command": "apt update"},
+            )
+            return {
+                "success": True,
+                "job_id": "job-running",
+                "command": kwargs["command"],
+                "cwd": "/workspace/item",
+                "exit_code": 0,
+                "timed_out": False,
+                "duration_seconds": 2.0,
+                "output_tail": "done",
+            }
+
+    monkeypatch.setattr(
+        server,
+        "_get_item_daemon_context",
+        lambda item_id: (
+            SimpleNamespace(owner_id="user-1", working_directory="/workspace/item"),
+            FakeConnection(),
+        ),
+    )
+
+    agent_session_manager.remove_session(item_id)
+    session = agent_session_manager.get_or_create_session(item_id, "handler-1")
+    try:
+        result = server.call_tool(
+            "run_job",
+            {"item_id": item_id, "command": "curl https://example.test/file -o file"},
+        )
+    finally:
+        agent_session_manager.remove_session(item_id)
+
+    assert "Job succeeded" in result[0]["text"]
+    assert "Background job is still running" in nested["execute"][0]["text"]
+    assert "java -version" in nested["execute"][0]["text"]
+    assert "Background job is still running" in nested["run_job"][0]["text"]
+    assert "apt update" in nested["run_job"][0]["text"]
+    assert session.has_running_terminal_job() is False
+
+
 def test_run_job_tool_is_registered_for_long_jobs() -> None:
     server = LocalMCPServer()
     tool = next(tool for tool in server.list_tools() if tool["name"] == "run_job")

@@ -1494,6 +1494,46 @@ def test_busy_pending_terminal_command_blocks_new_shell_input() -> None:
     assert (should_hold, resolved, direct) == (False, None, False)
     assert session._get_pending_command() is None
 
+
+def test_running_terminal_job_blocks_new_shell_and_job_commands() -> None:
+    from app.services.agent.session import (
+        AgentSession,
+        EXECUTE_COMMAND_TOOL_NAME,
+        RUN_JOB_TOOL_NAME,
+    )
+
+    session = AgentSession("item-1", "handler-1")
+    session.mark_terminal_job_started(
+        RUN_JOB_TOOL_NAME,
+        {"command": "curl https://example.test/jdk.tar.gz -o jdk.tar.gz"},
+    )
+
+    shell_warning = session._validate_terminal_command_input(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "java -version"},
+    )
+    job_warning = session._validate_terminal_command_input(
+        RUN_JOB_TOOL_NAME,
+        {"command": "apt update"},
+    )
+
+    assert shell_warning is not None
+    assert "Background job is still running" in shell_warning
+    assert "jdk.tar.gz" in shell_warning
+    assert "java -version" in shell_warning
+    assert job_warning is not None
+    assert "apt update" in job_warning
+
+    session.clear_terminal_job("apt update")
+    assert session.has_running_terminal_job() is True
+
+    session.clear_terminal_job("curl https://example.test/jdk.tar.gz -o jdk.tar.gz")
+    assert session.has_running_terminal_job() is False
+    assert session._validate_terminal_command_input(
+        RUN_JOB_TOOL_NAME,
+        {"command": "apt update"},
+    ) is None
+
 def test_console_terminal_context_allows_console_input_but_blocks_shell_input() -> None:
     from app.services.agent.session import AgentSession, EXECUTE_COMMAND_TOOL_NAME
 
@@ -1538,6 +1578,35 @@ def test_expected_terminal_output_match_clears_pending_command() -> None:
 
     should_hold, resolved, direct = session._maybe_hold_for_pending_terminal_feedback(
         '[2026-07-09 10:00:00] openjdk version "21"'
+    )
+
+    assert (should_hold, resolved, direct) == (False, None, False)
+    assert session._get_pending_command() is None
+
+
+def test_shell_error_output_clears_pending_command_after_echo() -> None:
+    from app.services.agent.session import AgentSession, EXECUTE_COMMAND_TOOL_NAME
+
+    command = 'java -version 2>&1 || echo "java not found"'
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+
+    session._set_pending_command(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": command},
+    )
+
+    should_hold, resolved, direct = session._maybe_hold_for_pending_terminal_feedback(
+        f"[2026-07-09 16:49:44] # {command}"
+    )
+
+    assert (should_hold, resolved, direct) == (True, None, False)
+    assert session._get_pending_command() is not None
+
+    should_hold, resolved, direct = session._maybe_hold_for_pending_terminal_feedback(
+        "[2026-07-09 16:49:44] /bin/sh: 6: java: not found\n"
+        "[2026-07-09 16:49:44] java not found"
     )
 
     assert (should_hold, resolved, direct) == (False, None, False)

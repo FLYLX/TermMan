@@ -215,7 +215,15 @@ def test_generate_stream_stops_after_terminal_command_dispatch(
         ],
         execute_tool_result=lambda name, args: (
             tool_calls.append((name, dict(args)))
-            or {"success": True, "result": [{"type": "text", "text": "command sent: apt update"}]}
+            or {
+                "success": True,
+                "result": [
+                    {
+                        "type": "text",
+                        "text": "\u547d\u4ee4\u5df2\u53d1\u9001\u5230\u7ec8\u7aef\uff0c\u5c1a\u672a\u786e\u8ba4\u6267\u884c\u7ed3\u679c: apt update",
+                    }
+                ],
+            }
         ),
     )
 
@@ -277,6 +285,9 @@ def test_generate_stream_stops_after_terminal_command_dispatch(
     assert call_count["value"] == 1
     assert tool_calls == [(tool_name, {"command": "apt update", "item_id": str(item.id)})]
     assert any('"status": "waiting_terminal"' in chunk for chunk in chunks)
+    assert not any('"type": "agent_tool_result"' in chunk for chunk in chunks)
+    assert not any("\u547d\u4ee4\u5df2\u53d1\u9001\u5230\u7ec8\u7aef" in chunk for chunk in chunks)
+    assert not any("\u5c1a\u672a\u786e\u8ba4\u6267\u884c\u7ed3\u679c" in chunk for chunk in chunks)
     assert not any('"type": "agent_response"' in chunk for chunk in chunks)
     assert not any("max iteration limit" in chunk for chunk in chunks)
 
