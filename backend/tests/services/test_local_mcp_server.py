@@ -91,6 +91,8 @@ def test_system_prompt_forbids_claiming_command_success_without_confirmation() -
     assert "终端防卡死规则" in prompt
     assert "终端打开不等于 shell 空闲" in prompt
     assert "不要为了试探是否可输入而连续发送" in prompt
+    assert "不要拼接 shell 命令" in prompt
+    assert "`&&`" in prompt
     assert "mcp_local_interrupt_command" in prompt
     assert "mcp_local_record_installed_software" in prompt
     assert "mcp_local_remove_installed_software" in prompt

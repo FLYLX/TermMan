@@ -1229,6 +1229,8 @@ def test_builtin_skills_are_terminal_qq_mcp_and_personas() -> None:
     assert "终端 MCP Skill" in (terminal_mcp.action.prompt or "")
     assert "mcp_local_record_installed_software" in (terminal_mcp.action.prompt or "")
     assert "mcp_local_remove_installed_software" in (terminal_mcp.action.prompt or "")
+    assert "不要拼接 shell 命令" in (terminal_mcp.action.prompt or "")
+    assert "`&&`" in (terminal_mcp.action.prompt or "")
     assert "QQ MCP Skill" in (qq_mcp.action.prompt or "")
     assert "若叶睦人格 Skill" in (mutsumi.action.prompt or "")
     assert "时崎狂三人格 Skill" in (kurumi.action.prompt or "")
