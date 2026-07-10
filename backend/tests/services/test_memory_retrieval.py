@@ -15,6 +15,11 @@ class FakeEmbeddingService:
         return [1.0]
 
 
+class FailingEmbeddingService:
+    def encode_single(self, text: str) -> list[float]:
+        raise RuntimeError("embedding unavailable")
+
+
 class FakeMemoryCollection:
     def query(self, **kwargs):
         now = datetime.now()
@@ -64,7 +69,7 @@ class FakeAddMemoryCollection:
         self.add_calls.append(kwargs)
 
 
-def test_embedding_service_does_not_remote_load_by_default(monkeypatch) -> None:
+def test_embedding_service_does_not_import_model_by_default(monkeypatch) -> None:
     import sys
 
     from app.core.config import settings
@@ -76,9 +81,7 @@ def test_embedding_service_does_not_remote_load_by_default(monkeypatch) -> None:
     class FakeSentenceTransformer:
         def __init__(self, model_name: str, local_files_only: bool = False):
             calls.append((model_name, local_files_only))
-            if not local_files_only:
-                raise AssertionError("remote load should not be attempted")
-            raise RuntimeError("local cache missing")
+            raise AssertionError("model should not be imported by default")
 
     fake_module.SentenceTransformer = FakeSentenceTransformer
     monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
@@ -89,16 +92,20 @@ def test_embedding_service_does_not_remote_load_by_default(monkeypatch) -> None:
     service._load_error = None
     with pytest.raises(RuntimeError):
         service.encode_single("hello")
-    assert calls == [("all-MiniLM-L6-v2", True)]
+    assert calls == []
 
     with pytest.raises(RuntimeError):
         service.encode_single("hello again")
-    assert calls == [("all-MiniLM-L6-v2", True)]
+    assert calls == []
 
     service._load_error = None
 
 
-def test_vector_add_memory_can_allow_manual_duplicates(monkeypatch) -> None:
+def test_vector_add_memory_can_allow_manual_duplicates(monkeypatch, tmp_path) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "CHROMA_PERSIST_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "EMBEDDING_ALLOW_REMOTE_LOAD", True)
     service = VectorStoreService()
     collection = FakeAddMemoryCollection()
     service._client = object()
@@ -122,7 +129,39 @@ def test_vector_add_memory_can_allow_manual_duplicates(monkeypatch) -> None:
     assert collection.add_calls[0]["documents"] == ["same memory"]
 
 
-def test_vector_memory_search_filters_expired_and_inactive_by_default() -> None:
+def test_vector_add_memory_saves_with_fallback_embedding_when_model_unavailable(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "CHROMA_PERSIST_DIR", str(tmp_path))
+    service = VectorStoreService()
+    collection = FakeAddMemoryCollection()
+    service._client = object()
+    service._collection = collection
+    service._embedding_service = FailingEmbeddingService()
+
+    memory_id = service.add_memory(
+        item_id="item-1",
+        content="memory survives embedding failure",
+        memory_type="fact",
+        allow_duplicate=True,
+    )
+
+    assert memory_id is not None
+    assert collection.add_calls == []
+    memories = service.get_all_memories("item-1")
+    assert [memory["content"] for memory in memories] == [
+        "memory survives embedding failure"
+    ]
+
+
+def test_vector_memory_search_filters_expired_and_inactive_by_default(monkeypatch, tmp_path) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "CHROMA_PERSIST_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "EMBEDDING_ALLOW_REMOTE_LOAD", True)
     service = VectorStoreService()
     service._client = object()
     service._collection = FakeMemoryCollection()

@@ -1,4 +1,6 @@
 import logging
+import json
+import math
 import os
 import uuid
 from datetime import datetime, timedelta
@@ -25,6 +27,7 @@ DEFAULT_MEMORY_TTL_DAYS = 30
 DEDUP_THRESHOLD = 0.95
 SUMMARIZE_THRESHOLD = 10
 DEFAULT_RECALL_CANDIDATE_MULTIPLIER = 4
+FALLBACK_EMBEDDING_DIMENSION = 384
 
 
 class EmbeddingService:
@@ -46,21 +49,23 @@ class EmbeddingService:
 
         if self._model is None:
             logger.info("[Embedding] Loading all-MiniLM-L6-v2 model...")
-            from sentence_transformers import SentenceTransformer
 
             model_name = "all-MiniLM-L6-v2"
+            if not settings.EMBEDDING_ALLOW_REMOTE_LOAD:
+                self._load_error = (
+                    "embedding model loading disabled; using fallback embeddings"
+                )
+                logger.warning(
+                    "[Embedding] Model loading disabled because EMBEDDING_ALLOW_REMOTE_LOAD=false; using fallback embeddings"
+                )
+                raise RuntimeError(self._load_error)
+
+            from sentence_transformers import SentenceTransformer
+
             try:
                 self._model = SentenceTransformer(model_name, local_files_only=True)
                 logger.info("[Embedding] Model loaded from local cache")
             except Exception as local_error:
-                if not settings.EMBEDDING_ALLOW_REMOTE_LOAD:
-                    self._load_error = str(local_error)
-                    logger.warning(
-                        "[Embedding] Local model unavailable and remote load disabled; long-term memory search/write will be skipped: %s",
-                        local_error,
-                    )
-                    raise RuntimeError(self._load_error) from local_error
-
                 logger.warning(
                     "[Embedding] Local model cache unavailable, trying remote load because EMBEDDING_ALLOW_REMOTE_LOAD=true: %s",
                     local_error,
@@ -105,6 +110,13 @@ class VectorStoreService:
         if self._client is not None:
             return
 
+        if not settings.EMBEDDING_ALLOW_REMOTE_LOAD:
+            self._client = object()
+            self._collection = None
+            self._embedding_service = EmbeddingService()
+            logger.info("[VectorStore] Using JSON fallback memory store")
+            return
+
         persist_dir = settings.CHROMA_PERSIST_DIR
         os.makedirs(persist_dir, exist_ok=True)
 
@@ -118,18 +130,144 @@ class VectorStoreService:
         logger.info("[VectorStore] ChromaDB initialized with persistence")
 
     def _try_encode_single(self, text: str) -> list[float] | None:
+        embedding, _used_fallback = self._encode_single_with_fallback(text)
+        return embedding
+
+    def _encode_single_with_fallback(self, text: str) -> tuple[list[float], bool]:
+        if not settings.EMBEDDING_ALLOW_REMOTE_LOAD:
+            return self._fallback_embedding(text), True
         try:
-            return self._embedding_service.encode_single(text)
+            return self._embedding_service.encode_single(text), False
         except Exception as e:
-            logger.warning("[VectorStore] Skipping memory embedding: %s", e)
-            return None
+            logger.warning("[VectorStore] Using fallback memory embedding: %s", e)
+            return self._fallback_embedding(text), True
 
     def _try_encode(self, texts: list[str]) -> list[list[float]] | None:
         try:
             return self._embedding_service.encode(texts)
         except Exception as e:
-            logger.warning("[VectorStore] Skipping memory embeddings: %s", e)
-            return None
+            logger.warning("[VectorStore] Using fallback memory embeddings: %s", e)
+            return [self._fallback_embedding(text) for text in texts]
+
+    @staticmethod
+    def _fallback_embedding(text: str) -> list[float]:
+        vector = [0.0] * FALLBACK_EMBEDDING_DIMENSION
+        raw = str(text or "").encode("utf-8", errors="ignore")
+        if not raw:
+            return vector
+
+        for index, byte in enumerate(raw):
+            slot = (index * 131 + byte) % FALLBACK_EMBEDDING_DIMENSION
+            sign = 1.0 if ((index + byte) % 2 == 0) else -1.0
+            vector[slot] += sign * (1.0 + byte / 255.0)
+
+        norm = math.sqrt(sum(value * value for value in vector))
+        if norm <= 0:
+            return vector
+        return [value / norm for value in vector]
+
+    def _fallback_store_path(self) -> str:
+        return os.path.join(settings.CHROMA_PERSIST_DIR, "fallback_memories.json")
+
+    def _load_fallback_memories(self) -> list[dict[str, Any]]:
+        path = self._fallback_store_path()
+        if not os.path.exists(path):
+            return []
+        try:
+            with open(path, encoding="utf-8") as file:
+                data = json.load(file)
+        except Exception as exc:
+            logger.warning("[VectorStore] Failed to load fallback memories: %s", exc)
+            return []
+        if not isinstance(data, list):
+            return []
+        return [entry for entry in data if isinstance(entry, dict)]
+
+    def _write_fallback_memories(self, memories: list[dict[str, Any]]) -> None:
+        path = self._fallback_store_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        temp_path = f"{path}.tmp"
+        with open(temp_path, "w", encoding="utf-8") as file:
+            json.dump(memories, file, ensure_ascii=False, indent=2, default=str)
+        os.replace(temp_path, path)
+
+    def _add_fallback_memory(
+        self,
+        *,
+        memory_id: str,
+        content: str,
+        metadata: dict[str, Any],
+    ) -> str:
+        self._upsert_fallback_memory(
+            memory_id=memory_id,
+            content=content,
+            metadata=metadata,
+        )
+        logger.info("[VectorStore] Added fallback memory %s", memory_id)
+        return memory_id
+
+    def _upsert_fallback_memory(
+        self,
+        *,
+        memory_id: str,
+        content: str,
+        metadata: dict[str, Any],
+    ) -> bool:
+        memories = self._load_fallback_memories()
+        record = {"id": memory_id, "content": content, "metadata": metadata}
+        replaced = False
+        for index, memory in enumerate(memories):
+            if str(memory.get("id") or "") == str(memory_id):
+                memories[index] = record
+                replaced = True
+                break
+        if not replaced:
+            memories.append(record)
+        self._write_fallback_memories(memories)
+        return True
+
+    def _update_fallback_memory(
+        self,
+        memory_id: str,
+        *,
+        content: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> bool:
+        memories = self._load_fallback_memories()
+        for memory in memories:
+            if str(memory.get("id") or "") != str(memory_id):
+                continue
+            current_metadata = (
+                memory.get("metadata") if isinstance(memory.get("metadata"), dict) else {}
+            )
+            if content is not None:
+                memory["content"] = content
+            if metadata:
+                memory["metadata"] = {**current_metadata, **metadata}
+            self._write_fallback_memories(memories)
+            return True
+        return False
+
+    def _fallback_memories_for_item(
+        self,
+        item_id: str,
+        memory_type: MemoryType | None = None,
+    ) -> list[dict[str, Any]]:
+        memories: list[dict[str, Any]] = []
+        for memory in self._load_fallback_memories():
+            metadata = memory.get("metadata") if isinstance(memory.get("metadata"), dict) else {}
+            if str(metadata.get("item_id") or "") != str(item_id):
+                continue
+            if memory_type and metadata.get("memory_type") != memory_type:
+                continue
+            memories.append(
+                {
+                    "id": str(memory.get("id") or ""),
+                    "content": str(memory.get("content") or ""),
+                    "metadata": metadata,
+                }
+            )
+        return [memory for memory in memories if memory["id"]]
 
     @staticmethod
     def _build_where_filter(
@@ -219,10 +357,6 @@ class VectorStoreService:
                 logger.info(f"[VectorStore] Skipping duplicate memory for item {item_id}")
                 return None
 
-        embedding = self._try_encode_single(content)
-        if embedding is None:
-            return None
-
         now = datetime.now()
         ttl = ttl_days or DEFAULT_MEMORY_TTL_DAYS
         expires_at = (now + timedelta(days=ttl)).isoformat()
@@ -232,6 +366,14 @@ class VectorStoreService:
         meta["memory_type"] = memory_type
         meta.setdefault("created_at", now.isoformat())
         meta.setdefault("expires_at", expires_at)
+
+        embedding, used_fallback_embedding = self._encode_single_with_fallback(content)
+        if used_fallback_embedding:
+            return self._add_fallback_memory(
+                memory_id=memory_id,
+                content=content,
+                metadata=meta,
+            )
 
         self._collection.add(
             ids=[memory_id],
@@ -245,6 +387,11 @@ class VectorStoreService:
 
     def _check_duplicate(self, item_id: str, content: str) -> bool:
         self._ensure_initialized()
+        if self._collection is None:
+            return any(
+                memory.get("content") == content
+                for memory in self._fallback_memories_for_item(item_id)
+            )
         query_embedding = self._try_encode_single(content)
         if query_embedding is None:
             return False
@@ -275,43 +422,71 @@ class VectorStoreService:
         candidate_multiplier: int = DEFAULT_RECALL_CANDIDATE_MULTIPLIER,
     ) -> list[dict[str, Any]]:
         self._ensure_initialized()
+        if self._collection is None:
+            memories = []
+            for memory in self._fallback_memories_for_item(item_id, memory_type=memory_type):
+                metadata = memory.get("metadata", {})
+                content = str(memory.get("content") or "")
+                if not include_expired and self._is_expired_memory(metadata):
+                    continue
+                if active_only and self._is_inactive_status_memory(content, metadata):
+                    continue
+                memories.append({**memory, "distance": None})
+                if len(memories) >= n_results:
+                    break
+            return memories
+
         query_embedding = self._try_encode_single(query)
-        if query_embedding is None:
-            return []
         where_filter = self._build_where_filter(item_id=item_id, memory_type=memory_type)
         query_results = max(n_results, n_results * max(candidate_multiplier, 1))
 
-        results = self._collection.query(
-            query_embeddings=[query_embedding],
-            n_results=query_results,
-            where=where_filter,
-        )
-
         memories = []
-        if results["documents"] and results["documents"][0]:
-            for i, doc in enumerate(results["documents"][0]):
-                metadata = results["metadatas"][0][i] if results["metadatas"] else {}
-                distance = results["distances"][0][i] if results["distances"] else None
-                if not include_expired and self._is_expired_memory(metadata):
-                    continue
-                if active_only and self._is_inactive_status_memory(doc, metadata):
-                    continue
-                similarity = self._similarity_from_distance(distance)
-                if (
-                    min_similarity is not None
-                    and similarity is not None
-                    and similarity < min_similarity
-                ):
-                    continue
-                memory = {
-                    "id": results["ids"][0][i],
-                    "content": doc,
-                    "metadata": metadata,
-                    "distance": distance,
-                }
-                memories.append(memory)
-                if len(memories) >= n_results:
-                    break
+        try:
+            results = self._collection.query(
+                query_embeddings=[query_embedding],
+                n_results=query_results,
+                where=where_filter,
+            )
+
+            if results["documents"] and results["documents"][0]:
+                for i, doc in enumerate(results["documents"][0]):
+                    metadata = results["metadatas"][0][i] if results["metadatas"] else {}
+                    distance = results["distances"][0][i] if results["distances"] else None
+                    if not include_expired and self._is_expired_memory(metadata):
+                        continue
+                    if active_only and self._is_inactive_status_memory(doc, metadata):
+                        continue
+                    similarity = self._similarity_from_distance(distance)
+                    if (
+                        min_similarity is not None
+                        and similarity is not None
+                        and similarity < min_similarity
+                    ):
+                        continue
+                    memory = {
+                        "id": results["ids"][0][i],
+                        "content": doc,
+                        "metadata": metadata,
+                        "distance": distance,
+                    }
+                    memories.append(memory)
+                    if len(memories) >= n_results:
+                        break
+        except Exception as exc:
+            logger.warning("[VectorStore] Failed to search Chroma memories: %s", exc)
+
+        for memory in self._fallback_memories_for_item(item_id, memory_type=memory_type):
+            metadata = memory.get("metadata", {})
+            content = str(memory.get("content") or "")
+            if not include_expired and self._is_expired_memory(metadata):
+                continue
+            if active_only and self._is_inactive_status_memory(content, metadata):
+                continue
+            if query and query not in content:
+                memory = {**memory, "distance": None}
+            memories.append(memory)
+            if len(memories) >= n_results:
+                break
 
         return memories
 
@@ -323,29 +498,46 @@ class VectorStoreService:
         self._ensure_initialized()
         where_filter = self._build_where_filter(item_id=item_id, memory_type=memory_type)
 
-        results = self._collection.get(where=where_filter)
-
         memories = []
-        if results["ids"]:
-            for i, memory_id in enumerate(results["ids"]):
-                memories.append({
-                    "id": memory_id,
-                    "content": results["documents"][i] if results["documents"] else "",
-                    "metadata": results["metadatas"][i] if results["metadatas"] else {},
-                })
+        if self._collection is not None:
+            try:
+                results = self._collection.get(where=where_filter)
+                if results["ids"]:
+                    for i, memory_id in enumerate(results["ids"]):
+                        memories.append({
+                            "id": memory_id,
+                            "content": results["documents"][i] if results["documents"] else "",
+                            "metadata": results["metadatas"][i] if results["metadatas"] else {},
+                        })
+            except Exception as exc:
+                logger.warning("[VectorStore] Failed to read Chroma memories: %s", exc)
 
+        memories.extend(self._fallback_memories_for_item(item_id, memory_type=memory_type))
         return memories
 
     def get_memory(self, memory_id: str) -> dict[str, Any] | None:
         self._ensure_initialized()
-        results = self._collection.get(ids=[memory_id])
-        if not results["ids"]:
-            return None
-        return {
-            "id": results["ids"][0],
-            "content": results["documents"][0] if results["documents"] else "",
-            "metadata": results["metadatas"][0] if results["metadatas"] else {},
-        }
+        if self._collection is not None:
+            try:
+                results = self._collection.get(ids=[memory_id])
+                if results["ids"]:
+                    return {
+                        "id": results["ids"][0],
+                        "content": results["documents"][0] if results["documents"] else "",
+                        "metadata": results["metadatas"][0] if results["metadatas"] else {},
+                    }
+            except Exception as exc:
+                logger.warning("[VectorStore] Failed to read Chroma memory %s: %s", memory_id, exc)
+
+        for memory in self._load_fallback_memories():
+            if str(memory.get("id") or "") == str(memory_id):
+                metadata = memory.get("metadata") if isinstance(memory.get("metadata"), dict) else {}
+                return {
+                    "id": str(memory.get("id") or ""),
+                    "content": str(memory.get("content") or ""),
+                    "metadata": metadata,
+                }
+        return None
 
     def get_memory_stats(self, item_id: str) -> dict[str, Any]:
         all_memories = self.get_all_memories(item_id)
@@ -375,17 +567,39 @@ class VectorStoreService:
 
     def delete_memory(self, memory_id: str) -> bool:
         self._ensure_initialized()
-        try:
-            self._collection.delete(ids=[memory_id])
-            logger.info(f"[VectorStore] Deleted memory {memory_id}")
-            return True
-        except Exception as e:
-            logger.error(f"[VectorStore] Failed to delete memory {memory_id}: {e}")
-            return False
+        deleted = False
+        if self._collection is not None:
+            try:
+                self._collection.delete(ids=[memory_id])
+                logger.info(f"[VectorStore] Deleted memory {memory_id}")
+            except Exception as e:
+                logger.error(f"[VectorStore] Failed to delete memory {memory_id}: {e}")
+            else:
+                deleted = True
+
+        fallback_memories = self._load_fallback_memories()
+        kept = [
+            memory
+            for memory in fallback_memories
+            if str(memory.get("id") or "") != str(memory_id)
+        ]
+        if len(kept) != len(fallback_memories):
+            self._write_fallback_memories(kept)
+            deleted = True
+        return deleted
 
     def delete_item_memories(self, item_id: str):
         self._ensure_initialized()
-        self._collection.delete(where={"item_id": item_id})
+        if self._collection is not None:
+            self._collection.delete(where={"item_id": item_id})
+        fallback_memories = self._load_fallback_memories()
+        kept = []
+        for memory in fallback_memories:
+            metadata = memory.get("metadata") if isinstance(memory.get("metadata"), dict) else {}
+            if str(metadata.get("item_id") or "") != str(item_id):
+                kept.append(memory)
+        if len(kept) != len(fallback_memories):
+            self._write_fallback_memories(kept)
         logger.info(f"[VectorStore] Deleted all memories for item {item_id}")
 
     def expire_old_memories(self, item_id: str) -> int:
@@ -405,8 +619,19 @@ class VectorStoreService:
                     pass
 
         if expired_ids:
-            self._collection.delete(ids=expired_ids)
+            if self._collection is not None:
+                self._collection.delete(ids=expired_ids)
             logger.info(f"[VectorStore] Expired {len(expired_ids)} memories for item {item_id}")
+
+        if expired_ids:
+            fallback_memories = self._load_fallback_memories()
+            kept = [
+                memory
+                for memory in fallback_memories
+                if str(memory.get("id") or "") not in expired_ids
+            ]
+            if len(kept) != len(fallback_memories):
+                self._write_fallback_memories(kept)
 
         return len(expired_ids)
 
@@ -434,7 +659,16 @@ class VectorStoreService:
                     ids_to_delete.add(all_memories[j]["id"])
 
         if ids_to_delete:
-            self._collection.delete(ids=list(ids_to_delete))
+            if self._collection is not None:
+                self._collection.delete(ids=list(ids_to_delete))
+            fallback_memories = self._load_fallback_memories()
+            kept = [
+                memory
+                for memory in fallback_memories
+                if str(memory.get("id") or "") not in ids_to_delete
+            ]
+            if len(kept) != len(fallback_memories):
+                self._write_fallback_memories(kept)
             logger.info(f"[VectorStore] Deduplicated {len(ids_to_delete)} memories for item {item_id}")
 
         return len(ids_to_delete)
@@ -450,10 +684,13 @@ class VectorStoreService:
 
     def update_memory(self, memory_id: str, content: str | None = None, metadata: dict[str, Any] | None = None) -> bool:
         self._ensure_initialized()
+        if self._collection is None:
+            return self._update_fallback_memory(memory_id, content=content, metadata=metadata)
+
         try:
             existing = self._collection.get(ids=[memory_id])
             if not existing["ids"]:
-                return False
+                return self._update_fallback_memory(memory_id, content=content, metadata=metadata)
 
             current_meta = existing["metadatas"][0] if existing["metadatas"] else {}
             current_doc = existing["documents"][0] if existing["documents"] else ""
@@ -461,9 +698,15 @@ class VectorStoreService:
             new_content = content or current_doc
             new_meta = {**current_meta, **(metadata or {})}
 
-            embedding = self._try_encode_single(new_content)
-            if embedding is None:
-                return False
+            embedding, used_fallback_embedding = self._encode_single_with_fallback(new_content)
+            if used_fallback_embedding:
+                if self._collection is not None:
+                    self._collection.delete(ids=[memory_id])
+                return self._upsert_fallback_memory(
+                    memory_id=memory_id,
+                    content=new_content,
+                    metadata=new_meta,
+                )
 
             self._collection.delete(ids=[memory_id])
             self._collection.add(
@@ -477,12 +720,10 @@ class VectorStoreService:
             return True
         except Exception as e:
             logger.error(f"[VectorStore] Failed to update memory {memory_id}: {e}")
-            return False
+            return self._update_fallback_memory(memory_id, content=content, metadata=metadata)
 
     def get_item_memory_count(self, item_id: str) -> int:
-        self._ensure_initialized()
-        results = self._collection.get(where={"item_id": item_id})
-        return len(results["ids"]) if results["ids"] else 0
+        return len(self.get_all_memories(item_id))
 
     def summarize_memories(
         self,
@@ -542,7 +783,7 @@ class VectorStoreService:
                 summary_lines = [line.strip() for line in summary_text.split("\n") if line.strip()]
 
                 for old_memory in memories:
-                    self._collection.delete(ids=[old_memory["id"]])
+                    self.delete_memory(old_memory["id"])
                     total_summarized += 1
 
                 for line in summary_lines:
