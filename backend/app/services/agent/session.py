@@ -1288,30 +1288,6 @@ class AgentSession:
         last_item.timestamp = input_msg.timestamp
         return True
 
-    def _build_running_terminal_job_chat_response(self, running_job: RunningTerminalJob) -> str:
-        elapsed_seconds = int((datetime.now() - running_job.started_at).total_seconds())
-        return (
-            f"\u540e\u53f0\u4efb\u52a1\u8fd8\u5728\u8dd1\uff0c\u5df2\u8fd0\u884c {elapsed_seconds}s\u3002"
-            "\u6211\u5df2\u7ecf\u9501\u4f4f\u7ec8\u7aef\u8f93\u5165\uff0c\u4e0d\u4f1a\u91cd\u590d\u53d1\u547d\u4ee4\u3002"
-            "\u7b49\u5b83\u7ed3\u675f\u540e\u6211\u4f1a\u62ff\u6700\u7ec8\u7ed3\u679c\u7ee7\u7eed\u5904\u7406\u3002"
-        )
-
-    def _try_reply_busy_terminal_job(self, input_msg: InputMessage) -> bool:
-        if input_msg.input_type != InputType.CHAT:
-            return False
-        running_job = self._get_running_terminal_job()
-        if not running_job:
-            return False
-        if input_msg.callback:
-            self.add_output_callback(input_msg.callback)
-        self.emit_output(
-            self._build_running_terminal_job_chat_response(running_job),
-            "agent_response",
-            {"tool_name": running_job.tool_name, "terminal_job_running": True},
-        )
-        self._emit_waiting_terminal_status(running_job.tool_name)
-        return True
-
     def queue_input(self, input_msg: InputMessage) -> bool:
         with self.lock:
             try:
@@ -1385,12 +1361,6 @@ class AgentSession:
             self.state = SessionState.IDLE if queue_size == 0 else SessionState.COOLDOWN
             self._current_turn_id = None
         self._emit_idle_or_waiting_status(queue_size)
-        return
-
-        if queue_size > 0:
-            self.emit_status("queued", "后续输出排队中", {"queue_size": queue_size})
-        else:
-            self.emit_status("idle", "")
 
     def process_queue(self):
         while True:
@@ -1400,8 +1370,6 @@ class AgentSession:
                 with self.lock:
                     self.state = SessionState.IDLE
                 self._emit_idle_or_waiting_status(0)
-                return
-                self.emit_status("idle", "")
                 return
 
             if (datetime.now() - input_msg.timestamp).total_seconds() > 60:
