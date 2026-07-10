@@ -33,6 +33,13 @@ QQ_MCP_SKILL_ID = "qq_mcp"
 ROBOT_MESSAGING_SKILL_ID = "robot_messaging"
 ROBOT_MESSAGING_COMPAT_SKILL_IDS = {QQ_MCP_SKILL_ID, ROBOT_MESSAGING_SKILL_ID}
 ROBOT_MESSAGE_STAMP_RE = re.compile(r"\[Robot message; (?P<body>[^\]]+)\]")
+ROBOT_READ_ONLY_TOOL_RESULT_PREFIXES = (
+    "QQ conversation .log memory ",
+    "No QQ conversation .log memory ",
+    "Robot memory recall ",
+    "No robot memory ",
+    "Memory saved",
+)
 
 
 def _has_tool(tools: list[dict[str, Any]], tool_name: str) -> bool:
@@ -61,6 +68,18 @@ def _robot_conversation_key(reply_target: RobotReplyTarget, sender_key: str) -> 
 
 def _is_robot_send_tool_result(value: str) -> bool:
     return is_robot_internal_trace_text(value)
+
+
+def _is_robot_read_only_tool_result(value: str) -> bool:
+    normalized = str(value or "").strip()
+    return any(
+        normalized.startswith(prefix)
+        for prefix in ROBOT_READ_ONLY_TOOL_RESULT_PREFIXES
+    )
+
+
+def is_robot_read_only_tool_result(value: str) -> bool:
+    return _is_robot_read_only_tool_result(value)
 
 
 def _parse_robot_message_stamp_body(body: str) -> dict[str, str]:
@@ -365,9 +384,6 @@ class RobotAgentIntegration:
         tool_name: str,
         args: dict[str, Any],
     ) -> None:
-        if server_name != ROBOT_MCP_SERVER_NAME:
-            return
-
         args.pop("_robot_context_token", None)
         args.pop("_termman_user_id", None)
         args.pop("_termman_is_superuser", None)
@@ -376,6 +392,18 @@ class RobotAgentIntegration:
 
         context = _robot_context(agent)
         if context is None:
+            return
+
+        if (
+            server_name == "local"
+            and tool_name in {"execute_command", "run_job"}
+            and getattr(context, "robot_id", "")
+            and getattr(context, "robot_context_token", "")
+        ):
+            args["_robot_context_token"] = context.robot_context_token
+            return
+
+        if server_name != ROBOT_MCP_SERVER_NAME:
             return
 
         if getattr(context, "current_user_id", ""):
@@ -483,10 +511,6 @@ class RobotAgentIntegration:
             if _is_robot_send_tool_result(normalized):
                 return normalized
 
-        for result in reversed(tool_results):
-            if result.strip():
-                return result.strip()
-
         for warning in reversed(warnings):
             if warning.strip():
                 return warning.strip()
@@ -531,6 +555,8 @@ class RobotAgentIntegration:
         robot_id = str(context.get("robot_id") or "").strip()
         robot_reply_target = context.get("reply_target")
         raw_content = str(content or "").strip()
+        if _is_robot_read_only_tool_result(raw_content):
+            return False
         text = compact_robot_visible_message_text(sanitize_robot_visible_text(raw_content))
         if not text:
             if robot_id and is_no_reply_intent(raw_content):

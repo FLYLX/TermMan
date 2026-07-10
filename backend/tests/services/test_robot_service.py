@@ -56,6 +56,42 @@ def test_dispatch_filtered_output_does_not_send_to_robot(
     )
 
 
+def test_enqueue_background_job_result_targets_original_conversation(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    captured = _capture_queued_chat(monkeypatch)
+    target = RobotReplyTarget(
+        target_type="private",
+        target_id="2537134688",
+        metadata={"mentioned_bot": True},
+    )
+
+    queued = robot_service.enqueue_background_job_result(
+        robot_id=robot.id,
+        item_id=item.id,
+        sender_key="2537134688",
+        reply_target=target,
+        conversation_key="private:2537134688",
+        conversation_generation=12,
+        message="[Background terminal job result]\nTemurin installed",
+    )
+
+    assert queued is True
+    job = captured["job"]
+    assert job.robot_id == robot.id
+    assert job.item_id == item.id
+    assert job.sender_key == "2537134688"
+    assert job.reply_target.target_id == "2537134688"
+    assert job.conversation_key == "private:2537134688"
+    assert job.conversation_generation == 12
+    assert job.direct_reply_trigger is True
+    assert job.reply_requires_awake is False
+    assert "Temurin installed" in job.message
+
+
 def _message(
     text: str,
     *,
@@ -215,6 +251,66 @@ def test_send_text_with_bot_uses_onebot_group_and_private_actions() -> None:
                 "message": "私信消息",
             },
         ),
+    ]
+
+
+def test_send_text_with_bot_converts_onebot_group_cq_at_to_segment() -> None:
+    bot = _FakeOneBotBot()
+
+    asyncio.run(
+        send_text_with_bot(
+            bot,
+            RobotReplyTarget(target_type="group", target_id="123456"),
+            "[CQ:at,qq=3385417251] hello",
+        )
+    )
+
+    assert bot.calls == [
+        (
+            "send_group_msg",
+            {
+                "group_id": 123456,
+                "message": [
+                    {"type": "at", "data": {"qq": "3385417251"}},
+                    {"type": "text", "data": {"text": " hello"}},
+                ],
+            },
+        )
+    ]
+
+
+def test_send_text_with_bot_converts_onebot_metadata_group_cq_at_to_segment() -> None:
+    bot = _FakeOneBotBot()
+
+    asyncio.run(
+        send_text_with_bot(
+            bot,
+            RobotReplyTarget(
+                target_type="universal",
+                target_id="universal-target",
+                metadata={
+                    "target": {
+                        "id": "universal-target",
+                        "message_type": "group",
+                        "group_id": "123456",
+                    }
+                },
+            ),
+            "reply [CQ:at,qq=3385417251]",
+        )
+    )
+
+    assert bot.calls == [
+        (
+            "send_group_msg",
+            {
+                "group_id": 123456,
+                "message": [
+                    {"type": "text", "data": {"text": "reply "}},
+                    {"type": "at", "data": {"qq": "3385417251"}},
+                ],
+            },
+        )
     ]
 
 
@@ -1022,6 +1118,57 @@ def test_private_robot_message_passes_context_stamp_to_agent(
     assert captured["job"].reply_requires_awake is True
     assert captured["job"].conversation_generation > 0
     assert response.reply_chunks == []
+
+
+def test_robot_message_includes_recent_live_context_without_current_duplicate(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    captured = _capture_queued_chat(monkeypatch)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "read_recent",
+        lambda *_args, **_kwargs: (
+            "[2026-07-10T16:32:32+00:00] user FLY (2537134688): 换国内源吧\n"
+            "[2026-07-10T16:33:33+00:00] user FLY (2537134688): 换好了吗"
+        ),
+    )
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "换好了吗",
+            sender_key="onebot_v11:private:2537134688",
+            target={"id": "2537134688", "private": True},
+            sender={
+                "user_id": "2537134688",
+                "display_name": "FLY",
+            },
+        ),
+    )
+
+    assert response.success is True
+    text = captured["job"].message
+    assert "[Recent QQ live context; background only" in text
+    assert "换国内源吧" in text
+    assert text.count("换好了吗") == 1
+    assert text.endswith("[Current QQ message]\n换好了吗")
 
 
 def test_term_command_routes_to_named_item_agent(

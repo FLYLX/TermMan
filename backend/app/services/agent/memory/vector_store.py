@@ -207,15 +207,17 @@ class VectorStoreService:
         metadata: dict[str, Any] | None = None,
         memory_id: str | None = None,
         ttl_days: int | None = None,
+        allow_duplicate: bool = False,
     ) -> str | None:
         self._ensure_initialized()
         if memory_id is None:
             memory_id = str(uuid.uuid4())
 
-        existing = self._check_duplicate(item_id, content)
-        if existing:
-            logger.info(f"[VectorStore] Skipping duplicate memory for item {item_id}")
-            return None
+        if not allow_duplicate:
+            existing = self._check_duplicate(item_id, content)
+            if existing:
+                logger.info(f"[VectorStore] Skipping duplicate memory for item {item_id}")
+                return None
 
         embedding = self._try_encode_single(content)
         if embedding is None:

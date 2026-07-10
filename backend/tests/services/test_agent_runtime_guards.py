@@ -688,6 +688,20 @@ def test_robot_collect_response_fallback_accepts_mcp_tool_delivery() -> None:
     ) == "Message sent to QQ group 123456 from chat context."
 
 
+def test_robot_collect_response_fallback_skips_conversation_memory_tool_result() -> None:
+    fallback = get_robot_agent_integration().fallback_response_content(
+        {"robot_id": "robot-1"},
+        tool_results=[
+            "QQ conversation .log memory (private:2537134688, recent 12 line(s)):\n"
+            "[2026-07-10T16:31:41+00:00] user FLY: 下载完了吗"
+        ],
+        warnings=[],
+        done_seen=True,
+    )
+
+    assert is_no_reply_intent(fallback)
+
+
 def test_robot_delivery_retry_skips_no_reply_intent() -> None:
     tools = [{"type": "function", "function": {"name": ROBOT_SEND_TOOL_NAME}}]
     agent = SimpleNamespace(
@@ -992,6 +1006,69 @@ def test_robot_collect_response_does_not_return_send_tool_trace(
     assert isinstance(result, ChatResponseResult)
     assert result.content == ""
     assert result.robot_message_sent is True
+
+
+def test_robot_collect_response_does_not_send_conversation_memory_final(
+    monkeypatch,
+) -> None:
+    class FakeAgent:
+        def setup_context(self, agent, context: dict) -> None:
+            return None
+
+        async def ensure_tools(self, agent, context: dict) -> None:
+            return None
+
+        def clear_context(self, agent, context: dict) -> None:
+            return None
+
+    async def fake_prepare_chat_agent(*_args, **_kwargs):
+        return SimpleNamespace(name="handler"), SimpleNamespace(id="item-1"), FakeAgent()
+
+    def fake_generate_stream(**_kwargs):
+        yield (
+            'data: {"type": "agent_response", '
+            '"content": "QQ conversation .log memory (private:2537134688, recent 12 line(s)):\\nuser: 下载完了吗"}\n\n'
+        )
+        yield 'data: {"done": true}\n\n'
+
+    monkeypatch.setattr(chat_runtime, "prepare_chat_agent", fake_prepare_chat_agent)
+    monkeypatch.setattr("app.api.routes.chat.generate_stream", fake_generate_stream)
+    sent: list[str] = []
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        lambda _robot_id, _target, text: sent.append(text),
+    )
+    integration = get_robot_agent_integration()
+    monkeypatch.setattr(
+        "app.services.agent.integrations.hooks.get_agent_integration",
+        lambda name: integration if name == "robot" else None,
+    )
+    monkeypatch.setattr(
+        "app.services.agent.integrations.hooks.get_agent_integrations",
+        lambda: [integration],
+    )
+
+    result = asyncio.run(
+        collect_chat_response(
+            session=SimpleNamespace(),
+            item_id="item-1",
+            current_user=SimpleNamespace(),
+            message="下载完了吗",
+            robot_id="robot-1",
+            robot_sender_key="onebot_v11:private:2537134688",
+            robot_reply_target=RobotReplyTarget(
+                target_type="private",
+                target_id="2537134688",
+                metadata={"mentioned_bot": True},
+            ),
+            return_result=True,
+        )
+    )
+
+    assert isinstance(result, ChatResponseResult)
+    assert is_no_reply_intent(result.content)
+    assert result.robot_message_sent is False
+    assert sent == []
 
 
 def test_robot_collect_response_suppresses_final_after_send_tool_result(

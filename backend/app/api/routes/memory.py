@@ -470,6 +470,7 @@ def import_memories(
                 content=content,
                 memory_type=_coerce_memory_type(memory.metadata.get("memory_type")),
                 metadata=metadata,
+                allow_duplicate=True,
             )
         except Exception as e:
             logger.warning("[Memory] Failed to import memory %s: %s", index, e)
@@ -547,10 +548,11 @@ def add_memory(
         memory_type=request.memory_type,
         metadata=request.metadata,
         ttl_days=request.ttl_days,
+        allow_duplicate=True,
     )
 
     if memory_id is None:
-        return {"memory_id": None, "message": "Duplicate memory skipped"}
+        return {"memory_id": None, "message": "Memory was not saved"}
 
     return {"memory_id": memory_id, "message": "Memory added"}
 

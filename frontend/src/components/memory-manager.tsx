@@ -285,7 +285,7 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
       if (result.memory_id) {
         showSuccessToast("记忆已添加")
       } else {
-        showErrorToast("重复记忆已跳过")
+        showErrorToast(result.message || "记忆保存失败")
       }
       setIsAddDialogOpen(false)
       setNewMemoryContent("")

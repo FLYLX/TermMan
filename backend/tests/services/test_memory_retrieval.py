@@ -56,6 +56,14 @@ class FakeMemoryCollection:
         }
 
 
+class FakeAddMemoryCollection:
+    def __init__(self) -> None:
+        self.add_calls: list[dict[str, object]] = []
+
+    def add(self, **kwargs) -> None:
+        self.add_calls.append(kwargs)
+
+
 def test_embedding_service_does_not_remote_load_by_default(monkeypatch) -> None:
     import sys
 
@@ -88,6 +96,30 @@ def test_embedding_service_does_not_remote_load_by_default(monkeypatch) -> None:
     assert calls == [("all-MiniLM-L6-v2", True)]
 
     service._load_error = None
+
+
+def test_vector_add_memory_can_allow_manual_duplicates(monkeypatch) -> None:
+    service = VectorStoreService()
+    collection = FakeAddMemoryCollection()
+    service._client = object()
+    service._collection = collection
+    service._embedding_service = FakeEmbeddingService()
+
+    def fail_duplicate_check(*_args, **_kwargs):
+        raise AssertionError("manual duplicate writes should skip duplicate checks")
+
+    monkeypatch.setattr(service, "_check_duplicate", fail_duplicate_check)
+
+    memory_id = service.add_memory(
+        item_id="item-1",
+        content="same memory",
+        memory_type="fact",
+        allow_duplicate=True,
+    )
+
+    assert memory_id is not None
+    assert collection.add_calls
+    assert collection.add_calls[0]["documents"] == ["same memory"]
 
 
 def test_vector_memory_search_filters_expired_and_inactive_by_default() -> None:

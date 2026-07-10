@@ -43,6 +43,16 @@ ROBOT_REFERENCE_RESOLUTION_INSTRUCTION = (
     "`mcp_robot_sleep_conversation`\u3002\u5982\u679c\u65e0\u6cd5\u5224\u65ad\u4f46\u5bf9\u65b9\u76f4\u63a5 @/\u56de\u590d\u673a\u5668\u4eba\uff0c\u53ea\u80fd\u7b80\u77ed\u95ee\u4e00\u53e5\u6f84\u6e05\uff0c"
     "\u4e0d\u8981\u64c5\u81ea\u6267\u884c\u3002\n"
 )
+ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION = (
+    "- Progressive QQ context: treat `[Recent QQ live context]` as the live chat "
+    "thread immediately before `[Current QQ message]`. Use it to resolve short "
+    "or elliptical follow-ups such as 'continue', 'what about it', 'is it done', "
+    "'change it', 'that one', and task-status questions. Answer only the current "
+    "or pending current messages; never re-answer old recent-context lines. If "
+    "recent context is still insufficient and the current message is directed at "
+    "the bot, read a few current-conversation `.log` lines with "
+    "`mcp_robot_read_conversation_memory`, then summarize instead of pasting raw logs.\n"
+)
 ROBOT_MESSAGING_PROMPT = (
     "QQ MCP Skill：\n\n"
     "这个 skill 提供 QQ 机器人 MCP 能力，不提供人格。\n"
@@ -57,6 +67,7 @@ ROBOT_MESSAGING_PROMPT = (
     "不要在单条 QQ 消息里写空行、回车段落或多个信息块；多个信息点用 `messages` 的多个元素。\n"
     "最终 assistant 文本是 TermMan 内部回复，不会自动发送到 QQ。"
     f"\n{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
+    f"{ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION}"
 )
 
 ROBOT_ACTIVE_CONTEXT_PROMPT = (
@@ -76,6 +87,7 @@ ROBOT_ACTIVE_CONTEXT_PROMPT = (
     "- 历史或 .log 里的旧 assistant/user 轮次都已经处理过，不要因为看见它们再次发送相同回复。\n"
     "- 不要回复普通群聊闲聊或发给别人的消息。不要发送隐藏推理、工具轨迹、原始日志或长摘要。\n"
     f"{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
+    f"{ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION}"
     f"{ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION}"
     f"{NO_QQ_REPLY_INSTRUCTION}"
 )

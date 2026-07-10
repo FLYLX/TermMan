@@ -1,4 +1,10 @@
 from app.services.agent.mcp.local_server import LocalMCPServer
+from app.plugins.robot.contracts import RobotReplyTarget
+from app.plugins.robot.mcp.context import (
+    RobotMCPContext,
+    register_robot_mcp_context,
+    unregister_robot_mcp_context,
+)
 from app.services.agent.session import (
     is_tool_result_auto_routed_to_job,
     should_auto_route_terminal_tool_to_job,
@@ -471,6 +477,91 @@ def test_run_job_defaults_to_background_and_notifies_session(monkeypatch) -> Non
     assert delivered[0].input_type.value == "terminal"
     assert "Background terminal job completed" in delivered[0].content
     assert "install complete" in delivered[0].content
+
+
+def test_background_run_job_queues_robot_completion(monkeypatch) -> None:
+    import threading
+    from types import SimpleNamespace
+
+    from app.plugins.robot.service import robot_service
+
+    item_id = "item-background-job-robot"
+    server = LocalMCPServer()
+    queued: list[dict] = []
+    started = threading.Event()
+    done = threading.Event()
+    target = RobotReplyTarget(
+        target_type="private",
+        target_id="2537134688",
+        metadata={"mentioned_bot": True},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="00000000-0000-0000-0000-000000000001",
+            sender_key="2537134688",
+            reply_target=target,
+            conversation_key="private:2537134688",
+            conversation_generation=7,
+            reply_requires_awake=True,
+        )
+    )
+
+    class FakeConnection:
+        def run_job_http(self, **kwargs):
+            started.set()
+            return {
+                "success": True,
+                "job_id": "job-bg-robot",
+                "command": kwargs["command"],
+                "cwd": "/workspace/item",
+                "exit_code": 0,
+                "timed_out": False,
+                "duration_seconds": 3.0,
+                "output_tail": "temurin installed",
+            }
+
+    def fake_enqueue_background_job_result(**kwargs):
+        queued.append(kwargs)
+        done.set()
+        return True
+
+    monkeypatch.setattr(
+        server,
+        "_get_item_daemon_context",
+        lambda item_id: (
+            SimpleNamespace(owner_id="user-1", working_directory="/workspace/item"),
+            FakeConnection(),
+        ),
+    )
+    monkeypatch.setattr(
+        robot_service,
+        "enqueue_background_job_result",
+        fake_enqueue_background_job_result,
+    )
+
+    try:
+        result = server.call_tool(
+            "run_job",
+            {
+                "item_id": item_id,
+                "command": "apt-get install -y temurin-17-jdk",
+                "_robot_context_token": token,
+            },
+        )
+        assert started.wait(2)
+        assert done.wait(2)
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert "后台" in result[0]["text"] or "鍚庡彴" in result[0]["text"]
+    assert len(queued) == 1
+    assert queued[0]["robot_id"] == "00000000-0000-0000-0000-000000000001"
+    assert queued[0]["item_id"] == item_id
+    assert queued[0]["sender_key"] == "2537134688"
+    assert queued[0]["conversation_key"] == "private:2537134688"
+    assert queued[0]["conversation_generation"] == 7
+    assert queued[0]["reply_target"]["target_id"] == "2537134688"
+    assert "temurin installed" in queued[0]["message"]
 
 
 def test_list_jobs_reports_active_daemon_jobs(monkeypatch) -> None:

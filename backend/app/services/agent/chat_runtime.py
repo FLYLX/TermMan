@@ -44,9 +44,16 @@ def _is_integration_internal_response(value: str) -> bool:
     normalized = str(value or "").strip()
     if not normalized:
         return False
-    return _looks_like_internal_tool_trace(normalized) or fallback_is_delivery_result(
+    if _looks_like_internal_tool_trace(normalized) or fallback_is_delivery_result(
         normalized
-    )
+    ):
+        return True
+    try:
+        from app.plugins.robot.agent.integration import is_robot_read_only_tool_result
+
+        return is_robot_read_only_tool_result(normalized)
+    except Exception:
+        return False
 
 
 def _sanitize_integration_response(value: str) -> str:

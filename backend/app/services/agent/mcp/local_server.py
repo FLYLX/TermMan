@@ -397,6 +397,7 @@ class LocalMCPServer:
         timeout_seconds = self._coerce_job_int(args.get("timeout_seconds"), 600, 1, 3600)
         tail_lines = self._coerce_job_int(args.get("tail_lines"), 80, 1, 300)
         wait_for_completion = bool(args.get("wait_for_completion"))
+        robot_job_context = self._robot_job_context_from_args(args)
         debug_log(
             f"[LocalMCPServer] _run_job: item={item_id}, timeout={timeout_seconds}, tail_lines={tail_lines}, wait={wait_for_completion}, command={command}"
         )
@@ -457,6 +458,7 @@ class LocalMCPServer:
                 connection=connection,
                 request_kwargs=request_kwargs,
                 agent_session=agent_session,
+                robot_job_context=robot_job_context,
             )
             return [
                 {
@@ -484,6 +486,7 @@ class LocalMCPServer:
         connection,
         request_kwargs: dict,
         agent_session,
+        robot_job_context: dict | None = None,
     ) -> None:
         def worker() -> None:
             result: dict
@@ -505,9 +508,21 @@ class LocalMCPServer:
                     "output_tail": "",
                 }
 
+            feedback = self._format_background_job_feedback(result)
+            self._deliver_background_job_to_robot(
+                item_id=item_id,
+                command=command,
+                result=result,
+                robot_job_context=robot_job_context,
+            )
+            if robot_job_context:
+                feedback = (
+                    f"{feedback}\n"
+                    "[Robot notification queued for the QQ conversation that started this job.]"
+                )
+
             if agent_session:
                 agent_session.clear_terminal_job(command)
-                feedback = self._format_background_job_feedback(result)
                 try:
                     from app.services.agent.session import InputMessage, InputType
 
@@ -530,6 +545,74 @@ class LocalMCPServer:
             daemon=True,
         )
         thread.start()
+
+    def _robot_job_context_from_args(self, args: dict) -> dict | None:
+        context_token = str(args.get("_robot_context_token") or "").strip()
+        if not context_token:
+            return None
+        try:
+            from app.plugins.robot.mcp.context import get_robot_mcp_context
+
+            context = get_robot_mcp_context(context_token)
+            if context is None or getattr(context, "reply_target", None) is None:
+                return None
+            return {
+                "robot_id": str(getattr(context, "robot_id", "") or ""),
+                "sender_key": str(getattr(context, "sender_key", "") or ""),
+                "reply_target": context.reply_target.model_dump(mode="json"),
+                "conversation_key": str(getattr(context, "conversation_key", "") or ""),
+                "conversation_generation": int(
+                    getattr(context, "conversation_generation", 0) or 0
+                ),
+            }
+        except Exception as exc:
+            debug_log(f"[LocalMCPServer] failed to capture robot job context: {exc}")
+            return None
+
+    def _deliver_background_job_to_robot(
+        self,
+        *,
+        item_id: str,
+        command: str,
+        result: dict,
+        robot_job_context: dict | None,
+    ) -> None:
+        if not robot_job_context:
+            return
+        try:
+            from app.plugins.robot.service import robot_service
+
+            message = self._format_background_job_robot_message(command, result)
+            queued = robot_service.enqueue_background_job_result(
+                robot_id=robot_job_context.get("robot_id", ""),
+                item_id=item_id,
+                sender_key=robot_job_context.get("sender_key", ""),
+                reply_target=robot_job_context.get("reply_target") or {},
+                conversation_key=robot_job_context.get("conversation_key", ""),
+                conversation_generation=int(
+                    robot_job_context.get("conversation_generation") or 0
+                ),
+                message=message,
+            )
+            if not queued:
+                debug_log(
+                    f"[LocalMCPServer] robot background job result not queued: item={item_id}, command={command}"
+                )
+        except Exception as exc:
+            debug_log(
+                f"[LocalMCPServer] failed to queue robot background job result: item={item_id}, error={exc}"
+            )
+
+    def _format_background_job_robot_message(self, command: str, result: dict) -> str:
+        status = "completed" if result.get("success") else "failed"
+        return (
+            "[Background terminal job result for this QQ conversation]\n"
+            "The terminal background job requested from this QQ conversation has "
+            f"{status}. Summarize the result briefly in Chinese, mention success "
+            "or failure, and do not paste full logs unless the failure reason needs it.\n"
+            f"Command: {command}\n"
+            f"{self._format_job_result(result)}"
+        )
 
     def _format_background_job_feedback(self, result: dict) -> str:
         if result.get("success"):
@@ -814,7 +897,8 @@ class LocalMCPServer:
                 item_id=item_id,
                 content=content,
                 memory_type=memory_type,
-                ttl_days=ttl_days
+                ttl_days=ttl_days,
+                allow_duplicate=True,
             )
             return [{"type": "text", "text": f"✓ 记忆已保存 (ID: {memory_id[:8]}..., 类型: {memory_type}, 有效期: {ttl_days}天)"}]
         except Exception as e:

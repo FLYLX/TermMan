@@ -45,7 +45,7 @@ PENDING_DIRECT_WAKE_TRIGGER_REASONS = frozenset({
     "reply_to_bot",
     "private_chat",
 })
-RECENT_LIVE_CONTEXT_LINES = 8
+RECENT_LIVE_CONTEXT_LINES = 12
 DEFAULT_MAX_MESSAGE_LENGTH = 1200
 REPLY_MESSAGE_TYPE_PRIVATE = "private"
 REPLY_MESSAGE_TYPE_GROUP = "group"
@@ -208,6 +208,82 @@ class RobotService:
         except queue.Full:
             return False
         return True
+
+    def enqueue_background_job_result(
+        self,
+        *,
+        robot_id: uuid.UUID | str,
+        item_id: uuid.UUID | str,
+        sender_key: str,
+        reply_target: RobotReplyTarget | dict,
+        conversation_key: str,
+        conversation_generation: int = 0,
+        message: str,
+    ) -> bool:
+        if not message.strip():
+            return False
+        try:
+            parsed_robot_id = (
+                robot_id if isinstance(robot_id, uuid.UUID) else uuid.UUID(str(robot_id))
+            )
+            parsed_item_id = (
+                item_id if isinstance(item_id, uuid.UUID) else uuid.UUID(str(item_id))
+            )
+        except (TypeError, ValueError):
+            return False
+
+        try:
+            target = (
+                reply_target
+                if isinstance(reply_target, RobotReplyTarget)
+                else RobotReplyTarget.model_validate(reply_target)
+            )
+        except Exception:
+            return False
+        resolved_conversation_key = conversation_key or self._conversation_key_from_target(
+            target,
+            sender_key,
+        )
+        if not resolved_conversation_key:
+            return False
+
+        with Session(engine) as session:
+            robot = session.get(Robot, parsed_robot_id)
+            item = session.get(Item, parsed_item_id)
+            if robot is None or item is None:
+                return False
+            if not robot.is_enabled:
+                return False
+            job = QueuedRobotChatJob(
+                robot_id=robot.id,
+                robot_owner_id=robot.owner_id,
+                item_id=item.id,
+                route_key="background_job",
+                message=message,
+                sender_key=sender_key,
+                reply_target=target.model_copy(deep=True),
+                conversation_key=resolved_conversation_key,
+                direct_reply_trigger=True,
+                reply_context_active=False,
+                conversation_generation=conversation_generation,
+                reply_requires_awake=False,
+                enqueued_at=self._now(),
+            )
+
+        queued = self._enqueue_chat_job(job)
+        record_robot_event(
+            str(parsed_robot_id),
+            direction="backend_queue",
+            event="background_job_result_queued" if queued else "background_job_result_dropped",
+            status="ok" if queued else "ignored",
+            message=preview_text(message),
+            payload={
+                "item_id": str(parsed_item_id),
+                "conversation": resolved_conversation_key,
+                "queue": self.dispatch_queue_snapshot(),
+            },
+        )
+        return queued
 
     def _item_chat_lock(self, item_id: uuid.UUID | str) -> threading.Lock:
         key = str(item_id)
@@ -455,9 +531,10 @@ class RobotService:
         if not text or is_robot_internal_trace_text(text):
             return ""
         try:
+            from app.plugins.robot.agent.integration import is_robot_read_only_tool_result
             from app.services.agent.integrations import fallback_is_delivery_result
 
-            if fallback_is_delivery_result(text):
+            if fallback_is_delivery_result(text) or is_robot_read_only_tool_result(text):
                 return ""
         except Exception:
             pass
@@ -781,7 +858,11 @@ class RobotService:
                         sender_key=message.sender_key,
                         reply_target=message.reply_target,
                     ),
-                    live_context_card="",
+                    live_context_card=self._recent_live_context_card(
+                        robot=robot,
+                        conversation_key=conversation_key,
+                        current_message_text=message_text,
+                    ),
                 ),
                 sender_key=message.sender_key,
                 reply_target=message.reply_target.model_copy(deep=True),
@@ -1153,6 +1234,7 @@ class RobotService:
         robot: Robot,
         conversation_key: str,
         lines: int = RECENT_LIVE_CONTEXT_LINES,
+        current_message_text: str = "",
     ) -> str:
         if not conversation_key:
             return ""
@@ -1178,10 +1260,47 @@ class RobotService:
             return ""
         if not recent:
             return ""
+        recent_lines = self._recent_context_lines_without_current(
+            recent,
+            current_message_text=current_message_text,
+        )
+        if not recent_lines:
+            return ""
         return (
             "[Recent QQ live context; background only, answer only current/pending messages]\n"
-            f"{recent}"
+            + "\n".join(recent_lines)
         )
+
+    def _recent_context_lines_without_current(
+        self,
+        recent: str,
+        *,
+        current_message_text: str = "",
+    ) -> list[str]:
+        recent_lines = [line for line in str(recent or "").splitlines() if line.strip()]
+        current_text = self._normalize_live_context_message_text(current_message_text)
+        if recent_lines and current_text:
+            last_line_text = self._normalize_live_context_message_text(
+                self._conversation_memory_line_text(recent_lines[-1])
+            )
+            if last_line_text == current_text:
+                recent_lines = recent_lines[:-1]
+        return recent_lines
+
+    @staticmethod
+    def _conversation_memory_line_text(line: str) -> str:
+        match = re.match(
+            r"^\[[^\]]+\]\s+(?:user|assistant|system)(?:\s+[^:]+)?:\s*(.*)$",
+            str(line or "").strip(),
+        )
+        if match:
+            return match.group(1).strip()
+        return str(line or "").strip()
+
+    @staticmethod
+    def _normalize_live_context_message_text(value: str) -> str:
+        return re.sub(r"\s+", " ", str(value or "").strip())
+
     def _remember_assistant_conversation_memory(
         self,
         robot_id: uuid.UUID | str,
@@ -1825,6 +1944,23 @@ class RobotService:
     def _conversation_key(self, message: RobotInboundMessage) -> str:
         conversation_type, conversation_id = self._message_conversation_parts(message)
         return f"{conversation_type}:{conversation_id or message.sender_key}"
+
+    def _conversation_key_from_target(
+        self,
+        target: RobotReplyTarget,
+        sender_key: str,
+    ) -> str:
+        target_type = str(target.target_type or "").strip().lower()
+        target_id = str(target.target_id or "").strip()
+        if target_type == "private":
+            return f"{REPLY_MESSAGE_TYPE_PRIVATE}:{target_id or sender_key}"
+        if target_type == "channel":
+            return f"{REPLY_MESSAGE_TYPE_CHANNEL}:{target_id or sender_key}"
+        if target_type == "group":
+            return f"{REPLY_MESSAGE_TYPE_GROUP}:{target_id or sender_key}"
+        if target_type == "command":
+            return f"{REPLY_MESSAGE_TYPE_COMMAND}:{target_id or sender_key}"
+        return f"{target_type or REPLY_MESSAGE_TYPE_GROUP}:{target_id or sender_key}"
 
     def _conversation_controller_key(
         self,
