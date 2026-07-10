@@ -53,8 +53,16 @@ class EmbeddingService:
                 self._model = SentenceTransformer(model_name, local_files_only=True)
                 logger.info("[Embedding] Model loaded from local cache")
             except Exception as local_error:
+                if not settings.EMBEDDING_ALLOW_REMOTE_LOAD:
+                    self._load_error = str(local_error)
+                    logger.warning(
+                        "[Embedding] Local model unavailable and remote load disabled; long-term memory search/write will be skipped: %s",
+                        local_error,
+                    )
+                    raise RuntimeError(self._load_error) from local_error
+
                 logger.warning(
-                    "[Embedding] Local model cache unavailable, trying remote load: %s",
+                    "[Embedding] Local model cache unavailable, trying remote load because EMBEDDING_ALLOW_REMOTE_LOAD=true: %s",
                     local_error,
                 )
                 try:

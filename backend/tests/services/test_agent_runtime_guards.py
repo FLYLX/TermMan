@@ -1126,6 +1126,16 @@ def test_robot_collect_response_sanitizes_mixed_send_tool_trace(
     assert sent == ["在呢。需要做什么测试？"]
 
 
+
+def test_robot_collect_response_done_without_content_is_no_reply() -> None:
+    assert get_robot_agent_integration().fallback_response_content(
+        {"robot_id": "robot-1"},
+        tool_results=[],
+        warnings=[],
+        done_seen=True,
+    ) == "[no_qq_reply]"
+
+
 def test_robot_collect_response_fallback_accepts_warning_completion() -> None:
     assert get_robot_agent_integration().fallback_response_content(
         {"robot_id": "robot-1"},

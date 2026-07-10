@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
+
+import pytest
 
 from app.services.agent.memory.vector_store import VectorStoreService
 from app.services.agent.prompts import builder as prompt_builder
@@ -52,6 +54,40 @@ class FakeMemoryCollection:
             ],
             "distances": [[0.1, 0.1, 0.1, 0.1]],
         }
+
+
+def test_embedding_service_does_not_remote_load_by_default(monkeypatch) -> None:
+    import sys
+
+    from app.core.config import settings
+    from app.services.agent.memory.vector_store import EmbeddingService
+
+    calls: list[tuple[str, bool]] = []
+    fake_module = ModuleType("sentence_transformers")
+
+    class FakeSentenceTransformer:
+        def __init__(self, model_name: str, local_files_only: bool = False):
+            calls.append((model_name, local_files_only))
+            if not local_files_only:
+                raise AssertionError("remote load should not be attempted")
+            raise RuntimeError("local cache missing")
+
+    fake_module.SentenceTransformer = FakeSentenceTransformer
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+    monkeypatch.setattr(settings, "EMBEDDING_ALLOW_REMOTE_LOAD", False)
+
+    service = EmbeddingService()
+    service._model = None
+    service._load_error = None
+    with pytest.raises(RuntimeError):
+        service.encode_single("hello")
+    assert calls == [("all-MiniLM-L6-v2", True)]
+
+    with pytest.raises(RuntimeError):
+        service.encode_single("hello again")
+    assert calls == [("all-MiniLM-L6-v2", True)]
+
+    service._load_error = None
 
 
 def test_vector_memory_search_filters_expired_and_inactive_by_default() -> None:

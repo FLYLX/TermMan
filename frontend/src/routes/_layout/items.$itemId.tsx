@@ -59,7 +59,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
-import { useTerminalConnection } from "@/hooks/useTerminalConnection"
+import {
+  type TerminalOutput,
+  useTerminalConnection,
+} from "@/hooks/useTerminalConnection"
 import { getStatusLabel } from "@/lib/i18n"
 import { getPluginsQueryOptions, isPluginEnabled } from "@/lib/plugins-api"
 
@@ -122,6 +125,17 @@ type BackgroundJobsResponse = {
   daemon_online?: boolean
   error?: string | null
 }
+
+type TerminalOutputGroup =
+  | {
+      kind: "terminal"
+      entries: TerminalOutput[]
+    }
+  | {
+      kind: "job"
+      entries: TerminalOutput[]
+      jobId: string
+    }
 
 type TerminalWebSocketServerForm = {
   name: string
@@ -252,6 +266,139 @@ function shortenJobCommand(command: string): string {
     return normalized || "(empty command)"
   }
   return `${normalized.slice(0, 117)}...`
+}
+
+function getTerminalOutputText(entry: TerminalOutput): string {
+  return entry.stdout || entry.stderr || entry.stdin || ""
+}
+
+function isTerminalInput(entry: TerminalOutput, text: string): boolean {
+  return (
+    Boolean(entry.stdin) ||
+    /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] #/.test(text)
+  )
+}
+
+function isBackgroundJobOutput(entry: TerminalOutput): boolean {
+  return entry.source === "job" || Boolean(entry.job_id)
+}
+
+function buildTerminalOutputGroups(output: TerminalOutput[]): TerminalOutputGroup[] {
+  const groups: TerminalOutputGroup[] = []
+
+  for (const entry of output) {
+    if (isBackgroundJobOutput(entry)) {
+      const jobId = entry.job_id || "job"
+      const lastGroup = groups[groups.length - 1]
+      if (lastGroup?.kind === "job" && lastGroup.jobId === jobId) {
+        lastGroup.entries.push(entry)
+      } else {
+        groups.push({ kind: "job", entries: [entry], jobId })
+      }
+      continue
+    }
+
+    const lastGroup = groups[groups.length - 1]
+    if (lastGroup?.kind === "terminal") {
+      lastGroup.entries.push(entry)
+    } else {
+      groups.push({ kind: "terminal", entries: [entry] })
+    }
+  }
+
+  return groups
+}
+
+function getTerminalJobStatusLabel(entry: TerminalOutput | undefined): string {
+  if (!entry) {
+    return "Job"
+  }
+  if (entry.cancelled) {
+    return "已取消"
+  }
+  if (entry.timed_out) {
+    return "超时"
+  }
+  if (typeof entry.exit_code === "number") {
+    return entry.exit_code === 0 ? "完成" : `失败 ${entry.exit_code}`
+  }
+  if (entry.status === "running") {
+    return "运行中"
+  }
+  if (entry.status === "finished") {
+    return "完成"
+  }
+  return entry.status || "Job"
+}
+
+function getTerminalJobTone(entry: TerminalOutput | undefined): {
+  border: string
+  header: string
+  badge: string
+  text: string
+} {
+  if (entry?.cancelled || entry?.timed_out) {
+    return {
+      border: "border-amber-500/35 bg-amber-500/10",
+      header: "border-amber-500/20 bg-amber-500/10",
+      badge: "border-amber-500/30 bg-amber-500/15 text-amber-200",
+      text: "text-amber-100",
+    }
+  }
+  if (typeof entry?.exit_code === "number" && entry.exit_code !== 0) {
+    return {
+      border: "border-red-500/35 bg-red-500/10",
+      header: "border-red-500/20 bg-red-500/10",
+      badge: "border-red-500/30 bg-red-500/15 text-red-200",
+      text: "text-red-100",
+    }
+  }
+  if (entry?.status === "finished") {
+    return {
+      border: "border-emerald-500/30 bg-emerald-500/10",
+      header: "border-emerald-500/20 bg-emerald-500/10",
+      badge: "border-emerald-500/30 bg-emerald-500/15 text-emerald-200",
+      text: "text-emerald-100",
+    }
+  }
+  return {
+    border: "border-cyan-500/30 bg-cyan-500/10",
+    header: "border-cyan-500/20 bg-cyan-500/10",
+    badge: "border-cyan-500/30 bg-cyan-500/15 text-cyan-200",
+    text: "text-cyan-100",
+  }
+}
+
+function TerminalJobOutputBlock({
+  group,
+}: {
+  group: Extract<TerminalOutputGroup, { kind: "job" }>
+}) {
+  const latestEntry = group.entries[group.entries.length - 1]
+  const tone = getTerminalJobTone(latestEntry)
+  const text = group.entries.map(getTerminalOutputText).join("")
+
+  return (
+    <div className={`my-2 overflow-hidden rounded-lg border ${tone.border}`}>
+      <div
+        className={`flex min-h-8 flex-wrap items-center gap-2 border-b px-3 py-1.5 ${tone.header}`}
+      >
+        <Server className="size-3.5 shrink-0 text-cyan-300" />
+        <span className="font-sans text-[11px] font-semibold text-slate-100">
+          后台 Job 输出
+        </span>
+        <span className="rounded-full border border-zinc-700 bg-zinc-950/70 px-2 py-0.5 text-[10px] text-slate-300">
+          {group.jobId}
+        </span>
+        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${tone.badge}`}>
+          {getTerminalJobStatusLabel(latestEntry)}
+        </span>
+      </div>
+      <pre className={`whitespace-pre-wrap px-3 py-2 text-[12px] leading-5 ${tone.text}`}>
+        {text}
+      </pre>
+    </div>
+  )
 }
 
 function createDefaultInputRules(): Record<string, FilterRule> {
@@ -860,7 +1007,7 @@ function BackgroundJobsPanel({
   const count = jobs.length
 
   return (
-    <div className="mb-3 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/70 text-xs text-slate-300">
+    <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/70 text-xs text-slate-300">
       <div className="flex h-10 items-center justify-between gap-2 px-3">
         <button
           type="button"
@@ -1338,6 +1485,10 @@ function ItemDetailPage({
       showErrorToast(t("items.detail.terminalError", { error }))
     },
   })
+  const terminalOutputGroups = useMemo(
+    () => buildTerminalOutputGroups(output),
+    [output],
+  )
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -2239,17 +2390,6 @@ function ItemDetailPage({
                           data={robotControllerStatus}
                           isFetching={isFetchingRobotControllerStatus}
                         />
-                        <BackgroundJobsPanel
-                          jobs={backgroundJobs?.jobs || []}
-                          isOpen={jobsPanelOpen}
-                          onOpenChange={setJobsPanelOpen}
-                          isFetching={isFetchingBackgroundJobs}
-                          onRefresh={() => void refetchBackgroundJobs()}
-                          onCancel={(jobId) => void handleCancelBackgroundJob(jobId)}
-                          cancelingJobId={jobCancelId}
-                          daemonOnline={Boolean(item.daemon_online)}
-                          error={backgroundJobs?.error}
-                        />
 
                         {isConnecting ? (
                           <div className="h-[34rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] flex flex-col items-center justify-center gap-4 px-4 py-8">
@@ -2274,22 +2414,29 @@ function ItemDetailPage({
                                   {t("items.detail.terminalConnectedWaiting")}
                                 </div>
                               ) : (
-                                output.map((out, idx) => {
-                                  const text = out.stdout || out.stderr || out.stdin || ""
-                                  const isInput =
-                                    Boolean(out.stdin) ||
-                                    /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] #/.test(
-                                      text,
+                                terminalOutputGroups.map((group, groupIndex) => {
+                                  if (group.kind === "job") {
+                                    return (
+                                      <TerminalJobOutputBlock
+                                        key={`job-${groupIndex}-${group.jobId}`}
+                                        group={group}
+                                      />
                                     )
-                                  const isError = Boolean(out.stderr)
-                                  return (
-                                    <span
-                                      key={idx}
-                                      className={`whitespace-pre ${isError ? "text-red-300" : isInput ? "text-green-400" : "text-blue-300"}`}
-                                    >
-                                      {text}
-                                    </span>
-                                  )
+                                  }
+
+                                  return group.entries.map((out, entryIndex) => {
+                                    const text = getTerminalOutputText(out)
+                                    const isInput = isTerminalInput(out, text)
+                                    const isError = Boolean(out.stderr)
+                                    return (
+                                      <span
+                                        key={`terminal-${groupIndex}-${entryIndex}`}
+                                        className={`whitespace-pre ${isError ? "text-red-300" : isInput ? "text-green-400" : "text-blue-300"}`}
+                                      >
+                                        {text}
+                                      </span>
+                                    )
+                                  })
                                 })
                               )}
                             </div>
@@ -2437,6 +2584,19 @@ function ItemDetailPage({
                       <ChatPanel itemId={item.id} />
                     </div>
                   </div>
+                </div>
+                <div className="mt-4">
+                  <BackgroundJobsPanel
+                    jobs={backgroundJobs?.jobs || []}
+                    isOpen={jobsPanelOpen}
+                    onOpenChange={setJobsPanelOpen}
+                    isFetching={isFetchingBackgroundJobs}
+                    onRefresh={() => void refetchBackgroundJobs()}
+                    onCancel={(jobId) => void handleCancelBackgroundJob(jobId)}
+                    cancelingJobId={jobCancelId}
+                    daemonOnline={Boolean(item.daemon_online)}
+                    error={backgroundJobs?.error}
+                  />
                 </div>
               </section>
             </TabsContent>

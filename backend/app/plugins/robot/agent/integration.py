@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.plugins.robot import is_robot_plugin_enabled
 from app.plugins.robot.internal_trace import (
+    NO_QQ_REPLY_MARKER,
     compact_robot_visible_message_text,
     is_robot_internal_trace_text,
     sanitize_robot_visible_text,
@@ -491,7 +492,7 @@ class RobotAgentIntegration:
                 return warning.strip()
 
         if done_seen:
-            return "Agent completed without a final response."
+            return NO_QQ_REPLY_MARKER
         return ""
 
     def record_no_final_response(

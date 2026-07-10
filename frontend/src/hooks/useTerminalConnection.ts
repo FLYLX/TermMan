@@ -2,13 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { io, type Socket } from "socket.io-client"
 import { ItemsService } from "@/client"
 
-interface TerminalOutput {
+export interface TerminalOutput {
   stdout?: string
   stderr?: string
   stdin?: string
   source?: string
   status?: string
   job_id?: string
+  exit_code?: number
+  timed_out?: boolean
+  cancelled?: boolean
 }
 
 interface RoomInfo {
@@ -176,6 +179,9 @@ function appendTerminalOutput(
     source: incoming.source,
     status: incoming.status,
     job_id: incoming.job_id,
+    exit_code: incoming.exit_code,
+    timed_out: incoming.timed_out,
+    cancelled: incoming.cancelled,
   }
 
   for (const [key, value] of textFields) {
