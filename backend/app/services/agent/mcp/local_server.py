@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import sys
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +39,14 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="run_job",
-            description="Run a non-interactive long-running shell job in an isolated daemon PTY. Use this for downloads, installs, builds, tests, and other commands that should report once after completion. Do not use for interactive shells, REPLs, Minecraft/server consoles, or long-lived services.",
+            description="Start a non-interactive long-running shell job in an isolated daemon PTY. Use this for downloads, installs, builds, tests, and other commands that should run in the background and notify the agent once after completion. Do not use for interactive shells, REPLs, Minecraft/server consoles, or long-lived services.",
             input_schema={
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "Non-interactive shell command to run as a one-shot job."},
                     "timeout_seconds": {"type": "integer", "description": "Maximum seconds before the job is terminated. Default 600, max 3600.", "default": 600},
-                    "tail_lines": {"type": "integer", "description": "Number of final output lines returned to the agent. Default 80, max 300.", "default": 80}
+                    "tail_lines": {"type": "integer", "description": "Number of final output lines returned to the agent. Default 80, max 300.", "default": 80},
+                    "wait_for_completion": {"type": "boolean", "description": "Optional. Default false. When false, return immediately and deliver the final result as a later terminal event.", "default": False}
                 },
                 "required": ["command"]
             },
@@ -393,8 +395,9 @@ class LocalMCPServer:
 
         timeout_seconds = self._coerce_job_int(args.get("timeout_seconds"), 600, 1, 3600)
         tail_lines = self._coerce_job_int(args.get("tail_lines"), 80, 1, 300)
+        wait_for_completion = bool(args.get("wait_for_completion"))
         debug_log(
-            f"[LocalMCPServer] _run_job: item={item_id}, timeout={timeout_seconds}, tail_lines={tail_lines}, command={command}"
+            f"[LocalMCPServer] _run_job: item={item_id}, timeout={timeout_seconds}, tail_lines={tail_lines}, wait={wait_for_completion}, command={command}"
         )
         agent_session = None
         try:
@@ -429,26 +432,117 @@ class LocalMCPServer:
 
         try:
             item, connection = self._get_item_daemon_context(str(item_id))
-            result = connection.run_job_http(
-                item_uuid=str(item_id),
-                user_uuid=str(item.owner_id),
+            request_kwargs = {
+                "item_uuid": str(item_id),
+                "user_uuid": str(item.owner_id),
+                "command": command,
+                "working_directory": item.working_directory,
+                "timeout_seconds": timeout_seconds,
+                "tail_lines": tail_lines,
+            }
+
+            if wait_for_completion:
+                result = connection.run_job_http(**request_kwargs)
+                debug_log(
+                    f"[LocalMCPServer] run_job result: item={item_id}, success={result.get('success')}, exit_code={result.get('exit_code')}, timed_out={result.get('timed_out')}"
+                )
+                if not result.get("success"):
+                    return [{"type": "text", "text": f"Error: {result.get('error', 'daemon job failed')}"}]
+                return [{"type": "text", "text": self._format_job_result(result)}]
+
+            self._start_background_job_thread(
+                item_id=str(item_id),
                 command=command,
-                working_directory=item.working_directory,
-                timeout_seconds=timeout_seconds,
-                tail_lines=tail_lines,
+                connection=connection,
+                request_kwargs=request_kwargs,
+                agent_session=agent_session,
             )
-            debug_log(
-                f"[LocalMCPServer] run_job result: item={item_id}, success={result.get('success')}, exit_code={result.get('exit_code')}, timed_out={result.get('timed_out')}"
-            )
-            if not result.get("success"):
-                return [{"type": "text", "text": f"Error: {result.get('error', 'daemon job failed')}"}]
-            return [{"type": "text", "text": self._format_job_result(result)}]
+            return [
+                {
+                    "type": "text",
+                    "text": (
+                        "后台任务已启动。下载、安装或构建会在独立任务里执行，"
+                        "完成后会把最终结果自动送回 Agent；在完成前不要重复发送新的终端命令。"
+                    ),
+                }
+            ]
         except Exception as e:
             debug_log(f"[LocalMCPServer] run_job error: {e}")
-            return [{"type": "text", "text": f"Error: {e}"}]
-        finally:
             if agent_session:
                 agent_session.clear_terminal_job(command)
+            return [{"type": "text", "text": f"Error: {e}"}]
+        finally:
+            if wait_for_completion and agent_session:
+                agent_session.clear_terminal_job(command)
+
+    def _start_background_job_thread(
+        self,
+        *,
+        item_id: str,
+        command: str,
+        connection,
+        request_kwargs: dict,
+        agent_session,
+    ) -> None:
+        def worker() -> None:
+            result: dict
+            try:
+                result = connection.run_job_http(**request_kwargs)
+                debug_log(
+                    f"[LocalMCPServer] background run_job result: item={item_id}, success={result.get('success')}, exit_code={result.get('exit_code')}, timed_out={result.get('timed_out')}"
+                )
+            except Exception as exc:
+                debug_log(f"[LocalMCPServer] background run_job error: item={item_id}, error={exc}")
+                result = {
+                    "success": False,
+                    "error": str(exc),
+                    "command": command,
+                    "job_id": "",
+                    "exit_code": None,
+                    "timed_out": False,
+                    "duration_seconds": "",
+                    "output_tail": "",
+                }
+
+            if agent_session:
+                agent_session.clear_terminal_job(command)
+                feedback = self._format_background_job_feedback(result)
+                try:
+                    from app.services.agent.session import InputMessage, InputType
+
+                    agent_session.process_input(
+                        InputMessage(
+                            input_type=InputType.TERMINAL,
+                            content=feedback,
+                            raw_content=feedback,
+                            query="background job completed",
+                        )
+                    )
+                except Exception as exc:
+                    debug_log(
+                        f"[LocalMCPServer] failed to deliver background job feedback: item={item_id}, error={exc}"
+                    )
+
+        thread = threading.Thread(
+            target=worker,
+            name=f"termman-job-{item_id[:8]}",
+            daemon=True,
+        )
+        thread.start()
+
+    def _format_background_job_feedback(self, result: dict) -> str:
+        if result.get("success"):
+            return (
+                "[Background terminal job completed]\n"
+                "后台任务已完成，请根据最终结果继续处理后续步骤。\n"
+                f"{self._format_job_result(result)}"
+            )
+        return (
+            "[Background terminal job failed]\n"
+            "后台任务请求失败，请根据错误信息决定是否重试或换方案。\n"
+            f"Error: {result.get('error', 'daemon job failed')}\n"
+            f"command: {result.get('command', '')}"
+        )
 
     def _execute_command(self, args: dict) -> list:
         command = args.get("command", "")

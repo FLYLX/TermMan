@@ -300,6 +300,7 @@ def test_run_job_reports_final_daemon_result(monkeypatch) -> None:
             "command": "bun install",
             "timeout_seconds": 12,
             "tail_lines": 5,
+            "wait_for_completion": True,
         },
     )
 
@@ -318,6 +319,72 @@ def test_run_job_reports_final_daemon_result(monkeypatch) -> None:
         "timeout_seconds": 12,
         "tail_lines": 5,
     }
+
+
+def test_run_job_defaults_to_background_and_notifies_session(monkeypatch) -> None:
+    import threading
+    from types import SimpleNamespace
+
+    from app.services.agent.session import RUN_JOB_TOOL_NAME, agent_session_manager
+
+    item_id = "item-background-job"
+    server = LocalMCPServer()
+    delivered: list[object] = []
+    started = threading.Event()
+    allow_finish = threading.Event()
+    done = threading.Event()
+
+    class FakeConnection:
+        def run_job_http(self, **kwargs):
+            started.set()
+            assert allow_finish.wait(2)
+            return {
+                "success": True,
+                "job_id": "job-bg",
+                "command": kwargs["command"],
+                "cwd": "/workspace/item",
+                "exit_code": 0,
+                "timed_out": False,
+                "duration_seconds": 3.0,
+                "output_tail": "install complete",
+            }
+
+    monkeypatch.setattr(
+        server,
+        "_get_item_daemon_context",
+        lambda item_id: (
+            SimpleNamespace(owner_id="user-1", working_directory="/workspace/item"),
+            FakeConnection(),
+        ),
+    )
+
+    agent_session_manager.remove_session(item_id)
+    session = agent_session_manager.get_or_create_session(item_id, "handler-1")
+
+    def fake_process_input(input_msg):
+        delivered.append(input_msg)
+        done.set()
+
+    monkeypatch.setattr(session, "process_input", fake_process_input)
+    try:
+        result = server.call_tool(
+            "run_job",
+            {"item_id": item_id, "command": "apt-get install -y temurin-17-jdk"},
+        )
+        assert started.wait(2)
+        assert session.has_running_terminal_job() is True
+        allow_finish.set()
+        assert done.wait(2)
+    finally:
+        allow_finish.set()
+        agent_session_manager.remove_session(item_id)
+
+    assert "后台任务已启动" in result[0]["text"]
+    assert session.has_running_terminal_job() is False
+    assert len(delivered) == 1
+    assert delivered[0].input_type.value == "terminal"
+    assert "Background terminal job completed" in delivered[0].content
+    assert "install complete" in delivered[0].content
 
 
 def test_list_jobs_reports_active_daemon_jobs(monkeypatch) -> None:
@@ -437,7 +504,11 @@ def test_run_job_marks_busy_and_blocks_nested_terminal_commands(monkeypatch) -> 
     try:
         result = server.call_tool(
             "run_job",
-            {"item_id": item_id, "command": "curl https://example.test/file -o file"},
+            {
+                "item_id": item_id,
+                "command": "curl https://example.test/file -o file",
+                "wait_for_completion": True,
+            },
         )
     finally:
         agent_session_manager.remove_session(item_id)

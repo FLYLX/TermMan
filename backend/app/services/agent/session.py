@@ -1276,9 +1276,6 @@ class AgentSession:
         return True
 
     def queue_input(self, input_msg: InputMessage) -> bool:
-        if self._try_reply_busy_terminal_job(input_msg):
-            return True
-
         with self.lock:
             try:
                 merged = False
@@ -1567,13 +1564,38 @@ class AgentSession:
             pending_command=pending_command.command if pending_command else "",
         )
 
+    def _build_running_terminal_job_prompt_context(
+        self,
+        running_job: RunningTerminalJob,
+    ) -> str:
+        elapsed_seconds = int((datetime.now() - running_job.started_at).total_seconds())
+        return (
+            "当前有一个后台终端任务正在运行。"
+            f"已运行 {elapsed_seconds}s，超时上限 {running_job.timeout_seconds}s。"
+            f"任务命令：`{self._short_command(running_job.command)}`。"
+            "你可以正常回答不需要终端的新问题。"
+            "如果用户问任务状态，只说明后台任务仍在运行，完成后系统会把最终结果作为新的终端反馈发给你。"
+            "在后台任务完成前，不要调用 execute_command 或 run_job 重复发送新的 shell 命令；"
+            "如果确实要终止任务，先 list_jobs 再 cancel_job。"
+        )
+
     def _build_chat_messages(self, agent: Agent, input_msg: InputMessage) -> list[dict]:
-        return build_chat_turn_messages(
+        messages = build_chat_turn_messages(
             agent,
             item_id=self.item_id,
             message=input_msg.content,
             query=input_msg.query or input_msg.content,
         )
+        running_job = self._get_running_terminal_job()
+        if running_job:
+            messages.insert(
+                max(len(messages) - 1, 0),
+                {
+                    "role": "system",
+                    "content": self._build_running_terminal_job_prompt_context(running_job),
+                },
+            )
+        return messages
 
     def _get_skill_prompt(
         self,

@@ -1536,7 +1536,7 @@ def test_running_terminal_job_blocks_new_shell_and_job_commands() -> None:
     ) is None
 
 
-def test_chat_during_running_terminal_job_gets_direct_busy_reply() -> None:
+def test_chat_during_running_terminal_job_is_queued_for_agent() -> None:
     from app.services.agent.session import (
         AgentSession,
         InputMessage,
@@ -1560,12 +1560,31 @@ def test_chat_during_running_terminal_job_gets_direct_busy_reply() -> None:
     )
 
     assert queued is True
-    assert session.input_queue.qsize() == 0
-    response = next(event for event in events if event.get("type") == "agent_response")
-    assert "\u540e\u53f0\u4efb\u52a1\u8fd8\u5728\u8dd1" in response["content"]
-    assert "\u4e0d\u4f1a\u91cd\u590d\u53d1\u547d\u4ee4" in response["content"]
-    assert "apt-get update" not in response["content"]
-    assert response["terminal_job_running"] is True
+    assert session.input_queue.qsize() == 1
+    assert not [event for event in events if event.get("type") == "agent_response"]
+
+
+def test_running_terminal_job_context_is_injected_into_chat_prompt() -> None:
+    from app.services.agent.session import (
+        AgentSession,
+        InputMessage,
+        InputType,
+        RUN_JOB_TOOL_NAME,
+    )
+
+    session = AgentSession("item-1", "handler-1")
+    session.mark_terminal_job_started(
+        RUN_JOB_TOOL_NAME,
+        {"command": "apt-get install -y temurin-17-jdk", "timeout_seconds": 600},
+    )
+
+    context = session._build_running_terminal_job_prompt_context(
+        session._get_running_terminal_job()
+    )
+
+    assert "后台终端任务正在运行" in context
+    assert "不要调用 execute_command 或 run_job" in context
+    assert "apt-get install -y temurin-17-jdk" in context
 
 
 def test_turn_guard_reset_timeout_window_after_long_job() -> None:
