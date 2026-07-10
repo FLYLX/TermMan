@@ -2,6 +2,7 @@ import os
 import re
 import select
 import signal
+import subprocess
 import threading
 import time
 import uuid
@@ -81,6 +82,7 @@ class JobRunner:
     MAX_TIMEOUT_SECONDS = 3600
     DEFAULT_TAIL_LINES = 80
     MAX_TAIL_LINES = 300
+    HEARTBEAT_INTERVAL_SECONDS = 30
 
     def __init__(self):
         self.encoding = config.get("TERMINAL_ENCODING", "utf-8")
@@ -108,7 +110,8 @@ class JobRunner:
         started_at = datetime.now()
         start_monotonic = time.monotonic()
         pid: int | None = None
-        master_fd: int | None = None
+        process: subprocess.Popen[bytes] | None = None
+        stdout_fd: int | None = None
         timed_out = False
         cancelled = False
         cancel_terminate_sent = False
@@ -146,17 +149,13 @@ class JobRunner:
                 },
             )
 
-            pty_module = self._get_pty_module()
-            pid, master_fd = pty_module.fork()
-            if pid == 0:
-                try:
-                    self._exec_child(cwd, command, env)
-                except Exception as child_exc:
-                    os.write(2, f"Job exec failed: {child_exc}\n".encode(self.encoding, errors="replace"))
-                    os._exit(127)
-
-            os.set_blocking(master_fd, False)
-            logger.info(f"[JobRunner] PTY forked: job_id={job_id} pid={pid} cwd={cwd}")
+            process = self._start_process(cwd, command, env)
+            pid = process.pid
+            if process.stdout is None:
+                raise JobRunnerError("job process stdout pipe was not created")
+            stdout_fd = process.stdout.fileno()
+            os.set_blocking(stdout_fd, False)
+            logger.info(f"[JobRunner] subprocess started: job_id={job_id} pid={pid} cwd={cwd}")
             self._register_active_job(
                 item_uuid=item_uuid,
                 job_id=job_id,
@@ -166,6 +165,8 @@ class JobRunner:
             )
 
             pending_line = ""
+            last_output_monotonic = start_monotonic
+            last_heartbeat_monotonic = start_monotonic
             while True:
                 now = time.monotonic()
                 if self._is_cancel_requested(job_id):
@@ -177,23 +178,24 @@ class JobRunner:
                         )
                         self._terminate_process(pid)
 
-                if now - start_monotonic > timeout:
+                if not timed_out and now - start_monotonic > timeout:
                     timed_out = True
                     logger.warning(
                         f"[JobRunner] Job timeout: job_id={job_id} pid={pid} timeout={timeout} command={command!r}"
                     )
                     self._terminate_process(pid)
 
-                ready, _, _ = select.select([master_fd], [], [], 0.1)
+                ready, _, _ = select.select([stdout_fd], [], [], 0.1)
                 if ready:
                     try:
-                        chunk = os.read(master_fd, 4096)
+                        chunk = os.read(stdout_fd, 4096)
                     except BlockingIOError:
                         chunk = b""
                     except OSError:
                         chunk = b""
 
                     if chunk:
+                        last_output_monotonic = now
                         read_iterations += 1
                         output_bytes += len(chunk)
                         decoded = chunk.decode(self.encoding, errors="replace")
@@ -205,19 +207,47 @@ class JobRunner:
                             tail=tail,
                         )
 
-                wait_pid, status = os.waitpid(pid, os.WNOHANG)
-                if wait_pid == pid:
-                    exit_code = self._status_to_exit_code(status)
+                exit_code = process.poll()
+                if exit_code is not None:
+                    pending_line = self._drain_process_output(
+                        stdout_fd=stdout_fd,
+                        item_uuid=item_uuid,
+                        job_id=job_id,
+                        pending_line=pending_line,
+                        tail=tail,
+                    )
                     logger.info(
                         f"[JobRunner] Job process exited: job_id={job_id} pid={pid} "
                         f"exit_code={exit_code} timed_out={timed_out}"
                     )
                     break
 
-                if timed_out:
-                    wait_pid, status = os.waitpid(pid, 0)
-                    exit_code = self._status_to_exit_code(status)
-                    break
+                if timed_out and process.poll() is None:
+                    try:
+                        exit_code = process.wait(timeout=1)
+                        pending_line = self._drain_process_output(
+                            stdout_fd=stdout_fd,
+                            item_uuid=item_uuid,
+                            job_id=job_id,
+                            pending_line=pending_line,
+                            tail=tail,
+                        )
+                        break
+                    except subprocess.TimeoutExpired:
+                        self._terminate_process(pid)
+
+                if (
+                    now - last_output_monotonic >= self.HEARTBEAT_INTERVAL_SECONDS
+                    and now - last_heartbeat_monotonic >= self.HEARTBEAT_INTERVAL_SECONDS
+                ):
+                    last_heartbeat_monotonic = now
+                    self._broadcast_job_heartbeat(
+                        item_uuid=item_uuid,
+                        job_id=job_id,
+                        idle_seconds=round(now - last_output_monotonic),
+                        elapsed_seconds=round(now - start_monotonic),
+                        timeout_seconds=timeout,
+                    )
 
             if pending_line.strip():
                 self._append_output_line(item_uuid, job_id, pending_line, tail)
@@ -234,9 +264,9 @@ class JobRunner:
             }
         finally:
             self._unregister_active_job(job_id)
-            if master_fd is not None:
+            if process and process.stdout:
                 try:
-                    os.close(master_fd)
+                    process.stdout.close()
                 except Exception:
                     pass
 
@@ -380,13 +410,6 @@ class JobRunner:
             active_job = self._active_jobs.get(job_id)
             return bool(active_job and active_job.cancel_requested)
 
-    def _get_pty_module(self):
-        try:
-            import pty
-        except ImportError as exc:
-            raise JobRunnerError("daemon job runner requires POSIX pty support") from exc
-        return pty
-
     def _resolve_workdir(self, user_uuid: str, item_uuid: str, working_directory: str | None) -> str:
         try:
             return str(
@@ -400,27 +423,73 @@ class JobRunner:
         except ItemPathError as exc:
             raise JobRunnerError(f"invalid working_directory: {exc}") from exc
 
-    def _exec_child(self, cwd: str, command: str, env: dict[str, str] | None):
-        os.chdir(cwd)
+    def _build_child_env(self, env: dict[str, str] | None) -> dict[str, str]:
         child_env = os.environ.copy()
         child_env.update(
             {
-                "TERM": "xterm-256color",
+                "TERM": "dumb",
                 "COLUMNS": "120",
                 "LINES": "30",
                 "LANG": child_env.get("LANG", "C.UTF-8"),
                 "LC_ALL": child_env.get("LC_ALL", "C.UTF-8"),
                 "LC_CTYPE": child_env.get("LC_CTYPE", child_env.get("LC_ALL", "C.UTF-8")),
+                "CI": child_env.get("CI", "1"),
+                "DEBIAN_FRONTEND": child_env.get("DEBIAN_FRONTEND", "noninteractive"),
+                "APT_LISTCHANGES_FRONTEND": child_env.get("APT_LISTCHANGES_FRONTEND", "none"),
+                "NEEDRESTART_MODE": child_env.get("NEEDRESTART_MODE", "a"),
+                "GPG_TTY": "",
                 "PYTHONUTF8": child_env.get("PYTHONUTF8", "1"),
                 "PYTHONIOENCODING": child_env.get("PYTHONIOENCODING", "utf-8"),
+                "PYTHONUNBUFFERED": child_env.get("PYTHONUNBUFFERED", "1"),
             }
         )
         if env:
             child_env.update({str(key): str(value) for key, value in env.items()})
-        os.environ.clear()
-        os.environ.update(child_env)
+        return child_env
+
+    def _start_process(
+        self,
+        cwd: str,
+        command: str,
+        env: dict[str, str] | None,
+    ) -> subprocess.Popen[bytes]:
         shell = config.get("TERMINAL_SHELL", "/bin/bash")
-        os.execvp(shell, [shell, "-lc", command])
+        return subprocess.Popen(
+            [shell, "-lc", command],
+            cwd=cwd,
+            env=self._build_child_env(env),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+
+    def _drain_process_output(
+        self,
+        *,
+        stdout_fd: int,
+        item_uuid: str,
+        job_id: str,
+        pending_line: str,
+        tail: deque[str],
+    ) -> str:
+        while True:
+            try:
+                chunk = os.read(stdout_fd, 4096)
+            except BlockingIOError:
+                return pending_line
+            except OSError:
+                return pending_line
+            if not chunk:
+                return pending_line
+            decoded = chunk.decode(self.encoding, errors="replace")
+            pending_line = self._handle_output_chunk(
+                item_uuid=item_uuid,
+                job_id=job_id,
+                decoded=decoded,
+                pending_line=pending_line,
+                tail=tail,
+            )
 
     def _handle_output_chunk(
         self,
@@ -457,6 +526,32 @@ class JobRunner:
         tail.append(clean_line)
         timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
         self._write_job_log(item_uuid, f"{timestamp} [job:{job_id}] {clean_line}\n")
+
+    def _broadcast_job_heartbeat(
+        self,
+        *,
+        item_uuid: str,
+        job_id: str,
+        idle_seconds: int,
+        elapsed_seconds: int,
+        timeout_seconds: int,
+    ) -> None:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self._broadcast(
+            item_uuid,
+            {
+                "stdout": (
+                    f"[{timestamp}] 后台 Job 仍在运行：{idle_seconds}s 没有新输出"
+                    f"（已运行 {elapsed_seconds}s / 超时 {timeout_seconds}s）\n"
+                ),
+                "stderr": "",
+                "source": "job",
+                "job_id": job_id,
+                "status": "running",
+                "idle_seconds": idle_seconds,
+                "elapsed_seconds": elapsed_seconds,
+            },
+        )
 
     def _write_job_log(self, item_uuid: str, content: str):
         if not daemon_log_manager.write_to_log(item_uuid, content):

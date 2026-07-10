@@ -39,7 +39,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="run_job",
-            description="Start a non-interactive long-running shell job in an isolated daemon PTY. Use this for downloads, installs, builds, tests, and other commands that should run in the background and notify the agent once after completion. Do not use for interactive shells, REPLs, Minecraft/server consoles, or long-lived services.",
+            description="Start a non-interactive long-running shell job in a daemon background process with stdin closed. Use this for downloads, installs, builds, tests, and other one-shot commands that should run in the background and notify the agent once after completion. Do not use for interactive shells, REPLs, Minecraft/server consoles, or long-lived services. Prefer one clear operation per job; avoid very long &&/pipe chains when a later step may need diagnosis.",
             input_schema={
                 "type": "object",
                 "properties": {

@@ -207,6 +207,50 @@ def test_job_runner_filters_progress_noise_from_tail(monkeypatch):
     assert len(written) == 2
 
 
+def test_job_runner_background_env_is_non_interactive():
+    from service.job_runner import JobRunner
+
+    env = JobRunner()._build_child_env(None)
+
+    assert env["TERM"] == "dumb"
+    assert env["DEBIAN_FRONTEND"] == "noninteractive"
+    assert env["APT_LISTCHANGES_FRONTEND"] == "none"
+    assert env["NEEDRESTART_MODE"] == "a"
+    assert env["GPG_TTY"] == ""
+    assert env["PYTHONUNBUFFERED"] == "1"
+
+
+def test_job_runner_starts_non_interactive_subprocess(monkeypatch):
+    import importlib
+    import subprocess
+
+    from service.job_runner import JobRunner
+
+    job_runner_module = importlib.import_module("service.job_runner")
+    captured = {}
+
+    class FakePopen:
+        def __init__(self, args, **kwargs):
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            self.pid = 1234
+            self.stdout = None
+
+    monkeypatch.setattr(job_runner_module.config, "get", lambda key, default=None: default)
+    monkeypatch.setattr(job_runner_module.subprocess, "Popen", FakePopen)
+
+    process = JobRunner()._start_process("/tmp", "echo ok", None)
+
+    assert process.pid == 1234
+    assert captured["args"] == ["/bin/bash", "-lc", "echo ok"]
+    assert captured["kwargs"]["cwd"] == "/tmp"
+    assert captured["kwargs"]["stdin"] is subprocess.DEVNULL
+    assert captured["kwargs"]["stdout"] is subprocess.PIPE
+    assert captured["kwargs"]["stderr"] is subprocess.STDOUT
+    assert captured["kwargs"]["start_new_session"] is True
+    assert captured["kwargs"]["env"]["DEBIAN_FRONTEND"] == "noninteractive"
+
+
 def test_internal_job_cancel_route_delegates_to_job_runner(monkeypatch):
     from api import http_routes
 
