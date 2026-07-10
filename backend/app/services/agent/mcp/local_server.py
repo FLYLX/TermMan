@@ -51,6 +51,30 @@ class LocalMCPServer:
             handler=self._run_job,
             skip_memory=True
         )
+        self.register_tool(
+            name="list_jobs",
+            description="List currently running daemon background jobs for this terminal item. Use before deciding which job to cancel.",
+            input_schema={
+                "type": "object",
+                "properties": {},
+                "required": []
+            },
+            handler=self._list_jobs,
+            skip_memory=True
+        )
+        self.register_tool(
+            name="cancel_job",
+            description="Cancel a running daemon background job by job_id after listing jobs.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "job_id": {"type": "string", "description": "Job id returned by list_jobs."}
+                },
+                "required": ["job_id"]
+            },
+            handler=self._cancel_job,
+            skip_memory=True
+        )
         
         self.register_tool(
             name="interrupt_command",
@@ -309,6 +333,58 @@ class LocalMCPServer:
             f"output_tail:\n{output_tail}"
         )
 
+    def _format_jobs_result(self, result: dict) -> str:
+        jobs = result.get("jobs") or []
+        if not jobs:
+            return "没有运行中的后台任务。"
+        lines = [f"运行中的后台任务：{len(jobs)} 个"]
+        for job in jobs:
+            command = str(job.get("command") or "")
+            if len(command) > 120:
+                command = f"{command[:117]}..."
+            lines.append(
+                " - "
+                f"job_id={job.get('job_id', '')} "
+                f"elapsed={int(float(job.get('elapsed_seconds') or 0))}s "
+                f"cancel_requested={bool(job.get('cancel_requested'))} "
+                f"command={command}"
+            )
+        return "\n".join(lines)
+
+    def _list_jobs(self, args: dict) -> list:
+        item_id = args.get("item_id", "")
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id required"}]
+        try:
+            _item, connection = self._get_item_daemon_context(str(item_id))
+            result = connection.list_jobs_http(item_uuid=str(item_id))
+            if not result.get("success"):
+                return [{"type": "text", "text": f"Error: {result.get('error', 'failed to list jobs')}"}]
+            return [{"type": "text", "text": self._format_jobs_result(result)}]
+        except Exception as e:
+            debug_log(f"[LocalMCPServer] list_jobs error: {e}")
+            return [{"type": "text", "text": f"Error: {e}"}]
+
+    def _cancel_job(self, args: dict) -> list:
+        item_id = args.get("item_id", "")
+        job_id = str(args.get("job_id") or "").strip()
+        if not item_id or not job_id:
+            return [{"type": "text", "text": "Error: item_id and job_id required"}]
+        try:
+            _item, connection = self._get_item_daemon_context(str(item_id))
+            result = connection.cancel_job_http(item_uuid=str(item_id), job_id=job_id)
+            if result.get("success") or result.get("cancelled"):
+                from app.services.agent.session import agent_session_manager
+
+                agent_session = agent_session_manager.get_session(str(item_id))
+                if agent_session:
+                    agent_session.clear_terminal_job()
+                return [{"type": "text", "text": f"后台任务已取消：{result.get('job_id', job_id)}"}]
+            return [{"type": "text", "text": f"Error: {result.get('error', 'failed to cancel job')}"}]
+        except Exception as e:
+            debug_log(f"[LocalMCPServer] cancel_job error: {e}")
+            return [{"type": "text", "text": f"Error: {e}"}]
+
     def _run_job(self, args: dict) -> list:
         command = (args.get("command") or "").strip()
         item_id = args.get("item_id", "")
@@ -430,6 +506,26 @@ class LocalMCPServer:
             debug_log(f"[LocalMCPServer] execute_command error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
     
+    def _cancel_running_job_for_item(self, item_id: str) -> dict | None:
+        try:
+            from app.services.agent.session import agent_session_manager
+
+            agent_session = agent_session_manager.get_session(str(item_id))
+            if not agent_session or not agent_session.has_running_terminal_job():
+                return None
+
+            _item, connection = self._get_item_daemon_context(str(item_id))
+            result = connection.cancel_job_http(item_uuid=str(item_id))
+            if result.get("success") or result.get("cancelled"):
+                agent_session.clear_terminal_job()
+            elif result.get("error") == "No running job for item":
+                agent_session.clear_terminal_job()
+                result["local_lock_cleared"] = True
+            return result
+        except Exception as exc:
+            debug_log(f"[LocalMCPServer] cancel running job error for item={item_id}: {exc}")
+            return {"success": False, "error": str(exc)}
+
     def _interrupt_command(self, args: dict) -> list:
         item_id = args.get("item_id", "")
         
@@ -437,6 +533,14 @@ class LocalMCPServer:
         
         if not item_id:
             return [{"type": "text", "text": "Error: item_id required"}]
+
+        cancel_result = self._cancel_running_job_for_item(str(item_id))
+        if cancel_result is not None:
+            if cancel_result.get("success") or cancel_result.get("cancelled"):
+                return [{"type": "text", "text": "\u540e\u53f0\u4efb\u52a1\u5df2\u4e2d\u65ad\uff0c\u7ec8\u7aef\u9501\u5df2\u91ca\u653e\u3002"}]
+            if cancel_result.get("local_lock_cleared"):
+                return [{"type": "text", "text": "daemon \u91cc\u6ca1\u6709\u627e\u5230\u6b63\u5728\u8fd0\u884c\u7684\u540e\u53f0\u4efb\u52a1\uff0c\u5df2\u6e05\u7406\u672c\u5730\u7ec8\u7aef\u9501\u3002"}]
+            return [{"type": "text", "text": f"\u540e\u53f0\u4efb\u52a1\u4e2d\u65ad\u5931\u8d25: {cancel_result.get('error', 'unknown error')}"}]
         
         try:
             from app.services.socket_pool import InputSDK

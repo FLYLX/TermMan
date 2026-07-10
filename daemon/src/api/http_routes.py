@@ -51,6 +51,10 @@ class InternalJobRunRequest(BaseModel):
     env: Optional[dict[str, str]] = None
 
 
+class InternalJobCancelRequest(BaseModel):
+    job_id: Optional[str] = None
+
+
 def _extract_bearer_token(request: Request) -> str:
     authorization = request.headers.get("Authorization", "").strip()
     if not authorization.lower().startswith("bearer "):
@@ -122,6 +126,14 @@ async def runtime_stats(_api_key: Any = Depends(verify_api_key)):
     return payload
 
 
+@router.get("/internal/items/{item_uuid}/jobs")
+def list_item_jobs(
+    item_uuid: str,
+    _api_key: Any = Depends(verify_api_key),
+):
+    return job_runner.list_jobs(item_uuid=item_uuid)
+
+
 @router.post("/internal/items/{item_uuid}/jobs/run")
 def run_item_job(
     item_uuid: str,
@@ -145,6 +157,18 @@ def run_item_job(
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "Job failed"))
     return result
+
+
+@router.post("/internal/items/{item_uuid}/jobs/cancel")
+def cancel_item_job(
+    item_uuid: str,
+    payload: InternalJobCancelRequest,
+    _api_key: Any = Depends(verify_api_key),
+):
+    logger.info(
+        f"[JobHTTP] cancel request: item={item_uuid} job_id={payload.job_id!r}"
+    )
+    return job_runner.cancel_job(item_uuid=item_uuid, job_id=payload.job_id)
 
 
 @router.post("/internal/items/{item_uuid}/files/tree")

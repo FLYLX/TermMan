@@ -95,6 +95,101 @@ def test_read_item_not_enough_permissions(
     assert content["detail"] == "Not enough permissions"
 
 
+
+def test_list_item_jobs_returns_empty_when_daemon_not_connected(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    item = create_random_item(db)
+    response = client.get(
+        f"{settings.API_V1_STR}/items/{item.id}/jobs",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["success"] is True
+    assert content["item_uuid"] == str(item.id)
+    assert content["jobs"] == []
+    assert content["count"] == 0
+    assert content["daemon_online"] is False
+    assert content["error"] == "Daemon is not connected"
+
+
+def test_cancel_item_job_requires_daemon_connection(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    item = create_random_item(db)
+    response = client.post(
+        f"{settings.API_V1_STR}/items/{item.id}/jobs/job-1/cancel",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Daemon is not connected"
+
+
+def test_cancel_item_job_clears_agent_terminal_job_lock(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import items as items_routes
+    from app.services.agent.session import RUN_JOB_TOOL_NAME, agent_session_manager
+
+    item = create_random_item(db)
+    item.socket_host = "127.0.0.1"
+    item.socket_port = 19001
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    class FakeDaemonState:
+        def is_connected(self):
+            return True
+
+    class FakeBackendConnPool:
+        def get_daemon_main_conn_state(self, api_key):
+            return FakeDaemonState()
+
+    class FakeConnection:
+        def __init__(self):
+            self.calls = []
+
+        def is_connected(self):
+            return True
+
+        def cancel_job_http(self, **kwargs):
+            self.calls.append(kwargs)
+            return {"success": True, "cancelled": True, "job_id": kwargs["job_id"]}
+
+    fake_connection = FakeConnection()
+    monkeypatch.setattr(items_routes, "backend_conn_pool", FakeBackendConnPool())
+    monkeypatch.setattr(
+        items_routes,
+        "connection_manager",
+        type("FakeConnectionManager", (), {"get_connection": lambda self, key: fake_connection})(),
+    )
+
+    item_id = str(item.id)
+    agent_session_manager.remove_session(item_id)
+    session = agent_session_manager.get_or_create_session(item_id, "handler-1")
+    session.mark_terminal_job_started(
+        RUN_JOB_TOOL_NAME,
+        {"item_id": item_id, "command": "apt-get install -y temurin-17-jdk"},
+    )
+    try:
+        response = client.post(
+            f"{settings.API_V1_STR}/items/{item.id}/jobs/job-9/cancel",
+            headers=superuser_token_headers,
+        )
+    finally:
+        agent_session_manager.remove_session(item_id)
+
+    assert response.status_code == 200
+    assert fake_connection.calls == [{"item_uuid": item_id, "job_id": "job-9"}]
+    assert session.has_running_terminal_job() is False
+
 def test_read_items(
     client: TestClient, superuser_token_headers: dict[str, str], db: Session
 ) -> None:

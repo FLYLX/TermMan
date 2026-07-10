@@ -3,6 +3,7 @@ import uuid as uuid_lib
 import requests
 from service.socket_service import SocketService
 from service.terminal_manager import terminal_manager
+from service.job_runner import job_runner
 from service.room_manager import room_manager
 from core import config, daemon_conn_pool
 from utils.logger import logger
@@ -546,6 +547,22 @@ async def on_terminal_write(sid, data):
     for item_uuid, conns in daemon_conn_pool.get_all_browser_terminal_conns().items():
         for conn in conns:
             if conn.sid == sid:
+                if command == "\x03":
+                    cancel_result = job_runner.cancel_job(item_uuid=item_uuid)
+                    if cancel_result.get("success") or cancel_result.get("cancelled"):
+                        socket_service.sync_broadcast(
+                            item_uuid,
+                            "stream",
+                            {
+                                "stdin": "^C\n",
+                                "stdout": "\u540e\u53f0\u4efb\u52a1\u5df2\u4e2d\u65ad\u3002\n",
+                                "stderr": "",
+                                "source": "browser",
+                                "job_cancelled": True,
+                                "job_id": cancel_result.get("job_id", ""),
+                            },
+                        )
+                        return
                 terminal = terminal_manager.get_terminal(item_uuid)
                 if terminal and terminal.write(command):
                     socket_service.sync_broadcast(
@@ -558,6 +575,22 @@ async def on_terminal_write(sid, data):
     room_listen_conns = daemon_conn_pool.get_all_backend_room_listen_conns()
     for conn in room_listen_conns:
         if conn.conn_id == sid:
+            if command == "\x03":
+                cancel_result = job_runner.cancel_job(item_uuid=conn.item_uuid)
+                if cancel_result.get("success") or cancel_result.get("cancelled"):
+                    socket_service.sync_broadcast(
+                        conn.item_uuid,
+                        "stream",
+                        {
+                            "stdin": "^C\n",
+                            "stdout": "\u540e\u53f0\u4efb\u52a1\u5df2\u4e2d\u65ad\u3002\n",
+                            "stderr": "",
+                            "source": "backend",
+                            "job_cancelled": True,
+                            "job_id": cancel_result.get("job_id", ""),
+                        },
+                    )
+                    return
             terminal = terminal_manager.get_terminal(conn.item_uuid)
             if terminal:
                 terminal.write(command)

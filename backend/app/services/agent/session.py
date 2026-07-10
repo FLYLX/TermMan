@@ -267,8 +267,12 @@ class TurnGuard:
     def check_timeout(self) -> tuple[bool, str]:
         elapsed = (datetime.now() - self.started_at).total_seconds()
         if elapsed > MAX_TURN_DURATION_SECONDS:
-            return True, f"当前轮处理超时 ({MAX_TURN_DURATION_SECONDS}s)，已停止"
+            return True, f"\u5f53\u524d\u8f6e\u5904\u7406\u8d85\u65f6 ({MAX_TURN_DURATION_SECONDS}s)\uff0c\u5df2\u505c\u6b62"
         return False, ""
+
+    def reset_timeout_window(self) -> None:
+        self.started_at = datetime.now()
+        self.no_progress_steps = 0
 
     def before_tool(self, tool_name: str, tool_args_str: str) -> tuple[bool, str]:
         if self.waiting_for_terminal_feedback and tool_name in COMMAND_TOOL_NAMES:
@@ -620,10 +624,9 @@ class AgentSession:
     ) -> str:
         elapsed_seconds = int((datetime.now() - running_job.started_at).total_seconds())
         return (
-            f"Background job is still running: `{self._short_command(running_job.command)}` "
-            f"(elapsed {elapsed_seconds}s). "
-            f"Blocked `{self._short_command(command)}`; command was not sent. "
-            "Wait for the current download/install/build job to finish before sending another terminal command."
+            f"\u540e\u53f0\u4efb\u52a1\u6b63\u5728\u8fd0\u884c\uff0c\u5df2\u8fd0\u884c {elapsed_seconds}s\u3002"
+            "\u65b0\u7684\u7ec8\u7aef\u547d\u4ee4\u5df2\u62e6\u622a\uff0c\u4e0d\u4f1a\u91cd\u590d\u53d1\u9001\u3002"
+            "\u7b49\u5f53\u524d\u4e0b\u8f7d/\u5b89\u88c5/\u6784\u5efa\u4efb\u52a1\u7ed3\u675f\u540e\u518d\u7ee7\u7eed\u3002"
         )
 
     def _validate_terminal_command_input(
@@ -1248,7 +1251,34 @@ class AgentSession:
         last_item.timestamp = input_msg.timestamp
         return True
 
+    def _build_running_terminal_job_chat_response(self, running_job: RunningTerminalJob) -> str:
+        elapsed_seconds = int((datetime.now() - running_job.started_at).total_seconds())
+        return (
+            f"\u540e\u53f0\u4efb\u52a1\u8fd8\u5728\u8dd1\uff0c\u5df2\u8fd0\u884c {elapsed_seconds}s\u3002"
+            "\u6211\u5df2\u7ecf\u9501\u4f4f\u7ec8\u7aef\u8f93\u5165\uff0c\u4e0d\u4f1a\u91cd\u590d\u53d1\u547d\u4ee4\u3002"
+            "\u7b49\u5b83\u7ed3\u675f\u540e\u6211\u4f1a\u62ff\u6700\u7ec8\u7ed3\u679c\u7ee7\u7eed\u5904\u7406\u3002"
+        )
+
+    def _try_reply_busy_terminal_job(self, input_msg: InputMessage) -> bool:
+        if input_msg.input_type != InputType.CHAT:
+            return False
+        running_job = self._get_running_terminal_job()
+        if not running_job:
+            return False
+        if input_msg.callback:
+            self.add_output_callback(input_msg.callback)
+        self.emit_output(
+            self._build_running_terminal_job_chat_response(running_job),
+            "agent_response",
+            {"tool_name": running_job.tool_name, "terminal_job_running": True},
+        )
+        self._emit_waiting_terminal_status(running_job.tool_name)
+        return True
+
     def queue_input(self, input_msg: InputMessage) -> bool:
+        if self._try_reply_busy_terminal_job(input_msg):
+            return True
+
         with self.lock:
             try:
                 merged = False
@@ -1681,6 +1711,8 @@ class AgentSession:
 
             result = loop.run_until_complete(agent.execute_tool(tool_name, tool_args))
             logger.info(f"[AgentSession] Tool {tool_name} executed")
+            if tool_name == RUN_JOB_TOOL_NAME:
+                turn_guard.reset_timeout_window()
 
             result_text = self._format_tool_result(result).strip()
             command_dispatch_failed = is_command_dispatch_failure_result(tool_name, result_text)

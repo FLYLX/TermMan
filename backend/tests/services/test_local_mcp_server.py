@@ -320,6 +320,76 @@ def test_run_job_reports_final_daemon_result(monkeypatch) -> None:
     }
 
 
+def test_list_jobs_reports_active_daemon_jobs(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    server = LocalMCPServer()
+    captured: dict[str, object] = {}
+
+    class FakeConnection:
+        def list_jobs_http(self, **kwargs):
+            captured.update(kwargs)
+            return {
+                "success": True,
+                "jobs": [
+                    {
+                        "job_id": "job-7",
+                        "item_uuid": "item-1",
+                        "command": "apt-get install -y temurin-17-jdk",
+                        "elapsed_seconds": 12.4,
+                        "cancel_requested": False,
+                    }
+                ],
+                "count": 1,
+            }
+
+    monkeypatch.setattr(
+        server,
+        "_get_item_daemon_context",
+        lambda item_id: (
+            SimpleNamespace(owner_id="user-1", working_directory="/workspace/item"),
+            FakeConnection(),
+        ),
+    )
+
+    result = server.call_tool("list_jobs", {"item_id": "item-1"})
+
+    assert captured == {"item_uuid": "item-1"}
+    assert len(result) == 1
+    text = result[0]["text"]
+    assert "job_id=job-7" in text
+    assert "apt-get install -y temurin-17-jdk" in text
+
+
+def test_cancel_job_tool_cancels_selected_daemon_job(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    server = LocalMCPServer()
+    captured: list[dict[str, object]] = []
+
+    class FakeConnection:
+        def cancel_job_http(self, **kwargs):
+            captured.append(kwargs)
+            return {"success": True, "cancelled": True, "job_id": kwargs["job_id"]}
+
+    monkeypatch.setattr(
+        server,
+        "_get_item_daemon_context",
+        lambda item_id: (
+            SimpleNamespace(owner_id="user-1", working_directory="/workspace/item"),
+            FakeConnection(),
+        ),
+    )
+
+    result = server.call_tool(
+        "cancel_job",
+        {"item_id": "item-1", "job_id": "job-7"},
+    )
+
+    assert captured == [{"item_uuid": "item-1", "job_id": "job-7"}]
+    assert "job-7" in result[0]["text"]
+
+
 def test_run_job_marks_busy_and_blocks_nested_terminal_commands(monkeypatch) -> None:
     from types import SimpleNamespace
 
@@ -373,10 +443,52 @@ def test_run_job_marks_busy_and_blocks_nested_terminal_commands(monkeypatch) -> 
         agent_session_manager.remove_session(item_id)
 
     assert "Job succeeded" in result[0]["text"]
-    assert "Background job is still running" in nested["execute"][0]["text"]
-    assert "java -version" in nested["execute"][0]["text"]
-    assert "Background job is still running" in nested["run_job"][0]["text"]
-    assert "apt update" in nested["run_job"][0]["text"]
+    assert "\u540e\u53f0\u4efb\u52a1\u6b63\u5728\u8fd0\u884c" in nested["execute"][0]["text"]
+    assert "java -version" not in nested["execute"][0]["text"]
+    assert "\u4e0d\u4f1a\u91cd\u590d\u53d1\u9001" in nested["execute"][0]["text"]
+    assert "\u540e\u53f0\u4efb\u52a1\u6b63\u5728\u8fd0\u884c" in nested["run_job"][0]["text"]
+    assert "apt update" not in nested["run_job"][0]["text"]
+    assert "\u4e0d\u4f1a\u91cd\u590d\u53d1\u9001" in nested["run_job"][0]["text"]
+    assert session.has_running_terminal_job() is False
+
+
+
+def test_interrupt_command_cancels_running_daemon_job(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from app.services.agent.session import RUN_JOB_TOOL_NAME, agent_session_manager
+
+    item_id = "item-cancel-job"
+    server = LocalMCPServer()
+    cancelled: list[dict] = []
+
+    class FakeConnection:
+        def cancel_job_http(self, **kwargs):
+            cancelled.append(kwargs)
+            return {"success": True, "cancelled": True, "job_id": "job-1"}
+
+    monkeypatch.setattr(
+        server,
+        "_get_item_daemon_context",
+        lambda item_id: (
+            SimpleNamespace(owner_id="user-1", working_directory="/workspace/item"),
+            FakeConnection(),
+        ),
+    )
+
+    agent_session_manager.remove_session(item_id)
+    session = agent_session_manager.get_or_create_session(item_id, "handler-1")
+    session.mark_terminal_job_started(
+        RUN_JOB_TOOL_NAME,
+        {"item_id": item_id, "command": "apt-get install -y temurin-17-jdk"},
+    )
+    try:
+        result = server.call_tool("interrupt_command", {"item_id": item_id})
+    finally:
+        agent_session_manager.remove_session(item_id)
+
+    assert cancelled == [{"item_uuid": item_id}]
+    assert "\u540e\u53f0\u4efb\u52a1\u5df2\u4e2d\u65ad" in result[0]["text"]
     assert session.has_running_terminal_job() is False
 
 

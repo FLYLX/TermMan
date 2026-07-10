@@ -105,6 +105,24 @@ type TerminalWebSocketServerListResponse = {
   servers: TerminalWebSocketServerStatus[]
 }
 
+type BackgroundJob = {
+  job_id: string
+  item_uuid?: string
+  command: string
+  pid?: number
+  started_at?: string
+  elapsed_seconds?: number
+  cancel_requested?: boolean
+}
+
+type BackgroundJobsResponse = {
+  success: boolean
+  jobs: BackgroundJob[]
+  count: number
+  daemon_online?: boolean
+  error?: string | null
+}
+
 type TerminalWebSocketServerForm = {
   name: string
   host: string
@@ -180,6 +198,60 @@ async function requestTerminalWebSocket<T>(
   }
 
   return payload as T
+}
+
+async function requestItemJobs<T>(
+  itemId: string,
+  path = "",
+  init: RequestInit = {},
+): Promise<T> {
+  const token = localStorage.getItem("access_token") || ""
+  const headers = new Headers(init.headers)
+  headers.set("Authorization", `Bearer ${token}`)
+  if (init.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json")
+  }
+
+  const response = await fetch(`${OpenAPI.BASE}/api/v1/items/${itemId}/jobs${path}`, {
+    ...init,
+    headers,
+  })
+  const contentType = response.headers.get("content-type") || ""
+  const payload = contentType.includes("application/json")
+    ? await response.json().catch(() => undefined)
+    : await response.text().catch(() => "")
+
+  if (!response.ok) {
+    const detail =
+      payload && typeof payload === "object" && "detail" in payload
+        ? String((payload as { detail?: unknown }).detail)
+        : String(payload || `HTTP ${response.status}`)
+    throw new Error(detail)
+  }
+
+  return payload as T
+}
+
+function formatJobElapsed(seconds: number | undefined): string {
+  const total = Math.max(0, Math.floor(Number(seconds || 0)))
+  if (total < 60) {
+    return `${total}s`
+  }
+  const minutes = Math.floor(total / 60)
+  const rest = total % 60
+  if (minutes < 60) {
+    return `${minutes}m ${rest}s`
+  }
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h ${minutes % 60}m`
+}
+
+function shortenJobCommand(command: string): string {
+  const normalized = command.replace(/\s+/g, " ").trim()
+  if (normalized.length <= 120) {
+    return normalized || "(empty command)"
+  }
+  return `${normalized.slice(0, 117)}...`
 }
 
 function createDefaultInputRules(): Record<string, FilterRule> {
@@ -764,6 +836,140 @@ function RobotSleepTerminalLine({
 }
 
 
+function BackgroundJobsPanel({
+  jobs,
+  isOpen,
+  onOpenChange,
+  isFetching,
+  onRefresh,
+  onCancel,
+  cancelingJobId,
+  daemonOnline,
+  error,
+}: {
+  jobs: BackgroundJob[]
+  isOpen: boolean
+  onOpenChange: (open: boolean) => void
+  isFetching: boolean
+  onRefresh: () => void
+  onCancel: (jobId: string) => void
+  cancelingJobId: string | null
+  daemonOnline: boolean
+  error?: string | null
+}) {
+  const count = jobs.length
+
+  return (
+    <div className="mb-3 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/70 text-xs text-slate-300">
+      <div className="flex h-10 items-center justify-between gap-2 px-3">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          aria-expanded={isOpen}
+          onClick={() => onOpenChange(!isOpen)}
+        >
+          <ChevronRight
+            className={`size-4 shrink-0 text-slate-500 transition-transform ${isOpen ? "rotate-90" : ""}`}
+          />
+          <Server className="size-3.5 shrink-0 text-blue-300" />
+          <span className="truncate font-medium text-slate-200">后台 Jobs</span>
+          <Badge
+            variant="outline"
+            className="h-5 border-zinc-700 bg-zinc-900 px-1.5 font-mono text-[10px] text-slate-300"
+          >
+            {count}
+          </Badge>
+          {count > 0 ? (
+            <span className="hidden truncate font-mono text-[11px] text-slate-500 sm:inline">
+              {shortenJobCommand(jobs[0]?.command || "")}
+            </span>
+          ) : null}
+        </button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0 text-slate-400 hover:bg-zinc-800 hover:text-slate-100"
+          onClick={onRefresh}
+          disabled={!daemonOnline || isFetching}
+          title="刷新后台 Jobs"
+        >
+          <RefreshCw className={`size-3.5 ${isFetching ? "animate-spin" : ""}`} />
+          <span className="sr-only">刷新后台 Jobs</span>
+        </Button>
+      </div>
+
+      {isOpen ? (
+        <div className="border-t border-zinc-800 px-3 py-2">
+          {!daemonOnline ? (
+            <div className="rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-slate-500">
+              Daemon 未连接，暂时看不到后台 Jobs。
+            </div>
+          ) : error ? (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-200">
+              {error}
+            </div>
+          ) : count === 0 ? (
+            <div className="rounded-md border border-dashed border-zinc-800 bg-zinc-900/40 px-3 py-2 text-slate-500">
+              没有运行中的后台 Job。
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {jobs.map((job) => {
+                const isCanceling = cancelingJobId === job.job_id
+                const cancelDisabled = isCanceling || Boolean(job.cancel_requested)
+                return (
+                  <div
+                    key={job.job_id}
+                    className="rounded-md border border-zinc-800 bg-zinc-900/70 px-3 py-2"
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-[11px] text-blue-300">
+                            {job.job_id}
+                          </span>
+                          <span className="rounded-full bg-zinc-800 px-2 py-0.5 font-mono text-[10px] text-slate-400">
+                            {formatJobElapsed(job.elapsed_seconds)}
+                          </span>
+                          {job.cancel_requested ? (
+                            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-300">
+                              取消中
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="break-all font-mono text-[11px] leading-5 text-slate-300">
+                          {shortenJobCommand(job.command)}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 shrink-0 border-red-500/30 bg-red-500/10 px-2.5 text-xs text-red-300 hover:bg-red-500/20 hover:text-red-200"
+                        onClick={() => onCancel(job.job_id)}
+                        disabled={cancelDisabled}
+                      >
+                        {isCanceling ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Square className="size-3.5" />
+                        )}
+                        取消
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+
 function RobotConversationDebugTable({
   data,
   isFetching,
@@ -994,6 +1200,8 @@ function ItemDetailPage({
   const [terminalWsActionId, setTerminalWsActionId] = useState<string | null>(
     null,
   )
+  const [jobsPanelOpen, setJobsPanelOpen] = useState(false)
+  const [jobCancelId, setJobCancelId] = useState<string | null>(null)
   const activateTab = (value: string) => {
     const nextTab = value as ItemDetailTab
     setActiveTab(nextTab)
@@ -1013,6 +1221,8 @@ function ItemDetailPage({
     setVisitedTabs(new Set<ItemDetailTab>(["terminal"]))
     setTerminalWsForm(createTerminalWsForm(item))
     setTerminalWsServers([])
+    setJobsPanelOpen(false)
+    setJobCancelId(null)
   }, [item.id])
 
   useEffect(() => {
@@ -1093,6 +1303,18 @@ function ItemDetailPage({
   const shouldConnect = item.status === "running" && item.daemon_online
 
   const {
+    data: backgroundJobs,
+    isFetching: isFetchingBackgroundJobs,
+    refetch: refetchBackgroundJobs,
+  } = useQuery({
+    queryKey: ["items", "jobs", item.id],
+    queryFn: () => requestItemJobs<BackgroundJobsResponse>(item.id),
+    enabled: Boolean(shouldConnect),
+    refetchInterval: jobsPanelOpen ? 2000 : 5000,
+    retry: false,
+  })
+
+  const {
     isConnected,
     isConnecting,
     error: connectionError,
@@ -1169,6 +1391,25 @@ function ItemDetailPage({
     if (command.trim()) {
       sendCommand(command)
       setCommand("")
+    }
+  }
+
+  const handleCancelBackgroundJob = async (jobId: string) => {
+    setJobCancelId(jobId)
+    try {
+      await requestItemJobs<{ success: boolean }>(
+        item.id,
+        `/${encodeURIComponent(jobId)}/cancel`,
+        { method: "POST" },
+      )
+      await refetchBackgroundJobs()
+      showSuccessToast("后台 Job 已取消")
+    } catch (error) {
+      showErrorToast(
+        error instanceof Error ? error.message : "后台 Job 取消失败",
+      )
+    } finally {
+      setJobCancelId(null)
     }
   }
 
@@ -1998,6 +2239,17 @@ function ItemDetailPage({
                           data={robotControllerStatus}
                           isFetching={isFetchingRobotControllerStatus}
                         />
+                        <BackgroundJobsPanel
+                          jobs={backgroundJobs?.jobs || []}
+                          isOpen={jobsPanelOpen}
+                          onOpenChange={setJobsPanelOpen}
+                          isFetching={isFetchingBackgroundJobs}
+                          onRefresh={() => void refetchBackgroundJobs()}
+                          onCancel={(jobId) => void handleCancelBackgroundJob(jobId)}
+                          cancelingJobId={jobCancelId}
+                          daemonOnline={Boolean(item.daemon_online)}
+                          error={backgroundJobs?.error}
+                        />
 
                         {isConnecting ? (
                           <div className="h-[34rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] flex flex-col items-center justify-center gap-4 px-4 py-8">
@@ -2023,15 +2275,17 @@ function ItemDetailPage({
                                 </div>
                               ) : (
                                 output.map((out, idx) => {
-                                  const text = out.stdout || ""
+                                  const text = out.stdout || out.stderr || out.stdin || ""
                                   const isInput =
+                                    Boolean(out.stdin) ||
                                     /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] #/.test(
                                       text,
                                     )
+                                  const isError = Boolean(out.stderr)
                                   return (
                                     <span
                                       key={idx}
-                                      className={`whitespace-pre ${isInput ? "text-green-400" : "text-blue-300"}`}
+                                      className={`whitespace-pre ${isError ? "text-red-300" : isInput ? "text-green-400" : "text-blue-300"}`}
                                     >
                                       {text}
                                     </span>

@@ -169,6 +169,19 @@ def _check_item_permission(item: Item, current_user: CurrentUser):
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
 
+def _get_item_daemon_connection(item: Item):
+    daemon_status = _get_daemon_status(item)
+    if not daemon_status["daemon_online"]:
+        return daemon_status, None
+
+    connection = connection_manager.get_connection(
+        f"{item.socket_host}:{item.socket_port}:{item.api_key}"
+    )
+    if not connection or not connection.is_connected():
+        return daemon_status, None
+    return daemon_status, connection
+
+
 def _sanitize_filter_name(name: str, index: int, existing: set[str]) -> str:
     candidate = re.sub(r"[^a-zA-Z0-9_]+", "_", (name or "").strip().lower()).strip(
         "_"
@@ -879,6 +892,77 @@ def disconnect_item_subscriber(
         ip_address=ip_address
     )
     
+    return result
+
+
+@router.get("/{id}/jobs")
+def list_item_jobs(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    daemon_status, connection = _get_item_daemon_connection(item)
+    if not connection:
+        return {
+            "success": True,
+            "item_uuid": str(id),
+            "jobs": [],
+            "count": 0,
+            "daemon_online": daemon_status["daemon_online"],
+            "error": (
+                "Backend not connected to daemon"
+                if daemon_status["daemon_online"]
+                else "Daemon is not connected"
+            ),
+        }
+
+    result = connection.list_jobs_http(item_uuid=str(id))
+    result["daemon_online"] = True
+    return result
+
+
+@router.post("/{id}/jobs/{job_id}/cancel")
+def cancel_item_job(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    job_id: str,
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    daemon_status, connection = _get_item_daemon_connection(item)
+    if not connection:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Daemon is not connected"
+                if not daemon_status["daemon_online"]
+                else "Backend not connected to daemon"
+            ),
+        )
+
+    result = connection.cancel_job_http(item_uuid=str(id), job_id=job_id)
+    if not result.get("success") and result.get("error") != "No running job for item":
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("error", "Failed to cancel job"),
+        )
+
+    from app.services.agent.session import agent_session_manager
+
+    agent_session = agent_session_manager.get_session(str(id))
+    if agent_session:
+        agent_session.clear_terminal_job()
+
+    result["daemon_online"] = True
     return result
 
 

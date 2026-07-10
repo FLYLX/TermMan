@@ -385,6 +385,85 @@ class DaemonConnection:
             logger.error("[DaemonConnection] Daemon job request failed: item=%s error=%s", item_uuid, exc)
             return {"success": False, "error": f"Daemon job request failed: {exc}"}
 
+    def list_jobs_http(self, *, item_uuid: str) -> Dict[str, Any]:
+        url = f"{self.config.base_url}/api/internal/items/{item_uuid}/jobs"
+        headers = {"X-API-Key": self.config.api_key}
+        logger.debug(
+            "[DaemonConnection] Listing daemon jobs over HTTP: url=%s item=%s",
+            url,
+            item_uuid,
+        )
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                response = client.get(url, headers=headers)
+            try:
+                result = response.json()
+            except ValueError:
+                return {
+                    "success": False,
+                    "error": f"Invalid daemon job list response: HTTP {response.status_code}",
+                    "status_code": response.status_code,
+                    "body": response.text[:1000],
+                }
+            if response.status_code >= 400:
+                detail = result.get("detail") if isinstance(result, dict) else None
+                return {
+                    "success": False,
+                    "error": detail or f"Daemon job list failed: HTTP {response.status_code}",
+                    "status_code": response.status_code,
+                    "response": result,
+                }
+            return result
+        except httpx.TimeoutException:
+            logger.error("[DaemonConnection] Daemon job list timed out: item=%s", item_uuid)
+            return {"success": False, "error": "Daemon job list timed out"}
+        except httpx.HTTPError as exc:
+            logger.error("[DaemonConnection] Daemon job list failed: item=%s error=%s", item_uuid, exc)
+            return {"success": False, "error": str(exc)}
+
+    def cancel_job_http(
+        self,
+        *,
+        item_uuid: str,
+        job_id: str | None = None,
+    ) -> Dict[str, Any]:
+        url = f"{self.config.base_url}/api/internal/items/{item_uuid}/jobs/cancel"
+        payload: Dict[str, Any] = {"job_id": job_id}
+        headers = {"X-API-Key": self.config.api_key}
+        logger.info(
+            "[DaemonConnection] Cancelling daemon job over HTTP: url=%s item=%s job_id=%s",
+            url,
+            item_uuid,
+            job_id,
+        )
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                response = client.post(url, json=payload, headers=headers)
+            try:
+                result = response.json()
+            except ValueError:
+                return {
+                    "success": False,
+                    "error": f"Invalid daemon job cancel response: HTTP {response.status_code}",
+                    "status_code": response.status_code,
+                    "body": response.text[:1000],
+                }
+            if response.status_code >= 400:
+                detail = result.get("detail") if isinstance(result, dict) else None
+                return {
+                    "success": False,
+                    "error": detail or f"Daemon job cancel failed: HTTP {response.status_code}",
+                    "status_code": response.status_code,
+                    "response": result,
+                }
+            return result
+        except httpx.TimeoutException:
+            logger.error("[DaemonConnection] Daemon job cancel timed out: item=%s job_id=%s", item_uuid, job_id)
+            return {"success": False, "error": "Daemon job cancel timed out"}
+        except httpx.HTTPError as exc:
+            logger.error("[DaemonConnection] Daemon job cancel failed: item=%s error=%s", item_uuid, exc)
+            return {"success": False, "error": str(exc)}
+
     def get_item_subscribers_http(self, item_uuid: str) -> Dict[str, Any]:
         """
         鑾峰彇item鐨勮闃呰€呬俊鎭?- 鍚屾鏂规硶

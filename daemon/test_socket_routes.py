@@ -82,6 +82,42 @@ def test_browser_terminal_write_broadcasts_stdin(monkeypatch):
     ]
 
 
+
+def test_browser_ctrl_c_cancels_active_job_before_terminal_write(monkeypatch):
+    terminal = FakeTerminal()
+    socket_service = FakeSocketService()
+    cancelled = []
+
+    class FakeJobRunner:
+        def cancel_job(self, **kwargs):
+            cancelled.append(kwargs)
+            return {"success": True, "cancelled": True, "job_id": "job-1"}
+
+    monkeypatch.setattr(socket_routes, "daemon_conn_pool", FakeDaemonConnPool())
+    monkeypatch.setattr(socket_routes, "terminal_manager", FakeTerminalManager(terminal))
+    monkeypatch.setattr(socket_routes, "socket_service", socket_service)
+    monkeypatch.setattr(socket_routes, "job_runner", FakeJobRunner())
+
+    asyncio.run(socket_routes.on_terminal_write("browser-sid", {"command": "\x03"}))
+
+    assert cancelled == [{"item_uuid": "item-1"}]
+    assert terminal.writes == []
+    assert socket_service.broadcasts == [
+        (
+            "item-1",
+            "stream",
+            {
+                "stdin": "^C\n",
+                "stdout": "\u540e\u53f0\u4efb\u52a1\u5df2\u4e2d\u65ad\u3002\n",
+                "stderr": "",
+                "source": "browser",
+                "job_cancelled": True,
+                "job_id": "job-1",
+            },
+        )
+    ]
+
+
 def test_internal_job_run_route_delegates_to_job_runner(monkeypatch):
     from api import http_routes
 
@@ -120,3 +156,131 @@ def test_internal_job_run_route_delegates_to_job_runner(monkeypatch):
         "tail_lines": 7,
         "env": {"A": "B"},
     }
+
+
+def test_internal_job_list_route_delegates_to_job_runner(monkeypatch):
+    from api import http_routes
+
+    captured = {}
+
+    class FakeJobRunner:
+        def list_jobs(self, **kwargs):
+            captured.update(kwargs)
+            return {
+                "success": True,
+                "jobs": [{"job_id": "job-1", "command": "apt-get update"}],
+                "count": 1,
+            }
+
+    monkeypatch.setattr(http_routes, "job_runner", FakeJobRunner())
+
+    result = http_routes.list_item_jobs("item-1", _api_key="ok")
+
+    assert result["success"] is True
+    assert result["count"] == 1
+    assert result["jobs"][0]["job_id"] == "job-1"
+    assert captured == {"item_uuid": "item-1"}
+
+def test_job_runner_filters_progress_noise_from_tail(monkeypatch):
+    from collections import deque
+
+    from service.job_runner import JobRunner, is_progress_noise_line
+
+    written: list[str] = []
+    runner = JobRunner()
+    monkeypatch.setattr(runner, "_write_job_log", lambda item_uuid, content: written.append(content))
+    tail: deque[str] = deque(maxlen=20)
+
+    progress_lines = [
+        "  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current",
+        "  0     0    0     0    0     0      0      0 --:--:--  0:00:20 --:--:--     0",
+        "45%|####5     | 45/100 [00:01<00:01, 30.00it/s]",
+    ]
+    for line in progress_lines:
+        assert is_progress_noise_line(line) is True
+        runner._append_output_line("item-1", "job-1", line, tail)
+
+    runner._append_output_line("item-1", "job-1", "TEMURIN_DOWNLOAD_DONE", tail)
+    runner._append_output_line("item-1", "job-1", "curl: (28) Connection timed out", tail)
+
+    assert list(tail) == ["TEMURIN_DOWNLOAD_DONE", "curl: (28) Connection timed out"]
+    assert len(written) == 2
+
+
+def test_internal_job_cancel_route_delegates_to_job_runner(monkeypatch):
+    from api import http_routes
+
+    captured = {}
+
+    class FakeJobRunner:
+        def cancel_job(self, **kwargs):
+            captured.update(kwargs)
+            return {"success": True, "cancelled": True, "job_id": kwargs["job_id"]}
+
+    monkeypatch.setattr(http_routes, "job_runner", FakeJobRunner())
+
+    payload = http_routes.InternalJobCancelRequest(job_id="job-1")
+    result = http_routes.cancel_item_job("item-1", payload, _api_key="ok")
+
+    assert result == {"success": True, "cancelled": True, "job_id": "job-1"}
+    assert captured == {"item_uuid": "item-1", "job_id": "job-1"}
+
+
+
+def test_job_runner_list_jobs_filters_by_item(monkeypatch):
+    from datetime import datetime, timedelta
+
+    from service.job_runner import JobRunner
+
+    runner = JobRunner()
+    started_at = datetime.now() - timedelta(seconds=8)
+    runner._register_active_job(
+        item_uuid="item-1",
+        job_id="job-1",
+        command="apt-get update",
+        pid=1234,
+        started_at=started_at,
+    )
+    runner._register_active_job(
+        item_uuid="item-2",
+        job_id="job-2",
+        command="bun install",
+        pid=5678,
+        started_at=started_at,
+    )
+
+    try:
+        result = runner.list_jobs(item_uuid="item-1")
+    finally:
+        runner._unregister_active_job("job-1")
+        runner._unregister_active_job("job-2")
+
+    assert result["success"] is True
+    assert result["count"] == 1
+    assert result["jobs"][0]["job_id"] == "job-1"
+    assert result["jobs"][0]["elapsed_seconds"] >= 0
+
+def test_job_runner_cancel_job_marks_active_job(monkeypatch):
+    from datetime import datetime
+
+    from service.job_runner import JobRunner
+
+    runner = JobRunner()
+    killed: list[int] = []
+    monkeypatch.setattr(runner, "_terminate_process", lambda pid: killed.append(pid))
+
+    runner._register_active_job(
+        item_uuid="item-1",
+        job_id="job-1",
+        command="apt-get install -y temurin-17-jdk",
+        pid=1234,
+        started_at=datetime.now(),
+    )
+    result = runner.cancel_job(item_uuid="item-1")
+
+    assert result["success"] is True
+    assert result["cancelled"] is True
+    assert result["job_id"] == "job-1"
+    assert runner._is_cancel_requested("job-1") is True
+    assert killed == [1234]
+    runner._unregister_active_job("job-1")

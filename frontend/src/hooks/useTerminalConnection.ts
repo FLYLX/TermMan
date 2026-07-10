@@ -4,7 +4,11 @@ import { ItemsService } from "@/client"
 
 interface TerminalOutput {
   stdout?: string
+  stderr?: string
   stdin?: string
+  source?: string
+  status?: string
+  job_id?: string
 }
 
 interface RoomInfo {
@@ -37,6 +41,150 @@ interface UseTerminalConnectionReturn {
   sendCtrlC: () => void
   reconnect: () => void
   disconnect: () => void
+}
+
+function getOutputText(entry: TerminalOutput): {
+  key: "stdout" | "stderr" | "stdin"
+  text: string
+} | null {
+  if (typeof entry.stdout === "string") {
+    return { key: "stdout", text: entry.stdout }
+  }
+  if (typeof entry.stderr === "string") {
+    return { key: "stderr", text: entry.stderr }
+  }
+  if (typeof entry.stdin === "string") {
+    return { key: "stdin", text: entry.stdin }
+  }
+  return null
+}
+
+function replaceOutputText(
+  entry: TerminalOutput,
+  key: "stdout" | "stderr" | "stdin",
+  text: string,
+): TerminalOutput {
+  return { ...entry, [key]: text }
+}
+
+function trimCurrentTerminalLine(entries: TerminalOutput[]): void {
+  while (entries.length > 0) {
+    const lastIndex = entries.length - 1
+    const current = getOutputText(entries[lastIndex])
+    if (!current) {
+      entries.pop()
+      continue
+    }
+
+    const newlineIndex = current.text.lastIndexOf("\n")
+    if (newlineIndex >= 0) {
+      const kept = current.text.slice(0, newlineIndex + 1)
+      if (kept) {
+        entries[lastIndex] = replaceOutputText(
+          entries[lastIndex],
+          current.key,
+          kept,
+        )
+      } else {
+        entries.pop()
+      }
+      return
+    }
+
+    entries.pop()
+  }
+}
+
+function removeLastTerminalChar(entries: TerminalOutput[]): void {
+  while (entries.length > 0) {
+    const lastIndex = entries.length - 1
+    const current = getOutputText(entries[lastIndex])
+    if (!current) {
+      entries.pop()
+      continue
+    }
+
+    if (current.text.length <= 1) {
+      entries.pop()
+      return
+    }
+
+    entries[lastIndex] = replaceOutputText(
+      entries[lastIndex],
+      current.key,
+      current.text.slice(0, -1),
+    )
+    return
+  }
+}
+
+function appendTerminalText(
+  entries: TerminalOutput[],
+  key: "stdout" | "stderr" | "stdin",
+  text: string,
+  metadata: TerminalOutput,
+): void {
+  let buffer = ""
+
+  const flush = () => {
+    if (!buffer) {
+      return
+    }
+    entries.push({ ...metadata, [key]: buffer })
+    buffer = ""
+  }
+
+  for (const char of text) {
+    if (char === "\r") {
+      flush()
+      trimCurrentTerminalLine(entries)
+      continue
+    }
+
+    if (char === "\b") {
+      flush()
+      removeLastTerminalChar(entries)
+      continue
+    }
+
+    buffer += char
+  }
+
+  flush()
+}
+
+function appendTerminalOutput(
+  previous: TerminalOutput[],
+  incoming: TerminalOutput,
+): TerminalOutput[] {
+  const textFields = [
+    ["stdin", incoming.stdin],
+    ["stdout", incoming.stdout],
+    ["stderr", incoming.stderr],
+  ] as const
+  const hasControl = textFields.some(
+    ([, value]) =>
+      typeof value === "string" && (value.includes("\r") || value.includes("\b")),
+  )
+
+  if (!hasControl) {
+    return [...previous, incoming]
+  }
+
+  const next = [...previous]
+  const metadata = {
+    source: incoming.source,
+    status: incoming.status,
+    job_id: incoming.job_id,
+  }
+
+  for (const [key, value] of textFields) {
+    if (typeof value === "string" && value) {
+      appendTerminalText(next, key, value, metadata)
+    }
+  }
+
+  return next
 }
 
 export function useTerminalConnection({
@@ -199,7 +347,7 @@ export function useTerminalConnection({
         ) {
           return
         }
-        setOutput((prev) => [...prev, data])
+        setOutput((prev) => appendTerminalOutput(prev, data))
       })
 
       socket.on("disconnect", (reason) => {

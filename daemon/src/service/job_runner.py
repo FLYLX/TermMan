@@ -1,9 +1,12 @@
 import os
+import re
 import select
 import signal
+import threading
 import time
 import uuid
 from collections import deque
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
 
@@ -17,6 +20,62 @@ class JobRunnerError(Exception):
     pass
 
 
+@dataclass
+class ActiveJob:
+    job_id: str
+    item_uuid: str
+    command: str
+    pid: int
+    started_at: datetime
+    cancel_requested: bool = False
+
+
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+ERROR_HINT_RE = re.compile(
+    r"\b(?:error|failed|failure|exception|traceback|denied|not found|timed out|timeout|aborted|cancelled)\b",
+    re.IGNORECASE,
+)
+PROGRESS_LINE_PATTERNS = (
+    re.compile(r"^\s*%\s+Total\s+%\s+Received\b", re.IGNORECASE),
+    re.compile(
+        r"^\s*\d{1,3}\s+\d+(?:\.\d+)?[kmg]?\s+\d{1,3}\s+\d+(?:\.\d+)?[kmg]?\s+\d{1,3}\s+",
+        re.IGNORECASE,
+    ),
+    re.compile(r"^\s*\d{1,3}%\|.*\|"),
+    re.compile(r".*\d{1,3}%.*(?:\[[\s=>#.-]+\]|[=#>]{2,}|\|.*\|).*"),
+    re.compile(r"^\s*\d+(?:\.\d+)?\s*[KMG]B?\s+.*\d{1,3}%", re.IGNORECASE),
+    re.compile(
+        r"^\s*(?:downloading|downloaded|fetching|receiving|extracting|installing|building|preparing)\b.*(?:\d{1,3}%|\d+(?:\.\d+)?\s*(?:kb|mb|gb)|/s|it/s)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"^\s*(?:get|hit|ign):\d+\s+", re.IGNORECASE),
+    re.compile(r"^\s*(?:\||/|-|\\)\s*$"),
+    re.compile(r"^\s*(?:\||/|-|\\)\s+(?:download|fetch|install|build|extract)\b", re.IGNORECASE),
+)
+
+
+def _strip_terminal_controls(value: str) -> str:
+    value = ANSI_ESCAPE_RE.sub("", value or "")
+    value = value.replace("\b", "")
+    value = CONTROL_CHARS_RE.sub("", value)
+    return value
+
+
+def is_progress_noise_line(line: str) -> bool:
+    stripped = _strip_terminal_controls(line).strip()
+    if not stripped:
+        return False
+    if ERROR_HINT_RE.search(stripped):
+        return False
+    if any(pattern.match(stripped) for pattern in PROGRESS_LINE_PATTERNS):
+        return True
+    return bool(
+        re.search(r"\d{1,3}%", stripped)
+        and re.search(r"(?:/s|eta|remaining|\[[\s=>#.-]+\])", stripped, re.IGNORECASE)
+    )
+
+
 class JobRunner:
     DEFAULT_TIMEOUT_SECONDS = 600
     MAX_TIMEOUT_SECONDS = 3600
@@ -25,6 +84,8 @@ class JobRunner:
 
     def __init__(self):
         self.encoding = config.get("TERMINAL_ENCODING", "utf-8")
+        self._active_jobs: dict[str, ActiveJob] = {}
+        self._jobs_lock = threading.RLock()
 
     def run_job(
         self,
@@ -49,6 +110,8 @@ class JobRunner:
         pid: int | None = None
         master_fd: int | None = None
         timed_out = False
+        cancelled = False
+        cancel_terminate_sent = False
         exit_code: int | None = None
         tail = deque(maxlen=tail_limit)
         output_bytes = 0
@@ -94,10 +157,26 @@ class JobRunner:
 
             os.set_blocking(master_fd, False)
             logger.info(f"[JobRunner] PTY forked: job_id={job_id} pid={pid} cwd={cwd}")
+            self._register_active_job(
+                item_uuid=item_uuid,
+                job_id=job_id,
+                command=command,
+                pid=pid,
+                started_at=started_at,
+            )
 
             pending_line = ""
             while True:
                 now = time.monotonic()
+                if self._is_cancel_requested(job_id):
+                    cancelled = True
+                    if not cancel_terminate_sent:
+                        cancel_terminate_sent = True
+                        logger.warning(
+                            f"[JobRunner] Job cancel requested: job_id={job_id} pid={pid} command={command!r}"
+                        )
+                        self._terminate_process(pid)
+
                 if now - start_monotonic > timeout:
                     timed_out = True
                     logger.warning(
@@ -154,6 +233,7 @@ class JobRunner:
                 "cwd": cwd,
             }
         finally:
+            self._unregister_active_job(job_id)
             if master_fd is not None:
                 try:
                     os.close(master_fd)
@@ -170,6 +250,7 @@ class JobRunner:
             f"  Job ID: {job_id}\n"
             f"  Exit Code: {exit_code}\n"
             f"  Timed Out: {timed_out}\n"
+            f"  Cancelled: {cancelled}\n"
             f"  Duration: {duration_seconds}s\n"
             f"{'=' * 60}\n"
         )
@@ -184,6 +265,7 @@ class JobRunner:
                 "status": "finished",
                 "exit_code": exit_code,
                 "timed_out": timed_out,
+                "cancelled": cancelled,
             },
         )
         logger.info(
@@ -199,6 +281,7 @@ class JobRunner:
             "cwd": cwd,
             "exit_code": exit_code,
             "timed_out": timed_out,
+            "cancelled": cancelled,
             "duration_seconds": duration_seconds,
             "output_tail": output_tail,
             "tail_lines": len(tail),
@@ -206,6 +289,96 @@ class JobRunner:
             "started_at": started_at.isoformat(),
             "finished_at": finished_at.isoformat(),
         }
+
+    def list_jobs(self, *, item_uuid: str | None = None) -> dict[str, Any]:
+        now = datetime.now()
+        with self._jobs_lock:
+            jobs = [
+                {
+                    "job_id": job.job_id,
+                    "item_uuid": job.item_uuid,
+                    "command": job.command,
+                    "pid": job.pid,
+                    "started_at": job.started_at.isoformat(),
+                    "elapsed_seconds": round((now - job.started_at).total_seconds(), 3),
+                    "cancel_requested": job.cancel_requested,
+                }
+                for job in self._active_jobs.values()
+                if item_uuid is None or job.item_uuid == item_uuid
+            ]
+        jobs.sort(key=lambda job: str(job.get("started_at") or ""), reverse=True)
+        return {
+            "success": True,
+            "jobs": jobs,
+            "count": len(jobs),
+            "item_uuid": item_uuid,
+        }
+
+    def cancel_job(self, *, item_uuid: str, job_id: str | None = None) -> dict[str, Any]:
+        with self._jobs_lock:
+            active_job = None
+            if job_id:
+                candidate = self._active_jobs.get(job_id)
+                if candidate and candidate.item_uuid == item_uuid:
+                    active_job = candidate
+            else:
+                active_job = next(
+                    (job for job in self._active_jobs.values() if job.item_uuid == item_uuid),
+                    None,
+                )
+
+            if not active_job:
+                return {
+                    "success": False,
+                    "cancelled": False,
+                    "error": "No running job for item",
+                    "item_uuid": item_uuid,
+                    "job_id": job_id or "",
+                }
+
+            active_job.cancel_requested = True
+            pid = active_job.pid
+            resolved_job_id = active_job.job_id
+            command = active_job.command
+
+        logger.warning(
+            f"[JobRunner] Cancelling active job: job_id={resolved_job_id} item={item_uuid} pid={pid}"
+        )
+        self._terminate_process(pid)
+        return {
+            "success": True,
+            "cancelled": True,
+            "item_uuid": item_uuid,
+            "job_id": resolved_job_id,
+            "command": command,
+        }
+
+    def _register_active_job(
+        self,
+        *,
+        item_uuid: str,
+        job_id: str,
+        command: str,
+        pid: int,
+        started_at: datetime,
+    ) -> None:
+        with self._jobs_lock:
+            self._active_jobs[job_id] = ActiveJob(
+                job_id=job_id,
+                item_uuid=item_uuid,
+                command=command,
+                pid=pid,
+                started_at=started_at,
+            )
+
+    def _unregister_active_job(self, job_id: str) -> None:
+        with self._jobs_lock:
+            self._active_jobs.pop(job_id, None)
+
+    def _is_cancel_requested(self, job_id: str) -> bool:
+        with self._jobs_lock:
+            active_job = self._active_jobs.get(job_id)
+            return bool(active_job and active_job.cancel_requested)
 
     def _get_pty_module(self):
         try:
@@ -279,6 +452,8 @@ class JobRunner:
 
     def _append_output_line(self, item_uuid: str, job_id: str, line: str, tail: deque[str]):
         clean_line = line.rstrip("\n")
+        if is_progress_noise_line(clean_line):
+            return
         tail.append(clean_line)
         timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
         self._write_job_log(item_uuid, f"{timestamp} [job:{job_id}] {clean_line}\n")
@@ -299,14 +474,32 @@ class JobRunner:
         if pid is None:
             return
         for sig, delay in ((signal.SIGTERM, 0.5), (signal.SIGKILL, 0.0)):
+            delivered = False
             try:
-                os.kill(pid, sig)
-                if delay:
-                    time.sleep(delay)
+                child_pgid = os.getpgid(pid)
+                if child_pgid != os.getpgrp():
+                    os.killpg(child_pgid, sig)
+                    delivered = True
+                else:
+                    logger.debug(
+                        f"[JobRunner] Skip process-group signal {sig} for pid={pid}; child shares daemon pgid"
+                    )
             except ProcessLookupError:
                 return
             except Exception as exc:
-                logger.warning(f"[JobRunner] Failed to send signal {sig} to pid={pid}: {exc}")
+                logger.debug(f"[JobRunner] Failed to send signal {sig} to process group for pid={pid}: {exc}")
+
+            if not delivered:
+                try:
+                    os.kill(pid, sig)
+                    delivered = True
+                except ProcessLookupError:
+                    return
+                except Exception as exc:
+                    logger.warning(f"[JobRunner] Failed to send signal {sig} to pid={pid}: {exc}")
+
+            if delivered and delay:
+                time.sleep(delay)
 
     def _status_to_exit_code(self, status: int) -> int:
         if os.WIFEXITED(status):

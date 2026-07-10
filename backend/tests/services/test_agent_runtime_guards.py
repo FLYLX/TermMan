@@ -1518,11 +1518,12 @@ def test_running_terminal_job_blocks_new_shell_and_job_commands() -> None:
     )
 
     assert shell_warning is not None
-    assert "Background job is still running" in shell_warning
-    assert "jdk.tar.gz" in shell_warning
-    assert "java -version" in shell_warning
+    assert "\u540e\u53f0\u4efb\u52a1\u6b63\u5728\u8fd0\u884c" in shell_warning
+    assert "\u4e0d\u4f1a\u91cd\u590d\u53d1\u9001" in shell_warning
+    assert "jdk.tar.gz" not in shell_warning
+    assert "java -version" not in shell_warning
     assert job_warning is not None
-    assert "apt update" in job_warning
+    assert "apt update" not in job_warning
 
     session.clear_terminal_job("apt update")
     assert session.has_running_terminal_job() is True
@@ -1533,6 +1534,57 @@ def test_running_terminal_job_blocks_new_shell_and_job_commands() -> None:
         RUN_JOB_TOOL_NAME,
         {"command": "apt update"},
     ) is None
+
+
+def test_chat_during_running_terminal_job_gets_direct_busy_reply() -> None:
+    from app.services.agent.session import (
+        AgentSession,
+        InputMessage,
+        InputType,
+        RUN_JOB_TOOL_NAME,
+    )
+
+    session = AgentSession("item-1", "handler-1")
+    events: list[dict] = []
+    session.mark_terminal_job_started(
+        RUN_JOB_TOOL_NAME,
+        {"command": "apt-get update -qq"},
+    )
+
+    queued = session.queue_input(
+        InputMessage(
+            input_type=InputType.CHAT,
+            content="what does this mean",
+            callback=events.append,
+        )
+    )
+
+    assert queued is True
+    assert session.input_queue.qsize() == 0
+    response = next(event for event in events if event.get("type") == "agent_response")
+    assert "\u540e\u53f0\u4efb\u52a1\u8fd8\u5728\u8dd1" in response["content"]
+    assert "\u4e0d\u4f1a\u91cd\u590d\u53d1\u547d\u4ee4" in response["content"]
+    assert "apt-get update" not in response["content"]
+    assert response["terminal_job_running"] is True
+
+
+def test_turn_guard_reset_timeout_window_after_long_job() -> None:
+    from datetime import datetime, timedelta
+
+    from app.services.agent.session import MAX_TURN_DURATION_SECONDS, TurnGuard
+
+    guard = TurnGuard()
+    guard.started_at = datetime.now() - timedelta(seconds=MAX_TURN_DURATION_SECONDS + 5)
+
+    timed_out, _reason = guard.check_timeout()
+    assert timed_out is True
+
+    guard.reset_timeout_window()
+
+    timed_out, reason = guard.check_timeout()
+    assert timed_out is False
+    assert reason == ""
+
 
 def test_console_terminal_context_allows_console_input_but_blocks_shell_input() -> None:
     from app.services.agent.session import AgentSession, EXECUTE_COMMAND_TOOL_NAME
