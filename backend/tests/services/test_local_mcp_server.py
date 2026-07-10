@@ -1,4 +1,8 @@
 from app.services.agent.mcp.local_server import LocalMCPServer
+from app.services.agent.session import (
+    is_tool_result_auto_routed_to_job,
+    should_auto_route_terminal_tool_to_job,
+)
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.skills import skill_loader
 
@@ -91,6 +95,88 @@ def test_execute_command_blocks_when_busy_terminal_command_pending(monkeypatch) 
     assert "apt update" in result[0]["text"]
     assert "java -version" in result[0]["text"]
     assert "命令未发送" in result[0]["text"]
+
+
+def test_execute_command_auto_routes_busy_command_to_background_job(monkeypatch) -> None:
+    import importlib
+
+    import app.services.socket_pool as socket_pool
+    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, agent_session_manager
+
+    input_center_module = importlib.import_module("app.services.socket_pool.input_center")
+    item_id = "item-auto-route"
+    routed: dict[str, object] = {}
+
+    class FakeInputSDK:
+        def send(self, item_id: str, command: str) -> bool:
+            raise AssertionError("busy command should be routed to run_job, not terminal input")
+
+    def fake_run_job(args: dict):
+        routed.update(args)
+        return [{"type": "text", "text": "\u540e\u53f0\u4efb\u52a1\u5df2\u542f\u52a8"}]
+
+    monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
+    monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: True)
+
+    agent_session_manager.remove_session(item_id)
+    session = agent_session_manager.get_or_create_session(item_id, "handler-1")
+    monkeypatch.setattr(session, "_schedule_pending_command_recheck", lambda *args, **kwargs: None)
+    monkeypatch.setattr(session, "_get_log_line_count", lambda: 0)
+    session.mark_terminal_command_dispatched(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "apt update"},
+    )
+
+    server = LocalMCPServer()
+    monkeypatch.setattr(server, "_run_job", fake_run_job)
+
+    try:
+        result = server.call_tool(
+            "execute_command",
+            {
+                "item_id": item_id,
+                "command": "python -m pip install requests",
+                "timeout_seconds": 20,
+            },
+        )
+    finally:
+        agent_session_manager.remove_session(item_id)
+
+    assert routed["item_id"] == item_id
+    assert routed["command"] == "python -m pip install requests"
+    assert routed["timeout_seconds"] == 60
+    assert routed["wait_for_completion"] is False
+    assert "\u540e\u53f0 Job" in result[0]["text"]
+    assert result[1]["type"] == "metadata"
+    assert result[1]["auto_routed_execute_command_to_run_job"] is True
+
+
+def test_auto_routed_execute_command_result_skips_pending_terminal_lock() -> None:
+    assert should_auto_route_terminal_tool_to_job(
+        "mcp_local_execute_command",
+        {"command": "python -m pip install requests"},
+    ) is True
+    assert should_auto_route_terminal_tool_to_job(
+        "mcp_local_execute_command",
+        {"command": "java -version"},
+    ) is False
+
+    assert is_tool_result_auto_routed_to_job(
+        {
+            "success": True,
+            "result": [
+                {"type": "text", "text": "background job started"},
+                {
+                    "type": "metadata",
+                    "auto_routed_execute_command_to_run_job": True,
+                },
+            ],
+        }
+    ) is True
+
+    assert is_tool_result_auto_routed_to_job(
+        {"success": True, "result": [{"type": "text", "text": "command sent"}]}
+    ) is False
 
 def test_system_prompt_forbids_claiming_command_success_without_confirmation() -> None:
     skill_loader.reload()

@@ -50,6 +50,8 @@ from app.services.agent.session import (
     agent_session_manager,
     is_command_dispatch_failure_result,
     is_command_dispatch_pending_result,
+    is_tool_result_auto_routed_to_job,
+    should_auto_route_terminal_tool_to_job,
 )
 from app.services.agent.stream_manager import stream_manager
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
@@ -1067,10 +1069,12 @@ def generate_stream(
                         item_id,
                         str(handler.id),
                     )
-                    terminal_input_error = terminal_session.validate_terminal_tool_input(
-                        tool_name,
-                        tool_args,
-                    )
+                    terminal_input_error = None
+                    if not should_auto_route_terminal_tool_to_job(tool_name, tool_args):
+                        terminal_input_error = terminal_session.validate_terminal_tool_input(
+                            tool_name,
+                            tool_args,
+                        )
                     if terminal_input_error:
                         _mark_agent_task_plan_failed(planned_task_runtime)
                         warning_event = _persist_and_broadcast_event(
@@ -1161,7 +1165,11 @@ def generate_stream(
                     yield _to_sse({"done": True})
                     return
 
-                if tool_name in COMMAND_TOOL_NAMES and result.get("success"):
+                if (
+                    tool_name in COMMAND_TOOL_NAMES
+                    and result.get("success")
+                    and not is_tool_result_auto_routed_to_job(result)
+                ):
                     if terminal_session is None:
                         terminal_session = agent_session_manager.get_or_create_session(
                             item_id,

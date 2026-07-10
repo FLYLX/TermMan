@@ -12,6 +12,7 @@ def debug_log(msg: str):
 
 
 TERMINAL_NOT_CONNECTED_MESSAGE = "终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。"
+AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
 
 
 class LocalMCPServer:
@@ -554,6 +555,40 @@ class LocalMCPServer:
             return [{"type": "text", "text": "Error: command and item_id required"}]
         
         try:
+            if self._should_auto_route_execute_command_to_job(str(command)):
+                debug_log(
+                    f"[LocalMCPServer] auto-routing execute_command to run_job: item={item_id}, command={command}"
+                )
+                job_args = dict(args)
+                job_args["item_id"] = item_id
+                job_args["command"] = command
+                job_args["timeout_seconds"] = self._coerce_job_int(
+                    job_args.get("timeout_seconds"),
+                    600,
+                    60,
+                    3600,
+                )
+                job_args.setdefault("tail_lines", 80)
+                job_args["wait_for_completion"] = False
+                result = self._run_job(job_args)
+                result_text = "\n".join(
+                    item.get("text", "")
+                    for item in result
+                    if isinstance(item, dict) and item.get("type") == "text"
+                ).strip()
+                return [
+                    {
+                        "type": "text",
+                        "text": "\u5df2\u81ea\u52a8\u6539\u4e3a\u540e\u53f0 Job \u6267\u884c\uff0c\u7ec8\u7aef\u524d\u53f0\u8f93\u5165\u4e0d\u4f1a\u88ab\u9501\u5b9a\u3002"
+                        + (f"\n{result_text}" if result_text else ""),
+                    },
+                    {
+                        "type": "metadata",
+                        AUTO_ROUTED_TO_JOB_MARKER: True,
+                        "effective_tool_name": "mcp_local_run_job",
+                    },
+                ]
+
             try:
                 from app.services.agent.session import (
                     EXECUTE_COMMAND_TOOL_NAME,
@@ -599,6 +634,18 @@ class LocalMCPServer:
         except Exception as e:
             debug_log(f"[LocalMCPServer] execute_command error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
+
+    def _should_auto_route_execute_command_to_job(self, command: str) -> bool:
+        try:
+            from app.services.agent.session import (
+                TERMINAL_INPUT_MODE_BUSY,
+                classify_terminal_input_mode,
+            )
+
+            return classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_BUSY
+        except Exception as exc:
+            debug_log(f"[LocalMCPServer] auto-route classification error: {exc}")
+            return False
     
     def _cancel_running_job_for_item(self, item_id: str) -> dict | None:
         try:

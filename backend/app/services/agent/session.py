@@ -64,6 +64,7 @@ COMMAND_DISPATCH_FAILURE_MARKERS = (
 )
 EXECUTE_COMMAND_TOOL_NAME = "mcp_local_execute_command"
 RUN_JOB_TOOL_NAME = "mcp_local_run_job"
+AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
 TERMINAL_BUSY_GUARD_TOOL_NAMES = {EXECUTE_COMMAND_TOOL_NAME, RUN_JOB_TOOL_NAME}
 COMMAND_DISPATCH_PENDING_MARKER = "命令已发送到终端，尚未确认执行结果:"
 TERMINAL_INPUT_MODE_BUSY = "busy"
@@ -166,6 +167,18 @@ def is_command_dispatch_pending_result(tool_name: str, result_text: str) -> bool
     )
 
 
+def is_tool_result_auto_routed_to_job(result: Any) -> bool:
+    if not isinstance(result, dict) or not result.get("success"):
+        return False
+    result_data = result.get("result")
+    if not isinstance(result_data, list):
+        return False
+    return any(
+        isinstance(item, dict) and bool(item.get(AUTO_ROUTED_TO_JOB_MARKER))
+        for item in result_data
+    )
+
+
 def _normalize_command_for_routing(command: str) -> str:
     return " ".join((command or "").strip().split()).lower()
 
@@ -179,6 +192,17 @@ def classify_terminal_input_mode(command: str) -> str | None:
     if any(re.search(pattern, normalized) for pattern in TERMINAL_BUSY_COMMAND_PATTERNS):
         return TERMINAL_INPUT_MODE_BUSY
     return None
+
+
+def should_route_command_to_background_job(command: str) -> bool:
+    return classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_BUSY
+
+
+def should_auto_route_terminal_tool_to_job(tool_name: str, tool_args: dict[str, Any]) -> bool:
+    if tool_name != EXECUTE_COMMAND_TOOL_NAME:
+        return False
+    command = str((tool_args or {}).get("command") or "")
+    return should_route_command_to_background_job(command)
 
 
 def _coerce_timeout_seconds(value: Any, default: int = PENDING_COMMAND_TIMEOUT_SECONDS) -> int:
@@ -1197,6 +1221,19 @@ class AgentSession:
         self._emit_waiting_terminal_status(pending.tool_name)
         return True, None, False
 
+    def _should_display_pending_held_output(
+        self,
+        content: str,
+        pending: PendingCommand | None,
+    ) -> bool:
+        if not pending:
+            return False
+        lines = [line for line in content.splitlines() if line.strip()]
+        informative_lines = [line for line in lines if not self._is_prompt_only_line(line)]
+        return bool(informative_lines) and all(
+            self._is_command_echo_line(line, pending) for line in informative_lines
+        )
+
     def _emit_idle_or_waiting_status(self, queue_size: int):
         if queue_size > 0:
             self.emit_status("queued", "后续输出排队中", {"queue_size": queue_size})
@@ -1411,9 +1448,18 @@ class AgentSession:
             self._process_chat_input(input_msg, agent)
 
     def _process_terminal_input(self, input_msg: InputMessage, agent: Agent):
-        had_pending_command = self._get_pending_command() is not None
+        pending_before_analysis = self._get_pending_command()
+        had_pending_command = pending_before_analysis is not None
         analysis = self._resolve_terminal_analysis_content(input_msg)
-        if input_msg.content and not (had_pending_command and not analysis.content):
+        should_emit_terminal_output = bool(input_msg.content) and (
+            not had_pending_command
+            or bool(analysis.content)
+            or self._should_display_pending_held_output(
+                input_msg.content,
+                pending_before_analysis,
+            )
+        )
+        if should_emit_terminal_output:
             self.emit_output(input_msg.content, "terminal_output")
         if not analysis.content:
             return
@@ -1711,7 +1757,9 @@ class AgentSession:
 
             normalized_tool_args_str = json.dumps(tool_args, ensure_ascii=False)
             tool_args["item_id"] = self.item_id
-            terminal_input_error = self._validate_terminal_command_input(tool_name, tool_args)
+            terminal_input_error = None
+            if not should_auto_route_terminal_tool_to_job(tool_name, tool_args):
+                terminal_input_error = self._validate_terminal_command_input(tool_name, tool_args)
             if terminal_input_error:
                 self.emit_output(
                     terminal_input_error,
@@ -1776,7 +1824,11 @@ class AgentSession:
                 tool_name,
                 result_text,
             )
-            if tool_name in COMMAND_TOOL_NAMES and result.get("success"):
+            if (
+                tool_name in COMMAND_TOOL_NAMES
+                and result.get("success")
+                and not is_tool_result_auto_routed_to_job(result)
+            ):
                 self._set_pending_command(tool_name, tool_args)
                 self._emit_waiting_terminal_status(tool_name)
                 return None
