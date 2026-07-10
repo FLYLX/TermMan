@@ -215,7 +215,11 @@ def build_robot_reply_context_summary(
                 "Do not pass `reply_to`, `conversation`, `broadcast`, "
                 "`target_type`, or `target_id` in this active QQ context; it is "
                 "locked to the current conversation to prevent replying to the "
-                "wrong group/private chat."
+                "wrong group/private chat. In an active window, a short current "
+                "question asking for judgement or confirmation, such as whether "
+                "someone is bad or whether something is right, is a continuation "
+                "when recent live context shows users reacting to the bot's "
+                "previous reply; answer it briefly instead of sleeping."
             ),
             (
                 "- reference rule: when the current QQ text uses pronouns or "

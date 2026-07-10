@@ -1271,6 +1271,8 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     assert "mcp_robot_sleep_conversation" in prompt
     assert "\u6307\u4ee3\u5224\u65ad" in prompt
     assert "reference rule" in prompt
+    assert "Active-window continuation" in prompt
+    assert "whether someone is bad" in prompt
     assert "trigger=active_chat_window" in prompt
     assert "当前 QQ 会话" in prompt
     assert "只调用 `mcp_robot_send_message` 并只传 `text` 或 `messages`" in prompt
