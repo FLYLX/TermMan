@@ -1884,7 +1884,7 @@ def test_busy_pending_terminal_command_blocks_new_shell_input() -> None:
     assert session._get_pending_command() is None
 
 
-def test_running_terminal_job_blocks_new_shell_and_job_commands() -> None:
+def test_running_terminal_job_only_blocks_new_busy_jobs() -> None:
     from app.services.agent.session import (
         EXECUTE_COMMAND_TOOL_NAME,
         RUN_JOB_TOOL_NAME,
@@ -1897,20 +1897,30 @@ def test_running_terminal_job_blocks_new_shell_and_job_commands() -> None:
         {"command": "curl https://example.test/jdk.tar.gz -o jdk.tar.gz"},
     )
 
-    shell_warning = session._validate_terminal_command_input(
+    normal_command_warning = session._validate_terminal_command_input(
         EXECUTE_COMMAND_TOOL_NAME,
         {"command": "java -version"},
+    )
+    console_command_warning = session._validate_terminal_command_input(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "op Steve"},
+    )
+    busy_command_warning = session._validate_terminal_command_input(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "apt update"},
     )
     job_warning = session._validate_terminal_command_input(
         RUN_JOB_TOOL_NAME,
         {"command": "apt update"},
     )
 
-    assert shell_warning is not None
-    assert "\u540e\u53f0\u4efb\u52a1\u6b63\u5728\u8fd0\u884c" in shell_warning
-    assert "\u4e0d\u4f1a\u91cd\u590d\u53d1\u9001" in shell_warning
-    assert "jdk.tar.gz" not in shell_warning
-    assert "java -version" not in shell_warning
+    assert normal_command_warning is None
+    assert console_command_warning is None
+    assert busy_command_warning is not None
+    assert "\u540e\u53f0\u4efb\u52a1\u6b63\u5728\u8fd0\u884c" in busy_command_warning
+    assert "\u4e0d\u4f1a\u91cd\u590d\u53d1\u9001" in busy_command_warning
+    assert "jdk.tar.gz" not in busy_command_warning
+    assert "apt update" not in busy_command_warning
     assert job_warning is not None
     assert "apt update" not in job_warning
 
@@ -1970,7 +1980,8 @@ def test_running_terminal_job_context_is_injected_into_chat_prompt() -> None:
     )
 
     assert "后台终端任务正在运行" in context
-    assert "不要调用 execute_command 或 run_job" in context
+    assert "不要启动新的下载/安装/构建类 run_job" in context
+    assert "可以继续用 execute_command 发送安全的控制台输入" in context
     assert "apt-get install -y temurin-17-jdk" in context
 
 

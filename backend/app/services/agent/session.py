@@ -70,7 +70,7 @@ COMMAND_DISPATCH_FAILURE_MARKERS = (
 EXECUTE_COMMAND_TOOL_NAME = "mcp_local_execute_command"
 RUN_JOB_TOOL_NAME = "mcp_local_run_job"
 AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
-TERMINAL_BUSY_GUARD_TOOL_NAMES = {EXECUTE_COMMAND_TOOL_NAME, RUN_JOB_TOOL_NAME}
+TERMINAL_BUSY_GUARD_TOOL_NAMES = {RUN_JOB_TOOL_NAME}
 COMMAND_DISPATCH_PENDING_MARKER = "命令已发送到终端，尚未确认执行结果:"
 TERMINAL_INPUT_MODE_BUSY = "busy"
 TERMINAL_INPUT_MODE_CONSOLE = "console"
@@ -725,8 +725,24 @@ class AgentSession:
         elapsed_seconds = int((datetime.now() - running_job.started_at).total_seconds())
         return (
             f"\u540e\u53f0\u4efb\u52a1\u6b63\u5728\u8fd0\u884c\uff0c\u5df2\u8fd0\u884c {elapsed_seconds}s\u3002"
-            "\u65b0\u7684\u7ec8\u7aef\u547d\u4ee4\u5df2\u62e6\u622a\uff0c\u4e0d\u4f1a\u91cd\u590d\u53d1\u9001\u3002"
+            "\u65b0\u7684\u4e0b\u8f7d/\u5b89\u88c5/\u6784\u5efa\u7c7b\u540e\u53f0\u4efb\u52a1\u5df2\u62e6\u622a\uff0c\u4e0d\u4f1a\u91cd\u590d\u53d1\u9001\u3002"
             "\u7b49\u5f53\u524d\u4e0b\u8f7d/\u5b89\u88c5/\u6784\u5efa\u4efb\u52a1\u7ed3\u675f\u540e\u518d\u7ee7\u7eed\u3002"
+        )
+
+    def _running_job_blocks_terminal_tool(
+        self,
+        *,
+        running_job: RunningTerminalJob | None,
+        tool_name: str,
+        command: str,
+    ) -> bool:
+        if running_job is None:
+            return False
+        if tool_name == RUN_JOB_TOOL_NAME:
+            return True
+        return (
+            tool_name == EXECUTE_COMMAND_TOOL_NAME
+            and classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_BUSY
         )
 
     def _validate_terminal_command_input(
@@ -737,7 +753,11 @@ class AgentSession:
         command = self._extract_command_text(tool_name, tool_args)
 
         running_job = self._get_running_terminal_job()
-        if running_job and tool_name in TERMINAL_BUSY_GUARD_TOOL_NAMES:
+        if self._running_job_blocks_terminal_tool(
+            running_job=running_job,
+            tool_name=tool_name,
+            command=command,
+        ):
             return self._build_running_terminal_job_warning(running_job, command)
 
         if tool_name != EXECUTE_COMMAND_TOOL_NAME:
@@ -1682,7 +1702,9 @@ class AgentSession:
             f"任务命令：`{self._short_command(running_job.command)}`。"
             "你可以正常回答不需要终端的新问题。"
             "如果用户问任务状态，只说明后台任务仍在运行，完成后系统会把最终结果作为新的终端反馈发给你。"
-            "在后台任务完成前，不要调用 execute_command 或 run_job 重复发送新的 shell 命令；"
+            "在后台任务完成前，不要启动新的下载/安装/构建类 run_job；"
+            "但如果当前终端是已启动的交互式控制台，可以继续用 execute_command 发送安全的控制台输入，"
+            "例如 Minecraft 的 say/tell/op/give/setblock/fill/summon 等单条控制台命令。"
             "如果确实要终止任务，先 list_jobs 再 cancel_job。"
         )
 
