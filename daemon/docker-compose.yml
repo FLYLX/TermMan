@@ -6,6 +6,8 @@ services:
     container_name: termman-daemon
     ports:
       - "9000:9000"
+      # server port
+      - "43906:43906"
     volumes:
       - ./src:/app/src
       - ./workdir:/app/src/workdir

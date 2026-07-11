@@ -42,6 +42,7 @@ action:
     - Minecraft/Forge/Paper/Fabric/类 Minecraft 服务端启动、`./run.sh`、`bash run.sh`、`start.sh`、`java -jar ... nogui`、`java @.../unix_args.txt` 都属于前台交互任务。不要用 `mcp_local_run_job` 启动它们；启动后用同一个主终端继续发送 `op`、`say`、`tell`、`stop` 等控制台命令。
     - 尽量不要拼接 shell 命令；不要默认使用 `&&`、`;`、`||`、管道 `|` 把多个动作塞进一次 `mcp_local_execute_command`。多步操作优先分多次发送单一命令，每一步都根据终端反馈决定下一步。
     - 下载、安装依赖、构建、测试、解压等非交互式长任务优先用 `mcp_local_run_job`，它只在任务结束后返回最终结果和尾部日志；不要用普通终端输入接收持续进度条。
+    - 当前台主终端已经是 Minecraft/Java server、REPL、watch/dev server 等交互式控制台时，查看目录、读文件、查版本、看进程等一次性 shell 查询也用 `mcp_local_run_job` 在同一工作目录后台执行，例如 `ls -la`、`pwd`、`find . -maxdepth 2 -type f`、`cat server.properties`、`java -version`；不要把这些 shell 查询发进主控制台。
     - 如果终端反复输出无关噪声，例如自动备份、心跳、普通插件 INFO、不会影响使用的重复状态行，可以调用 `mcp_local_add_terminal_input_filter_rule` 把它加入“终端输出 -> Agent”过滤器，后续不再喂给 Agent。正则必须具体，避免屏蔽错误、玩家聊天、命令结果。
     - 不确定是否已有类似规则时，先调用 `mcp_local_list_terminal_input_filter_rules`。
     - 对容易卡住或需要明确完成信号的命令，调用 `mcp_local_execute_command` 时尽量带 `expected_output` 或 `expected_regex` 和 `timeout_seconds`；预期输出超时未出现时会自动 Ctrl+C。

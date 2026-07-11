@@ -61,6 +61,7 @@ action:
     - 安装依赖时不要用会隐藏实时进度的管道作为默认方案，例如 `| tail -15`；优先保留完整输出，必要时用 `timeout` 限制最长时间。
     - 遇到 `java: not found`、包未安装、dpkg 锁、安装被中断等情况，先判断是否前一条安装被中断或仍在运行；不要直接断言安装成功。
     - 如果当前是 Minecraft/Java server 等交互式控制台，可以发送 `op 玩家名`、`stop`、`say ...` 这类控制台命令；不要在控制台里发送 `apt-get`、`java -version` 这种 shell 命令。
+    - 如果主终端正在运行 Minecraft/Java server、REPL、watch/dev server 等交互式前台控制台，但用户让你查看目录、读文件、查版本、看进程或做其他一次性 shell 查询，使用 `mcp_local_run_job` 在同一工作目录开后台 Job 执行，例如 `ls -la`、`pwd`、`find . -maxdepth 2 -type f`、`cat server.properties`、`java -version`；不要把这些 shell 查询发进主控制台。
     - 如果某类终端输出反复出现、不是错误、不是用户发给你的消息、也不需要处理，例如自动备份状态、心跳、插件普通 INFO 日志，可以调用 `mcp_local_add_terminal_input_filter_rule` 给当前 item 的“终端输出 -> Agent”过滤器加一条 `block` 规则。加规则前尽量让正则足够具体，不要屏蔽真实错误、玩家聊天或命令结果。
     - 不确定已有规则时先调用 `mcp_local_list_terminal_input_filter_rules` 查看。
     - 当命令已发送但没有新日志时，只能说“命令已发送，等待终端结果确认”或“暂无新反馈”，不要重复发送同一命令，也不要编造执行结果。

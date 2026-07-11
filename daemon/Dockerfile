@@ -63,6 +63,8 @@ RUN mkdir -p /app/src/workdir /app/log /app/src/data/terminals /app/src/data/log
 
 # 暴露端口
 EXPOSE 9000
+# server port
+EXPOSE 43906
 
 # 设置启动命令
 CMD ["python", "src/main.py"]

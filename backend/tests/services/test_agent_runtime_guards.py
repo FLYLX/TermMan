@@ -2126,7 +2126,14 @@ def test_turn_guard_reset_timeout_window_after_long_job() -> None:
 
 
 def test_console_terminal_context_allows_console_input_but_blocks_shell_input() -> None:
-    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
+    from app.services.agent.session import (
+        EXECUTE_COMMAND_TOOL_NAME,
+        TERMINAL_INPUT_MODE_CONSOLE,
+        AgentSession,
+        classify_terminal_input_mode,
+    )
+
+    assert classify_terminal_input_mode("npm run dev") == TERMINAL_INPUT_MODE_CONSOLE
 
     session = AgentSession("item-1", "handler-1")
     session._schedule_pending_command_recheck = lambda *args, **kwargs: None
@@ -2150,6 +2157,10 @@ def test_console_terminal_context_allows_console_input_but_blocks_shell_input() 
     assert warning is not None
     assert "paper-server.jar" in warning
     assert "ls -la" in warning
+    assert session.should_route_execute_command_to_background_job("ls -la") is True
+    assert session.should_route_execute_command_to_background_job("java -version") is True
+    assert session.should_route_execute_command_to_background_job("op Steve") is False
+
 
 def test_expected_terminal_output_match_clears_pending_command() -> None:
     from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession

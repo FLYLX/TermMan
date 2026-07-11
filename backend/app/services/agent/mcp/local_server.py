@@ -24,7 +24,7 @@ class LocalMCPServer:
     def _register_builtin_tools(self):
         self.register_tool(
             name="execute_command",
-            description="在主终端前台执行一条命令或向当前交互式控制台发送输入。适合 shell 短命令、Minecraft/Forge/Paper/Fabric 服务端启动、run.sh/start.sh、REPL、长期服务，以及 MC 控制台里的 op/say/stop 等后续输入。优先一次只发一条命令，不要默认用 &&、||、;、管道或换行拼接多步操作；多步操作应等待上一条终端反馈后再继续。可设置 expected_output/expected_regex 和 timeout_seconds，超时未匹配时自动 Ctrl+C。",
+            description="在主终端前台执行一条命令或向当前交互式控制台发送输入。适合 shell 短命令、Minecraft/Forge/Paper/Fabric 服务端启动、run.sh/start.sh、REPL、长期服务，以及 MC 控制台里的 op/say/stop 等后续输入。当前台已经是 Minecraft/Java server/REPL 等交互式控制台时，不要把 ls/pwd/find/cat/java -version 这类 shell 查询发进控制台；这类一次性查询应使用 run_job，系统也会自动改走后台 Job。优先一次只发一条命令，不要默认用 &&、||、;、管道或换行拼接多步操作；多步操作应等待上一条终端反馈后再继续。可设置 expected_output/expected_regex 和 timeout_seconds，超时未匹配时自动 Ctrl+C。",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -41,7 +41,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="run_job",
-            description="Start a non-interactive one-shot shell job in a daemon background process with stdin closed. Use this for downloads, package installs, builds, tests, archive extraction, and other commands that can finish without later user input; the final result and tail output will be delivered back to the agent after completion. Before using it, decide whether the command needs an interactive foreground console. Do not choose run_job for Minecraft/Forge/Paper/Fabric server startup, run.sh/start.sh server launchers, REPLs, shells, watch/dev servers, or any process that should remain open for later commands such as op/say/stop; choose execute_command in the main terminal for those. Prefer one clear operation per job; avoid very long &&/pipe chains when a later step may need diagnosis.",
+            description="Start a non-interactive one-shot shell job in a daemon background process with stdin closed. Use this for downloads, package installs, builds, tests, archive extraction, and other commands that can finish without later user input; the final result and tail output will be delivered back to the agent after completion. Also use run_job for shell inspection commands such as ls, pwd, find, cat, head, tail, grep, du, df, and java -version while the main terminal is already occupied by an interactive server console. Before using it, decide whether the command needs an interactive foreground console. Do not choose run_job for Minecraft/Forge/Paper/Fabric server startup, run.sh/start.sh server launchers, REPLs, shells, watch/dev servers, or any process that should remain open for later commands such as op/say/stop; choose execute_command in the main terminal for those. Prefer one clear operation per job; avoid very long &&/pipe chains when a later step may need diagnosis.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -683,7 +683,7 @@ class LocalMCPServer:
             return [{"type": "text", "text": "Error: command and item_id required"}]
         
         try:
-            if self._should_auto_route_execute_command_to_job(str(command)):
+            if self._should_auto_route_execute_command_to_job(str(command), str(item_id)):
                 debug_log(
                     f"[LocalMCPServer] auto-routing execute_command to run_job: item={item_id}, command={command}"
                 )
@@ -763,13 +763,21 @@ class LocalMCPServer:
             debug_log(f"[LocalMCPServer] execute_command error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
 
-    def _should_auto_route_execute_command_to_job(self, command: str) -> bool:
+    def _should_auto_route_execute_command_to_job(self, command: str, item_id: str = "") -> bool:
         try:
             from app.services.agent.session import (
                 TERMINAL_INPUT_MODE_BUSY,
                 classify_terminal_input_mode,
+                agent_session_manager,
             )
 
+            agent_session = (
+                agent_session_manager.get_session(str(item_id)) if item_id else None
+            )
+            if agent_session and agent_session.should_route_execute_command_to_background_job(
+                command
+            ):
+                return True
             return classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_BUSY
         except Exception as exc:
             debug_log(f"[LocalMCPServer] auto-route classification error: {exc}")

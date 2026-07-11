@@ -190,6 +190,8 @@ services:
       - default
     ports:
       - "${DAEMON_HOST_PORT:-39999}:9000"
+      # server port
+      - "${DAEMON_SERVER_HOST_PORT:-43906}:43906"
     env_file:
       - .env
     environment:

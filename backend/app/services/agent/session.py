@@ -95,11 +95,26 @@ TERMINAL_BUSY_COMMAND_PATTERNS = (
     r"^git\s+(?:clone|pull|fetch|submodule\s+update)\b",
     r"^(?:make|cmake\s+--build|cargo\s+(?:build|install)|go\s+(?:build|install)|mvn|gradle|\./gradlew)\b",
 )
+TERMINAL_BACKGROUND_SHELL_COMMAND_PATTERNS = (
+    r"^(?:pwd|ls|find|du|df|stat|file|wc|tree)\b",
+    r"^(?:cat|head|tail|sed|awk|grep|rg)\b",
+    r"^(?:whoami|id|groups|uname|hostname|date)\b",
+    r"^(?:which|whereis|command\s+-v|type)\b",
+    r"^(?:python\d*(?:\.\d+)?|pip\d*|node|npm|pnpm|yarn|bun|java|javac|git|docker)\s+(?:--version|-v|version)\b",
+    r"^java\s+-version\b",
+    r"^(?:ps|pgrep|free|top\s+-b|uptime)\b",
+)
 TERMINAL_CONSOLE_COMMAND_PATTERNS = (
     r"\bjava\s+.*(?:-jar\s+\S*(?:server|paper|spigot|forge|fabric|bukkit|mohist|arclight|minecraft)\S*|nogui)\b",
     r"\bjava\s+.*@(?:\S*/)?libraries/\S*(?:minecraftforge|forge|fabric|minecraft)\S*/(?:unix_args|win_args)\.txt\b",
     r"^(?:sudo\s+)?(?:(?:bash|sh)\s+)?(?:\./)?(?:run|start|startserver|server)\.sh\b",
     r"\bbedrock_server\b",
+    r"^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|watch)\b",
+    r"^(?:vite|next\s+dev|nuxt\s+dev|astro\s+dev)\b",
+    r"^(?:python\d*(?:\.\d+)?\s+-m\s+)?(?:http\.server|uvicorn|fastapi)\b",
+    r"^(?:uvicorn|hypercorn|gunicorn)\b",
+    r"^(?:tail\s+-f|journalctl\s+-f|docker\s+(?:compose\s+)?logs\s+-f|watch\s+)\b",
+    r"^(?:bash|sh|zsh|fish|python\d*(?:\.\d+)?|node|deno)\s*$",
 )
 MINECRAFT_CONSOLE_COMMANDS = frozenset(
     {
@@ -224,6 +239,18 @@ def classify_terminal_input_mode(command: str) -> str | None:
 
 def should_route_command_to_background_job(command: str) -> bool:
     return classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_BUSY
+
+
+def should_run_shell_command_as_background_job(command: str) -> bool:
+    normalized = _normalize_command_for_routing(command)
+    if not normalized:
+        return False
+    if classify_terminal_input_mode(normalized) == TERMINAL_INPUT_MODE_BUSY:
+        return True
+    return any(
+        re.search(pattern, normalized)
+        for pattern in TERMINAL_BACKGROUND_SHELL_COMMAND_PATTERNS
+    )
 
 
 def should_auto_route_terminal_tool_to_job(tool_name: str, tool_args: dict[str, Any]) -> bool:
@@ -755,6 +782,33 @@ class AgentSession:
             tool_name == EXECUTE_COMMAND_TOOL_NAME
             and classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_BUSY
         )
+
+    def should_route_execute_command_to_background_job(self, command: str) -> bool:
+        if should_route_command_to_background_job(command):
+            return True
+        if is_terminal_console_command(command):
+            return False
+        if not should_run_shell_command_as_background_job(command):
+            return False
+
+        context = self._get_terminal_input_context()
+        if context and context.input_mode == TERMINAL_INPUT_MODE_CONSOLE:
+            return True
+
+        pending = self._get_pending_command()
+        return bool(pending and pending.input_mode == TERMINAL_INPUT_MODE_CONSOLE)
+
+    def _should_auto_route_tool_to_job(
+        self,
+        tool_name: str,
+        tool_args: dict[str, Any],
+    ) -> bool:
+        if should_auto_route_terminal_tool_to_job(tool_name, tool_args):
+            return True
+        if tool_name != EXECUTE_COMMAND_TOOL_NAME:
+            return False
+        command = self._extract_command_text(tool_name, tool_args)
+        return self.should_route_execute_command_to_background_job(command)
 
     def _validate_terminal_command_input(
         self,
@@ -2121,7 +2175,7 @@ class AgentSession:
             normalized_tool_args_str = json.dumps(tool_args, ensure_ascii=False)
             tool_args["item_id"] = self.item_id
             terminal_input_error = None
-            if not should_auto_route_terminal_tool_to_job(tool_name, tool_args):
+            if not self._should_auto_route_tool_to_job(tool_name, tool_args):
                 terminal_input_error = self._validate_terminal_command_input(tool_name, tool_args)
             if terminal_input_error:
                 self._send_pending_integration_response(
