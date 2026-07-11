@@ -467,7 +467,7 @@ class RobotService:
     ) -> bool:
         if not response_text.strip():
             return False
-        if not self.conversation_controller_allows_reply(
+        if not self.conversation_controller_allows_completion_reply(
             job.robot_id,
             job.conversation_key,
             job.conversation_generation,
@@ -563,7 +563,7 @@ class RobotService:
                 "queue": self.dispatch_queue_snapshot(),
             },
         )
-        if not self.conversation_controller_allows_reply(
+        if not self.conversation_controller_allows_completion_reply(
             job.robot_id,
             job.conversation_key,
             job.conversation_generation,
@@ -2366,6 +2366,32 @@ class RobotService:
             controller = self._conversation_controllers.get(key)
             if controller is None or controller.generation != conversation_generation:
                 return False
+            return self._controller_is_awake_locked(controller, now)
+
+    def conversation_controller_allows_completion_reply(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+        conversation_generation: int,
+        *,
+        requires_awake: bool,
+    ) -> bool:
+        if not requires_awake:
+            return True
+        if not conversation_key or conversation_generation <= 0:
+            return False
+
+        now = self._now()
+        key = self._conversation_controller_key(robot_id, conversation_key)
+        with self._lock:
+            self._prune_conversation_controllers_locked(now)
+            controller = self._conversation_controllers.get(key)
+            if controller is None or controller.generation != conversation_generation:
+                return False
+            if controller.sleeping:
+                return False
+            if controller.processing:
+                return True
             return self._controller_is_awake_locked(controller, now)
 
     def _controller_processing_timeout_seconds(self, robot: Robot) -> int:

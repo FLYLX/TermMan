@@ -603,7 +603,7 @@ class RobotAgentIntegration:
             from app.plugins.robot.debug_log import preview_text, record_robot_event
             from app.plugins.robot.service import robot_service
 
-            if not robot_service.conversation_controller_allows_reply(
+            if not robot_service.conversation_controller_allows_completion_reply(
                 robot_id,
                 conversation_key,
                 conversation_generation,

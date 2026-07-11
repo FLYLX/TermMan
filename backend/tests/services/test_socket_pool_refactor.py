@@ -25,6 +25,27 @@ def test_terminal_stream_pipeline_publishes_stream_events() -> None:
     assert received == [("stream", {"stdout": "hello\n"})]
 
 
+def test_terminal_stream_pipeline_strips_ansi_control_sequences() -> None:
+    bus = ItemEventBus()
+    pipeline = TerminalStreamPipeline(bus)
+    received: list[tuple[str, dict]] = []
+
+    bus.subscribe(
+        "item-1",
+        lambda event: received.append((event.event_type.value, event.data)),
+        subscriber_type="test",
+        event_types=[SubscriptionEventType.STREAM],
+    )
+
+    delivered = pipeline.publish_stream(
+        "item-1",
+        {"stdout": "\x1b[?1l\x1b>\x1b[?2004h> \x1b[KMade FLYLX op\n"},
+    )
+
+    assert delivered == 1
+    assert received == [("stream", {"stdout": "> Made FLYLX op\n"})]
+
+
 def test_agent_input_bridge_builds_raw_output_and_calls_stream_manager(monkeypatch) -> None:
     bridge = AgentInputBridge()
     captured: list[tuple[str, str, str, str]] = []
@@ -62,6 +83,26 @@ def test_subscription_center_runs_agent_bridge_after_stream_pipeline(monkeypatch
 
     assert delivered == 1
     assert call_order == ["pipeline", "bridge"]
+
+
+def test_subscription_center_sanitizes_agent_bridge_stream(monkeypatch) -> None:
+    center = ItemSubscriptionCenter()
+    captured: list[dict] = []
+
+    monkeypatch.setattr(
+        center._stream_pipeline,
+        "publish_stream",
+        lambda _item_uuid, _data: 1,
+    )
+    monkeypatch.setattr(
+        center,
+        "_trigger_agent_handler",
+        lambda _item_uuid, data: captured.append(data),
+    )
+
+    center.publish_stream("item-1", {"stdout": "\x1b[32mgreen\x1b[m\n"})
+
+    assert captured == [{"stdout": "green\n"}]
 
 
 def test_agent_input_bridge_skips_daemon_job_stream(monkeypatch) -> None:

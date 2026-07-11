@@ -2337,6 +2337,70 @@ def test_visible_agent_response_without_robot_tool_is_sent_to_qq(
     )
 
 
+def test_visible_agent_response_is_sent_after_long_processing(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "reply_context_window_seconds": 10,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    queued_jobs: list[Any] = []
+    sent_messages: list[tuple[Any, Any, str]] = []
+    now = robot_service._now()
+    current_time = {"value": now}
+
+    def fake_enqueue_chat_job(job) -> bool:
+        queued_jobs.append(job)
+        return True
+
+    def fake_send_message(robot_id, target, text) -> None:
+        sent_messages.append((robot_id, target, text))
+
+    async def fake_chat_with_item(**_kwargs):
+        current_time["value"] = now + timedelta(seconds=180)
+        return ChatResponseResult(content="Forge 已经安装好了", robot_message_sent=False)
+
+    monkeypatch.setattr(robot_service, "_now", lambda: current_time["value"])
+    monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
+    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("forge 装好了吗", target={"id": "g1"}, mentioned_bot=True),
+    )
+    assert response.ignored is False
+    job = queued_jobs[-1]
+
+    robot_service._process_chat_job(job)
+
+    assert sent_messages == [(robot.id, job.reply_target, "Forge 已经安装好了")]
+
+
 def test_direct_wakeup_countdown_starts_after_agent_result(
     db: Session,
     monkeypatch,

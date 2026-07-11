@@ -9,7 +9,10 @@ from .event_bus import (
     SubscriptionEvent,
     SubscriptionEventType,
 )
-from .terminal_stream_pipeline import TerminalStreamPipeline
+from .terminal_stream_pipeline import (
+    TerminalStreamPipeline,
+    sanitize_terminal_stream_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +66,9 @@ class ItemSubscriptionCenter:
         return self._event_bus.publish(event)
 
     def publish_stream(self, item_uuid: str, data: dict[str, Any]) -> int:
-        delivered = self._stream_pipeline.publish_stream(item_uuid, data)
-        self._trigger_agent_handler(item_uuid, data)
+        sanitized_data = sanitize_terminal_stream_data(data)
+        delivered = self._stream_pipeline.publish_stream(item_uuid, sanitized_data)
+        self._trigger_agent_handler(item_uuid, sanitized_data)
         return delivered
 
     def _trigger_agent_handler(self, item_uuid: str, data: dict[str, Any]):

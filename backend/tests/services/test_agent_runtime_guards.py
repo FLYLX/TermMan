@@ -625,6 +625,177 @@ def test_critical_terminal_prompt_forces_alert_skill(monkeypatch) -> None:
     assert "terminal mcp prompt body" not in normal_messages[0]["content"]
 
 
+def test_terminal_prompt_requires_source_delivery_for_server_chat(monkeypatch) -> None:
+    agent = SimpleNamespace(
+        get_skills=lambda: [],
+        match_skills=lambda query: [],
+        enabled_knowledge_files=[],
+    )
+    monkeypatch.setattr(
+        prompt_builder,
+        "resolve_prompt_memory_policy",
+        lambda turn_type: SimpleNamespace(
+            include_session_summary=False,
+            max_recent_messages=0,
+            include_recent_history=False,
+            include_long_term=False,
+            allowed_long_term_types=(),
+            max_long_term_memories=0,
+        ),
+    )
+
+    messages = prompt_builder.build_terminal_turn_messages(
+        agent,
+        item_id="item-1",
+        terminal_content="[15:51:17] [Server thread/INFO]: <FLYLX> 你在吗",
+    )
+    system_content = "\n".join(
+        message["content"] for message in messages if message["role"] == "system"
+    )
+
+    assert "来源路由规则" in system_content
+    assert "mcp_local_execute_command" in system_content
+    assert "say <回复内容>" in system_content
+    assert "不要只在 TermMan 聊天框输出最终回答" in system_content
+
+
+def test_terminal_source_delivery_retry_detects_server_chat() -> None:
+    from app.services.agent.session import (
+        EXECUTE_COMMAND_TOOL_NAME,
+        TERMINAL_SOURCE_FILTERED,
+        TERMINAL_SOURCE_RAW_FEEDBACK,
+        build_terminal_source_delivery_correction_message,
+        should_retry_terminal_source_delivery,
+        terminal_content_looks_like_server_chat,
+    )
+
+    agent = SimpleNamespace(
+        get_tools_for_litellm=lambda: [
+            {"type": "function", "function": {"name": EXECUTE_COMMAND_TOOL_NAME}}
+        ]
+    )
+    terminal_content = "[15:51:17] [Server thread/INFO]: <FLYLX> 怎么不回我了"
+
+    assert terminal_content_looks_like_server_chat(terminal_content) is True
+    assert should_retry_terminal_source_delivery(
+        agent=agent,
+        terminal_content=terminal_content,
+        terminal_source=TERMINAL_SOURCE_FILTERED,
+        final_response="在呢，刚才在看日志",
+        retry_used=False,
+    ) is True
+    assert should_retry_terminal_source_delivery(
+        agent=agent,
+        terminal_content=terminal_content,
+        terminal_source=TERMINAL_SOURCE_RAW_FEEDBACK,
+        final_response="在呢，刚才在看日志",
+        retry_used=False,
+    ) is False
+    assert should_retry_terminal_source_delivery(
+        agent=agent,
+        terminal_content=terminal_content,
+        terminal_source=TERMINAL_SOURCE_FILTERED,
+        final_response="这不是问我，不回复",
+        retry_used=False,
+    ) is False
+
+    correction = build_terminal_source_delivery_correction_message("在呢")
+    assert correction["role"] == "system"
+    assert "mcp_local_execute_command" in correction["content"]
+    assert "say <回复内容>" in correction["content"]
+
+
+def test_terminal_source_delivery_retry_reprompts_to_terminal_tool(monkeypatch) -> None:
+    from app.services.agent import session as session_module
+    from app.services.agent.session import AgentSession, InputMessage, InputType
+
+    tool_calls: list[tuple[str, dict]] = []
+
+    class FakeAgent:
+        _context = SimpleNamespace(model="fake-model", api_key=None, api_url=None)
+
+        async def start_mcp_servers(self):
+            return None
+
+        def get_tools_for_litellm(self):
+            return [
+                {
+                    "type": "function",
+                    "function": {"name": "mcp_local_execute_command"},
+                }
+            ]
+
+        async def execute_tool(self, tool_name: str, tool_args: dict):
+            tool_calls.append((tool_name, dict(tool_args)))
+            return {"success": True, "result": [{"type": "text", "text": "命令已发送"}]}
+
+    responses = iter(
+        [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content="在呢", tool_calls=None)
+                    )
+                ]
+            ),
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content="",
+                            tool_calls=[
+                                SimpleNamespace(
+                                    id="call-1",
+                                    function=SimpleNamespace(
+                                        name="mcp_local_execute_command",
+                                        arguments='{"command": "say 在呢"}',
+                                    ),
+                                )
+                            ],
+                        )
+                    )
+                ]
+            ),
+        ]
+    )
+
+    monkeypatch.setattr(session_module, "completion", lambda **kwargs: next(responses))
+    monkeypatch.setattr(
+        session_module,
+        "extract_integration_context_targets",
+        lambda *args, **kwargs: None,
+    )
+
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+    session._build_terminal_messages = lambda agent, input_msg, terminal_content, terminal_source: [
+        {"role": "user", "content": terminal_content}
+    ]
+    events: list[dict] = []
+    session.add_output_callback(events.append)
+
+    session._process_terminal_input(
+        InputMessage(
+            input_type=InputType.TERMINAL,
+            content="[15:51:17] [Server thread/INFO]: <FLYLX> 你在吗",
+        ),
+        FakeAgent(),
+    )
+
+    assert tool_calls == [
+        (
+            "mcp_local_execute_command",
+            {"command": "say 在呢", "item_id": "item-1"},
+        )
+    ]
+    assert not [
+        event
+        for event in events
+        if event.get("type") == "agent_response" and event.get("content") == "在呢"
+    ]
+
+
 def test_robot_delivery_retry_triggers_when_model_returns_plain_reply() -> None:
     tools = [
         {
@@ -822,7 +993,7 @@ def test_robot_plain_reply_bridge_fallback_sends_active_window_reply(monkeypatch
         fake_send_message,
     )
     monkeypatch.setattr(
-        "app.plugins.robot.service.robot_service.conversation_controller_allows_reply",
+        "app.plugins.robot.service.robot_service.conversation_controller_allows_completion_reply",
         fake_allows_reply,
     )
     monkeypatch.setattr(

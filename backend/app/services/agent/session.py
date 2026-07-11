@@ -29,12 +29,11 @@ from app.services.agent.prompts.builder import (
     is_critical_terminal_event,
 )
 from app.services.agent.prompts.system import get_system_prompt
-from app.services.agent.terminal_noise import is_progress_noise_content
-from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 from app.services.agent.tool_arguments import (
     ToolArgumentParseError,
     parse_tool_arguments,
 )
+from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +151,21 @@ MINECRAFT_CONSOLE_COMMANDS = frozenset(
 SILENT_TOOL_NAMES = {READ_LOG_TOOL_NAME, "mcp_robot_send_message", "mcp_robot_sleep_conversation", "mcp_robot_save_memory"}
 TERMINAL_SOURCE_FILTERED = "filtered_output"
 TERMINAL_SOURCE_RAW_FEEDBACK = "raw_feedback"
+MINECRAFT_PLAYER_CHAT_LINE_RE = re.compile(
+    r"(?m)^\s*(?:\[[^\]\n]+\]\s*){0,4}"
+    r"(?:\[[^\]\n]*INFO[^\]\n]*\]\s*)?"
+    r"(?:(?:\[[^\]\n]+\]|[^\n:：]{1,80})[:：]\s*)?"
+    r"(?:\[Not Secure\]\s*)?<[^>\n]{1,64}>\s+\S"
+)
+TERMINAL_NO_REPLY_MARKERS = (
+    "[no_terminal_reply]",
+    "[no_reply]",
+    "[no_qq_reply]",
+    "不回复",
+    "不用回复",
+    "不用回",
+    "不打扰",
+)
 
 
 def is_command_dispatch_failure_result(tool_name: str, result_text: str) -> bool:
@@ -249,6 +263,62 @@ def is_terminal_console_command(command: str) -> bool:
     if re.search(r"[;&|`$<>]", stripped):
         return False
     return _first_command_token(stripped) in MINECRAFT_CONSOLE_COMMANDS
+
+
+def terminal_content_looks_like_server_chat(content: str) -> bool:
+    return bool(MINECRAFT_PLAYER_CHAT_LINE_RE.search(content or ""))
+
+
+def is_terminal_no_reply_intent(content: str) -> bool:
+    normalized = " ".join((content or "").strip().lower().split())
+    if not normalized:
+        return True
+    return len(normalized) <= 120 and any(
+        marker.lower() in normalized for marker in TERMINAL_NO_REPLY_MARKERS
+    )
+
+
+def agent_has_litellm_tool(agent: Agent, tool_name: str) -> bool:
+    try:
+        tools = agent.get_tools_for_litellm()
+    except Exception:
+        return False
+    for tool in tools or []:
+        function = tool.get("function") if isinstance(tool, dict) else None
+        if isinstance(function, dict) and function.get("name") == tool_name:
+            return True
+    return False
+
+
+def should_retry_terminal_source_delivery(
+    *,
+    agent: Agent,
+    terminal_content: str,
+    terminal_source: str,
+    final_response: str,
+    retry_used: bool,
+) -> bool:
+    if retry_used or terminal_source != TERMINAL_SOURCE_FILTERED:
+        return False
+    if is_terminal_no_reply_intent(final_response):
+        return False
+    if not terminal_content_looks_like_server_chat(terminal_content):
+        return False
+    return agent_has_litellm_tool(agent, EXECUTE_COMMAND_TOOL_NAME)
+
+
+def build_terminal_source_delivery_correction_message(final_response: str) -> dict[str, str]:
+    return {
+        "role": "system",
+        "content": (
+            "终端/服务器来源回复反思：你刚才生成了最终文字，但没有写回消息来源。"
+            "当前终端输入像服务器内玩家聊天；如果这段文字是在回答服务器内的人，"
+            "现在必须调用 `mcp_local_execute_command` 回到同一个终端。"
+            "Minecraft/类 Minecraft 控制台用 `say <回复内容>`，需要私聊玩家时用 `tell <玩家名> <回复内容>`。"
+            "只调用工具，不要再次输出普通最终文本。\n"
+            f"刚才准备回复的内容:\n{final_response.strip()}"
+        ),
+    }
 
 
 class SessionState(Enum):
@@ -1464,6 +1534,7 @@ class AgentSession:
             turn_guard = TurnGuard()
             self._current_turn_id = turn_guard.turn_id
             self._emit_running_terminal_status(analysis.terminal_source)
+            terminal_delivery_retry_used = False
 
             for _ in range(MAX_ITERATIONS):
                 timed_out, timeout_reason = turn_guard.check_timeout()
@@ -1485,6 +1556,20 @@ class AgentSession:
                             message.content,
                             tool_called=turn_guard.tool_call_count > 0,
                         )
+                        if should_retry_terminal_source_delivery(
+                            agent=agent,
+                            terminal_content=analysis.content,
+                            terminal_source=analysis.terminal_source,
+                            final_response=final_content,
+                            retry_used=terminal_delivery_retry_used,
+                        ):
+                            messages.append({"role": "assistant", "content": final_content})
+                            messages.append(
+                                build_terminal_source_delivery_correction_message(final_content)
+                            )
+                            terminal_delivery_retry_used = True
+                            self._emit_running_terminal_status(analysis.terminal_source)
+                            continue
                         self.emit_output(final_content, "agent_response")
                     break
 

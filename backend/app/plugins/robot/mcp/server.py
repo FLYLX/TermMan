@@ -694,7 +694,7 @@ class RobotMCPServer:
 
         from app.plugins.robot.service import robot_service
 
-        if robot_service.conversation_controller_allows_reply(
+        if robot_service.conversation_controller_allows_completion_reply(
             getattr(context, "robot_id", ""),
             getattr(context, "conversation_key", ""),
             conversation_generation,
