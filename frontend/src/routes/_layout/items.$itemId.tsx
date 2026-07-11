@@ -12,6 +12,7 @@ import {
   Moon,
   Play,
   Plug,
+  Plus,
   RefreshCw,
   Send,
   Server,
@@ -22,7 +23,7 @@ import {
   Users,
   WifiOff,
 } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ApiError,
   type ItemPublic,
@@ -37,13 +38,6 @@ import {
   FilterRuleEditor,
 } from "@/components/Items/FilterRuleEditor"
 import { ItemFilesPanel } from "@/components/Items/ItemFilesPanel"
-import {
-  getItemRobotControllerStatus,
-  getItemRobotControllerStatusQueryKey,
-  type ItemRobotControllerStatusRecord,
-  type ItemRobotControllerStatusResponse,
-  type RobotConversationControllerStatus,
-} from "@/components/Robots/api"
 import ItemHandlersList from "@/components/Items/ItemHandlersList"
 import {
   createFallbackItem,
@@ -52,6 +46,13 @@ import {
 } from "@/components/Items/itemDetailSnapshots"
 import { useI18n } from "@/components/locale-provider"
 import { MemoryManager } from "@/components/memory-manager"
+import {
+  getItemRobotControllerStatus,
+  getItemRobotControllerStatusQueryKey,
+  type ItemRobotControllerStatusRecord,
+  type ItemRobotControllerStatusResponse,
+  type RobotConversationControllerStatus,
+} from "@/components/Robots/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -147,9 +148,9 @@ type TerminalWebSocketServerForm = {
   message_format: "json"
 }
 
-function createTerminalWsForm(item: ItemWithExtras): TerminalWebSocketServerForm {
+function createTerminalWsForm(itemTitle: string): TerminalWebSocketServerForm {
   return {
-    name: `${item.title} WS`,
+    name: `${itemTitle} WS`,
     host: "0.0.0.0",
     port: "",
     token: "",
@@ -170,7 +171,10 @@ function getTerminalWsConnectionUrl(
 
 function getTerminalWsPublicHost(): string {
   try {
-    const apiUrl = new URL(OpenAPI.BASE || window.location.origin, window.location.origin)
+    const apiUrl = new URL(
+      OpenAPI.BASE || window.location.origin,
+      window.location.origin,
+    )
     if (apiUrl.hostname) {
       return apiUrl.hostname
     }
@@ -227,10 +231,13 @@ async function requestItemJobs<T>(
     headers.set("Content-Type", "application/json")
   }
 
-  const response = await fetch(`${OpenAPI.BASE}/api/v1/items/${itemId}/jobs${path}`, {
-    ...init,
-    headers,
-  })
+  const response = await fetch(
+    `${OpenAPI.BASE}/api/v1/items/${itemId}/jobs${path}`,
+    {
+      ...init,
+      headers,
+    },
+  )
   const contentType = response.headers.get("content-type") || ""
   const payload = contentType.includes("application/json")
     ? await response.json().catch(() => undefined)
@@ -284,7 +291,9 @@ function isBackgroundJobOutput(entry: TerminalOutput): boolean {
   return entry.source === "job" || Boolean(entry.job_id)
 }
 
-function buildTerminalOutputGroups(output: TerminalOutput[]): TerminalOutputGroup[] {
+function buildTerminalOutputGroups(
+  output: TerminalOutput[],
+): TerminalOutputGroup[] {
   const groups: TerminalOutputGroup[] = []
 
   for (const entry of output) {
@@ -391,11 +400,15 @@ function TerminalJobOutputBlock({
         <span className="rounded-full border border-zinc-700 bg-zinc-950/70 px-2 py-0.5 text-[10px] text-slate-300">
           {group.jobId}
         </span>
-        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${tone.badge}`}>
+        <span
+          className={`rounded-full border px-2 py-0.5 text-[10px] ${tone.badge}`}
+        >
           {getTerminalJobStatusLabel(latestEntry)}
         </span>
       </div>
-      <pre className={`whitespace-pre-wrap px-3 py-2 text-[12px] leading-5 ${tone.text}`}>
+      <pre
+        className={`whitespace-pre-wrap px-3 py-2 text-[12px] leading-5 ${tone.text}`}
+      >
         {text}
       </pre>
     </div>
@@ -455,6 +468,67 @@ function createDefaultInputRules(): Record<string, FilterRule> {
       },
     },
   }
+}
+
+const COMMON_INPUT_NOISE_RULES: Array<{
+  key: string
+  label: string
+  description: string
+  rule: FilterRule
+}> = [
+  {
+    key: "noise_ftb_backups",
+    label: "FTBBackups 自动备份",
+    description: "拦截普通自动备份状态，不影响错误和玩家聊天。",
+    rule: {
+      regex_patterns: [
+        "\\[.*FTBBackups/\\]:\\s*(Attempting to create an automatic backup|Starting automatic backup|Created backup|Backup .* completed|Skipping automatic backup)",
+      ],
+      action_type: "block",
+      reason: "Repeated FTBBackups automatic backup status line.",
+    },
+  },
+]
+
+function mergeFilterRule(
+  rules: Record<string, FilterRule>,
+  key: string,
+  rule: FilterRule,
+): Record<string, FilterRule> {
+  const current = rules[key]
+  if (!current) {
+    return {
+      ...rules,
+      [key]: rule,
+    }
+  }
+
+  const mergedPatterns = Array.from(
+    new Set([...(current.regex_patterns || []), ...rule.regex_patterns]),
+  )
+  return {
+    ...rules,
+    [key]: {
+      ...current,
+      ...rule,
+      regex_patterns: mergedPatterns,
+      reason: current.reason || rule.reason,
+    },
+  }
+}
+
+function hasFilterRule(
+  rules: Record<string, FilterRule>,
+  key: string,
+  rule: FilterRule,
+) {
+  const current = rules[key]
+  if (!current) {
+    return false
+  }
+  return rule.regex_patterns.every((pattern) =>
+    current.regex_patterns.includes(pattern),
+  )
 }
 
 function createDefaultOutputRules(): Record<string, FilterRule> {
@@ -768,9 +842,7 @@ function getRobotControllerSecondsRemaining(
 function isRobotControllerProcessing(
   controller: RobotConversationControllerStatus | undefined,
 ) {
-  return (
-    controller?.status === "processing" || Boolean(controller?.processing)
-  )
+  return controller?.status === "processing" || Boolean(controller?.processing)
 }
 function getRobotControllerProcessingSecondsRemaining(
   controller: RobotConversationControllerStatus | undefined,
@@ -849,7 +921,11 @@ function RobotSleepCountdownRing({
       className={`relative inline-flex size-6 shrink-0 items-center justify-center ${className}`}
       aria-hidden="true"
     >
-      <svg viewBox="0 0 20 20" className="absolute inset-0 -rotate-90">
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 20 20"
+        className="absolute inset-0 -rotate-90"
+      >
         <circle
           cx="10"
           cy="10"
@@ -908,7 +984,9 @@ function RobotSleepStatusBadge({
   }
 
   const latest = getLatestRobotControllerRow(data)
-  const remainingSeconds = getRobotControllerSecondsRemaining(latest?.controller)
+  const remainingSeconds = getRobotControllerSecondsRemaining(
+    latest?.controller,
+  )
   const isProcessing = isRobotControllerProcessing(latest?.controller)
   const isAwake = isRobotControllerAwake(latest?.controller)
   const label = isProcessing
@@ -960,7 +1038,9 @@ function RobotSleepTerminalLine({
   const fallbackRobot = data.robots.find(
     (robot) => robot.is_enabled && robot.allow_chat,
   )
-  const remainingSeconds = getRobotControllerSecondsRemaining(latest?.controller)
+  const remainingSeconds = getRobotControllerSecondsRemaining(
+    latest?.controller,
+  )
   const isProcessing = isRobotControllerProcessing(latest?.controller)
   const isAwake = isRobotControllerAwake(latest?.controller)
   const statusText =
@@ -1012,7 +1092,6 @@ function RobotSleepTerminalLine({
     </div>
   )
 }
-
 
 function BackgroundJobsPanel({
   jobs,
@@ -1072,7 +1151,9 @@ function BackgroundJobsPanel({
           disabled={!daemonOnline || isFetching}
           title="刷新后台 Jobs"
         >
-          <RefreshCw className={`size-3.5 ${isFetching ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`size-3.5 ${isFetching ? "animate-spin" : ""}`}
+          />
           <span className="sr-only">刷新后台 Jobs</span>
         </Button>
       </div>
@@ -1095,7 +1176,8 @@ function BackgroundJobsPanel({
             <div className="space-y-2">
               {jobs.map((job) => {
                 const isCanceling = cancelingJobId === job.job_id
-                const cancelDisabled = isCanceling || Boolean(job.cancel_requested)
+                const cancelDisabled =
+                  isCanceling || Boolean(job.cancel_requested)
                 return (
                   <div
                     key={job.job_id}
@@ -1146,7 +1228,6 @@ function BackgroundJobsPanel({
     </div>
   )
 }
-
 
 function getRobotTriggerLabel(trigger: string) {
   switch (trigger) {
@@ -1256,7 +1337,10 @@ function RobotPendingRepliesPanel({
                     </span>
                   </div>
                   <div className="mb-1 flex min-w-0 items-center gap-1.5 text-[11px]">
-                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                    <Badge
+                      variant="secondary"
+                      className="h-5 px-1.5 text-[10px]"
+                    >
                       {getRobotTriggerLabel(message.trigger_reason)}
                     </Badge>
                     <span className="truncate text-muted-foreground">
@@ -1291,7 +1375,9 @@ function RobotConversationDebugTable({
       <div className="flex h-9 items-center justify-between border-b border-zinc-800 px-3">
         <div className="flex min-w-0 items-center gap-2 font-medium text-slate-200">
           <Bot className="size-3.5 shrink-0 text-cyan-300" />
-          <span className="truncate">{t("items.detail.qqConversationDebug")}</span>
+          <span className="truncate">
+            {t("items.detail.qqConversationDebug")}
+          </span>
         </div>
         {isFetching ? (
           <RefreshCw className="size-3 animate-spin text-slate-500" />
@@ -1324,7 +1410,8 @@ function RobotConversationDebugTable({
               {rows.map(({ robot, controller }) => {
                 const isProcessing = isRobotControllerProcessing(controller)
                 const isAwake = isRobotControllerAwake(controller)
-                const displaySeconds = getRobotControllerDisplaySeconds(controller)
+                const displaySeconds =
+                  getRobotControllerDisplaySeconds(controller)
                 const statusLabel = isProcessing
                   ? t("items.detail.qqProcessing")
                   : isAwake
@@ -1497,7 +1584,7 @@ function ItemDetailPage({
     TerminalWebSocketServerStatus[]
   >([])
   const [terminalWsForm, setTerminalWsForm] = useState(() =>
-    createTerminalWsForm(item),
+    createTerminalWsForm(item.title),
   )
   const [isLoadingTerminalWsServers, setIsLoadingTerminalWsServers] =
     useState(false)
@@ -1526,16 +1613,21 @@ function ItemDetailPage({
     })
   }
   const hasVisitedTab = (value: ItemDetailTab) => visitedTabs.has(value)
+  const currentItemId = item.id
+  const currentItemTitle = item.title
 
   useEffect(() => {
+    if (!currentItemId) {
+      return
+    }
     setActiveTab("terminal")
     setVisitedTabs(new Set<ItemDetailTab>(["terminal"]))
-    setTerminalWsForm(createTerminalWsForm(item))
+    setTerminalWsForm(createTerminalWsForm(currentItemTitle))
     setTerminalWsServers([])
     setJobsPanelOpen(false)
     setPendingRepliesPanelOpen(false)
     setJobCancelId(null)
-  }, [item.id])
+  }, [currentItemId, currentItemTitle])
 
   useEffect(() => {
     if (pendingReplyCount > 0) {
@@ -1668,7 +1760,7 @@ function ItemDetailPage({
       }
     }, 100)
     return () => clearTimeout(timer)
-  }, [isConnected, output])
+  })
 
   const handleStartItem = async () => {
     try {
@@ -1735,7 +1827,7 @@ function ItemDetailPage({
     }
   }
 
-  const loadTerminalWsServers = async () => {
+  const loadTerminalWsServers = useCallback(async () => {
     if (!terminalWsPluginEnabled) {
       setTerminalWsServers([])
       return
@@ -1756,7 +1848,7 @@ function ItemDetailPage({
     } finally {
       setIsLoadingTerminalWsServers(false)
     }
-  }
+  }, [item.id, showErrorToast, terminalWsPluginEnabled])
 
   const handleCreateTerminalWsServer = async () => {
     const name = terminalWsForm.name.trim()
@@ -1768,7 +1860,10 @@ function ItemDetailPage({
     const port = terminalWsForm.port.trim()
       ? Number(terminalWsForm.port.trim())
       : null
-    if (port !== null && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+    if (
+      port !== null &&
+      (!Number.isInteger(port) || port < 1 || port > 65535)
+    ) {
       showErrorToast("Port must be 1-65535")
       return
     }
@@ -1788,18 +1883,22 @@ function ItemDetailPage({
 
     setIsCreatingTerminalWsServer(true)
     try {
-      await requestTerminalWebSocket<TerminalWebSocketServerStatus>(item.id, "", {
-        method: "POST",
-        body: JSON.stringify({
-          name,
-          host: terminalWsForm.host.trim() || null,
-          port,
-          token: terminalWsForm.token.trim() || null,
-          heartbeat_interval: heartbeatInterval,
-          message_format: terminalWsForm.message_format,
-        }),
-      })
-      setTerminalWsForm(createTerminalWsForm(item))
+      await requestTerminalWebSocket<TerminalWebSocketServerStatus>(
+        item.id,
+        "",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name,
+            host: terminalWsForm.host.trim() || null,
+            port,
+            token: terminalWsForm.token.trim() || null,
+            heartbeat_interval: heartbeatInterval,
+            message_format: terminalWsForm.message_format,
+          }),
+        },
+      )
+      setTerminalWsForm(createTerminalWsForm(item.title))
       await loadTerminalWsServers()
       showSuccessToast("WebSocket server created")
     } catch (error) {
@@ -1834,7 +1933,11 @@ function ItemDetailPage({
       }
       await loadTerminalWsServers()
       const actionLabel =
-        action === "start" ? "started" : action === "stop" ? "stopped" : "deleted"
+        action === "start"
+          ? "started"
+          : action === "stop"
+            ? "stopped"
+            : "deleted"
       showSuccessToast(`WebSocket server ${actionLabel}`)
     } catch (error) {
       showErrorToast(
@@ -1858,7 +1961,7 @@ function ItemDetailPage({
       return
     }
     void loadTerminalWsServers()
-  }, [item.id, terminalWsPluginEnabled])
+  }, [loadTerminalWsServers, terminalWsPluginEnabled])
 
   useEffect(() => {
     if (!terminalWsPluginEnabled && activeTab === "websocket") {
@@ -1942,27 +2045,64 @@ function ItemDetailPage({
     }
   }
 
-  const updateItemCaches = (updatedItem: ItemPublic) => {
-    const cachedItem = updatedItem as ItemWithExtras
+  const updateItemCaches = useCallback(
+    (updatedItem: ItemPublic) => {
+      const cachedItem = updatedItem as ItemWithExtras
 
-    queryClient.setQueryData<ItemWithExtras>(
-      ["items", "detail", updatedItem.id],
-      (current) => ({ ...(current || {}), ...cachedItem }),
-    )
-    queryClient.setQueryData<ItemsResponse | undefined>(["items"], (current) =>
-      current
-        ? {
-            ...current,
-            data: current.data.map((entry) =>
-              entry.id === updatedItem.id
-                ? ({ ...entry, ...cachedItem } as ItemWithExtras)
-                : entry,
-            ),
-          }
-        : current,
-    )
-    saveItemSnapshot(cachedItem)
+      queryClient.setQueryData<ItemWithExtras>(
+        ["items", "detail", updatedItem.id],
+        (current) => ({ ...(current || {}), ...cachedItem }),
+      )
+      queryClient.setQueryData<ItemsResponse | undefined>(
+        ["items"],
+        (current) =>
+          current
+            ? {
+                ...current,
+                data: current.data.map((entry) =>
+                  entry.id === updatedItem.id
+                    ? ({ ...entry, ...cachedItem } as ItemWithExtras)
+                    : entry,
+                ),
+              }
+            : current,
+      )
+      saveItemSnapshot(cachedItem)
+    },
+    [queryClient],
+  )
+
+  const handleSyncInputFilterRules = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: ["items", "detail", item.id],
+    })
+    showSuccessToast("已同步后端过滤规则")
   }
+
+  const handleApplyCommonInputNoiseRule = (
+    preset: (typeof COMMON_INPUT_NOISE_RULES)[number],
+  ) => {
+    setInputFilterEnabled(true)
+    setInputFilterRules((current) =>
+      mergeFilterRule(current, preset.key, preset.rule),
+    )
+    showSuccessToast(`已添加规则：${preset.label}`)
+  }
+
+  useEffect(() => {
+    if (activeTab !== "filters") {
+      return
+    }
+    void queryClient.invalidateQueries({
+      queryKey: ["items", "detail", item.id],
+    })
+    const timer = window.setInterval(() => {
+      void queryClient.invalidateQueries({
+        queryKey: ["items", "detail", item.id],
+      })
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [activeTab, item.id, queryClient])
 
   useEffect(() => {
     if (inputSignature === inputSyncedSignatureRef.current) {
@@ -2201,9 +2341,7 @@ function ItemDetailPage({
                   {t("items.detail.terminal")}
                 </TabsTrigger>
                 {terminalWsPluginEnabled && (
-                  <TabsTrigger value="websocket">
-                    WebSocket Server
-                  </TabsTrigger>
+                  <TabsTrigger value="websocket">WebSocket Server</TabsTrigger>
                 )}
                 {robotPluginEnabled && (
                   <TabsTrigger value="qq-debug">
@@ -2232,267 +2370,276 @@ function ItemDetailPage({
               <TabsContent value="websocket" className="space-y-4">
                 {hasVisitedTab("websocket") ? (
                   <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex items-start gap-2">
-                    <Server className="mt-1 size-5 text-blue-500" />
-                    <div>
-                      <h2 className="text-base font-semibold">
-                        WebSocket Server
-                      </h2>
-                      <p className="text-xs text-muted-foreground">
-                        {item.title}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 w-fit px-3 text-xs"
-                    onClick={() => void loadTerminalWsServers()}
-                    disabled={isLoadingTerminalWsServers}
-                  >
-                    <RefreshCw
-                      className={`size-3.5 ${isLoadingTerminalWsServers ? "animate-spin" : ""}`}
-                    />
-                    Refresh
-                  </Button>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-12">
-                  <div className="space-y-1.5 xl:col-span-3">
-                    <Label htmlFor="terminal-ws-name">Name</Label>
-                    <Input
-                      id="terminal-ws-name"
-                      value={terminalWsForm.name}
-                      onChange={(event) =>
-                        setTerminalWsForm((current) => ({
-                          ...current,
-                          name: event.target.value,
-                        }))
-                      }
-                      className="h-9"
-                    />
-                  </div>
-                  <div className="space-y-1.5 xl:col-span-2">
-                    <Label htmlFor="terminal-ws-host">Host</Label>
-                    <Input
-                      id="terminal-ws-host"
-                      value={terminalWsForm.host}
-                      onChange={(event) =>
-                        setTerminalWsForm((current) => ({
-                          ...current,
-                          host: event.target.value,
-                        }))
-                      }
-                      placeholder="0.0.0.0"
-                      className="h-9 font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1.5 xl:col-span-1">
-                    <Label htmlFor="terminal-ws-port">Port</Label>
-                    <Input
-                      id="terminal-ws-port"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={terminalWsForm.port}
-                      onChange={(event) =>
-                        setTerminalWsForm((current) => ({
-                          ...current,
-                          port: event.target.value,
-                        }))
-                      }
-                      placeholder="auto"
-                      className="h-9 font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1.5 xl:col-span-3">
-                    <Label htmlFor="terminal-ws-token">Token</Label>
-                    <Input
-                      id="terminal-ws-token"
-                      value={terminalWsForm.token}
-                      onChange={(event) =>
-                        setTerminalWsForm((current) => ({
-                          ...current,
-                          token: event.target.value,
-                        }))
-                      }
-                      placeholder="auto"
-                      className="h-9 font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1.5 xl:col-span-1">
-                    <Label htmlFor="terminal-ws-heartbeat">Heartbeat</Label>
-                    <Input
-                      id="terminal-ws-heartbeat"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={terminalWsForm.heartbeat_interval}
-                      onChange={(event) =>
-                        setTerminalWsForm((current) => ({
-                          ...current,
-                          heartbeat_interval: event.target.value,
-                        }))
-                      }
-                      className="h-9 font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1.5 xl:col-span-1">
-                    <Label htmlFor="terminal-ws-format">Format</Label>
-                    <Input
-                      id="terminal-ws-format"
-                      value={terminalWsForm.message_format}
-                      disabled
-                      className="h-9 font-mono"
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    className="h-9 md:self-end xl:col-span-1"
-                    onClick={() => void handleCreateTerminalWsServer()}
-                    disabled={isCreatingTerminalWsServer}
-                  >
-                    {isCreatingTerminalWsServer ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Server className="size-4" />
-                    )}
-                    Create
-                  </Button>
-                </div>
-
-                <div className="mt-4 space-y-2">
-                  {isLoadingTerminalWsServers ? (
-                    <div className="flex h-20 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
-                      <Loader2 className="mr-2 size-4 animate-spin" />
-                      Loading
-                    </div>
-                  ) : terminalWsServers.length === 0 ? (
-                    <div className="flex h-20 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
-                      No WebSocket servers
-                    </div>
-                  ) : (
-                    terminalWsServers.map((server) => {
-                      const connectionUrl = getTerminalWsConnectionUrl(server)
-                      return (
-                        <div
-                          key={server.server_id}
-                          className="rounded-lg border bg-muted/20 p-3"
-                        >
-                        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                          <div className="min-w-0 flex-1 space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium">
-                                {server.name}
-                              </span>
-                              <Badge
-                                className={
-                                  server.running
-                                    ? "border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400"
-                                    : "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
-                                }
-                              >
-                                {server.running ? "running" : "stopped"}
-                              </Badge>
-                              <Badge variant="secondary">
-                                {server.client_count} clients
-                              </Badge>
-                            </div>
-                            <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
-                              <span className="truncate">
-                                Host:{" "}
-                                <span className="font-mono text-foreground/80">
-                                  {server.host}
-                                </span>
-                              </span>
-                              <span>
-                                Port:{" "}
-                                <span className="font-mono text-foreground/80">
-                                  {server.port}
-                                </span>
-                              </span>
-                              <span>
-                                Format:{" "}
-                                <span className="font-mono text-foreground/80">
-                                  {server.message_format}
-                                </span>
-                              </span>
-                              <span>
-                                Heartbeat:{" "}
-                                <span className="font-mono text-foreground/80">
-                                  {server.heartbeat_interval}s
-                                </span>
-                              </span>
-                            </div>
-                            <div className="flex min-w-0 items-center gap-2 rounded-md bg-background/70 px-2 py-1.5">
-                              <span className="min-w-0 flex-1 truncate font-mono text-xs">
-                                {connectionUrl}
-                              </span>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="size-7 shrink-0"
-                                onClick={() =>
-                                  void handleCopyTerminalWsUrl(connectionUrl)
-                                }
-                              >
-                                {copiedText === connectionUrl ? (
-                                  <Check className="size-3.5 text-green-500" />
-                                ) : (
-                                  <Copy className="size-3.5" />
-                                )}
-                                <span className="sr-only">Copy URL</span>
-                              </Button>
-                            </div>
-                          </div>
-
-                          <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={server.running ? "outline" : "default"}
-                              className="h-8 px-3 text-xs"
-                              onClick={() =>
-                                void handleTerminalWsAction(
-                                  server.server_id,
-                                  server.running ? "stop" : "start",
-                                )
-                              }
-                              disabled={terminalWsActionId === server.server_id}
-                            >
-                              {terminalWsActionId === server.server_id ? (
-                                <Loader2 className="size-3.5 animate-spin" />
-                              ) : server.running ? (
-                                <Square className="size-3.5" />
-                              ) : (
-                                <Play className="size-3.5" />
-                              )}
-                              {server.running ? "Stop" : "Start"}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="destructive"
-                              className="h-8 px-3 text-xs"
-                              onClick={() =>
-                                void handleTerminalWsAction(
-                                  server.server_id,
-                                  "delete",
-                                )
-                              }
-                              disabled={terminalWsActionId === server.server_id}
-                            >
-                              <Trash2 className="size-3.5" />
-                              Delete
-                            </Button>
-                          </div>
+                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex items-start gap-2">
+                        <Server className="mt-1 size-5 text-blue-500" />
+                        <div>
+                          <h2 className="text-base font-semibold">
+                            WebSocket Server
+                          </h2>
+                          <p className="text-xs text-muted-foreground">
+                            {item.title}
+                          </p>
                         </div>
                       </div>
-                      )
-                    })
-                  )}
-                </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-fit px-3 text-xs"
+                        onClick={() => void loadTerminalWsServers()}
+                        disabled={isLoadingTerminalWsServers}
+                      >
+                        <RefreshCw
+                          className={`size-3.5 ${isLoadingTerminalWsServers ? "animate-spin" : ""}`}
+                        />
+                        Refresh
+                      </Button>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-12">
+                      <div className="space-y-1.5 xl:col-span-3">
+                        <Label htmlFor="terminal-ws-name">Name</Label>
+                        <Input
+                          id="terminal-ws-name"
+                          value={terminalWsForm.name}
+                          onChange={(event) =>
+                            setTerminalWsForm((current) => ({
+                              ...current,
+                              name: event.target.value,
+                            }))
+                          }
+                          className="h-9"
+                        />
+                      </div>
+                      <div className="space-y-1.5 xl:col-span-2">
+                        <Label htmlFor="terminal-ws-host">Host</Label>
+                        <Input
+                          id="terminal-ws-host"
+                          value={terminalWsForm.host}
+                          onChange={(event) =>
+                            setTerminalWsForm((current) => ({
+                              ...current,
+                              host: event.target.value,
+                            }))
+                          }
+                          placeholder="0.0.0.0"
+                          className="h-9 font-mono"
+                        />
+                      </div>
+                      <div className="space-y-1.5 xl:col-span-1">
+                        <Label htmlFor="terminal-ws-port">Port</Label>
+                        <Input
+                          id="terminal-ws-port"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={terminalWsForm.port}
+                          onChange={(event) =>
+                            setTerminalWsForm((current) => ({
+                              ...current,
+                              port: event.target.value,
+                            }))
+                          }
+                          placeholder="auto"
+                          className="h-9 font-mono"
+                        />
+                      </div>
+                      <div className="space-y-1.5 xl:col-span-3">
+                        <Label htmlFor="terminal-ws-token">Token</Label>
+                        <Input
+                          id="terminal-ws-token"
+                          value={terminalWsForm.token}
+                          onChange={(event) =>
+                            setTerminalWsForm((current) => ({
+                              ...current,
+                              token: event.target.value,
+                            }))
+                          }
+                          placeholder="auto"
+                          className="h-9 font-mono"
+                        />
+                      </div>
+                      <div className="space-y-1.5 xl:col-span-1">
+                        <Label htmlFor="terminal-ws-heartbeat">Heartbeat</Label>
+                        <Input
+                          id="terminal-ws-heartbeat"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={terminalWsForm.heartbeat_interval}
+                          onChange={(event) =>
+                            setTerminalWsForm((current) => ({
+                              ...current,
+                              heartbeat_interval: event.target.value,
+                            }))
+                          }
+                          className="h-9 font-mono"
+                        />
+                      </div>
+                      <div className="space-y-1.5 xl:col-span-1">
+                        <Label htmlFor="terminal-ws-format">Format</Label>
+                        <Input
+                          id="terminal-ws-format"
+                          value={terminalWsForm.message_format}
+                          disabled
+                          className="h-9 font-mono"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        className="h-9 md:self-end xl:col-span-1"
+                        onClick={() => void handleCreateTerminalWsServer()}
+                        disabled={isCreatingTerminalWsServer}
+                      >
+                        {isCreatingTerminalWsServer ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Server className="size-4" />
+                        )}
+                        Create
+                      </Button>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      {isLoadingTerminalWsServers ? (
+                        <div className="flex h-20 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                          <Loader2 className="mr-2 size-4 animate-spin" />
+                          Loading
+                        </div>
+                      ) : terminalWsServers.length === 0 ? (
+                        <div className="flex h-20 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                          No WebSocket servers
+                        </div>
+                      ) : (
+                        terminalWsServers.map((server) => {
+                          const connectionUrl =
+                            getTerminalWsConnectionUrl(server)
+                          return (
+                            <div
+                              key={server.server_id}
+                              className="rounded-lg border bg-muted/20 p-3"
+                            >
+                              <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                                <div className="min-w-0 flex-1 space-y-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-medium">
+                                      {server.name}
+                                    </span>
+                                    <Badge
+                                      className={
+                                        server.running
+                                          ? "border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400"
+                                          : "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
+                                      }
+                                    >
+                                      {server.running ? "running" : "stopped"}
+                                    </Badge>
+                                    <Badge variant="secondary">
+                                      {server.client_count} clients
+                                    </Badge>
+                                  </div>
+                                  <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
+                                    <span className="truncate">
+                                      Host:{" "}
+                                      <span className="font-mono text-foreground/80">
+                                        {server.host}
+                                      </span>
+                                    </span>
+                                    <span>
+                                      Port:{" "}
+                                      <span className="font-mono text-foreground/80">
+                                        {server.port}
+                                      </span>
+                                    </span>
+                                    <span>
+                                      Format:{" "}
+                                      <span className="font-mono text-foreground/80">
+                                        {server.message_format}
+                                      </span>
+                                    </span>
+                                    <span>
+                                      Heartbeat:{" "}
+                                      <span className="font-mono text-foreground/80">
+                                        {server.heartbeat_interval}s
+                                      </span>
+                                    </span>
+                                  </div>
+                                  <div className="flex min-w-0 items-center gap-2 rounded-md bg-background/70 px-2 py-1.5">
+                                    <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                                      {connectionUrl}
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="size-7 shrink-0"
+                                      onClick={() =>
+                                        void handleCopyTerminalWsUrl(
+                                          connectionUrl,
+                                        )
+                                      }
+                                    >
+                                      {copiedText === connectionUrl ? (
+                                        <Check className="size-3.5 text-green-500" />
+                                      ) : (
+                                        <Copy className="size-3.5" />
+                                      )}
+                                      <span className="sr-only">Copy URL</span>
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={
+                                      server.running ? "outline" : "default"
+                                    }
+                                    className="h-8 px-3 text-xs"
+                                    onClick={() =>
+                                      void handleTerminalWsAction(
+                                        server.server_id,
+                                        server.running ? "stop" : "start",
+                                      )
+                                    }
+                                    disabled={
+                                      terminalWsActionId === server.server_id
+                                    }
+                                  >
+                                    {terminalWsActionId === server.server_id ? (
+                                      <Loader2 className="size-3.5 animate-spin" />
+                                    ) : server.running ? (
+                                      <Square className="size-3.5" />
+                                    ) : (
+                                      <Play className="size-3.5" />
+                                    )}
+                                    {server.running ? "Stop" : "Start"}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="destructive"
+                                    className="h-8 px-3 text-xs"
+                                    onClick={() =>
+                                      void handleTerminalWsAction(
+                                        server.server_id,
+                                        "delete",
+                                      )
+                                    }
+                                    disabled={
+                                      terminalWsActionId === server.server_id
+                                    }
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                    Delete
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
                   </section>
                 ) : null}
               </TabsContent>
@@ -2585,30 +2732,37 @@ function ItemDetailPage({
                                   {t("items.detail.terminalConnectedWaiting")}
                                 </div>
                               ) : (
-                                terminalOutputGroups.map((group, groupIndex) => {
-                                  if (group.kind === "job") {
-                                    return (
-                                      <TerminalJobOutputBlock
-                                        key={`job-${groupIndex}-${group.jobId}`}
-                                        group={group}
-                                      />
-                                    )
-                                  }
+                                terminalOutputGroups.map(
+                                  (group, groupIndex) => {
+                                    if (group.kind === "job") {
+                                      return (
+                                        <TerminalJobOutputBlock
+                                          key={`job-${groupIndex}-${group.jobId}`}
+                                          group={group}
+                                        />
+                                      )
+                                    }
 
-                                  return group.entries.map((out, entryIndex) => {
-                                    const text = getTerminalOutputText(out)
-                                    const isInput = isTerminalInput(out, text)
-                                    const isError = Boolean(out.stderr)
-                                    return (
-                                      <span
-                                        key={`terminal-${groupIndex}-${entryIndex}`}
-                                        className={`whitespace-pre ${isError ? "text-red-300" : isInput ? "text-green-400" : "text-blue-300"}`}
-                                      >
-                                        {text}
-                                      </span>
+                                    return group.entries.map(
+                                      (out, entryIndex) => {
+                                        const text = getTerminalOutputText(out)
+                                        const isInput = isTerminalInput(
+                                          out,
+                                          text,
+                                        )
+                                        const isError = Boolean(out.stderr)
+                                        return (
+                                          <span
+                                            key={`terminal-${groupIndex}-${entryIndex}`}
+                                            className={`whitespace-pre ${isError ? "text-red-300" : isInput ? "text-green-400" : "text-blue-300"}`}
+                                          >
+                                            {text}
+                                          </span>
+                                        )
+                                      },
                                     )
-                                  })
-                                })
+                                  },
+                                )
                               )}
                             </div>
 
@@ -2847,6 +3001,62 @@ function ItemDetailPage({
                             />
                           </button>
                         </div>
+                      </div>
+                    </div>
+
+                    <div className="mb-4 rounded-xl border bg-muted/20 p-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 text-sm font-medium">
+                            <Filter className="size-4 text-blue-500" />
+                            <span>Agent 噪声过滤规则</span>
+                            <Badge variant="outline" className="text-[10px]">
+                              {Object.keys(inputFilterRules).length}
+                            </Badge>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Agent 通过 MCP
+                            写入的规则会显示在下面，也可以手动添加常见噪声。
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void handleSyncInputFilterRules()}
+                        >
+                          <RefreshCw className="mr-2 size-4" />
+                          同步后端规则
+                        </Button>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {COMMON_INPUT_NOISE_RULES.map((preset) => {
+                          const applied = hasFilterRule(
+                            inputFilterRules,
+                            preset.key,
+                            preset.rule,
+                          )
+                          return (
+                            <Button
+                              key={preset.key}
+                              type="button"
+                              size="sm"
+                              variant={applied ? "secondary" : "outline"}
+                              disabled={applied}
+                              onClick={() =>
+                                handleApplyCommonInputNoiseRule(preset)
+                              }
+                              title={preset.description}
+                            >
+                              {applied ? (
+                                <Check className="mr-2 size-4" />
+                              ) : (
+                                <Plus className="mr-2 size-4" />
+                              )}
+                              {preset.label}
+                            </Button>
+                          )
+                        })}
                       </div>
                     </div>
 

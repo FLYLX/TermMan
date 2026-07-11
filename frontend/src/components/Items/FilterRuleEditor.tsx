@@ -22,6 +22,7 @@ export interface FilterRule {
   name?: string
   regex_patterns: string[]
   action_type: "block" | "ignore" | "log" | "replace"
+  reason?: string
   action?: {
     replace_rules: Record<string, string>
   }
@@ -192,6 +193,7 @@ export function FilterRuleEditor({
                 : [],
               action_type:
                 (cfg.action_type as FilterRule["action_type"]) || "ignore",
+              reason: typeof cfg.reason === "string" ? cfg.reason : undefined,
               action: cfg.action as FilterRule["action"],
             })
           }
@@ -320,6 +322,11 @@ export function FilterRuleEditor({
                       <span className="text-xs text-muted-foreground ml-2">
                         ({filter.regex_patterns.length} 条规则)
                       </span>
+                      {filter.reason ? (
+                        <span className="hidden truncate text-xs text-muted-foreground md:inline">
+                          {filter.reason}
+                        </span>
+                      ) : null}
                     </div>
                     <Button
                       size="icon"
@@ -336,7 +343,7 @@ export function FilterRuleEditor({
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <div className="p-4 space-y-4 border-t">
-                    <div className="flex items-end gap-4">
+                    <div className="flex flex-wrap items-end gap-4">
                       <div className="space-y-1">
                         <Label className="text-xs">过滤器名称</Label>
                         <Input
@@ -346,6 +353,18 @@ export function FilterRuleEditor({
                           }
                           placeholder="过滤器名称"
                           className="w-48"
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <Label className="text-xs">说明</Label>
+                        <Input
+                          value={filter.reason || ""}
+                          onChange={(e) =>
+                            updateFilter(filterIndex, {
+                              reason: e.target.value || undefined,
+                            })
+                          }
+                          placeholder="为什么添加这条规则"
                         />
                       </div>
                       <div className="space-y-1">

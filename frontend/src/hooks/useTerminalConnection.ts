@@ -46,6 +46,61 @@ interface UseTerminalConnectionReturn {
   disconnect: () => void
 }
 
+const ESC = String.fromCharCode(27)
+const BEL = String.fromCharCode(7)
+const ANSI_ESCAPE_RE = new RegExp(
+  `${ESC}(?:\\[[0-?]*[ -/]*[@-~]|\\][^${BEL}]*(?:${BEL}|${ESC}\\\\)|[PX^_].*?${ESC}\\\\|[@-Z\\\\-_=>])`,
+  "g",
+)
+const PROMPT_BEFORE_TIMESTAMP_RE = /^(?:\s*[>#]\s*)+(?=\[\d{2}:\d{2}:\d{2}\])/gm
+
+function stripTerminalControlChars(text: string): string {
+  let result = ""
+  for (const char of text) {
+    const code = char.charCodeAt(0)
+    if (
+      code <= 7 ||
+      code === 11 ||
+      code === 12 ||
+      (code >= 14 && code <= 31) ||
+      code === 127
+    ) {
+      continue
+    }
+    result += char
+  }
+  return result
+}
+
+function sanitizeTerminalText(value: unknown): string {
+  const text = String(value ?? "")
+  if (!text) {
+    return ""
+  }
+  return stripTerminalControlChars(text.replace(ANSI_ESCAPE_RE, "")).replace(
+    PROMPT_BEFORE_TIMESTAMP_RE,
+    "",
+  )
+}
+
+function sanitizeTerminalOutput(entry: TerminalOutput): TerminalOutput {
+  return {
+    ...entry,
+    stdout:
+      typeof entry.stdout === "string"
+        ? sanitizeTerminalText(entry.stdout)
+        : entry.stdout,
+    stderr:
+      typeof entry.stderr === "string"
+        ? sanitizeTerminalText(entry.stderr)
+        : entry.stderr,
+    stdin:
+      typeof entry.stdin === "string"
+        ? sanitizeTerminalText(entry.stdin)
+        : entry.stdin,
+  }
+}
+
 function getOutputText(entry: TerminalOutput): {
   key: "stdout" | "stderr" | "stdin"
   text: string
@@ -160,28 +215,30 @@ function appendTerminalOutput(
   previous: TerminalOutput[],
   incoming: TerminalOutput,
 ): TerminalOutput[] {
+  const sanitizedIncoming = sanitizeTerminalOutput(incoming)
   const textFields = [
-    ["stdin", incoming.stdin],
-    ["stdout", incoming.stdout],
-    ["stderr", incoming.stderr],
+    ["stdin", sanitizedIncoming.stdin],
+    ["stdout", sanitizedIncoming.stdout],
+    ["stderr", sanitizedIncoming.stderr],
   ] as const
   const hasControl = textFields.some(
     ([, value]) =>
-      typeof value === "string" && (value.includes("\r") || value.includes("\b")),
+      typeof value === "string" &&
+      (value.includes("\r") || value.includes("\b")),
   )
 
   if (!hasControl) {
-    return [...previous, incoming]
+    return [...previous, sanitizedIncoming]
   }
 
   const next = [...previous]
   const metadata = {
-    source: incoming.source,
-    status: incoming.status,
-    job_id: incoming.job_id,
-    exit_code: incoming.exit_code,
-    timed_out: incoming.timed_out,
-    cancelled: incoming.cancelled,
+    source: sanitizedIncoming.source,
+    status: sanitizedIncoming.status,
+    job_id: sanitizedIncoming.job_id,
+    exit_code: sanitizedIncoming.exit_code,
+    timed_out: sanitizedIncoming.timed_out,
+    cancelled: sanitizedIncoming.cancelled,
   }
 
   for (const [key, value] of textFields) {
@@ -260,7 +317,7 @@ export function useTerminalConnection({
         output: string | null
       }
       if (outputData.success && outputData.output) {
-        const lines = outputData.output.split("\n")
+        const lines = sanitizeTerminalText(outputData.output).split("\n")
         const outputLines = lines
           .filter((line) => line.trim())
           .map((line) => ({ stdout: `${line}\n` }))
