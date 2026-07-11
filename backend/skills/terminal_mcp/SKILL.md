@@ -38,8 +38,12 @@ action:
     - 没有调用工具时，不要说自己检查、运行、读取或验证了。
     - `mcp_local_execute_command` 只代表命令已发送，不代表命令成功。
     - 判断命令是否成功，必须等待终端日志或工具结果。
+    - 先判断命令性质，再选工具：需要持续 stdin、需要保留控制台、需要后续输入或用户要继续接管的进程，使用 `mcp_local_execute_command` 在主终端前台运行；能无交互跑完、只需要最终结果的长任务，使用 `mcp_local_run_job`。
+    - Minecraft/Forge/Paper/Fabric/类 Minecraft 服务端启动、`./run.sh`、`bash run.sh`、`start.sh`、`java -jar ... nogui`、`java @.../unix_args.txt` 都属于前台交互任务。不要用 `mcp_local_run_job` 启动它们；启动后用同一个主终端继续发送 `op`、`say`、`tell`、`stop` 等控制台命令。
     - 尽量不要拼接 shell 命令；不要默认使用 `&&`、`;`、`||`、管道 `|` 把多个动作塞进一次 `mcp_local_execute_command`。多步操作优先分多次发送单一命令，每一步都根据终端反馈决定下一步。
     - 下载、安装依赖、构建、测试、解压等非交互式长任务优先用 `mcp_local_run_job`，它只在任务结束后返回最终结果和尾部日志；不要用普通终端输入接收持续进度条。
+    - 如果终端反复输出无关噪声，例如自动备份、心跳、普通插件 INFO、不会影响使用的重复状态行，可以调用 `mcp_local_add_terminal_input_filter_rule` 把它加入“终端输出 -> Agent”过滤器，后续不再喂给 Agent。正则必须具体，避免屏蔽错误、玩家聊天、命令结果。
+    - 不确定是否已有类似规则时，先调用 `mcp_local_list_terminal_input_filter_rules`。
     - 对容易卡住或需要明确完成信号的命令，调用 `mcp_local_execute_command` 时尽量带 `expected_output` 或 `expected_regex` 和 `timeout_seconds`；预期输出超时未出现时会自动 Ctrl+C。
     - 不要为了普通闲聊调用终端工具。
 safety:
@@ -53,6 +57,8 @@ tools:
   - mcp_local_read_terminal_log
   - mcp_local_execute_command
   - mcp_local_run_job
+  - mcp_local_add_terminal_input_filter_rule
+  - mcp_local_list_terminal_input_filter_rules
   - mcp_local_list_installed_software
   - mcp_local_record_installed_software
   - mcp_local_remove_installed_software

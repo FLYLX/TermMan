@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import sys
 import threading
 
@@ -23,7 +24,7 @@ class LocalMCPServer:
     def _register_builtin_tools(self):
         self.register_tool(
             name="execute_command",
-            description="在终端执行一条 shell 命令。优先一次只发一条命令，不要默认用 &&、||、;、管道或换行拼接多步操作；多步操作应等待上一条终端反馈后再继续。可设置 expected_output/expected_regex 和 timeout_seconds，超时未匹配时自动 Ctrl+C。",
+            description="在主终端前台执行一条命令或向当前交互式控制台发送输入。适合 shell 短命令、Minecraft/Forge/Paper/Fabric 服务端启动、run.sh/start.sh、REPL、长期服务，以及 MC 控制台里的 op/say/stop 等后续输入。优先一次只发一条命令，不要默认用 &&、||、;、管道或换行拼接多步操作；多步操作应等待上一条终端反馈后再继续。可设置 expected_output/expected_regex 和 timeout_seconds，超时未匹配时自动 Ctrl+C。",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -40,7 +41,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="run_job",
-            description="Start a non-interactive long-running shell job in a daemon background process with stdin closed. Use this for downloads, installs, builds, tests, and other one-shot commands that should run in the background and notify the agent once after completion. Do not use for interactive shells, REPLs, Minecraft/server consoles, or long-lived services. Prefer one clear operation per job; avoid very long &&/pipe chains when a later step may need diagnosis.",
+            description="Start a non-interactive one-shot shell job in a daemon background process with stdin closed. Use this for downloads, package installs, builds, tests, archive extraction, and other commands that can finish without later user input; the final result and tail output will be delivered back to the agent after completion. Before using it, decide whether the command needs an interactive foreground console. Do not choose run_job for Minecraft/Forge/Paper/Fabric server startup, run.sh/start.sh server launchers, REPLs, shells, watch/dev servers, or any process that should remain open for later commands such as op/say/stop; choose execute_command in the main terminal for those. Prefer one clear operation per job; avoid very long &&/pipe chains when a later step may need diagnosis.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -102,6 +103,45 @@ class LocalMCPServer:
                 "required": []
             },
             handler=self._read_terminal_log,
+            skip_memory=True
+        )
+        self.register_tool(
+            name="add_terminal_input_filter_rule",
+            description="Add a terminal output -> Agent input filter rule for the current item. Use when repeated terminal output is harmless noise and should stop being sent to the Agent, for example automatic backup status lines, heartbeat lines, repeated progress chatter, or plugin logs that do not need action. Default action_type is block, which drops matching terminal chunks before they reach the Agent.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Current terminal item id."},
+                    "name": {"type": "string", "description": "Short rule name, for example noise_ftb_backups."},
+                    "regex_patterns": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Case-insensitive regex patterns to match noisy terminal output.",
+                    },
+                    "action_type": {
+                        "type": "string",
+                        "enum": ["block", "ignore", "log"],
+                        "description": "block drops the whole matching chunk; ignore removes matching text; log marks it as needs-action. Default block.",
+                        "default": "block",
+                    },
+                    "reason": {"type": "string", "description": "Optional human-readable reason for this rule."},
+                },
+                "required": ["item_id", "name", "regex_patterns"]
+            },
+            handler=self._add_terminal_input_filter_rule,
+            skip_memory=True
+        )
+        self.register_tool(
+            name="list_terminal_input_filter_rules",
+            description="List terminal output -> Agent input filter rules for the current item. Use before adding a new noise rule when unsure whether one already exists.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Current terminal item id."},
+                },
+                "required": ["item_id"]
+            },
+            handler=self._list_terminal_input_filter_rules,
             skip_memory=True
         )
         
@@ -352,6 +392,11 @@ class LocalMCPServer:
                 f"cancel_requested={bool(job.get('cancel_requested'))} "
                 f"command={command}"
             )
+            output_tail = str(job.get("output_tail") or "").strip()
+            if output_tail:
+                if len(output_tail) > 1200:
+                    output_tail = f"{output_tail[-1200:]}"
+                lines.append(f"   output_tail:\n{output_tail}")
         return "\n".join(lines)
 
     def _list_jobs(self, args: dict) -> list:
@@ -806,6 +851,183 @@ class LocalMCPServer:
             
             return [{"type": "text", "text": f"=== 终端日志 (最后 {lines} 行) ===\n{content}"}]
         except Exception as e:
+            return [{"type": "text", "text": f"Error: {e}"}]
+
+    def _sanitize_filter_rule_name(self, name: str, existing: set[str]) -> str:
+        candidate = re.sub(r"[^a-zA-Z0-9_]+", "_", (name or "").strip().lower()).strip("_")
+        if not candidate:
+            candidate = "agent_noise_filter"
+        if candidate not in existing:
+            return candidate
+        suffix = 2
+        while f"{candidate}_{suffix}" in existing:
+            suffix += 1
+        return f"{candidate}_{suffix}"
+
+    def _coerce_filter_patterns(self, raw_patterns) -> list[str]:
+        if not isinstance(raw_patterns, list):
+            raise ValueError("regex_patterns must be a non-empty list of strings")
+        patterns: list[str] = []
+        for raw_pattern in raw_patterns:
+            if not isinstance(raw_pattern, str):
+                continue
+            pattern = raw_pattern.strip()
+            if not pattern:
+                continue
+            try:
+                re.compile(pattern, re.IGNORECASE)
+            except re.error as exc:
+                raise ValueError(f"invalid regex pattern {pattern!r}: {exc}") from exc
+            if pattern not in patterns:
+                patterns.append(pattern)
+        if not patterns:
+            raise ValueError("regex_patterns must contain at least one valid regex")
+        return patterns
+
+    def _add_terminal_input_filter_rule(self, args: dict) -> list:
+        item_id = str(args.get("item_id") or "").strip()
+        name = str(args.get("name") or "agent_noise_filter").strip()
+        action_type = str(args.get("action_type") or "block").strip().lower()
+        reason = str(args.get("reason") or "").strip()
+        if action_type not in {"block", "ignore", "log"}:
+            return [{"type": "text", "text": "Error: action_type must be block, ignore, or log"}]
+        try:
+            import uuid
+
+            from sqlmodel import Session
+
+            from app.core.db import engine
+            from app.models import Item
+
+            try:
+                item_uuid = uuid.UUID(item_id)
+            except ValueError as exc:
+                raise ValueError(f"invalid item_id: {item_id}") from exc
+
+            patterns = self._coerce_filter_patterns(args.get("regex_patterns"))
+            with Session(engine) as db:
+                item = db.get(Item, item_uuid)
+                if not item:
+                    raise ValueError(f"item not found: {item_id}")
+
+                rules = dict(item.input_filter_rules or {})
+                for rule_name, rule in rules.items():
+                    if not isinstance(rule, dict):
+                        continue
+                    existing_patterns = [
+                        p for p in rule.get("regex_patterns", []) if isinstance(p, str)
+                    ]
+                    if (
+                        rule.get("action_type", "ignore") == action_type
+                        and all(pattern in existing_patterns for pattern in patterns)
+                    ):
+                        item.input_filter_enabled = True
+                        db.add(item)
+                        db.commit()
+                        return [
+                            {
+                                "type": "text",
+                                "text": (
+                                    "Terminal input filter already contains this rule: "
+                                    f"{rule_name}. input_filter_enabled=true"
+                                ),
+                            }
+                        ]
+
+                normalized_name = re.sub(
+                    r"[^a-zA-Z0-9_]+",
+                    "_",
+                    name.lower(),
+                ).strip("_")
+                if normalized_name in rules and isinstance(rules[normalized_name], dict):
+                    rule = dict(rules[normalized_name])
+                    existing_patterns = [
+                        p for p in rule.get("regex_patterns", []) if isinstance(p, str)
+                    ]
+                    merged_patterns = existing_patterns + [
+                        pattern for pattern in patterns if pattern not in existing_patterns
+                    ]
+                    rule["regex_patterns"] = merged_patterns
+                    rule["action_type"] = action_type
+                    if reason:
+                        rule["reason"] = reason
+                    rules[normalized_name] = rule
+                    rule_name = normalized_name
+                else:
+                    rule_name = self._sanitize_filter_rule_name(name, set(rules))
+                    rule_payload = {
+                        "regex_patterns": patterns,
+                        "action_type": action_type,
+                    }
+                    if reason:
+                        rule_payload["reason"] = reason
+                    rules[rule_name] = rule_payload
+
+                item.input_filter_enabled = True
+                item.input_filter_rules = rules
+                db.add(item)
+                db.commit()
+
+            return [
+                {
+                    "type": "text",
+                    "text": (
+                        "Added terminal output -> Agent input filter rule "
+                        f"`{rule_name}` action={action_type}; patterns={len(patterns)}. "
+                        "input_filter_enabled=true"
+                    ),
+                }
+            ]
+        except Exception as e:
+            debug_log(f"[LocalMCPServer] add terminal input filter rule error: {e}")
+            return [{"type": "text", "text": f"Error: {e}"}]
+
+    def _list_terminal_input_filter_rules(self, args: dict) -> list:
+        item_id = str(args.get("item_id") or "").strip()
+        try:
+            import uuid
+
+            from sqlmodel import Session
+
+            from app.core.db import engine
+            from app.models import Item
+
+            try:
+                item_uuid = uuid.UUID(item_id)
+            except ValueError as exc:
+                raise ValueError(f"invalid item_id: {item_id}") from exc
+
+            with Session(engine) as db:
+                item = db.get(Item, item_uuid)
+                if not item:
+                    raise ValueError(f"item not found: {item_id}")
+                enabled = bool(item.input_filter_enabled)
+                rules = item.input_filter_rules or {}
+
+            if not rules:
+                return [
+                    {
+                        "type": "text",
+                        "text": f"Terminal input filter enabled={enabled}; no rules.",
+                    }
+                ]
+
+            lines = [f"Terminal input filter enabled={enabled}; rules={len(rules)}"]
+            for rule_name, rule in rules.items():
+                if not isinstance(rule, dict):
+                    continue
+                patterns = rule.get("regex_patterns", [])
+                action_type = rule.get("action_type", "ignore")
+                lines.append(
+                    f"- {rule_name}: action={action_type}, patterns={len(patterns)}"
+                )
+                for pattern in patterns[:5]:
+                    lines.append(f"  - {pattern}")
+                if len(patterns) > 5:
+                    lines.append(f"  - ... {len(patterns) - 5} more")
+            return [{"type": "text", "text": "\n".join(lines)}]
+        except Exception as e:
+            debug_log(f"[LocalMCPServer] list terminal input filter rules error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
     
     def _list_installed_software(self, args: dict) -> list:

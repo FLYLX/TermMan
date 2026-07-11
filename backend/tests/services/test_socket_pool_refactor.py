@@ -46,6 +46,44 @@ def test_terminal_stream_pipeline_strips_ansi_control_sequences() -> None:
     assert received == [("stream", {"stdout": "> Made FLYLX op\n"})]
 
 
+def test_terminal_stream_pipeline_strips_prompt_before_timestamped_logs() -> None:
+    bus = ItemEventBus()
+    pipeline = TerminalStreamPipeline(bus)
+    received: list[tuple[str, dict]] = []
+
+    bus.subscribe(
+        "item-1",
+        lambda event: received.append((event.event_type.value, event.data)),
+        subscriber_type="test",
+        event_types=[SubscriptionEventType.STREAM],
+    )
+
+    delivered = pipeline.publish_stream(
+        "item-1",
+        {
+            "stdout": (
+                "\x1b[m> \x1b[K\x1b[32m[22:00:00] "
+                "[ftbbackups2_Worker-1/INFO] [ne.cr.ft.FTBBackups/]: "
+                "Attempting to create an automatic backup\n"
+            )
+        },
+    )
+
+    assert delivered == 1
+    assert received == [
+        (
+            "stream",
+            {
+                "stdout": (
+                    "[22:00:00] [ftbbackups2_Worker-1/INFO] "
+                    "[ne.cr.ft.FTBBackups/]: "
+                    "Attempting to create an automatic backup\n"
+                )
+            },
+        )
+    ]
+
+
 def test_agent_input_bridge_builds_raw_output_and_calls_stream_manager(monkeypatch) -> None:
     bridge = AgentInputBridge()
     captured: list[tuple[str, str, str, str]] = []

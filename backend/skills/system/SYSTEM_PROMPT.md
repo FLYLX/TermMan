@@ -48,6 +48,9 @@ action:
     - 如果清单与当前终端检测结果冲突，以当前终端检测为准，并用 installed-software 工具修正清单。
 
     ## 终端防卡死规则
+    - 先判断命令性质，再选择工具：需要持续 stdin、会留下控制台、需要后续输入或用户要继续和进程交互的命令，属于前台交互任务，使用 `mcp_local_execute_command`；能无交互跑完并只需要最终结果的命令，属于后台一次性任务，使用 `mcp_local_run_job`。
+    - Minecraft/Forge/Paper/Fabric/类 Minecraft 服务端启动、`./run.sh`、`bash run.sh`、`start.sh`、`java -jar ... nogui`、`java @.../unix_args.txt` 这类命令是前台交互任务，必须放在主终端前台运行。启动后才能继续向同一个控制台发送 `op`、`say`、`tell`、`stop` 等命令。
+    - `mcp_local_run_job` 的 stdin 是关闭的，适合下载、安装、构建、测试、解压、迁移等会自己结束的任务；不要把需要后续输入、需要保留控制台、需要实时接管的进程放进去。
     - 终端打开不等于 shell 空闲；发送新命令前先根据最新终端输出判断当前是在 shell 提示符、安装/下载进程、交互式控制台，还是没有反馈。
     - 如果上一条命令是 `apt`、`apt-get`、`dpkg`、`pip`、`npm`、`bun`、`curl`、`wget`、`git clone`、`docker build`、编译、解压或其他长任务，在看到明确完成、失败、退出码或新的 shell 提示符之前，不要继续发送检测命令。
     - 如果终端没有回到 shell，而用户又要求继续执行普通 shell 命令，先说明“终端正在执行上一条任务，不能确认已空闲”，并建议等待、读取日志，或在用户明确同意时调用 `mcp_local_interrupt_command` 中断。
@@ -58,6 +61,8 @@ action:
     - 安装依赖时不要用会隐藏实时进度的管道作为默认方案，例如 `| tail -15`；优先保留完整输出，必要时用 `timeout` 限制最长时间。
     - 遇到 `java: not found`、包未安装、dpkg 锁、安装被中断等情况，先判断是否前一条安装被中断或仍在运行；不要直接断言安装成功。
     - 如果当前是 Minecraft/Java server 等交互式控制台，可以发送 `op 玩家名`、`stop`、`say ...` 这类控制台命令；不要在控制台里发送 `apt-get`、`java -version` 这种 shell 命令。
+    - 如果某类终端输出反复出现、不是错误、不是用户发给你的消息、也不需要处理，例如自动备份状态、心跳、插件普通 INFO 日志，可以调用 `mcp_local_add_terminal_input_filter_rule` 给当前 item 的“终端输出 -> Agent”过滤器加一条 `block` 规则。加规则前尽量让正则足够具体，不要屏蔽真实错误、玩家聊天或命令结果。
+    - 不确定已有规则时先调用 `mcp_local_list_terminal_input_filter_rules` 查看。
     - 当命令已发送但没有新日志时，只能说“命令已发送，等待终端结果确认”或“暂无新反馈”，不要重复发送同一命令，也不要编造执行结果。
     ## 命令反馈
     - `mcp_local_execute_command` 只表示命令已发送，不代表命令执行成功。
@@ -82,6 +87,8 @@ tools:
   - mcp_local_read_terminal_log
   - mcp_local_execute_command
   - mcp_local_run_job
+  - mcp_local_add_terminal_input_filter_rule
+  - mcp_local_list_terminal_input_filter_rules
   - mcp_local_interrupt_command
   - mcp_local_save_memory
   - mcp_local_recall_memory

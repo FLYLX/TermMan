@@ -272,6 +272,7 @@ def test_internal_job_cancel_route_delegates_to_job_runner(monkeypatch):
 
 
 def test_job_runner_list_jobs_filters_by_item(monkeypatch):
+    from collections import deque
     from datetime import datetime, timedelta
 
     from service.job_runner import JobRunner
@@ -284,6 +285,7 @@ def test_job_runner_list_jobs_filters_by_item(monkeypatch):
         command="apt-get update",
         pid=1234,
         started_at=started_at,
+        output_tail=deque(["Get:1 packages", "Reading package lists..."]),
     )
     runner._register_active_job(
         item_uuid="item-2",
@@ -303,6 +305,7 @@ def test_job_runner_list_jobs_filters_by_item(monkeypatch):
     assert result["count"] == 1
     assert result["jobs"][0]["job_id"] == "job-1"
     assert result["jobs"][0]["elapsed_seconds"] >= 0
+    assert result["jobs"][0]["output_tail"] == "Get:1 packages\nReading package lists..."
 
 def test_job_runner_cancel_job_marks_active_job(monkeypatch):
     from datetime import datetime

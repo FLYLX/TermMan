@@ -898,9 +898,11 @@ def test_terminal_source_delivery_retry_reprompts_to_terminal_tool(monkeypatch) 
     session = AgentSession("item-1", "handler-1")
     session._schedule_pending_command_recheck = lambda *args, **kwargs: None
     session._get_log_line_count = lambda: 0
-    session._build_terminal_messages = lambda agent, input_msg, terminal_content, terminal_source: [
-        {"role": "user", "content": terminal_content}
-    ]
+    session._build_terminal_messages = (
+        lambda agent, input_msg, terminal_content, terminal_source, **kwargs: [
+            {"role": "user", "content": terminal_content}
+        ]
+    )
     events: list[dict] = []
     session.add_output_callback(events.append)
 
@@ -1621,6 +1623,13 @@ def test_builtin_skills_are_terminal_qq_mcp_and_personas() -> None:
     assert "mcp_local_record_installed_software" in (terminal_mcp.action.prompt or "")
     assert "mcp_local_remove_installed_software" in (terminal_mcp.action.prompt or "")
     assert "不要拼接 shell 命令" in (terminal_mcp.action.prompt or "")
+    assert "先判断命令性质，再选工具" in (terminal_mcp.action.prompt or "")
+    assert "Minecraft/Forge/Paper/Fabric/类 Minecraft 服务端启动" in (
+        terminal_mcp.action.prompt or ""
+    )
+    assert "不要用 `mcp_local_run_job` 启动它们" in (terminal_mcp.action.prompt or "")
+    assert "mcp_local_add_terminal_input_filter_rule" in (terminal_mcp.action.prompt or "")
+    assert "mcp_local_list_terminal_input_filter_rules" in (terminal_mcp.action.prompt or "")
     assert "`&&`" in (terminal_mcp.action.prompt or "")
     assert "QQ MCP Skill" in (qq_mcp.action.prompt or "")
     assert "若叶睦人格 Skill" in (mutsumi.action.prompt or "")
@@ -1843,6 +1852,14 @@ def test_terminal_input_mode_classifies_busy_and_console_commands() -> None:
     assert classify_terminal_input_mode("pip install fastapi") == TERMINAL_INPUT_MODE_BUSY
     assert classify_terminal_input_mode("npm install") == TERMINAL_INPUT_MODE_BUSY
     assert classify_terminal_input_mode("java -jar paper-server.jar nogui") == TERMINAL_INPUT_MODE_CONSOLE
+    assert classify_terminal_input_mode("./run.sh") == TERMINAL_INPUT_MODE_CONSOLE
+    assert classify_terminal_input_mode("bash run.sh") == TERMINAL_INPUT_MODE_CONSOLE
+    assert (
+        classify_terminal_input_mode(
+            "java @user_jvm_args.txt @libraries/net/minecraftforge/forge/1.20.1-47.4.20/unix_args.txt nogui"
+        )
+        == TERMINAL_INPUT_MODE_CONSOLE
+    )
     assert classify_terminal_input_mode("java -version") is None
     assert is_terminal_console_command("op Steve") is True
     assert is_terminal_console_command("/say hello") is True
@@ -1983,6 +2000,111 @@ def test_running_terminal_job_context_is_injected_into_chat_prompt() -> None:
     assert "不要启动新的下载/安装/构建类 run_job" in context
     assert "可以继续用 execute_command 发送安全的控制台输入" in context
     assert "apt-get install -y temurin-17-jdk" in context
+
+    messages = [
+        {"role": "system", "content": "base"},
+        {"role": "user", "content": "hello"},
+    ]
+    session.inject_active_jobs_prompt_context(messages)
+
+    assert len(messages) == 3
+    assert messages[-1] == {"role": "user", "content": "hello"}
+    assert "run_job" in messages[-2]["content"]
+    assert "apt-get install -y temurin-17-jdk" in messages[-2]["content"]
+
+
+def test_chat_route_injects_active_job_context_from_session() -> None:
+    from app.api.routes import chat as chat_route
+    from app.services.agent.session import RUN_JOB_TOOL_NAME, agent_session_manager
+
+    item_id = "item-active-job-route"
+    session = agent_session_manager.get_or_create_session(item_id, "handler-1")
+    session.mark_terminal_job_started(
+        RUN_JOB_TOOL_NAME,
+        {"command": "python -m pip install demo-package", "timeout_seconds": 300},
+    )
+    messages = [
+        {"role": "system", "content": "base"},
+        {"role": "user", "content": "status?"},
+    ]
+
+    try:
+        chat_route._inject_active_jobs_prompt_context(item_id, messages)
+    finally:
+        agent_session_manager.remove_session(item_id)
+
+    assert len(messages) == 3
+    assert messages[-1] == {"role": "user", "content": "status?"}
+    assert "run_job" in messages[-2]["content"]
+    assert "python -m pip install demo-package" in messages[-2]["content"]
+
+
+def test_active_job_context_includes_daemon_jobs_snapshot() -> None:
+    from app.services.agent.session import AgentSession
+
+    session = AgentSession("item-1", "handler-1")
+    session._get_daemon_jobs_snapshot = lambda: [
+        {
+            "job_id": "job-7",
+            "command": "apt-get install -y temurin-17-jdk",
+            "elapsed_seconds": 42.5,
+            "cancel_requested": False,
+            "output_tail": "Reading package lists...\nInstalling temurin-17-jdk",
+        }
+    ]
+
+    context = session.build_active_jobs_prompt_context()
+
+    assert "Active daemon background jobs snapshot" in context
+    assert "job_id=job-7" in context
+    assert "elapsed=42s" in context
+    assert "apt-get install -y temurin-17-jdk" in context
+    assert "Installing temurin-17-jdk" in context
+    assert "mcp_local_list_jobs" in context
+
+
+def test_running_terminal_job_context_is_injected_into_terminal_prompt() -> None:
+    from app.services.agent.session import (
+        RUN_JOB_TOOL_NAME,
+        AgentSession,
+        InputMessage,
+        InputType,
+    )
+
+    class FakeAgent:
+        _context = SimpleNamespace(
+            agent_profile={},
+            enabled_knowledge_files=[],
+            skill_revision=0,
+        )
+
+        def get_skills(self):
+            return []
+
+        def match_skills(self, query: str):
+            return []
+
+        def get_mcp_servers(self):
+            return []
+
+    session = AgentSession("item-1", "handler-1")
+    session.mark_terminal_job_started(
+        RUN_JOB_TOOL_NAME,
+        {"command": "apt-get install -y temurin-17-jdk", "timeout_seconds": 600},
+    )
+
+    messages = session._build_terminal_messages(
+        FakeAgent(),
+        InputMessage(
+            input_type=InputType.TERMINAL,
+            content="server is still running",
+        ),
+        "server is still running",
+    )
+    joined = "\n".join(str(message.get("content", "")) for message in messages)
+
+    assert "run_job" in joined
+    assert "apt-get install -y temurin-17-jdk" in joined
 
 
 def test_turn_guard_reset_timeout_window_after_long_job() -> None:
@@ -2202,3 +2324,203 @@ def test_pending_terminal_output_display_suppresses_pending_progress() -> None:
 
     terminal_events = [event for event in events if event.get("type") == "terminal_output"]
     assert terminal_events == []
+
+
+def test_pending_terminal_command_captures_robot_reply_context() -> None:
+    from app.plugins.robot.mcp.context import (
+        RobotMCPContext,
+        register_robot_mcp_context,
+        unregister_robot_mcp_context,
+    )
+    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
+
+    reply_target = RobotReplyTarget(
+        target_type="group",
+        target_id="770362397",
+        metadata={"conversation": {"type": "group", "id": "770362397"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-1",
+            sender_key="onebot_v11:group:770362397:2537134688",
+            reply_target=reply_target,
+            conversation_key="group:770362397",
+            conversation_generation=7,
+            reply_requires_awake=True,
+        )
+    )
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+
+    try:
+        session._set_pending_command(
+            EXECUTE_COMMAND_TOOL_NAME,
+            {
+                "command": "ls -la",
+                "_robot_context_token": token,
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    pending = session._get_pending_command()
+    assert pending is not None
+    robot_context = pending.integration_contexts["robot"]
+    assert robot_context["robot_id"] == "robot-1"
+    assert robot_context["sender_key"] == "onebot_v11:group:770362397:2537134688"
+    assert robot_context["conversation_key"] == "group:770362397"
+    assert robot_context["conversation_generation"] == 7
+    assert robot_context["reply_target"].target_id == "770362397"
+    assert robot_context["reply_requires_awake"] is False
+
+
+def test_terminal_feedback_prompt_requires_qq_source_delivery() -> None:
+    from app.plugins.robot.mcp.context import (
+        RobotMCPContext,
+        register_robot_mcp_context,
+        unregister_robot_mcp_context,
+    )
+    from app.services.agent.session import (
+        EXECUTE_COMMAND_TOOL_NAME,
+        TERMINAL_SOURCE_RAW_FEEDBACK,
+        AgentSession,
+        InputMessage,
+        InputType,
+    )
+
+    class FakeAgent:
+        _context = SimpleNamespace(
+            agent_profile={},
+            enabled_knowledge_files=[],
+            skill_revision=0,
+        )
+
+        def get_skills(self):
+            return []
+
+        def match_skills(self, query: str):
+            return []
+
+        def get_mcp_servers(self):
+            return []
+
+    reply_target = RobotReplyTarget(
+        target_type="group",
+        target_id="770362397",
+        metadata={"conversation": {"type": "group", "id": "770362397"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-1",
+            sender_key="onebot_v11:group:770362397:2537134688",
+            reply_target=reply_target,
+            conversation_key="group:770362397",
+        )
+    )
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+
+    try:
+        session._set_pending_command(
+            EXECUTE_COMMAND_TOOL_NAME,
+            {
+                "command": "cat run.sh",
+                "_robot_context_token": token,
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    pending = session._get_pending_command()
+    messages = session._build_terminal_messages(
+        FakeAgent(),
+        InputMessage(
+            input_type=InputType.TERMINAL,
+            content="java @user_jvm_args.txt @libraries/... nogui",
+        ),
+        "java @user_jvm_args.txt @libraries/... nogui",
+        terminal_source=TERMINAL_SOURCE_RAW_FEEDBACK,
+        pending_command=pending,
+    )
+    joined = "\n".join(str(message.get("content", "")) for message in messages)
+
+    assert "QQ conversation: group:770362397" in joined
+    assert "Pending command: cat run.sh" in joined
+    assert "mcp_robot_send_message" in joined
+    assert "Do not leave the answer only in TermMan" in joined
+
+
+def test_pending_integration_response_uses_captured_qq_context(monkeypatch) -> None:
+    from app.plugins.robot.mcp.context import (
+        RobotMCPContext,
+        register_robot_mcp_context,
+        unregister_robot_mcp_context,
+    )
+    from app.services.agent import session as session_module
+    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
+
+    captured: dict[str, object] = {}
+
+    def fake_send_integration_final_response_fallback(
+        contexts: dict[str, dict[str, object]],
+        *,
+        content: str,
+        message_sent: bool,
+    ) -> bool:
+        captured["contexts"] = contexts
+        captured["content"] = content
+        captured["message_sent"] = message_sent
+        return True
+
+    monkeypatch.setattr(
+        session_module,
+        "send_integration_final_response_fallback",
+        fake_send_integration_final_response_fallback,
+    )
+
+    reply_target = RobotReplyTarget(
+        target_type="private",
+        target_id="2537134688",
+        metadata={"conversation": {"type": "private", "id": "2537134688"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-1",
+            sender_key="onebot_v11:private:2537134688",
+            reply_target=reply_target,
+            conversation_key="private:2537134688",
+            reply_requires_awake=True,
+        )
+    )
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+
+    try:
+        session._set_pending_command(
+            EXECUTE_COMMAND_TOOL_NAME,
+            {
+                "command": "java -version",
+                "_robot_context_token": token,
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    pending = session._get_pending_command()
+    assert session._send_pending_integration_response(
+        pending,
+        "Java 17 is required.",
+    )
+
+    assert captured["content"] == "Java 17 is required."
+    assert captured["message_sent"] is False
+    contexts = captured["contexts"]
+    assert isinstance(contexts, dict)
+    robot_context = contexts["robot"]
+    assert robot_context["robot_id"] == "robot-1"
+    assert robot_context["conversation_key"] == "private:2537134688"
+    assert robot_context["reply_target"].target_id == "2537134688"
+    assert robot_context["reply_requires_awake"] is False

@@ -629,6 +629,7 @@ def build_terminal_turn_messages(
     query: str = "",
     terminal_source: str = "filtered_output",
     pending_command: str = "",
+    pending_source_context: str = "",
 ) -> list[dict[str, str]]:
     turn_type = (
         PromptTurnType.TERMINAL_RAW_FEEDBACK
@@ -665,6 +666,10 @@ def build_terminal_turn_messages(
         if pending_command:
             prompt_messages.append(
                 {"role": "system", "content": f"当前等待确认的命令:\n{pending_command}"}
+            )
+        if pending_source_context.strip():
+            prompt_messages.append(
+                {"role": "system", "content": pending_source_context.strip()}
             )
     else:
         terminal_source_notice = (

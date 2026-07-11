@@ -29,6 +29,7 @@ class ActiveJob:
     pid: int
     started_at: datetime
     cancel_requested: bool = False
+    output_tail: deque[str] | None = None
 
 
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -162,6 +163,7 @@ class JobRunner:
                 command=command,
                 pid=pid,
                 started_at=started_at,
+                output_tail=tail,
             )
 
             pending_line = ""
@@ -332,6 +334,8 @@ class JobRunner:
                     "started_at": job.started_at.isoformat(),
                     "elapsed_seconds": round((now - job.started_at).total_seconds(), 3),
                     "cancel_requested": job.cancel_requested,
+                    "output_tail": "\n".join(job.output_tail or []),
+                    "tail_lines": len(job.output_tail or []),
                 }
                 for job in self._active_jobs.values()
                 if item_uuid is None or job.item_uuid == item_uuid
@@ -391,6 +395,7 @@ class JobRunner:
         command: str,
         pid: int,
         started_at: datetime,
+        output_tail: deque[str] | None = None,
     ) -> None:
         with self._jobs_lock:
             self._active_jobs[job_id] = ActiveJob(
@@ -399,6 +404,7 @@ class JobRunner:
                 command=command,
                 pid=pid,
                 started_at=started_at,
+                output_tail=output_tail,
             )
 
     def _unregister_active_job(self, job_id: str) -> None:

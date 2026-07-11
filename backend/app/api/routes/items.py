@@ -39,6 +39,7 @@ from app.services.llm_generation_service import (
     generate_json_payload,
     get_item_handler_for_item,
 )
+from app.services.socket_pool.terminal_stream_pipeline import sanitize_terminal_text
 from app.services.terminal_service import TerminalService
 
 logger = logging.getLogger(__name__)
@@ -987,7 +988,7 @@ def get_item_output(
         "success": True,
         "item_uuid": str(id),
         "lines": lines,
-        "output": output
+        "output": sanitize_terminal_text(output) if output else output
     }
 
 

@@ -166,6 +166,19 @@ def test_auto_routed_execute_command_result_skips_pending_terminal_lock() -> Non
         "mcp_local_execute_command",
         {"command": "java -version"},
     ) is False
+    assert should_auto_route_terminal_tool_to_job(
+        "mcp_local_execute_command",
+        {"command": "./run.sh"},
+    ) is False
+    assert should_auto_route_terminal_tool_to_job(
+        "mcp_local_execute_command",
+        {
+            "command": (
+                "java @user_jvm_args.txt "
+                "@libraries/net/minecraftforge/forge/1.20.1-47.4.20/unix_args.txt nogui"
+            )
+        },
+    ) is False
 
     assert is_tool_result_auto_routed_to_job(
         {
@@ -194,6 +207,11 @@ def test_system_prompt_forbids_claiming_command_success_without_confirmation() -
     assert "终端打开不等于 shell 空闲" in prompt
     assert "不要为了试探是否可输入而连续发送" in prompt
     assert "不要拼接 shell 命令" in prompt
+    assert "先判断命令性质，再选择工具" in prompt
+    assert "Minecraft/Forge/Paper/Fabric/类 Minecraft 服务端启动" in prompt
+    assert "必须放在主终端前台运行" in prompt
+    assert "mcp_local_add_terminal_input_filter_rule" in prompt
+    assert "mcp_local_list_terminal_input_filter_rules" in prompt
     assert "`&&`" in prompt
     assert "mcp_local_interrupt_command" in prompt
     assert "mcp_local_run_job" in prompt
@@ -320,6 +338,54 @@ def test_installed_software_tools_record_list_remove(monkeypatch, tmp_path) -> N
     assert "none recorded" in empty_result[0]["text"]
 
 
+def test_terminal_input_filter_rule_tool_adds_noise_block_rule(db) -> None:
+    from app.models import Item
+    from app.services.filters.input_filter import InputFilter, InputFilterConfig
+    from tests.utils.item import create_random_item
+
+    item = create_random_item(db)
+    server = LocalMCPServer()
+
+    result = server.call_tool(
+        "add_terminal_input_filter_rule",
+        {
+            "item_id": str(item.id),
+            "name": "noise_ftb_backups",
+            "regex_patterns": [
+                r"FTBBackups/]: Attempting to create an automatic backup"
+            ],
+            "reason": "Repeated automatic backup status line.",
+        },
+    )
+
+    assert "Added terminal output -> Agent input filter rule" in result[0]["text"]
+    updated = db.get(Item, item.id)
+    assert updated is not None
+    db.refresh(updated)
+    assert updated.input_filter_enabled is True
+    assert "noise_ftb_backups" in updated.input_filter_rules
+
+    input_filter = InputFilter(InputFilterConfig.from_item(updated))
+    filtered = input_filter.filter(
+        {
+            "stdout": (
+                "[22:00:00] [ftbbackups2_Worker-1/INFO] "
+                "[ne.cr.ft.FTBBackups/]: "
+                "Attempting to create an automatic backup\n"
+            ),
+            "stderr": "",
+        }
+    )
+    assert filtered is None
+
+    list_result = server.call_tool(
+        "list_terminal_input_filter_rules",
+        {"item_id": str(item.id)},
+    )
+    assert "noise_ftb_backups" in list_result[0]["text"]
+    assert "FTBBackups" in list_result[0]["text"]
+
+
 def test_chat_prompt_includes_installed_software_list(monkeypatch, tmp_path) -> None:
     from types import SimpleNamespace
 
@@ -411,6 +477,28 @@ def test_run_job_reports_final_daemon_result(monkeypatch) -> None:
         "timeout_seconds": 12,
         "tail_lines": 5,
     }
+
+
+def test_tool_descriptions_guide_foreground_background_command_choice() -> None:
+    server = LocalMCPServer()
+
+    execute_tool = next(tool for tool in server.list_tools() if tool["name"] == "execute_command")
+    run_job_tool = next(tool for tool in server.list_tools() if tool["name"] == "run_job")
+
+    assert "主终端前台" in execute_tool["description"]
+    assert "Minecraft/Forge/Paper/Fabric" in execute_tool["description"]
+    assert "run.sh/start.sh" in execute_tool["description"]
+    assert "op/say/stop" in execute_tool["description"]
+    assert "stdin closed" in run_job_tool["description"]
+    assert (
+        "Before using it, decide whether the command needs an interactive foreground console"
+        in run_job_tool["description"]
+    )
+    assert (
+        "Do not choose run_job for Minecraft/Forge/Paper/Fabric server startup"
+        in run_job_tool["description"]
+    )
+    assert "choose execute_command in the main terminal" in run_job_tool["description"]
 
 
 def test_run_job_defaults_to_background_and_notifies_session(monkeypatch) -> None:
@@ -582,6 +670,7 @@ def test_list_jobs_reports_active_daemon_jobs(monkeypatch) -> None:
                         "command": "apt-get install -y temurin-17-jdk",
                         "elapsed_seconds": 12.4,
                         "cancel_requested": False,
+                        "output_tail": "Reading package lists...\nInstalling temurin-17-jdk",
                     }
                 ],
                 "count": 1,
@@ -603,6 +692,7 @@ def test_list_jobs_reports_active_daemon_jobs(monkeypatch) -> None:
     text = result[0]["text"]
     assert "job_id=job-7" in text
     assert "apt-get install -y temurin-17-jdk" in text
+    assert "Installing temurin-17-jdk" in text
 
 
 def test_cancel_job_tool_cancels_selected_daemon_job(monkeypatch) -> None:
@@ -691,9 +781,7 @@ def test_run_job_marks_busy_and_blocks_nested_terminal_commands(monkeypatch) -> 
         agent_session_manager.remove_session(item_id)
 
     assert "Job succeeded" in result[0]["text"]
-    assert "\u540e\u53f0\u4efb\u52a1\u6b63\u5728\u8fd0\u884c" in nested["execute"][0]["text"]
-    assert "java -version" not in nested["execute"][0]["text"]
-    assert "\u4e0d\u4f1a\u91cd\u590d\u53d1\u9001" in nested["execute"][0]["text"]
+    assert "终端未连接或未打开" in nested["execute"][0]["text"]
     assert "\u540e\u53f0\u4efb\u52a1\u6b63\u5728\u8fd0\u884c" in nested["run_job"][0]["text"]
     assert "apt update" not in nested["run_job"][0]["text"]
     assert "\u4e0d\u4f1a\u91cd\u590d\u53d1\u9001" in nested["run_job"][0]["text"]
@@ -744,6 +832,6 @@ def test_run_job_tool_is_registered_for_long_jobs() -> None:
     server = LocalMCPServer()
     tool = next(tool for tool in server.list_tools() if tool["name"] == "run_job")
 
-    assert "long-running shell job" in tool["description"]
+    assert "non-interactive one-shot shell job" in tool["description"]
     assert tool["inputSchema"]["properties"]["timeout_seconds"]["default"] == 600
     assert tool["skip_memory"] is True

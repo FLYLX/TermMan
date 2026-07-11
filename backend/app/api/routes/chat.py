@@ -736,7 +736,18 @@ def _build_chat_messages(
     messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
     messages.extend({"role": msg.role, "content": msg.content} for msg in history)
     messages.append({"role": "user", "content": message})
+    _inject_active_jobs_prompt_context(item_id, messages)
     return messages, matched_skills, tools
+
+
+def _inject_active_jobs_prompt_context(
+    item_id: str,
+    messages: list[dict[str, Any]],
+) -> None:
+    terminal_session = agent_session_manager.get_session(item_id)
+    if not terminal_session:
+        return
+    terminal_session.inject_active_jobs_prompt_context(messages)
 
 
 def _detect_tool_loop(
@@ -780,6 +791,7 @@ def generate_stream(
         latest_only_context=latest_only_context,
         pending_context=pending_context,
     )
+    _inject_active_jobs_prompt_context(item_id, messages)
     extract_integration_context_targets(agent, messages)
     record_integration_context_targets(agent, item_id)
     matched_skills = agent.match_skills(message)

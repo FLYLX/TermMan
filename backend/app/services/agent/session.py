@@ -18,9 +18,14 @@ from litellm import completion
 from app.services.agent.agent import Agent, agent_manager
 from app.services.agent.history.chat import append_chat_message
 from app.services.agent.integrations import (
+    clear_integration_chat_contexts,
     clear_terminal_alert_integration_tools,
+    ensure_integration_chat_context_tools,
     ensure_terminal_alert_integration_tools,
     extract_integration_context_targets,
+    integration_message_sent,
+    send_integration_final_response_fallback,
+    setup_integration_chat_contexts,
     should_enable_terminal_alert_integrations,
 )
 from app.services.agent.pending_context import (
@@ -75,6 +80,7 @@ COMMAND_DISPATCH_PENDING_MARKER = "命令已发送到终端，尚未确认执行
 TERMINAL_INPUT_MODE_BUSY = "busy"
 TERMINAL_INPUT_MODE_CONSOLE = "console"
 TERMINAL_INPUT_CONTEXT_TTL_SECONDS = 6 * 60 * 60
+DAEMON_JOBS_CONTEXT_REFRESH_SECONDS = 3.0
 TERMINAL_BUSY_COMMAND_PATTERNS = (
     r"^(?:sudo\s+)?(?:apt|apt-get|aptitude)\s+(?:update|upgrade|full-upgrade|dist-upgrade|install|remove|autoremove)\b",
     r"^(?:sudo\s+)?(?:dnf|yum)\s+(?:install|update|upgrade|remove|groupinstall)\b",
@@ -91,6 +97,8 @@ TERMINAL_BUSY_COMMAND_PATTERNS = (
 )
 TERMINAL_CONSOLE_COMMAND_PATTERNS = (
     r"\bjava\s+.*(?:-jar\s+\S*(?:server|paper|spigot|forge|fabric|bukkit|mohist|arclight|minecraft)\S*|nogui)\b",
+    r"\bjava\s+.*@(?:\S*/)?libraries/\S*(?:minecraftforge|forge|fabric|minecraft)\S*/(?:unix_args|win_args)\.txt\b",
+    r"^(?:sudo\s+)?(?:(?:bash|sh)\s+)?(?:\./)?(?:run|start|startserver|server)\.sh\b",
     r"\bbedrock_server\b",
 )
 MINECRAFT_CONSOLE_COMMANDS = frozenset(
@@ -436,6 +444,7 @@ class PendingCommand:
     tool_name: str
     command: str
     normalized_command: str
+    integration_contexts: dict[str, dict[str, Any]] = field(default_factory=dict)
     log_line_cursor: int = 0
     dispatched_at: datetime = field(default_factory=datetime.now)
     echo_count: int = 0
@@ -498,6 +507,8 @@ class AgentSession:
         self._pending_command_recheck_timer: threading.Timer | None = None
         self._terminal_input_context: TerminalInputContext | None = None
         self._running_terminal_job: RunningTerminalJob | None = None
+        self._daemon_jobs_snapshot: list[dict[str, Any]] = []
+        self._daemon_jobs_snapshot_at: datetime | None = None
 
         logger.info(f"[AgentSession] Created session for item={item_id}, handler={handler_id}")
 
@@ -829,6 +840,7 @@ class AgentSession:
             tool_name=tool_name,
             command=command,
             normalized_command=self._normalize_text(command),
+            integration_contexts=self._capture_tool_integration_contexts(tool_args),
             log_line_cursor=self._get_log_line_count(),
             input_mode=input_mode,
             expected_output=expected_output,
@@ -852,6 +864,109 @@ class AgentSession:
 
     def has_pending_command(self) -> bool:
         return self._get_pending_command() is not None
+
+    def _capture_tool_integration_contexts(
+        self,
+        tool_args: dict[str, Any],
+    ) -> dict[str, dict[str, Any]]:
+        context_token = str(tool_args.get("_robot_context_token") or "").strip()
+        if not context_token:
+            return {}
+
+        try:
+            from app.plugins.robot.mcp.context import get_robot_mcp_context
+
+            context = get_robot_mcp_context(context_token)
+            reply_target = getattr(context, "reply_target", None) if context else None
+            robot_id = str(getattr(context, "robot_id", "") or "").strip()
+            sender_key = str(getattr(context, "sender_key", "") or "").strip()
+            if not robot_id or not sender_key or reply_target is None:
+                return {}
+            if hasattr(reply_target, "model_copy"):
+                reply_target = reply_target.model_copy(deep=True)
+            return {
+                "robot": {
+                    "robot_id": robot_id,
+                    "sender_key": sender_key,
+                    "reply_target": reply_target,
+                    "conversation_key": str(
+                        getattr(context, "conversation_key", "") or ""
+                    ),
+                    "conversation_generation": int(
+                        getattr(context, "conversation_generation", 0) or 0
+                    ),
+                    # A terminal command result is a completion for an already accepted
+                    # QQ request. It must be delivered even if the chat window slept
+                    # before the shell produced output.
+                    "reply_requires_awake": False,
+                }
+            }
+        except Exception as exc:
+            logger.warning(
+                "[AgentSession] Failed to capture integration context for pending command item=%s: %s",
+                self.item_id,
+                exc,
+            )
+            return {}
+
+    def _copy_pending_integration_contexts(
+        self,
+        pending: PendingCommand | None,
+    ) -> dict[str, dict[str, Any]]:
+        if not pending or not pending.integration_contexts:
+            return {}
+        contexts: dict[str, dict[str, Any]] = {}
+        for name, context in pending.integration_contexts.items():
+            copied = dict(context)
+            reply_target = copied.get("reply_target")
+            if hasattr(reply_target, "model_copy"):
+                copied["reply_target"] = reply_target.model_copy(deep=True)
+            contexts[name] = copied
+        return contexts
+
+    def _build_pending_source_context_prompt(
+        self,
+        pending: PendingCommand | None,
+    ) -> str:
+        contexts = self._copy_pending_integration_contexts(pending)
+        if not pending or "robot" not in contexts:
+            return ""
+        robot_context = contexts["robot"]
+        conversation_key = str(robot_context.get("conversation_key") or "").strip()
+        sender_key = str(robot_context.get("sender_key") or "").strip()
+        return (
+            "Source routing for this terminal feedback:\n"
+            "- The pending terminal command was started by a QQ robot conversation.\n"
+            f"- Pending command: {pending.command}\n"
+            f"- QQ conversation: {conversation_key or 'current locked conversation'}\n"
+            f"- QQ sender_key: {sender_key or 'unknown'}\n"
+            "- Use the terminal output only as evidence for that pending QQ request.\n"
+            "- If you answer or update the user, call `mcp_robot_send_message` so the reply goes back to the locked QQ conversation. Do not leave the answer only in TermMan.\n"
+        )
+
+    def _send_pending_integration_response(
+        self,
+        pending: PendingCommand | None,
+        content: str,
+        *,
+        message_sent: bool = False,
+    ) -> bool:
+        contexts = self._copy_pending_integration_contexts(pending)
+        if not contexts or not content.strip():
+            return False
+        try:
+            return send_integration_final_response_fallback(
+                contexts,
+                content=content,
+                message_sent=message_sent,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[AgentSession] Failed to send pending integration response item=%s: %s",
+                self.item_id,
+                exc,
+            )
+            return False
 
     def _cancel_pending_command_recheck(self):
         with self.lock:
@@ -981,8 +1096,13 @@ class AgentSession:
                 interrupted = False
                 if pending.auto_interrupt_on_timeout:
                     interrupted = self._send_interrupt_for_pending_timeout(pending)
+                timeout_message = self._build_expected_command_timeout_feedback(
+                    pending,
+                    interrupted,
+                )
+                self._send_pending_integration_response(pending, timeout_message)
                 self.emit_output(
-                    self._build_expected_command_timeout_feedback(pending, interrupted),
+                    timeout_message,
                     "agent_warning",
                     {"tool_name": pending.tool_name},
                 )
@@ -996,8 +1116,10 @@ class AgentSession:
                     pending.command,
                 )
                 self._clear_pending_command()
+                timeout_message = self._build_missing_command_feedback(pending)
+                self._send_pending_integration_response(pending, timeout_message)
                 self.emit_output(
-                    self._build_missing_command_feedback(pending),
+                    timeout_message,
                     "agent_warning",
                     {"tool_name": pending.tool_name},
                 )
@@ -1514,6 +1636,9 @@ class AgentSession:
     def _process_terminal_input(self, input_msg: InputMessage, agent: Agent):
         pending_before_analysis = self._get_pending_command()
         had_pending_command = pending_before_analysis is not None
+        pending_integration_contexts = self._copy_pending_integration_contexts(
+            pending_before_analysis
+        )
         analysis = self._resolve_terminal_analysis_content(input_msg)
         if input_msg.content:
             attach_terminal_feedback_to_pending_continuation(self.item_id, input_msg.content)
@@ -1530,6 +1655,10 @@ class AgentSession:
         if not analysis.content:
             return
         if analysis.direct_response:
+            self._send_pending_integration_response(
+                pending_before_analysis,
+                analysis.content,
+            )
             self.emit_output(analysis.content, "agent_response")
             return
 
@@ -1538,7 +1667,16 @@ class AgentSession:
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            if pending_integration_contexts:
+                setup_integration_chat_contexts(agent, pending_integration_contexts)
             loop.run_until_complete(agent.start_mcp_servers())
+            if pending_integration_contexts:
+                loop.run_until_complete(
+                    ensure_integration_chat_context_tools(
+                        agent,
+                        pending_integration_contexts,
+                    )
+                )
             if (
                 is_critical_terminal_event(analysis.content)
                 and should_enable_terminal_alert_integrations(agent, analysis.content)
@@ -1557,16 +1695,22 @@ class AgentSession:
                 input_msg,
                 analysis.content,
                 terminal_source=analysis.terminal_source,
+                pending_command=pending_before_analysis,
             )
             extract_integration_context_targets(agent, messages)
             turn_guard = TurnGuard()
             self._current_turn_id = turn_guard.turn_id
             self._emit_running_terminal_status(analysis.terminal_source)
             terminal_delivery_retry_used = False
+            integration_tool_results: list[str] = []
 
             for _ in range(MAX_ITERATIONS):
                 timed_out, timeout_reason = turn_guard.check_timeout()
                 if timed_out:
+                    self._send_pending_integration_response(
+                        pending_before_analysis,
+                        timeout_reason,
+                    )
                     self.emit_output(timeout_reason, "agent_warning")
                     break
 
@@ -1598,6 +1742,15 @@ class AgentSession:
                             terminal_delivery_retry_used = True
                             self._emit_running_terminal_status(analysis.terminal_source)
                             continue
+                        if pending_integration_contexts:
+                            message_sent = (
+                                integration_message_sent(integration_tool_results)
+                            )
+                            send_integration_final_response_fallback(
+                                pending_integration_contexts,
+                                content=final_content,
+                                message_sent=message_sent,
+                            )
                         self.emit_output(final_content, "agent_response")
                     break
 
@@ -1608,11 +1761,15 @@ class AgentSession:
                     message,
                     turn_guard,
                     terminal_source=analysis.terminal_source,
+                    tool_results_sink=integration_tool_results,
+                    pending_command_for_delivery=pending_before_analysis,
                 )
                 if next_messages is None:
                     break
                 messages = next_messages
 
+            if pending_integration_contexts:
+                clear_integration_chat_contexts(agent, pending_integration_contexts)
             if transient_integration_tools_added:
                 clear_terminal_alert_integration_tools(agent)
             loop.close()
@@ -1622,6 +1779,8 @@ class AgentSession:
 
             if transient_integration_tools_added:
                 clear_terminal_alert_integration_tools(agent)
+            if pending_integration_contexts:
+                clear_integration_chat_contexts(agent, pending_integration_contexts)
             if loop is not None and not loop.is_closed():
                 loop.close()
 
@@ -1679,17 +1838,23 @@ class AgentSession:
         terminal_content: str | None = None,
         *,
         terminal_source: str = TERMINAL_SOURCE_FILTERED,
+        pending_command: PendingCommand | None = None,
     ) -> list[dict]:
         effective_terminal_content = terminal_content or input_msg.content
-        pending_command = self._get_pending_command()
-        return build_terminal_turn_messages(
+        pending_command = pending_command or self._get_pending_command()
+        messages = build_terminal_turn_messages(
             agent,
             item_id=self.item_id,
             terminal_content=effective_terminal_content,
             query=(input_msg.query or effective_terminal_content or "")[:500],
             terminal_source=terminal_source,
             pending_command=pending_command.command if pending_command else "",
+            pending_source_context=self._build_pending_source_context_prompt(
+                pending_command
+            ),
         )
+        self.inject_active_jobs_prompt_context(messages)
+        return messages
 
     def _build_running_terminal_job_prompt_context(
         self,
@@ -1708,6 +1873,122 @@ class AgentSession:
             "如果确实要终止任务，先 list_jobs 再 cancel_job。"
         )
 
+    def _get_daemon_jobs_snapshot(self) -> list[dict[str, Any]]:
+        now = datetime.now()
+        with self.lock:
+            snapshot_at = self._daemon_jobs_snapshot_at
+            if (
+                snapshot_at is not None
+                and (now - snapshot_at).total_seconds()
+                < DAEMON_JOBS_CONTEXT_REFRESH_SECONDS
+            ):
+                return [dict(job) for job in self._daemon_jobs_snapshot]
+
+        jobs: list[dict[str, Any]] = []
+        try:
+            import uuid
+
+            from sqlmodel import Session
+
+            from app.core.db import engine
+            from app.models import Item
+            from app.services import DaemonConfig, connection_manager
+
+            try:
+                item_uuid = uuid.UUID(str(self.item_id))
+            except ValueError:
+                return []
+
+            with Session(engine) as db:
+                item = db.get(Item, item_uuid)
+                if (
+                    item is None
+                    or not item.socket_host
+                    or not item.socket_port
+                    or not item.api_key
+                ):
+                    return []
+                daemon_config = DaemonConfig(
+                    item.socket_host,
+                    item.socket_port,
+                    item.api_key,
+                )
+
+            connection = connection_manager.get_or_create_connection(daemon_config)
+            result = connection.list_jobs_http(item_uuid=str(self.item_id))
+            raw_jobs = result.get("jobs") if result.get("success") else []
+            if isinstance(raw_jobs, list):
+                jobs = [dict(job) for job in raw_jobs if isinstance(job, dict)]
+        except Exception as exc:
+            logger.debug(
+                "[AgentSession] Failed to fetch daemon jobs snapshot for item=%s: %s",
+                self.item_id,
+                exc,
+            )
+            jobs = []
+
+        with self.lock:
+            self._daemon_jobs_snapshot = [dict(job) for job in jobs]
+            self._daemon_jobs_snapshot_at = now
+        return jobs
+
+    def _build_daemon_jobs_prompt_context(self, jobs: list[dict[str, Any]]) -> str:
+        if not jobs:
+            return ""
+
+        lines = [
+            "Active daemon background jobs snapshot:",
+            "These jobs are still running in daemon. This snapshot is included every turn so the agent does not lose track of background work.",
+        ]
+        for index, job in enumerate(jobs[:5], start=1):
+            command = self._short_command(str(job.get("command") or ""), max_length=160)
+            elapsed_raw = job.get("elapsed_seconds") or 0
+            try:
+                elapsed_seconds = int(float(elapsed_raw))
+            except (TypeError, ValueError):
+                elapsed_seconds = 0
+            lines.append(
+                f"- {index}. job_id={job.get('job_id', '')} "
+                f"elapsed={elapsed_seconds}s "
+                f"cancel_requested={bool(job.get('cancel_requested'))} "
+                f"command={command}"
+            )
+            output_tail = str(job.get("output_tail") or "").strip()
+            if output_tail:
+                if len(output_tail) > 1200:
+                    output_tail = output_tail[-1200:]
+                lines.append(f"  output_tail:\n{output_tail}")
+        lines.append(
+            "Rules: do not assume a listed job has completed; do not start another download/install/build job unless the user explicitly wants a separate job; if the user asks status, answer from this snapshot or call `mcp_local_list_jobs`; if they ask to stop it, call `mcp_local_cancel_job` with the job_id."
+        )
+        return "\n".join(lines)
+
+    def build_active_jobs_prompt_context(self) -> str:
+        parts: list[str] = []
+        running_job = self._get_running_terminal_job()
+        if running_job:
+            parts.append(self._build_running_terminal_job_prompt_context(running_job))
+
+        daemon_jobs_context = self._build_daemon_jobs_prompt_context(
+            self._get_daemon_jobs_snapshot()
+        )
+        if daemon_jobs_context:
+            parts.append(daemon_jobs_context)
+
+        return "\n\n".join(parts)
+
+    def inject_active_jobs_prompt_context(self, messages: list[dict]) -> None:
+        context = self.build_active_jobs_prompt_context()
+        if not context:
+            return
+        messages.insert(
+            max(len(messages) - 1, 0),
+            {
+                "role": "system",
+                "content": context,
+            },
+        )
+
     def _build_chat_messages(self, agent: Agent, input_msg: InputMessage) -> list[dict]:
         pending_context = build_pending_terminal_continuation_prompt(
             self.item_id,
@@ -1720,15 +2001,7 @@ class AgentSession:
             query=input_msg.query or input_msg.content,
             pending_context=pending_context,
         )
-        running_job = self._get_running_terminal_job()
-        if running_job:
-            messages.insert(
-                max(len(messages) - 1, 0),
-                {
-                    "role": "system",
-                    "content": self._build_running_terminal_job_prompt_context(running_job),
-                },
-            )
+        self.inject_active_jobs_prompt_context(messages)
         return messages
 
     def _get_skill_prompt(
@@ -1804,6 +2077,8 @@ class AgentSession:
         message: Any,
         turn_guard: TurnGuard,
         terminal_source: str | None = None,
+        tool_results_sink: list[str] | None = None,
+        pending_command_for_delivery: PendingCommand | None = None,
     ) -> list[dict] | None:
         tool_calls = list(message.tool_calls or [])
         if tool_calls:
@@ -1849,6 +2124,10 @@ class AgentSession:
             if not should_auto_route_terminal_tool_to_job(tool_name, tool_args):
                 terminal_input_error = self._validate_terminal_command_input(tool_name, tool_args)
             if terminal_input_error:
+                self._send_pending_integration_response(
+                    pending_command_for_delivery,
+                    terminal_input_error,
+                )
                 self.emit_output(
                     terminal_input_error,
                     "agent_warning",
@@ -1873,6 +2152,8 @@ class AgentSession:
                 turn_guard.reset_timeout_window()
 
             result_text = self._format_tool_result(result).strip()
+            if tool_results_sink is not None and result_text:
+                tool_results_sink.append(result_text)
             auto_routed_to_job = is_tool_result_auto_routed_to_job(result)
             command_dispatch_failed = is_command_dispatch_failure_result(tool_name, result_text)
             command_dispatch_pending = is_command_dispatch_pending_result(tool_name, result_text)

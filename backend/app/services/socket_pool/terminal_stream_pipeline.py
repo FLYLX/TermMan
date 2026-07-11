@@ -15,6 +15,9 @@ ANSI_ESCAPE_RE = re.compile(
     r")"
 )
 CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+PROMPT_BEFORE_TIMESTAMP_RE = re.compile(
+    r"(?m)^(?:\s*[>#]\s*)+(?=\[\d{2}:\d{2}:\d{2}\])"
+)
 
 
 def sanitize_terminal_text(value: object) -> str:
@@ -23,6 +26,7 @@ def sanitize_terminal_text(value: object) -> str:
         return ""
     text = ANSI_ESCAPE_RE.sub("", text)
     text = CONTROL_CHAR_RE.sub("", text)
+    text = PROMPT_BEFORE_TIMESTAMP_RE.sub("", text)
     return text
 
 
