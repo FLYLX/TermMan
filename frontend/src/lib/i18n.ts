@@ -389,8 +389,7 @@ const en = {
     "OneBot V11 QQ connector server for terminal agents.",
   "robots.add": "Add QQ Connector",
   "robots.addTitle": "Add QQ Connector",
-  "robots.addDescription":
-    "Fill in the QQ account, then bind terminals.",
+  "robots.addDescription": "Fill in the QQ account, then bind terminals.",
   "robots.serverModeHint":
     "Connector URL: /onebot/v11/ws. The QQ connector connects as client.",
   "robots.nameRequired": "Robot server name is required",
@@ -411,8 +410,7 @@ const en = {
   "robots.enabled": "Enabled",
   "robots.disabled": "Disabled",
   "robots.emptyTitle": "No robot servers yet",
-  "robots.emptyDescription":
-    "Create a QQ connector and bind terminals.",
+  "robots.emptyDescription": "Create a QQ connector and bind terminals.",
   "robots.search": "Search robot servers...",
   "robots.searchEmpty": "No matching robot servers found",
   "robots.createSuccess": "Robot server created successfully",
@@ -447,6 +445,8 @@ const en = {
   "files.creatingFolder": "Creating...",
   "files.upload": "Upload",
   "files.uploading": "Uploading...",
+  "files.uploadProgressLabel": "Uploading {current}/{total}: {name}",
+  "files.uploadProgressStats": "{loaded} / {total} · {speed}",
   "files.loading": "Loading files...",
   "files.folderEmpty": "This folder is empty.",
   "files.directory": "Directory",
@@ -679,7 +679,8 @@ const zh: Record<TranslationKey, string> = {
   "items.detail.qqConversationDebug": "QQ \u5bf9\u8bdd\u8c03\u8bd5",
   "items.detail.qqConversation": "\u5bf9\u8bdd",
   "items.detail.qqCountdown": "\u5012\u8ba1\u65f6",
-  "items.detail.qqNoConversations": "\u6682\u65e0 QQ \u5bf9\u8bdd\u63a7\u5236\u5668",
+  "items.detail.qqNoConversations":
+    "\u6682\u65e0 QQ \u5bf9\u8bdd\u63a7\u5236\u5668",
   "items.detail.connecting": "连接中...",
   "items.detail.retryConnection": "重试连接",
   "items.detail.terminalConnected": "终端已连接",
@@ -869,6 +870,8 @@ const zh: Record<TranslationKey, string> = {
   "files.creatingFolder": "创建中...",
   "files.upload": "上传",
   "files.uploading": "上传中...",
+  "files.uploadProgressLabel": "上传中 {current}/{total}：{name}",
+  "files.uploadProgressStats": "{loaded} / {total} · {speed}",
   "files.loading": "正在加载文件...",
   "files.folderEmpty": "这个文件夹是空的。",
   "files.directory": "目录",
@@ -957,8 +960,7 @@ const zh: Record<TranslationKey, string> = {
     "提供 OneBot V11 QQ 接入服务，把 QQ 消息路由到终端 agent。",
   "robots.add": "添加 QQ 接入",
   "robots.addTitle": "添加 QQ 接入",
-  "robots.addDescription":
-    "填写 QQ 号，创建后绑定终端。",
+  "robots.addDescription": "填写 QQ 号，创建后绑定终端。",
   "robots.serverModeHint":
     "连接地址：/onebot/v11/ws，QQ 接入端作为客户端连接。",
   "robots.nameRequired": "机器人 Server 名称不能为空",
@@ -969,8 +971,7 @@ const zh: Record<TranslationKey, string> = {
   "robots.platformPlaceholder": "选择平台",
   "robots.credentials": "QQ 接入凭据",
   "robots.noPlatforms": "没有可用平台",
-  "robots.noPlatformsDescription":
-    "当前构建未启用 OneBot V11 QQ 接入支持。",
+  "robots.noPlatformsDescription": "当前构建未启用 OneBot V11 QQ 接入支持。",
   "robots.appId": "AppID",
   "robots.appSecret": "密钥",
   "robots.botToken": "Token",
@@ -978,8 +979,7 @@ const zh: Record<TranslationKey, string> = {
   "robots.enabled": "已启用",
   "robots.disabled": "未启用",
   "robots.emptyTitle": "还没有机器人 Server",
-  "robots.emptyDescription":
-    "创建 QQ 接入后绑定终端。",
+  "robots.emptyDescription": "创建 QQ 接入后绑定终端。",
   "robots.search": "搜索机器人 Server...",
   "robots.searchEmpty": "没有匹配的机器人 Server",
   "robots.createSuccess": "机器人 Server 创建成功",

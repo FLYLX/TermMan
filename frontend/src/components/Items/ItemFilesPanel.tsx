@@ -91,6 +91,15 @@ type DirectoryState = {
   loaded: boolean
 }
 
+type UploadProgressState = {
+  fileName: string
+  fileIndex: number
+  fileCount: number
+  loadedBytes: number
+  totalBytes: number
+  speedBytesPerSecond: number
+}
+
 const ROOT_PATH = "/"
 const EDITOR_PREVIEW_BYTES = 1024 * 1024
 
@@ -244,6 +253,43 @@ async function daemonRequest(url: string, ticket: string, init?: RequestInit) {
   return response
 }
 
+function daemonUploadWithProgress(
+  url: string,
+  ticket: string,
+  formData: FormData,
+  onProgress: (loadedBytes: number) => void,
+) {
+  return new Promise<void>((resolve, reject) => {
+    const request = new XMLHttpRequest()
+    request.open("POST", url)
+    request.setRequestHeader("Authorization", `Bearer ${ticket}`)
+
+    request.upload.onprogress = (event) => {
+      onProgress(event.loaded)
+    }
+
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) {
+        resolve()
+        return
+      }
+
+      let detail = request.statusText || "Daemon request failed"
+      try {
+        const payload = JSON.parse(request.responseText)
+        detail = payload.detail || detail
+      } catch {
+        // Keep the status text fallback.
+      }
+      reject(new Error(detail))
+    }
+
+    request.onerror = () => reject(new Error("Daemon request failed"))
+    request.onabort = () => reject(new Error("Upload aborted"))
+    request.send(formData)
+  })
+}
+
 export function ItemFilesPanel({ itemId }: { itemId: string }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const directoriesRef = useRef<Record<string, DirectoryState>>({})
@@ -276,6 +322,8 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
   const [contentError, setContentError] = useState<string | null>(null)
 
   const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] =
+    useState<UploadProgressState | null>(null)
   const [isCreatingFolder, setIsCreatingFolder] = useState(false)
   const [actionPath, setActionPath] = useState<string | null>(null)
   const [downloadingPath, setDownloadingPath] = useState<string | null>(null)
@@ -919,8 +967,31 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
       }
 
       setIsUploading(true)
+      const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+      const startedAt = performance.now()
+      let completedBytes = 0
       try {
-        for (const file of files) {
+        for (const [index, file] of files.entries()) {
+          const updateProgress = (currentFileLoadedBytes: number) => {
+            const loadedBytes = Math.min(
+              totalBytes,
+              completedBytes + Math.min(currentFileLoadedBytes, file.size),
+            )
+            const elapsedSeconds = Math.max(
+              0.001,
+              (performance.now() - startedAt) / 1000,
+            )
+            setUploadProgress({
+              fileName: file.name,
+              fileIndex: index + 1,
+              fileCount: files.length,
+              loadedBytes,
+              totalBytes,
+              speedBytesPerSecond: loadedBytes / elapsedSeconds,
+            })
+          }
+
+          updateProgress(0)
           const targetPath = joinPath(selectedDirectoryPath, file.name)
           const ticket = await apiRequest<FileTicketResponse>(
             `/api/v1/items/${itemId}/files/upload-ticket`,
@@ -936,10 +1007,14 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
           const formData = new FormData()
           formData.append("file", file)
 
-          await daemonRequest(ticket.url, ticket.ticket, {
-            method: "POST",
-            body: formData,
-          })
+          await daemonUploadWithProgress(
+            ticket.url,
+            ticket.ticket,
+            formData,
+            updateProgress,
+          )
+          completedBytes += file.size
+          updateProgress(file.size)
         }
 
         await refreshExplorer()
@@ -954,6 +1029,7 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
       } finally {
         event.target.value = ""
         setIsUploading(false)
+        setUploadProgress(null)
       }
     },
     [
@@ -1100,6 +1176,16 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
   const selectedFileName =
     selectedContent?.path.split("/").pop() || t("files.noFileSelected")
   const explorerDirectory = directories[selectedDirectoryPath]
+  const uploadPercent = uploadProgress?.totalBytes
+    ? Math.min(
+        100,
+        Math.max(
+          0,
+          (uploadProgress.loadedBytes / uploadProgress.totalBytes) * 100,
+        ),
+      )
+    : 0
+  const uploadPercentLabel = `${uploadPercent.toFixed(uploadPercent >= 10 ? 0 : 1)}%`
 
   return (
     <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
@@ -1148,6 +1234,38 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
           />
         </div>
       </div>
+
+      {isUploading && uploadProgress && (
+        <div className="mb-4 rounded-xl border bg-muted/10 px-3 py-3">
+          <div className="mb-2 flex min-w-0 items-center justify-between gap-3 text-xs">
+            <div className="min-w-0">
+              <div className="truncate font-medium text-foreground">
+                {t("files.uploadProgressLabel", {
+                  current: uploadProgress.fileIndex,
+                  total: uploadProgress.fileCount,
+                  name: uploadProgress.fileName,
+                })}
+              </div>
+              <div className="truncate text-muted-foreground">
+                {t("files.uploadProgressStats", {
+                  loaded: formatBytes(uploadProgress.loadedBytes),
+                  total: formatBytes(uploadProgress.totalBytes),
+                  speed: `${formatBytes(uploadProgress.speedBytesPerSecond)}/s`,
+                })}
+              </div>
+            </div>
+            <span className="shrink-0 font-mono text-muted-foreground">
+              {uploadPercentLabel}
+            </span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-150"
+              style={{ width: uploadPercentLabel }}
+            />
+          </div>
+        </div>
+      )}
 
       <form
         className="mb-4 rounded-xl border bg-muted/10 px-3 py-3"
