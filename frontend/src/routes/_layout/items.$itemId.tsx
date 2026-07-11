@@ -8,6 +8,7 @@ import {
   Copy,
   Filter,
   Loader2,
+  MessageSquare,
   Moon,
   Play,
   Plug,
@@ -698,6 +699,12 @@ type RobotControllerRow = {
   controller: RobotConversationControllerStatus
 }
 
+type RobotPendingReplyRow = RobotControllerRow & {
+  message: NonNullable<
+    RobotConversationControllerStatus["pending_messages"]
+  >[number]
+}
+
 function getRobotControllerRows(
   data: ItemRobotControllerStatusResponse | undefined,
 ): RobotControllerRow[] {
@@ -718,6 +725,30 @@ function getRobotControllerRows(
         Date.parse(right.controller.updated_at || "") -
         Date.parse(left.controller.updated_at || ""),
     )
+}
+
+function getRobotPendingReplyRows(
+  data: ItemRobotControllerStatusResponse | undefined,
+): RobotPendingReplyRow[] {
+  return getRobotControllerRows(data)
+    .flatMap(({ robot, controller }) =>
+      (controller.pending_messages || []).map((message) => ({
+        robot,
+        controller,
+        message,
+      })),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(left.message.enqueued_at || "") -
+        Date.parse(right.message.enqueued_at || ""),
+    )
+}
+
+function getRobotPendingReplyCount(
+  data: ItemRobotControllerStatusResponse | undefined,
+) {
+  return getRobotPendingReplyRows(data).length
 }
 
 function getEnabledRobotCount(
@@ -1117,6 +1148,134 @@ function BackgroundJobsPanel({
 }
 
 
+function getRobotTriggerLabel(trigger: string) {
+  switch (trigger) {
+    case "mention_bot":
+      return "@唤醒"
+    case "reply_to_bot":
+      return "回复唤醒"
+    case "active_chat_window":
+      return "窗口延续"
+    case "pending_queue":
+      return "队列"
+    case "private":
+      return "私聊"
+    default:
+      return trigger || "消息"
+  }
+}
+
+function formatPendingReplyTime(value: string, localeTag: string) {
+  const timestamp = Date.parse(value || "")
+  if (!Number.isFinite(timestamp)) {
+    return ""
+  }
+  return new Intl.DateTimeFormat(localeTag, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(timestamp)
+}
+
+function RobotPendingRepliesPanel({
+  data,
+  isOpen,
+  onOpenChange,
+  isFetching,
+  localeTag,
+}: {
+  data: ItemRobotControllerStatusResponse | undefined
+  isOpen: boolean
+  onOpenChange: (open: boolean) => void
+  isFetching: boolean
+  localeTag: string
+}) {
+  const rows = getRobotPendingReplyRows(data)
+  const count = rows.length
+
+  if (!data || data.count === 0) {
+    return null
+  }
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-border/60 bg-card/80">
+      <button
+        type="button"
+        className="flex h-10 w-full items-center justify-between gap-3 px-3 text-left text-sm"
+        onClick={() => onOpenChange(!isOpen)}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <MessageSquare className="size-4 shrink-0 text-cyan-500 dark:text-cyan-300" />
+          <span className="truncate font-medium">待回复</span>
+          <Badge
+            variant="outline"
+            className={
+              count > 0
+                ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
+                : "border-slate-500/30 text-muted-foreground"
+            }
+          >
+            {count}
+          </Badge>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          {isFetching ? (
+            <RefreshCw className="size-3 animate-spin text-muted-foreground" />
+          ) : null}
+          <ChevronRight
+            className={`size-4 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`}
+          />
+        </span>
+      </button>
+
+      {isOpen ? (
+        <div className="max-h-[16rem] overflow-y-auto border-t border-border/60 px-3 py-2">
+          {count === 0 ? (
+            <div className="py-4 text-center text-xs text-muted-foreground">
+              暂无待回复消息
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {rows.slice(0, 5).map(({ robot, controller, message }) => (
+                <div
+                  key={`${robot.robot_id}:${controller.conversation_key}:${message.index}:${message.enqueued_at}`}
+                  className="rounded-lg border border-border/50 bg-muted/20 px-2.5 py-2"
+                >
+                  <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2 text-[11px]">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <Bot className="size-3 shrink-0 text-cyan-500 dark:text-cyan-300" />
+                      <span className="truncate font-medium text-foreground/90">
+                        {robot.robot_name}
+                      </span>
+                      <span className="truncate font-mono text-muted-foreground">
+                        {getRobotConversationLabel(controller)}
+                      </span>
+                    </div>
+                    <span className="shrink-0 font-mono text-muted-foreground">
+                      {formatPendingReplyTime(message.enqueued_at, localeTag)}
+                    </span>
+                  </div>
+                  <div className="mb-1 flex min-w-0 items-center gap-1.5 text-[11px]">
+                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                      {getRobotTriggerLabel(message.trigger_reason)}
+                    </Badge>
+                    <span className="truncate text-muted-foreground">
+                      {message.sender_label || message.sender_key}
+                    </span>
+                  </div>
+                  <div className="line-clamp-2 break-words text-xs leading-5 text-foreground/90">
+                    {message.message_preview || "[空消息]"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function RobotConversationDebugTable({
   data,
   isFetching,
@@ -1348,7 +1507,12 @@ function ItemDetailPage({
     null,
   )
   const [jobsPanelOpen, setJobsPanelOpen] = useState(false)
+  const [pendingRepliesPanelOpen, setPendingRepliesPanelOpen] = useState(false)
   const [jobCancelId, setJobCancelId] = useState<string | null>(null)
+  const pendingReplyCount = useMemo(
+    () => getRobotPendingReplyCount(robotControllerStatus),
+    [robotControllerStatus],
+  )
   const activateTab = (value: string) => {
     const nextTab = value as ItemDetailTab
     setActiveTab(nextTab)
@@ -1369,8 +1533,15 @@ function ItemDetailPage({
     setTerminalWsForm(createTerminalWsForm(item))
     setTerminalWsServers([])
     setJobsPanelOpen(false)
+    setPendingRepliesPanelOpen(false)
     setJobCancelId(null)
   }, [item.id])
+
+  useEffect(() => {
+    if (pendingReplyCount > 0) {
+      setPendingRepliesPanelOpen(true)
+    }
+  }, [pendingReplyCount])
 
   useEffect(() => {
     const isNewItem = previousItemIdRef.current !== item.id
@@ -2580,8 +2751,19 @@ function ItemDetailPage({
                   </div>
 
                   <div className="w-full shrink-0 xl:w-[23rem]">
-                    <div className="rounded-2xl border bg-card/85 shadow-sm h-[42rem] overflow-hidden">
-                      <ChatPanel itemId={item.id} />
+                    <div className="flex h-[42rem] flex-col gap-3">
+                      <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border bg-card/85 shadow-sm">
+                        <ChatPanel itemId={item.id} />
+                      </div>
+                      {robotPluginEnabled ? (
+                        <RobotPendingRepliesPanel
+                          data={robotControllerStatus}
+                          isOpen={pendingRepliesPanelOpen}
+                          onOpenChange={setPendingRepliesPanelOpen}
+                          isFetching={isFetchingRobotControllerStatus}
+                          localeTag={localeTag}
+                        />
+                      ) : null}
                     </div>
                   </div>
                 </div>

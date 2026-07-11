@@ -310,6 +310,8 @@ class RobotAgentIntegration:
             )
 
     def setup_chat_context(self, agent: Agent, context: dict[str, Any]) -> bool:
+        if not is_robot_plugin_enabled():
+            return False
         agent_context = _robot_context(agent)
         if agent_context is None:
             return False
@@ -350,6 +352,8 @@ class RobotAgentIntegration:
         agent: Agent,
         context: dict[str, Any],
     ) -> bool:
+        if not is_robot_plugin_enabled():
+            return False
         agent_context = _robot_context(agent)
         if agent_context is None or not getattr(agent_context, "robot_id", ""):
             return False
@@ -428,7 +432,8 @@ class RobotAgentIntegration:
         retry_used: bool,
     ) -> bool:
         return (
-            bool(final_response.strip())
+            is_robot_plugin_enabled()
+            and bool(final_response.strip())
             and not retry_used
             and not is_no_reply_intent(final_response)
             and _has_tool(tools, ROBOT_SEND_TOOL_NAME)
@@ -645,6 +650,8 @@ class RobotAgentIntegration:
         return True
 
     def should_enable_for_terminal_alert(self, agent: Agent, content: str) -> bool:
+        if not is_robot_plugin_enabled():
+            return False
         context = _robot_context(agent)
         if context is None:
             return False
@@ -685,6 +692,9 @@ class RobotAgentIntegration:
         return [skill] if skill is not None else []
 
     def builtin_mcp_server_factories(self) -> dict[str, Any]:
+        if not is_robot_plugin_enabled():
+            return {}
+
         def factory() -> Any:
             from app.plugins.robot.mcp.server import RobotMCPServer
 
@@ -693,6 +703,8 @@ class RobotAgentIntegration:
         return {ROBOT_MCP_SERVER_NAME: factory}
 
     async def _ensure_messaging_tools(self, agent: Agent) -> bool:
+        if not is_robot_plugin_enabled():
+            return False
         from app.services.agent.mcp.server_manager import mcp_server_manager
 
         context = _robot_context(agent)

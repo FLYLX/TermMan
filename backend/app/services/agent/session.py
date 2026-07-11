@@ -23,6 +23,12 @@ from app.services.agent.integrations import (
     extract_integration_context_targets,
     should_enable_terminal_alert_integrations,
 )
+from app.services.agent.pending_context import (
+    attach_terminal_feedback_to_pending_continuation,
+    build_pending_terminal_continuation_prompt,
+    clear_pending_terminal_continuation,
+    record_pending_terminal_continuation,
+)
 from app.services.agent.prompts.builder import (
     build_chat_turn_messages,
     build_terminal_turn_messages,
@@ -1489,6 +1495,8 @@ class AgentSession:
         pending_before_analysis = self._get_pending_command()
         had_pending_command = pending_before_analysis is not None
         analysis = self._resolve_terminal_analysis_content(input_msg)
+        if input_msg.content:
+            attach_terminal_feedback_to_pending_continuation(self.item_id, input_msg.content)
         should_emit_terminal_output = bool(input_msg.content) and (
             not had_pending_command
             or bool(analysis.content)
@@ -1679,11 +1687,16 @@ class AgentSession:
         )
 
     def _build_chat_messages(self, agent: Agent, input_msg: InputMessage) -> list[dict]:
+        pending_context = build_pending_terminal_continuation_prompt(
+            self.item_id,
+            input_msg.content,
+        )
         messages = build_chat_turn_messages(
             agent,
             item_id=self.item_id,
             message=input_msg.content,
             query=input_msg.query or input_msg.content,
+            pending_context=pending_context,
         )
         running_job = self._get_running_terminal_job()
         if running_job:
@@ -1838,6 +1851,7 @@ class AgentSession:
                 turn_guard.reset_timeout_window()
 
             result_text = self._format_tool_result(result).strip()
+            auto_routed_to_job = is_tool_result_auto_routed_to_job(result)
             command_dispatch_failed = is_command_dispatch_failure_result(tool_name, result_text)
             command_dispatch_pending = is_command_dispatch_pending_result(tool_name, result_text)
             if result_text and not hide_tool_details and not command_dispatch_pending:
@@ -1848,6 +1862,13 @@ class AgentSession:
                 )
 
             if command_dispatch_failed:
+                record_pending_terminal_continuation(
+                    item_id=self.item_id,
+                    command=str(tool_args.get("command") or ""),
+                    reason="terminal_not_connected",
+                    message=COMMAND_DISPATCH_FAILURE_MESSAGE,
+                    tool_name=tool_name,
+                )
                 self.emit_output(
                     COMMAND_DISPATCH_FAILURE_MESSAGE,
                     "agent_warning",
@@ -1873,18 +1894,33 @@ class AgentSession:
                 }
             )
 
-            should_stop_after_tool, reason_after_tool = turn_guard.after_tool(
-                tool_name,
-                result_text,
-            )
+            if auto_routed_to_job:
+                should_stop_after_tool, reason_after_tool = turn_guard.record_progress(
+                    f"job:{normalized_tool_args_str}"
+                )
+            else:
+                should_stop_after_tool, reason_after_tool = turn_guard.after_tool(
+                    tool_name,
+                    result_text,
+                )
             if (
                 tool_name in COMMAND_TOOL_NAMES
                 and result.get("success")
-                and not is_tool_result_auto_routed_to_job(result)
+                and not auto_routed_to_job
             ):
+                clear_pending_terminal_continuation(
+                    self.item_id,
+                    command=str(tool_args.get("command") or ""),
+                )
                 self._set_pending_command(tool_name, tool_args)
                 self._emit_waiting_terminal_status(tool_name)
                 return None
+
+            if auto_routed_to_job:
+                clear_pending_terminal_continuation(
+                    self.item_id,
+                    command=str(tool_args.get("command") or ""),
+                )
 
             if should_stop_after_tool:
                 self.emit_output(

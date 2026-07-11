@@ -35,6 +35,11 @@ from app.services.agent.integrations import (
     record_integration_delivery_correction,
 )
 from app.services.agent.memory.vector_store import vector_store
+from app.services.agent.pending_context import (
+    build_pending_terminal_continuation_prompt,
+    clear_pending_terminal_continuation,
+    record_pending_terminal_continuation,
+)
 from app.services.agent.prompts.builder import build_chat_turn_messages
 from app.services.agent.prompts.policy import (
     build_confirmation_memory_candidate,
@@ -54,11 +59,11 @@ from app.services.agent.session import (
     should_auto_route_terminal_tool_to_job,
 )
 from app.services.agent.stream_manager import stream_manager
-from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 from app.services.agent.tool_arguments import (
     ToolArgumentParseError,
     parse_tool_arguments,
 )
+from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 
 if TYPE_CHECKING:
     from app.services.agent.agent import Agent
@@ -766,12 +771,14 @@ def generate_stream(
     if agent is None:
         agent = agent_manager.get_or_create(handler)
 
+    pending_context = build_pending_terminal_continuation_prompt(item_id, message)
     messages = build_chat_turn_messages(
         agent,
         item_id=item_id,
         message=message,
         query=message,
         latest_only_context=latest_only_context,
+        pending_context=pending_context,
     )
     extract_integration_context_targets(agent, messages)
     record_integration_context_targets(agent, item_id)
@@ -1152,6 +1159,13 @@ def generate_stream(
                         yield _to_sse(result_event)
 
                 if command_dispatch_failed:
+                    record_pending_terminal_continuation(
+                        item_id=item_id,
+                        command=str(tool_args.get("command") or ""),
+                        reason="terminal_not_connected",
+                        message=COMMAND_DISPATCH_FAILURE_MESSAGE,
+                        tool_name=tool_name,
+                    )
                     _mark_agent_task_plan_failed(planned_task_runtime)
                     warning_event = _persist_and_broadcast_event(
                         item_id,
@@ -1170,6 +1184,10 @@ def generate_stream(
                     and result.get("success")
                     and not is_tool_result_auto_routed_to_job(result)
                 ):
+                    clear_pending_terminal_continuation(
+                        item_id,
+                        command=str(tool_args.get("command") or ""),
+                    )
                     if terminal_session is None:
                         terminal_session = agent_session_manager.get_or_create_session(
                             item_id,
@@ -1185,6 +1203,11 @@ def generate_stream(
                     yield _to_sse(waiting_event)
                     yield _to_sse({"done": True})
                     return
+                if is_tool_result_auto_routed_to_job(result):
+                    clear_pending_terminal_continuation(
+                        item_id,
+                        command=str(tool_args.get("command") or ""),
+                    )
                 assistant_message["tool_calls"].append(
                     {
                         "id": tool_call["id"],

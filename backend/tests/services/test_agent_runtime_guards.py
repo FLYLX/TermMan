@@ -29,6 +29,12 @@ from app.services.agent.chat_runtime import (
     collect_chat_response,
 )
 from app.services.agent.mcp.types import MCPTool
+from app.services.agent.pending_context import (
+    attach_terminal_feedback_to_pending_continuation,
+    build_pending_terminal_continuation_prompt,
+    clear_all_pending_terminal_continuations,
+    record_pending_terminal_continuation,
+)
 from app.services.agent.prompts import builder as prompt_builder
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.skills import skill_loader
@@ -286,6 +292,34 @@ def test_robot_messaging_tools_can_be_temporarily_exposed_for_alerts(monkeypatch
         agent_module.Agent._instances.pop(handler_id, None)
 
 
+def test_robot_messaging_tools_are_not_exposed_when_plugin_disabled(monkeypatch) -> None:
+    handler_id = f"handler-{uuid4()}"
+    agent = agent_module.Agent(handler_id)
+    agent._context = AgentContext(handler_id=handler_id, enabled_mcp_servers=[])
+    agent._mcp_servers = []
+    integration = get_robot_agent_integration()
+    monkeypatch.setattr(
+        "app.plugins.robot.agent.integration.is_robot_plugin_enabled",
+        lambda: False,
+    )
+
+    try:
+        assert asyncio.run(agent.ensure_robot_messaging_tools()) is False
+        assert integration.builtin_mcp_server_factories() == {}
+        assert integration.should_enable_for_terminal_alert(agent, "FATAL") is False
+        assert integration.should_retry_delivery(
+            agent,
+            messages=[{"role": "user", "content": "[Robot message; conversation=group:g1] hi"}],
+            tools=[{"type": "function", "function": {"name": ROBOT_SEND_TOOL_NAME}}],
+            final_response="hello",
+            retry_used=False,
+        ) is False
+        assert agent.get_mcp_servers() == []
+        assert agent.get_tools_for_litellm() == []
+    finally:
+        agent_module.Agent._instances.pop(handler_id, None)
+
+
 def test_robot_mcp_explicit_target_gets_backend_user_context(monkeypatch) -> None:
     handler_id = f"handler-{uuid4()}"
     agent = agent_module.Agent(handler_id)
@@ -506,6 +540,101 @@ def test_latest_only_chat_prompt_skips_stored_context(monkeypatch) -> None:
     combined = "\n".join(entry["content"] for entry in messages)
     assert "old" not in combined
     assert "Relevant knowledge files" not in combined
+
+
+def test_latest_only_chat_prompt_keeps_pending_terminal_continuation(monkeypatch) -> None:
+    def fail_context_read(*_args, **_kwargs):
+        raise AssertionError("stored context should not be read")
+
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(robot_id="robot-1", robot_reply_context_summary="current qq"),
+        get_skills=lambda: [],
+        get_mcp_servers=lambda: [],
+        get_tools_for_litellm=lambda: [],
+        match_skills=lambda query: [],
+        enabled_knowledge_files=["ops.md"],
+    )
+    monkeypatch.setattr(prompt_builder, "get_system_prompt", lambda agent: "system prompt")
+    monkeypatch.setattr(
+        prompt_builder,
+        "resolve_prompt_memory_policy",
+        lambda turn_type: SimpleNamespace(
+            include_session_summary=True,
+            include_recent_history=True,
+            max_recent_messages=10,
+            include_long_term=True,
+            allowed_long_term_types=("fact", "preference"),
+            max_long_term_memories=5,
+        ),
+    )
+    monkeypatch.setattr(prompt_builder, "get_chat_messages", fail_context_read)
+    monkeypatch.setattr(prompt_builder, "get_latest_session_summary", fail_context_read)
+    monkeypatch.setattr(prompt_builder, "build_integration_history_prompt", fail_context_read)
+    monkeypatch.setattr(prompt_builder, "_collect_long_term_memories", fail_context_read)
+    monkeypatch.setattr(prompt_builder, "_collect_handler_knowledge", fail_context_read)
+
+    try:
+        clear_all_pending_terminal_continuations()
+        record_pending_terminal_continuation(
+            item_id="item-1",
+            command="python cron_job.py",
+            reason="terminal_not_connected",
+            message="终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。",
+            tool_name="mcp_local_execute_command",
+        )
+        pending_context = build_pending_terminal_continuation_prompt(
+            "item-1",
+            "我开了，继续",
+        )
+
+        messages = prompt_builder.build_chat_turn_messages(
+            agent,
+            item_id="item-1",
+            message="我开了，继续",
+            latest_only_context=True,
+            pending_context=pending_context,
+        )
+    finally:
+        clear_all_pending_terminal_continuations()
+
+    combined = "\n".join(entry["content"] for entry in messages)
+    assert len(messages) == 3
+    assert "python cron_job.py" in combined
+    assert "终端未连接或未打开" in combined
+    assert "mcp_local_execute_command" in combined
+    assert messages[-1] == {"role": "user", "content": "我开了，继续"}
+
+
+def test_pending_terminal_continuation_keeps_manual_terminal_feedback() -> None:
+    try:
+        clear_all_pending_terminal_continuations()
+        record_pending_terminal_continuation(
+            item_id="item-1",
+            command="python cron_job.py",
+            reason="terminal_not_connected",
+            message="终端未连接或未打开，命令没有发送。",
+            tool_name="mcp_local_execute_command",
+        )
+        attach_terminal_feedback_to_pending_continuation(
+            "item-1",
+            (
+                "[2026-07-11 18:34:44] # python cron_job.py\n"
+                "python: can't open file '/app/items/5/cron_job.py': "
+                "[Errno 2] No such file or directory"
+            ),
+        )
+
+        pending_context = build_pending_terminal_continuation_prompt(
+            "item-1",
+            "为什么还是不行",
+        )
+    finally:
+        clear_all_pending_terminal_continuations()
+
+    assert "python cron_job.py" in pending_context
+    assert "后来终端出现了这段反馈" in pending_context
+    assert "No such file or directory" in pending_context
+
 
 def test_non_robot_context_does_not_include_robot_plugin_prompt(monkeypatch) -> None:
     agent = SimpleNamespace(
@@ -1722,7 +1851,7 @@ def test_terminal_input_mode_classifies_busy_and_console_commands() -> None:
 
 
 def test_busy_pending_terminal_command_blocks_new_shell_input() -> None:
-    from app.services.agent.session import AgentSession, EXECUTE_COMMAND_TOOL_NAME
+    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
 
     session = AgentSession("item-1", "handler-1")
     session._schedule_pending_command_recheck = lambda *args, **kwargs: None
@@ -1757,9 +1886,9 @@ def test_busy_pending_terminal_command_blocks_new_shell_input() -> None:
 
 def test_running_terminal_job_blocks_new_shell_and_job_commands() -> None:
     from app.services.agent.session import (
-        AgentSession,
         EXECUTE_COMMAND_TOOL_NAME,
         RUN_JOB_TOOL_NAME,
+        AgentSession,
     )
 
     session = AgentSession("item-1", "handler-1")
@@ -1798,10 +1927,10 @@ def test_running_terminal_job_blocks_new_shell_and_job_commands() -> None:
 
 def test_chat_during_running_terminal_job_is_queued_for_agent() -> None:
     from app.services.agent.session import (
+        RUN_JOB_TOOL_NAME,
         AgentSession,
         InputMessage,
         InputType,
-        RUN_JOB_TOOL_NAME,
     )
 
     session = AgentSession("item-1", "handler-1")
@@ -1826,10 +1955,8 @@ def test_chat_during_running_terminal_job_is_queued_for_agent() -> None:
 
 def test_running_terminal_job_context_is_injected_into_chat_prompt() -> None:
     from app.services.agent.session import (
-        AgentSession,
-        InputMessage,
-        InputType,
         RUN_JOB_TOOL_NAME,
+        AgentSession,
     )
 
     session = AgentSession("item-1", "handler-1")
@@ -1866,7 +1993,7 @@ def test_turn_guard_reset_timeout_window_after_long_job() -> None:
 
 
 def test_console_terminal_context_allows_console_input_but_blocks_shell_input() -> None:
-    from app.services.agent.session import AgentSession, EXECUTE_COMMAND_TOOL_NAME
+    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
 
     session = AgentSession("item-1", "handler-1")
     session._schedule_pending_command_recheck = lambda *args, **kwargs: None
@@ -1892,7 +2019,7 @@ def test_console_terminal_context_allows_console_input_but_blocks_shell_input() 
     assert "ls -la" in warning
 
 def test_expected_terminal_output_match_clears_pending_command() -> None:
-    from app.services.agent.session import AgentSession, EXECUTE_COMMAND_TOOL_NAME
+    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
 
     session = AgentSession("item-1", "handler-1")
     session._schedule_pending_command_recheck = lambda *args, **kwargs: None
@@ -1916,7 +2043,7 @@ def test_expected_terminal_output_match_clears_pending_command() -> None:
 
 
 def test_shell_error_output_clears_pending_command_after_echo() -> None:
-    from app.services.agent.session import AgentSession, EXECUTE_COMMAND_TOOL_NAME
+    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
 
     command = 'java -version 2>&1 || echo "java not found"'
     session = AgentSession("item-1", "handler-1")
@@ -1948,7 +2075,7 @@ def test_expected_terminal_output_timeout_interrupts_command(monkeypatch) -> Non
     from datetime import datetime, timedelta
 
     import app.services.socket_pool as socket_pool
-    from app.services.agent.session import AgentSession, EXECUTE_COMMAND_TOOL_NAME
+    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
 
     sent: list[tuple[str, str]] = []
 
@@ -2003,8 +2130,8 @@ def test_progress_noise_detection_ignores_download_meters() -> None:
 
 def test_pending_terminal_progress_feedback_is_not_sent_to_agent() -> None:
     from app.services.agent.session import (
-        AgentSession,
         EXECUTE_COMMAND_TOOL_NAME,
+        AgentSession,
         InputMessage,
         InputType,
     )
@@ -2029,12 +2156,12 @@ def test_pending_terminal_progress_feedback_is_not_sent_to_agent() -> None:
 
 def test_pending_terminal_output_display_suppresses_pending_progress() -> None:
     from app.services.agent.session import (
-        AgentSession,
         EXECUTE_COMMAND_TOOL_NAME,
+        TERMINAL_SOURCE_RAW_FEEDBACK,
+        AgentSession,
         InputMessage,
         InputType,
         TerminalAnalysisResult,
-        TERMINAL_SOURCE_RAW_FEEDBACK,
     )
 
     session = AgentSession("item-1", "handler-1")

@@ -82,6 +82,20 @@ export type RobotConversationControllerStatus = {
   processing_expires_at?: string | null
   updated_at: string
   seconds_remaining: number
+  pending_count?: number
+  pending_messages?: RobotPendingReplyMessage[]
+}
+
+export type RobotPendingReplyMessage = {
+  index: number
+  item_id: string
+  route_key: string
+  sender_key: string
+  sender_label: string
+  trigger_reason: string
+  message_preview: string
+  enqueued_at: string
+  direct_wakeup: boolean
 }
 
 export type ItemRobotControllerStatusRecord = {

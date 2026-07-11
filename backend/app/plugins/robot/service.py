@@ -45,7 +45,9 @@ PENDING_DIRECT_WAKE_TRIGGER_REASONS = frozenset({
     "reply_to_bot",
     "private_chat",
 })
-RECENT_LIVE_CONTEXT_LINES = 12
+RECENT_LIVE_CONTEXT_ACTIVE_LINES = 6
+RECENT_LIVE_CONTEXT_EXPANDED_LINES = 12
+RECENT_LIVE_CONTEXT_LINES = RECENT_LIVE_CONTEXT_EXPANDED_LINES
 DEFAULT_MAX_MESSAGE_LENGTH = 1200
 REPLY_MESSAGE_TYPE_PRIVATE = "private"
 REPLY_MESSAGE_TYPE_GROUP = "group"
@@ -73,6 +75,16 @@ MENTION_MATCH_MODE_BOT = "bot"
 DEFAULT_MENTION_MATCH_MODE = MENTION_MATCH_MODE_BOT
 QQ_AGENT_IGNORED_CQ_TYPES = frozenset({"image"})
 CQ_CODE_PATTERN = re.compile(r"\[CQ:([A-Za-z0-9_]+)(?:,[^\]]*)?\]")
+CONTEXT_DEPENDENT_TEXT_RE = re.compile(
+    r"("
+    r"为什么|为啥|怎么回事|什么意思|啥意思|然后呢|后来呢|继续|接着|刚才|刚刚|上面|前面|之前|"
+    r"这个|那个|这事|那事|这下|那现在|然后|所以呢|咋办|怎么办|怎么弄|怎么搞|"
+    r"好了吗|完了吗|结束了吗|成功了吗|失败了吗|装好了吗|换好了吗|行了吗|可以了吗|"
+    r"是不是|对不对|对吗|是吗|呢|吗|"
+    r"\b(?:why|continue|again|then|that|this|it|he|she|done|ready|status|what about)\b"
+    r")",
+    re.IGNORECASE,
+)
 ALLOWED_MENTION_MATCH_MODES = frozenset(
     {
         MENTION_MATCH_MODE_BOT,
@@ -531,7 +543,9 @@ class RobotService:
         if not text or is_robot_internal_trace_text(text):
             return ""
         try:
-            from app.plugins.robot.agent.integration import is_robot_read_only_tool_result
+            from app.plugins.robot.agent.integration import (
+                is_robot_read_only_tool_result,
+            )
             from app.services.agent.integrations import fallback_is_delivery_result
 
             if fallback_is_delivery_result(text) or is_robot_read_only_tool_result(text):
@@ -861,6 +875,7 @@ class RobotService:
                     live_context_card=self._recent_live_context_card(
                         robot=robot,
                         conversation_key=conversation_key,
+                        trigger_reason=trigger_reason,
                         current_message_text=message_text,
                     ),
                 ),
@@ -1098,6 +1113,40 @@ class RobotService:
             queue_items = list(entries) + list(self._pending_chat_inputs.get(key) or [])
             self._pending_chat_inputs[key] = queue_items[-PENDING_CHAT_QUEUE_LIMIT:]
 
+    def _pending_chat_snapshot_locked(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+    ) -> tuple[list[dict[str, object]], uuid.UUID | None]:
+        key = self._pending_chat_key(robot_id, conversation_key)
+        entries = list(self._pending_chat_inputs.get(key) or [])
+        snapshots: list[dict[str, object]] = []
+        first_item_id: uuid.UUID | None = None
+        for index, entry in enumerate(entries[:PENDING_CHAT_QUEUE_LIMIT], start=1):
+            if first_item_id is None:
+                first_item_id = entry.item_id
+            text = re.sub(
+                r"\s+",
+                " ",
+                self._agent_visible_message_text(entry.message_text),
+            ).strip()
+            if len(text) > 180:
+                text = f"{text[:177]}..."
+            snapshots.append(
+                {
+                    "index": index,
+                    "item_id": str(entry.item_id),
+                    "route_key": entry.route_key,
+                    "sender_key": entry.sender_key,
+                    "sender_label": entry.sender_label,
+                    "trigger_reason": entry.trigger_reason,
+                    "message_preview": text,
+                    "enqueued_at": entry.enqueued_at.isoformat(),
+                    "direct_wakeup": self._pending_chat_entry_is_direct_wakeup(entry),
+                }
+            )
+        return snapshots, first_item_id
+
     def _agent_visible_message_text(self, message_text: str) -> str:
         def replace_ignored_cq(match: re.Match[str]) -> str:
             cq_type = match.group(1).strip().lower()
@@ -1233,10 +1282,18 @@ class RobotService:
         *,
         robot: Robot,
         conversation_key: str,
-        lines: int = RECENT_LIVE_CONTEXT_LINES,
+        lines: int | None = None,
+        trigger_reason: str = "",
         current_message_text: str = "",
     ) -> str:
         if not conversation_key:
+            return ""
+        line_budget, strategy, hint = self._recent_live_context_budget(
+            current_message_text,
+            trigger_reason=trigger_reason,
+            requested_lines=lines,
+        )
+        if line_budget <= 0:
             return ""
         try:
             from app.plugins.robot.internal_trace import sanitize_robot_visible_text
@@ -1246,7 +1303,7 @@ class RobotService:
                     robot_conversation_memory.read_recent(
                         robot.id,
                         conversation_key,
-                        lines=lines,
+                        lines=line_budget,
                     )
                 )
             ).strip()
@@ -1267,9 +1324,60 @@ class RobotService:
         if not recent_lines:
             return ""
         return (
-            "[Recent QQ live context; background only, answer only current/pending messages]\n"
+            "[Recent QQ live context; background only, progressive budget, "
+            "answer only current/pending messages]\n"
+            f"- context_budget: {strategy}; latest {line_budget} line(s) only\n"
+            f"- context_hint: {hint}\n"
             + "\n".join(recent_lines)
         )
+
+    def _recent_live_context_budget(
+        self,
+        message_text: str,
+        *,
+        trigger_reason: str = "",
+        requested_lines: int | None = None,
+    ) -> tuple[int, str, str]:
+        if requested_lines is not None:
+            line_budget = max(0, min(int(requested_lines), RECENT_LIVE_CONTEXT_LINES))
+            if line_budget <= 0:
+                return 0, "off", "caller disabled recent context"
+            return (
+                line_budget,
+                "requested",
+                "caller requested a fixed recent-context budget",
+            )
+
+        if self._message_needs_progressive_context(message_text):
+            return (
+                RECENT_LIVE_CONTEXT_EXPANDED_LINES,
+                "expanded",
+                "current QQ message is short, referential, or asks about prior status/context",
+            )
+
+        if trigger_reason == "active_chat_window":
+            return (
+                RECENT_LIVE_CONTEXT_ACTIVE_LINES,
+                "active_window",
+                "active wake window needs a small same-conversation sample to decide reply vs sleep",
+            )
+
+        return 0, "current_only", "current QQ message is clear enough without recent context"
+
+    @staticmethod
+    def _message_needs_progressive_context(message_text: str) -> bool:
+        compact = re.sub(
+            r"[\s\uFF0C\u3002\uFF01\uFF1F!,.\u3001~\uFF5E\u2026]+",
+            "",
+            str(message_text or "").strip(),
+        )
+        if not compact:
+            return False
+        if CONTEXT_DEPENDENT_TEXT_RE.search(compact):
+            return True
+        if len(compact) <= 8 and compact not in {"你好", "hello", "hi", "在吗"}:
+            return True
+        return False
 
     def _recent_context_lines_without_current(
         self,
@@ -2265,9 +2373,14 @@ class RobotService:
                     continue
                 route_state = self._conversation_routes.get((robot_id, conversation_key))
                 route_item_id = route_state.item_id if route_state else None
+                pending_messages, pending_item_id = self._pending_chat_snapshot_locked(
+                    robot_id,
+                    conversation_key,
+                )
+                effective_item_id = route_item_id or pending_item_id
                 if (
                     allowed_item_ids is not None
-                    and str(route_item_id or "") not in allowed_item_ids
+                    and str(effective_item_id or "") not in allowed_item_ids
                 ):
                     continue
                 awake = self._controller_is_awake_locked(controller, now)
@@ -2285,7 +2398,7 @@ class RobotService:
                         "conversation_key": conversation_key,
                         "conversation_type": conversation_type,
                         "conversation_id": conversation_id,
-                        "item_id": str(route_item_id) if route_item_id else None,
+                        "item_id": str(effective_item_id) if effective_item_id else None,
                         "status": (
                             "processing"
                             if processing
@@ -2303,6 +2416,8 @@ class RobotService:
                         ),
                         "updated_at": controller.updated_at.isoformat(),
                         "seconds_remaining": seconds_remaining,
+                        "pending_count": len(pending_messages),
+                        "pending_messages": pending_messages,
                     }
                 )
 

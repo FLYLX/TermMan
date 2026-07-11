@@ -547,6 +547,7 @@ def build_chat_turn_messages(
     message: str,
     query: str = "",
     latest_only_context: bool = False,
+    pending_context: str = "",
 ) -> list[dict[str, str]]:
     effective_query = query or message
     policy = resolve_prompt_memory_policy(PromptTurnType.CHAT)
@@ -612,6 +613,9 @@ def build_chat_turn_messages(
         )
         if knowledge:
             prompt_messages.append({"role": "system", "content": f"Relevant knowledge files:\n{knowledge}"})
+
+    if pending_context.strip():
+        prompt_messages.append({"role": "system", "content": pending_context.strip()})
 
     prompt_messages.append({"role": "user", "content": message.strip()})
     return _dedupe_adjacent_messages(prompt_messages)

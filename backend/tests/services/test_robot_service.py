@@ -903,7 +903,7 @@ def test_robot_auto_memory_low_confidence_promotes_after_repeat(
     monkeypatch.setattr(vector_store, "get_all_memories", lambda *args, **kwargs: [])
     persisted: list[object] = []
 
-    def fake_persist_memory_candidate(_item_id, candidate, store):
+    def fake_persist_memory_candidate(_item_id, candidate, **_kwargs):
         persisted.append(candidate)
         return f"memory-{len(persisted)}"
 
@@ -1166,9 +1166,49 @@ def test_robot_message_includes_recent_live_context_without_current_duplicate(
     assert response.success is True
     text = captured["job"].message
     assert "[Recent QQ live context; background only" in text
+    assert "context_budget: expanded" in text
     assert "换国内源吧" in text
     assert text.count("换好了吗") == 1
     assert text.endswith("[Current QQ message]\n换好了吗")
+
+
+def test_recent_live_context_uses_progressive_budget(
+    db: Session,
+    monkeypatch,
+) -> None:
+    robot = create_random_robot(db)
+    calls: list[int] = []
+
+    def fake_read_recent(*_args, **kwargs):
+        calls.append(int(kwargs.get("lines") or 0))
+        return "[2026-07-10T16:32:32+00:00] user FLY (2537134688): 上一条"
+
+    monkeypatch.setattr(robot_conversation_memory, "read_recent", fake_read_recent)
+
+    clear_direct_card = robot_service._recent_live_context_card(
+        robot=robot,
+        conversation_key="private:2537134688",
+        trigger_reason="private_chat",
+        current_message_text="hello",
+    )
+    expanded_card = robot_service._recent_live_context_card(
+        robot=robot,
+        conversation_key="private:2537134688",
+        trigger_reason="private_chat",
+        current_message_text="为什么",
+    )
+    active_card = robot_service._recent_live_context_card(
+        robot=robot,
+        conversation_key="group:g1",
+        trigger_reason="active_chat_window",
+        current_message_text="今天群里在聊服务器配置",
+    )
+
+    assert clear_direct_card == ""
+    assert "context_budget: expanded" in expanded_card
+    assert "上一条" in expanded_card
+    assert "context_budget: active_window" in active_card
+    assert calls == [12, 6]
 
 
 def test_term_command_routes_to_named_item_agent(
@@ -2570,6 +2610,21 @@ def test_messages_arriving_while_processing_are_batched_in_pending_queue(
     assert second.reason == "queued_pending"
     assert third.reason == "queued_pending"
     assert len(queued_jobs) == 1
+    snapshots = robot_service.conversation_controller_snapshots(
+        {robot.id},
+        item_ids={item.id},
+    )
+    assert len(snapshots) == 1
+    assert snapshots[0]["pending_count"] == 2
+    assert [
+        message["sender_label"]
+        for message in snapshots[0]["pending_messages"]
+    ] == ["Bob (u2)", "Carol (u3)"]
+    assert [
+        message["message_preview"]
+        for message in snapshots[0]["pending_messages"]
+    ] == ["第二个人也问", "第三个人继续问"]
+    assert snapshots[0]["pending_messages"][0]["direct_wakeup"] is True
 
     robot_service._apply_reply_context_result(
         robot,

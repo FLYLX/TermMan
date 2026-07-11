@@ -24,6 +24,7 @@ ROBOT_LONG_TERM_MEMORY_INSTRUCTION = (
     "- Do not save trivial chat, short reactions, images/stickers, one-off jokes, temporary market chatter, raw logs, or sensitive secrets. Prefer concise normalized memory text instead of copying the whole message.\n"
     "- Use `mcp_robot_read_conversation_memory` only for raw current QQ .log when the user explicitly asks about exact previous chat or the current message cannot be understood without recent chat lines.\n"
     "- Do not read either memory tool just to decide whether to reply. First decide from the current QQ message and the wake/sleep rules.\n"
+    "- Pending QQ messages are short-term reply tasks, not long-term memory by themselves. Use them to answer in order and connect current tasks/context, but save only durable facts, preferences, names, or ongoing tasks from those messages.\n"
 )
 ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION = (
     "- For a QQ `trigger=active_chat_window` turn, this group/private chat is "
