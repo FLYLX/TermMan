@@ -190,6 +190,95 @@ def test_cancel_item_job_clears_agent_terminal_job_lock(
     assert fake_connection.calls == [{"item_uuid": item_id, "job_id": "job-9"}]
     assert session.has_running_terminal_job() is False
 
+
+def test_terminal_token_uses_public_daemon_endpoint(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import items as items_routes
+
+    item = create_random_item(db)
+    item.socket_host = "daemon"
+    item.socket_port = 9000
+    item.api_key = "daemon-key"
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    class FakeSocketPool:
+        def get_item_token(self, item_id: str):
+            assert item_id == str(item.id)
+            return ("daemon:9000:daemon-key", "daemon-token")
+
+    class FakeDaemonState:
+        def is_connected(self):
+            return True
+
+    class FakeBackendConnPool:
+        def get_daemon_main_conn_state(self, api_key: str):
+            assert api_key == "daemon-key"
+            return FakeDaemonState()
+
+    monkeypatch.setattr(items_routes, "socket_pool_facade", FakeSocketPool())
+    monkeypatch.setattr(items_routes, "backend_conn_pool", FakeBackendConnPool())
+    monkeypatch.setattr(items_routes.settings, "DAEMON_HOST_PORT", 39999)
+    monkeypatch.setattr(items_routes.settings, "DAEMON_PUBLIC_URL", None)
+    monkeypatch.setattr(items_routes.settings, "DAEMON_PUBLIC_HOST", None)
+    monkeypatch.setattr(items_routes.settings, "DAEMON_PUBLIC_PORT", None)
+    monkeypatch.setattr(items_routes.settings, "DAEMON_PUBLIC_WS_SCHEME", "ws")
+
+    response = client.get(
+        f"{settings.API_V1_STR}/items/{item.id}/terminal-token",
+        headers={**superuser_token_headers, "host": "203.135.104.22:28888"},
+    )
+
+    assert response.status_code == 200
+    content = response.json()
+    assert content["ws_url"] == "ws://203.135.104.22:39999"
+
+
+def test_terminal_token_public_url_override(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import items as items_routes
+
+    item = create_random_item(db)
+    item.socket_host = "daemon"
+    item.socket_port = 9000
+    item.api_key = "daemon-key"
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    class FakeSocketPool:
+        def get_item_token(self, item_id: str):
+            return ("daemon:9000:daemon-key", "daemon-token")
+
+    class FakeDaemonState:
+        def is_connected(self):
+            return True
+
+    class FakeBackendConnPool:
+        def get_daemon_main_conn_state(self, api_key: str):
+            return FakeDaemonState()
+
+    monkeypatch.setattr(items_routes, "socket_pool_facade", FakeSocketPool())
+    monkeypatch.setattr(items_routes, "backend_conn_pool", FakeBackendConnPool())
+    monkeypatch.setattr(items_routes.settings, "DAEMON_PUBLIC_URL", "https://terminal.example.com")
+
+    response = client.get(
+        f"{settings.API_V1_STR}/items/{item.id}/terminal-token",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ws_url"] == "wss://terminal.example.com"
+
 def test_read_items(
     client: TestClient, superuser_token_headers: dict[str, str], db: Session
 ) -> None:

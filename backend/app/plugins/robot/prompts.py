@@ -45,6 +45,16 @@ ACTIVE_CHAT_WINDOW_CONTINUATION_INSTRUCTION = (
     "the bot to judge the situation, answer the current message briefly instead "
     "of sleeping.\n"
 )
+ROBOT_HUMAN_LIKE_REPLY_DISCIPLINE = (
+    "- Human-like QQ reply discipline: being woken only means you may participate; "
+    "it does not mean every incoming message deserves a reply. Reply when the "
+    "message clearly addresses you, asks you to do something, asks for judgement, "
+    "or continues the current bot conversation. Stay silent for ordinary reactions, "
+    "side chatter, messages aimed at other people, and low-value acknowledgements. "
+    "For `trigger=active_chat_window`, call `mcp_robot_sleep_conversation` when "
+    "the chat has drifted away from the bot; otherwise return `[no_qq_reply]` "
+    "only when silence is enough and the controller should remain available.\n"
+)
 ROBOT_REFERENCE_RESOLUTION_INSTRUCTION = (
     "- \u6307\u4ee3\u5224\u65ad\uff1a\u5f53 QQ \u6d88\u606f\u91cc\u51fa\u73b0\u201c\u4f60/\u4ed6/\u5979/\u5b83/\u8fd9\u4e2a/\u90a3\u4e2a/\u521a\u624d\u90a3\u4e2a/\u4e0a\u9762\u90a3\u4e2a\u201d\u3001"
     "\u6216\u8005\u201c\u9700\u8981\u4eba\u64cd\u4f5c/\u786e\u8ba4/\u5904\u7406/\u7ee7\u7eed\u201d\u7b49\u9700\u8981\u4ea4\u4e92\u7684\u8bf4\u6cd5\u65f6\uff0c\u5148\u6839\u636e @/\u56de\u590d\u5bf9\u8c61\u3001"
@@ -79,6 +89,7 @@ ROBOT_MESSAGING_PROMPT = (
     "最终 assistant 文本是 TermMan 内部回复，不会自动发送到 QQ。"
     f"\n{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
     f"{ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION}"
+    f"{ROBOT_HUMAN_LIKE_REPLY_DISCIPLINE}"
     f"{ACTIVE_CHAT_WINDOW_CONTINUATION_INSTRUCTION}"
 )
 
@@ -100,6 +111,7 @@ ROBOT_ACTIVE_CONTEXT_PROMPT = (
     "- 不要回复普通群聊闲聊或发给别人的消息。不要发送隐藏推理、工具轨迹、原始日志或长摘要。\n"
     f"{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
     f"{ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION}"
+    f"{ROBOT_HUMAN_LIKE_REPLY_DISCIPLINE}"
     f"{ACTIVE_CHAT_WINDOW_CONTINUATION_INSTRUCTION}"
     f"{ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION}"
     f"{NO_QQ_REPLY_INSTRUCTION}"
@@ -118,6 +130,7 @@ ROBOT_REFLECTION_PROMPT = (
     "- 调用 `mcp_robot_send_message` 前，先静默判断 QQ 是否真的需要收到回复。\n"
     "- @、回复机器人、活跃窗口触发只是候选延续，不等于自动允许发送。\n"
     f"{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
+    f"{ROBOT_HUMAN_LIKE_REPLY_DISCIPLINE}"
     f"{ACTIVE_CHAT_WINDOW_CONTINUATION_INSTRUCTION}"
     f"{ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION}"
     f"{NO_QQ_REPLY_INSTRUCTION}"

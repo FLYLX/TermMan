@@ -161,7 +161,7 @@ class SocketService:
         async def disconnect_in_background():
             for sid in sids:
                 try:
-                    self.sio.leave_room(sid, room_id)
+                    await self.sio.leave_room(sid, room_id)
                     await asyncio.wait_for(self.sio.disconnect(sid), timeout=2.0)
                     logger.info(f"Disconnected socket: {sid[:16]}...")
                 except Exception as e:

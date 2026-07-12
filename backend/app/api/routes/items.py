@@ -3,12 +3,14 @@ import logging
 import re
 import uuid
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Body, HTTPException, Request
 from pydantic import BaseModel
 from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep
+from app.core.config import settings
 from app.models import (
     Item,
     ItemCreate,
@@ -47,6 +49,42 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/items", tags=["items"])
 
 FILTER_ACTION_TYPES = {"block", "ignore", "log", "replace"}
+
+
+def _normalize_ws_url(value: str) -> str:
+    url = value.strip().rstrip("/")
+    if url.startswith("http://"):
+        return f"ws://{url[7:]}"
+    if url.startswith("https://"):
+        return f"wss://{url[8:]}"
+    return url
+
+
+def _format_ws_host(host: str) -> str:
+    host = host.strip()
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
+def _build_terminal_ws_url(request: Request, item: Item) -> str:
+    public_url = (settings.DAEMON_PUBLIC_URL or "").strip()
+    if public_url:
+        return _normalize_ws_url(public_url)
+
+    configured_host = (settings.DAEMON_PUBLIC_HOST or "").strip()
+    host = configured_host or request.url.hostname or item.socket_host or "localhost"
+    port = settings.DAEMON_PUBLIC_PORT or settings.DAEMON_HOST_PORT or item.socket_port or 9000
+    scheme = settings.DAEMON_PUBLIC_WS_SCHEME or "ws"
+
+    if "://" in host:
+        parsed = urlsplit(host)
+        if parsed.scheme:
+            scheme = "wss" if parsed.scheme == "https" else "ws"
+        host = parsed.hostname or host
+        port = settings.DAEMON_PUBLIC_PORT or parsed.port or port
+
+    return f"{scheme}://{_format_ws_host(host)}:{port}"
 
 
 class FilePathRequest(BaseModel):
@@ -561,7 +599,7 @@ def delete_item(
 
 @router.get("/{id}/terminal-token")
 def get_terminal_token(
-    session: SessionDep, current_user: CurrentUser, id: uuid.UUID
+    request: Request, session: SessionDep, current_user: CurrentUser, id: uuid.UUID
 ) -> dict[str, Any]:
     from app.services.auth_service import auth_service
     
@@ -592,7 +630,7 @@ def get_terminal_token(
         "temp_token": temp_token_info["token"],
         "item_uuid": str(id),
         "user_uuid": str(current_user.id),
-        "ws_url": f"ws://{item.socket_host}:{item.socket_port}",
+        "ws_url": _build_terminal_ws_url(request, item),
         "daemon_id": daemon_id,
         "expire_seconds": temp_token_info["expires_in"]
     }

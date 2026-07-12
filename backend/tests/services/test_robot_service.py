@@ -210,6 +210,18 @@ def _capture_queued_chat(monkeypatch) -> dict[str, Any]:
     return captured
 
 
+def _process_captured_chat_job(monkeypatch, job) -> list[str]:
+    messages: list[str] = []
+
+    async def fake_chat_with_item(**kwargs):
+        messages.append(str(kwargs["message"]))
+        return ChatResponseResult(content="", robot_message_sent=False)
+
+    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
+    robot_service._process_chat_job(job)
+    return messages
+
+
 class _FakeBot:
     self_id = "10001"
 
@@ -893,6 +905,53 @@ def test_mentioned_group_message_routes_to_default_item_agent(
     assert memory_calls[0][1]["sender"] == "onebot_v11:group:g1:u1"
 
 
+def test_robot_dispatch_queues_before_slow_memory_and_context_work(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    captured = _capture_queued_chat(monkeypatch)
+
+    def fail_slow_memory(**_kwargs):
+        raise AssertionError("long-term memory must run in the worker, not dispatch")
+
+    def fail_impression(**_kwargs):
+        raise AssertionError("impression card must run in the worker, not dispatch")
+
+    monkeypatch.setattr(
+        robot_service,
+        "_persist_inbound_long_term_memory",
+        fail_slow_memory,
+    )
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", fail_impression)
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("hello", mentioned_bot=True),
+    )
+
+    assert response.success is True
+    assert response.reason == "queued"
+    assert captured["job"].message == "hello"
+    assert captured["job"].message_text == "hello"
+    assert captured["job"].trigger_reason == "mention_bot"
+    assert captured["job"].inbound_message is not None
+
+
 def test_robot_explicit_memory_is_persisted_with_conversation_scope(
     db: Session,
     monkeypatch,
@@ -936,6 +995,7 @@ def test_robot_explicit_memory_is_persisted_with_conversation_scope(
     assert response.success is True
     assert response.ignored is False
     assert captured["job"].conversation_key == "group:g1"
+    _process_captured_chat_job(monkeypatch, captured["job"])
     assert len(persisted) == 1
     assert persisted[0][0] == str(item.id)
     candidate = persisted[0][1]
@@ -965,7 +1025,7 @@ def test_robot_auto_memory_high_confidence_is_persisted_with_sender_scope(
     )
     db.commit()
 
-    _capture_queued_chat(monkeypatch)
+    captured = _capture_queued_chat(monkeypatch)
     monkeypatch.setattr(vector_store, "get_all_memories", lambda *args, **kwargs: [])
     persisted: list[tuple[str, object, object]] = []
 
@@ -991,6 +1051,7 @@ def test_robot_auto_memory_high_confidence_is_persisted_with_sender_scope(
 
     assert response.success is True
     assert response.ignored is False
+    _process_captured_chat_job(monkeypatch, captured["job"])
     assert len(persisted) == 1
     candidate = persisted[0][1]
     assert persisted[0][0] == str(item.id)
@@ -1023,7 +1084,7 @@ def test_robot_auto_memory_low_confidence_promotes_after_repeat(
     )
     db.commit()
 
-    _capture_queued_chat(monkeypatch)
+    captured = _capture_queued_chat(monkeypatch)
     monkeypatch.setattr(vector_store, "get_all_memories", lambda *args, **kwargs: [])
     persisted: list[object] = []
 
@@ -1047,6 +1108,7 @@ def test_robot_auto_memory_low_confidence_promotes_after_repeat(
         ),
     )
     assert first.success is True
+    _process_captured_chat_job(monkeypatch, captured["job"])
     assert persisted == []
 
     second = robot_service.handle_inbound_message(
@@ -1060,6 +1122,7 @@ def test_robot_auto_memory_low_confidence_promotes_after_repeat(
         ),
     )
     assert second.success is True
+    _process_captured_chat_job(monkeypatch, captured["job"])
     assert len(persisted) == 1
     candidate = persisted[0]
     assert candidate.memory_type == "context"
@@ -1142,7 +1205,8 @@ def test_robot_message_includes_current_conversation_impression_card(
     )
 
     assert response.success is True
-    text = captured["job"].message
+    messages = _process_captured_chat_job(monkeypatch, captured["job"])
+    text = messages[0]
     assert "Current QQ conversation impression card" in text
     assert "Alice 喜欢短回复" in text
     assert "Alice 以后叫她主人" in text
@@ -1288,7 +1352,8 @@ def test_robot_message_includes_recent_live_context_without_current_duplicate(
     )
 
     assert response.success is True
-    text = captured["job"].message
+    messages = _process_captured_chat_job(monkeypatch, captured["job"])
+    text = messages[0]
     assert "[Recent QQ live context; background only" in text
     assert "context_budget: expanded" in text
     assert "换国内源吧" in text
@@ -1477,7 +1542,7 @@ def test_reply_message_type_filter_ignores_unselected_group_message(
 
     assert response.success is True
     assert response.ignored is True
-    assert response.reason == "reply_message_type_disabled"
+    assert response.reason == "conversation_sleeping"
     assert response.reply_chunks == []
 
 
@@ -1639,7 +1704,7 @@ def test_reply_message_type_filter_ignores_unmentioned_when_only_mention_allowed
 
     assert response.success is True
     assert response.ignored is True
-    assert response.reason == "reply_message_type_disabled"
+    assert response.reason == "conversation_sleeping"
     assert response.reply_chunks == []
 
 
@@ -1730,7 +1795,7 @@ def test_reply_message_type_filter_ignores_at_target_by_default_when_only_mentio
 
     assert response.success is True
     assert response.ignored is True
-    assert response.reason == "reply_message_type_disabled"
+    assert response.reason == "conversation_sleeping"
     assert response.reply_chunks == []
 
 
@@ -1787,7 +1852,7 @@ def test_reply_message_type_filter_ignores_at_target_even_when_mention_match_mod
 
     assert response.success is True
     assert response.ignored is True
-    assert response.reason == "reply_message_type_disabled"
+    assert response.reason == "conversation_sleeping"
     assert response.reply_chunks == []
 
 
@@ -2189,7 +2254,7 @@ def test_reply_context_uses_onebot_group_id_before_universal_target_id(
         ),
     )
     assert other_group.ignored is True
-    assert other_group.reason == "reply_message_type_disabled"
+    assert other_group.reason == "conversation_sleeping"
     assert [job.conversation_key for job in queued_jobs] == ["group:g1"]
 
 

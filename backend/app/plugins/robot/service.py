@@ -178,6 +178,9 @@ class QueuedRobotChatJob:
     reply_context_active: bool = False
     conversation_generation: int = 0
     reply_requires_awake: bool = False
+    message_text: str = ""
+    trigger_reason: str = ""
+    inbound_message: RobotInboundMessage | None = None
 
 
 class RobotServiceError(Exception):
@@ -495,13 +498,18 @@ class RobotService:
                         },
                     )
                     return
+                chat_message = self._prepare_queued_chat_message(
+                    robot=robot,
+                    item=item,
+                    job=job,
+                )
                 with self._item_chat_lock(job.item_id):
                     response = asyncio.run(
                         self._chat_with_item(
                             session=session,
                             robot=robot,
                             item=item,
-                            message=job.message,
+                            message=chat_message,
                             sender_key=job.sender_key,
                             reply_target=job.reply_target,
                             conversation_key=job.conversation_key,
@@ -681,6 +689,44 @@ class RobotService:
         except Exception:
             pass
         return text
+
+    def _prepare_queued_chat_message(
+        self,
+        *,
+        robot: Robot,
+        item: Item,
+        job: QueuedRobotChatJob,
+    ) -> str:
+        inbound_message = job.inbound_message
+        message_text = (job.message_text or "").strip()
+        if inbound_message is None or not message_text:
+            return job.message
+
+        self._persist_inbound_long_term_memory(
+            item_id=item.id,
+            robot=robot,
+            message=inbound_message,
+            conversation_key=job.conversation_key,
+            message_text=message_text,
+        )
+        return self._agent_message_with_context(
+            inbound_message,
+            message_text,
+            trigger_reason=job.trigger_reason,
+            impression_card=self._conversation_impression_card(
+                item_id=item.id,
+                robot=robot,
+                conversation_key=job.conversation_key,
+                sender_key=job.sender_key,
+                reply_target=job.reply_target,
+            ),
+            live_context_card=self._recent_live_context_card(
+                robot=robot,
+                conversation_key=job.conversation_key,
+                trigger_reason=job.trigger_reason,
+                current_message_text=message_text,
+            ),
+        )
 
     def _record_and_send_job_error(
         self,
@@ -887,15 +933,14 @@ class RobotService:
                 conversation_key,
                 resolved_binding.item.id,
             )
-            self._persist_inbound_long_term_memory(
-                item_id=resolved_binding.item.id,
-                robot=robot,
-                message=message,
-                conversation_key=conversation_key,
-                message_text=message_text,
-            )
 
             if command.mode == "send":
+                self._remember_inbound_conversation_memory(
+                    robot,
+                    message,
+                    conversation_key,
+                    self._agent_visible_message_text(message_text),
+                )
                 success = self._write_to_item_terminal(resolved_binding.item.id, message_text)
                 if not success:
                     raise RobotServiceError("终端未运行或后端尚未连接到该终端。")
@@ -993,19 +1038,6 @@ class RobotService:
                     message,
                     message_text,
                     trigger_reason=trigger_reason,
-                    impression_card=self._conversation_impression_card(
-                        item_id=resolved_binding.item.id,
-                        robot=robot,
-                        conversation_key=conversation_key,
-                        sender_key=message.sender_key,
-                        reply_target=message.reply_target,
-                    ),
-                    live_context_card=self._recent_live_context_card(
-                        robot=robot,
-                        conversation_key=conversation_key,
-                        trigger_reason=trigger_reason,
-                        current_message_text=message_text,
-                    ),
                 ),
                 sender_key=message.sender_key,
                 reply_target=message.reply_target.model_copy(deep=True),
@@ -1014,6 +1046,9 @@ class RobotService:
                 reply_context_active=reply_context_active,
                 conversation_generation=conversation_generation,
                 reply_requires_awake=reply_requires_awake,
+                message_text=message_text,
+                trigger_reason=trigger_reason,
+                inbound_message=message.model_copy(deep=True),
                 enqueued_at=self._now(),
             )
             if not self._enqueue_chat_job(queued_job):

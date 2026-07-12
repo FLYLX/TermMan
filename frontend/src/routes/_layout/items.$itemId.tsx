@@ -1785,7 +1785,7 @@ function ItemDetailPage({
       const ready = await waitForTerminalReady()
       showSuccessToast(result.message || t("items.detail.started"))
       if (ready) {
-        reconnect()
+        reconnect(true)
       } else {
         showErrorToast("终端启动成功，但前端还没读到可连接状态，请稍后刷新。")
       }
@@ -1820,7 +1820,7 @@ function ItemDetailPage({
       const ready = await waitForTerminalReady()
       showSuccessToast(result.message || t("items.detail.restarted"))
       if (ready) {
-        reconnect()
+        reconnect(true)
       } else {
         showErrorToast("终端重启成功，但前端还没读到可连接状态，请稍后刷新。")
       }
@@ -2858,7 +2858,7 @@ function ItemDetailPage({
                               variant="outline"
                               size="sm"
                               className="mt-2"
-                              onClick={reconnect}
+                              onClick={() => reconnect()}
                             >
                               <Plug className="size-4 mr-2" />
                               {t("items.detail.retryConnection")}
@@ -2917,7 +2917,7 @@ function ItemDetailPage({
                                   variant="outline"
                                   size="sm"
                                   className="mt-2"
-                                  onClick={reconnect}
+                                  onClick={() => reconnect()}
                                 >
                                   <Plug className="size-4 mr-2" />
                                   {t("items.detail.retryConnection")}

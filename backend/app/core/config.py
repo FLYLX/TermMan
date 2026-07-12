@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     ROBOT_BACKEND_DISPATCH_WORKERS: int = 1
     ROBOT_CONVERSATION_MEMORY_DIR: str = str(BACKEND_DIR.parent / ".runtime" / "robot_conversation_memory")
     ROBOT_CONVERSATION_MEMORY_MAX_BYTES: int = 1024 * 1024
+    DAEMON_HOST_PORT: int | None = None
+    DAEMON_PUBLIC_URL: str | None = None
+    DAEMON_PUBLIC_HOST: str | None = None
+    DAEMON_PUBLIC_PORT: int | None = None
+    DAEMON_PUBLIC_WS_SCHEME: Literal["ws", "wss"] = "ws"
     TERMINAL_WS_DEFAULT_HOST: str = "0.0.0.0"
     TERMINAL_WS_DEFAULT_PORT_START: int = 7100
     TERMINAL_WS_DEFAULT_PORT_END: int = 7199

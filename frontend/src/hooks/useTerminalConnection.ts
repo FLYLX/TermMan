@@ -42,7 +42,7 @@ interface UseTerminalConnectionReturn {
   clearOutput: () => void
   sendCommand: (command: string) => void
   sendCtrlC: () => void
-  reconnect: () => void
+  reconnect: (force?: boolean) => void
   disconnect: () => void
 }
 
@@ -300,8 +300,8 @@ export function useTerminalConnection({
     connectingRef.current = false
   }, [disposeSocket])
 
-  const doConnect = useCallback(async () => {
-    if (!enabled || !itemId) {
+  const doConnect = useCallback(async (force = false) => {
+    if ((!force && !enabled) || !itemId) {
       return
     }
 
@@ -466,12 +466,12 @@ export function useTerminalConnection({
     }
   }, [disposeSocket, enabled, itemId])
 
-  const reconnect = useCallback(() => {
+  const reconnect = useCallback((force = false) => {
     disconnect()
     connectionIdRef.current++
     setTimeout(() => {
       if (mountedRef.current) {
-        doConnect()
+        doConnect(force)
       }
     }, 300)
   }, [doConnect, disconnect])
