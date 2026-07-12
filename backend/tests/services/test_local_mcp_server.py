@@ -6,6 +6,7 @@ from app.plugins.robot.mcp.context import (
     unregister_robot_mcp_context,
 )
 from app.services.agent.session import (
+    is_background_job_started_result,
     is_tool_result_auto_routed_to_job,
     should_auto_route_terminal_tool_to_job,
 )
@@ -248,6 +249,30 @@ def test_auto_routed_execute_command_result_skips_pending_terminal_lock() -> Non
     ) is True
 
     assert is_tool_result_auto_routed_to_job(
+        {"success": True, "result": [{"type": "text", "text": "command sent"}]}
+    ) is False
+
+    assert is_background_job_started_result(
+        {
+            "success": True,
+            "result": [
+                {"type": "text", "text": "background job started"},
+                {"type": "metadata", "background_job_started": True},
+            ],
+        }
+    ) is True
+
+    assert is_background_job_started_result(
+        {
+            "success": True,
+            "result": [
+                {"type": "text", "text": "background job started"},
+                {"type": "metadata", "auto_routed_execute_command_to_run_job": True},
+            ],
+        }
+    ) is True
+
+    assert is_background_job_started_result(
         {"success": True, "result": [{"type": "text", "text": "command sent"}]}
     ) is False
 
@@ -615,6 +640,8 @@ def test_run_job_defaults_to_background_and_notifies_session(monkeypatch) -> Non
         agent_session_manager.remove_session(item_id)
 
     assert "后台任务已启动" in result[0]["text"]
+    assert result[1]["type"] == "metadata"
+    assert result[1]["background_job_started"] is True
     assert session.has_running_terminal_job() is False
     assert len(delivered) == 1
     assert delivered[0].input_type.value == "terminal"

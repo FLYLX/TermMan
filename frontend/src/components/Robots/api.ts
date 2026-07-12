@@ -96,6 +96,8 @@ export type RobotPendingReplyMessage = {
   message_preview: string
   enqueued_at: string
   direct_wakeup: boolean
+  pending_reply_id?: string
+  command_preview?: string
 }
 
 export type ItemRobotControllerStatusRecord = {

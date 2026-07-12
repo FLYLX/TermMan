@@ -49,10 +49,12 @@ from app.services.agent.prompts.policy import (
 )
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.session import (
+    BACKGROUND_JOB_STARTED_RESPONSE,
     COMMAND_DISPATCH_FAILURE_MESSAGE,
     COMMAND_TOOL_NAMES,
     RUN_JOB_TOOL_NAME,
     agent_session_manager,
+    is_background_job_started_result,
     is_command_dispatch_failure_result,
     is_command_dispatch_pending_result,
     is_tool_result_auto_routed_to_job,
@@ -78,6 +80,13 @@ LOOP_DETECTION_WINDOW = 6
 LOOP_THRESHOLD = 3
 SILENT_TOOL_NAMES = {"mcp_local_read_terminal_log", "mcp_robot_send_message", "mcp_robot_save_memory"}
 HIDDEN_TOOL_RESULT_NAMES = {"mcp_robot_send_message"}
+BACKGROUND_JOB_RUNNING_RESPONSE = (
+    "\u540e\u53f0\u4efb\u52a1\u8fd8\u5728\u8fd0\u884c\uff0c"
+    "\u6211\u4e0d\u4f1a\u91cd\u590d\u542f\u52a8\u65b0\u7684\u4e0b\u8f7d/"
+    "\u5b89\u88c5/\u6784\u5efa\u4efb\u52a1\uff1b"
+    "\u4f60\u53ef\u4ee5\u7ee7\u7eed\u95ee\u522b\u7684\uff0c"
+    "\u4efb\u52a1\u5b8c\u6210\u540e\u6211\u4f1a\u56de\u5230\u5bf9\u5e94\u6765\u6e90\u3002"
+)
 AUTO_TASK_SOURCE = "agent_plan"
 AUTO_TASK_TTL_DAYS = 7
 MAX_AUTO_TASKS = 5
@@ -1095,6 +1104,21 @@ def generate_stream(
                             tool_args,
                         )
                     if terminal_input_error:
+                        if (
+                            _has_active_robot_chat_context(agent)
+                            and terminal_session.has_running_terminal_job()
+                        ):
+                            response_event = _persist_and_broadcast_event(
+                                item_id,
+                                role="assistant",
+                                content=BACKGROUND_JOB_RUNNING_RESPONSE,
+                                message_type="agent_response",
+                                extra={"tool_name": tool_name},
+                            )
+                            yield _to_sse(response_event)
+                            _broadcast_agent_status(item_id, "idle")
+                            yield _to_sse({"done": True})
+                            return
                         _mark_agent_task_plan_failed(planned_task_runtime)
                         warning_event = _persist_and_broadcast_event(
                             item_id,
@@ -1187,6 +1211,23 @@ def generate_stream(
                         extra={"tool_name": tool_name},
                     )
                     yield _to_sse(warning_event)
+                    _broadcast_agent_status(item_id, "idle")
+                    yield _to_sse({"done": True})
+                    return
+
+                if is_background_job_started_result(result):
+                    clear_pending_terminal_continuation(
+                        item_id,
+                        command=str(tool_args.get("command") or ""),
+                    )
+                    response_event = _persist_and_broadcast_event(
+                        item_id,
+                        role="assistant",
+                        content=BACKGROUND_JOB_STARTED_RESPONSE,
+                        message_type="agent_response",
+                        extra={"tool_name": tool_name},
+                    )
+                    yield _to_sse(response_event)
                     _broadcast_agent_status(item_id, "idle")
                     yield _to_sse({"done": True})
                     return

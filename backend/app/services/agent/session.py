@@ -75,6 +75,12 @@ COMMAND_DISPATCH_FAILURE_MARKERS = (
 EXECUTE_COMMAND_TOOL_NAME = "mcp_local_execute_command"
 RUN_JOB_TOOL_NAME = "mcp_local_run_job"
 AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
+BACKGROUND_JOB_STARTED_MARKER = "background_job_started"
+BACKGROUND_JOB_STARTED_RESPONSE = (
+    "\u540e\u53f0\u4efb\u52a1\u5df2\u542f\u52a8\uff0c"
+    "\u5b8c\u6210\u540e\u6211\u4f1a\u6839\u636e\u7ed3\u679c\u7ee7\u7eed\u5904\u7406"
+    "\u5e76\u56de\u5230\u5bf9\u5e94\u6765\u6e90\u3002"
+)
 TERMINAL_BUSY_GUARD_TOOL_NAMES = {RUN_JOB_TOOL_NAME}
 COMMAND_DISPATCH_PENDING_MARKER = "命令已发送到终端，尚未确认执行结果:"
 TERMINAL_INPUT_MODE_BUSY = "busy"
@@ -218,6 +224,22 @@ def is_tool_result_auto_routed_to_job(result: Any) -> bool:
         return False
     return any(
         isinstance(item, dict) and bool(item.get(AUTO_ROUTED_TO_JOB_MARKER))
+        for item in result_data
+    )
+
+
+def is_background_job_started_result(result: Any) -> bool:
+    if not isinstance(result, dict) or not result.get("success"):
+        return False
+    result_data = result.get("result")
+    if not isinstance(result_data, list):
+        return False
+    return any(
+        isinstance(item, dict)
+        and (
+            bool(item.get(BACKGROUND_JOB_STARTED_MARKER))
+            or bool(item.get(AUTO_ROUTED_TO_JOB_MARKER))
+        )
         for item in result_data
     )
 
@@ -1916,6 +1938,9 @@ class AgentSession:
     ) -> str:
         elapsed_seconds = int((datetime.now() - running_job.started_at).total_seconds())
         return (
+            "A background terminal job is running independently; it does not block normal conversation. "
+            "For normal chat, acknowledgement, or 'why are you quiet' messages, answer directly without calling run_job. "
+            "Only inspect/list/cancel jobs when the user explicitly asks about the job status or wants to stop it. "
             "当前有一个后台终端任务正在运行。"
             f"已运行 {elapsed_seconds}s，超时上限 {running_job.timeout_seconds}s。"
             f"任务命令：`{self._short_command(running_job.command)}`。"
@@ -2229,6 +2254,22 @@ class AgentSession:
                 self.emit_output(
                     COMMAND_DISPATCH_FAILURE_MESSAGE,
                     "agent_warning",
+                    {"tool_name": tool_name},
+                )
+                return None
+
+            if is_background_job_started_result(result):
+                clear_pending_terminal_continuation(
+                    self.item_id,
+                    command=str(tool_args.get("command") or ""),
+                )
+                self._send_pending_integration_response(
+                    pending_command_for_delivery,
+                    BACKGROUND_JOB_STARTED_RESPONSE,
+                )
+                self.emit_output(
+                    BACKGROUND_JOB_STARTED_RESPONSE,
+                    "agent_response",
                     {"tool_name": tool_name},
                 )
                 return None

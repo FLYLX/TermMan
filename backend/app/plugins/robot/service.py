@@ -151,6 +151,19 @@ class PendingRobotChatInput:
 
 
 @dataclass(frozen=True)
+class PendingRobotTaskReply:
+    pending_id: str
+    item_id: uuid.UUID
+    route_key: str
+    command: str
+    sender_key: str
+    sender_label: str
+    trigger_reason: str
+    reply_target: RobotReplyTarget
+    enqueued_at: datetime
+
+
+@dataclass(frozen=True)
 class QueuedRobotChatJob:
     robot_id: uuid.UUID
     robot_owner_id: uuid.UUID
@@ -180,6 +193,7 @@ class RobotService:
         self._conversation_controllers: dict[tuple[str, str], RobotConversationController] = {}
         self._pending_memory_candidates: dict[tuple[str, str, str], PendingRobotMemoryCandidate] = {}
         self._pending_chat_inputs: dict[tuple[str, str], list[PendingRobotChatInput]] = {}
+        self._pending_task_replies: dict[tuple[str, str], list[PendingRobotTaskReply]] = {}
         self._item_chat_locks: dict[str, threading.Lock] = {}
         self._lock = threading.RLock()
         self._dispatch_queue: queue.Queue[QueuedRobotChatJob] = queue.Queue(
@@ -231,6 +245,7 @@ class RobotService:
         conversation_key: str,
         conversation_generation: int = 0,
         message: str,
+        pending_reply_id: str = "",
     ) -> bool:
         if not message.strip():
             return False
@@ -283,6 +298,12 @@ class RobotService:
             )
 
         queued = self._enqueue_chat_job(job)
+        if pending_reply_id:
+            self.clear_background_job_reply(
+                robot_id=parsed_robot_id,
+                conversation_key=resolved_conversation_key,
+                pending_reply_id=pending_reply_id,
+            )
         record_robot_event(
             str(parsed_robot_id),
             direction="backend_queue",
@@ -296,6 +317,113 @@ class RobotService:
             },
         )
         return queued
+
+    def register_background_job_reply(
+        self,
+        *,
+        robot_id: uuid.UUID | str,
+        item_id: uuid.UUID | str,
+        sender_key: str,
+        reply_target: RobotReplyTarget | dict,
+        conversation_key: str,
+        conversation_generation: int = 0,
+        command: str,
+    ) -> str | None:
+        if not command.strip():
+            return None
+        try:
+            parsed_robot_id = (
+                robot_id if isinstance(robot_id, uuid.UUID) else uuid.UUID(str(robot_id))
+            )
+            parsed_item_id = (
+                item_id if isinstance(item_id, uuid.UUID) else uuid.UUID(str(item_id))
+            )
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            target = (
+                reply_target
+                if isinstance(reply_target, RobotReplyTarget)
+                else RobotReplyTarget.model_validate(reply_target)
+            )
+        except Exception:
+            return None
+
+        resolved_conversation_key = conversation_key or self._conversation_key_from_target(
+            target,
+            sender_key,
+        )
+        if not resolved_conversation_key:
+            return None
+
+        with Session(engine) as session:
+            robot = session.get(Robot, parsed_robot_id)
+            item = session.get(Item, parsed_item_id)
+            if robot is None or item is None or not robot.is_enabled:
+                return None
+            route_key = "background_job"
+
+        now = self._now()
+        pending_id = uuid.uuid4().hex
+        pending = PendingRobotTaskReply(
+            pending_id=pending_id,
+            item_id=parsed_item_id,
+            route_key=route_key,
+            command=command,
+            sender_key=sender_key,
+            sender_label=self._sender_label_from_reply_target(target, sender_key),
+            trigger_reason="background_job",
+            reply_target=target.model_copy(deep=True),
+            enqueued_at=now,
+        )
+        key = self._pending_chat_key(parsed_robot_id, resolved_conversation_key)
+        with self._lock:
+            self._prune_conversation_controllers_locked(now)
+            controller = self._get_or_create_controller_locked(
+                parsed_robot_id,
+                resolved_conversation_key,
+                now,
+            )
+            controller.updated_at = now
+            queue_items = list(self._pending_task_replies.get(key) or [])
+            queue_items.append(pending)
+            self._pending_task_replies[key] = queue_items[-PENDING_CHAT_QUEUE_LIMIT:]
+
+        record_robot_event(
+            str(parsed_robot_id),
+            direction="backend_queue",
+            event="background_job_reply_registered",
+            status="ok",
+            message=preview_text(command),
+            payload={
+                "item_id": str(parsed_item_id),
+                "conversation": resolved_conversation_key,
+                "pending_reply_id": pending_id,
+                "generation": conversation_generation,
+            },
+        )
+        return pending_id
+
+    def clear_background_job_reply(
+        self,
+        *,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+        pending_reply_id: str,
+    ) -> None:
+        if not pending_reply_id or not conversation_key:
+            return
+        key = self._pending_chat_key(robot_id, conversation_key)
+        with self._lock:
+            queue_items = list(self._pending_task_replies.get(key) or [])
+            if not queue_items:
+                return
+            kept = [entry for entry in queue_items if entry.pending_id != pending_reply_id]
+            if kept:
+                self._pending_task_replies[key] = kept
+            else:
+                self._pending_task_replies.pop(key, None)
 
     def _item_chat_lock(self, item_id: uuid.UUID | str) -> threading.Lock:
         key = str(item_id)
@@ -1120,9 +1248,11 @@ class RobotService:
     ) -> tuple[list[dict[str, object]], uuid.UUID | None]:
         key = self._pending_chat_key(robot_id, conversation_key)
         entries = list(self._pending_chat_inputs.get(key) or [])
+        task_replies = list(self._pending_task_replies.get(key) or [])
         snapshots: list[dict[str, object]] = []
         first_item_id: uuid.UUID | None = None
-        for index, entry in enumerate(entries[:PENDING_CHAT_QUEUE_LIMIT], start=1):
+        index = 1
+        for entry in entries[:PENDING_CHAT_QUEUE_LIMIT]:
             if first_item_id is None:
                 first_item_id = entry.item_id
             text = re.sub(
@@ -1145,6 +1275,30 @@ class RobotService:
                     "direct_wakeup": self._pending_chat_entry_is_direct_wakeup(entry),
                 }
             )
+            index += 1
+        remaining_slots = max(0, PENDING_CHAT_QUEUE_LIMIT - len(snapshots))
+        for task_reply in task_replies[:remaining_slots]:
+            if first_item_id is None:
+                first_item_id = task_reply.item_id
+            command = re.sub(r"\s+", " ", task_reply.command).strip()
+            if len(command) > 140:
+                command = f"{command[:137]}..."
+            snapshots.append(
+                {
+                    "index": index,
+                    "item_id": str(task_reply.item_id),
+                    "route_key": task_reply.route_key,
+                    "sender_key": task_reply.sender_key,
+                    "sender_label": task_reply.sender_label,
+                    "trigger_reason": task_reply.trigger_reason,
+                    "message_preview": f"后台 Job 完成后回复这个 QQ 会话：{command}",
+                    "enqueued_at": task_reply.enqueued_at.isoformat(),
+                    "direct_wakeup": True,
+                    "pending_reply_id": task_reply.pending_id,
+                    "command_preview": command,
+                }
+            )
+            index += 1
         return snapshots, first_item_id
 
     def _agent_visible_message_text(self, message_text: str) -> str:
@@ -1636,6 +1790,27 @@ class RobotService:
                 return f"{display_name} ({sender_id})"
             return display_name or sender_id
         return message.sender_key
+
+    def _sender_label_from_reply_target(
+        self,
+        reply_target: RobotReplyTarget,
+        sender_key: str,
+    ) -> str:
+        sender_data = reply_target.metadata.get("sender")
+        if isinstance(sender_data, dict):
+            sender_id = str(sender_data.get("user_id") or "").strip()
+            display_name = str(
+                sender_data.get("display_name")
+                or sender_data.get("card")
+                or sender_data.get("nickname")
+                or sender_id
+                or ""
+            ).strip()
+            if display_name and sender_id and display_name != sender_id:
+                return f"{display_name} ({sender_id})"
+            if display_name or sender_id:
+                return display_name or sender_id
+        return sender_key
 
     def normalize_chat_alias(self, value: str | None) -> str | None:
         if value is None:

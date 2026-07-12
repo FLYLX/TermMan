@@ -92,6 +92,69 @@ def test_enqueue_background_job_result_targets_original_conversation(
     assert "Temurin installed" in job.message
 
 
+def test_background_job_reply_is_visible_in_pending_controller_snapshot(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    _capture_queued_chat(monkeypatch)
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="770362397",
+        metadata={
+            "mentioned_bot": True,
+            "sender": {
+                "user_id": "2537134688",
+                "display_name": "Ac国常务腐管理",
+            },
+        },
+    )
+
+    pending_id = robot_service.register_background_job_reply(
+        robot_id=robot.id,
+        item_id=item.id,
+        sender_key="onebot_v11:group:770362397:2537134688",
+        reply_target=target,
+        conversation_key="group:770362397",
+        conversation_generation=3,
+        command="apt-get install -y temurin-17-jdk",
+    )
+
+    assert pending_id
+    snapshots = robot_service.conversation_controller_snapshots(
+        {robot.id},
+        {item.id},
+    )
+    assert len(snapshots) == 1
+    pending_messages = snapshots[0]["pending_messages"]
+    assert len(pending_messages) == 1
+    pending = pending_messages[0]
+    assert pending["trigger_reason"] == "background_job"
+    assert pending["sender_label"] == "Ac国常务腐管理 (2537134688)"
+    assert pending["item_id"] == str(item.id)
+    assert pending["pending_reply_id"] == pending_id
+    assert "temurin-17-jdk" in pending["message_preview"]
+
+    queued = robot_service.enqueue_background_job_result(
+        robot_id=robot.id,
+        item_id=item.id,
+        sender_key="onebot_v11:group:770362397:2537134688",
+        reply_target=target,
+        conversation_key="group:770362397",
+        conversation_generation=3,
+        message="[Background terminal job result]\nTemurin installed",
+        pending_reply_id=pending_id,
+    )
+
+    assert queued is True
+    snapshots = robot_service.conversation_controller_snapshots(
+        {robot.id},
+        {item.id},
+    )
+    assert snapshots == [] or snapshots[0]["pending_messages"] == []
+
+
 def _message(
     text: str,
     *,

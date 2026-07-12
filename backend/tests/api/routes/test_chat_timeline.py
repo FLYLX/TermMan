@@ -291,6 +291,119 @@ def test_generate_stream_stops_after_terminal_command_dispatch(
     assert not any('"type": "agent_response"' in chunk for chunk in chunks)
     assert not any("max iteration limit" in chunk for chunk in chunks)
 
+
+def test_generate_stream_stops_after_background_job_start(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+
+    item, handler = _create_linked_item_and_handler(db)
+    tool_name = "mcp_local_run_job"
+    call_count = {"value": 0}
+    tool_calls: list[tuple[str, dict]] = []
+
+    fake_agent = _make_fake_agent(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": "Start a background job",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        execute_tool_result=lambda name, args: (
+            tool_calls.append((name, dict(args)))
+            or {
+                "success": True,
+                "result": [
+                    {
+                        "type": "text",
+                        "text": "\u540e\u53f0\u4efb\u52a1\u5df2\u542f\u52a8",
+                    },
+                    {
+                        "type": "metadata",
+                        "background_job_started": True,
+                    },
+                ],
+            }
+        ),
+    )
+
+    def fake_stream_completion(**kwargs):
+        assert kwargs["messages"]
+        call_count["value"] += 1
+        if call_count["value"] > 1:
+            raise AssertionError("background job start should finish the current turn")
+
+        return iter(
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content="Starting background job",
+                                tool_calls=[
+                                    SimpleNamespace(
+                                        index=0,
+                                        id="call_1",
+                                        function=SimpleNamespace(
+                                            name=tool_name,
+                                            arguments='{"command":"apt-get install -y temurin-17-jdk"}',
+                                        ),
+                                    )
+                                ],
+                            ),
+                            finish_reason=None,
+                        )
+                    ]
+                )
+            ]
+        )
+
+    agent_session_manager.remove_session(str(item.id))
+    monkeypatch.setattr(chat_route, "completion", fake_stream_completion)
+    monkeypatch.setattr(
+        chat_route,
+        "build_chat_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "start background job"}],
+    )
+    monkeypatch.setattr(chat_route, "get_relevant_memories", lambda *args, **kwargs: "")
+    monkeypatch.setattr(chat_route, "extract_important_info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
+
+    try:
+        chunks = list(
+            chat_route.generate_stream(
+                message="install java",
+                history=[],
+                handler=handler,
+                item_id=str(item.id),
+                agent=fake_agent,
+            )
+        )
+    finally:
+        agent_session_manager.remove_session(str(item.id))
+
+    assert call_count["value"] == 1
+    assert tool_calls == [
+        (
+            tool_name,
+            {
+                "command": "apt-get install -y temurin-17-jdk",
+                "item_id": str(item.id),
+            },
+        )
+    ]
+    assert any('"type": "agent_tool_result"' in chunk for chunk in chunks)
+    assert any('"type": "agent_response"' in chunk for chunk in chunks)
+    assert any("\u540e\u53f0\u4efb\u52a1\u5df2\u542f\u52a8" in chunk for chunk in chunks)
+    assert any('"done": true' in chunk for chunk in chunks)
+    assert not any("max iteration limit" in chunk for chunk in chunks)
+
+
 def test_generate_stream_blocks_shell_command_while_busy_terminal_command_pending(
     db: Session,
     monkeypatch,

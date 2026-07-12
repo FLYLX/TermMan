@@ -14,6 +14,7 @@ def debug_log(msg: str):
 
 TERMINAL_NOT_CONNECTED_MESSAGE = "终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。"
 AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
+BACKGROUND_JOB_STARTED_MARKER = "background_job_started"
 
 
 class LocalMCPServer:
@@ -504,6 +505,11 @@ class LocalMCPServer:
                 request_kwargs=request_kwargs,
                 agent_session=agent_session,
                 robot_job_context=robot_job_context,
+                pending_robot_reply_id=self._register_background_job_robot_reply(
+                    item_id=str(item_id),
+                    command=command,
+                    robot_job_context=robot_job_context,
+                ),
             )
             return [
                 {
@@ -512,7 +518,12 @@ class LocalMCPServer:
                         "后台任务已启动。下载、安装或构建会在独立任务里执行，"
                         "完成后会把最终结果自动送回 Agent；在完成前不要重复发送新的终端命令。"
                     ),
-                }
+                },
+                {
+                    "type": "metadata",
+                    BACKGROUND_JOB_STARTED_MARKER: True,
+                    "effective_tool_name": "mcp_local_run_job",
+                },
             ]
         except Exception as e:
             debug_log(f"[LocalMCPServer] run_job error: {e}")
@@ -532,6 +543,7 @@ class LocalMCPServer:
         request_kwargs: dict,
         agent_session,
         robot_job_context: dict | None = None,
+        pending_robot_reply_id: str | None = None,
     ) -> None:
         def worker() -> None:
             result: dict
@@ -559,6 +571,7 @@ class LocalMCPServer:
                 command=command,
                 result=result,
                 robot_job_context=robot_job_context,
+                pending_reply_id=pending_robot_reply_id or "",
             )
             if robot_job_context:
                 feedback = (
@@ -614,6 +627,35 @@ class LocalMCPServer:
             debug_log(f"[LocalMCPServer] failed to capture robot job context: {exc}")
             return None
 
+    def _register_background_job_robot_reply(
+        self,
+        *,
+        item_id: str,
+        command: str,
+        robot_job_context: dict | None,
+    ) -> str | None:
+        if not robot_job_context:
+            return None
+        try:
+            from app.plugins.robot.service import robot_service
+
+            return robot_service.register_background_job_reply(
+                robot_id=robot_job_context.get("robot_id", ""),
+                item_id=item_id,
+                sender_key=robot_job_context.get("sender_key", ""),
+                reply_target=robot_job_context.get("reply_target") or {},
+                conversation_key=robot_job_context.get("conversation_key", ""),
+                conversation_generation=int(
+                    robot_job_context.get("conversation_generation") or 0
+                ),
+                command=command,
+            )
+        except Exception as exc:
+            debug_log(
+                f"[LocalMCPServer] failed to register robot background job reply: item={item_id}, error={exc}"
+            )
+            return None
+
     def _deliver_background_job_to_robot(
         self,
         *,
@@ -621,6 +663,7 @@ class LocalMCPServer:
         command: str,
         result: dict,
         robot_job_context: dict | None,
+        pending_reply_id: str = "",
     ) -> None:
         if not robot_job_context:
             return
@@ -638,6 +681,7 @@ class LocalMCPServer:
                     robot_job_context.get("conversation_generation") or 0
                 ),
                 message=message,
+                pending_reply_id=pending_reply_id,
             )
             if not queued:
                 debug_log(
@@ -647,6 +691,17 @@ class LocalMCPServer:
             debug_log(
                 f"[LocalMCPServer] failed to queue robot background job result: item={item_id}, error={exc}"
             )
+            if pending_reply_id:
+                try:
+                    from app.plugins.robot.service import robot_service
+
+                    robot_service.clear_background_job_reply(
+                        robot_id=robot_job_context.get("robot_id", ""),
+                        conversation_key=robot_job_context.get("conversation_key", ""),
+                        pending_reply_id=pending_reply_id,
+                    )
+                except Exception:
+                    pass
 
     def _format_background_job_robot_message(self, command: str, result: dict) -> str:
         status = "completed" if result.get("success") else "failed"
@@ -713,6 +768,7 @@ class LocalMCPServer:
                     {
                         "type": "metadata",
                         AUTO_ROUTED_TO_JOB_MARKER: True,
+                        BACKGROUND_JOB_STARTED_MARKER: True,
                         "effective_tool_name": "mcp_local_run_job",
                     },
                 ]

@@ -610,6 +610,10 @@ function serializeFilterState(
   })
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
 function getItemQueryOptions(itemId: string) {
   return {
     queryFn: () => ItemsService.readItem({ id: itemId }),
@@ -1239,6 +1243,8 @@ function getRobotTriggerLabel(trigger: string) {
       return "窗口延续"
     case "pending_queue":
       return "队列"
+    case "background_job":
+      return "后台 Job"
     case "private":
       return "私聊"
     default:
@@ -1596,6 +1602,9 @@ function ItemDetailPage({
   const [jobsPanelOpen, setJobsPanelOpen] = useState(false)
   const [pendingRepliesPanelOpen, setPendingRepliesPanelOpen] = useState(false)
   const [jobCancelId, setJobCancelId] = useState<string | null>(null)
+  const [itemAction, setItemAction] = useState<
+    "start" | "stop" | "restart" | null
+  >(null)
   const pendingReplyCount = useMemo(
     () => getRobotPendingReplyCount(robotControllerStatus),
     [robotControllerStatus],
@@ -1762,42 +1771,74 @@ function ItemDetailPage({
     return () => clearTimeout(timer)
   })
 
+  const refreshItemDetail = useCallback(async () => {
+    const refreshed = (await queryClient.fetchQuery(
+      getItemQueryOptions(item.id),
+    )) as ItemWithExtras
+    await queryClient.invalidateQueries({ queryKey: ["items"] })
+    return refreshed
+  }, [item.id, queryClient])
+
+  const waitForTerminalReady = useCallback(async () => {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const refreshed = await refreshItemDetail()
+      if (refreshed.status === "running" && refreshed.daemon_online) {
+        return true
+      }
+      await sleep(500)
+    }
+    return false
+  }, [refreshItemDetail])
+
   const handleStartItem = async () => {
+    setItemAction("start")
     try {
       const result = await ItemsService.startItem({ id: item.id })
-      queryClient.invalidateQueries({ queryKey: ["item", item.id] })
-      queryClient.invalidateQueries({ queryKey: ["items"] })
+      const ready = await waitForTerminalReady()
       showSuccessToast(result.message || t("items.detail.started"))
+      if (!ready) {
+        showErrorToast("终端启动成功，但前端还没读到可连接状态，请稍后刷新。")
+      }
     } catch (error) {
       console.error("Failed to start item:", error)
       showErrorToast(t("items.detail.startFailed"))
+    } finally {
+      setItemAction(null)
     }
   }
 
   const handleStopItem = async () => {
+    setItemAction("stop")
     try {
       disconnect()
       const result = await ItemsService.stopItem({ id: item.id })
-      queryClient.invalidateQueries({ queryKey: ["item", item.id] })
-      queryClient.invalidateQueries({ queryKey: ["items"] })
+      await refreshItemDetail()
       showSuccessToast(result.message || t("items.detail.stopped"))
     } catch (error) {
       console.error("Failed to stop item:", error)
       showErrorToast(t("items.detail.stopFailed"))
+    } finally {
+      setItemAction(null)
     }
   }
 
   const handleRestartItem = async () => {
+    setItemAction("restart")
     try {
       disconnect()
       const result = await ItemsService.restartItem({ id: item.id })
-      await queryClient.invalidateQueries({ queryKey: ["item", item.id] })
-      queryClient.invalidateQueries({ queryKey: ["items"] })
+      const ready = await waitForTerminalReady()
       showSuccessToast(result.message || t("items.detail.restarted"))
-      reconnect()
+      if (ready) {
+        reconnect()
+      } else {
+        showErrorToast("终端重启成功，但前端还没读到可连接状态，请稍后刷新。")
+      }
     } catch (error) {
       console.error("Failed to restart item:", error)
       showErrorToast(t("items.detail.restartFailed"))
+    } finally {
+      setItemAction(null)
     }
   }
 
@@ -2293,7 +2334,11 @@ function ItemDetailPage({
                     size="sm"
                     className="h-8 min-w-20 px-3.5 text-xs"
                     onClick={handleStartItem}
+                    disabled={itemAction !== null}
                   >
+                    {itemAction === "start" ? (
+                      <Loader2 className="mr-1 size-3 animate-spin" />
+                    ) : null}
                     {t("items.detail.start")}
                   </Button>
                   <Button
@@ -2302,7 +2347,11 @@ function ItemDetailPage({
                     variant="outline"
                     className="h-8 min-w-20 px-3.5 text-xs"
                     onClick={handleStopItem}
+                    disabled={itemAction !== null}
                   >
+                    {itemAction === "stop" ? (
+                      <Loader2 className="mr-1 size-3 animate-spin" />
+                    ) : null}
                     {t("items.detail.stop")}
                   </Button>
                   <Button
@@ -2311,7 +2360,11 @@ function ItemDetailPage({
                     variant="outline"
                     className="h-8 min-w-20 px-3.5 text-xs"
                     onClick={handleRestartItem}
+                    disabled={itemAction !== null}
                   >
+                    {itemAction === "restart" ? (
+                      <Loader2 className="mr-1 size-3 animate-spin" />
+                    ) : null}
                     {t("items.detail.restart")}
                   </Button>
                 </div>

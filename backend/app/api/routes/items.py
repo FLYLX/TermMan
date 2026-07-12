@@ -93,6 +93,14 @@ def _get_daemon_status(item: Item) -> dict:
     
     daemon_id = f"{item.socket_host}:{item.socket_port}:{item.api_key}"
     daemon_state = backend_conn_pool.get_daemon_main_conn_state(item.api_key)
+    connection = connection_manager.get_connection(daemon_id)
+    if connection and connection.is_connected():
+        synced_state = backend_conn_pool.create_daemon_main_conn_state(
+            item.api_key,
+            f"http://{item.socket_host}:{item.socket_port}",
+        )
+        synced_state.set_connected()
+        return {"daemon_id": daemon_id, "daemon_online": True, "daemon_status": "connected"}
     
     if daemon_state and daemon_state.is_connected():
         return {"daemon_id": daemon_id, "daemon_online": True, "daemon_status": "connected"}
