@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
 import sys
+import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from app.plugins.robot.contracts import RobotReplyTarget
@@ -43,12 +45,21 @@ LONG_TERM_MEMORY_TYPE_RANK = {
     "task": 2,
     "error": 2,
 }
+ROBOT_SEND_DEDUPE_SECONDS = 10
 
 
 class RobotMCPServer:
+    _recent_send_lock = threading.Lock()
+    _recent_send_signatures: dict[str, datetime] = {}
+
     def __init__(self) -> None:
         self._tools: dict[str, dict] = {}
         self._register_builtin_tools()
+
+    @classmethod
+    def _clear_recent_send_signatures_for_test(cls) -> None:
+        with cls._recent_send_lock:
+            cls._recent_send_signatures.clear()
 
     def _register_builtin_tools(self) -> None:
         self.register_tool(
@@ -442,7 +453,7 @@ class RobotMCPServer:
         args: dict,
         text: str,
         context: Any,
-    ) -> list[dict[str, str]]:
+    ) -> tuple[list[dict[str, str]], int]:
         targets = self._context_targets(args)
         active_target = self._context_target_from_active_context(context)
         if active_target is not None:
@@ -462,6 +473,7 @@ class RobotMCPServer:
 
         sent: list[dict[str, str]] = []
         delivered: list[tuple[str, RobotReplyTarget]] = []
+        skipped_duplicates = 0
         for target_data in targets:
             target = RobotReplyTarget(
                 target_type=target_data["target_type"],
@@ -486,7 +498,11 @@ class RobotMCPServer:
                 mode="context_broadcast",
                 args=args,
             )
+            if self._is_recent_duplicate(robot_id, target, text):
+                skipped_duplicates += 1
+                continue
             robot_bridge_client.send_message(robot_id, target, text)
+            self._remember_recent_send(robot_id, target, text)
             delivered.append((robot_id, target))
             sent.append(
                 {
@@ -498,7 +514,7 @@ class RobotMCPServer:
             )
         for robot_id, target in delivered:
             self._remember_sent_message(robot_id, target, text)
-        return sent
+        return sent, skipped_duplicates
 
     def _target_match_score(self, target: dict[str, str], reference: str) -> int:
         normalized_reference = reference.strip().casefold()
@@ -838,14 +854,79 @@ class RobotMCPServer:
             self._remember_sent_message(robot_id, target, message)
 
     @staticmethod
+    def _send_signature(
+        robot_id: str,
+        target: RobotReplyTarget,
+        text: str,
+    ) -> str:
+        payload = json.dumps(
+            {
+                "robot_id": str(robot_id),
+                "target_type": str(target.target_type or ""),
+                "target_id": str(target.target_id or ""),
+                "text": str(text or "").strip(),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def _prune_recent_send_signatures_locked(cls, cutoff: datetime) -> None:
+        stale_signatures = [
+            key
+            for key, sent_at in cls._recent_send_signatures.items()
+            if sent_at < cutoff
+        ]
+        for key in stale_signatures:
+            cls._recent_send_signatures.pop(key, None)
+
+    @classmethod
+    def _is_recent_duplicate(
+        cls,
+        robot_id: str,
+        target: RobotReplyTarget,
+        text: str,
+    ) -> bool:
+        now = datetime.now()
+        signature = cls._send_signature(robot_id, target, text)
+        cutoff = now - timedelta(seconds=ROBOT_SEND_DEDUPE_SECONDS)
+        with cls._recent_send_lock:
+            cls._prune_recent_send_signatures_locked(cutoff)
+            sent_at = cls._recent_send_signatures.get(signature)
+            return sent_at is not None and sent_at >= cutoff
+
+    @classmethod
+    def _remember_recent_send(
+        cls,
+        robot_id: str,
+        target: RobotReplyTarget,
+        text: str,
+    ) -> None:
+        now = datetime.now()
+        signature = cls._send_signature(robot_id, target, text)
+        cutoff = now - timedelta(seconds=ROBOT_SEND_DEDUPE_SECONDS)
+        with cls._recent_send_lock:
+            cls._prune_recent_send_signatures_locked(cutoff)
+            cls._recent_send_signatures[signature] = now
+
     def _send_messages(
+        self,
         bridge_client: Any,
         robot_id: str,
         target: RobotReplyTarget,
         messages: list[str],
-    ) -> None:
+    ) -> tuple[list[str], int]:
+        sent_messages: list[str] = []
+        skipped_duplicates = 0
         for message in messages:
+            if self._is_recent_duplicate(robot_id, target, message):
+                skipped_duplicates += 1
+                continue
             bridge_client.send_message(robot_id, target, message)
+            self._remember_recent_send(robot_id, target, message)
+            sent_messages.append(message)
+        return sent_messages, skipped_duplicates
 
     @staticmethod
     def _raw_message_texts(args: dict) -> list[str]:
@@ -1684,15 +1765,23 @@ class RobotMCPServer:
             from app.plugins.robot.bridge_client import robot_bridge_client
 
             if broadcast:
-                sent = self._broadcast_context_targets(
+                sent, skipped_duplicates = self._broadcast_context_targets(
                     args=args,
                     text=text,
                     context=context,
                 )
+                duplicate_note = (
+                    f" Duplicate QQ reply suppressed for {skipped_duplicates} conversation(s)."
+                    if skipped_duplicates
+                    else ""
+                )
                 return [
                     {
                         "type": "text",
-                        "text": f"Broadcast sent to {len(sent)} QQ conversation(s).",
+                        "text": (
+                            f"Broadcast sent to {len(sent)} QQ conversation(s)."
+                            f"{duplicate_note}"
+                        ),
                     }
                 ]
 
@@ -1718,14 +1807,24 @@ class RobotMCPServer:
                             "text": self._group_single_text_too_long_error(messages[0]),
                         }
                     ]
-                self._send_messages(robot_bridge_client, robot_id, explicit_target, messages)
-                self._remember_sent_messages(robot_id, explicit_target, messages)
+                sent_messages, skipped_duplicates = self._send_messages(
+                    robot_bridge_client,
+                    robot_id,
+                    explicit_target,
+                    messages,
+                )
+                self._remember_sent_messages(robot_id, explicit_target, sent_messages)
+                duplicate_note = (
+                    " Duplicate QQ reply suppressed."
+                    if skipped_duplicates and not sent_messages
+                    else ""
+                )
                 return [
                     {
                         "type": "text",
                         "text": (
                             f"Message sent to QQ {explicit_target.target_type} "
-                            f"{explicit_target.target_id}."
+                            f"{explicit_target.target_id}.{duplicate_note}"
                         ),
                     }
                 ]
@@ -1755,14 +1854,24 @@ class RobotMCPServer:
                             "text": self._group_single_text_too_long_error(messages[0]),
                         }
                     ]
-                self._send_messages(robot_bridge_client, robot_id, context_target, messages)
-                self._remember_sent_messages(robot_id, context_target, messages)
+                sent_messages, skipped_duplicates = self._send_messages(
+                    robot_bridge_client,
+                    robot_id,
+                    context_target,
+                    messages,
+                )
+                self._remember_sent_messages(robot_id, context_target, sent_messages)
+                duplicate_note = (
+                    " Duplicate QQ reply suppressed."
+                    if skipped_duplicates and not sent_messages
+                    else ""
+                )
                 return [
                     {
                         "type": "text",
                         "text": (
                             f"Message sent to QQ {context_target.target_type} "
-                            f"{context_target.target_id} from chat context."
+                            f"{context_target.target_id} from chat context.{duplicate_note}"
                         ),
                     }
                 ]
@@ -1787,14 +1896,24 @@ class RobotMCPServer:
                         "text": self._group_single_text_too_long_error(messages[0]),
                     }
                 ]
-            self._send_messages(
+            sent_messages, skipped_duplicates = self._send_messages(
                 robot_bridge_client,
                 attempted_robot_id,
                 attempted_target.model_copy(deep=True),
                 messages,
             )
-            self._remember_sent_messages(attempted_robot_id, attempted_target, messages)
-            return [{"type": "text", "text": "Message sent to current robot conversation."}]
+            self._remember_sent_messages(attempted_robot_id, attempted_target, sent_messages)
+            duplicate_note = (
+                " Duplicate QQ reply suppressed."
+                if skipped_duplicates and not sent_messages
+                else ""
+            )
+            return [
+                {
+                    "type": "text",
+                    "text": f"Message sent to current robot conversation.{duplicate_note}",
+                }
+            ]
         except Exception as exc:
             logger.warning("[RobotMCPServer] Failed to send robot message: %s", exc)
             if attempted_robot_id and attempted_target is not None:

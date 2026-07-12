@@ -145,6 +145,43 @@ class LocalMCPServer:
             handler=self._list_terminal_input_filter_rules,
             skip_memory=True
         )
+        self.register_tool(
+            name="delete_terminal_input_filter_rule",
+            description="Delete one terminal output -> Agent input filter rule for the current item by rule name.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Current terminal item id."},
+                    "name": {"type": "string", "description": "Rule name returned by list_terminal_input_filter_rules."},
+                    "disable_when_empty": {
+                        "type": "boolean",
+                        "description": "Disable input_filter_enabled when no rules remain. Default true.",
+                        "default": True,
+                    },
+                },
+                "required": ["item_id", "name"]
+            },
+            handler=self._delete_terminal_input_filter_rule,
+            skip_memory=True
+        )
+        self.register_tool(
+            name="clear_terminal_input_filter_rules",
+            description="Delete all terminal output -> Agent input filter rules for the current item.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Current terminal item id."},
+                    "disable": {
+                        "type": "boolean",
+                        "description": "Disable input_filter_enabled after clearing. Default true.",
+                        "default": True,
+                    },
+                },
+                "required": ["item_id"]
+            },
+            handler=self._clear_terminal_input_filter_rules,
+            skip_memory=True
+        )
         
         self.register_tool(
             name="list_installed_software",
@@ -1092,6 +1129,105 @@ class LocalMCPServer:
             return [{"type": "text", "text": "\n".join(lines)}]
         except Exception as e:
             debug_log(f"[LocalMCPServer] list terminal input filter rules error: {e}")
+            return [{"type": "text", "text": f"Error: {e}"}]
+
+    def _delete_terminal_input_filter_rule(self, args: dict) -> list:
+        item_id = str(args.get("item_id") or "").strip()
+        name = str(args.get("name") or "").strip()
+        disable_when_empty = bool(args.get("disable_when_empty", True))
+        if not name:
+            return [{"type": "text", "text": "Error: name is required"}]
+        try:
+            import uuid
+
+            from sqlmodel import Session
+
+            from app.core.db import engine
+            from app.models import Item
+
+            try:
+                item_uuid = uuid.UUID(item_id)
+            except ValueError as exc:
+                raise ValueError(f"invalid item_id: {item_id}") from exc
+
+            with Session(engine) as db:
+                item = db.get(Item, item_uuid)
+                if not item:
+                    raise ValueError(f"item not found: {item_id}")
+
+                rules = dict(item.input_filter_rules or {})
+                if name not in rules:
+                    existing = ", ".join(sorted(rules)) or "none"
+                    return [
+                        {
+                            "type": "text",
+                            "text": (
+                                f"Terminal input filter rule not found: {name}. "
+                                f"Existing rules: {existing}"
+                            ),
+                        }
+                    ]
+
+                rules.pop(name, None)
+                item.input_filter_rules = rules
+                if disable_when_empty and not rules:
+                    item.input_filter_enabled = False
+                enabled = bool(item.input_filter_enabled)
+                db.add(item)
+                db.commit()
+
+            return [
+                {
+                    "type": "text",
+                    "text": (
+                        f"Deleted terminal output -> Agent input filter rule `{name}`. "
+                        f"remaining={len(rules)} input_filter_enabled={enabled}"
+                    ),
+                }
+            ]
+        except Exception as e:
+            debug_log(f"[LocalMCPServer] delete terminal input filter rule error: {e}")
+            return [{"type": "text", "text": f"Error: {e}"}]
+
+    def _clear_terminal_input_filter_rules(self, args: dict) -> list:
+        item_id = str(args.get("item_id") or "").strip()
+        disable = bool(args.get("disable", True))
+        try:
+            import uuid
+
+            from sqlmodel import Session
+
+            from app.core.db import engine
+            from app.models import Item
+
+            try:
+                item_uuid = uuid.UUID(item_id)
+            except ValueError as exc:
+                raise ValueError(f"invalid item_id: {item_id}") from exc
+
+            with Session(engine) as db:
+                item = db.get(Item, item_uuid)
+                if not item:
+                    raise ValueError(f"item not found: {item_id}")
+
+                removed = len(item.input_filter_rules or {})
+                item.input_filter_rules = {}
+                if disable:
+                    item.input_filter_enabled = False
+                db.add(item)
+                db.commit()
+
+            return [
+                {
+                    "type": "text",
+                    "text": (
+                        "Cleared terminal output -> Agent input filter rules. "
+                        f"removed={removed} input_filter_enabled={not disable}"
+                    ),
+                }
+            ]
+        except Exception as e:
+            debug_log(f"[LocalMCPServer] clear terminal input filter rules error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
     
     def _list_installed_software(self, args: dict) -> list:

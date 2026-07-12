@@ -39,6 +39,11 @@ from app.services.agent.prompts.builder import (
     build_terminal_turn_messages,
     is_critical_terminal_event,
 )
+from app.services.agent.robot_delivery import (
+    ROBOT_QQ_REPLY_EVENT_TYPE,
+    ROBOT_SEND_TOOL_NAME,
+    robot_reply_event_content,
+)
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.tool_arguments import (
     ToolArgumentParseError,
@@ -183,7 +188,13 @@ MINECRAFT_CONSOLE_COMMANDS = frozenset(
         "xp",
     }
 )
-SILENT_TOOL_NAMES = {READ_LOG_TOOL_NAME, "mcp_robot_send_message", "mcp_robot_sleep_conversation", "mcp_robot_save_memory"}
+SILENT_TOOL_NAMES = {
+    READ_LOG_TOOL_NAME,
+    RUN_JOB_TOOL_NAME,
+    "mcp_robot_send_message",
+    "mcp_robot_sleep_conversation",
+    "mcp_robot_save_memory",
+}
 TERMINAL_SOURCE_FILTERED = "filtered_output"
 TERMINAL_SOURCE_RAW_FEEDBACK = "raw_feedback"
 MINECRAFT_PLAYER_CHAT_LINE_RE = re.compile(
@@ -248,13 +259,39 @@ def _normalize_command_for_routing(command: str) -> str:
     return " ".join((command or "").strip().split()).lower()
 
 
-def classify_terminal_input_mode(command: str) -> str | None:
+def _classification_command_variants(command: str) -> list[str]:
     normalized = _normalize_command_for_routing(command)
     if not normalized:
+        return []
+
+    variants = [normalized]
+    remainder = normalized
+    while True:
+        match = re.match(r"^(?:cd|pushd)\s+[^;&|]+\s*(?:&&|;)\s*(.+)$", remainder)
+        if not match:
+            break
+        remainder = match.group(1).strip()
+        if not remainder or remainder in variants:
+            break
+        variants.append(remainder)
+    return variants
+
+
+def classify_terminal_input_mode(command: str) -> str | None:
+    variants = _classification_command_variants(command)
+    if not variants:
         return None
-    if any(re.search(pattern, normalized) for pattern in TERMINAL_CONSOLE_COMMAND_PATTERNS):
+    if any(
+        re.search(pattern, variant)
+        for variant in variants
+        for pattern in TERMINAL_CONSOLE_COMMAND_PATTERNS
+    ):
         return TERMINAL_INPUT_MODE_CONSOLE
-    if any(re.search(pattern, normalized) for pattern in TERMINAL_BUSY_COMMAND_PATTERNS):
+    if any(
+        re.search(pattern, variant)
+        for variant in variants
+        for pattern in TERMINAL_BUSY_COMMAND_PATTERNS
+    ):
         return TERMINAL_INPUT_MODE_BUSY
     return None
 
@@ -264,13 +301,14 @@ def should_route_command_to_background_job(command: str) -> bool:
 
 
 def should_run_shell_command_as_background_job(command: str) -> bool:
-    normalized = _normalize_command_for_routing(command)
-    if not normalized:
+    variants = _classification_command_variants(command)
+    if not variants:
         return False
-    if classify_terminal_input_mode(normalized) == TERMINAL_INPUT_MODE_BUSY:
+    if classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_BUSY:
         return True
     return any(
-        re.search(pattern, normalized)
+        re.search(pattern, variant)
+        for variant in variants
         for pattern in TERMINAL_BACKGROUND_SHELL_COMMAND_PATTERNS
     )
 
@@ -852,7 +890,10 @@ class AgentSession:
 
         context = self._get_terminal_input_context()
         if context and context.input_mode == TERMINAL_INPUT_MODE_CONSOLE:
-            if is_terminal_console_command(command):
+            if (
+                is_terminal_console_command(command)
+                or classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_CONSOLE
+            ):
                 with self.lock:
                     active_context = self._terminal_input_context
                     if active_context:
@@ -2233,6 +2274,19 @@ class AgentSession:
             result_text = self._format_tool_result(result).strip()
             if tool_results_sink is not None and result_text:
                 tool_results_sink.append(result_text)
+            if (
+                tool_name == ROBOT_SEND_TOOL_NAME
+                and result_text
+                and integration_message_sent([result_text])
+            ):
+                self.emit_output(
+                    robot_reply_event_content(tool_args, result_text),
+                    ROBOT_QQ_REPLY_EVENT_TYPE,
+                    {
+                        "tool_name": tool_name,
+                        "qq_delivery": True,
+                    },
+                )
             auto_routed_to_job = is_tool_result_auto_routed_to_job(result)
             command_dispatch_failed = is_command_dispatch_failure_result(tool_name, result_text)
             command_dispatch_pending = is_command_dispatch_pending_result(tool_name, result_text)
@@ -2262,15 +2316,6 @@ class AgentSession:
                 clear_pending_terminal_continuation(
                     self.item_id,
                     command=str(tool_args.get("command") or ""),
-                )
-                self._send_pending_integration_response(
-                    pending_command_for_delivery,
-                    BACKGROUND_JOB_STARTED_RESPONSE,
-                )
-                self.emit_output(
-                    BACKGROUND_JOB_STARTED_RESPONSE,
-                    "agent_response",
-                    {"tool_name": tool_name},
                 )
                 return None
 

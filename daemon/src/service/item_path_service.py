@@ -34,11 +34,18 @@ class ItemPathService:
             raw_workdir = working_directory.replace("\\", "/").strip()
             candidate = Path(raw_workdir)
             if candidate.is_absolute():
-                # Legacy absolute workdirs are remapped under the item root
-                # instead of being used as-is, so existing items keep working
-                # without reopening access outside the item sandbox.
-                logical_path = self.normalize_logical_path(raw_workdir)
-                target = item_root if not logical_path else (item_root / logical_path).resolve(strict=False)
+                absolute_candidate = candidate.resolve(strict=False)
+                if (
+                    absolute_candidate == item_root
+                    or item_root in absolute_candidate.parents
+                ):
+                    target = absolute_candidate
+                else:
+                    # Legacy absolute workdirs are remapped under the item root
+                    # instead of being used as-is, so existing items keep working
+                    # without reopening access outside the item sandbox.
+                    logical_path = self.normalize_logical_path(raw_workdir)
+                    target = item_root if not logical_path else (item_root / logical_path).resolve(strict=False)
             else:
                 target = (item_root / raw_workdir).resolve(strict=False)
 

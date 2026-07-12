@@ -1630,6 +1630,8 @@ def test_builtin_skills_are_terminal_qq_mcp_and_personas() -> None:
     assert "不要用 `mcp_local_run_job` 启动它们" in (terminal_mcp.action.prompt or "")
     assert "mcp_local_add_terminal_input_filter_rule" in (terminal_mcp.action.prompt or "")
     assert "mcp_local_list_terminal_input_filter_rules" in (terminal_mcp.action.prompt or "")
+    assert "mcp_local_delete_terminal_input_filter_rule" in (terminal_mcp.action.prompt or "")
+    assert "mcp_local_clear_terminal_input_filter_rules" in (terminal_mcp.action.prompt or "")
     assert "`&&`" in (terminal_mcp.action.prompt or "")
     assert "QQ MCP Skill" in (qq_mcp.action.prompt or "")
     assert "若叶睦人格 Skill" in (mutsumi.action.prompt or "")
@@ -2160,6 +2162,33 @@ def test_console_terminal_context_allows_console_input_but_blocks_shell_input() 
     assert session.should_route_execute_command_to_background_job("ls -la") is True
     assert session.should_route_execute_command_to_background_job("java -version") is True
     assert session.should_route_execute_command_to_background_job("op Steve") is False
+
+
+def test_console_terminal_context_allows_cd_then_server_launcher() -> None:
+    from app.services.agent.session import (
+        EXECUTE_COMMAND_TOOL_NAME,
+        TERMINAL_INPUT_MODE_CONSOLE,
+        AgentSession,
+        classify_terminal_input_mode,
+    )
+
+    command = "cd temp_extract && bash run.sh"
+    assert classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_CONSOLE
+
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+
+    session._set_pending_command(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "bash run.sh"},
+    )
+
+    assert session._validate_terminal_command_input(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": command},
+    ) is None
+    assert session.should_route_execute_command_to_background_job(command) is False
 
 
 def test_expected_terminal_output_match_clears_pending_command() -> None:

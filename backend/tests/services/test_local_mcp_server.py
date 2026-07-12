@@ -212,6 +212,55 @@ def test_execute_command_auto_routes_shell_query_when_console_is_active(
     assert result[1]["auto_routed_execute_command_to_run_job"] is True
 
 
+def test_execute_command_sends_cd_then_server_launcher_when_console_context_is_stale(
+    monkeypatch,
+) -> None:
+    import importlib
+
+    import app.services.socket_pool as socket_pool
+    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, agent_session_manager
+
+    input_center_module = importlib.import_module("app.services.socket_pool.input_center")
+    item_id = "item-stale-console-launch"
+    sent: dict[str, str] = {}
+
+    class FakeInputSDK:
+        def send(self, item_id: str, command: str) -> bool:
+            sent["item_id"] = item_id
+            sent["command"] = command
+            return True
+
+    monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
+    monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: True)
+
+    agent_session_manager.remove_session(item_id)
+    session = agent_session_manager.get_or_create_session(item_id, "handler-1")
+    monkeypatch.setattr(session, "_schedule_pending_command_recheck", lambda *args, **kwargs: None)
+    monkeypatch.setattr(session, "_get_log_line_count", lambda: 0)
+    session.mark_terminal_command_dispatched(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "bash run.sh"},
+    )
+
+    try:
+        result = LocalMCPServer().call_tool(
+            "execute_command",
+            {
+                "item_id": item_id,
+                "command": "cd temp_extract && bash run.sh",
+            },
+        )
+    finally:
+        agent_session_manager.remove_session(item_id)
+
+    assert sent == {
+        "item_id": item_id,
+        "command": "cd temp_extract && bash run.sh\n",
+    }
+    assert result[0]["type"] == "text"
+    assert "cd temp_extract && bash run.sh" in result[0]["text"]
+
+
 def test_auto_routed_execute_command_result_skips_pending_terminal_lock() -> None:
     assert should_auto_route_terminal_tool_to_job(
         "mcp_local_execute_command",
@@ -291,6 +340,8 @@ def test_system_prompt_forbids_claiming_command_success_without_confirmation() -
     assert "必须放在主终端前台运行" in prompt
     assert "mcp_local_add_terminal_input_filter_rule" in prompt
     assert "mcp_local_list_terminal_input_filter_rules" in prompt
+    assert "mcp_local_delete_terminal_input_filter_rule" in prompt
+    assert "mcp_local_clear_terminal_input_filter_rules" in prompt
     assert "`&&`" in prompt
     assert "mcp_local_interrupt_command" in prompt
     assert "mcp_local_run_job" in prompt
@@ -463,6 +514,54 @@ def test_terminal_input_filter_rule_tool_adds_noise_block_rule(db) -> None:
     )
     assert "noise_ftb_backups" in list_result[0]["text"]
     assert "FTBBackups" in list_result[0]["text"]
+
+
+def test_terminal_input_filter_rule_tools_delete_and_clear_rules(db) -> None:
+    from app.models import Item
+    from tests.utils.item import create_random_item
+
+    item = create_random_item(db)
+    server = LocalMCPServer()
+
+    server.call_tool(
+        "add_terminal_input_filter_rule",
+        {
+            "item_id": str(item.id),
+            "name": "noise_one",
+            "regex_patterns": [r"noise one"],
+        },
+    )
+    server.call_tool(
+        "add_terminal_input_filter_rule",
+        {
+            "item_id": str(item.id),
+            "name": "noise_two",
+            "regex_patterns": [r"noise two"],
+        },
+    )
+
+    delete_result = server.call_tool(
+        "delete_terminal_input_filter_rule",
+        {"item_id": str(item.id), "name": "noise_one"},
+    )
+    assert "Deleted terminal output -> Agent input filter rule `noise_one`" in delete_result[0]["text"]
+
+    updated = db.get(Item, item.id)
+    assert updated is not None
+    db.refresh(updated)
+    assert "noise_one" not in updated.input_filter_rules
+    assert "noise_two" in updated.input_filter_rules
+    assert updated.input_filter_enabled is True
+
+    clear_result = server.call_tool(
+        "clear_terminal_input_filter_rules",
+        {"item_id": str(item.id)},
+    )
+    assert "Cleared terminal output -> Agent input filter rules" in clear_result[0]["text"]
+
+    db.refresh(updated)
+    assert updated.input_filter_rules == {}
+    assert updated.input_filter_enabled is False
 
 
 def test_chat_prompt_includes_installed_software_list(monkeypatch, tmp_path) -> None:

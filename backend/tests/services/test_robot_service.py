@@ -1,4 +1,6 @@
 import asyncio
+import sys
+import types
 from datetime import timedelta
 from typing import Any
 
@@ -166,6 +168,7 @@ def _message(
     mentioned_bot: bool = False,
     replied_to_bot: bool = False,
     bot_self_ids: list[str] | None = None,
+    reply: dict[str, Any] | None = None,
 ) -> RobotInboundMessage:
     metadata: dict[str, Any] = {}
     if target is not None:
@@ -182,6 +185,8 @@ def _message(
         metadata["replied_to_bot"] = True
     if bot_self_ids is not None:
         metadata["bot_self_ids"] = bot_self_ids
+    if reply is not None:
+        metadata["reply"] = reply
 
     return RobotInboundMessage(
         sender_key=sender_key,
@@ -279,6 +284,22 @@ class _FakeAlconnaTarget:
 
     def dump(self) -> dict[str, Any]:
         return {"id": self.id}
+
+
+def _mock_alconna(
+    monkeypatch,
+    *,
+    message_id: str = "message-1",
+    target: Any | None = None,
+) -> None:
+    monkeypatch.setitem(
+        sys.modules,
+        "nonebot_plugin_alconna",
+        types.SimpleNamespace(
+            get_message_id=lambda event, bot: message_id,
+            get_target=lambda event, bot: target or _FakeAlconnaTarget(),
+        ),
+    )
 
 
 def test_send_text_with_bot_uses_onebot_group_and_private_actions() -> None:
@@ -478,14 +499,7 @@ def test_event_mentions_bot_detects_to_me_flag() -> None:
 
 
 def test_build_inbound_message_keeps_empty_bot_mention(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "nonebot_plugin_alconna.get_message_id",
-        lambda event, bot: "message-1",
-    )
-    monkeypatch.setattr(
-        "nonebot_plugin_alconna.get_target",
-        lambda event, bot: _FakeAlconnaTarget(),
-    )
+    _mock_alconna(monkeypatch)
     event = _FakeEvent(
         [_FakeSegment("at", {"qq": "10001"})],
         user_id="10002",
@@ -506,14 +520,7 @@ def test_build_inbound_message_keeps_empty_bot_mention(monkeypatch) -> None:
 
 
 def test_build_inbound_message_preserves_onebot_at_in_text(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "nonebot_plugin_alconna.get_message_id",
-        lambda event, bot: "message-1",
-    )
-    monkeypatch.setattr(
-        "nonebot_plugin_alconna.get_target",
-        lambda event, bot: _FakeAlconnaTarget(),
-    )
+    _mock_alconna(monkeypatch)
     event = _FakeEvent(
         [
             _FakeSegment("at", {"qq": "20002"}),
@@ -539,14 +546,7 @@ def test_build_inbound_message_preserves_onebot_at_in_text(monkeypatch) -> None:
 
 
 def test_build_inbound_message_drops_empty_non_mention(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "nonebot_plugin_alconna.get_message_id",
-        lambda event, bot: "message-1",
-    )
-    monkeypatch.setattr(
-        "nonebot_plugin_alconna.get_target",
-        lambda event, bot: _FakeAlconnaTarget(),
-    )
+    _mock_alconna(monkeypatch)
     event = _FakeEvent(
         [],
         user_id="10002",
@@ -579,6 +579,40 @@ def test_event_replies_to_bot_ignores_other_sender() -> None:
     event = _FakeEvent([_FakeSegment("reply", {"user_id": "10002"})])
 
     assert _event_replies_to_bot(_FakeBot(), event) is False
+
+
+def test_build_inbound_message_keeps_replied_message_context(monkeypatch) -> None:
+    _mock_alconna(monkeypatch, message_id="message-2")
+    event = _FakeEvent(
+        [
+            _FakeSegment("reply", {"id": "message-1", "qq": "10001"}),
+            _FakeSegment("text", {"text": "is it running?"}),
+        ],
+        user_id="10002",
+        message_type="group",
+        group_id="123456",
+        reply={
+            "message_id": "message-1",
+            "sender": {"user_id": "10001", "nickname": "Bot"},
+            "raw_message": "run.sh is ready, start it?",
+        },
+    )
+
+    inbound = build_inbound_message("onebot_v11", _FakeBot(), event)
+
+    assert inbound is not None
+    assert inbound.reply_target.metadata["replied_to_bot"] is True
+    assert inbound.reply_target.metadata["reply"] == {
+        "message_id": "message-1",
+        "source": "message-1",
+        "text": "run.sh is ready, start it?",
+        "sender": {
+            "user_id": "10001",
+            "display_name": "Bot",
+            "nickname": "Bot",
+        },
+        "segment": {"id": "message-1", "qq": "10001"},
+    }
 
 
 def test_extract_sender_metadata_prefers_group_card() -> None:
@@ -654,6 +688,33 @@ def test_agent_message_context_marks_bot_self_mention_for_agent() -> None:
     assert "- mentioned_self: true" in text
     assert "- replied_to_self: false" in text
     assert "QQ mentions/replies to this self_id are addressing you" in text
+
+
+def test_agent_message_context_includes_replied_message_reference() -> None:
+    message = _message(
+        "is it running?",
+        sender={"user_id": "u1", "display_name": "Alice"},
+        conversation={"type": "group", "id": "g1"},
+        replied_to_bot=True,
+        bot_self_ids=["10001"],
+        reply={
+            "message_id": "message-1",
+            "text": "run.sh is ready, start it?",
+            "sender": {"user_id": "10001", "display_name": "Bot"},
+        },
+    )
+
+    text = robot_service._agent_message_with_context(
+        message,
+        message.text,
+        trigger_reason="reply_to_bot",
+    )
+
+    assert "[Replied QQ message; background only" in text
+    assert "- message_id: message-1" in text
+    assert "- sender: Bot (10001)" in text
+    assert "- text: run.sh is ready, start it?" in text
+    assert "[Current QQ message]\nis it running?" in text
 
 
 def test_robot_reply_context_summary_marks_reply_to_self() -> None:

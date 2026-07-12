@@ -158,6 +158,35 @@ def test_internal_job_run_route_delegates_to_job_runner(monkeypatch):
     }
 
 
+def test_internal_job_run_route_prefers_terminal_current_workdir(monkeypatch):
+    from api import http_routes
+
+    captured = {}
+
+    class FakeJobRunner:
+        def run_job(self, **kwargs):
+            captured.update(kwargs)
+            return {"success": True, "job_id": "job-1", "exit_code": 0}
+
+    class FakeTerminalManager:
+        def get_terminal_current_workdir(self, item_uuid):
+            assert item_uuid == "item-1"
+            return "/work/user/item/temp_extract"
+
+    monkeypatch.setattr(http_routes, "job_runner", FakeJobRunner())
+    monkeypatch.setattr(http_routes, "terminal_manager", FakeTerminalManager())
+
+    payload = http_routes.InternalJobRunRequest(
+        user_uuid="user-1",
+        command="find . -maxdepth 1 -name server.properties",
+        working_directory="workdir",
+    )
+    result = http_routes.run_item_job("item-1", payload, _api_key="ok")
+
+    assert result["success"] is True
+    assert captured["working_directory"] == "/work/user/item/temp_extract"
+
+
 def test_internal_job_list_route_delegates_to_job_runner(monkeypatch):
     from api import http_routes
 
@@ -249,6 +278,24 @@ def test_job_runner_starts_non_interactive_subprocess(monkeypatch):
     assert captured["kwargs"]["stderr"] is subprocess.STDOUT
     assert captured["kwargs"]["start_new_session"] is True
     assert captured["kwargs"]["env"]["DEBIAN_FRONTEND"] == "noninteractive"
+
+
+def test_item_path_service_accepts_absolute_path_inside_item_root(tmp_path):
+    from service.item_path_service import ItemPathService
+
+    service = ItemPathService(str(tmp_path / "workdir"))
+    item_root = service.get_item_root("user-1", "item-1")
+    nested = item_root / "temp_extract"
+
+    resolved = service.resolve_workdir(
+        user_uuid="user-1",
+        item_uuid="item-1",
+        working_directory=str(nested),
+        create=True,
+    )
+
+    assert resolved == nested
+    assert resolved.exists()
 
 
 def test_internal_job_cancel_route_delegates_to_job_runner(monkeypatch):

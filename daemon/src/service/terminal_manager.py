@@ -387,9 +387,18 @@ class TerminalProcess:
             "token": self.token,
             "status": self.status,
             "workdir": self.workdir,
+            "current_workdir": self.current_workdir(),
             "command": self.command,
             "stdout": stdout
         }
+
+    def current_workdir(self) -> str:
+        if self.pid is None:
+            return self.workdir
+        try:
+            return os.path.realpath(os.readlink(f"/proc/{self.pid}/cwd"))
+        except Exception:
+            return self.workdir
 
 
 class TerminalManager:
@@ -448,6 +457,12 @@ class TerminalManager:
         if not terminal:
             return None
         return terminal.get_status()
+
+    def get_terminal_current_workdir(self, item_uuid: str) -> Optional[str]:
+        terminal = self.get_terminal(item_uuid)
+        if not terminal:
+            return None
+        return terminal.current_workdir()
 
     def get_user_terminals(self, user_uuid: str) -> list:
         with self.lock:

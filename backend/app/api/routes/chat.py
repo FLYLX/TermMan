@@ -49,7 +49,6 @@ from app.services.agent.prompts.policy import (
 )
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.session import (
-    BACKGROUND_JOB_STARTED_RESPONSE,
     COMMAND_DISPATCH_FAILURE_MESSAGE,
     COMMAND_TOOL_NAMES,
     RUN_JOB_TOOL_NAME,
@@ -59,6 +58,11 @@ from app.services.agent.session import (
     is_command_dispatch_pending_result,
     is_tool_result_auto_routed_to_job,
     should_auto_route_terminal_tool_to_job,
+)
+from app.services.agent.robot_delivery import (
+    ROBOT_QQ_REPLY_EVENT_TYPE,
+    ROBOT_SEND_TOOL_NAME,
+    robot_reply_event_content,
 )
 from app.services.agent.stream_manager import stream_manager
 from app.services.agent.tool_arguments import (
@@ -78,7 +82,12 @@ REQUEST_TIMEOUT = 120
 MAX_ITERATIONS = 10
 LOOP_DETECTION_WINDOW = 6
 LOOP_THRESHOLD = 3
-SILENT_TOOL_NAMES = {"mcp_local_read_terminal_log", "mcp_robot_send_message", "mcp_robot_save_memory"}
+SILENT_TOOL_NAMES = {
+    "mcp_local_read_terminal_log",
+    RUN_JOB_TOOL_NAME,
+    "mcp_robot_send_message",
+    "mcp_robot_save_memory",
+}
 HIDDEN_TOOL_RESULT_NAMES = {"mcp_robot_send_message"}
 BACKGROUND_JOB_RUNNING_RESPONSE = (
     "\u540e\u53f0\u4efb\u52a1\u8fd8\u5728\u8fd0\u884c\uff0c"
@@ -1098,7 +1107,19 @@ def generate_stream(
                         str(handler.id),
                     )
                     terminal_input_error = None
-                    if not should_auto_route_terminal_tool_to_job(tool_name, tool_args):
+                    auto_routes_to_job = should_auto_route_terminal_tool_to_job(
+                        tool_name,
+                        tool_args,
+                    )
+                    if (
+                        not auto_routes_to_job
+                        and tool_name in COMMAND_TOOL_NAMES
+                        and terminal_session.should_route_execute_command_to_background_job(
+                            str(tool_args.get("command") or ""),
+                        )
+                    ):
+                        auto_routes_to_job = True
+                    if not auto_routes_to_job:
                         terminal_input_error = terminal_session.validate_terminal_tool_input(
                             tool_name,
                             tool_args,
@@ -1161,6 +1182,18 @@ def generate_stream(
                 )
                 if result_text and fallback_is_delivery_result(result_text):
                     delivery_tool_sent_by_integration = True
+                    if tool_name == ROBOT_SEND_TOOL_NAME:
+                        reply_event = _persist_and_broadcast_event(
+                            item_id,
+                            role="assistant",
+                            content=robot_reply_event_content(tool_args, result_text),
+                            message_type=ROBOT_QQ_REPLY_EVENT_TYPE,
+                            extra={
+                                "tool_name": tool_name,
+                                "qq_delivery": True,
+                            },
+                        )
+                        yield _to_sse(reply_event)
 
                 if result_text and not command_dispatch_pending:
                     if hide_tool_details:
@@ -1220,14 +1253,6 @@ def generate_stream(
                         item_id,
                         command=str(tool_args.get("command") or ""),
                     )
-                    response_event = _persist_and_broadcast_event(
-                        item_id,
-                        role="assistant",
-                        content=BACKGROUND_JOB_STARTED_RESPONSE,
-                        message_type="agent_response",
-                        extra={"tool_name": tool_name},
-                    )
-                    yield _to_sse(response_event)
                     _broadcast_agent_status(item_id, "idle")
                     yield _to_sse({"done": True})
                     return

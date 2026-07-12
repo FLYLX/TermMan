@@ -101,6 +101,15 @@ class SocketService:
         room = self.get_room_name(item_uuid)
         try:
             room_info = room_manager.get_room_info(room)
+            if not room_info:
+                logger.debug(f"[SocketService] Skip broadcast to room '{room}': no room")
+                return
+
+            subscriber_count = room_info.get('permanent_count', 0) + room_info.get('temporary_count', 0)
+            if subscriber_count <= 0:
+                logger.debug(f"[SocketService] Skip broadcast to room '{room}': no subscribers")
+                return
+
             logger.info(f"[SocketService] Broadcasting to room '{room}': event={event}")
             logger.info(f"[SocketService] Room info: permanent={room_info.get('permanent_count', 0)}, temporary={room_info.get('temporary_count', 0)}")
             logger.info(f"[SocketService] Permanent subscribers: {room_info.get('permanent', [])}")

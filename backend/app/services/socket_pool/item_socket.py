@@ -29,7 +29,12 @@ class ItemSocket:
         self.user_uuid = user_uuid
         self.subscriber_type = subscriber_type
         self.status = TerminalStatus.STOPPED
-        self.sio = socketio.Client(reconnection=False)
+        self.sio = socketio.Client(
+            reconnection=True,
+            reconnection_attempts=0,
+            reconnection_delay=1,
+            reconnection_delay_max=5,
+        )
         self._connected_event = threading.Event()
         self._connect_error = None
         self.setup_event_handlers()
@@ -38,6 +43,7 @@ class ItemSocket:
         @self.sio.event
         def connect():
             logger.info(f"[ItemSocket] Socket connect event for item={self.item_uuid}")
+            self._emit_terminal_connect()
 
         @self.sio.event
         def disconnect():
@@ -90,14 +96,7 @@ class ItemSocket:
                 wait_timeout=timeout
             )
 
-            logger.info("[ItemSocket] Socket connected, emitting terminal_connect")
-
-            self.sio.emit(ProtocolEvents.TERMINAL_CONNECT, {
-                "item_uuid": self.item_uuid,
-                "token": self.token,
-                "user_uuid": self.user_uuid,
-                "subscriber_type": self.subscriber_type
-            })
+            logger.info("[ItemSocket] Socket connected, waiting for terminal_connect confirmation")
 
             logger.info(f"[ItemSocket] Waiting for terminal_connected event (timeout={timeout}s)")
 
@@ -117,6 +116,17 @@ class ItemSocket:
             logger.error(f"[ItemSocket] Failed to connect: {str(e)}")
             self.status = TerminalStatus.ERROR
             return False
+
+    def _emit_terminal_connect(self) -> None:
+        try:
+            self.sio.emit(ProtocolEvents.TERMINAL_CONNECT, {
+                "item_uuid": self.item_uuid,
+                "token": self.token,
+                "user_uuid": self.user_uuid,
+                "subscriber_type": self.subscriber_type
+            })
+        except Exception as exc:
+            logger.error(f"[ItemSocket] Failed to emit terminal_connect: {exc}")
 
     def disconnect(self):
         try:

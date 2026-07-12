@@ -7,6 +7,59 @@ from app.services.socket_pool.subscription_center import ItemSubscriptionCenter
 from app.services.socket_pool.terminal_stream_pipeline import TerminalStreamPipeline
 
 
+def test_item_socket_reconnects_and_resubscribes(monkeypatch) -> None:
+    import app.services.socket_pool.item_socket as item_socket_module
+    from app.services.protocol import ProtocolEvents
+    from app.services.socket_pool.item_socket import ItemSocket
+
+    created: dict[str, object] = {}
+
+    class FakeSocketClient:
+        def __init__(self, **kwargs):
+            created["kwargs"] = kwargs
+            self.handlers = {}
+            self.emits = []
+
+        def event(self, func):
+            self.handlers[func.__name__] = func
+            return func
+
+        def on(self, event):
+            def decorator(func):
+                self.handlers[event] = func
+                return func
+
+            return decorator
+
+        def emit(self, event, data):
+            self.emits.append((event, data))
+
+    monkeypatch.setattr(item_socket_module.socketio, "Client", FakeSocketClient)
+
+    socket = ItemSocket(
+        item_uuid="item-1",
+        token="token-1",
+        daemon_url="http://daemon:20000",
+        user_uuid="backend",
+        subscriber_type="backend",
+    )
+    socket.sio.handlers["connect"]()
+
+    assert created["kwargs"]["reconnection"] is True
+    assert created["kwargs"]["reconnection_attempts"] == 0
+    assert socket.sio.emits == [
+        (
+            ProtocolEvents.TERMINAL_CONNECT,
+            {
+                "item_uuid": "item-1",
+                "token": "token-1",
+                "user_uuid": "backend",
+                "subscriber_type": "backend",
+            },
+        )
+    ]
+
+
 def test_terminal_stream_pipeline_publishes_stream_events() -> None:
     bus = ItemEventBus()
     pipeline = TerminalStreamPipeline(bus)

@@ -397,9 +397,8 @@ def test_generate_stream_stops_after_background_job_start(
             },
         )
     ]
-    assert any('"type": "agent_tool_result"' in chunk for chunk in chunks)
-    assert any('"type": "agent_response"' in chunk for chunk in chunks)
-    assert any("\u540e\u53f0\u4efb\u52a1\u5df2\u542f\u52a8" in chunk for chunk in chunks)
+    assert not any('"type": "agent_tool_result"' in chunk for chunk in chunks)
+    assert not any('"type": "agent_response"' in chunk for chunk in chunks)
     assert any('"done": true' in chunk for chunk in chunks)
     assert not any("max iteration limit" in chunk for chunk in chunks)
 
@@ -496,6 +495,118 @@ def test_generate_stream_blocks_shell_command_while_busy_terminal_command_pendin
     assert any("apt update" in chunk and "java -version" in chunk for chunk in chunks)
     assert not any('"type": "agent_tool_result"' in chunk for chunk in chunks)
     assert not any("max iteration limit" in chunk for chunk in chunks)
+
+
+def test_generate_stream_allows_shell_query_to_auto_route_when_console_is_active(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+
+    item, handler = _create_linked_item_and_handler(db)
+    item_id = str(item.id)
+    tool_name = "mcp_local_execute_command"
+    tool_calls: list[tuple[str, dict]] = []
+
+    fake_agent = _make_fake_agent(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": "Send a command to the terminal",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        execute_tool_result=lambda name, args: (
+            tool_calls.append((name, dict(args)))
+            or {
+                "success": True,
+                "result": [
+                    {"type": "text", "text": "后台任务已启动"},
+                    {
+                        "type": "metadata",
+                        "auto_routed_execute_command_to_run_job": True,
+                        "background_job_started": True,
+                    },
+                ],
+            }
+        ),
+    )
+
+    def fake_stream_completion(**kwargs):
+        assert kwargs["messages"]
+        return iter(
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content="Checking process",
+                                tool_calls=[
+                                    SimpleNamespace(
+                                        index=0,
+                                        id="call_1",
+                                        function=SimpleNamespace(
+                                            name=tool_name,
+                                            arguments='{"command":"ps aux | grep java | grep -v grep"}',
+                                        ),
+                                    )
+                                ],
+                            ),
+                            finish_reason=None,
+                        )
+                    ]
+                )
+            ]
+        )
+
+    agent_session_manager.remove_session(item_id)
+    terminal_session = agent_session_manager.get_or_create_session(item_id, str(handler.id))
+    monkeypatch.setattr(terminal_session, "_schedule_pending_command_recheck", lambda *args, **kwargs: None)
+    monkeypatch.setattr(terminal_session, "_get_log_line_count", lambda: 0)
+    terminal_session.mark_terminal_command_dispatched(
+        tool_name,
+        {"command": "bash run.sh"},
+    )
+
+    monkeypatch.setattr(chat_route, "completion", fake_stream_completion)
+    monkeypatch.setattr(
+        chat_route,
+        "build_chat_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "check process"}],
+    )
+    monkeypatch.setattr(chat_route, "get_relevant_memories", lambda *args, **kwargs: "")
+    monkeypatch.setattr(chat_route, "extract_important_info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
+
+    try:
+        chunks = list(
+            chat_route.generate_stream(
+                message="check process",
+                history=[],
+                handler=handler,
+                item_id=item_id,
+                agent=fake_agent,
+            )
+        )
+    finally:
+        agent_session_manager.remove_session(item_id)
+
+    assert tool_calls == [
+        (
+            tool_name,
+            {
+                "command": "ps aux | grep java | grep -v grep",
+                "item_id": item_id,
+            },
+        )
+    ]
+    assert not any("交互式控制台" in chunk and "已拦截" in chunk for chunk in chunks)
+    assert not any('"type": "agent_response"' in chunk for chunk in chunks)
+    assert any('"done": true' in chunk for chunk in chunks)
+
 
 def test_generate_stream_stops_when_terminal_command_not_delivered(
     db: Session,

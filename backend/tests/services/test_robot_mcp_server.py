@@ -3,6 +3,8 @@ import tempfile
 import uuid
 from pathlib import Path
 
+import pytest
+
 from app.plugins.robot.contracts import RobotReplyTarget
 from app.plugins.robot.conversation_memory import robot_conversation_memory
 from app.services.agent.mcp.robot_context import (
@@ -12,6 +14,13 @@ from app.services.agent.mcp.robot_context import (
 )
 from app.services.agent.mcp.robot_server import RobotMCPServer
 from app.services.agent.memory.vector_store import vector_store
+
+
+@pytest.fixture(autouse=True)
+def clear_robot_send_dedupe_cache():
+    RobotMCPServer._clear_recent_send_signatures_for_test()
+    yield
+    RobotMCPServer._clear_recent_send_signatures_for_test()
 
 
 def _test_memory_dir(name: str) -> Path:
@@ -57,6 +66,103 @@ def test_robot_mcp_send_message_noops_no_reply_intent(monkeypatch) -> None:
         {"type": "text", "text": "No QQ message sent: no reply needed."}
     ]
     assert sent == []
+
+
+def test_robot_mcp_send_message_suppresses_recent_duplicate(monkeypatch) -> None:
+    RobotMCPServer._clear_recent_send_signatures_for_test()
+    server = RobotMCPServer()
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="123456",
+        metadata={"target": {"id": "123456"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:123456:user-1",
+            reply_target=target,
+        )
+    )
+    sent: list[str] = []
+
+    def fake_send_message(_robot_id, _reply_target, text):
+        sent.append(text)
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+
+    try:
+        first = server.call_tool(
+            "send_message",
+            {"text": "同一个回复", "_robot_context_token": token},
+        )
+        second = server.call_tool(
+            "send_message",
+            {"text": "同一个回复", "_robot_context_token": token},
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+        RobotMCPServer._clear_recent_send_signatures_for_test()
+
+    assert first == [
+        {"type": "text", "text": "Message sent to current robot conversation."}
+    ]
+    assert second == [
+        {
+            "type": "text",
+            "text": "Message sent to current robot conversation. Duplicate QQ reply suppressed.",
+        }
+    ]
+    assert sent == ["同一个回复"]
+
+
+def test_robot_mcp_send_failure_does_not_poison_duplicate_cache(monkeypatch) -> None:
+    server = RobotMCPServer()
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="123456",
+        metadata={"target": {"id": "123456"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:123456:user-1",
+            reply_target=target,
+        )
+    )
+    attempts = {"count": 0}
+    sent: list[str] = []
+
+    def fake_send_message(_robot_id, _reply_target, text):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("bridge down")
+        sent.append(text)
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+
+    try:
+        first = server.call_tool(
+            "send_message",
+            {"text": "失败后重试", "_robot_context_token": token},
+        )
+        second = server.call_tool(
+            "send_message",
+            {"text": "失败后重试", "_robot_context_token": token},
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert first[0]["text"] == "Error: bridge down"
+    assert second == [
+        {"type": "text", "text": "Message sent to current robot conversation."}
+    ]
+    assert sent == ["失败后重试"]
 
 
 def test_robot_mcp_send_message_blocks_internal_tool_trace(monkeypatch) -> None:

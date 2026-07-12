@@ -55,6 +55,13 @@ class InternalJobCancelRequest(BaseModel):
     job_id: Optional[str] = None
 
 
+def _resolve_job_working_directory(item_uuid: str, fallback: Optional[str]) -> Optional[str]:
+    current_workdir = terminal_manager.get_terminal_current_workdir(item_uuid)
+    if current_workdir:
+        return current_workdir
+    return fallback
+
+
 def _extract_bearer_token(request: Request) -> str:
     authorization = request.headers.get("Authorization", "").strip()
     if not authorization.lower().startswith("bearer "):
@@ -145,11 +152,15 @@ def run_item_job(
         f"timeout={payload.timeout_seconds} tail_lines={payload.tail_lines} "
         f"command={payload.command!r} cwd={payload.working_directory!r}"
     )
+    working_directory = _resolve_job_working_directory(
+        item_uuid,
+        payload.working_directory,
+    )
     result = job_runner.run_job(
         user_uuid=payload.user_uuid,
         item_uuid=item_uuid,
         command=payload.command,
-        working_directory=payload.working_directory,
+        working_directory=working_directory,
         timeout_seconds=payload.timeout_seconds,
         tail_lines=payload.tail_lines,
         env=payload.env,

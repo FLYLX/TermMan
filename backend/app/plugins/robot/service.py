@@ -2953,8 +2953,65 @@ class RobotService:
             parts.append(impression_card.strip())
         if live_context_card.strip():
             parts.append(live_context_card.strip())
+        reply_reference_card = self._agent_reply_reference_context_card(inbound_message)
+        if reply_reference_card:
+            parts.append(reply_reference_card)
         parts.append(f"[Current QQ message]\n{message_text}")
         return "\n".join(parts)
+
+    def _agent_reply_reference_context_card(
+        self,
+        message: RobotInboundMessage,
+    ) -> str:
+        reply_data = message.reply_target.metadata.get("reply")
+        if not isinstance(reply_data, dict):
+            return ""
+
+        lines = [
+            "[Replied QQ message; background only, use it to resolve references in the current message]",
+        ]
+        message_id = str(
+            reply_data.get("message_id") or reply_data.get("id") or ""
+        ).strip()
+        if message_id:
+            lines.append(f"- message_id: {message_id}")
+
+        sender_data = reply_data.get("sender")
+        if isinstance(sender_data, dict):
+            sender_label = self._reply_sender_label_for_context(sender_data)
+            if sender_label:
+                lines.append(f"- sender: {sender_label}")
+
+        text = str(
+            reply_data.get("text")
+            or reply_data.get("plain_text")
+            or reply_data.get("raw_message")
+            or ""
+        ).strip()
+        if text:
+            lines.append(f"- text: {text[:600].rstrip()}")
+        elif message_id:
+            lines.append("- text: unavailable; only the replied message id was provided")
+
+        return "\n".join(lines) if len(lines) > 1 else ""
+
+    def _reply_sender_label_for_context(self, sender_data: dict[str, object]) -> str:
+        sender_id = str(
+            sender_data.get("user_id")
+            or sender_data.get("qq")
+            or sender_data.get("id")
+            or ""
+        ).strip()
+        display_name = str(
+            sender_data.get("display_name")
+            or sender_data.get("card")
+            or sender_data.get("nickname")
+            or sender_id
+            or ""
+        ).strip()
+        if sender_id and display_name and sender_id != display_name:
+            return f"{display_name} ({sender_id})"
+        return display_name or sender_id
 
     def _agent_identity_context_card(
         self,

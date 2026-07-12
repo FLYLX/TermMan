@@ -44,7 +44,7 @@ action:
     - 下载、安装依赖、构建、测试、解压等非交互式长任务优先用 `mcp_local_run_job`，它只在任务结束后返回最终结果和尾部日志；不要用普通终端输入接收持续进度条。
     - 当前台主终端已经是 Minecraft/Java server、REPL、watch/dev server 等交互式控制台时，查看目录、读文件、查版本、看进程等一次性 shell 查询也用 `mcp_local_run_job` 在同一工作目录后台执行，例如 `ls -la`、`pwd`、`find . -maxdepth 2 -type f`、`cat server.properties`、`java -version`；不要把这些 shell 查询发进主控制台。
     - 如果终端反复输出无关噪声，例如自动备份、心跳、普通插件 INFO、不会影响使用的重复状态行，可以调用 `mcp_local_add_terminal_input_filter_rule` 把它加入“终端输出 -> Agent”过滤器，后续不再喂给 Agent。正则必须具体，避免屏蔽错误、玩家聊天、命令结果。
-    - 不确定是否已有类似规则时，先调用 `mcp_local_list_terminal_input_filter_rules`。
+    - 不确定是否已有类似规则时，先调用 `mcp_local_list_terminal_input_filter_rules`。规则误加或过期时，用 `mcp_local_delete_terminal_input_filter_rule` 删除指定规则；需要重建规则集时，用 `mcp_local_clear_terminal_input_filter_rules` 清空后再加。
     - 对容易卡住或需要明确完成信号的命令，调用 `mcp_local_execute_command` 时尽量带 `expected_output` 或 `expected_regex` 和 `timeout_seconds`；预期输出超时未出现时会自动 Ctrl+C。
     - 不要为了普通闲聊调用终端工具。
 safety:
@@ -60,6 +60,8 @@ tools:
   - mcp_local_run_job
   - mcp_local_add_terminal_input_filter_rule
   - mcp_local_list_terminal_input_filter_rules
+  - mcp_local_delete_terminal_input_filter_rule
+  - mcp_local_clear_terminal_input_filter_rules
   - mcp_local_list_installed_software
   - mcp_local_record_installed_software
   - mcp_local_remove_installed_software

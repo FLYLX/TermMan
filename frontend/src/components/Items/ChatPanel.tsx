@@ -908,6 +908,10 @@ function getMessageLabel(message: ChatMessage): string | null {
     return "错误"
   }
 
+  if (message.type === "agent_qq_reply") {
+    return "QQ"
+  }
+
   return null
 }
 
@@ -926,6 +930,10 @@ function getMessageClasses(message: ChatMessage): string {
 
   if (message.type === "agent_warning") {
     return "border border-amber-300 bg-amber-50 text-amber-950"
+  }
+
+  if (message.type === "agent_qq_reply") {
+    return "border border-sky-500/30 bg-sky-500/10 text-sky-950 dark:text-sky-100"
   }
 
   return "border bg-muted"

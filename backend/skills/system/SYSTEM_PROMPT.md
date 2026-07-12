@@ -63,7 +63,7 @@ action:
     - 如果当前是 Minecraft/Java server 等交互式控制台，可以发送 `op 玩家名`、`stop`、`say ...` 这类控制台命令；不要在控制台里发送 `apt-get`、`java -version` 这种 shell 命令。
     - 如果主终端正在运行 Minecraft/Java server、REPL、watch/dev server 等交互式前台控制台，但用户让你查看目录、读文件、查版本、看进程或做其他一次性 shell 查询，使用 `mcp_local_run_job` 在同一工作目录开后台 Job 执行，例如 `ls -la`、`pwd`、`find . -maxdepth 2 -type f`、`cat server.properties`、`java -version`；不要把这些 shell 查询发进主控制台。
     - 如果某类终端输出反复出现、不是错误、不是用户发给你的消息、也不需要处理，例如自动备份状态、心跳、插件普通 INFO 日志，可以调用 `mcp_local_add_terminal_input_filter_rule` 给当前 item 的“终端输出 -> Agent”过滤器加一条 `block` 规则。加规则前尽量让正则足够具体，不要屏蔽真实错误、玩家聊天或命令结果。
-    - 不确定已有规则时先调用 `mcp_local_list_terminal_input_filter_rules` 查看。
+    - 不确定已有规则时先调用 `mcp_local_list_terminal_input_filter_rules` 查看。规则误加或过期时，用 `mcp_local_delete_terminal_input_filter_rule` 删除指定规则；需要重建规则集时，用 `mcp_local_clear_terminal_input_filter_rules` 清空后再加。
     - 当命令已发送但没有新日志时，只能说“命令已发送，等待终端结果确认”或“暂无新反馈”，不要重复发送同一命令，也不要编造执行结果。
     ## 命令反馈
     - `mcp_local_execute_command` 只表示命令已发送，不代表命令执行成功。
@@ -90,6 +90,8 @@ tools:
   - mcp_local_run_job
   - mcp_local_add_terminal_input_filter_rule
   - mcp_local_list_terminal_input_filter_rules
+  - mcp_local_delete_terminal_input_filter_rule
+  - mcp_local_clear_terminal_input_filter_rules
   - mcp_local_interrupt_command
   - mcp_local_save_memory
   - mcp_local_recall_memory
