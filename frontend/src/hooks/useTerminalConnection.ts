@@ -53,6 +53,7 @@ const ANSI_ESCAPE_RE = new RegExp(
   "g",
 )
 const PROMPT_BEFORE_TIMESTAMP_RE = /^(?:\s*[>#]\s*)+(?=\[\d{2}:\d{2}:\d{2}\])/gm
+const TERMINAL_DEBUG = import.meta.env.DEV
 
 function stripTerminalControlChars(text: string): string {
   let result = ""
@@ -382,7 +383,9 @@ export function useTerminalConnection({
       socketRef.current = socket
 
       socket.on("connect", () => {
-        console.log("[Terminal] Socket connected")
+        if (TERMINAL_DEBUG) {
+          console.debug("[Terminal] Socket connected")
+        }
       })
 
       socket.on("terminal_connected", (data: TerminalConnectedData) => {
@@ -392,7 +395,9 @@ export function useTerminalConnection({
         ) {
           return
         }
-        console.log("[Terminal] Terminal connected:", data)
+        if (TERMINAL_DEBUG) {
+          console.debug("[Terminal] Terminal connected:", data)
+        }
         setIsConnected(true)
         setIsConnecting(false)
         connectingRef.current = false
@@ -406,7 +411,9 @@ export function useTerminalConnection({
         ) {
           return
         }
-        console.error("[Terminal] Auth error:", data.message)
+        if (TERMINAL_DEBUG) {
+          console.warn("[Terminal] Auth error:", data.message)
+        }
         setError(data.message)
         setIsConnecting(false)
         connectingRef.current = false
@@ -425,7 +432,9 @@ export function useTerminalConnection({
       })
 
       socket.on("disconnect", (reason) => {
-        console.log("[Terminal] Disconnected:", reason)
+        if (TERMINAL_DEBUG) {
+          console.debug("[Terminal] Disconnected:", reason)
+        }
         if (socketRef.current === socket) {
           setIsConnected(false)
           setIsConnecting(false)
@@ -442,7 +451,9 @@ export function useTerminalConnection({
         ) {
           return
         }
-        console.error("[Terminal] Connect error:", err.message)
+        if (TERMINAL_DEBUG) {
+          console.warn("[Terminal] Connect error:", err.message)
+        }
         setError(err.message)
         setIsConnecting(false)
         connectingRef.current = false
@@ -456,7 +467,9 @@ export function useTerminalConnection({
       ) {
         return
       }
-      console.error("[Terminal] Connection error:", err)
+      if (TERMINAL_DEBUG) {
+        console.warn("[Terminal] Connection error:", err)
+      }
       const errorMessage =
         err instanceof Error ? err.message : "Connection failed"
       setError(errorMessage)

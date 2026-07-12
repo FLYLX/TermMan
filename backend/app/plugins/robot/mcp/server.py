@@ -71,11 +71,10 @@ class RobotMCPServer:
                 "Do not use reply_to, conversation, broadcast, target_type, or "
                 "target_id in that incoming QQ-triggered context; cross-conversation "
                 "sends are blocked there to prevent replying to the wrong group. "
-                "In backend chat, use reply_to only when intentionally choosing a "
-                "different QQ conversation visible in context. Use target_type and "
-                "target_id only when the user explicitly provided a QQ group number "
-                "or QQ number outside the visible context. If multiple robots are "
-                "available, provide robot_id."
+                "Outside an active QQ-triggered context, never infer the QQ "
+                "destination from prior chat history. Use target_type and target_id "
+                "only when the user explicitly provided a QQ group number or QQ "
+                "number. If multiple robots are available, provide robot_id."
             ),
             input_schema={
                 "type": "object",
@@ -125,18 +124,16 @@ class RobotMCPServer:
                     "conversation": {
                         "type": "string",
                         "description": (
-                            "Optional conversation reference from context, for "
-                            "example 'group:123456' or 'private:654321'. Use this "
-                            "when choosing a conversation from prior QQ context."
+                            "Deprecated for sending. Do not use this for delivery; "
+                            "provide target_type and target_id for an explicit manual "
+                            "QQ target outside the current QQ-triggered context."
                         ),
                     },
                     "reply_to": {
                         "type": "string",
                         "description": (
-                            "Optional natural reference to the QQ conversation from "
-                            "context, such as the sender name, group/private label, "
-                            "or conversation shown in prior robot messages. The "
-                            "backend resolves it against the context target index."
+                            "Deprecated for sending. Do not use this for delivery; "
+                            "it will not select a QQ target from prior chat history."
                         ),
                     },
                     "robot_id": {
@@ -149,9 +146,8 @@ class RobotMCPServer:
                     "broadcast": {
                         "type": "boolean",
                         "description": (
-                            "When true, send the same message to every QQ "
-                            "conversation visible in the current chat context. Use "
-                            "for severe terminal alerts only."
+                            "Deprecated. Broadcast from prior chat history is blocked "
+                            "to prevent replying to the wrong QQ conversation."
                         ),
                     },
                 },
@@ -1720,6 +1716,16 @@ class RobotMCPServer:
                     ),
                 }
             ]
+        if context is None and broadcast:
+            return [
+                {
+                    "type": "text",
+                    "text": (
+                        "Error: broadcast from prior QQ context is disabled. "
+                        "Use target_type and target_id for one explicit QQ target."
+                    ),
+                }
+            ]
 
         context_target: RobotReplyTarget | None = None
         context_target_robot_id = ""
@@ -1739,7 +1745,7 @@ class RobotMCPServer:
             explicit_target = None
             context_reference = ""
 
-        if explicit_target is None and not broadcast and (context is None or context_reference):
+        if explicit_target is None and not broadcast and context is not None and context_reference:
             try:
                 context_target, context_target_robot_id = self._resolve_context_target(args)
             except Exception as exc:
@@ -1750,10 +1756,9 @@ class RobotMCPServer:
                 {
                     "type": "text",
                     "text": (
-                        "Error: no active robot conversation context and no "
-                        "matching QQ target in chat context. Use reply_to to choose "
-                        "a QQ conversation from context, or provide target_type and "
-                        "target_id if the target is outside the current context."
+                        "Error: no active QQ robot conversation context. Provide "
+                        "target_type and target_id only when the user explicitly "
+                        "asked to send to that QQ target."
                     ),
                 }
             ]

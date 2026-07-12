@@ -1509,6 +1509,7 @@ function ItemDetailPage({
     () => new Set<ItemDetailTab>(["terminal"]),
   )
   const outputRef = useRef<HTMLDivElement>(null)
+  const terminalConnectedRef = useRef(false)
   const previousItemIdRef = useRef(item.id)
   const itemUpdatedAtRef = useRef(item.updated_at || "")
   const inputSyncedSignatureRef = useRef(
@@ -1732,15 +1733,17 @@ function ItemDetailPage({
   } = useTerminalConnection({
     itemId: item.id,
     enabled: shouldConnect,
-    onConnected: (data) => {
-      console.log("[Terminal] Connected:", data)
-      showSuccessToast(t("items.detail.terminalConnected"))
+    onConnected: () => {
+      if (!terminalConnectedRef.current) {
+        showSuccessToast(t("items.detail.terminalConnected"))
+      }
+      terminalConnectedRef.current = true
     },
     onDisconnected: () => {
-      console.log("[Terminal] Disconnected")
+      terminalConnectedRef.current = false
     },
     onError: (error) => {
-      console.error("[Terminal] Error:", error)
+      terminalConnectedRef.current = false
       showErrorToast(t("items.detail.terminalError", { error }))
     },
   })
@@ -1756,7 +1759,7 @@ function ItemDetailPage({
       }
     }, 100)
     return () => clearTimeout(timer)
-  })
+  }, [output])
 
   const refreshItemDetail = useCallback(async () => {
     const refreshed = (await ItemsService.readItem({

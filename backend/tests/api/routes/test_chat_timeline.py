@@ -1336,6 +1336,49 @@ def test_stream_chat_task_resolution_updates_existing_memory(
     assert captured_update["metadata"]["memory_key"] == "task.修复_daemon_状态同步"
 
 
+def test_agent_task_plan_records_reply_origin(monkeypatch) -> None:
+    from app.api.routes import chat as chat_route
+
+    captured: list[dict[str, object]] = []
+    handler = SimpleNamespace(id="handler-1")
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="robot-1",
+            robot_conversation_key="group:770362397",
+        )
+    )
+
+    monkeypatch.setattr(chat_route, "_clear_existing_agent_plan_tasks", lambda item_id: None)
+    monkeypatch.setattr(
+        chat_route,
+        "_plan_agent_task_titles",
+        lambda handler, message, history: ["install Java", "report result"],
+    )
+
+    def fake_add_memory(**kwargs):
+        captured.append(kwargs)
+        return f"task-{len(captured)}"
+
+    monkeypatch.setattr(chat_route.vector_store, "add_memory", fake_add_memory)
+
+    plan = chat_route._create_agent_task_plan(
+        "item-1",
+        handler=handler,
+        agent=agent,
+        message="install Java",
+        history=[],
+        tools=[{"type": "function", "function": {"name": "mcp_local_run_job"}}],
+    )
+
+    assert plan is not None
+    assert len(captured) == 2
+    assert captured[0]["metadata"]["task_origin_type"] == "qq"
+    assert captured[0]["metadata"]["task_origin_label"] == "QQ group:770362397"
+    assert captured[0]["metadata"]["task_reply_rule"] == (
+        "reply through the locked current QQ robot context"
+    )
+
+
 def test_terminal_output_batches_multiple_events_into_one_terminal_record(
     db: Session,
     monkeypatch,

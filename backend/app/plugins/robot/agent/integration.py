@@ -250,6 +250,9 @@ class RobotAgentIntegration:
         context = _robot_context(agent)
         if context is None:
             return
+        if not getattr(context, "robot_id", ""):
+            context.robot_known_targets = []
+            return
 
         targets_by_key: dict[str, dict[str, str]] = {}
         for message in messages:
@@ -371,6 +374,7 @@ class RobotAgentIntegration:
         agent_context.robot_conversation_key = ""
         agent_context.robot_context_token = ""
         agent_context.robot_reply_context_summary = ""
+        agent_context.robot_known_targets = []
         agent_context.robot_mcp_server_transient = False
         if should_remove_robot_mcp and ROBOT_MCP_SERVER_NAME in agent._mcp_servers:
             agent._mcp_servers = [
@@ -415,7 +419,10 @@ class RobotAgentIntegration:
             args["_termman_is_superuser"] = context.current_user_is_superuser
         if getattr(context, "item_id", ""):
             args["_termman_item_id"] = context.item_id
-        if getattr(context, "robot_known_targets", None):
+        if (
+            getattr(context, "robot_id", "")
+            and getattr(context, "robot_known_targets", None)
+        ):
             args["_robot_known_targets"] = [
                 dict(target) for target in context.robot_known_targets
             ]
@@ -736,16 +743,9 @@ class RobotAgentIntegration:
     ) -> bool:
         context = _robot_context(agent)
         if context is not None:
-            if getattr(context, "robot_id", ""):
-                return True
-            if getattr(context, "robot_known_targets", None):
-                return True
+            return bool(getattr(context, "robot_id", ""))
 
-        return any(
-            isinstance(message.get("content"), str)
-            and "[Robot message;" in message.get("content", "")
-            for message in messages
-        )
+        return False
 
     def _record_final_response_fallback(
         self,

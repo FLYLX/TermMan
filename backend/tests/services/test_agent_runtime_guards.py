@@ -441,6 +441,41 @@ def test_agent_extracts_robot_known_targets_from_context_messages() -> None:
         agent_module.Agent._instances.pop(handler_id, None)
 
 
+def test_agent_clears_robot_known_targets_without_active_robot_context() -> None:
+    handler_id = f"handler-{uuid4()}"
+    agent = agent_module.Agent(handler_id)
+    agent._context = AgentContext(
+        handler_id=handler_id,
+        enabled_mcp_servers=["robot"],
+    )
+    agent._context.robot_known_targets = [
+        {
+            "conversation": "group:old",
+            "target_type": "group",
+            "target_id": "old",
+            "sender": "Old Sender",
+            "robot_id": "robot-1",
+        }
+    ]
+
+    try:
+        agent.set_robot_known_targets_from_messages(
+            [
+                {
+                    "role": "user",
+                    "content": (
+                        "[Robot message; conversation=group:123456; "
+                        "sender=Alice (10001)]\nserver error"
+                    ),
+                }
+            ]
+        )
+
+        assert agent._context.robot_known_targets == []
+    finally:
+        agent_module.Agent._instances.pop(handler_id, None)
+
+
 def test_robot_context_uses_optional_robot_plugin_prompt(monkeypatch) -> None:
     robot_skill = build_robot_messaging_skill_definition()
     assert robot_skill is not None
@@ -489,6 +524,62 @@ def test_robot_context_uses_optional_robot_plugin_prompt(monkeypatch) -> None:
     assert "历史中的 QQ 上下文" in messages[0]["content"]
     assert "QQ 回复反思" not in messages[0]["content"]
     assert "mcp_robot_send_message" in messages[0]["content"]
+
+
+def test_chat_prompt_excludes_qq_delivery_receipts_from_recent_context(monkeypatch) -> None:
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(robot_id="", robot_reply_context_summary=""),
+        get_skills=lambda: [],
+        get_mcp_servers=lambda: [],
+        get_tools_for_litellm=lambda: [],
+        match_skills=lambda query: [],
+        enabled_knowledge_files=[],
+    )
+    monkeypatch.setattr(prompt_builder, "get_system_prompt", lambda agent: "system prompt")
+    monkeypatch.setattr(
+        prompt_builder,
+        "resolve_prompt_memory_policy",
+        lambda turn_type: SimpleNamespace(
+            include_session_summary=False,
+            include_recent_history=True,
+            max_recent_messages=4,
+            include_long_term=False,
+            allowed_long_term_types=(),
+            max_long_term_memories=0,
+        ),
+    )
+    monkeypatch.setattr(
+        prompt_builder,
+        "get_chat_messages",
+        lambda item_id: [
+            {
+                "type": "chat_user",
+                "role": "user",
+                "content": "怎么这么慢",
+            },
+            {
+                "type": "agent_qq_reply",
+                "role": "assistant",
+                "content": "已回复 QQ：服务器已经启动好了",
+            },
+            {
+                "type": "agent_response",
+                "role": "assistant",
+                "content": "内部总结",
+            },
+        ],
+    )
+
+    messages = prompt_builder.build_chat_turn_messages(
+        agent,
+        item_id="item-1",
+        message="现在呢",
+    )
+
+    joined = "\n".join(message["content"] for message in messages)
+    assert "已回复 QQ" not in joined
+    assert "服务器已经启动好了" not in joined
+    assert "内部总结" in joined
 
 
 
@@ -667,6 +758,74 @@ def test_non_robot_context_does_not_include_robot_plugin_prompt(monkeypatch) -> 
 
     assert "QQ MCP Skill" not in messages[0]["content"]
     assert "mcp_robot_send_message" not in messages[0]["content"]
+
+
+def test_chat_prompt_includes_active_task_ledger(monkeypatch) -> None:
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(robot_id="", robot_reply_context_summary=""),
+        get_skills=lambda: [],
+        get_mcp_servers=lambda: [],
+        get_tools_for_litellm=lambda: [],
+        match_skills=lambda query: [],
+        enabled_knowledge_files=[],
+    )
+    monkeypatch.setattr(
+        prompt_builder,
+        "resolve_prompt_memory_policy",
+        lambda turn_type: SimpleNamespace(
+            include_session_summary=False,
+            include_recent_history=False,
+            max_recent_messages=0,
+            include_long_term=False,
+            allowed_long_term_types=(),
+            max_long_term_memories=0,
+        ),
+    )
+    monkeypatch.setattr(
+        prompt_builder.vector_store,
+        "get_all_memories",
+        lambda item_id, memory_type=None: [
+            {
+                "id": "task-1",
+                "content": "Task 1: install Java",
+                "metadata": {
+                    "source": "agent_plan",
+                    "memory_type": "task",
+                    "status": "active",
+                    "task_state": "running",
+                    "task_order": 1,
+                    "task_total": 2,
+                    "task_title": "install Java",
+                    "task_origin_label": "QQ group:770362397",
+                },
+            },
+            {
+                "id": "task-2",
+                "content": "Task 2: old completed",
+                "metadata": {
+                    "source": "agent_plan",
+                    "memory_type": "task",
+                    "status": "completed",
+                    "task_state": "completed",
+                    "task_order": 2,
+                    "task_total": 2,
+                    "task_title": "old completed",
+                },
+            },
+        ],
+    )
+
+    messages = prompt_builder.build_chat_turn_messages(
+        agent,
+        item_id="item-1",
+        message="status?",
+    )
+
+    system_content = messages[0]["content"]
+    assert "Active task ledger" in system_content
+    assert "install Java" in system_content
+    assert "QQ group:770362397" in system_content
+    assert "old completed" not in system_content
 
 
 def test_robot_history_context_does_not_inject_prompt_without_robot_skill(monkeypatch) -> None:
@@ -936,7 +1095,7 @@ def test_robot_delivery_retry_triggers_when_model_returns_plain_reply() -> None:
     ]
     agent = SimpleNamespace(
         _context=SimpleNamespace(
-            robot_id="",
+            robot_id="robot-1",
             robot_known_targets=[
                 {
                     "conversation": "private:2537134688",
@@ -979,6 +1138,40 @@ def test_robot_delivery_retry_triggers_when_model_returns_plain_reply() -> None:
     assert "重新判断 QQ 是否应该收到这段文本" in correction["content"]
     assert "mcp_robot_send_message" in correction["content"]
     assert "你好呀~" in correction["content"]
+
+
+def test_robot_delivery_retry_skips_stale_history_without_active_robot_context() -> None:
+    tools = [{"type": "function", "function": {"name": ROBOT_SEND_TOOL_NAME}}]
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_known_targets=[
+                {
+                    "conversation": "private:2537134688",
+                    "target_type": "private",
+                    "target_id": "2537134688",
+                    "sender": "FLY (2537134688)",
+                }
+            ],
+        )
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                "[Robot message; conversation=private:2537134688; "
+                "sender=FLY (2537134688)]\nold qq context"
+            ),
+        }
+    ]
+
+    assert get_robot_agent_integration().should_retry_delivery(
+        agent=agent,
+        messages=messages,
+        tools=tools,
+        final_response="server reply",
+        retry_used=False,
+    ) is False
 
 
 def test_robot_collect_response_fallback_accepts_mcp_tool_delivery() -> None:
@@ -2564,3 +2757,129 @@ def test_pending_integration_response_uses_captured_qq_context(monkeypatch) -> N
     assert robot_context["conversation_key"] == "private:2537134688"
     assert robot_context["reply_target"].target_id == "2537134688"
     assert robot_context["reply_requires_awake"] is False
+
+
+def test_pending_integration_response_is_one_shot(monkeypatch) -> None:
+    from app.plugins.robot.mcp.context import (
+        RobotMCPContext,
+        register_robot_mcp_context,
+        unregister_robot_mcp_context,
+    )
+    from app.services.agent import session as session_module
+    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
+
+    sent_contents: list[str] = []
+
+    def fake_send_integration_final_response_fallback(
+        contexts: dict[str, dict[str, object]],
+        *,
+        content: str,
+        message_sent: bool,
+    ) -> bool:
+        sent_contents.append(content)
+        return True
+
+    monkeypatch.setattr(
+        session_module,
+        "send_integration_final_response_fallback",
+        fake_send_integration_final_response_fallback,
+    )
+
+    reply_target = RobotReplyTarget(
+        target_type="group",
+        target_id="770362397",
+        metadata={"conversation": {"type": "group", "id": "770362397"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-1",
+            sender_key="onebot_v11:group:770362397:2537134688",
+            reply_target=reply_target,
+            conversation_key="group:770362397",
+            reply_requires_awake=True,
+        )
+    )
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+
+    try:
+        session._set_pending_command(
+            EXECUTE_COMMAND_TOOL_NAME,
+            {
+                "command": "bash run.sh",
+                "_robot_context_token": token,
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    pending = session._get_pending_command()
+    assert session._send_pending_integration_response(pending, "还在加载模组")
+    assert not session._send_pending_integration_response(pending, "服务器已经启动好了")
+    assert sent_contents == ["还在加载模组"]
+
+
+def test_pending_integration_response_marks_tool_delivery_as_sent(monkeypatch) -> None:
+    from app.plugins.robot.mcp.context import (
+        RobotMCPContext,
+        register_robot_mcp_context,
+        unregister_robot_mcp_context,
+    )
+    from app.services.agent import session as session_module
+    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
+
+    sent_contents: list[str] = []
+
+    def fake_send_integration_final_response_fallback(
+        contexts: dict[str, dict[str, object]],
+        *,
+        content: str,
+        message_sent: bool,
+    ) -> bool:
+        sent_contents.append(content)
+        return True
+
+    monkeypatch.setattr(
+        session_module,
+        "send_integration_final_response_fallback",
+        fake_send_integration_final_response_fallback,
+    )
+
+    reply_target = RobotReplyTarget(
+        target_type="group",
+        target_id="770362397",
+        metadata={"conversation": {"type": "group", "id": "770362397"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-1",
+            sender_key="onebot_v11:group:770362397:2537134688",
+            reply_target=reply_target,
+            conversation_key="group:770362397",
+            reply_requires_awake=True,
+        )
+    )
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+
+    try:
+        session._set_pending_command(
+            EXECUTE_COMMAND_TOOL_NAME,
+            {
+                "command": "bash run.sh",
+                "_robot_context_token": token,
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    pending = session._get_pending_command()
+    assert session._send_pending_integration_response(
+        pending,
+        "服务器已经启动好了",
+        message_sent=True,
+    )
+    assert not session._send_pending_integration_response(pending, "重复总结")
+    assert sent_contents == []

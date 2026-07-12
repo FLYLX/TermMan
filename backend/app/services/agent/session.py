@@ -541,6 +541,7 @@ class PendingCommand:
     expected_regex: str = ""
     timeout_seconds: int = PENDING_COMMAND_TIMEOUT_SECONDS
     auto_interrupt_on_timeout: bool = False
+    integration_response_sent: bool = False
 
     def has_expectation(self) -> bool:
         return bool(self.expected_output or self.expected_regex)
@@ -1059,6 +1060,7 @@ class AgentSession:
             f"- QQ sender_key: {sender_key or 'unknown'}\n"
             "- Use the terminal output only as evidence for that pending QQ request.\n"
             "- If you answer or update the user, call `mcp_robot_send_message` so the reply goes back to the locked QQ conversation. Do not leave the answer only in TermMan.\n"
+            "- Treat this pending QQ request as one-shot: send at most one concise QQ status/final message for this command result. If you already sent a QQ message in this turn, do not restate the same conclusion in the final assistant text.\n"
         )
 
     def _send_pending_integration_response(
@@ -1071,12 +1073,20 @@ class AgentSession:
         contexts = self._copy_pending_integration_contexts(pending)
         if not contexts or not content.strip():
             return False
+        if pending and pending.integration_response_sent:
+            return False
+        if pending and message_sent:
+            self._mark_pending_integration_response_sent(pending)
+            return True
         try:
-            return send_integration_final_response_fallback(
+            delivered = send_integration_final_response_fallback(
                 contexts,
                 content=content,
                 message_sent=message_sent,
             )
+            if delivered and pending:
+                self._mark_pending_integration_response_sent(pending)
+            return delivered
         except Exception as exc:
             logger.warning(
                 "[AgentSession] Failed to send pending integration response item=%s: %s",
@@ -1084,6 +1094,16 @@ class AgentSession:
                 exc,
             )
             return False
+
+    def _mark_pending_integration_response_sent(self, pending: PendingCommand) -> None:
+        pending.integration_response_sent = True
+        with self.lock:
+            current_pending = self._pending_command
+            if (
+                current_pending
+                and current_pending.normalized_command == pending.normalized_command
+            ):
+                current_pending.integration_response_sent = True
 
     def _cancel_pending_command_recheck(self):
         with self.lock:
@@ -1756,6 +1776,10 @@ class AgentSession:
         pending_integration_contexts = self._copy_pending_integration_contexts(
             pending_before_analysis
         )
+        if not pending_integration_contexts:
+            clear_robot_context = getattr(agent, "clear_robot_context", None)
+            if callable(clear_robot_context):
+                clear_robot_context()
         analysis = self._resolve_terminal_analysis_content(input_msg)
         if input_msg.content:
             attach_terminal_feedback_to_pending_continuation(self.item_id, input_msg.content)
@@ -1772,11 +1796,16 @@ class AgentSession:
         if not analysis.content:
             return
         if analysis.direct_response:
-            self._send_pending_integration_response(
+            integration_already_sent = bool(
+                pending_before_analysis
+                and pending_before_analysis.integration_response_sent
+            )
+            integration_delivered = self._send_pending_integration_response(
                 pending_before_analysis,
                 analysis.content,
             )
-            self.emit_output(analysis.content, "agent_response")
+            if not (integration_already_sent or integration_delivered):
+                self.emit_output(analysis.content, "agent_response")
             return
 
         transient_integration_tools_added = False
@@ -1863,11 +1892,13 @@ class AgentSession:
                             message_sent = (
                                 integration_message_sent(integration_tool_results)
                             )
-                            send_integration_final_response_fallback(
-                                pending_integration_contexts,
-                                content=final_content,
+                            integration_delivered = self._send_pending_integration_response(
+                                pending_before_analysis,
+                                final_content,
                                 message_sent=message_sent,
                             )
+                            if message_sent or integration_delivered:
+                                break
                         self.emit_output(final_content, "agent_response")
                     break
 
@@ -1906,6 +1937,9 @@ class AgentSession:
             self.add_output_callback(input_msg.callback)
 
         try:
+            clear_robot_context = getattr(agent, "clear_robot_context", None)
+            if callable(clear_robot_context):
+                clear_robot_context()
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(agent.start_mcp_servers())

@@ -558,6 +558,26 @@ def _plan_agent_task_titles(
     return fallback_titles
 
 
+def _current_task_origin(agent: "Agent") -> dict[str, str]:
+    context = getattr(agent, "_context", None)
+    robot_id = str(getattr(context, "robot_id", "") or "").strip()
+    robot_conversation_key = str(
+        getattr(context, "robot_conversation_key", "") or ""
+    ).strip()
+    if robot_id:
+        label = robot_conversation_key or "current QQ conversation"
+        return {
+            "type": "qq",
+            "label": f"QQ {label}",
+            "reply_rule": "reply through the locked current QQ robot context",
+        }
+    return {
+        "type": "web",
+        "label": "TermMan web chat",
+        "reply_rule": "reply in the current web chat response",
+    }
+
+
 def _clear_existing_agent_plan_tasks(item_id: str) -> None:
     try:
         memories = vector_store.get_all_memories(item_id, memory_type="task")
@@ -660,6 +680,7 @@ def _create_agent_task_plan(
     item_id: str,
     *,
     handler: ItemHandler,
+    agent: "Agent",
     message: str,
     history: list[ChatMessage],
     tools: list[dict[str, Any]],
@@ -678,6 +699,7 @@ def _create_agent_task_plan(
 
     prefers_chinese = _contains_cjk(message)
     request_id = str(uuid4())
+    origin = _current_task_origin(agent)
     planned_tasks: list[PlannedTask] = []
 
     for index, title in enumerate(task_titles, start=1):
@@ -696,6 +718,9 @@ def _create_agent_task_plan(
                 "task_title": title,
                 "task_total": len(task_titles),
                 "task_request_id": request_id,
+                "task_origin_type": origin["type"],
+                "task_origin_label": origin["label"],
+                "task_reply_rule": origin["reply_rule"],
             },
             ttl_days=AUTO_TASK_TTL_DAYS,
         )
@@ -828,6 +853,7 @@ def generate_stream(
     planned_task_runtime = _create_agent_task_plan(
         item_id,
         handler=handler,
+        agent=agent,
         message=message,
         history=history,
         tools=tools,

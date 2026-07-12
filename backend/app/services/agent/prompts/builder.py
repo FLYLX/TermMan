@@ -37,8 +37,14 @@ ASSISTANT_CONTEXT_TYPES = {
     "agent_warning",
     "agent_error",
 }
+NON_MODEL_CONTEXT_TYPES = {
+    "agent_qq_reply",
+}
 
 TERMINAL_CRITICAL_ALERT_SKILL_ID = "terminal_mcp"
+AUTO_TASK_SOURCE = "agent_plan"
+ACTIVE_TASK_LEDGER_LABEL = "Active task ledger"
+CURRENT_SOURCE_ROUTE_LABEL = "Current source route"
 
 CRITICAL_TERMINAL_PATTERNS = (
     r"\bfatal\b",
@@ -230,6 +236,9 @@ def _event_to_model_message(event: dict[str, Any]) -> dict[str, str] | None:
     role = event.get("role")
 
     if not content:
+        return None
+
+    if message_type in NON_MODEL_CONTEXT_TYPES:
         return None
 
     if message_type == SESSION_SUMMARY_TYPE:
@@ -531,6 +540,112 @@ def _build_installed_software_context(item_id: str) -> str:
         )
         return ""
 
+
+def _build_current_source_route_context(
+    agent: "Agent",
+    *,
+    source: str,
+) -> str:
+    context = getattr(agent, "_context", None)
+    robot_id = str(getattr(context, "robot_id", "") or "").strip()
+    robot_conversation_key = str(
+        getattr(context, "robot_conversation_key", "") or ""
+    ).strip()
+    if robot_id:
+        route = robot_conversation_key or "current QQ conversation"
+        return (
+            f"{CURRENT_SOURCE_ROUTE_LABEL}:\n"
+            f"- current source: QQ robot conversation ({route})\n"
+            "- reply contract: if visible reply is needed, use mcp_robot_send_message "
+            "to the locked current QQ context; do not leave the answer only in the "
+            "TermMan web chat.\n"
+            "- one-turn reply contract: one QQ input should normally produce one concise QQ reply. "
+            "After `mcp_robot_send_message` succeeds, do not restate the same answer in the final assistant text.\n"
+            "- do not send to any other QQ conversation unless the user explicitly "
+            "gave a target and the tool allows it."
+        )
+
+    if source == "terminal":
+        return (
+            f"{CURRENT_SOURCE_ROUTE_LABEL}:\n"
+            "- current source: terminal/server output, not QQ and not normal web chat.\n"
+            "- reply contract: if a server player/user is talking to the agent, reply "
+            "back through the same terminal/server using mcp_local_execute_command "
+            "with an appropriate say/tell/console command.\n"
+            "- do not use QQ tools unless a separate pending-source context explicitly "
+            "says this terminal feedback belongs to a QQ-started request."
+        )
+
+    return (
+        f"{CURRENT_SOURCE_ROUTE_LABEL}:\n"
+        "- current source: TermMan web chat.\n"
+        "- reply contract: answer in the normal assistant response for this web chat.\n"
+        "- do not use QQ tools unless the user explicitly asks to send a message to "
+        "a specific QQ target."
+    )
+
+
+def _build_active_task_ledger_context(item_id: str) -> str:
+    try:
+        memories = vector_store.get_all_memories(item_id, memory_type="task")
+    except Exception as exc:
+        logger.warning(
+            "[PromptBuilder] Failed to load active task ledger for item=%s: %s",
+            item_id,
+            exc,
+        )
+        return ""
+
+    active_tasks: list[dict[str, Any]] = []
+    for memory in memories:
+        metadata = memory.get("metadata") or {}
+        if metadata.get("source") != AUTO_TASK_SOURCE:
+            continue
+        if not memory.get("content"):
+            continue
+        if _is_memory_expired(memory):
+            continue
+        status = str(resolve_memory_status(memory) or "").lower()
+        task_state = str(metadata.get("task_state") or status or "").lower()
+        if status == "completed" or task_state in {"completed", "cancelled"}:
+            continue
+        active_tasks.append(memory)
+
+    if not active_tasks:
+        return ""
+
+    def sort_key(memory: dict[str, Any]) -> tuple[str, int, float]:
+        metadata = memory.get("metadata") or {}
+        request_id = str(metadata.get("task_request_id") or "")
+        try:
+            order = int(metadata.get("task_order") or 0)
+        except (TypeError, ValueError):
+            order = 0
+        return (request_id, order, -_memory_timestamp(memory))
+
+    active_tasks.sort(key=sort_key)
+    lines = [
+        f"{ACTIVE_TASK_LEDGER_LABEL}:",
+        "This is an authoritative short-term task ledger, not a vague long-term memory.",
+        "Use it to remember unfinished work across turns; do not rely on vector recall for these tasks.",
+    ]
+    for memory in active_tasks[:6]:
+        metadata = memory.get("metadata") or {}
+        title = str(metadata.get("task_title") or memory.get("content") or "").strip()
+        if not title:
+            continue
+        status = str(metadata.get("task_state") or metadata.get("status") or "active")
+        order = metadata.get("task_order") or "?"
+        total = metadata.get("task_total") or "?"
+        origin = str(metadata.get("task_origin_label") or "").strip()
+        route_note = f" origin={origin}" if origin else ""
+        lines.append(f"- [{status}] {order}/{total}: {title}{route_note}")
+    lines.append(
+        "Rules: finish or update the active task before declaring it done; when a task "
+        "was started from QQ/server/web, report completion back to that same source route."
+    )
+    return "\n".join(lines)
+
 def _dedupe_adjacent_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
     deduped: list[dict[str, str]] = []
     for message in messages:
@@ -560,6 +675,12 @@ def build_chat_turn_messages(
         )
 
     extra_prompt_parts: list[str] = []
+    source_route_context = _build_current_source_route_context(agent, source="chat")
+    if source_route_context:
+        extra_prompt_parts.append(source_route_context)
+    active_task_ledger_context = _build_active_task_ledger_context(item_id)
+    if active_task_ledger_context:
+        extra_prompt_parts.append(active_task_ledger_context)
     installed_software_context = _build_installed_software_context(item_id)
     if installed_software_context:
         extra_prompt_parts.append(installed_software_context)
@@ -639,6 +760,12 @@ def build_terminal_turn_messages(
     policy = resolve_prompt_memory_policy(turn_type)
     effective_query = query or terminal_content
     extra_prompt_parts: list[str] = []
+    source_route_context = _build_current_source_route_context(agent, source="terminal")
+    if source_route_context:
+        extra_prompt_parts.append(source_route_context)
+    active_task_ledger_context = _build_active_task_ledger_context(item_id)
+    if active_task_ledger_context:
+        extra_prompt_parts.append(active_task_ledger_context)
     installed_software_context = _build_installed_software_context(item_id)
     if installed_software_context:
         extra_prompt_parts.append(installed_software_context)
@@ -661,6 +788,8 @@ def build_terminal_turn_messages(
             "下面输入的是命令发出后的原生日志反馈。"
             "请只根据当前日志判断状态，不要依赖长期记忆猜测，不要脑补命令已经成功或失败。"
             "如果证据不足，只能说明“命令已发送，等待终端结果确认”或“暂无新反馈”。"
+            "如果日志里同时出现旧的加载中信息和新的完成信息，只输出最新、最有决定性的状态；"
+            "不要把同一个任务拆成多条状态回复。"
         )
         prompt_messages.append({"role": "system", "content": raw_feedback_notice})
         if pending_command:

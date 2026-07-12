@@ -69,6 +69,10 @@ const COMPLETION_TYPES = new Set([
 const LIVE_REPLY_STATUS_TIMEOUT_MS = 90_000
 const ACTIVE_AGENT_STATUS_TIMEOUT_MS = 180_000
 const CHAT_HISTORY_PAGE_SIZE = 20
+const AGENT_EVENT_RECONNECT_INITIAL_MS = 2_000
+const AGENT_EVENT_RECONNECT_MAX_MS = 30_000
+const AGENT_EVENT_ERROR_LOG_INTERVAL_MS = 30_000
+const CHAT_DEBUG = import.meta.env.DEV
 const TERMINAL_STATUS_DONE_STATES = new Set([
   "idle",
   "done",
@@ -1204,6 +1208,23 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
     let reconnectTimer: number | null = null
     let controller: AbortController | null = null
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
+    let reconnectAttempt = 0
+    let lastErrorLogAt = 0
+
+    const scheduleReconnect = () => {
+      if (disposed || reconnectTimer !== null) {
+        return
+      }
+      const delay = Math.min(
+        AGENT_EVENT_RECONNECT_MAX_MS,
+        AGENT_EVENT_RECONNECT_INITIAL_MS * 2 ** reconnectAttempt,
+      )
+      reconnectAttempt += 1
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null
+        void connect()
+      }, delay)
+    }
 
     const connect = async () => {
       if (disposed) {
@@ -1231,6 +1252,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
           throw new Error("No SSE reader available")
         }
 
+        reconnectAttempt = 0
         setLiveError(null)
 
         const decoder = new TextDecoder()
@@ -1268,8 +1290,15 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
           !(error instanceof DOMException && error.name === "AbortError")
         ) {
           const message = error instanceof Error ? error.message : String(error)
-          console.error("[Chat] Agent event stream error:", error)
-          setLiveError(`实时事件连接异常: ${message}`)
+          if (CHAT_DEBUG) {
+            const now = Date.now()
+            if (now - lastErrorLogAt >= AGENT_EVENT_ERROR_LOG_INTERVAL_MS) {
+              lastErrorLogAt = now
+              console.warn("[Chat] Agent event stream error:", error)
+            }
+          }
+          const nextError = `实时事件连接异常: ${message}`
+          setLiveError((current) => (current === nextError ? current : nextError))
         }
       } finally {
         if (reader) {
@@ -1277,11 +1306,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
           reader = null
         }
 
-        if (!disposed) {
-          reconnectTimer = window.setTimeout(() => {
-            void connect()
-          }, 1500)
-        }
+        scheduleReconnect()
       }
     }
 
