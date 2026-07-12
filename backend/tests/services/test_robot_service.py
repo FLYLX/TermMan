@@ -2620,6 +2620,7 @@ def test_direct_wakeup_countdown_starts_after_agent_result(
     assert processing_snapshot["processing"] is True
     assert processing_snapshot["expires_at"] is None
     assert processing_snapshot["seconds_remaining"] == 0
+    assert processing_snapshot["processing_seconds_remaining"] == 120
 
     current_time["value"] = now + timedelta(seconds=11)
     assert robot_service.conversation_controller_allows_reply(
@@ -3136,6 +3137,7 @@ def test_processing_controller_timeout_sleeps_group_and_blocks_plain_message(
     processing_snapshot = robot_service.conversation_controller_snapshots({robot.id})[0]
     assert processing_snapshot["status"] == "processing"
     assert processing_snapshot["processing_expires_at"] is not None
+    assert processing_snapshot["processing_seconds_remaining"] == 120
 
     current_time["value"] = now + timedelta(seconds=121)
     plain = robot_service.handle_inbound_message(

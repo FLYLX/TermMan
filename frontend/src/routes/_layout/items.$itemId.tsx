@@ -840,6 +840,12 @@ function getEnabledRobotCount(
 function getRobotControllerSecondsRemaining(
   controller: RobotConversationControllerStatus | undefined,
 ) {
+  if (controller?.expires_at) {
+    const expiresAt = Date.parse(controller.expires_at)
+    if (Number.isFinite(expiresAt)) {
+      return Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000))
+    }
+  }
   return Math.max(0, Math.ceil(Number(controller?.seconds_remaining || 0)))
 }
 
@@ -847,27 +853,6 @@ function isRobotControllerProcessing(
   controller: RobotConversationControllerStatus | undefined,
 ) {
   return controller?.status === "processing" || Boolean(controller?.processing)
-}
-function getRobotControllerProcessingSecondsRemaining(
-  controller: RobotConversationControllerStatus | undefined,
-) {
-  if (!controller?.processing_expires_at) {
-    return 0
-  }
-  const expiresAt = Date.parse(controller.processing_expires_at)
-  if (!Number.isFinite(expiresAt)) {
-    return 0
-  }
-  return Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000))
-}
-
-function getRobotControllerDisplaySeconds(
-  controller: RobotConversationControllerStatus | undefined,
-) {
-  if (isRobotControllerProcessing(controller)) {
-    return getRobotControllerProcessingSecondsRemaining(controller)
-  }
-  return getRobotControllerSecondsRemaining(controller)
 }
 
 function isRobotControllerAwake(
@@ -1416,8 +1401,8 @@ function RobotConversationDebugTable({
               {rows.map(({ robot, controller }) => {
                 const isProcessing = isRobotControllerProcessing(controller)
                 const isAwake = isRobotControllerAwake(controller)
-                const displaySeconds =
-                  getRobotControllerDisplaySeconds(controller)
+                const remainingSeconds =
+                  getRobotControllerSecondsRemaining(controller)
                 const statusLabel = isProcessing
                   ? t("items.detail.qqProcessing")
                   : isAwake
@@ -1458,7 +1443,7 @@ function RobotConversationDebugTable({
                       <span className="inline-flex h-6 items-center gap-1.5">
                         {isAwake ? (
                           <RobotSleepCountdownRing
-                            seconds={displaySeconds}
+                            seconds={remainingSeconds}
                             totalSeconds={robot.reply_context_window_seconds}
                           />
                         ) : isProcessing ? (
@@ -1467,9 +1452,11 @@ function RobotConversationDebugTable({
                           <Moon className="size-3 text-slate-500" />
                         )}
                         <span>
-                          {isAwake || isProcessing
-                            ? formatRobotSleepCountdown(displaySeconds)
-                            : "0s"}
+                          {isAwake
+                            ? formatRobotSleepCountdown(remainingSeconds)
+                            : isProcessing
+                              ? t("items.detail.qqProcessing")
+                              : "0s"}
                         </span>
                       </span>
                     </td>
@@ -1772,9 +1759,10 @@ function ItemDetailPage({
   })
 
   const refreshItemDetail = useCallback(async () => {
-    const refreshed = (await queryClient.fetchQuery(
-      getItemQueryOptions(item.id),
-    )) as ItemWithExtras
+    const refreshed = (await ItemsService.readItem({
+      id: item.id,
+    })) as ItemWithExtras
+    queryClient.setQueryData(getItemQueryOptions(item.id).queryKey, refreshed)
     await queryClient.invalidateQueries({ queryKey: ["items"] })
     return refreshed
   }, [item.id, queryClient])
@@ -1796,7 +1784,9 @@ function ItemDetailPage({
       const result = await ItemsService.startItem({ id: item.id })
       const ready = await waitForTerminalReady()
       showSuccessToast(result.message || t("items.detail.started"))
-      if (!ready) {
+      if (ready) {
+        reconnect()
+      } else {
         showErrorToast("终端启动成功，但前端还没读到可连接状态，请稍后刷新。")
       }
     } catch (error) {
@@ -2886,7 +2876,9 @@ function ItemDetailPage({
                               <p className="text-xs text-slate-400 max-w-md">
                                 {item.status !== "running"
                                   ? t("items.detail.startItemToConnect")
-                                  : t("items.detail.daemonOfflineHint")}
+                                  : item.daemon_online
+                                    ? "Daemon 在线，但浏览器控制台还未连接。请点击重试连接。"
+                                    : t("items.detail.daemonOfflineHint")}
                               </p>
                             </div>
                             <div className="grid gap-2 text-xs text-slate-400 bg-muted/10 rounded-lg p-3 w-full max-w-sm">
@@ -2920,8 +2912,7 @@ function ItemDetailPage({
                                 </span>
                               </div>
                             </div>
-                            {item.status === "running" &&
-                              !item.daemon_online && (
+                            {item.status === "running" && (
                                 <Button
                                   variant="outline"
                                   size="sm"

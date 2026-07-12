@@ -2566,6 +2566,12 @@ class RobotService:
                     if expires_at is not None
                     else 0
                 )
+                processing_expires_at = controller.processing_expires_at
+                processing_seconds_remaining = (
+                    max(0, ceil((processing_expires_at - now).total_seconds()))
+                    if processing and processing_expires_at is not None
+                    else 0
+                )
                 conversation_type, _, conversation_id = conversation_key.partition(":")
                 snapshots.append(
                     {
@@ -2585,10 +2591,11 @@ class RobotService:
                         "generation": controller.generation,
                         "expires_at": expires_at.isoformat() if expires_at else None,
                         "processing_expires_at": (
-                            controller.processing_expires_at.isoformat()
-                            if controller.processing_expires_at
+                            processing_expires_at.isoformat()
+                            if processing_expires_at
                             else None
                         ),
+                        "processing_seconds_remaining": processing_seconds_remaining,
                         "updated_at": controller.updated_at.isoformat(),
                         "seconds_remaining": seconds_remaining,
                         "pending_count": len(pending_messages),

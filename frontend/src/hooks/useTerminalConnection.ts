@@ -281,17 +281,24 @@ export function useTerminalConnection({
     setOutput([])
   }, [])
 
-  const disconnect = useCallback(() => {
-    const socket = socketRef.current
-    if (socket) {
-      socket.removeAllListeners()
-      socket.disconnect()
+  const disposeSocket = useCallback((socket: Socket | null) => {
+    if (!socket) {
+      return
+    }
+    socket.removeAllListeners()
+    socket.disconnect()
+    if (socketRef.current === socket) {
       socketRef.current = null
     }
+  }, [])
+
+  const disconnect = useCallback(() => {
+    const socket = socketRef.current
+    disposeSocket(socket)
     setIsConnected(false)
     setIsConnecting(false)
     connectingRef.current = false
-  }, [])
+  }, [disposeSocket])
 
   const doConnect = useCallback(async () => {
     if (!enabled || !itemId) {
@@ -302,8 +309,12 @@ export function useTerminalConnection({
       return
     }
 
-    if (socketRef.current) {
-      return
+    const existingSocket = socketRef.current
+    if (existingSocket) {
+      if (existingSocket.connected) {
+        return
+      }
+      disposeSocket(existingSocket)
     }
 
     const currentConnectionId = ++connectionIdRef.current
@@ -400,7 +411,7 @@ export function useTerminalConnection({
         setIsConnecting(false)
         connectingRef.current = false
         onErrorRef.current?.(data.message)
-        socket.disconnect()
+        disposeSocket(socket)
       })
 
       socket.on("stream", (data: TerminalOutput) => {
@@ -436,6 +447,7 @@ export function useTerminalConnection({
         setIsConnecting(false)
         connectingRef.current = false
         onErrorRef.current?.(err.message)
+        disposeSocket(socket)
       })
     } catch (err) {
       if (
@@ -452,7 +464,7 @@ export function useTerminalConnection({
       connectingRef.current = false
       onErrorRef.current?.(errorMessage)
     }
-  }, [enabled, itemId])
+  }, [disposeSocket, enabled, itemId])
 
   const reconnect = useCallback(() => {
     disconnect()
@@ -490,14 +502,10 @@ export function useTerminalConnection({
       mountedRef.current = false
       connectionIdRef.current++
       const socket = socketRef.current
-      if (socket) {
-        socket.removeAllListeners()
-        socket.disconnect()
-        socketRef.current = null
-      }
+      disposeSocket(socket)
       connectingRef.current = false
     }
-  }, [enabled, itemId, doConnect])
+  }, [disposeSocket, enabled, itemId, doConnect])
 
   return {
     isConnected,
