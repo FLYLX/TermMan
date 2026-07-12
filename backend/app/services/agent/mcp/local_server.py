@@ -481,6 +481,14 @@ class LocalMCPServer:
         tail_lines = self._coerce_job_int(args.get("tail_lines"), 80, 1, 300)
         wait_for_completion = bool(args.get("wait_for_completion"))
         robot_job_context = self._robot_job_context_from_args(args)
+        reply_ticket_id = str(args.get("_reply_ticket_id") or "").strip()
+        if reply_ticket_id:
+            try:
+                from app.services.agent.reply_ticket import reply_ticket_manager
+
+                reply_ticket_manager.mark_command(reply_ticket_id, command)
+            except Exception:
+                pass
         debug_log(
             f"[LocalMCPServer] _run_job: item={item_id}, timeout={timeout_seconds}, tail_lines={tail_lines}, wait={wait_for_completion}, command={command}"
         )
@@ -542,6 +550,7 @@ class LocalMCPServer:
                 request_kwargs=request_kwargs,
                 agent_session=agent_session,
                 robot_job_context=robot_job_context,
+                reply_ticket_id=reply_ticket_id,
                 pending_robot_reply_id=self._register_background_job_robot_reply(
                     item_id=str(item_id),
                     command=command,
@@ -580,6 +589,7 @@ class LocalMCPServer:
         request_kwargs: dict,
         agent_session,
         robot_job_context: dict | None = None,
+        reply_ticket_id: str = "",
         pending_robot_reply_id: str | None = None,
     ) -> None:
         def worker() -> None:
@@ -603,17 +613,28 @@ class LocalMCPServer:
                 }
 
             feedback = self._format_background_job_feedback(result)
-            self._deliver_background_job_to_robot(
-                item_id=item_id,
+            delivered_by_ticket = self._deliver_background_job_to_reply_ticket(
+                reply_ticket_id=reply_ticket_id,
                 command=command,
                 result=result,
-                robot_job_context=robot_job_context,
-                pending_reply_id=pending_robot_reply_id or "",
             )
-            if robot_job_context:
+            if delivered_by_ticket and pending_robot_reply_id and robot_job_context:
+                self._clear_background_job_robot_reply(
+                    robot_job_context=robot_job_context,
+                    pending_reply_id=pending_robot_reply_id,
+                )
+            if not delivered_by_ticket:
+                self._deliver_background_job_to_robot(
+                    item_id=item_id,
+                    command=command,
+                    result=result,
+                    robot_job_context=robot_job_context,
+                    pending_reply_id=pending_robot_reply_id or "",
+                )
+            if robot_job_context or delivered_by_ticket:
                 feedback = (
                     f"{feedback}\n"
-                    "[Robot notification queued for the QQ conversation that started this job.]"
+                    "[Reply ticket notification handled for the source that started this job.]"
                 )
 
             if agent_session:
@@ -729,16 +750,59 @@ class LocalMCPServer:
                 f"[LocalMCPServer] failed to queue robot background job result: item={item_id}, error={exc}"
             )
             if pending_reply_id:
-                try:
-                    from app.plugins.robot.service import robot_service
+                self._clear_background_job_robot_reply(
+                    robot_job_context=robot_job_context,
+                    pending_reply_id=pending_reply_id,
+                )
 
-                    robot_service.clear_background_job_reply(
-                        robot_id=robot_job_context.get("robot_id", ""),
-                        conversation_key=robot_job_context.get("conversation_key", ""),
-                        pending_reply_id=pending_reply_id,
-                    )
-                except Exception:
-                    pass
+    def _clear_background_job_robot_reply(
+        self,
+        *,
+        robot_job_context: dict | None,
+        pending_reply_id: str,
+    ) -> None:
+        if not robot_job_context or not pending_reply_id:
+            return
+        try:
+            from app.plugins.robot.service import robot_service
+
+            robot_service.clear_background_job_reply(
+                robot_id=robot_job_context.get("robot_id", ""),
+                conversation_key=robot_job_context.get("conversation_key", ""),
+                pending_reply_id=pending_reply_id,
+            )
+        except Exception:
+            pass
+
+    def _deliver_background_job_to_reply_ticket(
+        self,
+        *,
+        reply_ticket_id: str,
+        command: str,
+        result: dict,
+    ) -> bool:
+        if not reply_ticket_id:
+            return False
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            message = self._format_background_job_reply_ticket_message(command, result)
+            return reply_ticket_manager.deliver(reply_ticket_id, message)
+        except Exception as exc:
+            debug_log(
+                f"[LocalMCPServer] failed to deliver background job via reply ticket: ticket={reply_ticket_id}, error={exc}"
+            )
+            return False
+
+    def _format_background_job_reply_ticket_message(self, command: str, result: dict) -> str:
+        if result.get("success"):
+            duration = result.get("duration_seconds")
+            duration_text = f"，耗时 {duration}s" if duration not in (None, "") else ""
+            return f"后台任务完成了：{command}。退出码 {result.get('exit_code', 0)}{duration_text}。"
+        error = str(result.get("error") or "daemon job failed").strip()
+        if len(error) > 160:
+            error = f"{error[:157]}..."
+        return f"后台任务失败了：{command}。原因：{error}"
 
     def _format_background_job_robot_message(self, command: str, result: dict) -> str:
         status = "completed" if result.get("success") else "failed"

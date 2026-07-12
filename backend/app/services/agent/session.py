@@ -39,6 +39,7 @@ from app.services.agent.prompts.builder import (
     build_terminal_turn_messages,
     is_critical_terminal_event,
 )
+from app.services.agent.prompts import builder as prompt_builder
 from app.services.agent.robot_delivery import (
     ROBOT_QQ_REPLY_EVENT_TYPE,
     ROBOT_SEND_TOOL_NAME,
@@ -2004,6 +2005,40 @@ class AgentSession:
                 pending_command
             ),
         )
+        terminal_text = (effective_terminal_content or "").strip()
+        if terminal_text:
+            has_system_prompt = any(
+                message.get("role") == "system" for message in messages
+            )
+            if not has_system_prompt:
+                system_parts = [get_system_prompt(agent)]
+                try:
+                    for skill in agent.match_skills(
+                        (input_msg.query or effective_terminal_content or "")[:500]
+                    ):
+                        action = getattr(skill, "action", None)
+                        prompt = str(getattr(action, "prompt", "") or "").strip()
+                        if prompt:
+                            system_parts.append(prompt)
+                except Exception:
+                    pass
+                messages = [
+                    {"role": "system", "content": "\n\n".join(system_parts)}
+                ] + messages
+
+            last_user_content = ""
+            if messages and messages[-1].get("role") == "user":
+                last_user_content = str(messages[-1].get("content") or "")
+            if terminal_text not in last_user_content:
+                source_label = prompt_builder.FILTERED_TERMINAL_LABEL
+                if terminal_source == TERMINAL_SOURCE_RAW_FEEDBACK:
+                    source_label = prompt_builder.RAW_TERMINAL_LABEL
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"{source_label}:\n{terminal_text}",
+                    }
+                )
         self.inject_active_jobs_prompt_context(messages)
         return messages
 

@@ -48,6 +48,7 @@ class AgentContext:
     integration_contexts: dict[str, dict[str, Any]] = field(default_factory=dict)
     current_user_id: str = ""
     current_user_is_superuser: bool = False
+    reply_ticket_id: str = ""
 
     def _integration_state(self, name: str) -> dict[str, Any]:
         return self.integration_contexts.setdefault(name, {})
@@ -410,6 +411,8 @@ class Agent:
             tool_name=actual_tool_name,
             args=args,
         )
+        if self._context and self._context.reply_ticket_id:
+            args["_reply_ticket_id"] = self._context.reply_ticket_id
 
         for tool in self._mcp_tools:
             if tool.get("function", {}).get("name") == tool_name:

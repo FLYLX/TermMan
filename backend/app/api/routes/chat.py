@@ -48,6 +48,7 @@ from app.services.agent.prompts.policy import (
     persist_memory_candidate,
 )
 from app.services.agent.prompts.system import get_system_prompt
+from app.services.agent.reply_ticket import SOURCE_QQ, reply_ticket_manager
 from app.services.agent.session import (
     COMMAND_DISPATCH_FAILURE_MESSAGE,
     COMMAND_TOOL_NAMES,
@@ -131,6 +132,7 @@ class PlannedTaskRuntime:
     current_index: int = 0
     tool_started: bool = False
     tool_finished: bool = False
+    reply_ticket_id: str = ""
 
 
 def get_relevant_memories(
@@ -322,6 +324,63 @@ def _format_tool_result(result: Any) -> str:
 def _has_active_robot_chat_context(agent: Any) -> bool:
     context = getattr(agent, "_context", None)
     return bool(str(getattr(context, "robot_id", "") or "").strip())
+
+
+def _current_reply_ticket_id(agent: Any) -> str:
+    context = getattr(agent, "_context", None)
+    return str(getattr(context, "reply_ticket_id", "") or "").strip()
+
+
+def _explicit_web_qq_send_requested(message: str, tool_args: dict[str, Any]) -> bool:
+    text = str(message or "").lower()
+    has_target = bool(
+        str(tool_args.get("target_type") or "").strip()
+        and str(tool_args.get("target_id") or "").strip()
+    )
+    if not has_target:
+        return False
+    send_words = ("发送", "发给", "转发", "通知", "告诉", "send", "message")
+    qq_words = ("qq", "群", "群号", "qq号", "group")
+    return any(word in text for word in send_words) and any(
+        word in text for word in qq_words
+    )
+
+
+def _ticket_delivery_trace() -> dict[str, Any]:
+    return {
+        "type": "agent_tool_result",
+        "content": "Message sent to current robot conversation.",
+        "timestamp": datetime.now().isoformat(),
+        "tool_name": "reply_ticket",
+        "hidden": True,
+    }
+
+
+def _deliver_reply_ticket_final_response(
+    *,
+    agent: Any,
+    item_id: str,
+    content: str,
+    include_hidden_tool_results: bool,
+) -> list[dict[str, Any]]:
+    ticket_id = _current_reply_ticket_id(agent)
+    ticket = reply_ticket_manager.get(ticket_id)
+    if not ticket or ticket.source_type != SOURCE_QQ:
+        return []
+    if not reply_ticket_manager.deliver(ticket_id, content):
+        return []
+    events: list[dict[str, Any]] = [
+        _persist_and_broadcast_event(
+            item_id,
+            role="assistant",
+            content=f"已回复 QQ：{content.strip()}",
+            message_type=ROBOT_QQ_REPLY_EVENT_TYPE,
+            extra={"tool_name": "reply_ticket", "qq_delivery": True},
+        )
+    ]
+    if include_hidden_tool_results:
+        events.append(_ticket_delivery_trace())
+    return events
 
 
 def _run_async_from_sync(coro_factory):
@@ -660,6 +719,8 @@ def _complete_agent_task_plan(plan: PlannedTaskRuntime | None) -> None:
 
     for task in plan.tasks:
         _update_agent_plan_memory(task.memory_id, status="completed", task_state="completed")
+    if plan.reply_ticket_id:
+        reply_ticket_manager.mark_completed(plan.reply_ticket_id)
 
 
 def _mark_agent_task_plan_failed(plan: PlannedTaskRuntime | None) -> None:
@@ -674,6 +735,8 @@ def _mark_agent_task_plan_failed(plan: PlannedTaskRuntime | None) -> None:
             _update_agent_plan_memory(task.memory_id, status="active", task_state="failed")
         else:
             _update_agent_plan_memory(task.memory_id, status="active", task_state="pending")
+    if plan.reply_ticket_id:
+        reply_ticket_manager.mark_failed(plan.reply_ticket_id)
 
 
 def _create_agent_task_plan(
@@ -825,6 +888,12 @@ def generate_stream(
     if agent is None:
         agent = agent_manager.get_or_create(handler)
 
+    reply_ticket = reply_ticket_manager.create_for_agent(
+        agent,
+        item_id=item_id,
+        handler_id=str(handler.id),
+        message=message,
+    )
     pending_context = build_pending_terminal_continuation_prompt(item_id, message)
     messages = build_chat_turn_messages(
         agent,
@@ -834,6 +903,9 @@ def generate_stream(
         latest_only_context=latest_only_context,
         pending_context=pending_context,
     )
+    reply_ticket_prompt = reply_ticket_manager.build_prompt(reply_ticket.ticket_id)
+    if reply_ticket_prompt:
+        messages.insert(1, {"role": "system", "content": reply_ticket_prompt})
     _inject_active_jobs_prompt_context(item_id, messages)
     extract_integration_context_targets(agent, messages)
     record_integration_context_targets(agent, item_id)
@@ -858,6 +930,12 @@ def generate_stream(
         history=history,
         tools=tools,
     )
+    if planned_task_runtime:
+        planned_task_runtime.reply_ticket_id = reply_ticket.ticket_id
+        reply_ticket_manager.mark_task_plan(
+            reply_ticket.ticket_id,
+            planned_task_runtime.request_id,
+        )
 
     tool_call_history: list[tuple[str, str]] = []
     final_response = ""
@@ -1033,6 +1111,24 @@ def generate_stream(
                         return
 
                     _complete_agent_task_plan(planned_task_runtime)
+                    ticket_events = _deliver_reply_ticket_final_response(
+                        agent=agent,
+                        item_id=item_id,
+                        content=final_response,
+                        include_hidden_tool_results=include_hidden_tool_results,
+                    )
+                    if ticket_events:
+                        for event in ticket_events:
+                            yield _to_sse(event)
+                        _append_conversation_memory(
+                            item_id,
+                            user_message=message,
+                            assistant_message=final_response,
+                            matched_skills=matched_skills,
+                        )
+                        _broadcast_agent_status(item_id, "idle")
+                        yield _to_sse({"done": True})
+                        return
                     response_event = _persist_and_broadcast_event(
                         item_id,
                         role="assistant",
@@ -1124,6 +1220,27 @@ def generate_stream(
                     )
                     return
 
+                if (
+                    tool_name == ROBOT_SEND_TOOL_NAME
+                    and not _has_active_robot_chat_context(agent)
+                    and not _explicit_web_qq_send_requested(message, tool_args)
+                ):
+                    _mark_agent_task_plan_failed(planned_task_runtime)
+                    warning_event = _persist_and_broadcast_event(
+                        item_id,
+                        role="assistant",
+                        content=(
+                            "已拦截 QQ 发送：当前来源是 TermMan web，不允许继承旧 QQ "
+                            "会话目标。只有当前网页消息明确要求发送到具体 QQ 目标时才会发送。"
+                        ),
+                        message_type="agent_warning",
+                        extra={"tool_name": tool_name},
+                    )
+                    yield _to_sse(warning_event)
+                    _broadcast_agent_status(item_id, "idle")
+                    yield _to_sse({"done": True})
+                    return
+
                 normalized_tool_args_str = json.dumps(tool_args, ensure_ascii=False)
                 tool_args["item_id"] = item_id
                 terminal_session = None
@@ -1155,14 +1272,24 @@ def generate_stream(
                             _has_active_robot_chat_context(agent)
                             and terminal_session.has_running_terminal_job()
                         ):
-                            response_event = _persist_and_broadcast_event(
-                                item_id,
-                                role="assistant",
+                            ticket_events = _deliver_reply_ticket_final_response(
+                                agent=agent,
+                                item_id=item_id,
                                 content=BACKGROUND_JOB_RUNNING_RESPONSE,
-                                message_type="agent_response",
-                                extra={"tool_name": tool_name},
+                                include_hidden_tool_results=include_hidden_tool_results,
                             )
-                            yield _to_sse(response_event)
+                            if ticket_events:
+                                for event in ticket_events:
+                                    yield _to_sse(event)
+                            else:
+                                response_event = _persist_and_broadcast_event(
+                                    item_id,
+                                    role="assistant",
+                                    content=BACKGROUND_JOB_RUNNING_RESPONSE,
+                                    message_type="agent_response",
+                                    extra={"tool_name": tool_name},
+                                )
+                                yield _to_sse(response_event)
                             _broadcast_agent_status(item_id, "idle")
                             yield _to_sse({"done": True})
                             return
@@ -1208,6 +1335,7 @@ def generate_stream(
                 )
                 if result_text and fallback_is_delivery_result(result_text):
                     delivery_tool_sent_by_integration = True
+                    reply_ticket_manager.mark_delivered(reply_ticket.ticket_id)
                     if tool_name == ROBOT_SEND_TOOL_NAME:
                         reply_event = _persist_and_broadcast_event(
                             item_id,
@@ -1360,6 +1488,8 @@ def generate_stream(
                 "timestamp": error_event["timestamp"],
             }
         )
+    finally:
+        reply_ticket_manager.detach_from_agent(agent, reply_ticket.ticket_id)
 
 
 @router.post("/{item_id}")

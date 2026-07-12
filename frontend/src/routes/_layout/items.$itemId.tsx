@@ -1500,7 +1500,7 @@ function ItemDetailPage({
     queryKey: getItemRobotControllerStatusQueryKey(item.id),
     queryFn: () => getItemRobotControllerStatus(item.id),
     enabled: Boolean(item.id && robotPluginEnabled),
-    refetchInterval: 1000,
+    refetchInterval: (query) => (query.state.error ? 10_000 : 2_500),
     retry: false,
   })
   const [command, setCommand] = useState("")
@@ -1610,6 +1610,7 @@ function ItemDetailPage({
     })
   }
   const hasVisitedTab = (value: ItemDetailTab) => visitedTabs.has(value)
+  const websocketTabVisited = visitedTabs.has("websocket")
   const currentItemId = item.id
   const currentItemTitle = item.title
 
@@ -1994,8 +1995,11 @@ function ItemDetailPage({
       setTerminalWsServers([])
       return
     }
+    if (!websocketTabVisited) {
+      return
+    }
     void loadTerminalWsServers()
-  }, [loadTerminalWsServers, terminalWsPluginEnabled])
+  }, [loadTerminalWsServers, terminalWsPluginEnabled, websocketTabVisited])
 
   useEffect(() => {
     if (!terminalWsPluginEnabled && activeTab === "websocket") {

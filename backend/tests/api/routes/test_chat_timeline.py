@@ -1,4 +1,5 @@
 import asyncio
+import json
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -98,6 +99,15 @@ def _fake_sync_completion(**_kwargs):
 
 def _non_status_event_types(events: list[dict]) -> list[str]:
     return [event["type"] for event in events if event["type"] != "agent_status"]
+
+
+def _sse_payloads(chunks: list[str]) -> list[dict]:
+    payloads: list[dict] = []
+    for chunk in chunks:
+        if not chunk.startswith("data: "):
+            continue
+        payloads.append(json.loads(chunk[6:].strip()))
+    return payloads
 
 
 def test_generate_stream_executes_tool_inside_running_event_loop(
@@ -401,6 +411,207 @@ def test_generate_stream_stops_after_background_job_start(
     assert not any('"type": "agent_response"' in chunk for chunk in chunks)
     assert any('"done": true' in chunk for chunk in chunks)
     assert not any("max iteration limit" in chunk for chunk in chunks)
+
+
+def test_generate_stream_delivers_qq_final_response_via_reply_ticket(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.plugins.robot.bridge_client import robot_bridge_client
+    from app.plugins.robot.contracts import RobotReplyTarget
+    from app.plugins.robot.conversation_memory import robot_conversation_memory
+    from app.plugins.robot.mcp.context import (
+        RobotMCPContext,
+        register_robot_mcp_context,
+        unregister_robot_mcp_context,
+    )
+    from app.services.agent.reply_ticket import reply_ticket_manager
+
+    item, handler = _create_linked_item_and_handler(db)
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="770362397",
+        metadata={"conversation": {"type": "group", "id": "770362397"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-1",
+            sender_key="onebot_v11:group:770362397:2537134688",
+            reply_target=target,
+            conversation_key="group:770362397",
+            conversation_generation=3,
+        )
+    )
+    fake_agent = _make_fake_agent(tools=[])
+    fake_agent._context = SimpleNamespace(
+        model="fake-model",
+        api_key=None,
+        api_url=None,
+        robot_id="robot-1",
+        robot_context_token=token,
+        robot_conversation_key="group:770362397",
+        agent_profile={},
+        enabled_knowledge_files=[],
+        skill_revision=0,
+        reply_ticket_id="",
+    )
+    sent: list[tuple[str, RobotReplyTarget, str]] = []
+    memory_writes: list[tuple[str, str, str]] = []
+
+    monkeypatch.setattr(chat_route, "completion", _fake_stream_completion)
+    monkeypatch.setattr(
+        chat_route,
+        "build_chat_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "qq message"}],
+    )
+    monkeypatch.setattr(chat_route, "extract_integration_context_targets", lambda *args, **kwargs: None)
+    monkeypatch.setattr(chat_route, "record_integration_context_targets", lambda *args, **kwargs: None)
+    monkeypatch.setattr(chat_route, "get_relevant_memories", lambda *args, **kwargs: "")
+    monkeypatch.setattr(chat_route, "extract_important_info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
+    monkeypatch.setattr(chat_route, "_append_conversation_memory", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        robot_bridge_client,
+        "send_message",
+        lambda robot_id, target, text: sent.append((str(robot_id), target, text)),
+    )
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "append_assistant_message",
+        lambda robot_id, conversation_key, text: memory_writes.append(
+            (str(robot_id), conversation_key, text)
+        ),
+    )
+    reply_ticket_manager.reset()
+
+    try:
+        chunks = list(
+            chat_route.generate_stream(
+                message="[Robot message; conversation=group:770362397]\n说话",
+                history=[],
+                handler=handler,
+                item_id=str(item.id),
+                agent=fake_agent,
+                include_hidden_tool_results=True,
+                latest_only_context=True,
+            )
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+        reply_ticket_manager.reset()
+
+    payloads = _sse_payloads(chunks)
+    assert [(robot_id, target.target_type, target.target_id, text) for robot_id, target, text in sent] == [
+        ("robot-1", "group", "770362397", "Shared reply")
+    ]
+    assert memory_writes == [("robot-1", "group:770362397", "Shared reply")]
+    assert any(
+        payload.get("type") == "agent_qq_reply" and "Shared reply" in payload.get("content", "")
+        for payload in payloads
+    )
+    assert any(
+        payload.get("type") == "agent_tool_result"
+        and payload.get("hidden") is True
+        and payload.get("content") == "Message sent to current robot conversation."
+        for payload in payloads
+    )
+    assert not any(payload.get("type") == "agent_response" for payload in payloads)
+
+
+def test_generate_stream_blocks_web_chat_from_reusing_qq_send_target(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.plugins.robot.bridge_client import robot_bridge_client
+    from app.services.agent.reply_ticket import reply_ticket_manager
+
+    item, handler = _create_linked_item_and_handler(db)
+    tool_name = "mcp_robot_send_message"
+    fake_agent = _make_fake_agent(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": "Send QQ message",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        execute_tool_result=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("web chat must not execute accidental QQ send")
+        ),
+    )
+
+    def fake_stream_completion(**kwargs):
+        assert kwargs["messages"]
+        return iter(
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content="",
+                                tool_calls=[
+                                    SimpleNamespace(
+                                        index=0,
+                                        id="call_1",
+                                        function=SimpleNamespace(
+                                            name=tool_name,
+                                            arguments='{"target_type":"group","target_id":"770362397","text":"误发"}',
+                                        ),
+                                    )
+                                ],
+                            ),
+                            finish_reason=None,
+                        )
+                    ]
+                )
+            ]
+        )
+
+    monkeypatch.setattr(chat_route, "completion", fake_stream_completion)
+    monkeypatch.setattr(
+        chat_route,
+        "build_chat_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "现在呢"}],
+    )
+    monkeypatch.setattr(chat_route, "get_relevant_memories", lambda *args, **kwargs: "")
+    monkeypatch.setattr(chat_route, "extract_important_info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        robot_bridge_client,
+        "send_message",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("bridge send should be blocked")
+        ),
+    )
+    reply_ticket_manager.reset()
+
+    try:
+        chunks = list(
+            chat_route.generate_stream(
+                message="现在呢",
+                history=[],
+                handler=handler,
+                item_id=str(item.id),
+                agent=fake_agent,
+            )
+        )
+    finally:
+        reply_ticket_manager.reset()
+
+    payloads = _sse_payloads(chunks)
+    warnings = [
+        payload.get("content", "")
+        for payload in payloads
+        if payload.get("type") == "agent_warning"
+    ]
+    assert len(warnings) == 1
+    assert "已拦截 QQ 发送" in warnings[0]
+    assert not any(payload.get("type") == "agent_response" for payload in payloads)
 
 
 def test_generate_stream_blocks_shell_command_while_busy_terminal_command_pending(

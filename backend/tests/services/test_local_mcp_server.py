@@ -833,6 +833,141 @@ def test_background_run_job_queues_robot_completion(monkeypatch) -> None:
     assert "temurin installed" in queued[0]["message"]
 
 
+def test_background_run_job_delivers_via_reply_ticket_without_robot_queue(
+    monkeypatch,
+) -> None:
+    import threading
+    from types import SimpleNamespace
+
+    from app.plugins.robot.bridge_client import robot_bridge_client
+    from app.plugins.robot.conversation_memory import robot_conversation_memory
+    from app.plugins.robot.service import robot_service
+    from app.services.agent.reply_ticket import reply_ticket_manager
+
+    item_id = "item-background-job-ticket"
+    server = LocalMCPServer()
+    started = threading.Event()
+    delivered = threading.Event()
+    cleared: list[str] = []
+    sent: list[tuple[str, RobotReplyTarget, str]] = []
+    memory_writes: list[tuple[str, str, str]] = []
+    target = RobotReplyTarget(
+        target_type="private",
+        target_id="2537134688",
+        metadata={"conversation": {"type": "private", "id": "2537134688"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="00000000-0000-0000-0000-000000000001",
+            sender_key="2537134688",
+            reply_target=target,
+            conversation_key="private:2537134688",
+            conversation_generation=8,
+            reply_requires_awake=True,
+        )
+    )
+    fake_agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="00000000-0000-0000-0000-000000000001",
+            robot_context_token=token,
+            reply_ticket_id="",
+        )
+    )
+
+    class FakeConnection:
+        def run_job_http(self, **kwargs):
+            started.set()
+            return {
+                "success": True,
+                "job_id": "job-bg-ticket",
+                "command": kwargs["command"],
+                "cwd": "/workspace/item",
+                "exit_code": 0,
+                "timed_out": False,
+                "duration_seconds": 2.5,
+                "output_tail": "temurin installed",
+            }
+
+    monkeypatch.setattr(
+        server,
+        "_get_item_daemon_context",
+        lambda item_id: (
+            SimpleNamespace(owner_id="user-1", working_directory="/workspace/item"),
+            FakeConnection(),
+        ),
+    )
+    monkeypatch.setattr(
+        robot_service,
+        "register_background_job_reply",
+        lambda **_kwargs: "pending-ticket-1",
+    )
+    monkeypatch.setattr(
+        robot_service,
+        "clear_background_job_reply",
+        lambda **kwargs: cleared.append(kwargs["pending_reply_id"]),
+    )
+    monkeypatch.setattr(
+        robot_service,
+        "enqueue_background_job_result",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("reply ticket delivery should bypass old robot queue")
+        ),
+    )
+    monkeypatch.setattr(
+        robot_bridge_client,
+        "send_message",
+        lambda robot_id, target, text: (
+            sent.append((str(robot_id), target, text)),
+            delivered.set(),
+        ),
+    )
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "append_assistant_message",
+        lambda robot_id, conversation_key, text: memory_writes.append(
+            (str(robot_id), conversation_key, text)
+        ),
+    )
+
+    reply_ticket_manager.reset()
+    try:
+        ticket = reply_ticket_manager.create_for_agent(
+            fake_agent,
+            item_id=item_id,
+            handler_id="handler-1",
+            message="安装 temurin java17",
+        )
+        result = server.call_tool(
+            "run_job",
+            {
+                "item_id": item_id,
+                "command": "apt-get install -y temurin-17-jdk",
+                "_robot_context_token": token,
+                "_reply_ticket_id": ticket.ticket_id,
+            },
+        )
+        assert started.wait(2)
+        assert delivered.wait(2)
+    finally:
+        unregister_robot_mcp_context(token)
+        reply_ticket_manager.reset()
+
+    assert "后台任务已启动" in result[0]["text"]
+    assert cleared == ["pending-ticket-1"]
+    assert [(robot_id, target.target_type, target.target_id) for robot_id, target, _ in sent] == [
+        ("00000000-0000-0000-0000-000000000001", "private", "2537134688")
+    ]
+    assert "后台任务完成了" in sent[0][2]
+    assert "apt-get install -y temurin-17-jdk" in sent[0][2]
+    assert memory_writes == [
+        (
+            "00000000-0000-0000-0000-000000000001",
+            "private:2537134688",
+            sent[0][2],
+        )
+    ]
+
+
 def test_list_jobs_reports_active_daemon_jobs(monkeypatch) -> None:
     from types import SimpleNamespace
 
