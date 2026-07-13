@@ -116,42 +116,6 @@ def _dispatch_failure_payload(inbound: RobotInboundMessage) -> dict[str, str]:
     }
 
 
-def _is_private_reply_target(inbound: RobotInboundMessage) -> bool:
-    metadata = inbound.reply_target.metadata
-    conversation = metadata.get("conversation")
-    if isinstance(conversation, dict):
-        conversation_type = str(
-            conversation.get("target_type")
-            or conversation.get("type")
-            or conversation.get("message_type")
-            or ""
-        ).strip().lower()
-        if conversation_type == "private":
-            return True
-
-    target_type = str(inbound.reply_target.target_type or "").strip().lower()
-    if target_type in {"private", "friend", "user", "direct", "c2c"}:
-        return True
-
-    target_data = metadata.get("target")
-    return isinstance(target_data, dict) and bool(target_data.get("private"))
-
-
-def _is_robot_command_text(text: str) -> bool:
-    normalized = (text or "").strip().lower()
-    return normalized.startswith(("/term ", "/item ", "/terminal ", "/send ", "/write ", "#"))
-
-
-def _should_notify_dispatch_failure(inbound: RobotInboundMessage) -> bool:
-    metadata = inbound.reply_target.metadata
-    return bool(
-        metadata.get("mentioned_bot")
-        or metadata.get("replied_to_bot")
-        or _is_private_reply_target(inbound)
-        or _is_robot_command_text(inbound.text)
-    )
-
-
 def _load_connection_errors() -> dict[str, dict[str, str]]:
     global _connection_errors
     try:
@@ -1452,31 +1416,14 @@ def init_embedded_bridge() -> APIRouter | None:
                 logger.exception(
                     "[Bridge] Failed to dispatch message for robot %s", robot_id
                 )
-                if not _should_notify_dispatch_failure(inbound):
-                    record_robot_event(
-                        robot_id,
-                        direction="bridge_to_platform",
-                        event="dispatch_failure_notification_suppressed",
-                        status="ignored",
-                        message=error_message,
-                        payload=_dispatch_failure_payload(inbound),
-                    )
-                    return
-
-                try:
-                    await send_text_with_rate_limit(
-                        bot,
-                        inbound.reply_target,
-                        f"Backend dispatch failed: {error_message}",
-                        robot_id=robot_id,
-                    )
-                except Exception as send_exc:
-                    logger.exception(
-                        "[Bridge] Failed to send dispatch error back to platform "
-                        "for robot %s: %s",
-                        robot_id,
-                        send_exc,
-                    )
+                record_robot_event(
+                    robot_id,
+                    direction="bridge_to_platform",
+                    event="dispatch_failure_notification_suppressed",
+                    status="ignored",
+                    message=error_message,
+                    payload=_dispatch_failure_payload(inbound),
+                )
                 return
 
             if dispatch.ignored:
