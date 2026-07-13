@@ -51,6 +51,7 @@ from app.services.agent.tool_arguments import (
     parse_tool_arguments,
 )
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
+from app.services.agent.tool_selection import select_tools_for_turn
 
 logger = logging.getLogger(__name__)
 
@@ -1982,6 +1983,12 @@ class AgentSession:
                 pending_command=pending_before_analysis,
             )
             extract_integration_context_targets(agent, messages)
+            tools = select_tools_for_turn(
+                agent.get_tools_for_litellm(),
+                source="terminal",
+                query=input_msg.query or analysis.content,
+                agent=agent,
+            )
             turn_guard = TurnGuard()
             self._current_turn_id = turn_guard.turn_id
             self._emit_running_terminal_status(analysis.terminal_source)
@@ -2003,7 +2010,7 @@ class AgentSession:
                     self.emit_status("interrupted", "当前轮已中断")
                     break
 
-                response = self._call_llm(agent, messages)
+                response = self._call_llm(agent, messages, tools=tools)
                 message = response.choices[0].message
 
                 if not (hasattr(message, "tool_calls") and message.tool_calls):
@@ -2084,6 +2091,12 @@ class AgentSession:
             loop.run_until_complete(agent.start_mcp_servers())
 
             messages = self._build_chat_messages(agent, input_msg)
+            tools = select_tools_for_turn(
+                agent.get_tools_for_litellm(),
+                source="web",
+                query=input_msg.query or input_msg.content,
+                agent=agent,
+            )
             turn_guard = TurnGuard()
             self._current_turn_id = turn_guard.turn_id
             self.emit_status("running", "回复中")
@@ -2099,7 +2112,7 @@ class AgentSession:
                     self.emit_status("interrupted", "当前轮已中断")
                     break
 
-                response = self._call_llm(agent, messages)
+                response = self._call_llm(agent, messages, tools=tools)
                 message = response.choices[0].message
 
                 if not (hasattr(message, "tool_calls") and message.tool_calls):
@@ -2397,7 +2410,13 @@ class AgentSession:
     def _should_hide_tool_details(self, tool_name: str) -> bool:
         return tool_name in SILENT_TOOL_NAMES
 
-    def _call_llm(self, agent: Agent, messages: list[dict]):
+    def _call_llm(
+        self,
+        agent: Agent,
+        messages: list[dict],
+        *,
+        tools: list[dict] | None = None,
+    ):
         kwargs: dict[str, Any] = {
             "model": agent._context.model,
             "messages": messages,
@@ -2410,8 +2429,9 @@ class AgentSession:
         if agent._context.api_url:
             kwargs["api_base"] = agent._context.api_url
 
-        if tools := agent.get_tools_for_litellm():
-            kwargs["tools"] = tools
+        effective_tools = agent.get_tools_for_litellm() if tools is None else tools
+        if effective_tools:
+            kwargs["tools"] = effective_tools
             kwargs["tool_choice"] = "auto"
 
         return completion(**kwargs)

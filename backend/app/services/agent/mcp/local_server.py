@@ -4,6 +4,8 @@ import logging
 import re
 import sys
 import threading
+from datetime import datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +107,47 @@ class LocalMCPServer:
             },
             handler=self._read_terminal_log,
             skip_memory=True
+        )
+        self.register_tool(
+            name="read_chat_history",
+            description=(
+                "Read recent TermMan chat/agent/terminal history for the current item. "
+                "Use this when the user refers to previous work or context, such as "
+                "'刚才', '前面', '之前', '继续', '上一个任务', '你忘了', or asks what was done. "
+                "This is short-term evidence, not long-term memory."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Current terminal item id."},
+                    "limit": {"type": "integer", "description": "Recent messages to return. Default 30, max 100.", "default": 30},
+                    "offset": {"type": "integer", "description": "Skip this many newest messages before reading older history. Default 0.", "default": 0},
+                    "query": {"type": "string", "description": "Optional case-insensitive substring filter."},
+                    "include_summary": {"type": "boolean", "description": "Include the latest session summary when available. Default true.", "default": True},
+                },
+                "required": ["item_id"],
+            },
+            handler=self._read_chat_history,
+            skip_memory=True,
+        )
+        self.register_tool(
+            name="list_reply_tickets",
+            description=(
+                "List active recent reply tickets for this item. Use this to check the "
+                "authoritative source route for pending/running work so completion is "
+                "reported back to the same QQ/server/web source."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Current terminal item id."},
+                    "limit": {"type": "integer", "description": "Tickets to return. Default 10, max 50.", "default": 10},
+                    "include_delivered": {"type": "boolean", "description": "Include already delivered tickets. Default false.", "default": False},
+                },
+                "required": ["item_id"],
+            },
+            handler=self._list_reply_tickets,
+            skip_memory=True,
         )
         self.register_tool(
             name="add_terminal_input_filter_rule",
@@ -449,6 +492,156 @@ class LocalMCPServer:
                     output_tail = f"{output_tail[-1200:]}"
                 lines.append(f"   output_tail:\n{output_tail}")
         return "\n".join(lines)
+
+    def _clip_history_text(self, value: Any, limit: int = 900) -> str:
+        text = str(value or "").replace("\r\n", "\n").strip()
+        if len(text) <= limit:
+            return text
+        head = max(limit // 2 - 20, 120)
+        tail = max(limit - head - 40, 120)
+        return f"{text[:head].rstrip()}\n...<truncated>...\n{text[-tail:].lstrip()}"
+
+    def _format_chat_history_entry(self, index: int, message: dict[str, Any]) -> str:
+        timestamp = str(message.get("timestamp") or "").strip() or "unknown-time"
+        message_type = str(message.get("type") or "message").strip()
+        role = str(message.get("role") or "").strip()
+        detail_parts: list[str] = []
+        if role:
+            detail_parts.append(f"role={role}")
+        for key in ("tool_name", "source_type", "source_label", "status"):
+            value = str(message.get(key) or "").strip()
+            if value:
+                detail_parts.append(f"{key}={self._clip_history_text(value, 120)}")
+        details = f" ({', '.join(detail_parts)})" if detail_parts else ""
+        content = self._clip_history_text(message.get("content"), 1000) or "(empty)"
+        return f"[{index}] {timestamp} {message_type}{details}\n{content}"
+
+    def _read_chat_history(self, args: dict) -> list:
+        item_id = str(args.get("item_id") or "").strip()
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id required"}]
+
+        limit = self._coerce_job_int(args.get("limit"), 30, 1, 100)
+        offset = self._coerce_job_int(args.get("offset"), 0, 0, 10000)
+        query = str(args.get("query") or "").strip().lower()
+        include_summary = bool(args.get("include_summary", True))
+
+        try:
+            from app.services.agent.history.chat import (
+                SESSION_SUMMARY_TYPE,
+                get_chat_messages,
+                get_latest_session_summary,
+            )
+
+            messages = get_chat_messages(item_id)
+            summary = get_latest_session_summary(item_id) if include_summary else None
+            history_messages = [
+                message
+                for message in messages
+                if isinstance(message, dict)
+                and message.get("type") != SESSION_SUMMARY_TYPE
+            ]
+            if query:
+                history_messages = [
+                    message
+                    for message in history_messages
+                    if query in str(message.get("content") or "").lower()
+                    or query in str(message.get("type") or "").lower()
+                    or query in str(message.get("tool_name") or "").lower()
+                ]
+
+            total = len(history_messages)
+            effective_offset = min(offset, total)
+            end = max(total - effective_offset, 0)
+            start = max(end - limit, 0)
+            page = history_messages[start:end]
+
+            lines = [
+                "TermMan item chat history:",
+                f"item_id={item_id}",
+                f"total_matching_messages={total}",
+                f"limit={limit}",
+                f"offset={effective_offset}",
+                "order=oldest_to_newest",
+            ]
+            if query:
+                lines.append(f"query={query}")
+            if summary and summary.get("content"):
+                lines.append("")
+                lines.append("Latest session summary:")
+                lines.append(self._clip_history_text(summary.get("content"), 1200))
+            if page:
+                lines.append("")
+                lines.append("Messages:")
+                for display_index, message in enumerate(page, start=start + 1):
+                    lines.append(self._format_chat_history_entry(display_index, message))
+            else:
+                lines.append("")
+                lines.append("No matching chat history messages.")
+            lines.append("")
+            lines.append(
+                "Use this as short-term evidence for previous work; do not quote raw history unless the user asks."
+            )
+            return [{"type": "text", "text": "\n".join(lines)}]
+        except Exception as e:
+            debug_log(f"[LocalMCPServer] read_chat_history error: {e}")
+            return [{"type": "text", "text": f"Error: {e}"}]
+
+    def _list_reply_tickets(self, args: dict) -> list:
+        item_id = str(args.get("item_id") or "").strip()
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id required"}]
+
+        limit = self._coerce_job_int(args.get("limit"), 10, 1, 50)
+        include_delivered = bool(args.get("include_delivered", False))
+
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            tickets = reply_ticket_manager.snapshot(item_id)
+            if not include_delivered:
+                tickets = [
+                    ticket
+                    for ticket in tickets
+                    if str(ticket.get("status") or "") != "delivered"
+                ]
+            tickets = tickets[:limit]
+            if not tickets:
+                return [
+                    {
+                        "type": "text",
+                        "text": "No active reply tickets for this item.",
+                    }
+                ]
+
+            lines = [
+                "Reply tickets for current item:",
+                "Use these routes as authoritative return targets for pending/running work.",
+            ]
+            for ticket in tickets:
+                ticket_id = str(ticket.get("ticket_id") or "")
+                command = self._clip_history_text(ticket.get("command"), 180)
+                task_request_id = str(ticket.get("task_request_id") or "").strip()
+                parts = [
+                    f"ticket_id={ticket_id[:12]}",
+                    f"source_type={ticket.get('source_type', '')}",
+                    f"source_label={ticket.get('source_label', '')}",
+                    f"status={ticket.get('status', '')}",
+                    f"updated_at={ticket.get('updated_at', '')}",
+                ]
+                if task_request_id:
+                    parts.append(f"task_request_id={task_request_id}")
+                lines.append(f"- {'; '.join(parts)}")
+                if command:
+                    lines.append(f"  command={command}")
+                delivery_error = str(ticket.get("delivery_error") or "").strip()
+                if delivery_error:
+                    lines.append(f"  delivery_error={self._clip_history_text(delivery_error, 300)}")
+
+            return [{"type": "text", "text": "\n".join(lines)}]
+        except Exception as e:
+            debug_log(f"[LocalMCPServer] list_reply_tickets error: {e}")
+            return [{"type": "text", "text": f"Error: {e}"}]
 
     def _list_jobs(self, args: dict) -> list:
         item_id = args.get("item_id", "")
@@ -1484,21 +1677,43 @@ class LocalMCPServer:
     def _save_memory(self, args: dict) -> list:
         content = args.get("content", "")
         memory_type = args.get("memory_type", "fact")
-        ttl_days = args.get("ttl_days", 30)
         item_id = args.get("item_id", "")
         
         if not content or not item_id:
             return [{"type": "text", "text": "Error: content and item_id required"}]
         
         try:
+            from app.services.agent.prompts import policy as memory_policy
             from app.services.agent.memory.vector_store import vector_store
+
+            default_ttl_days = memory_policy.resolve_memory_ttl_days(str(memory_type))
+            raw_ttl_days = args.get("ttl_days")
+            ttl_days = default_ttl_days if raw_ttl_days in (None, "") else int(raw_ttl_days)
+            ttl_days = max(1, min(3650, ttl_days))
+
+            metadata: dict[str, Any] = {
+                "type": "agent_saved",
+                "source": "local_agent_saved",
+                "verified": True,
+                "content_hash": memory_policy._build_content_hash(str(content)),
+                "updated_at": datetime.now().isoformat(),
+            }
+            memory_key = memory_policy.infer_memory_key(str(content), str(memory_type))
+            if memory_key:
+                metadata["memory_key"] = memory_key
+            if str(memory_type) in {"task", "error"}:
+                metadata["status"] = "active"
+
             memory_id = vector_store.add_memory(
                 item_id=item_id,
                 content=content,
                 memory_type=memory_type,
+                metadata=metadata,
                 ttl_days=ttl_days,
                 allow_duplicate=True,
             )
+            if not memory_id:
+                return [{"type": "text", "text": "Memory was not saved."}]
             return [{"type": "text", "text": f"✓ 记忆已保存 (ID: {memory_id[:8]}..., 类型: {memory_type}, 有效期: {ttl_days}天)"}]
         except Exception as e:
             return [{"type": "text", "text": f"Error: {e}"}]

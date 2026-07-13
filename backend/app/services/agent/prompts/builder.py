@@ -91,8 +91,10 @@ FILTERED_TERMINAL_LABEL = "终端过滤输出"
 RAW_TERMINAL_LABEL = "原生日志反馈"
 MIN_LONG_TERM_MEMORY_RELEVANCE = 0.08
 ALWAYS_ON_SKILL_CATEGORIES: set[str] = set()
-ALWAYS_ON_MEMORY_TYPES = {"preference"}
-MAX_ALWAYS_ON_MEMORIES_PER_TYPE = 5
+ALWAYS_ON_MEMORY_TYPES = {"preference", "fact", "context", "task", "error"}
+MAX_ALWAYS_ON_MEMORIES_PER_TYPE = 3
+MAX_ALWAYS_ON_MEMORIES_TOTAL = 8
+ALWAYS_ON_RECENT_DAYS = 14
 PREFERENCE_LIKE_MEMORY_TYPES = ("preference", "fact", "context")
 PREFERENCE_LIKE_MEMORY_MARKERS = (
     "用户偏好",
@@ -114,6 +116,21 @@ MEMORY_TYPE_RANK_BONUS = {
     "fact": 0.04,
 }
 PINNED_MEMORY_TYPES = ("preference", "task", "error")
+ALWAYS_ON_MEMORY_SOURCES = {
+    "chat_user",
+    "local_agent_saved",
+    "qq_robot",
+    "qq_robot_agent",
+    "qq_robot_auto",
+    "qq_robot_auto_promoted",
+}
+ALWAYS_ON_MEMORY_RECORD_TYPES = {
+    "agent_saved",
+    "conversation_explicit",
+    "conversation_auto_candidate",
+    "conversation_auto_promoted",
+    "robot_agent_saved",
+}
 
 
 def _build_skill_prompt(
@@ -187,19 +204,117 @@ def _looks_like_preference_memory(memory: dict[str, Any]) -> bool:
     return any(marker.lower() in content for marker in PREFERENCE_LIKE_MEMORY_MARKERS)
 
 
+def _robot_memory_scope_rank(agent: "Agent | None", memory: dict[str, Any]) -> int:
+    metadata = memory.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    has_robot_scope = bool(
+        str(metadata.get("robot_id") or "").strip()
+        or str(metadata.get("robot_conversation_key") or "").strip()
+        or str(metadata.get("conversation_key") or "").strip()
+        or str(metadata.get("speaker_global_key") or "").strip()
+        or str(metadata.get("speaker_key") or "").strip()
+        or str(metadata.get("memory_scope") or "").strip()
+    )
+    context = getattr(agent, "_context", None) if agent is not None else None
+    robot_id = str(getattr(context, "robot_id", "") or "").strip()
+    conversation_key = str(getattr(context, "robot_conversation_key", "") or "").strip()
+    sender_key = str(getattr(context, "robot_sender_key", "") or "").strip()
+
+    if not robot_id and not conversation_key:
+        return -1 if has_robot_scope else 1
+
+    try:
+        from app.plugins.robot.memory_scope import (
+            memory_scope_rank,
+            speaker_global_key_from_context,
+        )
+
+        return memory_scope_rank(
+            memory,
+            robot_id=robot_id,
+            conversation_key=conversation_key,
+            speaker_global_key=speaker_global_key_from_context(sender_key),
+        )
+    except Exception as exc:
+        logger.debug("[PromptBuilder] Failed to rank robot memory scope: %s", exc)
+        memory_conversation = str(
+            metadata.get("robot_conversation_key")
+            or metadata.get("conversation_key")
+            or ""
+        ).strip()
+        if memory_conversation:
+            return 4 if memory_conversation == conversation_key else -1
+        memory_robot_id = str(metadata.get("robot_id") or "").strip()
+        if memory_robot_id:
+            return 2 if memory_robot_id == robot_id else -1
+        return 1
+
+
+def _is_recent_memory(memory: dict[str, Any], days: int = ALWAYS_ON_RECENT_DAYS) -> bool:
+    metadata = memory.get("metadata") or {}
+    timestamp = _parse_memory_datetime(
+        metadata.get("updated_at") or metadata.get("created_at")
+    )
+    if timestamp is None:
+        return False
+    now = datetime.now(timestamp.tzinfo) if timestamp.tzinfo else datetime.now()
+    return 0 <= (now - timestamp).days <= days
+
+
+def _is_sticky_long_term_memory(memory: dict[str, Any]) -> bool:
+    metadata = memory.get("metadata") or {}
+    memory_type = _memory_type(memory)
+    status = str(resolve_memory_status(memory) or "").lower()
+    source = str(metadata.get("source") or "").strip()
+    record_type = str(metadata.get("type") or "").strip()
+
+    if _looks_like_preference_memory(memory):
+        return True
+    if memory_type in {"task", "error"} and status in {"active", ""}:
+        return True
+    if metadata.get("verified") is True:
+        return True
+    if source in ALWAYS_ON_MEMORY_SOURCES:
+        return True
+    if record_type in ALWAYS_ON_MEMORY_RECORD_TYPES:
+        return True
+    return _is_recent_memory(memory)
+
+
+def _always_on_memory_sort_key(memory: dict[str, Any]) -> tuple[float, float]:
+    metadata = memory.get("metadata") or {}
+    sticky_bonus = 0.0
+    if metadata.get("verified") is True:
+        sticky_bonus += 0.25
+    if str(metadata.get("source") or "") in ALWAYS_ON_MEMORY_SOURCES:
+        sticky_bonus += 0.18
+    if str(metadata.get("type") or "") in ALWAYS_ON_MEMORY_RECORD_TYPES:
+        sticky_bonus += 0.16
+    if _looks_like_preference_memory(memory):
+        sticky_bonus += 0.14
+    if _is_recent_memory(memory, days=7):
+        sticky_bonus += 0.12
+    return (_memory_rank_score(memory) + sticky_bonus, _memory_timestamp(memory))
+
+
 def _collect_always_on_memories(
     item_id: str,
     *,
     allowed_types: tuple[str, ...],
+    agent: "Agent | None" = None,
 ) -> list[dict[str, Any]]:
     collected: list[dict[str, Any]] = []
     if not allowed_types:
         return collected
 
-    if "preference" not in allowed_types:
-        return collected
-
-    for memory_type in PREFERENCE_LIKE_MEMORY_TYPES:
+    memory_types = [
+        memory_type
+        for memory_type in allowed_types
+        if memory_type in ALWAYS_ON_MEMORY_TYPES
+    ]
+    for memory_type in memory_types:
         try:
             memories = vector_store.get_all_memories(item_id, memory_type=memory_type)
         except Exception as exc:
@@ -215,15 +330,28 @@ def _collect_always_on_memories(
             memory
             for memory in memories
             if memory.get("content")
-            and _looks_like_preference_memory(memory)
+            and _is_sticky_long_term_memory(memory)
             and not _is_memory_expired(memory)
             and not _is_inactive_status_memory(memory)
+            and _robot_memory_scope_rank(agent, memory) >= 0
         ]
         collected.extend(
-            _sort_memories_by_stability(active_memories)[:MAX_ALWAYS_ON_MEMORIES_PER_TYPE]
+            sorted(
+                active_memories,
+                key=_always_on_memory_sort_key,
+                reverse=True,
+            )[:MAX_ALWAYS_ON_MEMORIES_PER_TYPE]
         )
 
-    return collected
+    return sorted(
+        collected,
+        key=_always_on_memory_sort_key,
+        reverse=True,
+    )[:MAX_ALWAYS_ON_MEMORIES_TOTAL]
+
+
+def _query_memory_scope_usable(agent: "Agent | None", memory: dict[str, Any]) -> bool:
+    return _robot_memory_scope_rank(agent, memory) >= 0
 
 
 def _normalize_content(value: str) -> str:
@@ -305,6 +433,7 @@ def _collect_long_term_memories(
     *,
     allowed_types: tuple[str, ...],
     n_results: int,
+    agent: "Agent | None" = None,
 ) -> str:
     if not allowed_types or n_results <= 0:
         return ""
@@ -312,7 +441,11 @@ def _collect_long_term_memories(
     collected: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
 
-    for memory in _collect_always_on_memories(item_id, allowed_types=allowed_types):
+    for memory in _collect_always_on_memories(
+        item_id,
+        allowed_types=allowed_types,
+        agent=agent,
+    ):
         memory_id = memory.get("id")
         if memory_id in seen_ids:
             continue
@@ -339,6 +472,8 @@ def _collect_long_term_memories(
                 )
                 continue
             for memory in memories:
+                if not _query_memory_scope_usable(agent, memory):
+                    continue
                 memory_id = memory.get("id")
                 if memory_id in seen_ids:
                     continue
@@ -720,6 +855,7 @@ def build_chat_turn_messages(
             effective_query,
             allowed_types=policy.allowed_long_term_types,
             n_results=policy.max_long_term_memories,
+            agent=agent,
         )
         if memories:
             prompt_messages.append(
@@ -834,6 +970,7 @@ def build_terminal_turn_messages(
             effective_query,
             allowed_types=policy.allowed_long_term_types,
             n_results=policy.max_long_term_memories,
+            agent=agent,
         )
         if memories:
             prompt_messages.append(

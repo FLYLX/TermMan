@@ -288,6 +288,99 @@ def test_preference_memories_are_always_included_without_query_match(monkeypatch
     assert "默认使用安静、简短的人格语气回复" in memories
 
 
+def test_verified_recent_fact_memories_are_always_included_without_query_match(monkeypatch) -> None:
+    def fake_get_all_memories(*_args, memory_type: str, **_kwargs):
+        if memory_type != "fact":
+            return []
+        return [
+            {
+                "id": "fact-identity",
+                "content": "你叫大狗",
+                "metadata": {
+                    "memory_type": "fact",
+                    "type": "agent_saved",
+                    "source": "local_agent_saved",
+                    "verified": True,
+                    "updated_at": datetime.now().isoformat(),
+                },
+            }
+        ]
+
+    def fake_search_memories(**_kwargs):
+        return []
+
+    monkeypatch.setattr(prompt_builder.vector_store, "get_all_memories", fake_get_all_memories)
+    monkeypatch.setattr(prompt_builder.vector_store, "search_memories", fake_search_memories)
+
+    memories = prompt_builder._collect_long_term_memories(
+        "item-1",
+        "你是谁",
+        allowed_types=("fact", "preference", "task", "error", "context"),
+        n_results=3,
+    )
+
+    assert "你叫大狗" in memories
+
+
+def test_robot_scoped_always_on_memory_does_not_cross_conversations(monkeypatch) -> None:
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="robot-1",
+            robot_conversation_key="group:g1",
+            robot_sender_key="onebot_v11:group:g1:u1",
+        )
+    )
+
+    def fake_get_all_memories(*_args, memory_type: str, **_kwargs):
+        if memory_type != "context":
+            return []
+        return [
+            {
+                "id": "ctx-g1",
+                "content": "这个群正在开 Forge 服务器",
+                "metadata": {
+                    "memory_type": "context",
+                    "source": "qq_robot_auto_promoted",
+                    "robot_id": "robot-1",
+                    "conversation_key": "group:g1",
+                    "robot_conversation_key": "group:g1",
+                    "memory_scope": "conversation",
+                    "updated_at": datetime.now().isoformat(),
+                },
+            },
+            {
+                "id": "ctx-g2",
+                "content": "另一个群在聊股票",
+                "metadata": {
+                    "memory_type": "context",
+                    "source": "qq_robot_auto_promoted",
+                    "robot_id": "robot-1",
+                    "conversation_key": "group:g2",
+                    "robot_conversation_key": "group:g2",
+                    "memory_scope": "conversation",
+                    "updated_at": datetime.now().isoformat(),
+                },
+            },
+        ]
+
+    def fake_search_memories(**_kwargs):
+        return []
+
+    monkeypatch.setattr(prompt_builder.vector_store, "get_all_memories", fake_get_all_memories)
+    monkeypatch.setattr(prompt_builder.vector_store, "search_memories", fake_search_memories)
+
+    memories = prompt_builder._collect_long_term_memories(
+        "item-1",
+        "现在什么情况",
+        allowed_types=("fact", "preference", "task", "error", "context"),
+        n_results=5,
+        agent=agent,
+    )
+
+    assert "这个群正在开 Forge 服务器" in memories
+    assert "另一个群在聊股票" not in memories
+
+
 def test_persona_skill_is_not_duplicated_as_regular_skill_prompt(monkeypatch) -> None:
     persona_skill = SkillDefinition(
         skill_id="quiet_persona",

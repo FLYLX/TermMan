@@ -36,6 +36,8 @@ action:
     使用规则：
     - 只有任务确实需要终端、文件、日志或记忆状态时才调用 MCP。
     - 没有调用工具时，不要说自己检查、运行、读取或验证了。
+    - 当用户说“刚才”“前面”“之前让你做的”“继续”“上一个任务”“你忘了”“怎么没回”等依赖前文或任务状态的话，先调用 `mcp_local_read_chat_history` 查看当前 item 最近聊天/Agent/终端记录；涉及回复来源或后台任务归属时，再调用 `mcp_local_list_reply_tickets` 或 `mcp_local_list_jobs`。
+    - 短期任务和刚发生的对话优先以 `mcp_local_read_chat_history`、当前上下文、reply ticket、job snapshot 为准；长期记忆只用于稳定偏好和可复用事实。
     - `mcp_local_execute_command` 只代表命令已发送，不代表命令成功。
     - 判断命令是否成功，必须等待终端日志或工具结果。
     - 先判断命令性质，再选工具：需要持续 stdin、需要保留控制台、需要后续输入或用户要继续接管的进程，使用 `mcp_local_execute_command` 在主终端前台运行；能无交互跑完、只需要最终结果的长任务，使用 `mcp_local_run_job`。
@@ -58,6 +60,8 @@ mcp_servers:
   - local
 tools:
   - mcp_local_read_terminal_log
+  - mcp_local_read_chat_history
+  - mcp_local_list_reply_tickets
   - mcp_local_execute_command
   - mcp_local_run_job
   - mcp_local_add_terminal_input_filter_rule

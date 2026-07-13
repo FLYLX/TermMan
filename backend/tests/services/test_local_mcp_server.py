@@ -14,6 +14,154 @@ from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.skills import skill_loader
 
 
+def test_read_chat_history_tool_returns_recent_trimmed_context(monkeypatch) -> None:
+    import app.services.agent.history.chat as chat_history
+
+    long_terminal_output = "download progress\n" + ("x" * 2200)
+    monkeypatch.setattr(
+        chat_history,
+        "get_chat_messages",
+        lambda item_id: [
+            {
+                "type": "chat_user",
+                "role": "user",
+                "timestamp": "2026-07-10T10:00:00",
+                "content": "install java",
+            },
+            {
+                "type": "terminal_output",
+                "role": "terminal",
+                "timestamp": "2026-07-10T10:01:00",
+                "content": long_terminal_output,
+            },
+            {
+                "type": "agent_response",
+                "role": "assistant",
+                "timestamp": "2026-07-10T10:02:00",
+                "content": "java install failed",
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        chat_history,
+        "get_latest_session_summary",
+        lambda item_id: {"content": "Current task: install Java for the server."},
+    )
+
+    server = LocalMCPServer()
+    result = server.call_tool(
+        "read_chat_history",
+        {
+            "item_id": "item-1",
+            "limit": 2,
+        },
+    )
+
+    text = result[0]["text"]
+    assert "TermMan item chat history" in text
+    assert "Latest session summary" in text
+    assert "Current task: install Java" in text
+    assert "install java" not in text
+    assert "terminal_output" in text
+    assert "java install failed" in text
+    assert "...<truncated>..." in text
+
+    tool = next(tool for tool in server.list_tools() if tool["name"] == "read_chat_history")
+    assert tool["skip_memory"] is True
+    assert "刚才" in tool["description"]
+    assert "query" in tool["inputSchema"]["properties"]
+
+
+def test_list_reply_tickets_hides_delivered_by_default(monkeypatch) -> None:
+    import app.services.agent.reply_ticket as reply_ticket_module
+
+    class FakeReplyTicketManager:
+        def snapshot(self, item_id: str):
+            return [
+                {
+                    "ticket_id": "running-ticket-id",
+                    "source_type": "qq",
+                    "source_label": "QQ group:g1",
+                    "status": "running",
+                    "updated_at": "2026-07-10T10:03:00",
+                    "task_request_id": "task-1",
+                    "command": "apt-get install temurin-17-jdk",
+                    "delivery_error": "",
+                },
+                {
+                    "ticket_id": "delivered-ticket-id",
+                    "source_type": "web",
+                    "source_label": "TermMan web chat",
+                    "status": "delivered",
+                    "updated_at": "2026-07-10T10:00:00",
+                    "task_request_id": "",
+                    "command": "echo old",
+                    "delivery_error": "",
+                },
+            ]
+
+    monkeypatch.setattr(
+        reply_ticket_module,
+        "reply_ticket_manager",
+        FakeReplyTicketManager(),
+    )
+
+    server = LocalMCPServer()
+    result = server.call_tool(
+        "list_reply_tickets",
+        {
+            "item_id": "item-1",
+        },
+    )
+
+    text = result[0]["text"]
+    assert "Reply tickets for current item" in text
+    assert "running-tick" in text
+    assert "QQ group:g1" in text
+    assert "apt-get install temurin-17-jdk" in text
+    assert "delivered-ticket" not in text
+
+    tool = next(tool for tool in server.list_tools() if tool["name"] == "list_reply_tickets")
+    assert tool["skip_memory"] is True
+    assert "include_delivered" in tool["inputSchema"]["properties"]
+
+
+def test_save_memory_uses_type_ttl_and_verified_metadata(monkeypatch) -> None:
+    import importlib
+
+    vector_store_module = importlib.import_module("app.services.agent.memory.vector_store")
+
+    captured: dict[str, object] = {}
+
+    def fake_add_memory(**kwargs):
+        captured.update(kwargs)
+        return "memory-123456"
+
+    monkeypatch.setattr(vector_store_module.vector_store, "add_memory", fake_add_memory)
+
+    server = LocalMCPServer()
+    result = server.call_tool(
+        "save_memory",
+        {
+            "item_id": "item-1",
+            "content": "你叫大狗",
+            "memory_type": "fact",
+        },
+    )
+
+    assert "memory-1" in result[0]["text"]
+    assert captured["item_id"] == "item-1"
+    assert captured["content"] == "你叫大狗"
+    assert captured["memory_type"] == "fact"
+    assert captured["ttl_days"] == 90
+    assert captured["allow_duplicate"] is True
+    metadata = captured["metadata"]
+    assert metadata["type"] == "agent_saved"
+    assert metadata["source"] == "local_agent_saved"
+    assert metadata["verified"] is True
+    assert metadata["content_hash"]
+
+
 def test_execute_command_only_reports_dispatch(monkeypatch) -> None:
     import importlib
 

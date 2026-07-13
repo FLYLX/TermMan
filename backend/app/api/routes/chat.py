@@ -71,6 +71,7 @@ from app.services.agent.tool_arguments import (
     parse_tool_arguments,
 )
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
+from app.services.agent.tool_selection import select_tools_for_turn
 
 if TYPE_CHECKING:
     from app.services.agent.agent import Agent
@@ -214,7 +215,12 @@ def build_system_prompt_with_skills(
 
     all_skills = agent.get_skills()
     matched_skills = agent.match_skills(message)
-    tools = agent.get_tools_for_litellm()
+    tools = select_tools_for_turn(
+        agent.get_tools_for_litellm(),
+        source="web",
+        query=message,
+        agent=agent,
+    )
 
     parts = [get_system_prompt(agent)]
 
@@ -928,7 +934,12 @@ def generate_stream(
     extract_integration_context_targets(agent, messages)
     record_integration_context_targets(agent, item_id)
     matched_skills = agent.match_skills(message)
-    tools = agent.get_tools_for_litellm()
+    tools = select_tools_for_turn(
+        agent.get_tools_for_litellm(),
+        source="qq" if normalized_source_type == SOURCE_QQ else "web",
+        query=message,
+        agent=agent,
+    )
 
     AgentMessageQueue.clear_abort(item_id)
 
