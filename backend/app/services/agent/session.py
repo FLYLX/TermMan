@@ -87,7 +87,6 @@ BACKGROUND_JOB_STARTED_RESPONSE = (
     "\u5b8c\u6210\u540e\u6211\u4f1a\u6839\u636e\u7ed3\u679c\u7ee7\u7eed\u5904\u7406"
     "\u5e76\u56de\u5230\u5bf9\u5e94\u6765\u6e90\u3002"
 )
-TERMINAL_BUSY_GUARD_TOOL_NAMES = {RUN_JOB_TOOL_NAME}
 COMMAND_DISPATCH_PENDING_MARKER = "命令已发送到终端，尚未确认执行结果:"
 TERMINAL_INPUT_MODE_BUSY = "busy"
 TERMINAL_INPUT_MODE_CONSOLE = "console"
@@ -846,8 +845,51 @@ class AgentSession:
         elapsed_seconds = int((datetime.now() - running_job.started_at).total_seconds())
         return (
             f"\u540e\u53f0\u4efb\u52a1\u6b63\u5728\u8fd0\u884c\uff0c\u5df2\u8fd0\u884c {elapsed_seconds}s\u3002"
-            "\u65b0\u7684\u4e0b\u8f7d/\u5b89\u88c5/\u6784\u5efa\u7c7b\u540e\u53f0\u4efb\u52a1\u5df2\u62e6\u622a\uff0c\u4e0d\u4f1a\u91cd\u590d\u53d1\u9001\u3002"
-            "\u7b49\u5f53\u524d\u4e0b\u8f7d/\u5b89\u88c5/\u6784\u5efa\u4efb\u52a1\u7ed3\u675f\u540e\u518d\u7ee7\u7eed\u3002"
+            "\u8fd9\u6761\u770b\u8d77\u6765\u662f\u4f1a\u5360\u7528\u524d\u53f0\u7ec8\u7aef\u7684 shell \u547d\u4ee4\uff0c"
+            "\u5df2\u62e6\u622a\u672a\u53d1\u9001\u3002"
+            "\u5982\u679c\u662f\u72ec\u7acb\u7684\u4e0b\u8f7d/\u5b89\u88c5/\u6784\u5efa\u4efb\u52a1\uff0c"
+            "\u8bf7\u6539\u7528 mcp_local_run_job\uff1b\u4e0d\u540c\u540e\u53f0\u4efb\u52a1\u53ef\u4ee5\u5e76\u884c\u3002"
+        )
+
+    def _find_duplicate_background_job(self, command: str) -> dict[str, Any] | None:
+        normalized_command = self._normalize_text(command or "")
+        if not normalized_command:
+            return None
+
+        running_job = self._get_running_terminal_job()
+        if running_job and running_job.normalized_command == normalized_command:
+            return {
+                "command": running_job.command,
+                "elapsed_seconds": (
+                    datetime.now() - running_job.started_at
+                ).total_seconds(),
+                "source": "session",
+            }
+
+        for job in self._get_daemon_jobs_snapshot():
+            job_command = str(job.get("command") or "")
+            if self._normalize_text(job_command) == normalized_command:
+                return dict(job)
+
+        return None
+
+    def _build_duplicate_background_job_warning(
+        self,
+        duplicate_job: dict[str, Any],
+    ) -> str:
+        elapsed_raw = duplicate_job.get("elapsed_seconds") or 0
+        try:
+            elapsed_seconds = int(float(elapsed_raw))
+        except (TypeError, ValueError):
+            elapsed_seconds = 0
+        job_id = str(duplicate_job.get("job_id") or "").strip()
+        job_suffix = f" job_id={job_id}" if job_id else ""
+        return (
+            "\u540e\u53f0\u4efb\u52a1\u5df2\u5728\u8fd0\u884c"
+            f"{job_suffix}\uff0c\u5df2\u8fd0\u884c {elapsed_seconds}s\u3002"
+            "\u76f8\u540c\u547d\u4ee4\u5df2\u62e6\u622a\uff0c\u4e0d\u4f1a\u91cd\u590d\u53d1\u9001\u3002"
+            "\u5982\u679c\u8981\u542f\u52a8\u53e6\u4e00\u4e2a\u4e0d\u540c\u7684\u540e\u53f0\u4efb\u52a1\uff0c"
+            "\u8bf7\u53d1\u9001\u4e0d\u540c\u7684\u547d\u4ee4\u3002"
         )
 
     def _running_job_blocks_terminal_tool(
@@ -859,8 +901,6 @@ class AgentSession:
     ) -> bool:
         if running_job is None:
             return False
-        if tool_name == RUN_JOB_TOOL_NAME:
-            return True
         return (
             tool_name == EXECUTE_COMMAND_TOOL_NAME
             and classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_BUSY
@@ -899,6 +939,12 @@ class AgentSession:
         tool_args: dict[str, Any],
     ) -> str | None:
         command = self._extract_command_text(tool_name, tool_args)
+
+        if tool_name == RUN_JOB_TOOL_NAME:
+            duplicate_job = self._find_duplicate_background_job(command)
+            if duplicate_job:
+                return self._build_duplicate_background_job_warning(duplicate_job)
+            return None
 
         running_job = self._get_running_terminal_job()
         if self._running_job_blocks_terminal_tool(
@@ -2167,7 +2213,8 @@ class AgentSession:
             f"任务命令：`{self._short_command(running_job.command)}`。"
             "你可以正常回答不需要终端的新问题。"
             "如果用户问任务状态，只说明后台任务仍在运行，完成后系统会把最终结果作为新的终端反馈发给你。"
-            "在后台任务完成前，不要启动新的下载/安装/构建类 run_job；"
+            "不同的后台任务可以继续用 run_job 启动；不要重复启动完全相同的命令。"
+            "如果涉及 apt/dpkg 等有全局锁的安装任务，优先等当前同类安装完成，或先 list_jobs 确认。"
             "但如果当前终端是已启动的交互式控制台，可以继续用 execute_command 发送安全的控制台输入，"
             "例如 Minecraft 的 say/tell/op/give/setblock/fill/summon 等单条控制台命令。"
             "如果确实要终止任务，先 list_jobs 再 cancel_job。"
@@ -2259,7 +2306,7 @@ class AgentSession:
                     output_tail = output_tail[-1200:]
                 lines.append(f"  output_tail:\n{output_tail}")
         lines.append(
-            "Rules: do not assume a listed job has completed; do not start another download/install/build job unless the user explicitly wants a separate job; if the user asks status, answer from this snapshot or call `mcp_local_list_jobs`; if they ask to stop it, call `mcp_local_cancel_job` with the job_id."
+            "Rules: do not assume a listed job has completed; different background jobs may run in parallel when the user explicitly asks for separate work; do not start an exact duplicate of an already listed command; for apt/dpkg/package-manager installs that may share global locks, prefer waiting for the current same-manager install to finish or inspect with `mcp_local_list_jobs`; if the user asks status, answer from this snapshot or call `mcp_local_list_jobs`; if they ask to stop it, call `mcp_local_cancel_job` with the job_id."
         )
         return "\n".join(lines)
 
@@ -2425,10 +2472,11 @@ class AgentSession:
                 tool_name,
             )
             if robot_send_source_error:
-                self.emit_output(
+                logger.info(
+                    "[AgentSession] Blocked robot send for non-QQ reply ticket: item=%s tool=%s reason=%s",
+                    self.item_id,
+                    tool_name,
                     robot_send_source_error,
-                    "agent_warning",
-                    {"tool_name": tool_name},
                 )
                 return None
             tool_args["item_id"] = self.item_id

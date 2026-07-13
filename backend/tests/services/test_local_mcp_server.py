@@ -716,6 +716,8 @@ def test_tool_descriptions_guide_foreground_background_command_choice() -> None:
     )
     assert "choose execute_command in the main terminal" in run_job_tool["description"]
     assert "shell inspection commands" in run_job_tool["description"]
+    assert "start from the current working directory" in run_job_tool["description"]
+    assert "do not scan /, ~, /opt, or /srv" in run_job_tool["description"]
 
 
 def test_run_job_defaults_to_background_and_notifies_session(monkeypatch) -> None:
@@ -871,7 +873,7 @@ def test_background_run_job_queues_robot_completion(monkeypatch) -> None:
     assert "temurin installed" in queued[0]["message"]
 
 
-def test_background_run_job_delivers_via_reply_ticket_without_robot_queue(
+def test_background_run_job_queues_robot_result_instead_of_direct_raw_reply(
     monkeypatch,
 ) -> None:
     import threading
@@ -885,9 +887,10 @@ def test_background_run_job_delivers_via_reply_ticket_without_robot_queue(
     item_id = "item-background-job-ticket"
     server = LocalMCPServer()
     started = threading.Event()
-    delivered = threading.Event()
+    queued_event = threading.Event()
     cleared: list[str] = []
     sent: list[tuple[str, RobotReplyTarget, str]] = []
+    queued_results: list[dict] = []
     memory_writes: list[tuple[str, str, str]] = []
     target = RobotReplyTarget(
         target_type="private",
@@ -947,17 +950,16 @@ def test_background_run_job_delivers_via_reply_ticket_without_robot_queue(
     monkeypatch.setattr(
         robot_service,
         "enqueue_background_job_result",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("reply ticket delivery should bypass old robot queue")
-        ),
+        lambda **kwargs: (
+            queued_results.append(kwargs),
+            queued_event.set(),
+            True,
+        )[-1],
     )
     monkeypatch.setattr(
         robot_bridge_client,
         "send_message",
-        lambda robot_id, target, text: (
-            sent.append((str(robot_id), target, text)),
-            delivered.set(),
-        ),
+        lambda robot_id, target, text: sent.append((str(robot_id), target, text)),
     )
     monkeypatch.setattr(
         robot_conversation_memory,
@@ -985,25 +987,40 @@ def test_background_run_job_delivers_via_reply_ticket_without_robot_queue(
             },
         )
         assert started.wait(2)
-        assert delivered.wait(2)
+        assert queued_event.wait(2)
     finally:
         unregister_robot_mcp_context(token)
         reply_ticket_manager.reset()
 
     assert "后台任务已启动" in result[0]["text"]
-    assert cleared == ["pending-ticket-1"]
-    assert [(robot_id, target.target_type, target.target_id) for robot_id, target, _ in sent] == [
-        ("00000000-0000-0000-0000-000000000001", "private", "2537134688")
-    ]
-    assert "后台任务完成了" in sent[0][2]
-    assert "apt-get install -y temurin-17-jdk" in sent[0][2]
-    assert memory_writes == [
-        (
-            "00000000-0000-0000-0000-000000000001",
-            "private:2537134688",
-            sent[0][2],
-        )
-    ]
+    assert cleared == []
+    assert sent == []
+    assert memory_writes == []
+    assert len(queued_results) == 1
+    assert queued_results[0]["robot_id"] == "00000000-0000-0000-0000-000000000001"
+    assert queued_results[0]["conversation_key"] == "private:2537134688"
+    assert queued_results[0]["pending_reply_id"] == "pending-ticket-1"
+    assert "Background terminal job result" in queued_results[0]["message"]
+    assert "apt-get install -y temurin-17-jdk" in queued_results[0]["message"]
+    assert "temurin installed" in queued_results[0]["message"]
+
+
+def test_background_job_reply_ticket_message_hides_command_and_keeps_result() -> None:
+    server = LocalMCPServer()
+
+    message = server._format_background_job_reply_ticket_message(
+        "find / -name server.jar",
+        {
+            "success": True,
+            "exit_code": 0,
+            "duration_seconds": 0.2,
+            "output_tail": "./server.jar",
+        },
+    )
+
+    assert "后台任务已完成" in message
+    assert "./server.jar" in message
+    assert "find / -name server.jar" not in message
 
 
 def test_background_run_job_passes_web_reply_ticket_to_terminal_feedback(
@@ -1200,32 +1217,35 @@ def test_cancel_job_tool_cancels_selected_daemon_job(monkeypatch) -> None:
     assert "job-7" in result[0]["text"]
 
 
-def test_run_job_marks_busy_and_blocks_nested_terminal_commands(monkeypatch) -> None:
+def test_run_job_allows_distinct_background_jobs_but_blocks_duplicates(monkeypatch) -> None:
+    import threading
     from types import SimpleNamespace
 
     from app.services.agent.session import agent_session_manager
 
     item_id = "item-running-job"
     server = LocalMCPServer()
-    nested: dict[str, list] = {}
+    commands: list[str] = []
+    first_started = threading.Event()
+    second_started = threading.Event()
+    release_first = threading.Event()
 
     class FakeConnection:
         def run_job_http(self, **kwargs):
+            command = kwargs["command"]
+            commands.append(command)
             session = agent_session_manager.get_session(item_id)
             assert session is not None
             assert session.has_running_terminal_job() is True
-            nested["execute"] = server.call_tool(
-                "execute_command",
-                {"item_id": item_id, "command": "java -version"},
-            )
-            nested["run_job"] = server.call_tool(
-                "run_job",
-                {"item_id": item_id, "command": "apt update"},
-            )
+            if command == "curl https://example.test/file -o file":
+                first_started.set()
+                release_first.wait(2)
+            if command == "python -m pip install demo-package":
+                second_started.set()
             return {
                 "success": True,
-                "job_id": "job-running",
-                "command": kwargs["command"],
+                "job_id": f"job-{len(commands)}",
+                "command": command,
                 "cwd": "/workspace/item",
                 "exit_code": 0,
                 "timed_out": False,
@@ -1245,23 +1265,40 @@ def test_run_job_marks_busy_and_blocks_nested_terminal_commands(monkeypatch) -> 
     agent_session_manager.remove_session(item_id)
     session = agent_session_manager.get_or_create_session(item_id, "handler-1")
     try:
-        result = server.call_tool(
+        first_result = server.call_tool(
             "run_job",
             {
                 "item_id": item_id,
                 "command": "curl https://example.test/file -o file",
-                "wait_for_completion": True,
             },
         )
+        assert first_started.wait(2)
+
+        duplicate_result = server.call_tool(
+            "run_job",
+            {
+                "item_id": item_id,
+                "command": "curl https://example.test/file -o file",
+            },
+        )
+        second_result = server.call_tool(
+            "run_job",
+            {
+                "item_id": item_id,
+                "command": "python -m pip install demo-package",
+            },
+        )
+        assert second_started.wait(2)
+        release_first.set()
     finally:
+        release_first.set()
         agent_session_manager.remove_session(item_id)
 
-    assert "Job succeeded" in result[0]["text"]
-    assert "终端未连接或未打开" in nested["execute"][0]["text"]
-    assert "\u540e\u53f0\u4efb\u52a1\u6b63\u5728\u8fd0\u884c" in nested["run_job"][0]["text"]
-    assert "apt update" not in nested["run_job"][0]["text"]
-    assert "\u4e0d\u4f1a\u91cd\u590d\u53d1\u9001" in nested["run_job"][0]["text"]
-    assert session.has_running_terminal_job() is False
+    assert first_result[0]["type"] == "text"
+    assert duplicate_result[0]["type"] == "text"
+    assert second_result[0]["type"] == "text"
+    assert commands.count("curl https://example.test/file -o file") == 1
+    assert "python -m pip install demo-package" in commands
 
 
 

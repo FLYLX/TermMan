@@ -42,7 +42,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="run_job",
-            description="Start a non-interactive one-shot shell job in a daemon background process with stdin closed. Use this for downloads, package installs, builds, tests, archive extraction, and other commands that can finish without later user input; the final result and tail output will be delivered back to the agent after completion. Also use run_job for shell inspection commands such as ls, pwd, find, cat, head, tail, grep, du, df, and java -version while the main terminal is already occupied by an interactive server console. Before using it, decide whether the command needs an interactive foreground console. Do not choose run_job for Minecraft/Forge/Paper/Fabric server startup, run.sh/start.sh server launchers, REPLs, shells, watch/dev servers, or any process that should remain open for later commands such as op/say/stop; choose execute_command in the main terminal for those. Prefer one clear operation per job; avoid very long &&/pipe chains when a later step may need diagnosis.",
+            description="Start a non-interactive one-shot shell job in a daemon background process with stdin closed. Use this for downloads, package installs, builds, tests, archive extraction, and other commands that can finish without later user input; the final result and tail output will be delivered back to the agent after completion. Multiple different background jobs may run at the same time; exact duplicate commands are rejected. For apt/dpkg or other package-manager installs that share global locks, prefer waiting for an existing same-manager install to finish or inspect with list_jobs first. Also use run_job for shell inspection commands such as ls, pwd, local find, cat, head, tail, grep, du, df, and java -version while the main terminal is already occupied by an interactive server console. For file discovery, start from the current working directory with pwd and ls -la, then use find . -maxdepth 2 only if needed; do not scan /, ~, /opt, or /srv unless the user explicitly asks for a wider search. Before using it, decide whether the command needs an interactive foreground console. Do not choose run_job for Minecraft/Forge/Paper/Fabric server startup, run.sh/start.sh server launchers, REPLs, shells, watch/dev servers, or any process that should remain open for later commands such as op/say/stop; choose execute_command in the main terminal for those. Prefer one clear operation per job; avoid very long &&/pipe chains when a later step may need diagnosis.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -517,6 +517,7 @@ class LocalMCPServer:
                         "item_id": str(item_id),
                         "command": command,
                         "timeout_seconds": timeout_seconds,
+                        "_reply_ticket_id": reply_ticket_id,
                     },
                 )
                 if guard_error:
@@ -530,6 +531,7 @@ class LocalMCPServer:
                         "item_id": str(item_id),
                         "command": command,
                         "timeout_seconds": timeout_seconds,
+                        "_reply_ticket_id": reply_ticket_id,
                     },
                 )
         except Exception as guard_error:
@@ -574,8 +576,8 @@ class LocalMCPServer:
                 {
                     "type": "text",
                     "text": (
-                        "后台任务已启动。下载、安装或构建会在独立任务里执行，"
-                        "完成后会把最终结果自动送回 Agent；在完成前不要重复发送新的终端命令。"
+                        "后台任务已启动，会在独立任务里执行，完成后把最终结果自动送回 Agent。"
+                        "不同后台任务可以并行启动；不要重复启动完全相同的命令。"
                     ),
                 },
                 {
@@ -626,25 +628,28 @@ class LocalMCPServer:
                 }
 
             feedback = self._format_background_job_feedback(result)
-            delivered_by_ticket = self._deliver_background_job_to_reply_ticket(
-                reply_ticket_id=reply_ticket_id,
-                command=command,
-                result=result,
-            )
-            if delivered_by_ticket and pending_robot_reply_id and robot_job_context:
-                self._clear_background_job_robot_reply(
-                    robot_job_context=robot_job_context,
-                    pending_reply_id=pending_robot_reply_id,
-                )
-            if not delivered_by_ticket:
-                self._deliver_background_job_to_robot(
+            queued_to_robot = False
+            delivered_by_ticket = False
+            if robot_job_context:
+                queued_to_robot = self._deliver_background_job_to_robot(
                     item_id=item_id,
                     command=command,
                     result=result,
                     robot_job_context=robot_job_context,
                     pending_reply_id=pending_robot_reply_id or "",
                 )
-            if robot_job_context or delivered_by_ticket:
+            if not queued_to_robot:
+                delivered_by_ticket = self._deliver_background_job_to_reply_ticket(
+                    reply_ticket_id=reply_ticket_id,
+                    command=command,
+                    result=result,
+                )
+            if delivered_by_ticket and pending_robot_reply_id and robot_job_context:
+                self._clear_background_job_robot_reply(
+                    robot_job_context=robot_job_context,
+                    pending_reply_id=pending_robot_reply_id,
+                )
+            if queued_to_robot or delivered_by_ticket:
                 feedback = (
                     f"{feedback}\n"
                     "[Reply ticket notification handled for the source that started this job.]"
@@ -652,6 +657,8 @@ class LocalMCPServer:
 
             if agent_session:
                 agent_session.clear_terminal_job(command)
+                if queued_to_robot or delivered_by_ticket:
+                    return
                 try:
                     from app.services.agent.session import InputMessage, InputType
 
@@ -736,9 +743,9 @@ class LocalMCPServer:
         result: dict,
         robot_job_context: dict | None,
         pending_reply_id: str = "",
-    ) -> None:
+    ) -> bool:
         if not robot_job_context:
-            return
+            return False
         try:
             from app.plugins.robot.service import robot_service
 
@@ -759,6 +766,7 @@ class LocalMCPServer:
                 debug_log(
                     f"[LocalMCPServer] robot background job result not queued: item={item_id}, command={command}"
                 )
+            return bool(queued)
         except Exception as exc:
             debug_log(
                 f"[LocalMCPServer] failed to queue robot background job result: item={item_id}, error={exc}"
@@ -768,6 +776,7 @@ class LocalMCPServer:
                     robot_job_context=robot_job_context,
                     pending_reply_id=pending_reply_id,
                 )
+            return False
 
     def _clear_background_job_robot_reply(
         self,
@@ -809,14 +818,23 @@ class LocalMCPServer:
             return False
 
     def _format_background_job_reply_ticket_message(self, command: str, result: dict) -> str:
+        output_tail = str(result.get("output_tail") or "").strip()
+        if len(output_tail) > 1200:
+            output_tail = output_tail[-1200:]
         if result.get("success"):
             duration = result.get("duration_seconds")
             duration_text = f"，耗时 {duration}s" if duration not in (None, "") else ""
-            return f"后台任务完成了：{command}。退出码 {result.get('exit_code', 0)}{duration_text}。"
+            message = f"后台任务已完成，退出码 {result.get('exit_code', 0)}{duration_text}。"
+            if output_tail:
+                return f"{message}\n结果：\n{output_tail}"
+            return f"{message}\n没有输出内容。"
         error = str(result.get("error") or "daemon job failed").strip()
         if len(error) > 160:
             error = f"{error[:157]}..."
-        return f"后台任务失败了：{command}。原因：{error}"
+        message = f"后台任务失败。原因：{error}"
+        if output_tail:
+            return f"{message}\n输出：\n{output_tail}"
+        return message
 
     def _format_background_job_robot_message(self, command: str, result: dict) -> str:
         status = "completed" if result.get("success") else "failed"

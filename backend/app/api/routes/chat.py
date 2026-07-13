@@ -48,7 +48,7 @@ from app.services.agent.prompts.policy import (
     persist_memory_candidate,
 )
 from app.services.agent.prompts.system import get_system_prompt
-from app.services.agent.reply_ticket import SOURCE_QQ, reply_ticket_manager
+from app.services.agent.reply_ticket import SOURCE_QQ, SOURCE_WEB, reply_ticket_manager
 from app.services.agent.session import (
     COMMAND_DISPATCH_FAILURE_MESSAGE,
     COMMAND_TOOL_NAMES,
@@ -352,6 +352,16 @@ def _ticket_delivery_trace() -> dict[str, Any]:
         "content": "Message sent to current robot conversation.",
         "timestamp": datetime.now().isoformat(),
         "tool_name": "reply_ticket",
+        "hidden": True,
+    }
+
+
+def _hidden_blocked_qq_send_trace() -> dict[str, Any]:
+    return {
+        "type": "agent_tool_result",
+        "content": "Blocked accidental QQ send from non-QQ source.",
+        "timestamp": datetime.now().isoformat(),
+        "tool_name": ROBOT_SEND_TOOL_NAME,
         "hidden": True,
     }
 
@@ -884,15 +894,23 @@ def generate_stream(
     agent: "Agent" = None,
     include_hidden_tool_results: bool = False,
     latest_only_context: bool = False,
+    source_type: str = SOURCE_WEB,
 ) -> Generator[str, None, None]:
     if agent is None:
         agent = agent_manager.get_or_create(handler)
+
+    normalized_source_type = str(source_type or SOURCE_WEB).strip().lower()
+    if normalized_source_type == SOURCE_WEB:
+        clear_robot_context = getattr(agent, "clear_robot_context", None)
+        if callable(clear_robot_context):
+            clear_robot_context()
 
     reply_ticket = reply_ticket_manager.create_for_agent(
         agent,
         item_id=item_id,
         handler_id=str(handler.id),
         message=message,
+        source_type=normalized_source_type,
     )
     pending_context = build_pending_terminal_continuation_prompt(item_id, message)
     messages = build_chat_turn_messages(
@@ -1222,21 +1240,20 @@ def generate_stream(
 
                 if (
                     tool_name == ROBOT_SEND_TOOL_NAME
-                    and not _has_active_robot_chat_context(agent)
+                    and (
+                        reply_ticket.source_type == SOURCE_WEB
+                        or not _has_active_robot_chat_context(agent)
+                    )
                     and not _explicit_web_qq_send_requested(message, tool_args)
                 ):
                     _mark_agent_task_plan_failed(planned_task_runtime)
-                    warning_event = _persist_and_broadcast_event(
+                    logger.info(
+                        "[Chat] Blocked accidental QQ send from source=%s item=%s",
+                        reply_ticket.source_type,
                         item_id,
-                        role="assistant",
-                        content=(
-                            "已拦截 QQ 发送：当前来源是 TermMan web，不允许继承旧 QQ "
-                            "会话目标。只有当前网页消息明确要求发送到具体 QQ 目标时才会发送。"
-                        ),
-                        message_type="agent_warning",
-                        extra={"tool_name": tool_name},
                     )
-                    yield _to_sse(warning_event)
+                    if include_hidden_tool_results:
+                        yield _to_sse(_hidden_blocked_qq_send_trace())
                     _broadcast_agent_status(item_id, "idle")
                     yield _to_sse({"done": True})
                     return

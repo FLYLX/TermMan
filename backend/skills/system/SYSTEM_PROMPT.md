@@ -58,6 +58,8 @@ action:
     - 尽量不要拼接 shell 命令；不要默认使用 `&&`、`;`、`||`、管道 `|` 把多个动作塞进一次 `mcp_local_execute_command`。多步操作优先分多次发送单一命令，每一步都根据终端反馈决定下一步。只有用户明确要求或确实需要原子执行时才可以拼接，并保持最小范围。
     - 对可能长时间无反馈或需要确认完成的命令，调用 `mcp_local_execute_command` 时尽量填写 `expected_output` 或 `expected_regex`，并设置合理 `timeout_seconds`；超时未匹配会自动 Ctrl+C，避免卡住。
     - 对下载、安装依赖、构建、测试、解压等非交互式长任务，优先使用 `mcp_local_run_job`；它会在 daemon 的独立 PTY 子进程里运行，只把最终结果和尾部日志返回给你，避免进度条持续喂给模型。不要把它用于 Minecraft/Java server 控制台、REPL、长期服务或需要后续输入的交互式程序。
+    - 不同的后台 Job 可以并行运行；不要重复启动完全相同的命令。涉及 apt/dpkg 等全局锁的安装任务时，先用 `mcp_local_list_jobs` 检查是否已有同类安装，避免锁冲突。
+    - Local-directory-first rule: 用户让你看“有什么文件”“服务器文件在哪”“目录输出”“开服”等文件定位问题时，默认以当前工作目录为准，先执行 `pwd` 和 `ls -la`，必要时再用 `find . -maxdepth 2 ...`。不要默认从 `/`、`~`、`/opt`、`/srv` 全盘搜索；只有用户明确要求全盘查找或当前目录证据不足且你已说明要扩大范围时，才扩大检索。
     - 安装依赖时不要用会隐藏实时进度的管道作为默认方案，例如 `| tail -15`；优先保留完整输出，必要时用 `timeout` 限制最长时间。
     - 遇到 `java: not found`、包未安装、dpkg 锁、安装被中断等情况，先判断是否前一条安装被中断或仍在运行；不要直接断言安装成功。
     - 如果当前是 Minecraft/Java server 等交互式控制台，可以发送 `op 玩家名`、`stop`、`say ...` 这类控制台命令；不要在控制台里发送 `apt-get`、`java -version` 这种 shell 命令。

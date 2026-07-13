@@ -67,8 +67,10 @@ class ReplyTicketManager:
         item_id: str,
         handler_id: str,
         message: str = "",
+        source_type: str | None = None,
     ) -> ReplyTicket:
         now = datetime.now()
+        forced_source_type = str(source_type or "").strip().lower()
         context = getattr(agent, "_context", None)
         robot_id = str(getattr(context, "robot_id", "") or "").strip()
         ticket = ReplyTicket(
@@ -78,6 +80,9 @@ class ReplyTicketManager:
             source_type=SOURCE_WEB,
             source_label="TermMan web chat",
         )
+
+        if forced_source_type == SOURCE_WEB:
+            robot_id = ""
 
         if robot_id:
             try:
@@ -104,6 +109,13 @@ class ReplyTicketManager:
                     getattr(robot_context, "conversation_generation", 0) or 0
                 )
                 ticket.reply_target = reply_target.model_dump(mode="json")
+
+        if forced_source_type == SOURCE_QQ and ticket.source_type != SOURCE_QQ:
+            logger.warning(
+                "[ReplyTicket] Requested QQ source but no active robot context was available: item=%s handler=%s",
+                item_id,
+                handler_id,
+            )
 
         with self._lock:
             self._prune_locked(now)

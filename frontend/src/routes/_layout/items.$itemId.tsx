@@ -967,8 +967,16 @@ function RobotSleepStatusBadge({
   isFetching: boolean
 }) {
   const { t } = useI18n()
-  if (!data || data.count === 0) {
+  if (!data) {
     return null
+  }
+  if (data.count === 0) {
+    return (
+      <Badge variant="outline" className="border-slate-500/40 text-slate-500">
+        <Bot className="mr-1 size-3" />
+        {t("items.detail.qqUnbound")}
+      </Badge>
+    )
   }
 
   const enabledRobotCount = getEnabledRobotCount(data)
@@ -1027,8 +1035,19 @@ function RobotSleepTerminalLine({
   isFetching: boolean
 }) {
   const { t } = useI18n()
-  if (!data || data.count === 0) {
+  if (!data) {
     return null
+  }
+  if (data.count === 0) {
+    return (
+      <div className="mb-3 flex min-h-9 flex-wrap items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs text-slate-300">
+        <Bot className="size-3.5 text-slate-400" />
+        <span className="font-medium text-slate-200">QQ</span>
+        <span className="rounded-full bg-slate-700/70 px-2 py-0.5 font-medium text-slate-300">
+          {t("items.detail.qqUnbound")}
+        </span>
+      </div>
+    )
   }
 
   const enabledRobotCount = getEnabledRobotCount(data)

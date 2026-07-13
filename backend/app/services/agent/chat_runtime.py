@@ -162,6 +162,7 @@ async def collect_chat_response(
             agent=agent,
             include_hidden_tool_results=True,
             latest_only_context=bool(integration_contexts),
+            source_type="qq" if integration_contexts else "web",
         ):
             if not chunk.startswith("data: "):
                 continue

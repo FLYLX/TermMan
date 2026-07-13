@@ -1827,6 +1827,7 @@ def test_builtin_skills_are_terminal_qq_mcp_and_personas() -> None:
     assert "mcp_local_delete_terminal_input_filter_rule" in (terminal_mcp.action.prompt or "")
     assert "mcp_local_clear_terminal_input_filter_rules" in (terminal_mcp.action.prompt or "")
     assert "`&&`" in (terminal_mcp.action.prompt or "")
+    assert "Local-directory-first rule" in (terminal_mcp.action.prompt or "")
     assert "QQ MCP Skill" in (qq_mcp.action.prompt or "")
     assert "若叶睦人格 Skill" in (mutsumi.action.prompt or "")
     assert "时崎狂三人格 Skill" in (kurumi.action.prompt or "")
@@ -2097,7 +2098,7 @@ def test_busy_pending_terminal_command_blocks_new_shell_input() -> None:
     assert session._get_pending_command() is None
 
 
-def test_running_terminal_job_only_blocks_new_busy_jobs() -> None:
+def test_running_terminal_job_blocks_duplicate_job_but_allows_distinct_jobs() -> None:
     from app.services.agent.session import (
         EXECUTE_COMMAND_TOOL_NAME,
         RUN_JOB_TOOL_NAME,
@@ -2122,7 +2123,11 @@ def test_running_terminal_job_only_blocks_new_busy_jobs() -> None:
         EXECUTE_COMMAND_TOOL_NAME,
         {"command": "apt update"},
     )
-    job_warning = session._validate_terminal_command_input(
+    duplicate_job_warning = session._validate_terminal_command_input(
+        RUN_JOB_TOOL_NAME,
+        {"command": "curl https://example.test/jdk.tar.gz -o jdk.tar.gz"},
+    )
+    distinct_job_warning = session._validate_terminal_command_input(
         RUN_JOB_TOOL_NAME,
         {"command": "apt update"},
     )
@@ -2131,11 +2136,13 @@ def test_running_terminal_job_only_blocks_new_busy_jobs() -> None:
     assert console_command_warning is None
     assert busy_command_warning is not None
     assert "\u540e\u53f0\u4efb\u52a1\u6b63\u5728\u8fd0\u884c" in busy_command_warning
-    assert "\u4e0d\u4f1a\u91cd\u590d\u53d1\u9001" in busy_command_warning
+    assert "mcp_local_run_job" in busy_command_warning
+    assert "\u4e0d\u540c\u540e\u53f0\u4efb\u52a1\u53ef\u4ee5\u5e76\u884c" in busy_command_warning
     assert "jdk.tar.gz" not in busy_command_warning
     assert "apt update" not in busy_command_warning
-    assert job_warning is not None
-    assert "apt update" not in job_warning
+    assert duplicate_job_warning is not None
+    assert "\u76f8\u540c\u547d\u4ee4\u5df2\u62e6\u622a" in duplicate_job_warning
+    assert distinct_job_warning is None
 
     session.clear_terminal_job("apt update")
     assert session.has_running_terminal_job() is True
@@ -2193,7 +2200,8 @@ def test_running_terminal_job_context_is_injected_into_chat_prompt() -> None:
     )
 
     assert "后台终端任务正在运行" in context
-    assert "不要启动新的下载/安装/构建类 run_job" in context
+    assert "不同的后台任务可以继续用 run_job" in context
+    assert "不要重复启动完全相同的命令" in context
     assert "可以继续用 execute_command 发送安全的控制台输入" in context
     assert "apt-get install -y temurin-17-jdk" in context
 
