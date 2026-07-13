@@ -1822,6 +1822,7 @@ def test_builtin_skills_are_terminal_qq_mcp_and_personas() -> None:
     )
     assert "不要用 `mcp_local_run_job` 启动它们" in (terminal_mcp.action.prompt or "")
     assert "mcp_local_add_terminal_input_filter_rule" in (terminal_mcp.action.prompt or "")
+    assert "mcp_local_list_terminal_filter_rules" in (terminal_mcp.action.prompt or "")
     assert "mcp_local_list_terminal_input_filter_rules" in (terminal_mcp.action.prompt or "")
     assert "mcp_local_delete_terminal_input_filter_rule" in (terminal_mcp.action.prompt or "")
     assert "mcp_local_clear_terminal_input_filter_rules" in (terminal_mcp.action.prompt or "")

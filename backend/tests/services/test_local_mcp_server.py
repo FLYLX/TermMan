@@ -516,6 +516,44 @@ def test_terminal_input_filter_rule_tool_adds_noise_block_rule(db) -> None:
     assert "FTBBackups" in list_result[0]["text"]
 
 
+def test_terminal_filter_rule_tool_lists_input_and_output_rules(db) -> None:
+    from tests.utils.item import create_random_item
+
+    item = create_random_item(db)
+    item.input_filter_enabled = True
+    item.input_filter_rules = {
+        "noise_backup": {
+            "regex_patterns": [r"Attempting to create an automatic backup"],
+            "action_type": "block",
+            "reason": "Repeated backup line.",
+        }
+    }
+    item.output_filter_enabled = True
+    item.output_filter_rules = {
+        "dangerous_rm": {
+            "regex_patterns": [r"rm\s+-rf\s+/"],
+            "action_type": "block",
+            "reason": "Protect root filesystem.",
+        }
+    }
+    db.add(item)
+    db.commit()
+
+    server = LocalMCPServer()
+    result = server.call_tool(
+        "list_terminal_filter_rules",
+        {"item_id": str(item.id)},
+    )
+
+    text = result[0]["text"]
+    assert "Input filter (terminal output -> Agent) enabled=True; rules=1" in text
+    assert "noise_backup" in text
+    assert "Attempting to create an automatic backup" in text
+    assert "Output filter (Agent command -> terminal) enabled=True; rules=1" in text
+    assert "dangerous_rm" in text
+    assert r"rm\s+-rf\s+/" in text
+
+
 def test_terminal_input_filter_rule_tools_delete_and_clear_rules(db) -> None:
     from app.models import Item
     from tests.utils.item import create_random_item

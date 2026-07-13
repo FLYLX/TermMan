@@ -146,6 +146,19 @@ class LocalMCPServer:
             skip_memory=True
         )
         self.register_tool(
+            name="list_terminal_filter_rules",
+            description="List all terminal filter rules for the current item, including terminal output -> Agent input filters and Agent -> terminal command output filters. Use this before adding or changing filters when the user asks what filtering rules exist.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Current terminal item id."},
+                },
+                "required": ["item_id"]
+            },
+            handler=self._list_terminal_filter_rules,
+            skip_memory=True
+        )
+        self.register_tool(
             name="delete_terminal_input_filter_rule",
             description="Delete one terminal output -> Agent input filter rule for the current item by rule name.",
             input_schema={
@@ -1193,6 +1206,87 @@ class LocalMCPServer:
             return [{"type": "text", "text": "\n".join(lines)}]
         except Exception as e:
             debug_log(f"[LocalMCPServer] list terminal input filter rules error: {e}")
+            return [{"type": "text", "text": f"Error: {e}"}]
+
+    def _format_terminal_filter_section(
+        self,
+        title: str,
+        *,
+        enabled: bool,
+        rules: dict,
+    ) -> list[str]:
+        if not rules:
+            return [f"{title} enabled={enabled}; no rules."]
+
+        lines = [f"{title} enabled={enabled}; rules={len(rules)}"]
+        for rule_name, rule in rules.items():
+            if not isinstance(rule, dict):
+                lines.append(f"- {rule_name}: invalid rule payload")
+                continue
+            patterns = [
+                pattern
+                for pattern in rule.get("regex_patterns", [])
+                if isinstance(pattern, str)
+            ]
+            action_type = rule.get("action_type", "ignore")
+            reason = str(rule.get("reason") or "").strip()
+            action = rule.get("action") if isinstance(rule.get("action"), dict) else {}
+            replace_rules = action.get("replace_rules") if isinstance(action, dict) else None
+            details = [f"action={action_type}", f"patterns={len(patterns)}"]
+            if isinstance(replace_rules, dict):
+                details.append(f"replace_rules={len(replace_rules)}")
+            if reason:
+                details.append(f"reason={reason}")
+            lines.append(f"- {rule_name}: {', '.join(details)}")
+            for pattern in patterns[:5]:
+                lines.append(f"  - {pattern}")
+            if len(patterns) > 5:
+                lines.append(f"  - ... {len(patterns) - 5} more")
+        return lines
+
+    def _list_terminal_filter_rules(self, args: dict) -> list:
+        item_id = str(args.get("item_id") or "").strip()
+        try:
+            import uuid
+
+            from sqlmodel import Session
+
+            from app.core.db import engine
+            from app.models import Item
+
+            try:
+                item_uuid = uuid.UUID(item_id)
+            except ValueError as exc:
+                raise ValueError(f"invalid item_id: {item_id}") from exc
+
+            with Session(engine) as db:
+                item = db.get(Item, item_uuid)
+                if not item:
+                    raise ValueError(f"item not found: {item_id}")
+                input_enabled = bool(item.input_filter_enabled)
+                input_rules = dict(item.input_filter_rules or {})
+                output_enabled = bool(item.output_filter_enabled)
+                output_rules = dict(item.output_filter_rules or {})
+
+            lines = ["Terminal filter rules for current item:"]
+            lines.extend(
+                self._format_terminal_filter_section(
+                    "Input filter (terminal output -> Agent)",
+                    enabled=input_enabled,
+                    rules=input_rules,
+                )
+            )
+            lines.append("")
+            lines.extend(
+                self._format_terminal_filter_section(
+                    "Output filter (Agent command -> terminal)",
+                    enabled=output_enabled,
+                    rules=output_rules,
+                )
+            )
+            return [{"type": "text", "text": "\n".join(lines)}]
+        except Exception as e:
+            debug_log(f"[LocalMCPServer] list terminal filter rules error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
 
     def _delete_terminal_input_filter_rule(self, args: dict) -> list:
