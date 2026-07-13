@@ -863,6 +863,15 @@ function isRobotControllerAwake(
   )
 }
 
+function hasActiveRobotController(
+  data: ItemRobotControllerStatusResponse | undefined,
+) {
+  return getRobotControllerRows(data).some(
+    ({ controller }) =>
+      isRobotControllerProcessing(controller) || isRobotControllerAwake(controller),
+  )
+}
+
 function getLatestRobotControllerRow(
   data: ItemRobotControllerStatusResponse | undefined,
 ) {
@@ -1500,7 +1509,18 @@ function ItemDetailPage({
     queryKey: getItemRobotControllerStatusQueryKey(item.id),
     queryFn: () => getItemRobotControllerStatus(item.id),
     enabled: Boolean(item.id && robotPluginEnabled),
-    refetchInterval: (query) => (query.state.error ? 10_000 : 2_500),
+    refetchInterval: (query) => {
+      if (query.state.error) {
+        return 10_000
+      }
+      const data = query.state.data as
+        | ItemRobotControllerStatusResponse
+        | undefined
+      if (!data || data.count === 0) {
+        return 15_000
+      }
+      return hasActiveRobotController(data) ? 2_500 : 10_000
+    },
     retry: false,
   })
   const [command, setCommand] = useState("")
@@ -1718,7 +1738,13 @@ function ItemDetailPage({
     queryKey: ["items", "jobs", item.id],
     queryFn: () => requestItemJobs<BackgroundJobsResponse>(item.id),
     enabled: Boolean(shouldConnect),
-    refetchInterval: jobsPanelOpen ? 2000 : 5000,
+    refetchInterval: (query) => {
+      if (jobsPanelOpen) {
+        return 2_000
+      }
+      const data = query.state.data as BackgroundJobsResponse | undefined
+      return data?.jobs?.length ? 5_000 : 15_000
+    },
     retry: false,
   })
 

@@ -69,6 +69,9 @@ const COMPLETION_TYPES = new Set([
 const LIVE_REPLY_STATUS_TIMEOUT_MS = 90_000
 const ACTIVE_AGENT_STATUS_TIMEOUT_MS = 180_000
 const CHAT_HISTORY_PAGE_SIZE = 20
+const CHAT_LIVE_MESSAGE_LIMIT = 300
+const CHAT_REQUEST_HISTORY_LIMIT = 40
+const CHAT_MESSAGE_CONTENT_MAX_CHARS = 16_000
 const AGENT_EVENT_RECONNECT_INITIAL_MS = 2_000
 const AGENT_EVENT_RECONNECT_MAX_MS = 30_000
 const AGENT_EVENT_ERROR_LOG_INTERVAL_MS = 30_000
@@ -211,6 +214,54 @@ function shouldRenderMessage(message: ChatMessage): boolean {
   return !STATUS_ONLY_TYPES.has(message.type ?? "")
 }
 
+function compactLongChatContent(content: string): string {
+  if (content.length <= CHAT_MESSAGE_CONTENT_MAX_CHARS) {
+    return content
+  }
+
+  const edgeLength = Math.floor((CHAT_MESSAGE_CONTENT_MAX_CHARS - 96) / 2)
+  return [
+    content.slice(0, edgeLength),
+    `\n...[trimmed ${content.length - edgeLength * 2} chars for browser performance]...\n`,
+    content.slice(-edgeLength),
+  ].join("")
+}
+
+function compactChatMessageContent(content: string): string {
+  if (content.length <= CHAT_MESSAGE_CONTENT_MAX_CHARS) {
+    return content
+  }
+
+  if (content.includes("[Robot message;")) {
+    const firstLineEnd = content.indexOf("\n")
+    const header = firstLineEnd >= 0 ? content.slice(0, firstLineEnd) : ""
+    const currentMarker = "[Current QQ message]"
+    const currentIndex = content.lastIndexOf(currentMarker)
+    if (currentIndex >= 0) {
+      return compactLongChatContent(
+        [header, content.slice(currentIndex)].filter(Boolean).join("\n"),
+      )
+    }
+  }
+
+  return compactLongChatContent(content)
+}
+
+function prepareChatMessageForState(message: ChatMessage): ChatMessage {
+  const content = compactChatMessageContent(message.content)
+  if (content === message.content) {
+    return message
+  }
+  return { ...message, content }
+}
+
+function limitLiveChatMessages(messages: ChatMessage[]): ChatMessage[] {
+  if (messages.length <= CHAT_LIVE_MESSAGE_LIMIT) {
+    return messages
+  }
+  return messages.slice(-CHAT_LIVE_MESSAGE_LIMIT)
+}
+
 function normalizeRenderableMessages(
   messages: ChatSessionPage["messages"] | undefined,
 ): ChatMessage[] {
@@ -220,6 +271,7 @@ function normalizeRenderableMessages(
       (message): message is ChatMessage =>
         message !== null && shouldRenderMessage(message),
     )
+    .map((message) => prepareChatMessageForState(message))
 }
 
 function getChatMessageKey(message: ChatMessage): string {
@@ -866,7 +918,7 @@ function isTerminalStreamEvent(event: unknown): boolean {
 function buildRequestHistory(
   messages: ChatMessage[],
 ): Array<{ role: "user" | "assistant"; content: string }> {
-  return messages.reduce<
+  return messages.slice(-CHAT_REQUEST_HISTORY_LIMIT).reduce<
     Array<{ role: "user" | "assistant"; content: string }>
   >((history, message) => {
     if (message.localEcho || STATUS_ONLY_TYPES.has(message.type ?? "")) {
@@ -957,6 +1009,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const suppressNextAutoScrollRef = useRef(false)
+  const loadedPersistedMessageCountRef = useRef(0)
   const streamReaderRef =
     useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
   const streamAbortRef = useRef<AbortController | null>(null)
@@ -976,33 +1029,40 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
   }, [agentStatus])
 
   const appendLiveMessage = (message: ChatMessage) => {
+    const nextMessage = prepareChatMessageForState(message)
     setMessages((prev) => {
       for (let index = prev.length - 1; index >= 0; index -= 1) {
         const current = prev[index]
         if (
           current.localEcho &&
-          current.role === "user" &&
-          message.type === "chat_user" &&
-          current.content === message.content
+          current.role === nextMessage.role &&
+          nextMessage.type === "chat_user" &&
+          current.content === nextMessage.content
         ) {
           const next = [...prev]
-          next[index] = message
-          return next
+          next[index] = nextMessage
+          if (!nextMessage.localEcho) {
+            loadedPersistedMessageCountRef.current += 1
+          }
+          return limitLiveChatMessages(next)
         }
       }
 
       const lastMessage = prev[prev.length - 1]
       if (
         lastMessage &&
-        lastMessage.role === message.role &&
-        lastMessage.type === message.type &&
-        lastMessage.timestamp === message.timestamp &&
-        lastMessage.content === message.content
+        lastMessage.role === nextMessage.role &&
+        lastMessage.type === nextMessage.type &&
+        lastMessage.timestamp === nextMessage.timestamp &&
+        lastMessage.content === nextMessage.content
       ) {
         return prev
       }
 
-      return [...prev, message]
+      if (!nextMessage.localEcho) {
+        loadedPersistedMessageCountRef.current += 1
+      }
+      return limitLiveChatMessages([...prev, nextMessage])
     })
   }
 
@@ -1102,6 +1162,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       setHistoryHasMore(false)
       setHistoryTotal(0)
       setIsLoadingHistory(false)
+      loadedPersistedMessageCountRef.current = 0
 
       const [handlersResult, sessionResult] = await Promise.allSettled([
         ItemHandlerAssociationsService.getHandlersForItem({ itemId }),
@@ -1126,6 +1187,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
           sessionResult.value.messages,
         )
         setMessages(normalizedMessages)
+        loadedPersistedMessageCountRef.current = normalizedMessages.length
         setHistoryTotal(sessionResult.value.total ?? normalizedMessages.length)
         setHistoryHasMore(Boolean(sessionResult.value.has_more))
       } else {
@@ -1156,9 +1218,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
     const scrollElement = scrollRef.current
     const previousScrollHeight = scrollElement?.scrollHeight ?? 0
     const previousScrollTop = scrollElement?.scrollTop ?? 0
-    const loadedPersistedMessages = messages.filter(
-      (message) => !message.localEcho,
-    ).length
+    const loadedPersistedMessages = loadedPersistedMessageCountRef.current
 
     setIsLoadingHistory(true)
     try {
@@ -1167,6 +1227,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
         offset: loadedPersistedMessages,
       })
       const olderMessages = normalizeRenderableMessages(page.messages)
+      loadedPersistedMessageCountRef.current += olderMessages.length
       setHistoryTotal(page.total ?? historyTotal)
       setHistoryHasMore(Boolean(page.has_more))
       suppressNextAutoScrollRef.current = true
@@ -1368,15 +1429,17 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
     }
 
     const history = buildRequestHistory(messages)
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "user",
-        content: messageText,
-        type: "chat_user",
-        localEcho: true,
-      },
-    ])
+    setMessages((prev) =>
+      limitLiveChatMessages([
+        ...prev,
+        prepareChatMessageForState({
+          role: "user",
+          content: messageText,
+          type: "chat_user",
+          localEcho: true,
+        }),
+      ]),
+    )
     setInput("")
     setAgentStatus({
         text: "\u56de\u590d\u4e2d",
@@ -1534,6 +1597,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
                     try {
                       await clearChatSession(itemId)
                       setMessages([])
+                      loadedPersistedMessageCountRef.current = 0
                       setHistoryError(null)
                       setAgentStatus(null)
                       setHistoryHasMore(false)

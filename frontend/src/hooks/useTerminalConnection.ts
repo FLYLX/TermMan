@@ -54,6 +54,10 @@ const ANSI_ESCAPE_RE = new RegExp(
 )
 const PROMPT_BEFORE_TIMESTAMP_RE = /^(?:\s*[>#]\s*)+(?=\[\d{2}:\d{2}:\d{2}\])/gm
 const TERMINAL_DEBUG = import.meta.env.DEV
+const TERMINAL_OUTPUT_MAX_ENTRIES = 1200
+const TERMINAL_OUTPUT_MAX_CHARS = 240_000
+const TERMINAL_PENDING_OUTPUT_MAX_ENTRIES = 4000
+const TERMINAL_STREAM_FLUSH_MS = 80
 
 function stripTerminalControlChars(text: string): string {
   let result = ""
@@ -74,9 +78,12 @@ function stripTerminalControlChars(text: string): string {
 }
 
 function sanitizeTerminalText(value: unknown): string {
-  const text = String(value ?? "")
+  let text = String(value ?? "")
   if (!text) {
     return ""
+  }
+  if (text.length > TERMINAL_OUTPUT_MAX_CHARS) {
+    text = text.slice(-TERMINAL_OUTPUT_MAX_CHARS)
   }
   return stripTerminalControlChars(text.replace(ANSI_ESCAPE_RE, "")).replace(
     PROMPT_BEFORE_TIMESTAMP_RE,
@@ -251,6 +258,46 @@ function appendTerminalOutput(
   return next
 }
 
+function limitTerminalOutput(entries: TerminalOutput[]): TerminalOutput[] {
+  if (entries.length <= TERMINAL_OUTPUT_MAX_ENTRIES) {
+    let totalChars = 0
+    for (const entry of entries) {
+      totalChars += getOutputText(entry)?.text.length ?? 0
+      if (totalChars > TERMINAL_OUTPUT_MAX_CHARS) {
+        break
+      }
+    }
+    if (totalChars <= TERMINAL_OUTPUT_MAX_CHARS) {
+      return entries
+    }
+  }
+
+  const kept: TerminalOutput[] = []
+  let totalChars = 0
+
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    if (kept.length >= TERMINAL_OUTPUT_MAX_ENTRIES) {
+      break
+    }
+
+    const entry = entries[index]
+    const current = getOutputText(entry)
+    const textLength = current?.text.length ?? 0
+    if (
+      kept.length > 0 &&
+      textLength > 0 &&
+      totalChars + textLength > TERMINAL_OUTPUT_MAX_CHARS
+    ) {
+      break
+    }
+
+    kept.push(entry)
+    totalChars += textLength
+  }
+
+  return kept.reverse()
+}
+
 export function useTerminalConnection({
   itemId,
   enabled = true,
@@ -267,6 +314,8 @@ export function useTerminalConnection({
   const connectingRef = useRef(false)
   const mountedRef = useRef(true)
   const connectionIdRef = useRef(0)
+  const pendingOutputRef = useRef<TerminalOutput[]>([])
+  const outputFlushTimerRef = useRef<number | null>(null)
 
   const onConnectedRef = useRef(onConnected)
   const onDisconnectedRef = useRef(onDisconnected)
@@ -279,7 +328,52 @@ export function useTerminalConnection({
   }, [onConnected, onDisconnected, onError])
 
   const clearOutput = useCallback(() => {
+    pendingOutputRef.current = []
     setOutput([])
+  }, [])
+
+  const flushPendingOutput = useCallback(() => {
+    outputFlushTimerRef.current = null
+    const pending = pendingOutputRef.current
+    if (pending.length === 0) {
+      return
+    }
+
+    pendingOutputRef.current = []
+    setOutput((previous) => {
+      let next = previous
+      for (const entry of pending) {
+        next = appendTerminalOutput(next, entry)
+      }
+      return limitTerminalOutput(next)
+    })
+  }, [])
+
+  const enqueueOutput = useCallback(
+    (entry: TerminalOutput) => {
+      pendingOutputRef.current.push(entry)
+      if (pendingOutputRef.current.length > TERMINAL_PENDING_OUTPUT_MAX_ENTRIES) {
+        pendingOutputRef.current = pendingOutputRef.current.slice(
+          -TERMINAL_PENDING_OUTPUT_MAX_ENTRIES,
+        )
+      }
+      if (outputFlushTimerRef.current !== null) {
+        return
+      }
+      outputFlushTimerRef.current = window.setTimeout(
+        flushPendingOutput,
+        TERMINAL_STREAM_FLUSH_MS,
+      )
+    },
+    [flushPendingOutput],
+  )
+
+  const cancelPendingOutputFlush = useCallback(() => {
+    if (outputFlushTimerRef.current !== null) {
+      window.clearTimeout(outputFlushTimerRef.current)
+      outputFlushTimerRef.current = null
+    }
+    pendingOutputRef.current = []
   }, [])
 
   const disposeSocket = useCallback((socket: Socket | null) => {
@@ -296,10 +390,11 @@ export function useTerminalConnection({
   const disconnect = useCallback(() => {
     const socket = socketRef.current
     disposeSocket(socket)
+    cancelPendingOutputFlush()
     setIsConnected(false)
     setIsConnecting(false)
     connectingRef.current = false
-  }, [disposeSocket])
+  }, [cancelPendingOutputFlush, disposeSocket])
 
   const doConnect = useCallback(async (force = false) => {
     if ((!force && !enabled) || !itemId) {
@@ -333,7 +428,7 @@ export function useTerminalConnection({
         const outputLines = lines
           .filter((line) => line.trim())
           .map((line) => ({ stdout: `${line}\n` }))
-        setOutput(outputLines)
+        setOutput(limitTerminalOutput(outputLines))
       }
 
       if (
@@ -428,7 +523,7 @@ export function useTerminalConnection({
         ) {
           return
         }
-        setOutput((prev) => appendTerminalOutput(prev, data))
+        enqueueOutput(data)
       })
 
       socket.on("disconnect", (reason) => {
@@ -477,7 +572,7 @@ export function useTerminalConnection({
       connectingRef.current = false
       onErrorRef.current?.(errorMessage)
     }
-  }, [disposeSocket, enabled, itemId])
+  }, [disposeSocket, enabled, enqueueOutput, itemId])
 
   const reconnect = useCallback((force = false) => {
     disconnect()
@@ -516,9 +611,16 @@ export function useTerminalConnection({
       connectionIdRef.current++
       const socket = socketRef.current
       disposeSocket(socket)
+      cancelPendingOutputFlush()
       connectingRef.current = false
     }
-  }, [disposeSocket, enabled, itemId, doConnect])
+  }, [
+    cancelPendingOutputFlush,
+    disposeSocket,
+    enabled,
+    itemId,
+    doConnect,
+  ])
 
   return {
     isConnected,
