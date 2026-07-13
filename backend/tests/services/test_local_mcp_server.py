@@ -1006,6 +1006,128 @@ def test_background_run_job_delivers_via_reply_ticket_without_robot_queue(
     ]
 
 
+def test_background_run_job_passes_web_reply_ticket_to_terminal_feedback(
+    monkeypatch,
+) -> None:
+    import threading
+    from types import SimpleNamespace
+
+    from app.services.agent.reply_ticket import reply_ticket_manager
+    from app.services.agent.session import agent_session_manager
+
+    item_id = "item-background-job-web-ticket"
+    server = LocalMCPServer()
+    started = threading.Event()
+    delivered = threading.Event()
+    processed_inputs: list[object] = []
+
+    class FakeConnection:
+        def run_job_http(self, **kwargs):
+            started.set()
+            return {
+                "success": False,
+                "error": "daemon job failed",
+                "job_id": "job-web-ticket",
+                "command": kwargs["command"],
+                "cwd": "/workspace/item",
+                "exit_code": 127,
+                "timed_out": False,
+                "duration_seconds": 0.02,
+                "output_tail": "/bin/sh: 1: java: not found",
+            }
+
+    monkeypatch.setattr(
+        server,
+        "_get_item_daemon_context",
+        lambda item_id: (
+            SimpleNamespace(owner_id="user-1", working_directory="/workspace/item"),
+            FakeConnection(),
+        ),
+    )
+
+    agent_session_manager.remove_session(item_id)
+    session = agent_session_manager.get_or_create_session(item_id, "handler-1")
+
+    def fake_process_input(input_msg):
+        processed_inputs.append(input_msg)
+        delivered.set()
+
+    monkeypatch.setattr(session, "process_input", fake_process_input)
+    fake_agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_context_token="",
+            reply_ticket_id="",
+        )
+    )
+
+    reply_ticket_manager.reset()
+    try:
+        ticket = reply_ticket_manager.create_for_agent(
+            fake_agent,
+            item_id=item_id,
+            handler_id="handler-1",
+            message="java 还在不",
+        )
+        result = server.call_tool(
+            "run_job",
+            {
+                "item_id": item_id,
+                "command": "java -version 2>&1",
+                "_reply_ticket_id": ticket.ticket_id,
+            },
+        )
+        assert started.wait(2)
+        assert delivered.wait(2)
+    finally:
+        agent_session_manager.remove_session(item_id)
+        reply_ticket_manager.reset()
+
+    assert result[0]["type"] == "text"
+    assert len(processed_inputs) == 1
+    assert processed_inputs[0].reply_ticket_id == ticket.ticket_id
+    assert processed_inputs[0].content.startswith("[Background terminal job failed]")
+
+
+def test_web_reply_ticket_blocks_robot_send_for_terminal_feedback() -> None:
+    from types import SimpleNamespace
+
+    from app.services.agent.reply_ticket import reply_ticket_manager
+    from app.services.agent.session import agent_session_manager
+
+    item_id = "item-web-ticket-blocks-qq"
+    session = agent_session_manager.get_or_create_session(item_id, "handler-1")
+    fake_agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_context_token="",
+            reply_ticket_id="",
+        )
+    )
+
+    reply_ticket_manager.reset()
+    try:
+        ticket = reply_ticket_manager.create_for_agent(
+            fake_agent,
+            item_id=item_id,
+            handler_id="handler-1",
+            message="java 还在不",
+        )
+
+        warning = session._robot_send_blocked_by_reply_ticket(
+            ticket.ticket_id,
+            "mcp_robot_send_message",
+        )
+        prompt = session._build_reply_ticket_prompt(ticket.ticket_id)
+    finally:
+        agent_session_manager.remove_session(item_id)
+        reply_ticket_manager.reset()
+
+    assert "QQ" in warning
+    assert "TermMan web chat" in warning
+    assert "do not call QQ tools" in prompt
+
+
 def test_list_jobs_reports_active_daemon_jobs(monkeypatch) -> None:
     from types import SimpleNamespace
 

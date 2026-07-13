@@ -661,6 +661,7 @@ class LocalMCPServer:
                             content=feedback,
                             raw_content=feedback,
                             query="background job completed",
+                            reply_ticket_id=reply_ticket_id,
                         )
                     )
                 except Exception as exc:

@@ -442,6 +442,7 @@ class InputMessage:
     content: str
     raw_content: str = ""
     query: str = ""
+    reply_ticket_id: str = ""
     timestamp: datetime = field(default_factory=datetime.now)
     callback: Callable | None = None
 
@@ -569,6 +570,9 @@ class RunningTerminalJob:
     command: str
     normalized_command: str
     timeout_seconds: int = 600
+    reply_ticket_id: str = ""
+    source_type: str = ""
+    source_label: str = ""
     started_at: datetime = field(default_factory=datetime.now)
 
 
@@ -799,12 +803,29 @@ class AgentSession:
             tool_args.get("timeout_seconds"),
             default=600,
         )
+        reply_ticket_id = str(tool_args.get("_reply_ticket_id") or "").strip()
+        source_type = ""
+        source_label = ""
+        if reply_ticket_id:
+            try:
+                from app.services.agent.reply_ticket import reply_ticket_manager
+
+                ticket = reply_ticket_manager.get(reply_ticket_id)
+                if ticket:
+                    source_type = str(ticket.source_type or "")
+                    source_label = str(ticket.source_label or "")
+            except Exception:
+                source_type = ""
+                source_label = ""
         with self.lock:
             self._running_terminal_job = RunningTerminalJob(
                 tool_name=tool_name,
                 command=command,
                 normalized_command=self._normalize_text(command),
                 timeout_seconds=timeout_seconds,
+                reply_ticket_id=reply_ticket_id,
+                source_type=source_type,
+                source_label=source_label,
             )
 
     def clear_terminal_job(self, command: str | None = None) -> None:
@@ -1062,6 +1083,72 @@ class AgentSession:
             "- Use the terminal output only as evidence for that pending QQ request.\n"
             "- If you answer or update the user, call `mcp_robot_send_message` so the reply goes back to the locked QQ conversation. Do not leave the answer only in TermMan.\n"
             "- Treat this pending QQ request as one-shot: send at most one concise QQ status/final message for this command result. If you already sent a QQ message in this turn, do not restate the same conclusion in the final assistant text.\n"
+        )
+
+    def _get_reply_ticket(self, ticket_id: str):
+        ticket_id = str(ticket_id or "").strip()
+        if not ticket_id:
+            return None
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            return reply_ticket_manager.get(ticket_id)
+        except Exception:
+            return None
+
+    def _build_reply_ticket_prompt(self, ticket_id: str) -> str:
+        ticket_id = str(ticket_id or "").strip()
+        if not ticket_id:
+            return ""
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            return reply_ticket_manager.build_prompt(ticket_id)
+        except Exception:
+            return ""
+
+    def _attach_reply_ticket_to_agent(self, agent: Agent, ticket_id: str) -> None:
+        ticket_id = str(ticket_id or "").strip()
+        if not ticket_id:
+            return
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            reply_ticket_manager.attach_to_agent(agent, ticket_id)
+        except Exception:
+            context = getattr(agent, "_context", None)
+            if context is not None:
+                setattr(context, "reply_ticket_id", ticket_id)
+
+    def _detach_reply_ticket_from_agent(self, agent: Agent, ticket_id: str) -> None:
+        ticket_id = str(ticket_id or "").strip()
+        if not ticket_id:
+            return
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            reply_ticket_manager.detach_from_agent(agent, ticket_id)
+        except Exception:
+            context = getattr(agent, "_context", None)
+            if (
+                context is not None
+                and str(getattr(context, "reply_ticket_id", "") or "") == ticket_id
+            ):
+                setattr(context, "reply_ticket_id", "")
+
+    def _robot_send_blocked_by_reply_ticket(self, ticket_id: str, tool_name: str) -> str:
+        if tool_name != ROBOT_SEND_TOOL_NAME:
+            return ""
+        ticket = self._get_reply_ticket(ticket_id)
+        if not ticket:
+            return ""
+        if ticket.source_type == "qq":
+            return ""
+        return (
+            "\u5df2\u62e6\u622a QQ \u53d1\u9001\uff1a"
+            "\u5f53\u524d\u540e\u53f0\u4efb\u52a1\u7684\u53d1\u8d77\u6765\u6e90"
+            f"\u662f {ticket.source_label or ticket.source_type}\uff0c"
+            "\u53ea\u80fd\u56de\u5230\u539f\u59cb\u6765\u6e90\uff0c\u4e0d\u80fd\u8f6c\u53d1\u5230 QQ\u3002"
         )
 
     def _send_pending_integration_response(
@@ -1772,12 +1859,16 @@ class AgentSession:
             self._process_chat_input(input_msg, agent)
 
     def _process_terminal_input(self, input_msg: InputMessage, agent: Agent):
+        reply_ticket = self._get_reply_ticket(input_msg.reply_ticket_id)
+        reply_ticket_is_web = bool(
+            reply_ticket and getattr(reply_ticket, "source_type", "") == "web"
+        )
         pending_before_analysis = self._get_pending_command()
         had_pending_command = pending_before_analysis is not None
         pending_integration_contexts = self._copy_pending_integration_contexts(
             pending_before_analysis
         )
-        if not pending_integration_contexts:
+        if reply_ticket_is_web or not pending_integration_contexts:
             clear_robot_context = getattr(agent, "clear_robot_context", None)
             if callable(clear_robot_context):
                 clear_robot_context()
@@ -1912,6 +2003,7 @@ class AgentSession:
                     terminal_source=analysis.terminal_source,
                     tool_results_sink=integration_tool_results,
                     pending_command_for_delivery=pending_before_analysis,
+                    reply_ticket_id=input_msg.reply_ticket_id,
                 )
                 if next_messages is None:
                     break
@@ -2026,6 +2118,16 @@ class AgentSession:
                     {"role": "system", "content": "\n\n".join(system_parts)}
                 ] + messages
 
+            reply_ticket_prompt = self._build_reply_ticket_prompt(
+                input_msg.reply_ticket_id
+            )
+            if reply_ticket_prompt:
+                insert_at = 1 if messages and messages[0].get("role") == "system" else 0
+                messages.insert(
+                    insert_at,
+                    {"role": "system", "content": reply_ticket_prompt},
+                )
+
             last_user_content = ""
             if messages and messages[-1].get("role") == "user":
                 last_user_content = str(messages[-1].get("content") or "")
@@ -2047,10 +2149,19 @@ class AgentSession:
         running_job: RunningTerminalJob,
     ) -> str:
         elapsed_seconds = int((datetime.now() - running_job.started_at).total_seconds())
+        source_line = ""
+        if running_job.source_type or running_job.source_label:
+            source_line = (
+                "Original requester route: "
+                f"{running_job.source_label or running_job.source_type}. "
+                "When this job completes, report back only through that same route. "
+                "Do not switch to QQ unless this route is QQ. "
+            )
         return (
             "A background terminal job is running independently; it does not block normal conversation. "
             "For normal chat, acknowledgement, or 'why are you quiet' messages, answer directly without calling run_job. "
             "Only inspect/list/cancel jobs when the user explicitly asks about the job status or wants to stop it. "
+            f"{source_line}"
             "当前有一个后台终端任务正在运行。"
             f"已运行 {elapsed_seconds}s，超时上限 {running_job.timeout_seconds}s。"
             f"任务命令：`{self._short_command(running_job.command)}`。"
@@ -2268,6 +2379,7 @@ class AgentSession:
         terminal_source: str | None = None,
         tool_results_sink: list[str] | None = None,
         pending_command_for_delivery: PendingCommand | None = None,
+        reply_ticket_id: str = "",
     ) -> list[dict] | None:
         tool_calls = list(message.tool_calls or [])
         if tool_calls:
@@ -2308,6 +2420,17 @@ class AgentSession:
                 return None
 
             normalized_tool_args_str = json.dumps(tool_args, ensure_ascii=False)
+            robot_send_source_error = self._robot_send_blocked_by_reply_ticket(
+                reply_ticket_id,
+                tool_name,
+            )
+            if robot_send_source_error:
+                self.emit_output(
+                    robot_send_source_error,
+                    "agent_warning",
+                    {"tool_name": tool_name},
+                )
+                return None
             tool_args["item_id"] = self.item_id
             terminal_input_error = None
             if not self._should_auto_route_tool_to_job(tool_name, tool_args):
