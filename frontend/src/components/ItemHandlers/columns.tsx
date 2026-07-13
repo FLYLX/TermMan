@@ -5,6 +5,7 @@ import type { ItemHandlerPublic } from "@/client"
 import { ItemHandlerAssociationsService } from "@/client"
 import { useI18n } from "@/components/locale-provider"
 import { Badge } from "@/components/ui/badge"
+import { SecretValue } from "@/components/ui/secret-value"
 import { cn } from "@/lib/utils"
 import { ItemHandlerActionsMenu } from "./ItemHandlerActionsMenu"
 
@@ -116,14 +117,12 @@ export function useItemHandlerColumns() {
         cell: ({ row }) => {
           const apiKey = row.original.api_key
           return (
-            <span
-              className={cn(
-                "max-w-xs truncate block text-muted-foreground",
-                !apiKey && "italic",
-              )}
-            >
-              {apiKey ? `****${apiKey.slice(-4)}` : t("common.noApiKey")}
-            </span>
+            <SecretValue
+              value={apiKey}
+              label={t("common.apiKey")}
+              emptyText={t("common.noApiKey")}
+              compact
+            />
           )
         },
       },

@@ -181,6 +181,8 @@ class QueuedRobotChatJob:
     message_text: str = ""
     trigger_reason: str = ""
     inbound_message: RobotInboundMessage | None = None
+    reply_ticket_id: str = ""
+    pending_reply_id: str = ""
 
 
 class RobotServiceError(Exception):
@@ -249,6 +251,7 @@ class RobotService:
         conversation_generation: int = 0,
         message: str,
         pending_reply_id: str = "",
+        reply_ticket_id: str = "",
     ) -> bool:
         if not message.strip():
             return False
@@ -298,15 +301,11 @@ class RobotService:
                 conversation_generation=conversation_generation,
                 reply_requires_awake=False,
                 enqueued_at=self._now(),
+                reply_ticket_id=str(reply_ticket_id or ""),
+                pending_reply_id=str(pending_reply_id or ""),
             )
 
         queued = self._enqueue_chat_job(job)
-        if pending_reply_id:
-            self.clear_background_job_reply(
-                robot_id=parsed_robot_id,
-                conversation_key=resolved_conversation_key,
-                pending_reply_id=pending_reply_id,
-            )
         record_robot_event(
             str(parsed_robot_id),
             direction="backend_queue",
@@ -515,6 +514,7 @@ class RobotService:
                             conversation_key=job.conversation_key,
                             conversation_generation=job.conversation_generation,
                             reply_requires_awake=job.reply_requires_awake,
+                            reply_ticket_id=job.reply_ticket_id,
                         )
                     )
                 response_text = self._visible_agent_response_text(response)
@@ -534,6 +534,12 @@ class RobotService:
                     and not job.direct_reply_trigger,
                 )
                 if robot_message_sent:
+                    if job.pending_reply_id:
+                        self.clear_background_job_reply(
+                            robot_id=job.robot_id,
+                            conversation_key=job.conversation_key,
+                            pending_reply_id=job.pending_reply_id,
+                        )
                     self._enqueue_pending_chat_followup(
                         robot=robot,
                         conversation_key=job.conversation_key,
@@ -3212,6 +3218,7 @@ class RobotService:
         conversation_key: str = "",
         conversation_generation: int = 0,
         reply_requires_awake: bool = False,
+        reply_ticket_id: str = "",
     ) -> ChatResponseResult:
         owner = session.get(User, robot.owner_id)
         if owner is None:
@@ -3229,6 +3236,7 @@ class RobotService:
                 robot_conversation_key=conversation_key,
                 robot_conversation_generation=conversation_generation,
                 robot_reply_requires_awake=reply_requires_awake,
+                reply_ticket_id=reply_ticket_id,
                 return_result=True,
             )
             if isinstance(result, ChatResponseResult):

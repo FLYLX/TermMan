@@ -34,18 +34,19 @@ from app.services.agent.pending_context import (
     clear_pending_terminal_continuation,
     record_pending_terminal_continuation,
 )
+from app.services.agent.prompts import builder as prompt_builder
 from app.services.agent.prompts.builder import (
     build_chat_turn_messages,
     build_terminal_turn_messages,
     is_critical_terminal_event,
 )
-from app.services.agent.prompts import builder as prompt_builder
+from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.robot_delivery import (
     ROBOT_QQ_REPLY_EVENT_TYPE,
     ROBOT_SEND_TOOL_NAME,
     robot_reply_event_content,
 )
-from app.services.agent.prompts.system import get_system_prompt
+from app.services.agent.task_workflow import task_workflow_manager
 from app.services.agent.tool_arguments import (
     ToolArgumentParseError,
     parse_tool_arguments,
@@ -434,6 +435,7 @@ class SessionState(Enum):
 class InputType(Enum):
     TERMINAL = "terminal"
     CHAT = "chat"
+    SCHEDULED_TASK = "scheduled_task"
 
 
 @dataclass
@@ -445,6 +447,9 @@ class InputMessage:
     reply_ticket_id: str = ""
     timestamp: datetime = field(default_factory=datetime.now)
     callback: Callable | None = None
+    completion_callback: Callable[[bool, str], None] | None = None
+    scheduled_task_id: str = ""
+    scheduled_execution_id: str = ""
 
 
 @dataclass
@@ -1143,6 +1148,31 @@ class AgentSession:
         except Exception:
             return None
 
+    @staticmethod
+    def _record_scheduled_ticket_result(
+        ticket_id: str,
+        *,
+        success: bool,
+        error: str = "",
+    ) -> None:
+        if not ticket_id:
+            return
+        try:
+            from app.services.agent.scheduled_tasks import (
+                record_scheduled_ticket_result,
+            )
+
+            record_scheduled_ticket_result(
+                ticket_id,
+                success=success,
+                error=error,
+            )
+        except Exception:
+            logger.exception(
+                "[AgentSession] Failed to update scheduled task result: ticket=%s",
+                ticket_id,
+            )
+
     def _build_reply_ticket_prompt(self, ticket_id: str) -> str:
         ticket_id = str(ticket_id or "").strip()
         if not ticket_id:
@@ -1153,6 +1183,34 @@ class AgentSession:
             return reply_ticket_manager.build_prompt(ticket_id)
         except Exception:
             return ""
+
+    def _deliver_terminal_reply_ticket(
+        self,
+        ticket_id: str,
+        content: str,
+    ) -> bool:
+        ticket = self._get_reply_ticket(ticket_id)
+        if not ticket or not content.strip():
+            return False
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            if ticket.source_type == "qq":
+                delivered = reply_ticket_manager.deliver(ticket_id, content)
+                if delivered:
+                    self.emit_output(
+                        f"已回复 QQ：{content.strip()}",
+                        ROBOT_QQ_REPLY_EVENT_TYPE,
+                        {"tool_name": "reply_ticket", "qq_delivery": True},
+                    )
+                return delivered
+        except Exception:
+            logger.exception(
+                "[AgentSession] Failed to deliver terminal reply ticket: item=%s ticket=%s",
+                self.item_id,
+                ticket_id,
+            )
+        return False
 
     def _attach_reply_ticket_to_agent(self, agent: Agent, ticket_id: str) -> None:
         ticket_id = str(ticket_id or "").strip()
@@ -1165,7 +1223,7 @@ class AgentSession:
         except Exception:
             context = getattr(agent, "_context", None)
             if context is not None:
-                setattr(context, "reply_ticket_id", ticket_id)
+                context.reply_ticket_id = ticket_id
 
     def _detach_reply_ticket_from_agent(self, agent: Agent, ticket_id: str) -> None:
         ticket_id = str(ticket_id or "").strip()
@@ -1181,7 +1239,7 @@ class AgentSession:
                 context is not None
                 and str(getattr(context, "reply_ticket_id", "") or "") == ticket_id
             ):
-                setattr(context, "reply_ticket_id", "")
+                context.reply_ticket_id = ""
 
     def _robot_send_blocked_by_reply_ticket(self, ticket_id: str, tool_name: str) -> str:
         if tool_name != ROBOT_SEND_TOOL_NAME:
@@ -1765,6 +1823,8 @@ class AgentSession:
             return False
         if last_item.input_type != InputType.TERMINAL:
             return False
+        if str(last_item.reply_ticket_id or "") != str(input_msg.reply_ticket_id or ""):
+            return False
 
         last_item.content = self._merge_text_parts(last_item.content, input_msg.content)
         last_item.raw_content = self._merge_text_parts(
@@ -1862,19 +1922,26 @@ class AgentSession:
                 self._emit_idle_or_waiting_status(0)
                 return
 
-            if (datetime.now() - input_msg.timestamp).total_seconds() > 60:
+            if (
+                input_msg.input_type != InputType.SCHEDULED_TASK
+                and not input_msg.reply_ticket_id
+                and (datetime.now() - input_msg.timestamp).total_seconds() > 60
+            ):
                 logger.debug(f"[AgentSession] Skipping stale input for item {self.item_id}")
                 continue
 
             self._begin_turn(input_msg)
 
+            process_error = ""
             try:
                 self._process_input(input_msg)
             except Exception as exc:
+                process_error = str(exc)
                 logger.error(f"[AgentSession] Error processing queue: {exc}")
                 self.emit_output(f"处理失败: {exc}", "agent_error")
             finally:
                 self._finish_turn()
+                self._notify_input_complete(input_msg, not process_error, process_error)
 
     def process_input(self, input_msg: InputMessage):
         with self.lock:
@@ -1884,15 +1951,36 @@ class AgentSession:
 
         self._begin_turn(input_msg)
 
+        process_error = ""
         try:
             self._process_input(input_msg)
+        except Exception as exc:
+            process_error = str(exc)
+            raise
         finally:
             self._finish_turn()
+            self._notify_input_complete(input_msg, not process_error, process_error)
 
             if not self.input_queue.empty():
                 threading.Thread(target=self.process_queue, daemon=True).start()
 
+    @staticmethod
+    def _notify_input_complete(
+        input_msg: InputMessage,
+        processed: bool,
+        process_error: str = "",
+    ) -> None:
+        callback = input_msg.completion_callback
+        if callback is None:
+            return
+        try:
+            callback(processed, process_error)
+        except Exception:
+            logger.exception("[AgentSession] Input completion callback failed")
+
     def _process_input(self, input_msg: InputMessage):
+        if input_msg.callback:
+            self.add_output_callback(input_msg.callback)
         agent = self.get_agent()
         if not agent:
             self.emit_output("Agent 不可用", "agent_error")
@@ -1901,7 +1989,30 @@ class AgentSession:
         self._last_activity = datetime.now()
 
         if input_msg.input_type == InputType.TERMINAL:
-            self._process_terminal_input(input_msg, agent)
+            self._attach_reply_ticket_to_agent(agent, input_msg.reply_ticket_id)
+            try:
+                self._process_terminal_input(input_msg, agent)
+            finally:
+                self._detach_reply_ticket_from_agent(agent, input_msg.reply_ticket_id)
+        elif input_msg.input_type == InputType.SCHEDULED_TASK:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            if not input_msg.reply_ticket_id:
+                ticket = reply_ticket_manager.create_for_scheduled_task(
+                    agent,
+                    item_id=self.item_id,
+                    handler_id=self.handler_id,
+                    message=input_msg.content,
+                    scheduled_task_id=input_msg.scheduled_task_id,
+                    scheduled_execution_id=input_msg.scheduled_execution_id,
+                )
+                input_msg.reply_ticket_id = ticket.ticket_id
+            else:
+                self._attach_reply_ticket_to_agent(agent, input_msg.reply_ticket_id)
+            try:
+                self._process_chat_input(input_msg, agent)
+            finally:
+                self._detach_reply_ticket_from_agent(agent, input_msg.reply_ticket_id)
         else:
             self._process_chat_input(input_msg, agent)
 
@@ -1945,6 +2056,10 @@ class AgentSession:
             )
             if not (integration_already_sent or integration_delivered):
                 self.emit_output(analysis.content, "agent_response")
+            self._record_scheduled_ticket_result(
+                input_msg.reply_ticket_id,
+                success=True,
+            )
             return
 
         transient_integration_tools_added = False
@@ -2019,6 +2134,22 @@ class AgentSession:
                             message.content,
                             tool_called=turn_guard.tool_call_count > 0,
                         )
+                        can_finalize, workflow_correction = (
+                            task_workflow_manager.can_finalize(
+                                input_msg.reply_ticket_id
+                            )
+                        )
+                        if not can_finalize:
+                            messages.append(
+                                {"role": "assistant", "content": final_content}
+                            )
+                            messages.append(
+                                {"role": "system", "content": workflow_correction}
+                            )
+                            self._emit_running_terminal_status(
+                                analysis.terminal_source
+                            )
+                            continue
                         if should_retry_terminal_source_delivery(
                             agent=agent,
                             terminal_content=analysis.content,
@@ -2044,7 +2175,38 @@ class AgentSession:
                             )
                             if message_sent or integration_delivered:
                                 break
+                        reply_ticket = self._get_reply_ticket(
+                            input_msg.reply_ticket_id
+                        )
+                        if (
+                            reply_ticket
+                            and reply_ticket.source_type == "qq"
+                            and self._deliver_terminal_reply_ticket(
+                                input_msg.reply_ticket_id,
+                                final_content,
+                            )
+                        ):
+                            break
                         self.emit_output(final_content, "agent_response")
+                        if reply_ticket and reply_ticket.source_type == "web":
+                            try:
+                                from app.services.agent.reply_ticket import (
+                                    reply_ticket_manager,
+                                )
+
+                                reply_ticket_manager.mark_delivered(
+                                    input_msg.reply_ticket_id
+                                )
+                            except Exception:
+                                logger.exception(
+                                    "[AgentSession] Failed to complete web reply ticket: item=%s ticket=%s",
+                                    self.item_id,
+                                    input_msg.reply_ticket_id,
+                                )
+                        self._record_scheduled_ticket_result(
+                            input_msg.reply_ticket_id,
+                            success=True,
+                        )
                     break
 
                 next_messages = self._handle_tool_calls(
@@ -2070,6 +2232,11 @@ class AgentSession:
         except Exception as exc:
             logger.error(f"[AgentSession] Terminal processing error: {exc}")
             self.emit_output(f"处理失败: {exc}", "agent_error")
+            self._record_scheduled_ticket_result(
+                input_msg.reply_ticket_id,
+                success=False,
+                error=str(exc),
+            )
 
             if transient_integration_tools_added:
                 clear_terminal_alert_integration_tools(agent)
@@ -2526,19 +2693,55 @@ class AgentSession:
                     {"tool_name": tool_name},
                 )
 
+            if tool_name != "mcp_local_update_task_workflow":
+                task_workflow_manager.record_tool_call(
+                    reply_ticket_id,
+                    tool_name=tool_name,
+                    command=str(tool_args.get("command") or ""),
+                )
+
             result = loop.run_until_complete(agent.execute_tool(tool_name, tool_args))
             logger.info(f"[AgentSession] Tool {tool_name} executed")
             if tool_name == RUN_JOB_TOOL_NAME:
                 turn_guard.reset_timeout_window()
 
             result_text = self._format_tool_result(result).strip()
-            if tool_results_sink is not None and result_text:
-                tool_results_sink.append(result_text)
-            if (
+            robot_delivery_result = bool(
                 tool_name == ROBOT_SEND_TOOL_NAME
                 and result_text
                 and integration_message_sent([result_text])
+            )
+            delivery_is_final = True
+            if robot_delivery_result:
+                delivery_is_final, _ = task_workflow_manager.can_finalize(
+                    reply_ticket_id
+                )
+            if (
+                tool_results_sink is not None
+                and result_text
+                and not (robot_delivery_result and not delivery_is_final)
             ):
+                tool_results_sink.append(result_text)
+            if robot_delivery_result:
+                if delivery_is_final:
+                    try:
+                        from app.services.agent.reply_ticket import (
+                            reply_ticket_manager,
+                        )
+
+                        reply_ticket_manager.mark_delivered(reply_ticket_id)
+                    except Exception:
+                        logger.exception(
+                            "[AgentSession] Failed to mark QQ reply delivered: item=%s ticket=%s",
+                            self.item_id,
+                            reply_ticket_id,
+                        )
+                else:
+                    task_workflow_manager.update(
+                        reply_ticket_id,
+                        action="record_progress",
+                        note="Sent an intermediate status update; the main task remains active.",
+                    )
                 self.emit_output(
                     robot_reply_event_content(tool_args, result_text),
                     ROBOT_QQ_REPLY_EVENT_TYPE,
@@ -2573,11 +2776,24 @@ class AgentSession:
                 return None
 
             if is_background_job_started_result(result):
+                task_workflow_manager.mark_job_started(
+                    reply_ticket_id,
+                    command=str(tool_args.get("command") or ""),
+                )
                 clear_pending_terminal_continuation(
                     self.item_id,
                     command=str(tool_args.get("command") or ""),
                 )
                 return None
+
+            if tool_name != "mcp_local_update_task_workflow":
+                task_workflow_manager.record_tool_result(
+                    reply_ticket_id,
+                    tool_name=tool_name,
+                    success=bool(result.get("success", True))
+                    and not result_text.lower().startswith("error:"),
+                    result_summary=result_text,
+                )
 
             assistant_message["tool_calls"].append(
                 {

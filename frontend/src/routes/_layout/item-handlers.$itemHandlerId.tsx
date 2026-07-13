@@ -16,7 +16,14 @@ import {
   X,
   Zap,
 } from "lucide-react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import {
   ApiError,
   ItemHandlerAssociationsService,
@@ -44,7 +51,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { PasswordInput } from "@/components/ui/password-input"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { SecretValue } from "@/components/ui/secret-value"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
 import { extractErrorMessage } from "@/utils"
@@ -130,15 +139,15 @@ function ProfileValue({ label, value }: { label: string; value?: string | null }
   )
 }
 
-function KeyValue({ label, value }: { label: string; value?: string | null }) {
+function KeyValue({ label, value }: { label: string; value?: ReactNode }) {
   const { t } = useI18n()
 
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
       <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="font-mono text-sm">
+      <div className="min-w-0 font-mono text-sm">
         {value || t("common.notAvailable")}
-      </span>
+      </div>
     </div>
   )
 }
@@ -2624,7 +2633,7 @@ function ItemHandlerDetail() {
                         <label className="text-sm font-medium">
                           {t("common.apiKey")}
                         </label>
-                        <Input
+                        <PasswordInput
                           value={editForm.api_key}
                           onChange={(e) =>
                             setEditForm({
@@ -2633,6 +2642,10 @@ function ItemHandlerDetail() {
                             })
                           }
                           placeholder={t("common.apiKey")}
+                          copyable
+                          copyLabel={t("common.copyLabel", {
+                            label: t("common.apiKey"),
+                          })}
                         />
                       </div>
                       <div className="space-y-2">
@@ -2798,9 +2811,11 @@ function ItemHandlerDetail() {
                       <KeyValue
                         label={t("common.apiKey")}
                         value={
-                          itemHandler.api_key
-                            ? `****${itemHandler.api_key.slice(-4)}`
-                            : null
+                          <SecretValue
+                            value={itemHandler.api_key}
+                            label={t("common.apiKey")}
+                            emptyText={t("common.noApiKey")}
+                          />
                         }
                       />
                       <KeyValue

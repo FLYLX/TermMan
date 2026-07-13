@@ -520,6 +520,127 @@ def test_generate_stream_delivers_qq_final_response_via_reply_ticket(
     assert not any(payload.get("type") == "agent_response" for payload in payloads)
 
 
+def test_generate_stream_hides_internal_qq_background_job_callback(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.plugins.robot.bridge_client import robot_bridge_client
+    from app.plugins.robot.contracts import RobotReplyTarget
+    from app.plugins.robot.conversation_memory import robot_conversation_memory
+    from app.plugins.robot.mcp.context import (
+        RobotMCPContext,
+        register_robot_mcp_context,
+        unregister_robot_mcp_context,
+    )
+    from app.services.agent.reply_ticket import reply_ticket_manager
+
+    item, handler = _create_linked_item_and_handler(db)
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="770362397",
+        metadata={
+            "conversation": {"type": "group", "id": "770362397"},
+            "message": {"raw_message": "check apt sources"},
+        },
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-1",
+            sender_key="onebot_v11:group:770362397:2537134688",
+            reply_target=target,
+            conversation_key="group:770362397",
+            conversation_generation=3,
+        )
+    )
+    fake_agent = _make_fake_agent(tools=[])
+    fake_agent._context = SimpleNamespace(
+        model="fake-model",
+        api_key=None,
+        api_url=None,
+        robot_id="robot-1",
+        robot_context_token=token,
+        robot_conversation_key="group:770362397",
+        agent_profile={},
+        enabled_knowledge_files=[],
+        skill_revision=0,
+        reply_ticket_id="",
+    )
+    sent: list[str] = []
+    memory_appends: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(chat_route, "completion", _fake_stream_completion)
+    monkeypatch.setattr(
+        chat_route,
+        "build_chat_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "job result"}],
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "extract_integration_context_targets",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "record_integration_context_targets",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(chat_route, "get_relevant_memories", lambda *args, **kwargs: "")
+    monkeypatch.setattr(chat_route, "extract_important_info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        chat_route,
+        "_create_agent_task_plan",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("internal callback must not create a new user task plan")
+        ),
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "_append_conversation_memory",
+        lambda item_id, **kwargs: memory_appends.append(
+            (str(item_id), str(kwargs.get("user_message") or ""))
+        ),
+    )
+    monkeypatch.setattr(
+        robot_bridge_client,
+        "send_message",
+        lambda _robot_id, _target, text: sent.append(text),
+    )
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "append_assistant_message",
+        lambda *args, **kwargs: None,
+    )
+    reply_ticket_manager.reset()
+
+    internal_message = (
+        "[Background terminal job result for this QQ conversation]\n"
+        "Job succeeded\noutput_tail:\ndebian.sources"
+    )
+    try:
+        chunks = list(
+            chat_route.generate_stream(
+                message=internal_message,
+                history=[],
+                handler=handler,
+                item_id=str(item.id),
+                agent=fake_agent,
+                include_hidden_tool_results=True,
+                latest_only_context=True,
+                source_type="qq",
+            )
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+        reply_ticket_manager.reset()
+
+    payloads = _sse_payloads(chunks)
+    assert sent == ["Shared reply"]
+    assert memory_appends == []
+    assert not any(payload.get("type") == "chat_user" for payload in payloads)
+    assert not any(internal_message in str(payload.get("content") or "") for payload in payloads)
+
+
 def test_generate_stream_web_source_does_not_reuse_stale_qq_reply_ticket(
     db: Session,
     monkeypatch,
@@ -1646,6 +1767,7 @@ def test_stream_chat_task_resolution_updates_existing_memory(
 
 def test_agent_task_plan_records_reply_origin(monkeypatch) -> None:
     from app.api.routes import chat as chat_route
+    from app.services.agent.task_workflow import task_workflow_manager
 
     captured: list[dict[str, object]] = []
     handler = SimpleNamespace(id="handler-1")
@@ -1653,10 +1775,11 @@ def test_agent_task_plan_records_reply_origin(monkeypatch) -> None:
         _context=SimpleNamespace(
             robot_id="robot-1",
             robot_conversation_key="group:770362397",
+            reply_ticket_id="",
         )
     )
 
-    monkeypatch.setattr(chat_route, "_clear_existing_agent_plan_tasks", lambda item_id: None)
+    task_workflow_manager.reset()
     monkeypatch.setattr(
         chat_route,
         "_plan_agent_task_titles",
@@ -1685,6 +1808,54 @@ def test_agent_task_plan_records_reply_origin(monkeypatch) -> None:
     assert captured[0]["metadata"]["task_reply_rule"] == (
         "reply through the locked current QQ robot context"
     )
+    workflow = task_workflow_manager.get(plan.workflow_id)
+    assert workflow is not None
+    assert workflow.objective == "install Java"
+    assert workflow.source_label == "QQ group:770362397"
+    task_workflow_manager.reset()
+
+
+def test_agent_task_workflow_does_not_depend_on_vector_memory_write(
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.services.agent.task_workflow import task_workflow_manager
+
+    handler = SimpleNamespace(id="handler-1")
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_conversation_key="",
+            reply_ticket_id="ticket-java",
+        )
+    )
+    task_workflow_manager.reset()
+    monkeypatch.setattr(
+        chat_route,
+        "_plan_agent_task_titles",
+        lambda handler, message, history: ["install Java", "verify Java"],
+    )
+    monkeypatch.setattr(chat_route.vector_store, "add_memory", lambda **kwargs: None)
+
+    plan = chat_route._create_agent_task_plan(
+        "item-1",
+        handler=handler,
+        agent=agent,
+        message="install Java 17",
+        history=[],
+        tools=[{"type": "function", "function": {"name": "mcp_local_run_job"}}],
+    )
+
+    assert plan is not None
+    assert plan.tasks == []
+    workflow = task_workflow_manager.get(plan.workflow_id)
+    assert workflow is not None
+    assert workflow.objective == "install Java 17"
+    assert [step.title for step in workflow.steps] == [
+        "install Java",
+        "verify Java",
+    ]
+    task_workflow_manager.reset()
 
 
 def test_terminal_output_batches_multiple_events_into_one_terminal_record(

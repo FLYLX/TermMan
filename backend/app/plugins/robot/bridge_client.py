@@ -16,6 +16,7 @@ from .debug_log import record_robot_event
 from .internal_trace import (
     compact_robot_visible_message_text,
     is_robot_internal_trace_text,
+    normalize_robot_message_text,
     sanitize_robot_visible_text,
 )
 from .message_chunks import split_robot_message_for_target
@@ -101,7 +102,7 @@ class RobotBridgeClient:
 
     def send_message(self, robot_id: uuid.UUID | str, target: RobotReplyTarget, text: str) -> None:
         robot_id_str = str(robot_id)
-        original_text = str(text or "")
+        original_text = normalize_robot_message_text(text)
         text = compact_robot_visible_message_text(sanitize_robot_visible_text(original_text))
         if not text or is_robot_internal_trace_text(text):
             record_robot_event(

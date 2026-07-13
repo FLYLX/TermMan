@@ -62,6 +62,18 @@ class InstalledSoftwareDelete(BaseModel):
     manager: str | None = Field(default=None, max_length=64)
     reason: str | None = Field(default=None, max_length=500)
 
+
+class ScheduledTaskUpsert(BaseModel):
+    task_id: str | None = Field(default=None, max_length=80)
+    name: str = Field(..., min_length=1, max_length=160)
+    instruction: str = Field(..., min_length=1, max_length=4000)
+    schedule_type: Literal["once", "interval", "daily"]
+    run_at: str | None = Field(default=None, max_length=80)
+    interval_seconds: int | None = Field(default=None, ge=10, le=31_536_000)
+    time_of_day: str | None = Field(default=None, max_length=16)
+    timezone: str = Field(default="Asia/Shanghai", max_length=80)
+    enabled: bool = True
+
 class ItemChatSessionPage(ItemChatSessionPublic):
     total: int = 0
     offset: int = 0
@@ -386,6 +398,72 @@ def delete_installed_software(
     if result.get("count", 0) <= 0:
         raise HTTPException(status_code=404, detail="Installed software record not found")
     return {"message": "Installed software removed", **result}
+
+
+@router.get("/{item_id}/scheduled-tasks")
+def get_scheduled_tasks(
+    item_id: uuid.UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    _get_accessible_item(item_id, session, current_user)
+
+    from app.services.agent.scheduled_tasks import list_scheduled_tasks
+
+    tasks = list_scheduled_tasks(str(item_id))
+    return {"items": tasks, "count": len(tasks)}
+
+
+@router.post("/{item_id}/scheduled-tasks")
+def upsert_scheduled_task(
+    item_id: uuid.UUID,
+    request: ScheduledTaskUpsert,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    _get_accessible_item(item_id, session, current_user)
+
+    from app.services.agent.scheduled_tasks import write_scheduled_task
+
+    try:
+        task = write_scheduled_task(
+            str(item_id),
+            task_id=request.task_id or "",
+            name=request.name,
+            instruction=request.instruction,
+            schedule_type=request.schedule_type,
+            run_at=request.run_at or "",
+            interval_seconds=request.interval_seconds or 0,
+            time_of_day=request.time_of_day or "",
+            timezone_name=request.timezone,
+            enabled=request.enabled,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"item": task, "message": "Scheduled task saved"}
+
+
+@router.delete("/{item_id}/scheduled-tasks/{task_id}")
+def remove_scheduled_task(
+    item_id: uuid.UUID,
+    task_id: str,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    _get_accessible_item(item_id, session, current_user)
+
+    from app.services.agent.scheduled_tasks import delete_scheduled_task
+
+    result = delete_scheduled_task(
+        str(item_id),
+        task_id=task_id,
+        reason="manual delete",
+    )
+    if result.get("count", 0) <= 0:
+        raise HTTPException(status_code=404, detail="Scheduled task not found")
+    return {"message": "Scheduled task deleted", **result}
 
 @router.get("/{item_id}/memories")
 def get_all_memories(

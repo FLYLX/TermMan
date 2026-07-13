@@ -9,6 +9,7 @@ from app.models import ItemChatSession
 DEFAULT_ROLE_BY_TYPE = {
     "terminal_output": "terminal",
     "chat_user": "user",
+    "scheduled_task": "user",
 }
 SESSION_SUMMARY_TYPE = "session_summary"
 SUMMARY_SOURCE_TYPES = {

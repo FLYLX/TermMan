@@ -129,6 +129,7 @@ async def collect_chat_response(
     robot_conversation_key: str | None = None,
     robot_conversation_generation: int = 0,
     robot_reply_requires_awake: bool = False,
+    reply_ticket_id: str = "",
     return_result: bool = False,
 ) -> str | ChatResponseResult:
     from app.api.routes.chat import generate_stream
@@ -163,6 +164,7 @@ async def collect_chat_response(
             include_hidden_tool_results=True,
             latest_only_context=bool(integration_contexts),
             source_type="qq" if integration_contexts else "web",
+            reply_ticket_id=reply_ticket_id,
         ):
             if not chunk.startswith("data: "):
                 continue

@@ -147,6 +147,7 @@ def test_background_job_reply_is_visible_in_pending_controller_snapshot(
         conversation_generation=3,
         message="[Background terminal job result]\nTemurin installed",
         pending_reply_id=pending_id,
+        reply_ticket_id="ticket-java",
     )
 
     assert queued is True
@@ -154,7 +155,38 @@ def test_background_job_reply_is_visible_in_pending_controller_snapshot(
         {robot.id},
         {item.id},
     )
-    assert snapshots == [] or snapshots[0]["pending_messages"] == []
+    assert snapshots[0]["pending_messages"][0]["pending_reply_id"] == pending_id
+
+    captured = _capture_queued_chat(monkeypatch)
+    robot_service.enqueue_background_job_result(
+        robot_id=robot.id,
+        item_id=item.id,
+        sender_key="onebot_v11:group:770362397:2537134688",
+        reply_target=target,
+        conversation_key="group:770362397",
+        conversation_generation=3,
+        message="[Background terminal job result]\nTemurin installed",
+        pending_reply_id=pending_id,
+        reply_ticket_id="ticket-java",
+    )
+    job = captured["job"]
+    assert job.reply_ticket_id == "ticket-java"
+
+    async def fake_chat_with_item(**kwargs):
+        assert kwargs["reply_ticket_id"] == "ticket-java"
+        return ChatResponseResult(content="", robot_message_sent=True)
+
+    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat_with_item)
+    robot_service._process_chat_job(job)
+
+    delivered_snapshots = robot_service.conversation_controller_snapshots(
+        {robot.id},
+        {item.id},
+    )
+    assert (
+        delivered_snapshots == []
+        or delivered_snapshots[0]["pending_messages"] == []
+    )
 
 
 def _message(

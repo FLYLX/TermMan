@@ -11,6 +11,13 @@ def test_robot_reply_event_content_formats_sent_text() -> None:
     )
 
 
+def test_robot_reply_event_content_unwraps_structured_text() -> None:
+    assert robot_reply_event_content(
+        {"text": {"type": "text", "text": "服务器启动成功"}},
+        "Message sent to current robot conversation.",
+    ).endswith("服务器启动成功")
+
+
 def test_robot_reply_event_content_formats_duplicate_skip() -> None:
     assert (
         robot_reply_event_content(

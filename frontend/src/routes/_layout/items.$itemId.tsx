@@ -46,6 +46,7 @@ import {
 } from "@/components/Items/itemDetailSnapshots"
 import { useI18n } from "@/components/locale-provider"
 import { MemoryManager } from "@/components/memory-manager"
+import { ScheduledTasksManager } from "@/components/scheduled-tasks-manager"
 import {
   getItemRobotControllerStatus,
   getItemRobotControllerStatusQueryKey,
@@ -56,6 +57,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { PasswordInput } from "@/components/ui/password-input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
@@ -91,6 +93,7 @@ type ItemDetailTab =
   | "filters"
   | "config"
   | "memory"
+  | "scheduled-tasks"
 
 type TerminalWebSocketServerStatus = {
   server_id: string
@@ -839,14 +842,23 @@ function getEnabledRobotCount(
 
 function getRobotControllerSecondsRemaining(
   controller: RobotConversationControllerStatus | undefined,
+  snapshotAtMs = 0,
+  nowMs = Date.now(),
 ) {
+  const reportedSeconds = Number(controller?.seconds_remaining)
+  if (Number.isFinite(reportedSeconds)) {
+    const elapsedSeconds =
+      snapshotAtMs > 0 ? Math.max(0, (nowMs - snapshotAtMs) / 1000) : 0
+    return Math.max(0, Math.ceil(reportedSeconds - elapsedSeconds))
+  }
+
   if (controller?.expires_at) {
     const expiresAt = Date.parse(controller.expires_at)
     if (Number.isFinite(expiresAt)) {
-      return Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000))
+      return Math.max(0, Math.ceil((expiresAt - nowMs) / 1000))
     }
   }
-  return Math.max(0, Math.ceil(Number(controller?.seconds_remaining || 0)))
+  return 0
 }
 
 function isRobotControllerProcessing(
@@ -857,9 +869,12 @@ function isRobotControllerProcessing(
 
 function isRobotControllerAwake(
   controller: RobotConversationControllerStatus | undefined,
+  snapshotAtMs = 0,
+  nowMs = Date.now(),
 ) {
   return Boolean(
-    controller?.awake && getRobotControllerSecondsRemaining(controller) > 0,
+    controller?.awake &&
+      getRobotControllerSecondsRemaining(controller, snapshotAtMs, nowMs) > 0,
   )
 }
 
@@ -868,17 +883,22 @@ function hasActiveRobotController(
 ) {
   return getRobotControllerRows(data).some(
     ({ controller }) =>
-      isRobotControllerProcessing(controller) || isRobotControllerAwake(controller),
+      isRobotControllerProcessing(controller) ||
+      isRobotControllerAwake(controller),
   )
 }
 
 function getLatestRobotControllerRow(
   data: ItemRobotControllerStatusResponse | undefined,
+  snapshotAtMs = 0,
+  nowMs = Date.now(),
 ) {
   const rows = getRobotControllerRows(data)
   return (
     rows.find((row) => isRobotControllerProcessing(row.controller)) ||
-    rows.find((row) => isRobotControllerAwake(row.controller)) ||
+    rows.find((row) =>
+      isRobotControllerAwake(row.controller, snapshotAtMs, nowMs),
+    ) ||
     rows[0] ||
     null
   )
@@ -962,9 +982,13 @@ function getRobotConversationLabel(
 
 function RobotSleepStatusBadge({
   data,
+  snapshotAtMs,
+  nowMs,
 }: {
   data: ItemRobotControllerStatusResponse | undefined
   isFetching: boolean
+  snapshotAtMs: number
+  nowMs: number
 }) {
   const { t } = useI18n()
   if (!data) {
@@ -989,12 +1013,18 @@ function RobotSleepStatusBadge({
     )
   }
 
-  const latest = getLatestRobotControllerRow(data)
+  const latest = getLatestRobotControllerRow(data, snapshotAtMs, nowMs)
   const remainingSeconds = getRobotControllerSecondsRemaining(
     latest?.controller,
+    snapshotAtMs,
+    nowMs,
   )
   const isProcessing = isRobotControllerProcessing(latest?.controller)
-  const isAwake = isRobotControllerAwake(latest?.controller)
+  const isAwake = isRobotControllerAwake(
+    latest?.controller,
+    snapshotAtMs,
+    nowMs,
+  )
   const label = isProcessing
     ? t("items.detail.qqProcessing")
     : isAwake
@@ -1030,9 +1060,13 @@ function RobotSleepStatusBadge({
 
 function RobotSleepTerminalLine({
   data,
+  snapshotAtMs,
+  nowMs,
 }: {
   data: ItemRobotControllerStatusResponse | undefined
   isFetching: boolean
+  snapshotAtMs: number
+  nowMs: number
 }) {
   const { t } = useI18n()
   if (!data) {
@@ -1051,15 +1085,21 @@ function RobotSleepTerminalLine({
   }
 
   const enabledRobotCount = getEnabledRobotCount(data)
-  const latest = getLatestRobotControllerRow(data)
+  const latest = getLatestRobotControllerRow(data, snapshotAtMs, nowMs)
   const fallbackRobot = data.robots.find(
     (robot) => robot.is_enabled && robot.allow_chat,
   )
   const remainingSeconds = getRobotControllerSecondsRemaining(
     latest?.controller,
+    snapshotAtMs,
+    nowMs,
   )
   const isProcessing = isRobotControllerProcessing(latest?.controller)
-  const isAwake = isRobotControllerAwake(latest?.controller)
+  const isAwake = isRobotControllerAwake(
+    latest?.controller,
+    snapshotAtMs,
+    nowMs,
+  )
   const statusText =
     enabledRobotCount === 0
       ? t("items.detail.qqDisabled")
@@ -1258,10 +1298,27 @@ function getRobotTriggerLabel(trigger: string) {
       return "队列"
     case "background_job":
       return "后台 Job"
+    case "reply_ticket":
+      return "待回复"
     case "private":
       return "私聊"
     default:
       return trigger || "消息"
+  }
+}
+
+function getReplyTicketStatusLabel(status: string | undefined) {
+  switch (status) {
+    case "running":
+      return "处理中"
+    case "completed":
+      return "待发送"
+    case "sending":
+      return "发送中"
+    case "failed":
+      return "发送失败"
+    default:
+      return "待处理"
   }
 }
 
@@ -1338,7 +1395,7 @@ function RobotPendingRepliesPanel({
             <div className="space-y-2">
               {rows.slice(0, 5).map(({ robot, controller, message }) => (
                 <div
-                  key={`${robot.robot_id}:${controller.conversation_key}:${message.index}:${message.enqueued_at}`}
+                  key={`${robot.robot_id}:${controller.conversation_key}:${message.reply_ticket_id || message.pending_reply_id || message.index}:${message.enqueued_at}`}
                   className="rounded-lg border border-border/50 bg-muted/20 px-2.5 py-2"
                 >
                   <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2 text-[11px]">
@@ -1362,6 +1419,23 @@ function RobotPendingRepliesPanel({
                     >
                       {getRobotTriggerLabel(message.trigger_reason)}
                     </Badge>
+                    {message.reply_ticket_status ? (
+                      <Badge
+                        variant="outline"
+                        className={`h-5 px-1.5 text-[10px] ${
+                          message.reply_ticket_status === "failed"
+                            ? "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-300"
+                            : "border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
+                        }`}
+                      >
+                        {getReplyTicketStatusLabel(message.reply_ticket_status)}
+                      </Badge>
+                    ) : null}
+                    {message.task_request_id ? (
+                      <span className="truncate font-mono text-[10px] text-muted-foreground">
+                        plan {message.task_request_id.slice(0, 8)}
+                      </span>
+                    ) : null}
                     <span className="truncate text-muted-foreground">
                       {message.sender_label || message.sender_key}
                     </span>
@@ -1369,6 +1443,72 @@ function RobotPendingRepliesPanel({
                   <div className="line-clamp-2 break-words text-xs leading-5 text-foreground/90">
                     {message.message_preview || "[空消息]"}
                   </div>
+                  {message.workflow_objective ? (
+                    <div className="mt-2 border-t border-border/50 pt-2 text-[11px]">
+                      <div className="flex min-w-0 items-start gap-2">
+                        <span className="shrink-0 font-medium text-cyan-700 dark:text-cyan-300">
+                          主任务
+                        </span>
+                        <span className="line-clamp-2 text-foreground/90">
+                          {message.workflow_objective}
+                        </span>
+                      </div>
+                      {message.workflow_current_step ? (
+                        <div className="mt-1 flex min-w-0 items-start gap-2">
+                          <span className="shrink-0 text-muted-foreground">
+                            当前
+                          </span>
+                          <span className="line-clamp-2 font-medium text-foreground/80">
+                            {message.workflow_current_step}
+                          </span>
+                        </div>
+                      ) : null}
+                      {message.workflow_steps?.length ? (
+                        <div className="mt-2 space-y-1">
+                          {message.workflow_steps.slice(0, 5).map((step) => (
+                            <div
+                              key={step.step_id}
+                              className="flex min-w-0 items-center gap-1.5 text-[10px]"
+                            >
+                              {step.status === "completed" ? (
+                                <Check className="size-3 shrink-0 text-emerald-500" />
+                              ) : step.status === "running" ? (
+                                <Loader2 className="size-3 shrink-0 animate-spin text-cyan-500" />
+                              ) : step.status === "failed" ? (
+                                <AlertCircle className="size-3 shrink-0 text-red-500" />
+                              ) : (
+                                <Square className="size-3 shrink-0 text-muted-foreground" />
+                              )}
+                              <span className="truncate text-muted-foreground">
+                                {step.title}
+                              </span>
+                              {step.recovery ? (
+                                <span className="shrink-0 text-amber-600 dark:text-amber-300">
+                                  恢复步骤
+                                </span>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {message.workflow_blocker ? (
+                        <div className="mt-1 line-clamp-2 text-red-600 dark:text-red-300">
+                          {message.workflow_blocker}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {message.command_preview &&
+                  message.command_preview !== message.message_preview ? (
+                    <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                      task: {message.command_preview}
+                    </div>
+                  ) : null}
+                  {message.delivery_error ? (
+                    <div className="mt-1 line-clamp-2 text-[10px] text-red-600 dark:text-red-300">
+                      {message.delivery_error}
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -1382,9 +1522,13 @@ function RobotPendingRepliesPanel({
 function RobotConversationDebugTable({
   data,
   isFetching,
+  snapshotAtMs,
+  nowMs,
 }: {
   data: ItemRobotControllerStatusResponse | undefined
   isFetching: boolean
+  snapshotAtMs: number
+  nowMs: number
 }) {
   const { t } = useI18n()
   const rows = getRobotControllerRows(data)
@@ -1428,9 +1572,16 @@ function RobotConversationDebugTable({
             <tbody>
               {rows.map(({ robot, controller }) => {
                 const isProcessing = isRobotControllerProcessing(controller)
-                const isAwake = isRobotControllerAwake(controller)
-                const remainingSeconds =
-                  getRobotControllerSecondsRemaining(controller)
+                const isAwake = isRobotControllerAwake(
+                  controller,
+                  snapshotAtMs,
+                  nowMs,
+                )
+                const remainingSeconds = getRobotControllerSecondsRemaining(
+                  controller,
+                  snapshotAtMs,
+                  nowMs,
+                )
                 const statusLabel = isProcessing
                   ? t("items.detail.qqProcessing")
                   : isAwake
@@ -1523,6 +1674,7 @@ function ItemDetailPage({
   const robotPluginEnabled = isPluginEnabled(plugins, "termman.robot")
   const {
     data: robotControllerStatus,
+    dataUpdatedAt: robotControllerStatusUpdatedAt,
     isFetching: isFetchingRobotControllerStatus,
   } = useQuery({
     queryKey: getItemRobotControllerStatusQueryKey(item.id),
@@ -1542,6 +1694,23 @@ function ItemDetailPage({
     },
     retry: false,
   })
+  const [robotCountdownNowMs, setRobotCountdownNowMs] = useState(() =>
+    Date.now(),
+  )
+  const robotControllerActive = hasActiveRobotController(robotControllerStatus)
+
+  useEffect(() => {
+    setRobotCountdownNowMs(Date.now())
+    if (!robotControllerActive) {
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      setRobotCountdownNowMs(Date.now())
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [robotControllerActive])
+
   const [command, setCommand] = useState("")
   const [activeTab, setActiveTab] = useState<ItemDetailTab>("terminal")
   const [visitedTabs, setVisitedTabs] = useState<Set<ItemDetailTab>>(
@@ -2458,6 +2627,7 @@ function ItemDetailPage({
                 <TabsTrigger value="memory">
                   {t("items.detail.memory")}
                 </TabsTrigger>
+                <TabsTrigger value="scheduled-tasks">定时任务</TabsTrigger>
               </TabsList>
             </div>
 
@@ -2786,6 +2956,8 @@ function ItemDetailPage({
                           <RobotSleepStatusBadge
                             data={robotControllerStatus}
                             isFetching={isFetchingRobotControllerStatus}
+                            snapshotAtMs={robotControllerStatusUpdatedAt}
+                            nowMs={robotCountdownNowMs}
                           />
                         </div>
                       </div>
@@ -2802,6 +2974,8 @@ function ItemDetailPage({
                         <RobotSleepTerminalLine
                           data={robotControllerStatus}
                           isFetching={isFetchingRobotControllerStatus}
+                          snapshotAtMs={robotControllerStatusUpdatedAt}
+                          nowMs={robotCountdownNowMs}
                         />
 
                         {isConnecting ? (
@@ -3040,6 +3214,8 @@ function ItemDetailPage({
                     <RobotConversationDebugTable
                       data={robotControllerStatus}
                       isFetching={isFetchingRobotControllerStatus}
+                      snapshotAtMs={robotControllerStatusUpdatedAt}
+                      nowMs={robotCountdownNowMs}
                     />
                   </section>
                 ) : null}
@@ -3427,8 +3603,7 @@ function ItemDetailPage({
                         </div>
                         <div className="grid gap-2">
                           <Label>Daemon API Key</Label>
-                          <Input
-                            type="password"
+                          <PasswordInput
                             value={configForm.api_key}
                             onChange={(event) =>
                               setConfigForm((current) => ({
@@ -3436,6 +3611,10 @@ function ItemDetailPage({
                                 api_key: event.target.value,
                               }))
                             }
+                            copyable
+                            copyLabel={t("common.copyLabel", {
+                              label: "Daemon API Key",
+                            })}
                           />
                         </div>
                         <div className="grid gap-2">
@@ -3576,6 +3755,14 @@ function ItemDetailPage({
               {hasVisitedTab("memory") ? (
                 <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
                   <MemoryManager itemId={item.id} />
+                </section>
+              ) : null}
+            </TabsContent>
+
+            <TabsContent value="scheduled-tasks">
+              {hasVisitedTab("scheduled-tasks") ? (
+                <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                  <ScheduledTasksManager itemId={item.id} />
                 </section>
               ) : null}
             </TabsContent>

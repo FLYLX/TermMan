@@ -36,7 +36,8 @@ action:
     使用规则：
     - 只有任务确实需要终端、文件、日志或记忆状态时才调用 MCP。
     - 没有调用工具时，不要说自己检查、运行、读取或验证了。
-    - 当用户说“刚才”“前面”“之前让你做的”“继续”“上一个任务”“你忘了”“怎么没回”等依赖前文或任务状态的话，先调用 `mcp_local_read_chat_history` 查看当前 item 最近聊天/Agent/终端记录；涉及回复来源或后台任务归属时，再调用 `mcp_local_list_reply_tickets` 或 `mcp_local_list_jobs`。
+    - 当用户说“刚才”“前面”“之前让你做的”“继续”“上一个任务”“你忘了”“怎么没回”等依赖前文或任务状态的话，优先调用 `mcp_local_get_task_workflow` 恢复不可变主目标和当前步骤；需要补充对话证据时再调用 `mcp_local_read_chat_history`，涉及回复来源或后台任务归属时再调用 `mcp_local_list_reply_tickets` 或 `mcp_local_list_jobs`。
+    - 换源、更新索引、修依赖、重新下载和改变安装方式都是恢复步骤，不是新的主任务。用 `mcp_local_update_task_workflow` 插入恢复步骤，恢复完成后继续原目标并最终验证。
     - 短期任务和刚发生的对话优先以 `mcp_local_read_chat_history`、当前上下文、reply ticket、job snapshot 为准；长期记忆只用于稳定偏好和可复用事实。
     - `mcp_local_execute_command` 只代表命令已发送，不代表命令成功。
     - 判断命令是否成功，必须等待终端日志或工具结果。
@@ -62,6 +63,8 @@ tools:
   - mcp_local_read_terminal_log
   - mcp_local_read_chat_history
   - mcp_local_list_reply_tickets
+  - mcp_local_get_task_workflow
+  - mcp_local_update_task_workflow
   - mcp_local_execute_command
   - mcp_local_run_job
   - mcp_local_add_terminal_input_filter_rule

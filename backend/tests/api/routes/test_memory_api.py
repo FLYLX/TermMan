@@ -359,3 +359,62 @@ def test_installed_software_api_allows_manual_edit(
     )
     assert empty_response.status_code == 200
     assert empty_response.json()["items"] == []
+
+
+def test_scheduled_tasks_api_allows_manual_crud(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    import app.services.agent.scheduled_tasks as scheduled_tasks
+
+    monkeypatch.setattr(scheduled_tasks, "_SCHEDULED_TASKS_DIR", tmp_path)
+    item = create_random_item(db)
+
+    create_response = client.post(
+        f"{settings.API_V1_STR}/memory/{item.id}/scheduled-tasks",
+        headers=superuser_token_headers,
+        json={
+            "name": "daily terminal check",
+            "instruction": "Check the terminal and report any failures.",
+            "schedule_type": "daily",
+            "time_of_day": "09:00",
+            "timezone": "Asia/Shanghai",
+            "enabled": True,
+        },
+    )
+    assert create_response.status_code == 200
+    task_id = create_response.json()["item"]["id"]
+
+    list_response = client.get(
+        f"{settings.API_V1_STR}/memory/{item.id}/scheduled-tasks",
+        headers=superuser_token_headers,
+    )
+    assert list_response.status_code == 200
+    assert list_response.json()["count"] == 1
+    assert list_response.json()["items"][0]["name"] == "daily terminal check"
+
+    update_response = client.post(
+        f"{settings.API_V1_STR}/memory/{item.id}/scheduled-tasks",
+        headers=superuser_token_headers,
+        json={
+            "task_id": task_id,
+            "name": "daily terminal check",
+            "instruction": "Check the terminal and report any failures.",
+            "schedule_type": "daily",
+            "time_of_day": "10:00",
+            "timezone": "Asia/Shanghai",
+            "enabled": False,
+        },
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["item"]["enabled"] is False
+
+    delete_response = client.delete(
+        f"{settings.API_V1_STR}/memory/{item.id}/scheduled-tasks/{task_id}",
+        headers=superuser_token_headers,
+    )
+    assert delete_response.status_code == 200
+    assert delete_response.json()["count"] == 1

@@ -41,6 +41,13 @@ action:
     - 读取日志后只总结结论，不要整段粘贴原始日志，除非用户明确要求原文。
     - 空输出、提示符、心跳日志、普通噪声不要过度处理。
 
+    ## 任务工作流
+    - 系统提供的 `Authoritative task workflow` 是多步骤任务的唯一任务真相，不要用长期记忆、聊天摘要或当前子命令替代它。
+    - `main_objective` 在任务结束前不可改写。换源、更新软件索引、重试下载、修复依赖、检查目录都只是恢复步骤；完成后必须回到原主任务继续执行。
+    - 每次后台 Job 返回、工具报错、执行方式改变或恢复会话时，先读取当前 workflow；根据真实证据调用 `mcp_local_update_task_workflow` 记录进度、完成当前步骤或插入恢复步骤。
+    - 只有全部步骤完成并验证最终结果后才能汇报成功。确实需要用户输入或外部状态变化时才标记 blocked，并明确说明阻塞点。
+    - 工作流始终关联原始 reply ticket。最终结果只能回到该票据的来源，成功发送前不要把待回复任务当成已完成。
+
     ## 安装状态清单
     - 系统会提供当前终端 item 的已安装软件清单；先读清单，再决定是否需要安装。
     - 清单里已有的软件，不要直接重复安装；先用版本命令、`command -v`、包管理器查询等方式确认版本和路径是否满足要求。
@@ -92,6 +99,8 @@ tools:
   - mcp_local_read_terminal_log
   - mcp_local_read_chat_history
   - mcp_local_list_reply_tickets
+  - mcp_local_get_task_workflow
+  - mcp_local_update_task_workflow
   - mcp_local_execute_command
   - mcp_local_run_job
   - mcp_local_add_terminal_input_filter_rule

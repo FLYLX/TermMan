@@ -18,6 +18,16 @@ LOCAL_MEMORY_TOOLS = {
     "mcp_local_list_memories",
     "mcp_local_delete_memory",
 }
+LOCAL_WORKFLOW_TOOLS = {
+    "mcp_local_get_task_workflow",
+    "mcp_local_update_task_workflow",
+    "mcp_local_list_reply_tickets",
+}
+LOCAL_SCHEDULE_TOOLS = {
+    "mcp_local_list_scheduled_tasks",
+    "mcp_local_write_scheduled_task",
+    "mcp_local_delete_scheduled_task",
+}
 
 HISTORY_PATTERNS = (
     r"刚才",
@@ -113,6 +123,17 @@ ROBOT_PATTERNS = (
     r"onebot",
 )
 
+SCHEDULE_PATTERNS = (
+    r"定时任务",
+    r"计划任务",
+    r"定时执行",
+    r"每天.*执行",
+    r"每隔.*执行",
+    r"scheduled task",
+    r"\bschedule\b",
+    r"\bcron\b",
+)
+
 
 def _tool_name(tool: dict[str, Any]) -> str:
     function = tool.get("function") if isinstance(tool, dict) else None
@@ -139,12 +160,33 @@ def _wants_memory_tools(text: str) -> bool:
     return _matches_any(text, MEMORY_PATTERNS)
 
 
+def _wants_schedule_tools(text: str) -> bool:
+    return _matches_any(text, SCHEDULE_PATTERNS)
+
+
 def _wants_robot_tools(text: str, *, source: TurnSource, agent: Any) -> bool:
     if source == "qq":
         return True
     if source == "terminal":
         return False
     return _matches_any(text, ROBOT_PATTERNS)
+
+
+def _has_active_task_workflow(agent: Any) -> bool:
+    context = getattr(agent, "_context", None)
+    ticket_id = str(getattr(context, "reply_ticket_id", "") or "").strip()
+    if not ticket_id:
+        return False
+    try:
+        from app.services.agent.task_workflow import task_workflow_manager
+
+        workflow = task_workflow_manager.get_by_ticket(ticket_id)
+        return bool(
+            workflow
+            and workflow.status not in {"completed", "cancelled"}
+        )
+    except Exception:
+        return False
 
 
 def select_tools_for_turn(
@@ -156,9 +198,16 @@ def select_tools_for_turn(
 ) -> list[dict[str, Any]]:
     text = str(query or "")
     include_robot = _wants_robot_tools(text, source=source, agent=agent)
-    include_local_all = _wants_terminal_tools(text, source=source)
+    include_local_schedule = _wants_schedule_tools(text)
+    is_scheduled_execution = text.lstrip().lower().startswith(
+        ("scheduled task", "[scheduled task]")
+    )
+    include_local_all = _wants_terminal_tools(text, source=source) and (
+        not include_local_schedule or is_scheduled_execution
+    )
     include_local_history = _wants_history_tools(text)
     include_local_memory = _wants_memory_tools(text) and source != "qq"
+    include_local_workflow = _has_active_task_workflow(agent)
 
     selected: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -175,6 +224,8 @@ def select_tools_for_turn(
                 include_local_all
                 or (include_local_history and name in LOCAL_HISTORY_TOOLS)
                 or (include_local_memory and name in LOCAL_MEMORY_TOOLS)
+                or (include_local_workflow and name in LOCAL_WORKFLOW_TOOLS)
+                or (include_local_schedule and name in LOCAL_SCHEDULE_TOOLS)
             )
         else:
             keep = include_local_all

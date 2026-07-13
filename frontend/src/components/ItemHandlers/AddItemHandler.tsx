@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
+import { PasswordInput } from "@/components/ui/password-input"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
@@ -155,9 +156,12 @@ const AddItemHandler = ({
                   <FormItem>
                     <FormLabel>{t("common.apiKey")}</FormLabel>
                     <FormControl>
-                      <Input
+                      <PasswordInput
                         placeholder={t("common.apiKey")}
-                        type="text"
+                        copyable
+                        copyLabel={t("common.copyLabel", {
+                          label: t("common.apiKey"),
+                        })}
                         {...field}
                       />
                     </FormControl>

@@ -98,7 +98,32 @@ export type RobotPendingReplyMessage = {
   enqueued_at: string
   direct_wakeup: boolean
   pending_reply_id?: string
+  reply_ticket_id?: string
+  reply_ticket_status?:
+    | "pending"
+    | "running"
+    | "completed"
+    | "sending"
+    | "failed"
   command_preview?: string
+  task_request_id?: string
+  delivery_error?: string
+  workflow_id?: string
+  workflow_objective?: string
+  workflow_status?: string
+  workflow_current_step?: string
+  workflow_latest_progress?: string
+  workflow_blocker?: string
+  workflow_steps?: Array<{
+    step_id: string
+    title: string
+    status: string
+    attempts: number
+    note?: string
+    evidence?: string
+    last_error?: string
+    recovery?: boolean
+  }>
 }
 
 export type ItemRobotControllerStatusRecord = {

@@ -19,6 +19,7 @@ from app.models import (
     RobotsPublic,
     RobotUpdate,
 )
+from app.services.agent.reply_ticket import SOURCE_QQ, reply_ticket_manager
 
 from . import is_robot_plugin_enabled
 from .api_support import (
@@ -70,6 +71,124 @@ router = APIRouter(
     tags=["robots"],
     dependencies=[Depends(ensure_robot_plugin_enabled)],
 )
+
+
+def _merge_active_reply_tickets_into_controller_snapshots(
+    snapshots_by_robot: dict[str, list[dict[str, object]]],
+    *,
+    item_id: uuid.UUID | str,
+    robot_ids: set[uuid.UUID | str],
+) -> None:
+    allowed_robot_ids = {str(robot_id) for robot_id in robot_ids}
+    tickets = reply_ticket_manager.snapshot(str(item_id))
+    for ticket in tickets:
+        robot_id = str(ticket.get("robot_id") or "")
+        conversation_key = str(ticket.get("conversation_key") or "")
+        if (
+            ticket.get("source_type") != SOURCE_QQ
+            or ticket.get("status") == "delivered"
+            or robot_id not in allowed_robot_ids
+            or not conversation_key
+        ):
+            continue
+
+        robot_snapshots = snapshots_by_robot.setdefault(robot_id, [])
+        controller = next(
+            (
+                snapshot
+                for snapshot in robot_snapshots
+                if str(snapshot.get("conversation_key") or "") == conversation_key
+            ),
+            None,
+        )
+        if controller is None:
+            conversation_type, _, conversation_id = conversation_key.partition(":")
+            updated_at = str(ticket.get("updated_at") or ticket.get("created_at") or "")
+            controller = {
+                "robot_id": robot_id,
+                "conversation_key": conversation_key,
+                "conversation_type": conversation_type,
+                "conversation_id": conversation_id,
+                "item_id": str(item_id),
+                "status": "processing",
+                "awake": True,
+                "sleeping": False,
+                "processing": True,
+                "generation": int(ticket.get("conversation_generation") or 0),
+                "expires_at": None,
+                "processing_expires_at": None,
+                "processing_seconds_remaining": 0,
+                "updated_at": updated_at,
+                "seconds_remaining": 0,
+                "pending_count": 0,
+                "pending_messages": [],
+            }
+            robot_snapshots.append(controller)
+
+        pending_messages = list(controller.get("pending_messages") or [])
+        ticket_id = str(ticket.get("ticket_id") or "")
+        if any(
+            str(message.get("reply_ticket_id") or "") == ticket_id
+            for message in pending_messages
+            if isinstance(message, dict)
+        ):
+            continue
+
+        request_message = re.sub(
+            r"\s+",
+            " ",
+            str(ticket.get("request_message") or ""),
+        ).strip()
+        command = re.sub(r"\s+", " ", str(ticket.get("command") or "")).strip()
+        preview = request_message or command or "等待回复原来源"
+        if len(preview) > 180:
+            preview = f"{preview[:177]}..."
+        if len(command) > 140:
+            command = f"{command[:137]}..."
+        workflow = ticket.get("workflow")
+        workflow = workflow if isinstance(workflow, dict) else {}
+
+        pending_messages.append(
+            {
+                "index": len(pending_messages) + 1,
+                "item_id": str(item_id),
+                "route_key": "reply_ticket",
+                "sender_key": str(ticket.get("sender_key") or ""),
+                "sender_label": str(
+                    ticket.get("sender_label")
+                    or ticket.get("sender_key")
+                    or ticket.get("source_label")
+                    or "QQ"
+                ),
+                "trigger_reason": "reply_ticket",
+                "message_preview": preview,
+                "enqueued_at": str(ticket.get("created_at") or ""),
+                "direct_wakeup": True,
+                "reply_ticket_id": ticket_id,
+                "reply_ticket_status": str(ticket.get("status") or "pending"),
+                "task_request_id": str(ticket.get("task_request_id") or ""),
+                "command_preview": command,
+                "delivery_error": str(ticket.get("delivery_error") or ""),
+                "workflow_id": str(workflow.get("workflow_id") or ""),
+                "workflow_objective": str(workflow.get("objective") or ""),
+                "workflow_status": str(workflow.get("status") or ""),
+                "workflow_current_step": str(
+                    workflow.get("current_step") or ""
+                ),
+                "workflow_latest_progress": str(
+                    workflow.get("latest_progress") or ""
+                ),
+                "workflow_blocker": str(workflow.get("blocker") or ""),
+                "workflow_steps": workflow.get("steps")
+                if isinstance(workflow.get("steps"), list)
+                else [],
+            }
+        )
+        pending_messages.sort(key=lambda message: str(message.get("enqueued_at") or ""))
+        for index, message in enumerate(pending_messages, start=1):
+            message["index"] = index
+        controller["pending_messages"] = pending_messages
+        controller["pending_count"] = len(pending_messages)
 
 CONVERSATION_KEY_PATTERN = r"^(group|private|channel):[^/\\\r\n]+$"
 
@@ -315,6 +434,12 @@ def get_item_robot_conversation_controllers(
         snapshots_by_robot.setdefault(str(snapshot.get("robot_id") or ""), []).append(
             snapshot
         )
+
+    _merge_active_reply_tickets_into_controller_snapshots(
+        snapshots_by_robot,
+        item_id=item.id,
+        robot_ids=robot_ids,
+    )
 
     robots: list[dict[str, object]] = []
     for binding, robot in visible_bindings:

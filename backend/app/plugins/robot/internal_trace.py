@@ -1,8 +1,57 @@
 from __future__ import annotations
 
+import ast
+import json
+from typing import Any
+
 ROBOT_SEND_TOOL_NAME = "mcp_robot_send_message"
 ROBOT_SLEEP_TOOL_NAME = "mcp_robot_sleep_conversation"
 NO_QQ_REPLY_MARKER = "[no_qq_reply]"
+
+
+def _parse_structured_text_string(value: str) -> Any | None:
+    stripped = value.strip()
+    if len(stripped) < 2 or stripped[0] not in "[{" or stripped[-1] not in "]}":
+        return None
+    try:
+        parsed = json.loads(stripped)
+    except (json.JSONDecodeError, TypeError):
+        try:
+            parsed = ast.literal_eval(stripped)
+        except (SyntaxError, ValueError):
+            return None
+    return parsed if isinstance(parsed, (dict, list, tuple)) else None
+
+
+def normalize_robot_message_text(value: Any, *, _depth: int = 0) -> str:
+    """Extract plain text from MCP/LLM content blocks without leaking reprs."""
+    if _depth > 5 or value is None:
+        return ""
+    if isinstance(value, str):
+        parsed = _parse_structured_text_string(value)
+        if parsed is not None:
+            extracted = normalize_robot_message_text(parsed, _depth=_depth + 1)
+            if extracted:
+                return extracted
+        return value
+    if isinstance(value, dict):
+        for key in ("text", "content", "message", "data"):
+            if key not in value:
+                continue
+            extracted = normalize_robot_message_text(
+                value.get(key),
+                _depth=_depth + 1,
+            )
+            if extracted:
+                return extracted
+        return ""
+    if isinstance(value, (list, tuple)):
+        parts = [
+            normalize_robot_message_text(item, _depth=_depth + 1).strip()
+            for item in value
+        ]
+        return "\n".join(part for part in parts if part)
+    return str(value)
 
 
 def _is_cjk(value: str) -> bool:
@@ -21,8 +70,9 @@ def _join_visible_lines(lines: list[str]) -> str:
     return message.strip()
 
 
-def _normalized_lines(value: str) -> list[str]:
-    return [line.strip() for line in str(value or "").splitlines() if line.strip()]
+def _normalized_lines(value: Any) -> list[str]:
+    text = normalize_robot_message_text(value)
+    return [line.strip() for line in text.splitlines() if line.strip()]
 
 
 def _is_tool_execution_line(line: str) -> bool:
@@ -89,11 +139,12 @@ def is_robot_internal_trace_text(value: str) -> bool:
     return False
 
 
-def sanitize_robot_visible_text(value: str) -> str:
+def sanitize_robot_visible_text(value: Any) -> str:
     """Remove robot tool traces from text that may be sent or shown as chat memory."""
     cleaned_lines: list[str] = []
     previous_blank = False
-    for raw_line in str(value or "").replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+    normalized = normalize_robot_message_text(value)
+    for raw_line in normalized.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         line = raw_line.rstrip()
         stripped = line.strip()
 
@@ -121,16 +172,19 @@ def sanitize_robot_visible_text(value: str) -> str:
     return "\n".join(cleaned_lines).strip()
 
 
-def compact_robot_visible_message_text(value: str) -> str:
+def compact_robot_visible_message_text(value: Any) -> str:
     """Keep one outgoing QQ message as one visual line.
 
     Multi-message replies should use the MCP `messages` array. Newlines inside a
     single message are presentation noise from the model, not separate QQ sends.
     """
+    normalized = normalize_robot_message_text(value)
     return _join_visible_lines(
         [
             line.strip()
-        for line in str(value or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
-        if line.strip()
+            for line in normalized.replace("\r\n", "\n")
+            .replace("\r", "\n")
+            .split("\n")
+            if line.strip()
         ]
     )

@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
+import { PasswordInput } from "@/components/ui/password-input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import useCustomToast from "@/hooks/useCustomToast"
@@ -167,7 +168,12 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
                   <FormItem>
                     <FormLabel>API Key</FormLabel>
                     <FormControl>
-                      <Input placeholder="API Key" type="text" {...field} />
+                      <PasswordInput
+                        placeholder="API Key"
+                        copyable
+                        copyLabel="Copy API Key"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

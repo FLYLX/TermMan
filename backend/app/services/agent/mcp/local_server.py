@@ -150,6 +150,72 @@ class LocalMCPServer:
             skip_memory=True,
         )
         self.register_tool(
+            name="get_task_workflow",
+            description=(
+                "Read the authoritative task workflow linked to the current reply ticket. "
+                "Use it whenever a multi-step task has changed method, hit an error, resumed "
+                "after a background job, or you need to recover the main objective."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {
+                        "type": "string",
+                        "description": "Current terminal item id.",
+                    }
+                },
+                "required": ["item_id"],
+            },
+            handler=self._get_task_workflow,
+            skip_memory=True,
+        )
+        self.register_tool(
+            name="update_task_workflow",
+            description=(
+                "Update the authoritative task state after observing real evidence. "
+                "The main objective cannot be replaced. Complete the current step only "
+                "after evidence, insert a recovery step when changing source/method, and "
+                "mark blocked only when user or external input is genuinely required."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {
+                        "type": "string",
+                        "description": "Current terminal item id.",
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": [
+                            "record_progress",
+                            "complete_current_step",
+                            "set_current_step",
+                            "insert_recovery_step",
+                            "mark_ready_to_report",
+                            "mark_blocked",
+                            "resume",
+                            "cancel",
+                        ],
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "Observed evidence, progress, or blocker reason.",
+                    },
+                    "step_index": {
+                        "type": "integer",
+                        "description": "Zero-based step index for set_current_step.",
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Recovery step title for insert_recovery_step.",
+                    },
+                },
+                "required": ["item_id", "action"],
+            },
+            handler=self._update_task_workflow,
+            skip_memory=True,
+        )
+        self.register_tool(
             name="add_terminal_input_filter_rule",
             description="Add a terminal output -> Agent input filter rule for the current item. Use when repeated terminal output is harmless noise and should stop being sent to the Agent, for example automatic backup status lines, heartbeat lines, repeated progress chatter, or plugin logs that do not need action. Default action_type is block, which drops matching terminal chunks before they reach the Agent.",
             input_schema={
@@ -285,6 +351,105 @@ class LocalMCPServer:
             skip_memory=True
         )
         self.register_tool(
+            name="list_scheduled_tasks",
+            description=(
+                "Read all scheduled tasks for the current terminal item, including ids, "
+                "instructions, enabled state, next run time, and last result."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {
+                        "type": "string",
+                        "description": "Current terminal item id; injected automatically.",
+                    }
+                },
+                "required": [],
+            },
+            handler=self._list_scheduled_tasks,
+            skip_memory=True,
+        )
+        self.register_tool(
+            name="write_scheduled_task",
+            description=(
+                "Create or update one scheduled task for the current terminal item. "
+                "Pass task_id to update an existing task. Supported schedules are once, "
+                "interval, and daily."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {
+                        "type": "string",
+                        "description": "Current terminal item id; injected automatically.",
+                    },
+                    "task_id": {
+                        "type": "string",
+                        "description": "Existing task id when updating; omit when creating.",
+                    },
+                    "name": {"type": "string", "description": "Short task name."},
+                    "instruction": {
+                        "type": "string",
+                        "description": "Instruction sent to the Agent when the task runs.",
+                    },
+                    "schedule_type": {
+                        "type": "string",
+                        "enum": ["once", "interval", "daily"],
+                    },
+                    "run_at": {
+                        "type": "string",
+                        "description": "ISO datetime for a once task.",
+                    },
+                    "interval_seconds": {
+                        "type": "integer",
+                        "description": "Interval in seconds for an interval task; minimum 10.",
+                    },
+                    "time_of_day": {
+                        "type": "string",
+                        "description": "Local HH:MM time for a daily task.",
+                    },
+                    "timezone": {
+                        "type": "string",
+                        "description": "IANA timezone, default Asia/Shanghai.",
+                        "default": "Asia/Shanghai",
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "Whether the task should run.",
+                        "default": True,
+                    },
+                },
+                "required": ["name", "instruction", "schedule_type"],
+            },
+            handler=self._write_scheduled_task,
+            skip_memory=True,
+        )
+        self.register_tool(
+            name="delete_scheduled_task",
+            description=(
+                "Delete one scheduled task by id. During scheduled execution, use this only "
+                "after deciding the task is obsolete, invalid, unsafe, or permanently unable "
+                "to succeed. Do not delete it for a transient failure."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {
+                        "type": "string",
+                        "description": "Current terminal item id; injected automatically.",
+                    },
+                    "task_id": {"type": "string", "description": "Scheduled task id."},
+                    "reason": {
+                        "type": "string",
+                        "description": "Why the Agent decided to delete the task.",
+                    },
+                },
+                "required": ["task_id"],
+            },
+            handler=self._delete_scheduled_task,
+            skip_memory=True,
+        )
+        self.register_tool(
             name="save_memory",
             description="保存稳定、可复用、已验证的重要信息到长期记忆中。不要保存原生日志、命令回显、等待态消息或敏感信息。",
             input_schema={
@@ -357,7 +522,11 @@ class LocalMCPServer:
 
             from app.core.db import engine
             from app.models import Item
-            from app.services import DaemonConfig, connection_manager, socket_pool_facade
+            from app.services import (
+                DaemonConfig,
+                connection_manager,
+                socket_pool_facade,
+            )
             from app.services.terminal_service import TerminalService
 
             try:
@@ -587,6 +756,85 @@ class LocalMCPServer:
             debug_log(f"[LocalMCPServer] read_chat_history error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
 
+    def _get_task_workflow(self, args: dict) -> list:
+        item_id = str(args.get("item_id") or "").strip()
+        reply_ticket_id = str(args.get("_reply_ticket_id") or "").strip()
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id required"}]
+        try:
+            from app.services.agent.task_workflow import task_workflow_manager
+
+            workflow = task_workflow_manager.snapshot_for_ticket(reply_ticket_id)
+            if workflow is None:
+                active = [
+                    candidate
+                    for candidate in task_workflow_manager.snapshot(item_id)
+                    if candidate.get("status")
+                    not in {"completed", "cancelled"}
+                ]
+                workflow = active[0] if len(active) == 1 else None
+            if workflow is None:
+                return [
+                    {
+                        "type": "text",
+                        "text": "No authoritative task workflow is linked to this turn.",
+                    }
+                ]
+            return [
+                {
+                    "type": "text",
+                    "text": task_workflow_manager.build_prompt_context(
+                        item_id=item_id,
+                        reply_ticket_id=reply_ticket_id,
+                    ),
+                }
+            ]
+        except Exception as exc:
+            debug_log(f"[LocalMCPServer] get_task_workflow error: {exc}")
+            return [{"type": "text", "text": f"Error: {exc}"}]
+
+    def _update_task_workflow(self, args: dict) -> list:
+        item_id = str(args.get("item_id") or "").strip()
+        reply_ticket_id = str(args.get("_reply_ticket_id") or "").strip()
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id required"}]
+        if not reply_ticket_id:
+            return [
+                {
+                    "type": "text",
+                    "text": "Error: no reply ticket is linked to this task turn",
+                }
+            ]
+        try:
+            from app.services.agent.task_workflow import task_workflow_manager
+
+            raw_step_index = args.get("step_index")
+            step_index = None
+            if raw_step_index is not None:
+                step_index = int(raw_step_index)
+            success, detail = task_workflow_manager.update(
+                reply_ticket_id,
+                action=str(args.get("action") or ""),
+                note=str(args.get("note") or ""),
+                step_index=step_index,
+                title=str(args.get("title") or ""),
+            )
+            if not success:
+                return [{"type": "text", "text": f"Error: {detail}"}]
+            context = task_workflow_manager.build_prompt_context(
+                item_id=item_id,
+                reply_ticket_id=reply_ticket_id,
+            )
+            return [
+                {
+                    "type": "text",
+                    "text": f"Task workflow updated: {detail}\n{context}",
+                }
+            ]
+        except Exception as exc:
+            debug_log(f"[LocalMCPServer] update_task_workflow error: {exc}")
+            return [{"type": "text", "text": f"Error: {exc}"}]
+
     def _list_reply_tickets(self, args: dict) -> list:
         item_id = str(args.get("item_id") or "").strip()
         if not item_id:
@@ -700,7 +948,10 @@ class LocalMCPServer:
         )
         agent_session = None
         try:
-            from app.services.agent.session import RUN_JOB_TOOL_NAME, agent_session_manager
+            from app.services.agent.session import (
+                RUN_JOB_TOOL_NAME,
+                agent_session_manager,
+            )
 
             agent_session = agent_session_manager.get_session(str(item_id))
             if agent_session:
@@ -821,6 +1072,38 @@ class LocalMCPServer:
                 }
 
             feedback = self._format_background_job_feedback(result)
+            if reply_ticket_id:
+                try:
+                    from app.services.agent.scheduled_tasks import (
+                        record_scheduled_ticket_result,
+                    )
+
+                    record_scheduled_ticket_result(
+                        reply_ticket_id,
+                        success=bool(result.get("success")),
+                        error="" if result.get("success") else self._format_job_result(result),
+                    )
+                except Exception as exc:
+                    debug_log(
+                        f"[LocalMCPServer] failed to update scheduled task result: "
+                        f"ticket={reply_ticket_id}, error={exc}"
+                    )
+            if reply_ticket_id:
+                try:
+                    from app.services.agent.task_workflow import task_workflow_manager
+
+                    task_workflow_manager.record_job_result(
+                        reply_ticket_id,
+                        command=command,
+                        success=bool(result.get("success")),
+                        result_summary=self._format_job_result(result),
+                        daemon_job_id=str(result.get("job_id") or ""),
+                        exit_code=result.get("exit_code"),
+                    )
+                except Exception as exc:
+                    debug_log(
+                        f"[LocalMCPServer] failed to update task workflow from job: ticket={reply_ticket_id}, error={exc}"
+                    )
             queued_to_robot = False
             delivered_by_ticket = False
             if robot_job_context:
@@ -830,19 +1113,9 @@ class LocalMCPServer:
                     result=result,
                     robot_job_context=robot_job_context,
                     pending_reply_id=pending_robot_reply_id or "",
-                )
-            if not queued_to_robot:
-                delivered_by_ticket = self._deliver_background_job_to_reply_ticket(
                     reply_ticket_id=reply_ticket_id,
-                    command=command,
-                    result=result,
                 )
-            if delivered_by_ticket and pending_robot_reply_id and robot_job_context:
-                self._clear_background_job_robot_reply(
-                    robot_job_context=robot_job_context,
-                    pending_reply_id=pending_robot_reply_id,
-                )
-            if queued_to_robot or delivered_by_ticket:
+            if queued_to_robot:
                 feedback = (
                     f"{feedback}\n"
                     "[Reply ticket notification handled for the source that started this job.]"
@@ -850,7 +1123,7 @@ class LocalMCPServer:
 
             if agent_session:
                 agent_session.clear_terminal_job(command)
-                if queued_to_robot or delivered_by_ticket:
+                if queued_to_robot:
                     return
                 try:
                     from app.services.agent.session import InputMessage, InputType
@@ -864,10 +1137,23 @@ class LocalMCPServer:
                             reply_ticket_id=reply_ticket_id,
                         )
                     )
+                    return
                 except Exception as exc:
                     debug_log(
                         f"[LocalMCPServer] failed to deliver background job feedback: item={item_id}, error={exc}"
                     )
+
+            if not queued_to_robot:
+                delivered_by_ticket = self._deliver_background_job_to_reply_ticket(
+                    reply_ticket_id=reply_ticket_id,
+                    command=command,
+                    result=result,
+                )
+            if delivered_by_ticket and pending_robot_reply_id and robot_job_context:
+                self._clear_background_job_robot_reply(
+                    robot_job_context=robot_job_context,
+                    pending_reply_id=pending_robot_reply_id,
+                )
 
         thread = threading.Thread(
             target=worker,
@@ -936,6 +1222,7 @@ class LocalMCPServer:
         result: dict,
         robot_job_context: dict | None,
         pending_reply_id: str = "",
+        reply_ticket_id: str = "",
     ) -> bool:
         if not robot_job_context:
             return False
@@ -954,6 +1241,7 @@ class LocalMCPServer:
                 ),
                 message=message,
                 pending_reply_id=pending_reply_id,
+                reply_ticket_id=reply_ticket_id,
             )
             if not queued:
                 debug_log(
@@ -1149,8 +1437,8 @@ class LocalMCPServer:
         try:
             from app.services.agent.session import (
                 TERMINAL_INPUT_MODE_BUSY,
-                classify_terminal_input_mode,
                 agent_session_manager,
+                classify_terminal_input_mode,
             )
 
             agent_session = (
@@ -1674,6 +1962,83 @@ class LocalMCPServer:
         except Exception as e:
             return [{"type": "text", "text": f"Error: {e}"}]
 
+    def _list_scheduled_tasks(self, args: dict) -> list:
+        item_id = str(args.get("item_id") or "").strip()
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id required"}]
+        try:
+            from app.services.agent.scheduled_tasks import (
+                format_scheduled_tasks,
+                list_scheduled_tasks,
+            )
+
+            tasks = list_scheduled_tasks(item_id)
+            return [
+                {
+                    "type": "text",
+                    "text": "Scheduled tasks:\n" + format_scheduled_tasks(tasks),
+                }
+            ]
+        except Exception as e:
+            return [{"type": "text", "text": f"Error: {e}"}]
+
+    def _write_scheduled_task(self, args: dict) -> list:
+        item_id = str(args.get("item_id") or "").strip()
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id required"}]
+        try:
+            from app.services.agent.scheduled_tasks import write_scheduled_task
+
+            task = write_scheduled_task(
+                item_id,
+                task_id=str(args.get("task_id") or ""),
+                name=str(args.get("name") or ""),
+                instruction=str(args.get("instruction") or ""),
+                schedule_type=str(args.get("schedule_type") or ""),
+                run_at=str(args.get("run_at") or ""),
+                interval_seconds=int(args.get("interval_seconds") or 0),
+                time_of_day=str(args.get("time_of_day") or ""),
+                timezone_name=str(args.get("timezone") or "Asia/Shanghai"),
+                enabled=bool(args.get("enabled", True)),
+            )
+            return [
+                {
+                    "type": "text",
+                    "text": (
+                        f"Scheduled task saved: id={task['id']} name={task['name']!r} "
+                        f"enabled={task['enabled']} next_run_at={task.get('next_run_at') or 'none'}"
+                    ),
+                }
+            ]
+        except KeyError as e:
+            return [{"type": "text", "text": f"Error: {e.args[0]}"}]
+        except Exception as e:
+            return [{"type": "text", "text": f"Error: {e}"}]
+
+    def _delete_scheduled_task(self, args: dict) -> list:
+        item_id = str(args.get("item_id") or "").strip()
+        task_id = str(args.get("task_id") or "").strip()
+        if not item_id or not task_id:
+            return [{"type": "text", "text": "Error: item_id and task_id required"}]
+        try:
+            from app.services.agent.scheduled_tasks import delete_scheduled_task
+
+            result = delete_scheduled_task(
+                item_id,
+                task_id=task_id,
+                reason=str(args.get("reason") or "Agent decision"),
+            )
+            if not result.get("count"):
+                return [{"type": "text", "text": "Error: scheduled task not found"}]
+            return [
+                {
+                    "type": "text",
+                    "text": f"Scheduled task deleted: id={task_id}",
+                }
+            ]
+        except Exception as e:
+            return [{"type": "text", "text": f"Error: {e}"}]
+
     def _save_memory(self, args: dict) -> list:
         content = args.get("content", "")
         memory_type = args.get("memory_type", "fact")
@@ -1683,8 +2048,8 @@ class LocalMCPServer:
             return [{"type": "text", "text": "Error: content and item_id required"}]
         
         try:
-            from app.services.agent.prompts import policy as memory_policy
             from app.services.agent.memory.vector_store import vector_store
+            from app.services.agent.prompts import policy as memory_policy
 
             default_ttl_days = memory_policy.resolve_memory_ttl_days(str(memory_type))
             raw_ttl_days = args.get("ttl_days")
@@ -1787,7 +2152,7 @@ class LocalMCPServer:
             if success:
                 return [{"type": "text", "text": f"✓ 记忆已删除 (ID: {memory_id[:8]}...)"}]
             else:
-                return [{"type": "text", "text": f"记忆不存在或删除失败"}]
+                return [{"type": "text", "text": "记忆不存在或删除失败"}]
         except Exception as e:
             return [{"type": "text", "text": f"Error: {e}"}]
     

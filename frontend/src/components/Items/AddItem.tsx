@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
+import { PasswordInput } from "@/components/ui/password-input"
 import {
   Select,
   SelectContent,
@@ -357,9 +358,12 @@ const AddItem = ({
                       <FormItem>
                         <FormLabel>{copy.manualApiKey}</FormLabel>
                         <FormControl>
-                          <Input
+                          <PasswordInput
                             placeholder="daemon-secret"
-                            type="text"
+                            copyable
+                            copyLabel={t("common.copyLabel", {
+                              label: copy.manualApiKey,
+                            })}
                             {...field}
                           />
                         </FormControl>

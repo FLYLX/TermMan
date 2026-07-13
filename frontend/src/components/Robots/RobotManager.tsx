@@ -28,8 +28,9 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import useCustomToast from "@/hooks/useCustomToast"
+import { PasswordInput } from "@/components/ui/password-input"
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
+import useCustomToast from "@/hooks/useCustomToast"
 
 import {
   type BridgeHealthResponse,
@@ -337,22 +338,43 @@ function CreateRobotDialog({
                     {field.label}
                     {field.required ? " *" : ""}
                   </Label>
-                  <Input
-                    id={`robot-field-${field.key}`}
-                    type={field.secret ? "password" : "text"}
-                    autoComplete={field.secret ? "new-password" : "off"}
-                    value={form.credentials[field.key] ?? ""}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        credentials: {
-                          ...current.credentials,
-                          [field.key]: event.target.value,
-                        },
-                      }))
-                    }
-                    placeholder={field.label}
-                  />
+                  {field.secret ? (
+                    <PasswordInput
+                      id={`robot-field-${field.key}`}
+                      autoComplete="new-password"
+                      value={form.credentials[field.key] ?? ""}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          credentials: {
+                            ...current.credentials,
+                            [field.key]: event.target.value,
+                          },
+                        }))
+                      }
+                      placeholder={field.label}
+                      copyable
+                      copyLabel={t("common.copyLabel", {
+                        label: field.label,
+                      })}
+                    />
+                  ) : (
+                    <Input
+                      id={`robot-field-${field.key}`}
+                      autoComplete="off"
+                      value={form.credentials[field.key] ?? ""}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          credentials: {
+                            ...current.credentials,
+                            [field.key]: event.target.value,
+                          },
+                        }))
+                      }
+                      placeholder={field.label}
+                    />
+                  )}
                 </div>
               ))}
             </div>

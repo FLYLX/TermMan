@@ -69,6 +69,8 @@ const COMPLETION_TYPES = new Set([
 const LIVE_REPLY_STATUS_TIMEOUT_MS = 90_000
 const ACTIVE_AGENT_STATUS_TIMEOUT_MS = 180_000
 const CHAT_HISTORY_PAGE_SIZE = 20
+const INTERNAL_QQ_BACKGROUND_JOB_PREFIX =
+  "[Background terminal job result for this QQ conversation]"
 const CHAT_LIVE_MESSAGE_LIMIT = 300
 const CHAT_REQUEST_HISTORY_LIMIT = 40
 const CHAT_MESSAGE_CONTENT_MAX_CHARS = 16_000
@@ -191,7 +193,7 @@ function normalizeMessage(message: {
     }
   }
 
-  if (type === "chat_user") {
+  if (type === "chat_user" || type === "scheduled_task") {
     return {
       role: "user",
       content: message.content,
@@ -210,8 +212,17 @@ function normalizeMessage(message: {
   }
 }
 
+function isInternalAgentCallbackMessage(message: ChatMessage): boolean {
+  return message.content
+    .trimStart()
+    .startsWith(INTERNAL_QQ_BACKGROUND_JOB_PREFIX)
+}
+
 function shouldRenderMessage(message: ChatMessage): boolean {
-  return !STATUS_ONLY_TYPES.has(message.type ?? "")
+  return (
+    !STATUS_ONLY_TYPES.has(message.type ?? "") &&
+    !isInternalAgentCallbackMessage(message)
+  )
 }
 
 function compactLongChatContent(content: string): string {
@@ -952,6 +963,10 @@ function buildRequestHistory(
 }
 
 function getMessageLabel(message: ChatMessage): string | null {
+  if (message.type === "scheduled_task") {
+    return "定时任务"
+  }
+
   if (message.role === "terminal") {
     return "term"
   }
@@ -972,6 +987,10 @@ function getMessageLabel(message: ChatMessage): string | null {
 }
 
 function getMessageClasses(message: ChatMessage): string {
+  if (message.type === "scheduled_task") {
+    return "border border-amber-500/40 bg-amber-500/10 text-foreground"
+  }
+
   if (message.role === "user") {
     return "bg-primary text-primary-foreground"
   }
@@ -1118,6 +1137,9 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
     }
     const normalizedMessage = normalizeMessage(event as Record<string, unknown>)
     if (!normalizedMessage) {
+      return
+    }
+    if (isInternalAgentCallbackMessage(normalizedMessage)) {
       return
     }
 

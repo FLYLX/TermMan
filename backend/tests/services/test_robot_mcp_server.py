@@ -321,6 +321,44 @@ def test_robot_mcp_send_message_uses_llm_chosen_messages(monkeypatch) -> None:
     ]
 
 
+def test_robot_mcp_send_message_unwraps_structured_text_blocks(monkeypatch) -> None:
+    server = RobotMCPServer()
+    sent: list[str] = []
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        lambda _robot_id, _reply_target, text: sent.append(text),
+    )
+    monkeypatch.setattr(
+        server,
+        "_get_accessible_robot_id",
+        lambda args, fallback_robot_id="": "robot-2",
+    )
+
+    result = server.call_tool(
+        "send_message",
+        {
+            "messages": [
+                {"text": "RCON 也开了，现在可以进游戏了~"},
+                {"type": "text", "text": "服务器启动成功啦~ Done (2.901s)！"},
+                "{'text': '第三条也是纯文本'}",
+            ],
+            "target_type": "group",
+            "target_id": "123456",
+            "_termman_user_id": "user-1",
+        },
+    )
+
+    assert result == [
+        {"type": "text", "text": "Message sent to QQ group 123456."}
+    ]
+    assert sent == [
+        "RCON 也开了，现在可以进游戏了~",
+        "服务器启动成功啦~ Done (2.901s)！",
+        "第三条也是纯文本",
+    ]
+
+
 def test_robot_mcp_send_message_rejects_long_group_text(monkeypatch) -> None:
     server = RobotMCPServer()
     sent: list[str] = []

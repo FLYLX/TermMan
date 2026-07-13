@@ -165,6 +165,34 @@ def test_bridge_client_blocks_internal_tool_trace(monkeypatch) -> None:
     assert calls == []
 
 
+def test_bridge_client_unwraps_stringified_text_block(monkeypatch) -> None:
+    client = RobotBridgeClient()
+    target = RobotReplyTarget(target_type="group", target_id="123")
+    calls: list[dict] = []
+
+    def fake_request(method, path, *, timeout, content):
+        calls.append(
+            {
+                "method": method,
+                "path": path,
+                "timeout": timeout,
+                "body": json.loads(content),
+            }
+        )
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    client.send_message(
+        uuid.uuid4(),
+        target,
+        "{'type': 'text', 'text': '服务器启动成功啦~ Done (2.901s)！'}",
+    )
+
+    assert [call["body"]["text"] for call in calls] == [
+        "服务器启动成功啦~ Done (2.901s)！"
+    ]
+
+
 def test_bridge_client_sanitizes_mixed_internal_tool_trace(monkeypatch) -> None:
     client = RobotBridgeClient()
     target = RobotReplyTarget(target_type="private", target_id="456")

@@ -9,6 +9,8 @@ import {
   CirclePlus,
   Copy,
   Download,
+  Eye,
+  EyeOff,
   FileText,
   Loader2,
   MessageSquare,
@@ -43,6 +45,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PasswordInput } from "@/components/ui/password-input"
 import {
   Select,
   SelectContent,
@@ -1205,7 +1208,9 @@ function CopyableConfigValue({
   secret?: boolean
 }) {
   const copyText = useRobotDetailUiCopy()
+  const { t } = useI18n()
   const [copiedText, copy] = useCopyToClipboard()
+  const [revealed, setRevealed] = useState(false)
   const displayValue = value || mutedValue || "-"
   const canCopy = Boolean(value)
   const isCopied = copiedText === value
@@ -1214,28 +1219,63 @@ function CopyableConfigValue({
     <div className="grid gap-1.5 rounded-xl border bg-muted/10 p-3">
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs font-medium text-muted-foreground">{label}</span>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="size-7 rounded-lg"
-              disabled={!canCopy}
-              onClick={() => {
-                if (value) {
-                  void copy(value)
-                }
-              }}
-            >
-              {isCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-              <span className="sr-only">{copyText.copyLabel(label)}</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            {isCopied ? copyText.copied : copyText.copyLabel(label)}
-          </TooltipContent>
-        </Tooltip>
+        <div className="flex items-center gap-1">
+          {secret && value ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="size-7 rounded-lg"
+                  onClick={() => setRevealed((current) => !current)}
+                >
+                  {revealed ? (
+                    <EyeOff className="size-3.5" />
+                  ) : (
+                    <Eye className="size-3.5" />
+                  )}
+                  <span className="sr-only">
+                    {revealed
+                      ? t("common.hideSecret")
+                      : t("common.showSecret")}
+                  </span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {revealed
+                  ? t("common.hideSecret")
+                  : t("common.showSecret")}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="size-7 rounded-lg"
+                disabled={!canCopy}
+                onClick={() => {
+                  if (value) {
+                    void copy(value)
+                  }
+                }}
+              >
+                {isCopied ? (
+                  <Check className="size-3.5" />
+                ) : (
+                  <Copy className="size-3.5" />
+                )}
+                <span className="sr-only">{copyText.copyLabel(label)}</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {isCopied ? copyText.copied : copyText.copyLabel(label)}
+            </TooltipContent>
+          </Tooltip>
+        </div>
       </div>
       <div
         className={
@@ -1244,7 +1284,7 @@ function CopyableConfigValue({
             : "break-all font-mono text-sm text-muted-foreground"
         }
       >
-        {secret && value ? "********" : displayValue}
+        {secret && value && !revealed ? "********" : displayValue}
       </div>
     </div>
   )
@@ -1591,24 +1631,40 @@ function RobotBasicConfigPanel({
                     {field.label}
                     {field.required ? " *" : ""}
                   </Label>
-                  <Input
-                    id={`robot-edit-${field.key}`}
-                    type={field.secret ? "password" : "text"}
-                    autoComplete={field.secret ? "new-password" : "off"}
-                    value={form.credentials[field.key] ?? ""}
-                    placeholder={
-                      field.secret ? copy.keepCurrentSecret : undefined
-                    }
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        credentials: {
-                          ...current.credentials,
-                          [field.key]: event.target.value,
-                        },
-                      }))
-                    }
-                  />
+                  {field.secret ? (
+                    <PasswordInput
+                      id={`robot-edit-${field.key}`}
+                      autoComplete="new-password"
+                      value={form.credentials[field.key] ?? ""}
+                      placeholder={copy.keepCurrentSecret}
+                      copyable
+                      copyLabel={copy.copyLabel(field.label)}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          credentials: {
+                            ...current.credentials,
+                            [field.key]: event.target.value,
+                          },
+                        }))
+                      }
+                    />
+                  ) : (
+                    <Input
+                      id={`robot-edit-${field.key}`}
+                      autoComplete="off"
+                      value={form.credentials[field.key] ?? ""}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          credentials: {
+                            ...current.credentials,
+                            [field.key]: event.target.value,
+                          },
+                        }))
+                      }
+                    />
+                  )}
                 </div>
               ))}
             </div>
@@ -1641,6 +1697,15 @@ function RobotBasicConfigPanel({
                 getRobotReplyContextWindowSeconds(robot),
               )}
             />
+            {(platform?.fields ?? []).map((field) => (
+              <CopyableConfigValue
+                key={field.key}
+                label={field.label}
+                value={credentials[field.key]}
+                mutedValue={copy.notConfigured}
+                secret={field.secret}
+              />
+            ))}
           </div>
         )}
       </CardContent>

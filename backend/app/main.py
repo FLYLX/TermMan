@@ -30,7 +30,13 @@ async def lifespan(app: FastAPI):
     await mcp_server_manager.start_all()
     logger.info("[App] MCP servers started")
 
+    from app.services.agent.scheduled_tasks import scheduled_task_manager
+
+    scheduled_task_manager.start()
+
     yield
+
+    scheduled_task_manager.stop()
 
     await plugin_manager.shutdown(app)
 

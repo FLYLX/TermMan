@@ -7,14 +7,16 @@ ROBOT_QQ_REPLY_EVENT_TYPE = "agent_qq_reply"
 
 
 def _raw_robot_message_texts(tool_args: dict[str, Any]) -> list[str]:
+    from app.plugins.robot.internal_trace import normalize_robot_message_text
+
     messages = tool_args.get("messages")
     if isinstance(messages, list):
-        return [str(message or "") for message in messages]
+        return [normalize_robot_message_text(message) for message in messages]
 
     text = tool_args.get("text")
     if text is None:
         return []
-    return [str(text)]
+    return [normalize_robot_message_text(text)]
 
 
 def _compact_visible_text(value: str) -> str:

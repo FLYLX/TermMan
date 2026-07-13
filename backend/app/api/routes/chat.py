@@ -49,6 +49,11 @@ from app.services.agent.prompts.policy import (
 )
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.reply_ticket import SOURCE_QQ, SOURCE_WEB, reply_ticket_manager
+from app.services.agent.robot_delivery import (
+    ROBOT_QQ_REPLY_EVENT_TYPE,
+    ROBOT_SEND_TOOL_NAME,
+    robot_reply_event_content,
+)
 from app.services.agent.session import (
     COMMAND_DISPATCH_FAILURE_MESSAGE,
     COMMAND_TOOL_NAMES,
@@ -60,12 +65,8 @@ from app.services.agent.session import (
     is_tool_result_auto_routed_to_job,
     should_auto_route_terminal_tool_to_job,
 )
-from app.services.agent.robot_delivery import (
-    ROBOT_QQ_REPLY_EVENT_TYPE,
-    ROBOT_SEND_TOOL_NAME,
-    robot_reply_event_content,
-)
 from app.services.agent.stream_manager import stream_manager
+from app.services.agent.task_workflow import task_workflow_manager
 from app.services.agent.tool_arguments import (
     ToolArgumentParseError,
     parse_tool_arguments,
@@ -101,8 +102,33 @@ BACKGROUND_JOB_RUNNING_RESPONSE = (
 AUTO_TASK_SOURCE = "agent_plan"
 AUTO_TASK_TTL_DAYS = 7
 MAX_AUTO_TASKS = 5
+INTERNAL_QQ_BACKGROUND_JOB_PREFIX = (
+    "[Background terminal job result for this QQ conversation]"
+)
+TASK_WORKFLOW_REQUEST_RE = re.compile(
+    r"(安装|装(?:个|一下|好)?|下载|部署|构建|编译|配置|修改|修复|创建|删除|启动|停止|重启|"
+    r"更新|升级|迁移|解压|上传|运行|执行|测试|开服|换源|"
+    r"\b(?:install|download|deploy|build|compile|configure|modify|fix|create|"
+    r"delete|start|stop|restart|update|upgrade|migrate|extract|upload|run|"
+    r"execute|test)\b)",
+    re.IGNORECASE,
+)
+TASK_WORKFLOW_CONTINUATION_RE = re.compile(
+    r"(继续|接着|重试|再试|换源|换个源|用国内源|好了|开了|可以了|那就|然后|下一步|"
+    r"\b(?:continue|retry|resume|next|try again)\b)",
+    re.IGNORECASE,
+)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+def _is_internal_agent_callback(message: str, source_type: str) -> bool:
+    return (
+        str(source_type or "").strip().lower() == SOURCE_QQ
+        and str(message or "").lstrip().startswith(
+            INTERNAL_QQ_BACKGROUND_JOB_PREFIX
+        )
+    )
 
 
 class ChatMessage(BaseModel):
@@ -134,6 +160,7 @@ class PlannedTaskRuntime:
     tool_started: bool = False
     tool_finished: bool = False
     reply_ticket_id: str = ""
+    workflow_id: str = ""
 
 
 def get_relevant_memories(
@@ -733,26 +760,67 @@ def _complete_agent_task_plan(plan: PlannedTaskRuntime | None) -> None:
     if not plan:
         return
 
+    workflow = task_workflow_manager.get(plan.workflow_id)
+    if workflow and workflow.status not in {
+        "ready_to_report",
+        "completed",
+        "cancelled",
+    }:
+        return
+
     for task in plan.tasks:
         _update_agent_plan_memory(task.memory_id, status="completed", task_state="completed")
     if plan.reply_ticket_id:
         reply_ticket_manager.mark_completed(plan.reply_ticket_id)
 
 
-def _mark_agent_task_plan_failed(plan: PlannedTaskRuntime | None) -> None:
-    if not plan or not plan.tasks:
+def _mark_agent_task_plan_failed(
+    plan: PlannedTaskRuntime | None,
+    reason: str = "Agent turn stopped before the main objective was completed.",
+) -> None:
+    if not plan:
         return
 
-    current_index = max(0, min(plan.current_index, len(plan.tasks) - 1))
-    for index, task in enumerate(plan.tasks):
-        if index < current_index:
-            _update_agent_plan_memory(task.memory_id, status="completed", task_state="completed")
-        elif index == current_index:
-            _update_agent_plan_memory(task.memory_id, status="active", task_state="failed")
-        else:
-            _update_agent_plan_memory(task.memory_id, status="active", task_state="pending")
+    if plan.reply_ticket_id and plan.workflow_id:
+        task_workflow_manager.update(
+            plan.reply_ticket_id,
+            action="mark_blocked",
+            note=reason,
+        )
+
+    if plan.tasks:
+        current_index = max(0, min(plan.current_index, len(plan.tasks) - 1))
+        for index, task in enumerate(plan.tasks):
+            if index < current_index:
+                _update_agent_plan_memory(
+                    task.memory_id,
+                    status="completed",
+                    task_state="completed",
+                )
+            elif index == current_index:
+                _update_agent_plan_memory(
+                    task.memory_id,
+                    status="active",
+                    task_state="failed",
+                )
+            else:
+                _update_agent_plan_memory(
+                    task.memory_id,
+                    status="active",
+                    task_state="pending",
+                )
     if plan.reply_ticket_id:
-        reply_ticket_manager.mark_failed(plan.reply_ticket_id)
+        reply_ticket_manager.mark_failed(plan.reply_ticket_id, reason)
+
+
+def _should_create_task_workflow(message: str, tools: list[dict[str, Any]]) -> bool:
+    if not tools:
+        return False
+    text = str(message or "")
+    return bool(
+        TASK_WORKFLOW_REQUEST_RE.search(text)
+        or TASK_WORKFLOW_CONTINUATION_RE.search(text)
+    )
 
 
 def _create_agent_task_plan(
@@ -764,13 +832,36 @@ def _create_agent_task_plan(
     history: list[ChatMessage],
     tools: list[dict[str, Any]],
 ) -> PlannedTaskRuntime | None:
-    if not tools:
+    if not _should_create_task_workflow(message, tools):
         return None
 
     if build_status_update_memory_candidate(item_id, message, store=vector_store) is not None:
         return None
 
-    _clear_existing_agent_plan_tasks(item_id)
+    reply_ticket_id = _current_reply_ticket_id(agent)
+    reply_ticket = reply_ticket_manager.get(reply_ticket_id)
+    origin = _current_task_origin(agent)
+    source_type = reply_ticket.source_type if reply_ticket else origin["type"]
+    source_label = reply_ticket.source_label if reply_ticket else origin["label"]
+    resumable = task_workflow_manager.find_resumable(
+        item_id=item_id,
+        source_type=source_type,
+        source_label=source_label,
+    )
+    if resumable and TASK_WORKFLOW_CONTINUATION_RE.search(message):
+        task_workflow_manager.attach_ticket(resumable.workflow_id, reply_ticket_id)
+        task_workflow_manager.update(
+            reply_ticket_id,
+            action="resume",
+            note=f"User follow-up: {message.strip()[:500]}",
+        )
+        return PlannedTaskRuntime(
+            request_id=resumable.workflow_id,
+            tasks=[],
+            workflow_id=resumable.workflow_id,
+        )
+    if not TASK_WORKFLOW_REQUEST_RE.search(message):
+        return None
 
     task_titles = _plan_agent_task_titles(handler, message, history)
     if not task_titles:
@@ -778,7 +869,6 @@ def _create_agent_task_plan(
 
     prefers_chinese = _contains_cjk(message)
     request_id = str(uuid4())
-    origin = _current_task_origin(agent)
     planned_tasks: list[PlannedTask] = []
 
     for index, title in enumerate(task_titles, start=1):
@@ -806,13 +896,22 @@ def _create_agent_task_plan(
         if memory_id:
             planned_tasks.append(PlannedTask(memory_id=memory_id, order=index))
 
-    if not planned_tasks:
-        return None
+    workflow = task_workflow_manager.create(
+        item_id=item_id,
+        handler_id=str(handler.id),
+        reply_ticket_id=reply_ticket_id,
+        objective=message,
+        source_type=source_type,
+        source_label=source_label,
+        step_titles=task_titles,
+        workflow_id=request_id,
+    )
 
     return PlannedTaskRuntime(
         request_id=request_id,
         tasks=planned_tasks,
         current_index=0,
+        workflow_id=workflow.workflow_id,
     )
 
 
@@ -901,23 +1000,67 @@ def generate_stream(
     include_hidden_tool_results: bool = False,
     latest_only_context: bool = False,
     source_type: str = SOURCE_WEB,
+    reply_ticket_id: str = "",
 ) -> Generator[str, None, None]:
     if agent is None:
         agent = agent_manager.get_or_create(handler)
 
     normalized_source_type = str(source_type or SOURCE_WEB).strip().lower()
+    internal_agent_callback = _is_internal_agent_callback(
+        message,
+        normalized_source_type,
+    )
     if normalized_source_type == SOURCE_WEB:
         clear_robot_context = getattr(agent, "clear_robot_context", None)
         if callable(clear_robot_context):
             clear_robot_context()
 
-    reply_ticket = reply_ticket_manager.create_for_agent(
-        agent,
-        item_id=item_id,
-        handler_id=str(handler.id),
-        message=message,
-        source_type=normalized_source_type,
+    reply_ticket = reply_ticket_manager.get(reply_ticket_id)
+    if (
+        reply_ticket is None
+        or reply_ticket.item_id != str(item_id)
+        or reply_ticket.status == "delivered"
+    ):
+        reply_ticket = reply_ticket_manager.create_for_agent(
+            agent,
+            item_id=item_id,
+            handler_id=str(handler.id),
+            message=message,
+            source_type=normalized_source_type,
+        )
+    else:
+        reply_ticket_manager.attach_to_agent(agent, reply_ticket.ticket_id)
+    matched_skills = agent.match_skills(message)
+    tools = select_tools_for_turn(
+        agent.get_tools_for_litellm(),
+        source="qq" if normalized_source_type == SOURCE_QQ else "web",
+        query=message,
+        agent=agent,
     )
+
+    planned_task_runtime = None
+    if not internal_agent_callback:
+        planned_task_runtime = _create_agent_task_plan(
+            item_id,
+            handler=handler,
+            agent=agent,
+            message=message,
+            history=history,
+            tools=tools,
+        )
+    if planned_task_runtime:
+        planned_task_runtime.reply_ticket_id = reply_ticket.ticket_id
+        reply_ticket_manager.mark_task_plan(
+            reply_ticket.ticket_id,
+            planned_task_runtime.request_id,
+        )
+        tools = select_tools_for_turn(
+            agent.get_tools_for_litellm(),
+            source="qq" if normalized_source_type == SOURCE_QQ else "web",
+            query=message,
+            agent=agent,
+        )
+
     pending_context = build_pending_terminal_continuation_prompt(item_id, message)
     messages = build_chat_turn_messages(
         agent,
@@ -933,38 +1076,17 @@ def generate_stream(
     _inject_active_jobs_prompt_context(item_id, messages)
     extract_integration_context_targets(agent, messages)
     record_integration_context_targets(agent, item_id)
-    matched_skills = agent.match_skills(message)
-    tools = select_tools_for_turn(
-        agent.get_tools_for_litellm(),
-        source="qq" if normalized_source_type == SOURCE_QQ else "web",
-        query=message,
-        agent=agent,
-    )
 
     AgentMessageQueue.clear_abort(item_id)
 
-    user_event = _persist_and_broadcast_event(
-        item_id,
-        role="user",
-        content=message,
-        message_type="chat_user",
-    )
-    yield _to_sse(user_event)
-
-    planned_task_runtime = _create_agent_task_plan(
-        item_id,
-        handler=handler,
-        agent=agent,
-        message=message,
-        history=history,
-        tools=tools,
-    )
-    if planned_task_runtime:
-        planned_task_runtime.reply_ticket_id = reply_ticket.ticket_id
-        reply_ticket_manager.mark_task_plan(
-            reply_ticket.ticket_id,
-            planned_task_runtime.request_id,
+    if not internal_agent_callback:
+        user_event = _persist_and_broadcast_event(
+            item_id,
+            role="user",
+            content=message,
+            message_type="chat_user",
         )
+        yield _to_sse(user_event)
 
     tool_call_history: list[tuple[str, str]] = []
     final_response = ""
@@ -1130,6 +1252,22 @@ def generate_stream(
                     continue
 
                 if final_response:
+                    can_finalize, workflow_correction = (
+                        task_workflow_manager.can_finalize(reply_ticket.ticket_id)
+                    )
+                    if not can_finalize:
+                        messages.append(
+                            {"role": "assistant", "content": final_response}
+                        )
+                        messages.append(
+                            {
+                                "role": "system",
+                                "content": workflow_correction,
+                            }
+                        )
+                        final_response = ""
+                        continue
+
                     if delivery_tool_sent_by_integration and _has_active_robot_chat_context(agent):
                         logger.info(
                             "[Chat] Suppressed final response after robot delivery tool sent for item %s",
@@ -1149,12 +1287,13 @@ def generate_stream(
                     if ticket_events:
                         for event in ticket_events:
                             yield _to_sse(event)
-                        _append_conversation_memory(
-                            item_id,
-                            user_message=message,
-                            assistant_message=final_response,
-                            matched_skills=matched_skills,
-                        )
+                        if not internal_agent_callback:
+                            _append_conversation_memory(
+                                item_id,
+                                user_message=message,
+                                assistant_message=final_response,
+                                matched_skills=matched_skills,
+                            )
                         _broadcast_agent_status(item_id, "idle")
                         yield _to_sse({"done": True})
                         return
@@ -1165,12 +1304,15 @@ def generate_stream(
                         message_type="agent_response",
                     )
                     yield _to_sse(response_event)
-                    _append_conversation_memory(
-                        item_id,
-                        user_message=message,
-                        assistant_message=final_response,
-                        matched_skills=matched_skills,
-                    )
+                    if reply_ticket.source_type != SOURCE_QQ:
+                        reply_ticket_manager.mark_delivered(reply_ticket.ticket_id)
+                    if not internal_agent_callback:
+                        _append_conversation_memory(
+                            item_id,
+                            user_message=message,
+                            assistant_message=final_response,
+                            matched_skills=matched_skills,
+                        )
 
                 _broadcast_agent_status(item_id, "idle")
 
@@ -1181,8 +1323,7 @@ def generate_stream(
                 not _should_hide_tool_details(tool_call["function"]["name"])
                 for tool_call in ordered_tool_calls
             )
-            if planned_task_runtime and len(planned_task_runtime.tasks) > 1:
-                _advance_agent_task_plan(planned_task_runtime, 1)
+            if planned_task_runtime:
                 planned_task_runtime.tool_started = True
             thinking_text = iteration_content.strip()
             if thinking_text and has_visible_tool:
@@ -1345,6 +1486,13 @@ def generate_stream(
                     )
                     yield _to_sse(action_event)
 
+                if tool_name != "mcp_local_update_task_workflow":
+                    task_workflow_manager.record_tool_call(
+                        reply_ticket.ticket_id,
+                        tool_name=tool_name,
+                        command=str(tool_args.get("command") or ""),
+                    )
+
                 result = _run_async_from_sync(
                     lambda tool_name=tool_name, tool_args=tool_args: agent.execute_tool(
                         tool_name,
@@ -1362,8 +1510,20 @@ def generate_stream(
                     result_text,
                 )
                 if result_text and fallback_is_delivery_result(result_text):
-                    delivery_tool_sent_by_integration = True
-                    reply_ticket_manager.mark_delivered(reply_ticket.ticket_id)
+                    delivery_is_final, _ = task_workflow_manager.can_finalize(
+                        reply_ticket.ticket_id
+                    )
+                    if delivery_is_final:
+                        delivery_tool_sent_by_integration = True
+                        reply_ticket_manager.mark_delivered(
+                            reply_ticket.ticket_id
+                        )
+                    else:
+                        task_workflow_manager.update(
+                            reply_ticket.ticket_id,
+                            action="record_progress",
+                            note="Sent an intermediate status update; the main task remains active.",
+                        )
                     if tool_name == ROBOT_SEND_TOOL_NAME:
                         reply_event = _persist_and_broadcast_event(
                             item_id,
@@ -1393,13 +1553,6 @@ def generate_stream(
                                 }
                             )
                     else:
-                        if (
-                            planned_task_runtime
-                            and not planned_task_runtime.tool_finished
-                            and len(planned_task_runtime.tasks) > 2
-                        ):
-                            _advance_agent_task_plan(planned_task_runtime, 2)
-                            planned_task_runtime.tool_finished = True
                         result_event = _persist_and_broadcast_event(
                             item_id,
                             role="assistant",
@@ -1431,6 +1584,10 @@ def generate_stream(
                     return
 
                 if is_background_job_started_result(result):
+                    task_workflow_manager.mark_job_started(
+                        reply_ticket.ticket_id,
+                        command=str(tool_args.get("command") or ""),
+                    )
                     clear_pending_terminal_continuation(
                         item_id,
                         command=str(tool_args.get("command") or ""),
@@ -1438,6 +1595,17 @@ def generate_stream(
                     _broadcast_agent_status(item_id, "idle")
                     yield _to_sse({"done": True})
                     return
+
+                if tool_name != "mcp_local_update_task_workflow":
+                    tool_success = bool(result.get("success", True)) and not (
+                        result_text.strip().lower().startswith("error:")
+                    )
+                    task_workflow_manager.record_tool_result(
+                        reply_ticket.ticket_id,
+                        tool_name=tool_name,
+                        success=tool_success,
+                        result_summary=result_text,
+                    )
 
                 if (
                     tool_name in COMMAND_TOOL_NAMES

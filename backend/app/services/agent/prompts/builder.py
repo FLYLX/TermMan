@@ -23,6 +23,7 @@ from app.services.agent.prompts.policy import (
 )
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.skills import skill_loader
+from app.services.agent.task_workflow import task_workflow_manager
 
 if TYPE_CHECKING:
     from app.services.agent.agent import Agent
@@ -720,7 +721,19 @@ def _build_current_source_route_context(
     )
 
 
-def _build_active_task_ledger_context(item_id: str) -> str:
+def _build_active_task_ledger_context(
+    item_id: str,
+    agent: "Agent | None" = None,
+) -> str:
+    context = getattr(agent, "_context", None) if agent is not None else None
+    reply_ticket_id = str(getattr(context, "reply_ticket_id", "") or "").strip()
+    workflow_context = task_workflow_manager.build_prompt_context(
+        item_id=item_id,
+        reply_ticket_id=reply_ticket_id,
+    )
+    if workflow_context:
+        return workflow_context
+
     try:
         memories = vector_store.get_all_memories(item_id, memory_type="task")
     except Exception as exc:
@@ -813,7 +826,7 @@ def build_chat_turn_messages(
     source_route_context = _build_current_source_route_context(agent, source="chat")
     if source_route_context:
         extra_prompt_parts.append(source_route_context)
-    active_task_ledger_context = _build_active_task_ledger_context(item_id)
+    active_task_ledger_context = _build_active_task_ledger_context(item_id, agent)
     if active_task_ledger_context:
         extra_prompt_parts.append(active_task_ledger_context)
     installed_software_context = _build_installed_software_context(item_id)
@@ -899,7 +912,7 @@ def build_terminal_turn_messages(
     source_route_context = _build_current_source_route_context(agent, source="terminal")
     if source_route_context:
         extra_prompt_parts.append(source_route_context)
-    active_task_ledger_context = _build_active_task_ledger_context(item_id)
+    active_task_ledger_context = _build_active_task_ledger_context(item_id, agent)
     if active_task_ledger_context:
         extra_prompt_parts.append(active_task_ledger_context)
     installed_software_context = _build_installed_software_context(item_id)

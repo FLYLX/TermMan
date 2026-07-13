@@ -15,14 +15,19 @@ from app.plugins.robot.contracts import RobotReplyTarget
 from app.plugins.robot.internal_trace import (
     compact_robot_visible_message_text,
     is_robot_internal_trace_text,
+    normalize_robot_message_text,
     sanitize_robot_visible_text,
 )
 from app.plugins.robot.mcp.context import get_robot_mcp_context
 from app.plugins.robot.memory_scope import (
     memory_conversation_key as scoped_memory_conversation_key,
+)
+from app.plugins.robot.memory_scope import (
     memory_scope_for_content,
-    memory_scope_rank as scoped_memory_scope_rank,
     speaker_global_key_from_context,
+)
+from app.plugins.robot.memory_scope import (
+    memory_scope_rank as scoped_memory_scope_rank,
 )
 from app.plugins.robot.message_chunks import is_group_reply_target
 from app.plugins.robot.reply_intent import is_no_reply_intent
@@ -928,18 +933,18 @@ class RobotMCPServer:
     def _raw_message_texts(args: dict) -> list[str]:
         raw_messages = args.get("messages")
         if isinstance(raw_messages, list):
-            return [str(value or "") for value in raw_messages]
+            return [normalize_robot_message_text(value) for value in raw_messages]
         raw_text = args.get("text")
         if raw_text is None:
             return []
-        return [str(raw_text)]
+        return [normalize_robot_message_text(raw_text)]
 
     @staticmethod
     def _sanitize_outgoing_messages(raw_messages: list[str]) -> list[str]:
         messages: list[str] = []
         for raw_message in raw_messages[:5]:
             text = compact_robot_visible_message_text(
-                sanitize_robot_visible_text(str(raw_message or ""))
+                sanitize_robot_visible_text(raw_message)
             )
             if text and not is_no_reply_intent(text) and not is_robot_internal_trace_text(text):
                 messages.append(text)
