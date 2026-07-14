@@ -62,6 +62,7 @@ from app.services.agent.session import (
     is_background_job_started_result,
     is_command_dispatch_failure_result,
     is_command_dispatch_pending_result,
+    is_pending_reply_sent_result,
     is_tool_result_auto_routed_to_job,
     should_auto_route_terminal_tool_to_job,
 )
@@ -91,7 +92,10 @@ SILENT_TOOL_NAMES = {
     "mcp_robot_send_message",
     "mcp_robot_save_memory",
 }
-HIDDEN_TOOL_RESULT_NAMES = {"mcp_robot_send_message"}
+HIDDEN_TOOL_RESULT_NAMES = {
+    "mcp_robot_send_message",
+    "mcp_local_send_pending_reply",
+}
 BACKGROUND_JOB_RUNNING_RESPONSE = (
     "\u540e\u53f0\u4efb\u52a1\u8fd8\u5728\u8fd0\u884c\uff0c"
     "\u6211\u4e0d\u4f1a\u91cd\u590d\u542f\u52a8\u65b0\u7684\u4e0b\u8f7d/"
@@ -108,6 +112,7 @@ INTERNAL_QQ_BACKGROUND_JOB_PREFIX = (
 TASK_WORKFLOW_REQUEST_RE = re.compile(
     r"(安装|装(?:个|一下|好)?|下载|部署|构建|编译|配置|修改|修复|创建|删除|启动|停止|重启|"
     r"更新|升级|迁移|解压|上传|运行|执行|测试|开服|换源|"
+    r"问问|问一下|帮我问|帮忙问|转问|转告后等待|"
     r"\b(?:install|download|deploy|build|compile|configure|modify|fix|create|"
     r"delete|start|stop|restart|update|upgrade|migrate|extract|upload|run|"
     r"execute|test)\b)",
@@ -906,6 +911,20 @@ def _create_agent_task_plan(
         step_titles=task_titles,
         workflow_id=request_id,
     )
+    if reply_ticket_id:
+        try:
+            reply_ticket_manager.upsert_pending_reply(
+                reply_ticket_id,
+                request_summary=message,
+                task_plan=task_titles,
+                status="working",
+            )
+        except Exception:
+            logger.exception(
+                "[Chat] Failed to create pending reply queue entry: item=%s ticket=%s",
+                item_id,
+                reply_ticket_id,
+            )
 
     return PlannedTaskRuntime(
         request_id=request_id,
@@ -1093,6 +1112,7 @@ def generate_stream(
     tool_called_this_turn = False
     delivery_tool_sent_by_integration = False
     delivery_retry_used_by_integration: dict[str, bool] = {}
+    pending_reply_delivery_retry_used = False
 
     try:
         for _ in range(MAX_ITERATIONS):
@@ -1268,9 +1288,48 @@ def generate_stream(
                         final_response = ""
                         continue
 
-                    if delivery_tool_sent_by_integration and _has_active_robot_chat_context(agent):
+                    current_ticket = reply_ticket_manager.get(
+                        reply_ticket.ticket_id
+                    )
+                    if (
+                        current_ticket
+                        and current_ticket.pending_reply_active
+                        and not delivery_tool_sent_by_integration
+                    ):
+                        if not pending_reply_delivery_retry_used:
+                            messages.append(
+                                {"role": "assistant", "content": final_response}
+                            )
+                            messages.append(
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "This task has an active pending-reply queue entry. "
+                                        "Do not answer with normal final text. Call "
+                                        "mcp_local_write_pending_reply(status=ready) if needed, "
+                                        "then mcp_local_send_pending_reply with entry_id="
+                                        f"{current_ticket.ticket_id}. The send tool must deliver "
+                                        "to the stored destination and remove the entry."
+                                    ),
+                                }
+                            )
+                            pending_reply_delivery_retry_used = True
+                            final_response = ""
+                            continue
+                        warning_event = _persist_and_broadcast_event(
+                            item_id,
+                            role="assistant",
+                            content="待回复任务尚未通过发送工具汇报，队列记录已保留。",
+                            message_type="agent_warning",
+                        )
+                        yield _to_sse(warning_event)
+                        _broadcast_agent_status(item_id, "idle")
+                        yield _to_sse({"done": True})
+                        return
+
+                    if delivery_tool_sent_by_integration:
                         logger.info(
-                            "[Chat] Suppressed final response after robot delivery tool sent for item %s",
+                            "[Chat] Suppressed final response after source delivery tool sent for item %s",
                             item_id,
                         )
                         _broadcast_agent_status(item_id, "idle")
@@ -1501,6 +1560,8 @@ def generate_stream(
                 )
                 tool_called_this_turn = True
                 result_text = _format_tool_result(result)
+                if is_pending_reply_sent_result(result):
+                    delivery_tool_sent_by_integration = True
                 command_dispatch_failed = is_command_dispatch_failure_result(
                     tool_name,
                     result_text,

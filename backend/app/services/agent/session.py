@@ -84,6 +84,7 @@ EXECUTE_COMMAND_TOOL_NAME = "mcp_local_execute_command"
 RUN_JOB_TOOL_NAME = "mcp_local_run_job"
 AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
 BACKGROUND_JOB_STARTED_MARKER = "background_job_started"
+PENDING_REPLY_SENT_MARKER = "pending_reply_sent"
 BACKGROUND_JOB_STARTED_RESPONSE = (
     "\u540e\u53f0\u4efb\u52a1\u5df2\u542f\u52a8\uff0c"
     "\u5b8c\u6210\u540e\u6211\u4f1a\u6839\u636e\u7ed3\u679c\u7ee7\u7eed\u5904\u7406"
@@ -196,6 +197,7 @@ SILENT_TOOL_NAMES = {
     "mcp_robot_send_message",
     "mcp_robot_sleep_conversation",
     "mcp_robot_save_memory",
+    "mcp_local_send_pending_reply",
 }
 TERMINAL_SOURCE_FILTERED = "filtered_output"
 TERMINAL_SOURCE_RAW_FEEDBACK = "raw_feedback"
@@ -204,6 +206,14 @@ MINECRAFT_PLAYER_CHAT_LINE_RE = re.compile(
     r"(?:\[[^\]\n]*INFO[^\]\n]*\]\s*)?"
     r"(?:(?:\[[^\]\n]+\]|[^\n:：]{1,80})[:：]\s*)?"
     r"(?:\[Not Secure\]\s*)?<[^>\n]{1,64}>\s+\S"
+)
+MINECRAFT_PLAYER_CHAT_CAPTURE_RE = re.compile(
+    r"(?m)^.*?<(?P<player>[^>\n]{1,64})>\s+(?P<message>\S.*)$"
+)
+MINECRAFT_RELAY_COMMAND_RE = re.compile(
+    r"^\s*/?(?:(?:minecraft):)?(?:tell|msg|w|whisper)\s+"
+    r"(?P<player>[A-Za-z0-9_]{1,64})\s+(?P<question>\S[\s\S]*)$",
+    re.IGNORECASE,
 )
 TERMINAL_NO_REPLY_MARKERS = (
     "[no_terminal_reply]",
@@ -253,6 +263,18 @@ def is_background_job_started_result(result: Any) -> bool:
             bool(item.get(BACKGROUND_JOB_STARTED_MARKER))
             or bool(item.get(AUTO_ROUTED_TO_JOB_MARKER))
         )
+        for item in result_data
+    )
+
+
+def is_pending_reply_sent_result(result: Any) -> bool:
+    if not isinstance(result, dict) or not result.get("success"):
+        return False
+    result_data = result.get("result")
+    if not isinstance(result_data, list):
+        return False
+    return any(
+        isinstance(item, dict) and bool(item.get(PENDING_REPLY_SENT_MARKER))
         for item in result_data
     )
 
@@ -549,6 +571,7 @@ class PendingCommand:
     timeout_seconds: int = PENDING_COMMAND_TIMEOUT_SECONDS
     auto_interrupt_on_timeout: bool = False
     integration_response_sent: bool = False
+    reply_ticket_id: str = ""
 
     def has_expectation(self) -> bool:
         return bool(self.expected_output or self.expected_regex)
@@ -559,6 +582,7 @@ class PendingCommand:
         if self.expected_regex:
             return f"regex:{self.expected_regex}"
         return ""
+
 
 @dataclass
 class TerminalInputContext:
@@ -1039,11 +1063,52 @@ class AgentSession:
             expected_regex=expected_regex,
             timeout_seconds=timeout_seconds,
             auto_interrupt_on_timeout=auto_interrupt_on_timeout,
+            reply_ticket_id=str(tool_args.get("_reply_ticket_id") or "").strip(),
         )
         self._set_terminal_input_context(command, input_mode)
         with self.lock:
             self._pending_command = pending
+        self._update_pending_reply_waiting(pending)
         self._schedule_pending_command_recheck()
+
+    @staticmethod
+    def _parse_terminal_relay_command(command: str) -> tuple[str, str] | None:
+        match = MINECRAFT_RELAY_COMMAND_RE.match(str(command or "").strip())
+        if not match:
+            return None
+        player = str(match.group("player") or "").strip()
+        question = str(match.group("question") or "").strip()
+        if not player or not question:
+            return None
+        return player, question
+
+    def _update_pending_reply_waiting(self, pending: PendingCommand) -> None:
+        parsed = self._parse_terminal_relay_command(pending.command)
+        if not parsed or not pending.reply_ticket_id:
+            return
+        target_player, question = parsed
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            reply_ticket_manager.upsert_pending_reply(
+                pending.reply_ticket_id,
+                status="waiting",
+                awaiting_kind="minecraft_player",
+                awaiting_key=target_player,
+            )
+            logger.info(
+                "[AgentSession] Pending reply now awaits Minecraft player item=%s "
+                "ticket=%s player=%s question=%s",
+                self.item_id,
+                pending.reply_ticket_id,
+                target_player,
+                question[:160],
+            )
+        except Exception as exc:
+            logger.warning(
+                "[AgentSession] Failed to update pending reply awaiting target: %s",
+                exc,
+            )
 
     def _clear_pending_command(self):
         self._cancel_pending_command_recheck()
@@ -2017,6 +2082,40 @@ class AgentSession:
             self._process_chat_input(input_msg, agent)
 
     def _process_terminal_input(self, input_msg: InputMessage, agent: Agent):
+        combined_input = "\n".join(
+            part
+            for part in (input_msg.content, input_msg.raw_content)
+            if part and part.strip()
+        )
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            matched_entry = reply_ticket_manager.match_pending_reply(
+                self.item_id,
+                combined_input,
+            )
+            if matched_entry:
+                input_msg.reply_ticket_id = str(matched_entry["id"])
+                self._attach_reply_ticket_to_agent(agent, input_msg.reply_ticket_id)
+            elif not input_msg.reply_ticket_id and self._get_pending_command() is None:
+                player_chat = MINECRAFT_PLAYER_CHAT_CAPTURE_RE.search(combined_input)
+                if player_chat:
+                    player = str(player_chat.group("player") or "").strip()
+                    message = str(player_chat.group("message") or "").strip()
+                    ticket = reply_ticket_manager.create_for_terminal(
+                        agent,
+                        item_id=self.item_id,
+                        handler_id=self.handler_id,
+                        player=player,
+                        message=message,
+                    )
+                    input_msg.reply_ticket_id = ticket.ticket_id
+        except Exception:
+            logger.exception(
+                "[AgentSession] Failed to resolve terminal pending-reply source: item=%s",
+                self.item_id,
+            )
+
         reply_ticket = self._get_reply_ticket(input_msg.reply_ticket_id)
         reply_ticket_is_web = bool(
             reply_ticket and getattr(reply_ticket, "source_type", "") == "web"
@@ -2108,6 +2207,7 @@ class AgentSession:
             self._current_turn_id = turn_guard.turn_id
             self._emit_running_terminal_status(analysis.terminal_source)
             terminal_delivery_retry_used = False
+            pending_reply_delivery_retry_used = False
             integration_tool_results: list[str] = []
 
             for _ in range(MAX_ITERATIONS):
@@ -2150,6 +2250,33 @@ class AgentSession:
                                 analysis.terminal_source
                             )
                             continue
+                        reply_ticket = self._get_reply_ticket(
+                            input_msg.reply_ticket_id
+                        )
+                        if reply_ticket and reply_ticket.pending_reply_active:
+                            if not pending_reply_delivery_retry_used:
+                                messages.append(
+                                    {"role": "assistant", "content": final_content}
+                                )
+                                messages.append(
+                                    {
+                                        "role": "system",
+                                        "content": (
+                                            "The task belongs to an active pending-reply queue entry. "
+                                            "Do not return normal final text. Call "
+                                            "mcp_local_write_pending_reply(status=ready) if needed, "
+                                            "then call mcp_local_send_pending_reply with entry_id="
+                                            f"{reply_ticket.ticket_id} and the concise final report."
+                                        ),
+                                    }
+                                )
+                                pending_reply_delivery_retry_used = True
+                                continue
+                            self.emit_output(
+                                "待回复任务尚未通过发送工具汇报，队列记录已保留。",
+                                "agent_warning",
+                            )
+                            break
                         if should_retry_terminal_source_delivery(
                             agent=agent,
                             terminal_content=analysis.content,
@@ -2706,6 +2833,7 @@ class AgentSession:
                 turn_guard.reset_timeout_window()
 
             result_text = self._format_tool_result(result).strip()
+            pending_reply_sent = is_pending_reply_sent_result(result)
             robot_delivery_result = bool(
                 tool_name == ROBOT_SEND_TOOL_NAME
                 and result_text
@@ -2750,6 +2878,9 @@ class AgentSession:
                         "qq_delivery": True,
                     },
                 )
+            if pending_reply_sent:
+                self.emit_status("idle", "")
+                return None
             auto_routed_to_job = is_tool_result_auto_routed_to_job(result)
             command_dispatch_failed = is_command_dispatch_failure_result(tool_name, result_text)
             command_dispatch_pending = is_command_dispatch_pending_result(tool_name, result_text)

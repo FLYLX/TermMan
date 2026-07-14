@@ -27,6 +27,10 @@ ALL_TOOLS = [
     _tool("mcp_local_read_terminal_log"),
     _tool("mcp_local_read_chat_history"),
     _tool("mcp_local_list_reply_tickets"),
+    _tool("mcp_local_read_pending_replies"),
+    _tool("mcp_local_write_pending_reply"),
+    _tool("mcp_local_delete_pending_reply"),
+    _tool("mcp_local_send_pending_reply"),
     _tool("mcp_local_get_task_workflow"),
     _tool("mcp_local_update_task_workflow"),
     _tool("mcp_local_save_memory"),
@@ -83,6 +87,10 @@ def test_web_history_request_keeps_only_history_tools() -> None:
     assert _names(selected) == [
         "mcp_local_read_chat_history",
         "mcp_local_list_reply_tickets",
+        "mcp_local_read_pending_replies",
+        "mcp_local_write_pending_reply",
+        "mcp_local_delete_pending_reply",
+        "mcp_local_send_pending_reply",
     ]
 
 
@@ -155,4 +163,22 @@ def test_active_workflow_keeps_control_tools_on_follow_up_turn() -> None:
     assert "mcp_local_get_task_workflow" in _names(selected)
     assert "mcp_local_update_task_workflow" in _names(selected)
     assert "mcp_local_list_reply_tickets" in _names(selected)
+    assert "mcp_local_read_pending_replies" in _names(selected)
+    assert "mcp_local_write_pending_reply" in _names(selected)
+    assert "mcp_local_send_pending_reply" in _names(selected)
     task_workflow_manager.reset()
+
+
+def test_delegated_qq_question_keeps_terminal_and_pending_reply_tools() -> None:
+    selected = select_tools_for_turn(
+        ALL_TOOLS,
+        source="qq",
+        query="\u4f60\u95ee\u95ee\u6c49\u5821\u732a\u8981\u73a9\u5230\u51e0\u70b9",
+    )
+    names = _names(selected)
+
+    assert "mcp_robot_send_message" in names
+    assert "mcp_local_execute_command" in names
+    assert "mcp_local_read_pending_replies" in names
+    assert "mcp_local_write_pending_reply" in names
+    assert "mcp_local_send_pending_reply" in names

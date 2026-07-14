@@ -39,6 +39,7 @@ import {
 } from "@/components/Items/FilterRuleEditor"
 import { ItemFilesPanel } from "@/components/Items/ItemFilesPanel"
 import ItemHandlersList from "@/components/Items/ItemHandlersList"
+import { PendingReplyQueuePanel } from "@/components/Items/PendingReplyQueuePanel"
 import {
   createFallbackItem,
   getStoredItemSnapshot,
@@ -3179,15 +3180,7 @@ function ItemDetailPage({
                       <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border bg-card/85 shadow-sm">
                         <ChatPanel itemId={item.id} />
                       </div>
-                      {robotPluginEnabled ? (
-                        <RobotPendingRepliesPanel
-                          data={robotControllerStatus}
-                          isOpen={pendingRepliesPanelOpen}
-                          onOpenChange={setPendingRepliesPanelOpen}
-                          isFetching={isFetchingRobotControllerStatus}
-                          localeTag={localeTag}
-                        />
-                      ) : null}
+                      <PendingReplyQueuePanel itemId={item.id} />
                     </div>
                   </div>
                 </div>
@@ -3211,6 +3204,13 @@ function ItemDetailPage({
               <TabsContent value="qq-debug" className="space-y-4">
                 {hasVisitedTab("qq-debug") ? (
                   <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                    <RobotPendingRepliesPanel
+                      data={robotControllerStatus}
+                      isOpen={pendingRepliesPanelOpen}
+                      onOpenChange={setPendingRepliesPanelOpen}
+                      isFetching={isFetchingRobotControllerStatus}
+                      localeTag={localeTag}
+                    />
                     <RobotConversationDebugTable
                       data={robotControllerStatus}
                       isFetching={isFetchingRobotControllerStatus}

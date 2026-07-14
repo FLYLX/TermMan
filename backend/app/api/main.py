@@ -9,6 +9,7 @@ from app.api.routes import (
     login,
     mcp,
     memory,
+    pending_replies,
     plugins,
     private,
     skills,
@@ -29,6 +30,7 @@ api_router.include_router(knowledge.router)
 api_router.include_router(skills.router)
 api_router.include_router(chat.router)
 api_router.include_router(memory.router, prefix="/memory", tags=["memory"])
+api_router.include_router(pending_replies.router)
 api_router.include_router(mcp.router)
 api_router.include_router(plugins.router)
 plugin_manager.include_routers(api_router)

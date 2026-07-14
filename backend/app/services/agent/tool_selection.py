@@ -22,6 +22,16 @@ LOCAL_WORKFLOW_TOOLS = {
     "mcp_local_get_task_workflow",
     "mcp_local_update_task_workflow",
     "mcp_local_list_reply_tickets",
+    "mcp_local_read_pending_replies",
+    "mcp_local_write_pending_reply",
+    "mcp_local_delete_pending_reply",
+    "mcp_local_send_pending_reply",
+}
+LOCAL_PENDING_REPLY_TOOLS = {
+    "mcp_local_read_pending_replies",
+    "mcp_local_write_pending_reply",
+    "mcp_local_delete_pending_reply",
+    "mcp_local_send_pending_reply",
 }
 LOCAL_SCHEDULE_TOOLS = {
     "mcp_local_list_scheduled_tasks",
@@ -30,58 +40,58 @@ LOCAL_SCHEDULE_TOOLS = {
 }
 
 HISTORY_PATTERNS = (
-    r"刚才",
-    r"前面",
-    r"之前",
-    r"上次",
-    r"继续",
-    r"你忘",
-    r"忘了",
-    r"没回",
-    r"历史",
-    r"聊天记录",
-    r"待回复",
-    r"原路",
-    r"回哪",
-    r"ticket",
+    "\u521a\u624d",
+    "\u524d\u9762",
+    "\u4e4b\u524d",
+    "\u4e0a\u6b21",
+    "\u7ee7\u7eed",
+    "\u4f60\u8fd8",
+    "\u5fd8\u4e86",
+    "\u6ca1\u56de",
+    "\u5386\u53f2",
+    "\u804a\u5929\u8bb0\u5f55",
+    "\u5f85\u56de\u590d",
+    "\u539f\u8def",
+    "\u56de\u54ea",
+    "ticket",
     r"\bprevious\b",
     r"\bearlier\b",
     r"\bcontinue\b",
 )
 
 MEMORY_PATTERNS = (
-    r"记忆",
-    r"长期",
-    r"记住",
-    r"记得",
-    r"忘记",
-    r"偏好",
-    r"你记",
+    "\u8bb0\u5fc6",
+    "\u957f\u671f",
+    "\u8bb0\u4f4f",
+    "\u8bb0\u5f97",
+    "\u5fd8\u8bb0",
+    "\u504f\u597d",
+    "\u4f60\u8bb0",
     r"\bmemory\b",
     r"\brecall\b",
 )
 
 TERMINAL_PATTERNS = (
-    r"终端",
-    r"命令",
+    "\u7ec8\u7aef",
+    "\u547d\u4ee4",
     r"\bshell\b",
-    r"执行",
-    r"运行",
-    r"安装",
-    r"下载",
-    r"构建",
-    r"测试",
-    r"日志",
-    r"报错",
-    r"文件",
-    r"目录",
-    r"路径",
-    r"解压",
-    r"上传",
-    r"后台",
+    "\u6267\u884c",
+    "\u8fd0\u884c",
+    "\u5b89\u88c5",
+    "\u4e0b\u8f7d",
+    "\u6784\u5efa",
+    "\u6d4b\u8bd5",
+    "\u65e5\u5fd7",
+    "\u62a5\u9519",
+    "\u6587\u4ef6",
+    "\u76ee\u5f55",
+    "\u8def\u5f84",
+    "\u89e3\u538b",
+    "\u4e0a\u4f20",
+    "\u540e\u53f0",
     r"\bjob[s]?\b",
-    r"端口",
-    r"进程",
+    "\u7aef\u53e3",
+    "\u8fdb\u7a0b",
     r"\bps\b",
     r"\bls\b",
     r"\bcat\b",
@@ -98,12 +108,17 @@ TERMINAL_PATTERNS = (
     r"\bcurl\b",
     r"\bwget\b",
     r"\bgit\b",
-    r"启动",
-    r"重启",
-    r"停止",
-    r"中断",
-    r"服务器",
-    r"开服",
+    "\u542f\u52a8",
+    "\u91cd\u542f",
+    "\u505c\u6b62",
+    "\u4e2d\u65ad",
+    "\u670d\u52a1\u5668",
+    "\u5f00\u670d",
+    "\u95ee\u95ee",
+    "\u95ee\u4e00\u4e0b",
+    "\u5e2e\u6211\u95ee",
+    "\u5e2e\u5fd9\u95ee",
+    "\u8f6c\u95ee",
     r"\bmc\b",
     r"\bminecraft\b",
     r"\bforge\b",
@@ -111,25 +126,37 @@ TERMINAL_PATTERNS = (
     r"\bfabric\b",
 )
 
+PENDING_REPLY_PATTERNS = (
+    "\u5f85\u56de\u590d",
+    "\u56de\u590d\u961f\u5217",
+    "\u539f\u8def\u56de\u590d",
+    "\u56de\u62a5",
+    "\u6c47\u62a5",
+    "\u95ee\u95ee",
+    "\u5e2e\u6211\u95ee",
+    "\u8f6c\u95ee",
+    "pending repl",
+)
+
 ROBOT_PATTERNS = (
     r"\bqq\b",
-    r"机器人",
-    r"群",
-    r"私聊",
-    r"发给",
-    r"发送给",
-    r"回复到",
-    r"napcat",
-    r"onebot",
+    "\u673a\u5668\u4eba",
+    "\u7fa4",
+    "\u79c1\u804a",
+    "\u53d1\u7ed9",
+    "\u53d1\u9001\u7ed9",
+    "\u56de\u590d\u5230",
+    "napcat",
+    "onebot",
 )
 
 SCHEDULE_PATTERNS = (
-    r"定时任务",
-    r"计划任务",
-    r"定时执行",
-    r"每天.*执行",
-    r"每隔.*执行",
-    r"scheduled task",
+    "\u5b9a\u65f6\u4efb\u52a1",
+    "\u8ba1\u5212\u4efb\u52a1",
+    "\u5b9a\u65f6\u6267\u884c",
+    "\u6bcf\u5929.*\u6267\u884c",
+    "\u6bcf\u9694.*\u6267\u884c",
+    "scheduled task",
     r"\bschedule\b",
     r"\bcron\b",
 )
@@ -164,7 +191,12 @@ def _wants_schedule_tools(text: str) -> bool:
     return _matches_any(text, SCHEDULE_PATTERNS)
 
 
+def _wants_pending_reply_tools(text: str) -> bool:
+    return _matches_any(text, PENDING_REPLY_PATTERNS)
+
+
 def _wants_robot_tools(text: str, *, source: TurnSource, agent: Any) -> bool:
+    del agent
     if source == "qq":
         return True
     if source == "terminal":
@@ -181,10 +213,7 @@ def _has_active_task_workflow(agent: Any) -> bool:
         from app.services.agent.task_workflow import task_workflow_manager
 
         workflow = task_workflow_manager.get_by_ticket(ticket_id)
-        return bool(
-            workflow
-            and workflow.status not in {"completed", "cancelled"}
-        )
+        return bool(workflow and workflow.status not in {"completed", "cancelled"})
     except Exception:
         return False
 
@@ -208,6 +237,7 @@ def select_tools_for_turn(
     include_local_history = _wants_history_tools(text)
     include_local_memory = _wants_memory_tools(text) and source != "qq"
     include_local_workflow = _has_active_task_workflow(agent)
+    include_local_pending_replies = _wants_pending_reply_tools(text)
 
     selected: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -225,6 +255,10 @@ def select_tools_for_turn(
                 or (include_local_history and name in LOCAL_HISTORY_TOOLS)
                 or (include_local_memory and name in LOCAL_MEMORY_TOOLS)
                 or (include_local_workflow and name in LOCAL_WORKFLOW_TOOLS)
+                or (
+                    include_local_pending_replies
+                    and name in LOCAL_PENDING_REPLY_TOOLS
+                )
                 or (include_local_schedule and name in LOCAL_SCHEDULE_TOOLS)
             )
         else:
