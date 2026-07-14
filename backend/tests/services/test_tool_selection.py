@@ -169,6 +169,34 @@ def test_active_workflow_keeps_control_tools_on_follow_up_turn() -> None:
     task_workflow_manager.reset()
 
 
+def test_explicit_ticket_keeps_workflow_tools_when_agent_context_is_stale() -> None:
+    task_workflow_manager.reset()
+    task_workflow_manager.create(
+        item_id="item-java",
+        handler_id="handler-java",
+        reply_ticket_id="ticket-current",
+        objective="install Java 17",
+        source_type="qq",
+        source_label="QQ private:2537134688",
+        step_titles=["install Java", "verify Java"],
+    )
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(reply_ticket_id="ticket-from-another-turn")
+    )
+
+    selected = select_tools_for_turn(
+        ALL_TOOLS,
+        source="qq",
+        query="background job completed",
+        agent=agent,
+        reply_ticket_id="ticket-current",
+    )
+
+    assert "mcp_local_update_task_workflow" in _names(selected)
+    assert "mcp_local_send_pending_reply" in _names(selected)
+    task_workflow_manager.reset()
+
+
 def test_delegated_qq_question_keeps_terminal_and_pending_reply_tools() -> None:
     selected = select_tools_for_turn(
         ALL_TOOLS,

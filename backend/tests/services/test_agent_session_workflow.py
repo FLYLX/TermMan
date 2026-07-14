@@ -4,6 +4,35 @@ from app.services.agent.reply_ticket import reply_ticket_manager
 from app.services.agent.session import AgentSession, InputMessage, InputType
 
 
+def test_agent_session_converts_dsml_content_into_tool_call() -> None:
+    session = AgentSession("item-1", "handler-1")
+    message = SimpleNamespace(
+        content="""<｜｜DSML｜｜tool_calls>
+<｜｜DSML｜｜invoke name="mcp_local_update_task_workflow">
+<｜｜DSML｜｜parameter name="action" string="true">complete_current_step</｜｜DSML｜｜parameter>
+<｜｜DSML｜｜parameter name="note" string="true">Java 安装完成</｜｜DSML｜｜parameter>
+</｜｜DSML｜｜invoke>
+</｜｜DSML｜｜tool_calls>""",
+        tool_calls=None,
+    )
+    tools = [
+        {
+            "type": "function",
+            "function": {"name": "mcp_local_update_task_workflow"},
+        }
+    ]
+
+    normalized = session._normalize_dsml_tool_message(message, tools)
+
+    assert normalized.content == ""
+    assert len(normalized.tool_calls) == 1
+    assert (
+        normalized.tool_calls[0].function.name
+        == "mcp_local_update_task_workflow"
+    )
+    assert "complete_current_step" in normalized.tool_calls[0].function.arguments
+
+
 def test_terminal_queue_does_not_merge_different_reply_tickets() -> None:
     session = AgentSession("item-1", "handler-1")
     session.input_queue.put_nowait(

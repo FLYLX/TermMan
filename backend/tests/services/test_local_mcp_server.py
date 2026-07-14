@@ -226,6 +226,8 @@ def test_execute_command_only_reports_dispatch(monkeypatch) -> None:
     assert "expected_regex" in props
     assert "timeout_seconds" in props
     assert "auto_interrupt_on_timeout" in props
+    assert props["auto_interrupt_on_timeout"]["default"] is False
+    assert "默认只汇报" in tool["description"]
     assert "不要默认用 &&" in tool["description"]
     assert "一次只发一条命令" in tool["description"]
     assert "默认不要拼接" in tool["inputSchema"]["properties"]["command"]["description"]
@@ -330,7 +332,7 @@ def test_execute_command_auto_routes_busy_command_to_background_job(monkeypatch)
     assert result[1]["auto_routed_execute_command_to_run_job"] is True
 
 
-def test_execute_command_auto_routes_shell_query_when_console_is_active(
+def test_execute_command_sends_shell_like_input_to_active_console(
     monkeypatch,
 ) -> None:
     import importlib
@@ -340,15 +342,13 @@ def test_execute_command_auto_routes_shell_query_when_console_is_active(
 
     input_center_module = importlib.import_module("app.services.socket_pool.input_center")
     item_id = "item-console-shell-query"
-    routed: dict[str, object] = {}
+    sent: dict[str, str] = {}
 
     class FakeInputSDK:
         def send(self, item_id: str, command: str) -> bool:
-            raise AssertionError("shell query should be routed to run_job, not console input")
-
-    def fake_run_job(args: dict):
-        routed.update(args)
-        return [{"type": "text", "text": "\u540e\u53f0\u4efb\u52a1\u5df2\u542f\u52a8"}]
+            sent["item_id"] = item_id
+            sent["command"] = command
+            return True
 
     monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
     monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: True)
@@ -363,7 +363,13 @@ def test_execute_command_auto_routes_shell_query_when_console_is_active(
     )
 
     server = LocalMCPServer()
-    monkeypatch.setattr(server, "_run_job", fake_run_job)
+    monkeypatch.setattr(
+        server,
+        "_run_job",
+        lambda _args: (_ for _ in ()).throw(
+            AssertionError("active console input must not be auto-routed")
+        ),
+    )
 
     try:
         result = server.call_tool(
@@ -376,12 +382,13 @@ def test_execute_command_auto_routes_shell_query_when_console_is_active(
     finally:
         agent_session_manager.remove_session(item_id)
 
-    assert routed["item_id"] == item_id
-    assert routed["command"] == "ls -la"
-    assert routed["wait_for_completion"] is False
-    assert "\u540e\u53f0 Job" in result[0]["text"]
-    assert result[1]["type"] == "metadata"
-    assert result[1]["auto_routed_execute_command_to_run_job"] is True
+    assert sent == {"item_id": item_id, "command": "ls -la\n"}
+    assert result == [
+        {
+            "type": "text",
+            "text": "命令已发送到终端，尚未确认执行结果: ls -la",
+        }
+    ]
 
 
 def test_execute_command_sends_cd_then_server_launcher_when_console_context_is_stale(

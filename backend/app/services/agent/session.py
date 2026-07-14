@@ -10,11 +10,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
 from litellm import completion
 
+from app.core.tool_markup import extract_dsml_tool_calls
 from app.services.agent.agent import Agent, agent_manager
 from app.services.agent.history.chat import append_chat_message
 from app.services.agent.integrations import (
@@ -53,6 +55,8 @@ from app.services.agent.tool_arguments import (
 )
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 from app.services.agent.tool_selection import select_tools_for_turn
+from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
+from app.services.terminal_command_state import terminal_command_state_manager
 
 logger = logging.getLogger(__name__)
 
@@ -108,15 +112,6 @@ TERMINAL_BUSY_COMMAND_PATTERNS = (
     r"^(?:curl|wget)\b.*(?:https?://|ftp://)",
     r"^git\s+(?:clone|pull|fetch|submodule\s+update)\b",
     r"^(?:make|cmake\s+--build|cargo\s+(?:build|install)|go\s+(?:build|install)|mvn|gradle|\./gradlew)\b",
-)
-TERMINAL_BACKGROUND_SHELL_COMMAND_PATTERNS = (
-    r"^(?:pwd|ls|find|du|df|stat|file|wc|tree)\b",
-    r"^(?:cat|head|tail|sed|awk|grep|rg)\b",
-    r"^(?:whoami|id|groups|uname|hostname|date)\b",
-    r"^(?:which|whereis|command\s+-v|type)\b",
-    r"^(?:python\d*(?:\.\d+)?|pip\d*|node|npm|pnpm|yarn|bun|java|javac|git|docker)\s+(?:--version|-v|version)\b",
-    r"^java\s+-version\b",
-    r"^(?:ps|pgrep|free|top\s+-b|uptime)\b",
 )
 TERMINAL_CONSOLE_COMMAND_PATTERNS = (
     r"\bjava\s+.*(?:-jar\s+\S*(?:server|paper|spigot|forge|fabric|bukkit|mohist|arclight|minecraft)\S*|nogui)\b",
@@ -322,19 +317,6 @@ def classify_terminal_input_mode(command: str) -> str | None:
 
 def should_route_command_to_background_job(command: str) -> bool:
     return classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_BUSY
-
-
-def should_run_shell_command_as_background_job(command: str) -> bool:
-    variants = _classification_command_variants(command)
-    if not variants:
-        return False
-    if classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_BUSY:
-        return True
-    return any(
-        re.search(pattern, variant)
-        for variant in variants
-        for pattern in TERMINAL_BACKGROUND_SHELL_COMMAND_PATTERNS
-    )
 
 
 def should_auto_route_terminal_tool_to_job(tool_name: str, tool_args: dict[str, Any]) -> bool:
@@ -822,6 +804,14 @@ class AgentSession:
     def has_running_terminal_job(self) -> bool:
         return self._get_running_terminal_job() is not None
 
+    def has_interactive_terminal_context(self) -> bool:
+        context = self._get_terminal_input_context()
+        pending = self._get_pending_command()
+        return bool(
+            (context and context.input_mode == TERMINAL_INPUT_MODE_CONSOLE)
+            or (pending and pending.input_mode == TERMINAL_INPUT_MODE_CONSOLE)
+        )
+
     def mark_terminal_job_started(
         self,
         tool_name: str,
@@ -937,25 +927,17 @@ class AgentSession:
         )
 
     def should_route_execute_command_to_background_job(self, command: str) -> bool:
-        if should_route_command_to_background_job(command):
-            return True
-        if is_terminal_console_command(command):
+        if self.has_interactive_terminal_context() or is_terminal_console_command(command):
             return False
-        if not should_run_shell_command_as_background_job(command):
-            return False
-
-        context = self._get_terminal_input_context()
-        if context and context.input_mode == TERMINAL_INPUT_MODE_CONSOLE:
-            return True
-
-        pending = self._get_pending_command()
-        return bool(pending and pending.input_mode == TERMINAL_INPUT_MODE_CONSOLE)
+        return should_route_command_to_background_job(command)
 
     def _should_auto_route_tool_to_job(
         self,
         tool_name: str,
         tool_args: dict[str, Any],
     ) -> bool:
+        if self.has_interactive_terminal_context():
+            return False
         if should_auto_route_terminal_tool_to_job(tool_name, tool_args):
             return True
         if tool_name != EXECUTE_COMMAND_TOOL_NAME:
@@ -976,6 +958,16 @@ class AgentSession:
                 return self._build_duplicate_background_job_warning(duplicate_job)
             return None
 
+        if (
+            tool_name == EXECUTE_COMMAND_TOOL_NAME
+            and self.has_interactive_terminal_context()
+        ):
+            with self.lock:
+                active_context = self._terminal_input_context
+                if active_context:
+                    active_context.last_seen_at = datetime.now()
+            return None
+
         running_job = self._get_running_terminal_job()
         if self._running_job_blocks_terminal_tool(
             running_job=running_job,
@@ -987,22 +979,6 @@ class AgentSession:
         if tool_name != EXECUTE_COMMAND_TOOL_NAME:
             return None
 
-        context = self._get_terminal_input_context()
-        if context and context.input_mode == TERMINAL_INPUT_MODE_CONSOLE:
-            if (
-                is_terminal_console_command(command)
-                or classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_CONSOLE
-            ):
-                with self.lock:
-                    active_context = self._terminal_input_context
-                    if active_context:
-                        active_context.last_seen_at = datetime.now()
-                return None
-            return (
-                f"终端当前在 `{self._short_command(context.command)}` 的交互式控制台中。"
-                f"`{self._short_command(command)}` 看起来是 shell 命令，发送进去不会由 shell 执行，已拦截，命令未发送。"
-            )
-
         pending = self._get_pending_command()
         if not pending:
             return None
@@ -1011,14 +987,6 @@ class AgentSession:
             return (
                 f"终端正在执行 `{self._short_command(pending.command)}`，前台进程通常不接收新的 shell 命令。"
                 f"已拦截 `{self._short_command(command)}`，命令未发送；请等待当前任务结束，或明确要求中断。"
-            )
-
-        if pending.input_mode == TERMINAL_INPUT_MODE_CONSOLE:
-            if is_terminal_console_command(command):
-                return None
-            return (
-                f"终端正在启动 `{self._short_command(pending.command)}` 的交互式控制台。"
-                f"`{self._short_command(command)}` 看起来不是控制台命令，已拦截，命令未发送。"
             )
 
         return None
@@ -1041,16 +1009,25 @@ class AgentSession:
     def _set_pending_command(self, tool_name: str, tool_args: dict[str, Any]):
         command = self._extract_command_text(tool_name, tool_args)
         input_mode = classify_terminal_input_mode(command)
+        if tool_name == EXECUTE_COMMAND_TOOL_NAME:
+            context = self._get_terminal_input_context()
+            current_pending = self._get_pending_command()
+            if (
+                context and context.input_mode == TERMINAL_INPUT_MODE_CONSOLE
+            ) or (
+                current_pending
+                and current_pending.input_mode == TERMINAL_INPUT_MODE_CONSOLE
+            ):
+                input_mode = TERMINAL_INPUT_MODE_CONSOLE
         expected_output = _normalize_optional_text(tool_args.get("expected_output"))
         expected_regex = _normalize_optional_text(tool_args.get("expected_regex"))
-        has_expectation = bool(expected_output or expected_regex)
         timeout_seconds = _coerce_timeout_seconds(
             tool_args.get("timeout_seconds"),
             PENDING_COMMAND_TIMEOUT_SECONDS,
         )
         auto_interrupt_on_timeout = _coerce_bool(
             tool_args.get("auto_interrupt_on_timeout"),
-            has_expectation,
+            False,
         )
         pending = PendingCommand(
             tool_name=tool_name,
@@ -1066,6 +1043,14 @@ class AgentSession:
             reply_ticket_id=str(tool_args.get("_reply_ticket_id") or "").strip(),
         )
         self._set_terminal_input_context(command, input_mode)
+        terminal_command_state_manager.record(
+            self.item_id,
+            command,
+            source="agent",
+            expected_output=expected_output,
+            expected_regex=expected_regex,
+            timeout_seconds=timeout_seconds,
+        )
         with self.lock:
             self._pending_command = pending
         self._update_pending_reply_waiting(pending)
@@ -1277,6 +1262,49 @@ class AgentSession:
             )
         return False
 
+    def _fail_and_report_pending_reply(
+        self,
+        ticket_id: str,
+        *,
+        report: str,
+        reason: str,
+    ) -> bool:
+        ticket = self._get_reply_ticket(ticket_id)
+        if not ticket or not ticket.pending_reply_active:
+            return False
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            task_workflow_manager.update(
+                ticket_id,
+                action="mark_blocked",
+                note=str(reason or report)[:2000],
+            )
+            reply_ticket_manager.mark_failed(ticket_id, reason or report)
+            delivered, detail = reply_ticket_manager.send_pending_reply(
+                ticket_id,
+                report,
+            )
+            if delivered and ticket.source_type == "qq":
+                self.emit_output(
+                    f"已回复 QQ：{report.strip()}",
+                    ROBOT_QQ_REPLY_EVENT_TYPE,
+                    {"tool_name": "reply_ticket", "qq_delivery": True},
+                )
+            elif not delivered:
+                self.emit_output(
+                    f"任务失败汇报尚未送达，任务已保留：{detail}",
+                    "agent_warning",
+                )
+            return delivered
+        except Exception:
+            logger.exception(
+                "[AgentSession] Failed to report pending task failure: item=%s ticket=%s",
+                self.item_id,
+                ticket_id,
+            )
+            return False
+
     def _attach_reply_ticket_to_agent(self, agent: Agent, ticket_id: str) -> None:
         ticket_id = str(ticket_id or "").strip()
         if not ticket_id:
@@ -1448,7 +1476,14 @@ class AgentSession:
         pending: PendingCommand,
         interrupted: bool,
     ) -> str:
-        interrupt_text = "已自动发送 Ctrl+C。" if interrupted else "未能自动发送 Ctrl+C。"
+        if pending.auto_interrupt_on_timeout:
+            interrupt_text = (
+                "已按显式配置发送 Ctrl+C。"
+                if interrupted
+                else "按显式配置尝试发送 Ctrl+C，但发送失败。"
+            )
+        else:
+            interrupt_text = "未中断当前进程，请结合上一条命令和最新终端输出排查。"
         return (
             f"命令 `{pending.command}` 在 {pending.timeout_seconds} 秒内没有匹配预期输出 "
             f"`{pending.expectation_label()}`。{interrupt_text}"
@@ -2044,6 +2079,10 @@ class AgentSession:
             logger.exception("[AgentSession] Input completion callback failed")
 
     def _process_input(self, input_msg: InputMessage):
+        with agent_turn_coordinator.turn(agent_turn_key(self.handler_id)):
+            self._process_input_serialized(input_msg)
+
+    def _process_input_serialized(self, input_msg: InputMessage):
         if input_msg.callback:
             self.add_output_callback(input_msg.callback)
         agent = self.get_agent()
@@ -2202,6 +2241,7 @@ class AgentSession:
                 source="terminal",
                 query=input_msg.query or analysis.content,
                 agent=agent,
+                reply_ticket_id=input_msg.reply_ticket_id,
             )
             turn_guard = TurnGuard()
             self._current_turn_id = turn_guard.turn_id
@@ -2209,10 +2249,12 @@ class AgentSession:
             terminal_delivery_retry_used = False
             pending_reply_delivery_retry_used = False
             integration_tool_results: list[str] = []
+            terminal_failure_report = ""
 
             for _ in range(MAX_ITERATIONS):
                 timed_out, timeout_reason = turn_guard.check_timeout()
                 if timed_out:
+                    terminal_failure_report = "任务未能完成：本轮处理超时，已停止该任务。"
                     self._send_pending_integration_response(
                         pending_before_analysis,
                         timeout_reason,
@@ -2221,12 +2263,16 @@ class AgentSession:
                     break
 
                 if self._abort_flag:
+                    terminal_failure_report = "任务已被中断，未能完成。"
                     self.emit_output("当前轮已中断", "agent_warning")
                     self.emit_status("interrupted", "当前轮已中断")
                     break
 
                 response = self._call_llm(agent, messages, tools=tools)
-                message = response.choices[0].message
+                message = self._normalize_dsml_tool_message(
+                    response.choices[0].message,
+                    tools,
+                )
 
                 if not (hasattr(message, "tool_calls") and message.tool_calls):
                     if message.content:
@@ -2275,6 +2321,9 @@ class AgentSession:
                             self.emit_output(
                                 "待回复任务尚未通过发送工具汇报，队列记录已保留。",
                                 "agent_warning",
+                            )
+                            terminal_failure_report = (
+                                "任务未能完成：Agent 未能生成有效的最终汇报，已停止该任务。"
                             )
                             break
                         if should_retry_terminal_source_delivery(
@@ -2350,6 +2399,17 @@ class AgentSession:
                 if next_messages is None:
                     break
                 messages = next_messages
+            else:
+                terminal_failure_report = (
+                    "任务未能完成：Agent 达到本轮处理次数上限，已停止该任务。"
+                )
+
+            if terminal_failure_report:
+                self._fail_and_report_pending_reply(
+                    input_msg.reply_ticket_id,
+                    report=terminal_failure_report,
+                    reason=terminal_failure_report,
+                )
 
             if pending_integration_contexts:
                 clear_integration_chat_contexts(agent, pending_integration_contexts)
@@ -2359,6 +2419,11 @@ class AgentSession:
         except Exception as exc:
             logger.error(f"[AgentSession] Terminal processing error: {exc}")
             self.emit_output(f"处理失败: {exc}", "agent_error")
+            self._fail_and_report_pending_reply(
+                input_msg.reply_ticket_id,
+                report=f"任务处理失败：{exc}",
+                reason=str(exc),
+            )
             self._record_scheduled_ticket_result(
                 input_msg.reply_ticket_id,
                 success=False,
@@ -2390,6 +2455,7 @@ class AgentSession:
                 source="web",
                 query=input_msg.query or input_msg.content,
                 agent=agent,
+                reply_ticket_id=input_msg.reply_ticket_id,
             )
             turn_guard = TurnGuard()
             self._current_turn_id = turn_guard.turn_id
@@ -2407,7 +2473,10 @@ class AgentSession:
                     break
 
                 response = self._call_llm(agent, messages, tools=tools)
-                message = response.choices[0].message
+                message = self._normalize_dsml_tool_message(
+                    response.choices[0].message,
+                    tools,
+                )
 
                 if not (hasattr(message, "tool_calls") and message.tool_calls):
                     if message.content:
@@ -2450,6 +2519,15 @@ class AgentSession:
                 pending_command
             ),
         )
+        last_command_context = terminal_command_state_manager.build_prompt_context(
+            self.item_id
+        )
+        if last_command_context:
+            insert_at = max(len(messages) - 1, 0)
+            messages.insert(
+                insert_at,
+                {"role": "system", "content": last_command_context},
+            )
         terminal_text = (effective_terminal_content or "").strip()
         if terminal_text:
             has_system_prompt = any(
@@ -2730,6 +2808,38 @@ class AgentSession:
 
         return completion(**kwargs)
 
+    @staticmethod
+    def _normalize_dsml_tool_message(message: Any, tools: list[dict]) -> Any:
+        raw_content = str(getattr(message, "content", "") or "")
+        allowed_tool_names = {
+            str(tool.get("function", {}).get("name") or "").strip()
+            for tool in tools
+            if str(tool.get("function", {}).get("name") or "").strip()
+        }
+        visible_content, dsml_calls = extract_dsml_tool_calls(
+            raw_content,
+            allowed_tool_names=allowed_tool_names,
+        )
+        native_tool_calls = list(getattr(message, "tool_calls", None) or [])
+        if native_tool_calls:
+            return SimpleNamespace(
+                content=visible_content,
+                tool_calls=native_tool_calls,
+            )
+        if not dsml_calls and visible_content == raw_content:
+            return message
+        return SimpleNamespace(
+            content=visible_content,
+            tool_calls=[
+                SimpleNamespace(
+                    id=tool_call["id"],
+                    type=tool_call["type"],
+                    function=SimpleNamespace(**tool_call["function"]),
+                )
+                for tool_call in dsml_calls
+            ],
+        )
+
     def _handle_tool_calls(
         self,
         agent: Agent,
@@ -2794,6 +2904,8 @@ class AgentSession:
                 )
                 return None
             tool_args["item_id"] = self.item_id
+            if reply_ticket_id:
+                tool_args["_reply_ticket_id"] = reply_ticket_id
             terminal_input_error = None
             if not self._should_auto_route_tool_to_job(tool_name, tool_args):
                 terminal_input_error = self._validate_terminal_command_input(tool_name, tool_args)

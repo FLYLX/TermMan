@@ -678,13 +678,22 @@ def _build_installed_software_context(item_id: str) -> str:
         return ""
 
 
-def _build_pending_reply_context(item_id: str, current_input: str) -> str:
+def _build_pending_reply_context(
+    item_id: str,
+    current_input: str,
+    agent: "Agent | None" = None,
+) -> str:
     try:
         from app.services.agent.reply_ticket import reply_ticket_manager
 
+        context = getattr(agent, "_context", None) if agent is not None else None
+        current_ticket_id = str(
+            getattr(context, "reply_ticket_id", "") or ""
+        ).strip()
         return reply_ticket_manager.build_pending_reply_prompt(
             item_id,
             current_input=current_input,
+            current_ticket_id=current_ticket_id,
         )
     except Exception as exc:
         logger.warning("[PromptBuilder] Failed to build pending reply context: %s", exc)
@@ -785,7 +794,7 @@ def build_chat_turn_messages(
     installed_software_context = _build_installed_software_context(item_id)
     if installed_software_context:
         extra_prompt_parts.append(installed_software_context)
-    pending_reply_context = _build_pending_reply_context(item_id, message)
+    pending_reply_context = _build_pending_reply_context(item_id, message, agent)
     if pending_reply_context:
         extra_prompt_parts.append(pending_reply_context)
     if not latest_only_context:
@@ -874,7 +883,11 @@ def build_terminal_turn_messages(
     installed_software_context = _build_installed_software_context(item_id)
     if installed_software_context:
         extra_prompt_parts.append(installed_software_context)
-    pending_reply_context = _build_pending_reply_context(item_id, terminal_content)
+    pending_reply_context = _build_pending_reply_context(
+        item_id,
+        terminal_content,
+        agent,
+    )
     if pending_reply_context:
         extra_prompt_parts.append(pending_reply_context)
     prompt_messages: list[dict[str, str]] = [

@@ -79,6 +79,41 @@ def test_start_mcp_servers_does_not_duplicate_tools(monkeypatch) -> None:
     ]
 
 
+def test_execute_tool_preserves_explicit_reply_ticket(monkeypatch) -> None:
+    handler_id = f"handler-{uuid4()}"
+    agent = agent_module.Agent(handler_id)
+    agent._context = AgentContext(
+        handler_id=handler_id,
+        enabled_mcp_servers=["local"],
+        reply_ticket_id="stale-ticket-from-another-turn",
+    )
+    agent._mcp_servers = ["local"]
+    captured_args: dict[str, object] = {}
+
+    async def fake_call_tool(_server_name: str, _tool_name: str, args: dict):
+        captured_args.update(args)
+        return [{"type": "text", "text": "started"}]
+
+    monkeypatch.setattr(agent_module.mcp_server_manager, "call_tool", fake_call_tool)
+
+    try:
+        result = asyncio.run(
+            agent.execute_tool(
+                "mcp_local_run_job",
+                {
+                    "item_id": "item-1",
+                    "command": "install-java",
+                    "_reply_ticket_id": "ticket-for-current-request",
+                },
+            )
+        )
+
+        assert result["success"] is True
+        assert captured_args["_reply_ticket_id"] == "ticket-for-current-request"
+    finally:
+        agent_module.Agent._instances.pop(handler_id, None)
+
+
 def test_agent_manager_refreshes_cached_agent_when_skill_revision_changes(monkeypatch) -> None:
     handler_id = f"handler-{uuid4()}"
     handler = SimpleNamespace(
@@ -760,7 +795,7 @@ def test_non_robot_context_does_not_include_robot_plugin_prompt(monkeypatch) -> 
     assert "mcp_robot_send_message" not in messages[0]["content"]
 
 
-def test_chat_prompt_includes_active_task_ledger(monkeypatch) -> None:
+def test_casual_chat_does_not_load_legacy_task_memory(monkeypatch) -> None:
     agent = SimpleNamespace(
         _context=SimpleNamespace(robot_id="", robot_reply_context_summary=""),
         get_skills=lambda: [],
@@ -822,9 +857,9 @@ def test_chat_prompt_includes_active_task_ledger(monkeypatch) -> None:
     )
 
     system_content = messages[0]["content"]
-    assert "Active task ledger" in system_content
-    assert "install Java" in system_content
-    assert "QQ group:770362397" in system_content
+    assert "Active task ledger" not in system_content
+    assert "install Java" not in system_content
+    assert "QQ group:770362397" not in system_content
     assert "old completed" not in system_content
 
 
@@ -1073,12 +1108,11 @@ def test_terminal_source_delivery_retry_reprompts_to_terminal_tool(monkeypatch) 
         FakeAgent(),
     )
 
-    assert tool_calls == [
-        (
-            "mcp_local_execute_command",
-            {"command": "say 在呢", "item_id": "item-1"},
-        )
-    ]
+    assert len(tool_calls) == 1
+    tool_name, tool_args = tool_calls[0]
+    assert tool_name == "mcp_local_execute_command"
+    assert tool_args.pop("_reply_ticket_id")
+    assert tool_args == {"command": "say 在呢", "item_id": "item-1"}
     assert not [
         event
         for event in events
@@ -2314,6 +2348,54 @@ def test_running_terminal_job_context_is_injected_into_terminal_prompt() -> None
     assert "apt-get install -y temurin-17-jdk" in joined
 
 
+def test_last_terminal_command_is_injected_into_terminal_prompt() -> None:
+    from app.services.agent.session import AgentSession, InputMessage, InputType
+    from app.services.terminal_command_state import terminal_command_state_manager
+
+    class FakeAgent:
+        _context = SimpleNamespace(
+            agent_profile={},
+            enabled_knowledge_files=[],
+            skill_revision=0,
+        )
+
+        def get_skills(self):
+            return []
+
+        def match_skills(self, query: str):
+            return []
+
+        def get_mcp_servers(self):
+            return []
+
+    terminal_command_state_manager.clear("item-last-command")
+    terminal_command_state_manager.record(
+        "item-last-command",
+        "cd /srv/minecraft && ./run.sh",
+        source="agent",
+        expected_regex=r"Done \(.*\)!",
+        timeout_seconds=180,
+    )
+    try:
+        session = AgentSession("item-last-command", "handler-1")
+        messages = session._build_terminal_messages(
+            FakeAgent(),
+            InputMessage(
+                input_type=InputType.TERMINAL,
+                content="startup output did not match the expected marker",
+            ),
+            "startup output did not match the expected marker",
+        )
+        joined = "\n".join(str(message.get("content", "")) for message in messages)
+
+        assert "Last terminal command sent for this item" in joined
+        assert "cd /srv/minecraft && ./run.sh" in joined
+        assert r"Done \(.*\)!" in joined
+        assert "Do not interrupt" in joined
+    finally:
+        terminal_command_state_manager.clear("item-last-command")
+
+
 def test_turn_guard_reset_timeout_window_after_long_job() -> None:
     from datetime import datetime, timedelta
 
@@ -2332,9 +2414,10 @@ def test_turn_guard_reset_timeout_window_after_long_job() -> None:
     assert reason == ""
 
 
-def test_console_terminal_context_allows_console_input_but_blocks_shell_input() -> None:
+def test_console_terminal_context_allows_all_main_terminal_input() -> None:
     from app.services.agent.session import (
         EXECUTE_COMMAND_TOOL_NAME,
+        RUN_JOB_TOOL_NAME,
         TERMINAL_INPUT_MODE_CONSOLE,
         AgentSession,
         classify_terminal_input_mode,
@@ -2356,17 +2439,36 @@ def test_console_terminal_context_allows_console_input_but_blocks_shell_input() 
         {"command": "op Steve"},
     ) is None
 
-    warning = session._validate_terminal_command_input(
+    shell_warning = session._validate_terminal_command_input(
         EXECUTE_COMMAND_TOOL_NAME,
         {"command": "ls -la"},
     )
+    busy_warning = session._validate_terminal_command_input(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "apt update"},
+    )
 
-    assert warning is not None
-    assert "paper-server.jar" in warning
-    assert "ls -la" in warning
-    assert session.should_route_execute_command_to_background_job("ls -la") is True
-    assert session.should_route_execute_command_to_background_job("java -version") is True
+    assert shell_warning is None
+    assert busy_warning is None
+    assert session.should_route_execute_command_to_background_job("ls -la") is False
+    assert session.should_route_execute_command_to_background_job("java -version") is False
+    assert session.should_route_execute_command_to_background_job("apt update") is False
     assert session.should_route_execute_command_to_background_job("op Steve") is False
+
+    session.mark_terminal_job_started(
+        RUN_JOB_TOOL_NAME,
+        {"command": "apt-get install -y curl"},
+    )
+    assert session._validate_terminal_command_input(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "apt update"},
+    ) is None
+
+    session._set_pending_command(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {"command": "ls -la"},
+    )
+    assert session._get_pending_command().input_mode == TERMINAL_INPUT_MODE_CONSOLE
 
 
 def test_console_terminal_context_allows_cd_then_server_launcher() -> None:
@@ -2449,7 +2551,7 @@ def test_shell_error_output_clears_pending_command_after_echo() -> None:
     assert session._get_pending_command() is None
 
 
-def test_expected_terminal_output_timeout_interrupts_command(monkeypatch) -> None:
+def test_expected_terminal_output_timeout_does_not_interrupt_by_default(monkeypatch) -> None:
     from datetime import datetime, timedelta
 
     import app.services.socket_pool as socket_pool
@@ -2484,14 +2586,51 @@ def test_expected_terminal_output_timeout_interrupts_command(monkeypatch) -> Non
 
     session._run_pending_command_recheck(pending.normalized_command)
 
-    assert sent == [("item-1", "\x03")]
+    assert sent == []
     assert session._get_pending_command() is None
     assert any(
         event.get("type") == "agent_warning"
         and "openjdk" in event.get("content", "")
-        and "Ctrl+C" in event.get("content", "")
+        and "未中断当前进程" in event.get("content", "")
         for event in events
     )
+
+
+def test_expected_terminal_output_timeout_can_interrupt_when_explicit(monkeypatch) -> None:
+    from datetime import datetime, timedelta
+
+    import app.services.socket_pool as socket_pool
+    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
+
+    sent: list[tuple[str, str]] = []
+
+    class FakeInputSDK:
+        def send(self, item_id: str, command: str) -> bool:
+            sent.append((item_id, command))
+            return True
+
+    session = AgentSession("item-1", "handler-1")
+    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
+    session._get_log_line_count = lambda: 0
+    session._get_recent_pending_log_tail = lambda lines=8: "still waiting"
+    monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
+
+    session._set_pending_command(
+        EXECUTE_COMMAND_TOOL_NAME,
+        {
+            "command": "java -version",
+            "expected_output": "openjdk",
+            "timeout_seconds": 1,
+            "auto_interrupt_on_timeout": True,
+        },
+    )
+    pending = session._get_pending_command()
+    assert pending is not None
+    pending.dispatched_at = datetime.now() - timedelta(seconds=2)
+
+    session._run_pending_command_recheck(pending.normalized_command)
+
+    assert sent == [("item-1", "\x03")]
 
 def test_progress_noise_detection_ignores_download_meters() -> None:
     from app.services.agent.terminal_noise import is_progress_noise_content

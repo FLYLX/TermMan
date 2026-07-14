@@ -14,6 +14,12 @@ export interface TerminalOutput {
   cancelled?: boolean
 }
 
+export interface TerminalCompletion {
+  value: string
+  cursor: number
+  candidates: string[]
+}
+
 interface RoomInfo {
   permanent_count: number
   temporary_count: number
@@ -41,6 +47,10 @@ interface UseTerminalConnectionReturn {
   output: TerminalOutput[]
   clearOutput: () => void
   sendCommand: (command: string) => void
+  completeCommand: (
+    command: string,
+    cursor: number,
+  ) => Promise<TerminalCompletion | null>
   sendCtrlC: () => void
   reconnect: (force?: boolean) => void
   disconnect: () => void
@@ -593,6 +603,47 @@ export function useTerminalConnection({
     [isConnected],
   )
 
+  const completeCommand = useCallback(
+    (command: string, cursor: number) =>
+      new Promise<TerminalCompletion | null>((resolve) => {
+        const socket = socketRef.current
+        if (!socket || !isConnected) {
+          resolve(null)
+          return
+        }
+
+        let settled = false
+        const timeoutId = window.setTimeout(() => {
+          if (!settled) {
+            settled = true
+            resolve(null)
+          }
+        }, 1500)
+
+        socket.emit(
+          "terminal/complete",
+          { command, cursor },
+          (result: (TerminalCompletion & { success?: boolean }) | undefined) => {
+            if (settled) {
+              return
+            }
+            settled = true
+            window.clearTimeout(timeoutId)
+            if (!result?.success) {
+              resolve(null)
+              return
+            }
+            resolve({
+              value: result.value,
+              cursor: result.cursor,
+              candidates: result.candidates || [],
+            })
+          },
+        )
+      }),
+    [isConnected],
+  )
+
   const sendCtrlC = useCallback(() => {
     if (socketRef.current && isConnected) {
       socketRef.current.emit("terminal/write", { command: "\x03" })
@@ -629,6 +680,7 @@ export function useTerminalConnection({
     output,
     clearOutput,
     sendCommand,
+    completeCommand,
     sendCtrlC,
     reconnect,
     disconnect,

@@ -1,10 +1,23 @@
 import { Link } from "@tanstack/react-router"
 import { Activity, ChevronDown, ChevronUp, Download, ExternalLink, Loader2, Lock, Send, Square, Terminal, Trash2 } from "lucide-react"
-import { useEffect, useEffectEvent, useRef, useState } from "react"
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  memo,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 
 import type { ItemHandlerPublic } from "@/client"
 import { ItemHandlerAssociationsService } from "@/client"
 import { OpenAPI } from "@/client/core/OpenAPI"
+import {
+  advanceChatHistoryOffset,
+  buildStableChatMessageRows,
+  getChatMessageKey,
+} from "@/components/Items/chatHistory"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -284,15 +297,6 @@ function normalizeRenderableMessages(
         message !== null && shouldRenderMessage(message),
     )
     .map((message) => prepareChatMessageForState(message))
-}
-
-function getChatMessageKey(message: ChatMessage): string {
-  return [
-    message.role,
-    message.type ?? "",
-    message.timestamp ?? "",
-    message.content,
-  ].join("\u0001")
 }
 
 function getVisibleChatContent(message: ChatMessage): string {
@@ -1015,6 +1019,47 @@ function getMessageClasses(message: ChatMessage): string {
   return "border bg-muted"
 }
 
+const ChatMessageRow = memo(function ChatMessageRow({
+  message,
+}: {
+  message: ChatMessage
+}) {
+  const label = getMessageLabel(message)
+  const robotDisplay = getRobotMessageDisplay(message)
+  const visibleContent = robotDisplay ? "" : getVisibleChatContent(message)
+  const alignment = message.role === "user" ? "justify-end" : "justify-start"
+
+  return (
+    <div className={`flex ${alignment}`}>
+      {robotDisplay ? (
+        <div className="w-full max-w-[94%]">
+          <RobotMessageCard
+            display={robotDisplay}
+            timestamp={message.timestamp}
+          />
+        </div>
+      ) : (
+        <div
+          className={`max-w-[90%] rounded-lg px-3 py-2 text-sm ${getMessageClasses(message)}`}
+        >
+          {label && (
+            <div className="mb-1 border-b border-current/15 pb-1 text-[11px] uppercase tracking-wide opacity-70">
+              {label}
+            </div>
+          )}
+          <div
+            className={`whitespace-pre-wrap break-words ${
+              message.role === "terminal" ? "font-mono" : "font-sans"
+            }`}
+          >
+            {visibleContent}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+})
+
 export function ChatPanel({ itemId }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
@@ -1028,13 +1073,21 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement>(null)
-  const suppressNextAutoScrollRef = useRef(false)
+  const scrollContentRef = useRef<HTMLDivElement>(null)
+  const messageCountRef = useRef(0)
+  const initialScrollPendingRef = useRef(true)
+  const shouldStickToBottomRef = useRef(true)
+  const pendingHistoryAnchorRef = useRef<{
+    scrollHeight: number
+    scrollTop: number
+  } | null>(null)
   const loadedPersistedMessageCountRef = useRef(0)
   const streamReaderRef =
     useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
   const streamAbortRef = useRef<AbortController | null>(null)
   const canAbortSession =
     Boolean(handler) && (Boolean(agentStatus) || isLoading)
+  messageCountRef.current = messages.length
 
   useEffect(() => {
     if (!agentStatus?.autoClearMs) {
@@ -1181,6 +1234,9 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
     let cancelled = false
 
     const fetchData = async () => {
+      initialScrollPendingRef.current = true
+      shouldStickToBottomRef.current = true
+      pendingHistoryAnchorRef.current = null
       setHandler(null)
       setMessages([])
       setHistoryError(null)
@@ -1215,7 +1271,8 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
           sessionResult.value.messages,
         )
         setMessages(normalizedMessages)
-        loadedPersistedMessageCountRef.current = normalizedMessages.length
+        loadedPersistedMessageCountRef.current =
+          sessionResult.value.messages?.length ?? 0
         setHistoryTotal(sessionResult.value.total ?? normalizedMessages.length)
         setHistoryHasMore(Boolean(sessionResult.value.has_more))
       } else {
@@ -1255,27 +1312,26 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
         offset: loadedPersistedMessages,
       })
       const olderMessages = normalizeRenderableMessages(page.messages)
-      loadedPersistedMessageCountRef.current += olderMessages.length
+      loadedPersistedMessageCountRef.current = advanceChatHistoryOffset(
+        loadedPersistedMessageCountRef.current,
+        page.messages,
+      )
       setHistoryTotal(page.total ?? historyTotal)
       setHistoryHasMore(Boolean(page.has_more))
-      suppressNextAutoScrollRef.current = true
+      pendingHistoryAnchorRef.current = {
+        scrollHeight: previousScrollHeight,
+        scrollTop: previousScrollTop,
+      }
       setMessages((current) => {
         const existingKeys = new Set(current.map((message) => getChatMessageKey(message)))
         const uniqueOlderMessages = olderMessages.filter(
           (message) => !existingKeys.has(getChatMessageKey(message)),
         )
         if (uniqueOlderMessages.length === 0) {
+          pendingHistoryAnchorRef.current = null
           return current
         }
         return [...uniqueOlderMessages, ...current]
-      })
-      window.requestAnimationFrame(() => {
-        const nextScrollElement = scrollRef.current
-        if (!nextScrollElement) {
-          return
-        }
-        nextScrollElement.scrollTop =
-          nextScrollElement.scrollHeight - previousScrollHeight + previousScrollTop
       })
     } catch (error) {
       console.error("[Chat] Failed to load older session history:", error)
@@ -1413,16 +1469,64 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
     }
   }, [handler, itemId])
 
-  useEffect(() => {
-    const messageCount = messages.length
-    if (suppressNextAutoScrollRef.current) {
-      suppressNextAutoScrollRef.current = false
+  useLayoutEffect(() => {
+    const scrollElement = scrollRef.current
+    if (!scrollElement) {
       return
     }
-    if (scrollRef.current && messageCount >= 0) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+
+    const historyAnchor = pendingHistoryAnchorRef.current
+    if (historyAnchor) {
+      pendingHistoryAnchorRef.current = null
+      scrollElement.scrollTop =
+        scrollElement.scrollHeight -
+        historyAnchor.scrollHeight +
+        historyAnchor.scrollTop
+      shouldStickToBottomRef.current =
+        scrollElement.scrollHeight -
+          scrollElement.scrollTop -
+          scrollElement.clientHeight <
+        80
+      return
     }
-  }, [messages.length])
+
+    if (messages.length === 0) {
+      return
+    }
+    if (
+      initialScrollPendingRef.current ||
+      shouldStickToBottomRef.current
+    ) {
+      scrollElement.scrollTop = scrollElement.scrollHeight
+      initialScrollPendingRef.current = false
+      shouldStickToBottomRef.current = true
+    }
+  }, [messages])
+
+  useEffect(() => {
+    const contentElement = scrollContentRef.current
+    if (!contentElement || typeof ResizeObserver === "undefined") {
+      return
+    }
+
+    const observer = new ResizeObserver(() => {
+      const scrollElement = scrollRef.current
+      if (
+        !scrollElement ||
+        pendingHistoryAnchorRef.current ||
+        (!initialScrollPendingRef.current &&
+          !shouldStickToBottomRef.current)
+      ) {
+        return
+      }
+      scrollElement.scrollTop = scrollElement.scrollHeight
+      if (messageCountRef.current > 0) {
+        initialScrollPendingRef.current = false
+      }
+    })
+    observer.observe(contentElement)
+    return () => observer.disconnect()
+  }, [itemId])
 
   const abortChat = async () => {
     const token = localStorage.getItem("access_token") || ""
@@ -1583,6 +1687,10 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
     : handler
       ? "\u8f93\u5165\u6d88\u606f..."
       : "\u8bf7\u5148\u5173\u8054 ItemHandler"
+  const stableMessageRows = useMemo(
+    () => buildStableChatMessageRows(messages),
+    [messages],
+  )
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -1656,8 +1764,17 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto" ref={scrollRef}>
-        <div className="space-y-3 p-3">
+      <div
+        className="min-h-0 flex-1 overflow-y-auto"
+        ref={scrollRef}
+        data-testid="chat-history-scroll"
+        onScroll={(event) => {
+          const element = event.currentTarget
+          shouldStickToBottomRef.current =
+            element.scrollHeight - element.scrollTop - element.clientHeight < 80
+        }}
+      >
+        <div className="space-y-3 p-3" ref={scrollContentRef}>
           {messages.length === 0 && (
             <div className="py-8 text-center text-sm text-muted-foreground">
               {handler
@@ -1674,6 +1791,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
                 size="sm"
                 onClick={() => void loadOlderHistory()}
                 disabled={isLoadingHistory}
+                data-testid="chat-load-older"
                 className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
                 title="向上加载更早的 20 条历史"
               >
@@ -1690,46 +1808,9 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
             </div>
           )}
 
-          {messages.map((message, index) => {
-            const label = getMessageLabel(message)
-            const robotDisplay = getRobotMessageDisplay(message)
-            const visibleContent = robotDisplay
-              ? ""
-              : getVisibleChatContent(message)
-            const alignment = message.role === "user" ? "justify-end" : "justify-start"
-            return (
-              <div
-                key={`${message.timestamp ?? "msg"}-${index}`}
-                className={`flex ${alignment}`}
-              >
-                {robotDisplay ? (
-                  <div className="w-full max-w-[94%]">
-                    <RobotMessageCard
-                      display={robotDisplay}
-                      timestamp={message.timestamp}
-                    />
-                  </div>
-                ) : (
-                  <div
-                    className={`max-w-[90%] rounded-lg px-3 py-2 text-sm ${getMessageClasses(message)}`}
-                  >
-                    {label && (
-                      <div className="mb-1 border-b border-current/15 pb-1 text-[11px] uppercase tracking-wide opacity-70">
-                        {label}
-                      </div>
-                    )}
-                    <div
-                      className={`whitespace-pre-wrap break-words ${
-                        message.role === "terminal" ? "font-mono" : "font-sans"
-                      }`}
-                    >
-                      {visibleContent}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+          {stableMessageRows.map(({ key, message }) => (
+            <ChatMessageRow key={key} message={message} />
+          ))}
         </div>
       </div>
 

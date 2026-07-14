@@ -889,7 +889,11 @@ def test_generate_stream_executes_tool_inside_running_event_loop(
 
     chunks = asyncio.run(consume_inside_running_loop())
 
-    assert tool_calls == [(tool_name, {"command": "pwd", "item_id": str(item.id)})]
+    assert len(tool_calls) == 1
+    called_tool_name, called_tool_args = tool_calls[0]
+    assert called_tool_name == tool_name
+    assert called_tool_args.pop("_reply_ticket_id")
+    assert called_tool_args == {"command": "pwd", "item_id": str(item.id)}
     assert any('"type": "agent_response"' in chunk for chunk in chunks)
 
 def test_generate_stream_stops_after_terminal_command_dispatch(
@@ -984,7 +988,14 @@ def test_generate_stream_stops_after_terminal_command_dispatch(
         agent_session_manager.remove_session(str(item.id))
 
     assert call_count["value"] == 1
-    assert tool_calls == [(tool_name, {"command": "apt update", "item_id": str(item.id)})]
+    assert len(tool_calls) == 1
+    called_tool_name, called_tool_args = tool_calls[0]
+    assert called_tool_name == tool_name
+    assert called_tool_args.pop("_reply_ticket_id")
+    assert called_tool_args == {
+        "command": "apt update",
+        "item_id": str(item.id),
+    }
     assert any('"status": "waiting_terminal"' in chunk for chunk in chunks)
     assert not any('"type": "agent_tool_result"' in chunk for chunk in chunks)
     assert not any("\u547d\u4ee4\u5df2\u53d1\u9001\u5230\u7ec8\u7aef" in chunk for chunk in chunks)
@@ -1089,6 +1100,9 @@ def test_generate_stream_stops_after_background_job_start(
         agent_session_manager.remove_session(str(item.id))
 
     assert call_count["value"] == 1
+    assert len(tool_calls) == 1
+    reply_ticket_id = tool_calls[0][1].pop("_reply_ticket_id")
+    assert reply_ticket_id
     assert tool_calls == [
         (
             tool_name,
@@ -1617,7 +1631,7 @@ def test_generate_stream_blocks_shell_command_while_busy_terminal_command_pendin
     assert not any("max iteration limit" in chunk for chunk in chunks)
 
 
-def test_generate_stream_allows_shell_query_to_auto_route_when_console_is_active(
+def test_generate_stream_does_not_block_shell_like_input_when_console_is_active(
     db: Session,
     monkeypatch,
 ) -> None:
@@ -1714,6 +1728,9 @@ def test_generate_stream_allows_shell_query_to_auto_route_when_console_is_active
     finally:
         agent_session_manager.remove_session(item_id)
 
+    assert len(tool_calls) == 1
+    reply_ticket_id = tool_calls[0][1].pop("_reply_ticket_id")
+    assert reply_ticket_id
     assert tool_calls == [
         (
             tool_name,
@@ -2558,6 +2575,79 @@ def test_agent_task_plan_creates_task_queue_entry(monkeypatch) -> None:
         assert entries[0]["id"] == ticket.ticket_id
         assert entries[0]["request_summary"] == "install Java"
         assert entries[0]["task_plan"] == ["install Java", "verify Java"]
+    finally:
+        reply_ticket_manager.reset()
+        task_workflow_manager.reset()
+
+
+def test_stopped_web_task_reports_failure_then_removes_queue_entry(
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.services.agent.reply_ticket import reply_ticket_manager
+    from app.services.agent.task_workflow import task_workflow_manager
+
+    handler = SimpleNamespace(id="handler-1")
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_conversation_key="",
+            reply_ticket_id="",
+        )
+    )
+    reply_ticket_manager.reset()
+    task_workflow_manager.reset()
+    ticket = reply_ticket_manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="install Java",
+        source_type="web",
+    )
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id=ticket.ticket_id,
+        objective="install Java",
+        source_type="web",
+        source_label="TermMan web chat",
+        step_titles=["install Java", "report result"],
+    )
+    reply_ticket_manager.upsert_pending_reply(
+        ticket.ticket_id,
+        status="working",
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "_generate_stopped_turn_report",
+        lambda *_args, **_kwargs: "Java 安装失败：软件源不可用。",
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "_persist_and_broadcast_event",
+        lambda _item_id, **event: event,
+    )
+
+    try:
+        events = chat_route._finalize_stopped_turn(
+            agent=agent,
+            handler=handler,
+            item_id="item-1",
+            messages=[],
+            planned_task_runtime=chat_route.PlannedTaskRuntime(
+                request_id=workflow.workflow_id,
+                reply_ticket_id=ticket.ticket_id,
+                workflow_id=workflow.workflow_id,
+            ),
+            reason="Package source is unavailable",
+            prefers_chinese=True,
+            include_hidden_tool_results=False,
+            reply_ticket_id=ticket.ticket_id,
+        )
+
+        assert events[0]["content"] == "Java 安装失败：软件源不可用。"
+        assert reply_ticket_manager.list_pending_replies("item-1") == []
+        assert workflow.status == "failed"
     finally:
         reply_ticket_manager.reset()
         task_workflow_manager.reset()

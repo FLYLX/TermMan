@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from app.services.agent.task_workflow import TaskWorkflowManager
 
 
@@ -13,11 +15,8 @@ def _create_java_workflow(manager: TaskWorkflowManager):
     )
 
 
-def test_recovery_step_returns_to_immutable_main_objective(tmp_path) -> None:
-    manager = TaskWorkflowManager(
-        state_path=tmp_path / "task-workflows.json",
-        persist=True,
-    )
+def test_recovery_step_returns_to_immutable_main_objective() -> None:
+    manager = TaskWorkflowManager()
     workflow = _create_java_workflow(manager)
 
     manager.record_tool_call(
@@ -58,11 +57,8 @@ def test_recovery_step_returns_to_immutable_main_objective(tmp_path) -> None:
     assert "安装 Temurin Java 17" in correction
 
 
-def test_workflow_completes_only_after_verification_and_delivery(tmp_path) -> None:
-    manager = TaskWorkflowManager(
-        state_path=tmp_path / "task-workflows.json",
-        persist=True,
-    )
+def test_workflow_completes_only_after_verification_and_delivery() -> None:
+    manager = TaskWorkflowManager()
     workflow = _create_java_workflow(manager)
 
     manager.update(
@@ -92,9 +88,8 @@ def test_workflow_completes_only_after_verification_and_delivery(tmp_path) -> No
     assert workflow.delivered_at is not None
 
 
-def test_active_workflow_survives_manager_reload(tmp_path) -> None:
-    state_path = tmp_path / "task-workflows.json"
-    manager = TaskWorkflowManager(state_path=state_path, persist=True)
+def test_reset_discards_active_workflow() -> None:
+    manager = TaskWorkflowManager()
     workflow = _create_java_workflow(manager)
     manager.update(
         "ticket-java",
@@ -102,20 +97,14 @@ def test_active_workflow_survives_manager_reload(tmp_path) -> None:
         note="正在切换软件源",
     )
 
-    reloaded = TaskWorkflowManager(state_path=state_path, persist=True)
-    restored = reloaded.get(workflow.workflow_id)
+    manager.reset()
 
-    assert restored is not None
-    assert restored.objective == workflow.objective
-    assert restored.latest_progress == "正在切换软件源"
-    assert restored.reply_ticket_id == "ticket-java"
+    assert manager.get(workflow.workflow_id) is None
+    assert manager.get_by_ticket("ticket-java") is None
 
 
-def test_follow_up_ticket_reattaches_same_workflow(tmp_path) -> None:
-    manager = TaskWorkflowManager(
-        state_path=tmp_path / "task-workflows.json",
-        persist=False,
-    )
+def test_follow_up_ticket_reattaches_same_workflow() -> None:
+    manager = TaskWorkflowManager()
     workflow = _create_java_workflow(manager)
     manager.update(
         "ticket-java",
@@ -141,3 +130,30 @@ def test_follow_up_ticket_reattaches_same_workflow(tmp_path) -> None:
     assert manager.get_by_ticket("ticket-follow-up") is workflow
     assert workflow.status == "active"
     assert workflow.objective == "安装 Temurin Java 17，使用可用的国内源"
+
+
+def test_full_task_workflow_is_loaded_only_for_linked_turn() -> None:
+    from app.services.agent.prompts import builder as prompt_builder
+    from app.services.agent.task_workflow import task_workflow_manager
+
+    task_workflow_manager.reset()
+    workflow = _create_java_workflow(task_workflow_manager)
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(reply_ticket_id="casual-ticket")
+    )
+    try:
+        assert prompt_builder._build_active_task_ledger_context(
+            "item-java",
+            agent,
+        ) == ""
+
+        agent._context.reply_ticket_id = workflow.reply_ticket_id
+        task_prompt = prompt_builder._build_active_task_ledger_context(
+            "item-java",
+            agent,
+        )
+
+        assert "Authoritative task workflow" in task_prompt
+        assert "安装 Temurin Java 17" in task_prompt
+    finally:
+        task_workflow_manager.reset()

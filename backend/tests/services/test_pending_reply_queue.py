@@ -85,6 +85,52 @@ def test_pending_reply_locks_requester_plan_and_destination() -> None:
         unregister_robot_mcp_context(token)
 
 
+def test_pending_task_rebinds_to_follow_up_ticket_without_losing_plan() -> None:
+    manager = ReplyTicketManager()
+    task_workflow_manager.reset()
+    first = manager.create_for_agent(
+        _agent(),
+        item_id="item-1",
+        handler_id="handler-1",
+        message="Install Java",
+        source_type="web",
+    )
+    second = manager.create_for_agent(
+        _agent(),
+        item_id="item-1",
+        handler_id="handler-1",
+        message="Continue",
+        source_type="web",
+    )
+    try:
+        manager.upsert_pending_reply(
+            first.ticket_id,
+            request_summary="Install Java",
+            task_plan=["Install Java", "Verify version", "Report result"],
+        )
+        workflow = task_workflow_manager.get_by_ticket(first.ticket_id)
+        assert workflow is not None
+
+        assert task_workflow_manager.attach_ticket(
+            workflow.workflow_id,
+            second.ticket_id,
+        ) is True
+        assert manager.rebind_pending_reply(first.ticket_id, second.ticket_id) is True
+
+        entries = manager.list_pending_replies("item-1")
+        assert len(entries) == 1
+        assert entries[0]["id"] == second.ticket_id
+        assert entries[0]["request_summary"] == "Install Java"
+        assert entries[0]["task_plan"] == [
+            "Install Java",
+            "Verify version",
+            "Report result",
+        ]
+        assert manager.get(first.ticket_id) is None
+    finally:
+        task_workflow_manager.reset()
+
+
 def test_pending_reply_broadcasts_created_updated_and_removed_events(
     monkeypatch,
 ) -> None:
@@ -204,6 +250,141 @@ def test_pending_reply_delivery_failure_keeps_entry(monkeypatch) -> None:
         unregister_robot_mcp_context(token)
 
 
+def test_failed_task_report_retries_then_removes_and_finalizes(monkeypatch) -> None:
+    from app.plugins.robot.bridge_client import robot_bridge_client
+    from app.plugins.robot.conversation_memory import robot_conversation_memory
+
+    manager = ReplyTicketManager()
+    token, ticket = _create_qq_ticket(manager)
+    attempts = 0
+
+    def send_message(*_args, **_kwargs) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("bridge offline")
+
+    monkeypatch.setattr(robot_bridge_client, "send_message", send_message)
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "append_assistant_message",
+        lambda *_args, **_kwargs: None,
+    )
+    task_workflow_manager.reset()
+    try:
+        workflow = task_workflow_manager.create(
+            item_id="item-1",
+            handler_id="handler-1",
+            reply_ticket_id=ticket.ticket_id,
+            objective="Install Java",
+            source_type="qq",
+            source_label="QQ group:770362397",
+            step_titles=["Install Java", "Report result"],
+        )
+        manager.upsert_pending_reply(ticket.ticket_id, status="working")
+        task_workflow_manager.update(
+            ticket.ticket_id,
+            action="mark_blocked",
+            note="Package source is unavailable",
+        )
+
+        delivered, detail = manager.send_pending_reply(
+            ticket.ticket_id,
+            "Java installation failed because the package source is unavailable.",
+        )
+
+        assert delivered is False
+        assert "bridge offline" in detail
+        assert len(manager.list_pending_replies("item-1")) == 1
+        assert workflow.status == "blocked"
+
+        delivered, _ = manager.send_pending_reply(
+            ticket.ticket_id,
+            "Java installation failed because the package source is unavailable.",
+        )
+
+        assert delivered is True
+        assert attempts == 2
+        assert manager.list_pending_replies("item-1") == []
+        assert workflow.status == "failed"
+    finally:
+        unregister_robot_mcp_context(token)
+        task_workflow_manager.reset()
+
+
+def test_pending_reply_rejects_dsml_trace_and_keeps_entry() -> None:
+    manager = ReplyTicketManager()
+    ticket = manager.create_for_agent(
+        _agent(),
+        item_id="item-1",
+        handler_id="handler-1",
+        message="Install Java",
+        source_type="web",
+    )
+    manager.upsert_pending_reply(ticket.ticket_id, status="ready")
+
+    delivered, detail = manager.send_pending_reply(
+        ticket.ticket_id,
+        """<｜｜DSML｜｜tool_calls>
+<｜｜DSML｜｜invoke name="mcp_local_update_task_workflow">
+<｜｜DSML｜｜parameter name="action" string="true">complete_current_step</｜｜DSML｜｜parameter>
+</｜｜DSML｜｜invoke>
+</｜｜DSML｜｜tool_calls>""",
+    )
+
+    assert delivered is False
+    assert detail == "reply content contains no visible text"
+    assert manager.get(ticket.ticket_id) is ticket
+    assert manager.list_pending_replies("item-1")[0]["status"] == "ready"
+
+
+def test_final_qq_delivery_uses_explicit_ticket_when_agent_context_is_stale(
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.plugins.robot.bridge_client import robot_bridge_client
+    from app.plugins.robot.conversation_memory import robot_conversation_memory
+
+    reply_ticket_manager.reset()
+    task_workflow_manager.reset()
+    token, ticket = _create_qq_ticket(reply_ticket_manager)
+    agent = _agent(robot_id="robot-1", token=token)
+    agent._context.reply_ticket_id = "stale-ticket-from-another-turn"
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        robot_bridge_client,
+        "send_message",
+        lambda _robot_id, target, text: sent.append((target.target_id, text)),
+    )
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "append_assistant_message",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "_persist_and_broadcast_event",
+        lambda _item_id, **event: event,
+    )
+
+    try:
+        events = chat_route._deliver_reply_ticket_final_response(
+            agent=agent,
+            item_id="item-1",
+            content="Java 17 已安装完成。",
+            include_hidden_tool_results=False,
+            reply_ticket_id=ticket.ticket_id,
+        )
+
+        assert sent == [("770362397", "Java 17 已安装完成。")]
+        assert events[0]["content"] == "已回复 QQ：Java 17 已安装完成。"
+        assert reply_ticket_manager.get(ticket.ticket_id).status == "delivered"
+    finally:
+        unregister_robot_mcp_context(token)
+        reply_ticket_manager.reset()
+        task_workflow_manager.reset()
+
+
 def test_pending_reply_cannot_send_before_workflow_is_finished(monkeypatch) -> None:
     from app.plugins.robot.bridge_client import robot_bridge_client
 
@@ -273,8 +454,37 @@ def test_minecraft_reply_matches_waiting_pending_reply() -> None:
         "item-1",
         current_input="<yueyinghanbo> I will play until bedtime",
     )
-    assert "current_input_matches_awaiting=yes" in prompt
+    assert "awaiting=minecraft_player:yueyinghanbo" in prompt
     assert "mcp_local_send_pending_reply" in prompt
+
+
+def test_casual_prompt_uses_compact_task_index_and_loads_selected_task() -> None:
+    manager = ReplyTicketManager()
+    ticket_ids: list[str] = []
+    for index in range(10):
+        ticket = manager.create_for_agent(
+            _agent(),
+            item_id="item-1",
+            handler_id="handler-1",
+            message=f"task {index}",
+            source_type="web",
+        )
+        manager.upsert_pending_reply(ticket.ticket_id, status="working")
+        ticket_ids.append(ticket.ticket_id)
+
+    compact_prompt = manager.build_pending_reply_prompt("item-1")
+    selected_prompt = manager.build_pending_reply_prompt(
+        "item-1",
+        current_ticket_id=ticket_ids[0],
+    )
+
+    assert "Background task index: 10 unfinished task(s)." in compact_prompt
+    assert "7 more task(s) hidden" in compact_prompt
+    assert len(compact_prompt) < 1200
+    assert "Authoritative task queue entry for this turn" in selected_prompt
+    assert ticket_ids[0] in selected_prompt
+    assert "task 0" in selected_prompt
+    assert ticket_ids[-1] not in selected_prompt
 
 
 def test_tell_command_updates_pending_reply_wait_target() -> None:
@@ -420,7 +630,7 @@ def test_qq_task_plan_enters_queue_with_original_qq_destination(
     task_workflow_manager.reset()
     token, ticket = _create_qq_ticket(reply_ticket_manager)
     agent = _agent(robot_id="robot-1", token=token)
-    agent._context.reply_ticket_id = ticket.ticket_id
+    agent._context.reply_ticket_id = "stale-ticket-from-another-turn"
     monkeypatch.setattr(
         chat_route,
         "build_status_update_memory_candidate",
@@ -437,7 +647,7 @@ def test_qq_task_plan_enters_queue_with_original_qq_destination(
             "item-1",
             handler=SimpleNamespace(id="handler-1"),
             agent=agent,
-            message="安装 Temurin Java 17",
+            message="下 Java 17",
             history=[],
             tools=[
                 {
@@ -445,6 +655,7 @@ def test_qq_task_plan_enters_queue_with_original_qq_destination(
                     "function": {"name": "mcp_local_run_job"},
                 }
             ],
+            reply_ticket_id=ticket.ticket_id,
         )
 
         assert runtime is not None

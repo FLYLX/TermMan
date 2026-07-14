@@ -90,8 +90,9 @@ async def prepare_chat_agent(
     session: Session,
     item_id: str,
     current_user: User,
+    prepared: tuple[ItemHandler, Item] | None = None,
 ) -> tuple[ItemHandler, Item, Agent]:
-    result = get_item_handler_llm_config(session, item_id, current_user)
+    result = prepared or get_item_handler_llm_config(session, item_id, current_user)
     if not result:
         raise HTTPException(
             status_code=404,
@@ -116,7 +117,7 @@ async def prepare_chat_agent(
     return handler, item, agent
 
 
-async def collect_chat_response(
+async def _collect_chat_response_unserialized(
     *,
     session: Session,
     item_id: str,
@@ -131,10 +132,20 @@ async def collect_chat_response(
     robot_reply_requires_awake: bool = False,
     reply_ticket_id: str = "",
     return_result: bool = False,
+    prepared: tuple[ItemHandler, Item] | None = None,
+    prepared_agent: tuple[ItemHandler, Item, Agent] | None = None,
 ) -> str | ChatResponseResult:
     from app.api.routes.chat import generate_stream
 
-    handler, _, agent = await prepare_chat_agent(session, item_id, current_user)
+    if prepared_agent is not None:
+        handler, _, agent = prepared_agent
+    else:
+        handler, _, agent = await prepare_chat_agent(
+            session,
+            item_id,
+            current_user,
+            prepared=prepared,
+        )
 
     integration_contexts: dict[str, dict[str, Any]] = {}
     if robot_id and robot_sender_key and robot_reply_target:
@@ -165,6 +176,7 @@ async def collect_chat_response(
             latest_only_context=bool(integration_contexts),
             source_type="qq" if integration_contexts else "web",
             reply_ticket_id=reply_ticket_id,
+            turn_serialized=True,
         ):
             if not chunk.startswith("data: "):
                 continue
@@ -241,3 +253,60 @@ async def collect_chat_response(
         )
     result = ChatResponseResult(content=content, robot_message_sent=robot_message_sent)
     return result if return_result else result.content
+
+
+async def collect_chat_response(
+    *,
+    session: Session,
+    item_id: str,
+    current_user: User,
+    message: str,
+    history: list[Any] | None = None,
+    robot_id: str | None = None,
+    robot_sender_key: str | None = None,
+    robot_reply_target: Any | None = None,
+    robot_conversation_key: str | None = None,
+    robot_conversation_generation: int = 0,
+    robot_reply_requires_awake: bool = False,
+    reply_ticket_id: str = "",
+    return_result: bool = False,
+) -> str | ChatResponseResult:
+    from app.services.agent.turn_coordinator import (
+        agent_turn_coordinator,
+        agent_turn_key,
+    )
+
+    prepared_agent = None
+    try:
+        prepared = get_item_handler_llm_config(session, item_id, current_user)
+    except AttributeError:
+        prepared = None
+    if prepared:
+        handler_id = str(prepared[0].id)
+    else:
+        prepared_agent = await prepare_chat_agent(session, item_id, current_user)
+        handler = prepared_agent[0]
+        handler_id = str(getattr(handler, "id", "") or handler.name)
+    lease = await agent_turn_coordinator.acquire_async(
+        agent_turn_key(handler_id)
+    )
+    try:
+        return await _collect_chat_response_unserialized(
+            session=session,
+            item_id=item_id,
+            current_user=current_user,
+            message=message,
+            history=history,
+            robot_id=robot_id,
+            robot_sender_key=robot_sender_key,
+            robot_reply_target=robot_reply_target,
+            robot_conversation_key=robot_conversation_key,
+            robot_conversation_generation=robot_conversation_generation,
+            robot_reply_requires_awake=robot_reply_requires_awake,
+            reply_ticket_id=reply_ticket_id,
+            return_result=return_result,
+            prepared=prepared,
+            prepared_agent=prepared_agent,
+        )
+    finally:
+        lease.release()

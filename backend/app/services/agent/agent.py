@@ -419,7 +419,11 @@ class Agent:
             tool_name=actual_tool_name,
             args=args,
         )
-        if self._context and self._context.reply_ticket_id:
+        if (
+            self._context
+            and self._context.reply_ticket_id
+            and "_reply_ticket_id" not in args
+        ):
             args["_reply_ticket_id"] = self._context.reply_ticket_id
 
         for tool in self._mcp_tools:

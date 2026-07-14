@@ -32,12 +32,16 @@ class FakeDaemonConnPool:
 
 
 class FakeTerminal:
-    def __init__(self):
+    def __init__(self, current_workdir=None):
         self.writes = []
+        self._current_workdir = current_workdir
 
     def write(self, command):
         self.writes.append(command)
         return True
+
+    def current_workdir(self):
+        return self._current_workdir
 
 
 class FakeTerminalManager:
@@ -57,7 +61,7 @@ class FakeSocketService:
         self.broadcasts.append((item_uuid, event, data))
 
 
-def test_browser_terminal_write_broadcasts_stdin(monkeypatch):
+def test_browser_terminal_write_relies_on_pty_echo(monkeypatch):
     terminal = FakeTerminal()
     socket_service = FakeSocketService()
 
@@ -68,18 +72,49 @@ def test_browser_terminal_write_broadcasts_stdin(monkeypatch):
     asyncio.run(socket_routes.on_terminal_write("browser-sid", {"command": "ls"}))
 
     assert terminal.writes == ["ls\n"]
-    assert socket_service.broadcasts == [
-        (
-            "item-1",
-            "stream",
-            {
-                "stdin": "ls\n",
-                "stdout": "",
-                "stderr": "",
-                "source": "browser",
-            },
+    assert socket_service.broadcasts == []
+
+
+def test_browser_terminal_completion_uses_live_terminal_workdir(monkeypatch, tmp_path):
+    (tmp_path / "run.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    terminal = FakeTerminal(str(tmp_path))
+
+    monkeypatch.setattr(socket_routes, "daemon_conn_pool", FakeDaemonConnPool())
+    monkeypatch.setattr(socket_routes, "terminal_manager", FakeTerminalManager(terminal))
+
+    result = asyncio.run(
+        socket_routes.on_terminal_complete(
+            "browser-sid",
+            {"command": "./r", "cursor": 3},
         )
-    ]
+    )
+
+    assert result == {
+        "success": True,
+        "value": "./run.sh",
+        "cursor": 8,
+        "candidates": ["./run.sh"],
+    }
+
+
+def test_browser_terminal_completion_extends_common_prefix(monkeypatch, tmp_path):
+    (tmp_path / "run.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (tmp_path / "runtime.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    terminal = FakeTerminal(str(tmp_path))
+
+    monkeypatch.setattr(socket_routes, "daemon_conn_pool", FakeDaemonConnPool())
+    monkeypatch.setattr(socket_routes, "terminal_manager", FakeTerminalManager(terminal))
+
+    result = asyncio.run(
+        socket_routes.on_terminal_complete(
+            "browser-sid",
+            {"command": "./r", "cursor": 3},
+        )
+    )
+
+    assert result["value"] == "./run"
+    assert result["cursor"] == 5
+    assert result["candidates"] == ["./run.sh", "./runtime.sh"]
 
 
 

@@ -28,15 +28,15 @@ class LocalMCPServer:
     def _register_builtin_tools(self):
         self.register_tool(
             name="execute_command",
-            description="在主终端前台执行一条命令或向当前交互式控制台发送输入。适合 shell 短命令、Minecraft/Forge/Paper/Fabric 服务端启动、run.sh/start.sh、REPL、长期服务，以及 MC 控制台里的 op/say/stop 等后续输入。当前台已经是 Minecraft/Java server/REPL 等交互式控制台时，不要把 ls/pwd/find/cat/java -version 这类 shell 查询发进控制台；这类一次性查询应使用 run_job，系统也会自动改走后台 Job。优先一次只发一条命令，不要默认用 &&、||、;、管道或换行拼接多步操作；多步操作应等待上一条终端反馈后再继续。可设置 expected_output/expected_regex 和 timeout_seconds，超时未匹配时自动 Ctrl+C。",
+            description="在主终端前台执行一条命令或向当前交互式控制台发送输入。适合 shell 短命令、Minecraft/Forge/Paper/Fabric 服务端启动、run.sh/start.sh、REPL、长期服务，以及 MC 控制台里的 op/say/stop 等后续输入。当前台已经是 Minecraft/Java server/REPL 等交互式控制台时，系统不会硬拦截或自动改写 execute_command；所填内容会原样发送，由你根据终端回显判断是否是有效控制台命令。若明确需要在 shell 中执行 ls/pwd/find/cat/java -version 等一次性查询，优先自行选择 run_job。优先一次只发一条命令，不要默认用 &&、||、;、管道或换行拼接多步操作；多步操作应等待上一条终端反馈后再继续。可设置 expected_output/expected_regex 和 timeout_seconds；超时未匹配默认只汇报，不中断进程。",
             input_schema={
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "要执行的一条 shell 命令；默认不要拼接 &&、||、;、管道或换行。"},
-                    "expected_output": {"type": "string", "description": "可选。预期在终端输出中出现的文本；设置后若超时未出现，可自动 Ctrl+C。"},
+                    "expected_output": {"type": "string", "description": "可选。预期在终端输出中出现的文本；超时未出现时默认只汇报并保留进程。"},
                     "expected_regex": {"type": "string", "description": "可选。预期输出正则；比 expected_output 更灵活。"},
                     "timeout_seconds": {"type": "integer", "description": "可选。等待预期输出的秒数，默认 20，范围 1-600。", "default": 20},
-                    "auto_interrupt_on_timeout": {"type": "boolean", "description": "可选。设置预期输出时默认 true；超时未匹配则发送 Ctrl+C。"}
+                    "auto_interrupt_on_timeout": {"type": "boolean", "description": "可选，默认 false。只有用户明确要求超时停止进程时才设为 true。", "default": False}
                 },
                 "required": ["command"]
             },
@@ -1723,10 +1723,13 @@ class LocalMCPServer:
             agent_session = (
                 agent_session_manager.get_session(str(item_id)) if item_id else None
             )
-            if agent_session and agent_session.should_route_execute_command_to_background_job(
-                command
-            ):
-                return True
+            if agent_session:
+                if agent_session.has_interactive_terminal_context():
+                    return False
+                if agent_session.should_route_execute_command_to_background_job(
+                    command
+                ):
+                    return True
             return classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_BUSY
         except Exception as exc:
             debug_log(f"[LocalMCPServer] auto-route classification error: {exc}")

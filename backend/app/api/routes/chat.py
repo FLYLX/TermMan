@@ -74,6 +74,7 @@ from app.services.agent.tool_arguments import (
 )
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 from app.services.agent.tool_selection import select_tools_for_turn
+from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
 from app.core.tool_markup import extract_dsml_tool_calls
 
 if TYPE_CHECKING:
@@ -113,6 +114,7 @@ INTERNAL_QQ_BACKGROUND_JOB_PREFIX = (
 TASK_WORKFLOW_REQUEST_RE = re.compile(
     r"(安装|装(?:个|一下|好)?|下载|部署|构建|编译|配置|修改|修复|创建|删除|启动|停止|重启|"
     r"更新|升级|迁移|解压|上传|运行|执行|测试|开服|换源|"
+    r"下(?:载|一个|一下)?\s*(?:java|jdk|软件|依赖|包|文件|模组|整合包|服务端)|"
     r"问问|问一下|帮我问|帮忙问|转问|转告后等待|"
     r"\b(?:install|download|deploy|build|compile|configure|modify|fix|create|"
     r"delete|start|stop|restart|update|upgrade|migrate|extract|upload|run|"
@@ -120,7 +122,9 @@ TASK_WORKFLOW_REQUEST_RE = re.compile(
     re.IGNORECASE,
 )
 TASK_WORKFLOW_CONTINUATION_RE = re.compile(
-    r"(继续|接着|重试|再试|换源|换个源|用国内源|好了|开了|可以了|那就|然后|下一步|"
+    r"(继续|接着|重试|再试|换源|换个源|用国内源|好了|好了吗|完了|完了吗|"
+    r"完成了吗|结束了吗|成功了吗|失败了吗|进度|怎么样了|怎样了|现在呢|结果呢|"
+    r"开了|可以了|那就|然后|下一步|"
     r"\b(?:continue|retry|resume|next|try again)\b)",
     re.IGNORECASE,
 )
@@ -464,18 +468,24 @@ def _deliver_reply_ticket_final_response(
     item_id: str,
     content: str,
     include_hidden_tool_results: bool,
+    reply_ticket_id: str = "",
 ) -> list[dict[str, Any]]:
-    ticket_id = _current_reply_ticket_id(agent)
+    from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+
+    ticket_id = str(reply_ticket_id or "").strip() or _current_reply_ticket_id(agent)
     ticket = reply_ticket_manager.get(ticket_id)
     if not ticket or ticket.source_type != SOURCE_QQ:
         return []
-    if not reply_ticket_manager.deliver(ticket_id, content):
+    visible_content = sanitize_robot_visible_text(content).strip()
+    if not visible_content:
+        return []
+    if not reply_ticket_manager.deliver(ticket_id, visible_content):
         return []
     events: list[dict[str, Any]] = [
         _persist_and_broadcast_event(
             item_id,
             role="assistant",
-            content=f"已回复 QQ：{content.strip()}",
+            content=f"已回复 QQ：{visible_content}",
             message_type=ROBOT_QQ_REPLY_EVENT_TYPE,
             extra={"tool_name": "reply_ticket", "qq_delivery": True},
         )
@@ -805,6 +815,7 @@ def _create_agent_task_plan(
     message: str,
     history: list[ChatMessage],
     tools: list[dict[str, Any]],
+    reply_ticket_id: str = "",
 ) -> PlannedTaskRuntime | None:
     if not _should_create_task_workflow(message, tools):
         return None
@@ -812,8 +823,10 @@ def _create_agent_task_plan(
     if build_status_update_memory_candidate(item_id, message, store=vector_store) is not None:
         return None
 
-    reply_ticket_id = _current_reply_ticket_id(agent)
-    reply_ticket = reply_ticket_manager.get(reply_ticket_id)
+    locked_reply_ticket_id = str(reply_ticket_id or "").strip()
+    if not locked_reply_ticket_id:
+        locked_reply_ticket_id = _current_reply_ticket_id(agent)
+    reply_ticket = reply_ticket_manager.get(locked_reply_ticket_id)
     origin = _current_task_origin(agent)
     source_type = reply_ticket.source_type if reply_ticket else origin["type"]
     source_label = reply_ticket.source_label if reply_ticket else origin["label"]
@@ -823,9 +836,17 @@ def _create_agent_task_plan(
         source_label=source_label,
     )
     if resumable and TASK_WORKFLOW_CONTINUATION_RE.search(message):
-        task_workflow_manager.attach_ticket(resumable.workflow_id, reply_ticket_id)
+        previous_ticket_id = resumable.reply_ticket_id
+        task_workflow_manager.attach_ticket(
+            resumable.workflow_id,
+            locked_reply_ticket_id,
+        )
+        reply_ticket_manager.rebind_pending_reply(
+            previous_ticket_id,
+            locked_reply_ticket_id,
+        )
         task_workflow_manager.update(
-            reply_ticket_id,
+            locked_reply_ticket_id,
             action="resume",
             note=f"User follow-up: {message.strip()[:500]}",
         )
@@ -845,7 +866,7 @@ def _create_agent_task_plan(
     workflow = task_workflow_manager.create(
         item_id=item_id,
         handler_id=str(handler.id),
-        reply_ticket_id=reply_ticket_id,
+        reply_ticket_id=locked_reply_ticket_id,
         objective=message,
         source_type=source_type,
         source_label=source_label,
@@ -1029,7 +1050,10 @@ def _finalize_stopped_turn(
     reason: str,
     prefers_chinese: bool,
     include_hidden_tool_results: bool,
+    reply_ticket_id: str = "",
 ) -> list[dict[str, Any]]:
+    from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+
     _mark_agent_task_plan_failed(planned_task_runtime, reason)
     report = _generate_stopped_turn_report(
         handler,
@@ -1037,21 +1061,33 @@ def _finalize_stopped_turn(
         reason=reason,
         prefers_chinese=prefers_chinese,
     )
+    visible_report = sanitize_robot_visible_text(report).strip()
+    final_report = visible_report or "任务未能完成，已停止处理。"
 
-    ticket_id = _current_reply_ticket_id(agent)
+    ticket_id = str(reply_ticket_id or "").strip() or _current_reply_ticket_id(agent)
     ticket = reply_ticket_manager.get(ticket_id)
+    if ticket and ticket.pending_reply_active:
+        task_workflow_manager.update(
+            ticket_id,
+            action="mark_blocked",
+            note=str(reason or final_report)[:2000],
+        )
+        reply_ticket_manager.mark_failed(ticket_id, reason or final_report)
     delivered = False
     if ticket and ticket.source_type == SOURCE_QQ:
         if ticket.pending_reply_active:
-            delivered, _ = reply_ticket_manager.send_pending_reply(ticket_id, report)
+            delivered, _ = reply_ticket_manager.send_pending_reply(
+                ticket_id,
+                final_report,
+            )
         else:
-            delivered = reply_ticket_manager.deliver(ticket_id, report)
+            delivered = reply_ticket_manager.deliver(ticket_id, final_report)
         if delivered:
             events = [
                 _persist_and_broadcast_event(
                     item_id,
                     role="assistant",
-                    content=f"已回复 QQ：{report}",
+                    content=f"已回复 QQ：{final_report}",
                     message_type=ROBOT_QQ_REPLY_EVENT_TYPE,
                     extra={"tool_name": "reply_ticket", "qq_delivery": True},
                 )
@@ -1061,18 +1097,23 @@ def _finalize_stopped_turn(
             return events
 
     if ticket and ticket.source_type != SOURCE_QQ:
-        reply_ticket_manager.mark_delivered(ticket_id)
+        if ticket.pending_reply_active:
+            reply_ticket_manager.complete_pending_reply_after_external_delivery(
+                ticket_id
+            )
+        else:
+            reply_ticket_manager.mark_delivered(ticket_id)
     return [
         _persist_and_broadcast_event(
             item_id,
             role="assistant",
-            content=report,
+            content=final_report,
             message_type="agent_response",
         )
     ]
 
 
-def generate_stream(
+def _generate_stream_unserialized(
     message: str,
     history: list[ChatMessage],
     handler: ItemHandler,
@@ -1118,6 +1159,7 @@ def generate_stream(
         source="qq" if normalized_source_type == SOURCE_QQ else "web",
         query=tool_selection_query,
         agent=agent,
+        reply_ticket_id=reply_ticket.ticket_id,
     )
 
     planned_task_runtime = None
@@ -1129,6 +1171,7 @@ def generate_stream(
             message=message,
             history=history,
             tools=tools,
+            reply_ticket_id=reply_ticket.ticket_id,
         )
     if planned_task_runtime:
         planned_task_runtime.reply_ticket_id = reply_ticket.ticket_id
@@ -1141,6 +1184,7 @@ def generate_stream(
             source="qq" if normalized_source_type == SOURCE_QQ else "web",
             query=tool_selection_query,
             agent=agent,
+            reply_ticket_id=reply_ticket.ticket_id,
         )
 
     agent_context = getattr(agent, "_context", None)
@@ -1197,19 +1241,24 @@ def generate_stream(
     try:
         for _ in range(MAX_ITERATIONS):
             if AgentMessageQueue.is_aborted(item_id):
-                _mark_agent_task_plan_failed(planned_task_runtime)
-                warning_event = _persist_and_broadcast_event(
-                    item_id,
-                    role="assistant",
-                    content="Chat aborted",
-                    message_type="agent_warning",
+                stopped_events = _finalize_stopped_turn(
+                    agent=agent,
+                    handler=handler,
+                    item_id=item_id,
+                    messages=messages,
+                    planned_task_runtime=planned_task_runtime,
+                    reason="Task was interrupted before completion.",
+                    prefers_chinese=_contains_cjk(message),
+                    include_hidden_tool_results=include_hidden_tool_results,
+                    reply_ticket_id=reply_ticket.ticket_id,
                 )
-                yield _to_sse(warning_event)
+                for stopped_event in stopped_events:
+                    yield _to_sse(stopped_event)
                 yield _to_sse(
                     {
                         "type": "aborted",
-                        "content": warning_event["content"],
-                        "timestamp": warning_event["timestamp"],
+                        "content": "Chat aborted",
+                        "timestamp": datetime.now().isoformat(),
                     }
                 )
                 return
@@ -1241,22 +1290,21 @@ def generate_stream(
                         time.sleep(RETRY_DELAY)
 
             if response is None:
-                _mark_agent_task_plan_failed(planned_task_runtime)
                 error_text = str(last_error or "Unknown stream error")
-                error_event = _persist_and_broadcast_event(
-                    item_id,
-                    role="assistant",
-                    content=error_text,
-                    message_type="agent_error",
+                stopped_events = _finalize_stopped_turn(
+                    agent=agent,
+                    handler=handler,
+                    item_id=item_id,
+                    messages=messages,
+                    planned_task_runtime=planned_task_runtime,
+                    reason=f"Agent request failed: {error_text}",
+                    prefers_chinese=_contains_cjk(message),
+                    include_hidden_tool_results=include_hidden_tool_results,
+                    reply_ticket_id=reply_ticket.ticket_id,
                 )
-                yield _to_sse(error_event)
-                yield _to_sse(
-                    {
-                        "type": "error",
-                        "content": error_text,
-                        "timestamp": error_event["timestamp"],
-                    }
-                )
+                for stopped_event in stopped_events:
+                    yield _to_sse(stopped_event)
+                yield _to_sse({"done": True})
                 return
 
             iteration_content = ""
@@ -1264,19 +1312,24 @@ def generate_stream(
 
             for chunk in response:
                 if AgentMessageQueue.is_aborted(item_id):
-                    _mark_agent_task_plan_failed(planned_task_runtime)
-                    warning_event = _persist_and_broadcast_event(
-                        item_id,
-                        role="assistant",
-                        content="Chat aborted",
-                        message_type="agent_warning",
+                    stopped_events = _finalize_stopped_turn(
+                        agent=agent,
+                        handler=handler,
+                        item_id=item_id,
+                        messages=messages,
+                        planned_task_runtime=planned_task_runtime,
+                        reason="Task was interrupted before completion.",
+                        prefers_chinese=_contains_cjk(message),
+                        include_hidden_tool_results=include_hidden_tool_results,
+                        reply_ticket_id=reply_ticket.ticket_id,
                     )
-                    yield _to_sse(warning_event)
+                    for stopped_event in stopped_events:
+                        yield _to_sse(stopped_event)
                     yield _to_sse(
                         {
                             "type": "aborted",
-                            "content": warning_event["content"],
-                            "timestamp": warning_event["timestamp"],
+                            "content": "Chat aborted",
+                            "timestamp": datetime.now().isoformat(),
                         }
                     )
                     return
@@ -1406,13 +1459,21 @@ def generate_stream(
                             pending_reply_delivery_retry_used = True
                             final_response = ""
                             continue
-                        warning_event = _persist_and_broadcast_event(
-                            item_id,
-                            role="assistant",
-                            content="待回复任务尚未通过发送工具汇报，队列记录已保留。",
-                            message_type="agent_warning",
+                        stopped_events = _finalize_stopped_turn(
+                            agent=agent,
+                            handler=handler,
+                            item_id=item_id,
+                            messages=messages,
+                            planned_task_runtime=planned_task_runtime,
+                            reason=(
+                                "Agent did not produce a valid final task report after retry."
+                            ),
+                            prefers_chinese=_contains_cjk(message),
+                            include_hidden_tool_results=include_hidden_tool_results,
+                            reply_ticket_id=reply_ticket.ticket_id,
                         )
-                        yield _to_sse(warning_event)
+                        for stopped_event in stopped_events:
+                            yield _to_sse(stopped_event)
                         _broadcast_agent_status(item_id, "idle")
                         yield _to_sse({"done": True})
                         return
@@ -1432,6 +1493,7 @@ def generate_stream(
                         item_id=item_id,
                         content=final_response,
                         include_hidden_tool_results=include_hidden_tool_results,
+                        reply_ticket_id=reply_ticket.ticket_id,
                     )
                     if ticket_events:
                         for event in ticket_events:
@@ -1516,6 +1578,7 @@ def generate_stream(
                         reason=TOOL_LOOP_STOP_REASON,
                         prefers_chinese=_contains_cjk(message),
                         include_hidden_tool_results=include_hidden_tool_results,
+                        reply_ticket_id=reply_ticket.ticket_id,
                     ):
                         yield _to_sse(event)
                     _broadcast_agent_status(item_id, "idle")
@@ -1570,6 +1633,7 @@ def generate_stream(
 
                 normalized_tool_args_str = json.dumps(tool_args, ensure_ascii=False)
                 tool_args["item_id"] = item_id
+                tool_args["_reply_ticket_id"] = reply_ticket.ticket_id
                 terminal_session = None
                 if tool_name in COMMAND_TOOL_NAMES or tool_name == RUN_JOB_TOOL_NAME:
                     terminal_session = agent_session_manager.get_or_create_session(
@@ -1577,18 +1641,21 @@ def generate_stream(
                         str(handler.id),
                     )
                     terminal_input_error = None
-                    auto_routes_to_job = should_auto_route_terminal_tool_to_job(
-                        tool_name,
-                        tool_args,
-                    )
-                    if (
-                        not auto_routes_to_job
-                        and tool_name in COMMAND_TOOL_NAMES
-                        and terminal_session.should_route_execute_command_to_background_job(
-                            str(tool_args.get("command") or ""),
+                    if terminal_session.has_interactive_terminal_context():
+                        auto_routes_to_job = False
+                    else:
+                        auto_routes_to_job = should_auto_route_terminal_tool_to_job(
+                            tool_name,
+                            tool_args,
                         )
-                    ):
-                        auto_routes_to_job = True
+                        if (
+                            not auto_routes_to_job
+                            and tool_name in COMMAND_TOOL_NAMES
+                            and terminal_session.should_route_execute_command_to_background_job(
+                                str(tool_args.get("command") or ""),
+                            )
+                        ):
+                            auto_routes_to_job = True
                     if not auto_routes_to_job:
                         terminal_input_error = terminal_session.validate_terminal_tool_input(
                             tool_name,
@@ -1604,6 +1671,7 @@ def generate_stream(
                                 item_id=item_id,
                                 content=BACKGROUND_JOB_RUNNING_RESPONSE,
                                 include_hidden_tool_results=include_hidden_tool_results,
+                                reply_ticket_id=reply_ticket.ticket_id,
                             )
                             if ticket_events:
                                 for event in ticket_events:
@@ -1872,29 +1940,81 @@ def generate_stream(
             reason=TOOL_BUDGET_STOP_REASON,
             prefers_chinese=_contains_cjk(message),
             include_hidden_tool_results=include_hidden_tool_results,
+            reply_ticket_id=reply_ticket.ticket_id,
         ):
             yield _to_sse(event)
         _broadcast_agent_status(item_id, "idle")
         yield _to_sse({"done": True})
     except Exception as exc:
         logger.exception("[Chat] Unexpected stream error for item %s", item_id)
-        _mark_agent_task_plan_failed(planned_task_runtime)
-        error_event = _persist_and_broadcast_event(
-            item_id,
-            role="assistant",
-            content=str(exc),
-            message_type="agent_error",
-        )
-        yield _to_sse(error_event)
-        yield _to_sse(
-            {
-                "type": "error",
-                "content": error_event["content"],
-                "timestamp": error_event["timestamp"],
-            }
-        )
+        for event in _finalize_stopped_turn(
+            agent=agent,
+            handler=handler,
+            item_id=item_id,
+            messages=messages,
+            planned_task_runtime=planned_task_runtime,
+            reason=f"Unexpected Agent error: {exc}",
+            prefers_chinese=_contains_cjk(message),
+            include_hidden_tool_results=include_hidden_tool_results,
+            reply_ticket_id=reply_ticket.ticket_id,
+        ):
+            yield _to_sse(event)
+        yield _to_sse({"done": True})
     finally:
         reply_ticket_manager.detach_from_agent(agent, reply_ticket.ticket_id)
+
+
+def generate_stream(
+    message: str,
+    history: list[ChatMessage],
+    handler: ItemHandler,
+    item_id: str,
+    agent: "Agent" = None,
+    include_hidden_tool_results: bool = False,
+    latest_only_context: bool = False,
+    source_type: str = SOURCE_WEB,
+    reply_ticket_id: str = "",
+    turn_serialized: bool = False,
+) -> Generator[str, None, None]:
+    if turn_serialized:
+        yield from _generate_stream_unserialized(
+            message=message,
+            history=history,
+            handler=handler,
+            item_id=item_id,
+            agent=agent,
+            include_hidden_tool_results=include_hidden_tool_results,
+            latest_only_context=latest_only_context,
+            source_type=source_type,
+            reply_ticket_id=reply_ticket_id,
+        )
+        return
+    with agent_turn_coordinator.turn(agent_turn_key(str(handler.id))):
+        yield from _generate_stream_unserialized(
+            message=message,
+            history=history,
+            handler=handler,
+            item_id=item_id,
+            agent=agent,
+            include_hidden_tool_results=include_hidden_tool_results,
+            latest_only_context=latest_only_context,
+            source_type=source_type,
+            reply_ticket_id=reply_ticket_id,
+        )
+
+
+def _require_chat_handler(
+    session: SessionDep,
+    item_id: str,
+    current_user: CurrentUser,
+) -> tuple[ItemHandler, Item]:
+    prepared = get_item_handler_llm_config(session, item_id, current_user)
+    if not prepared:
+        raise HTTPException(
+            status_code=404,
+            detail="No ItemHandler associated with this item.",
+        )
+    return prepared
 
 
 @router.post("/{item_id}")
@@ -1904,29 +2024,42 @@ async def chat(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> dict:
-    handler, _, agent = await prepare_chat_agent(session, item_id, current_user)
-    matched_skills = agent.match_skills(request.message)
+    prepared = _require_chat_handler(session, item_id, current_user)
+    lease = await agent_turn_coordinator.acquire_async(
+        agent_turn_key(str(prepared[0].id))
+    )
+    try:
+        handler, _, agent = await prepare_chat_agent(
+            session,
+            item_id,
+            current_user,
+            prepared=prepared,
+        )
+        matched_skills = agent.match_skills(request.message)
 
-    content = ""
-    error_message = ""
+        content = ""
+        error_message = ""
 
-    for chunk in generate_stream(
-        message=request.message,
-        history=request.history,
-        handler=handler,
-        item_id=item_id,
-        agent=agent,
-    ):
-        if not chunk.startswith("data: "):
-            continue
+        for chunk in generate_stream(
+            message=request.message,
+            history=request.history,
+            handler=handler,
+            item_id=item_id,
+            agent=agent,
+            turn_serialized=True,
+        ):
+            if not chunk.startswith("data: "):
+                continue
 
-        payload = json.loads(chunk[6:].strip())
-        if payload.get("type") == "agent_response":
-            content = payload.get("content", content)
-        elif payload.get("type") == "agent_error":
-            error_message = payload.get("content", error_message)
-        elif payload.get("type") == "error":
-            error_message = payload.get("content", error_message)
+            payload = json.loads(chunk[6:].strip())
+            if payload.get("type") == "agent_response":
+                content = payload.get("content", content)
+            elif payload.get("type") == "agent_error":
+                error_message = payload.get("content", error_message)
+            elif payload.get("type") == "error":
+                error_message = payload.get("content", error_message)
+    finally:
+        lease.release()
 
     if error_message:
         raise HTTPException(status_code=500, detail=error_message)
@@ -1945,16 +2078,36 @@ async def chat_stream(
     session: SessionDep,
     current_user: CurrentUser,
 ):
-    handler, _, agent = await prepare_chat_agent(session, item_id, current_user)
+    prepared = _require_chat_handler(session, item_id, current_user)
+    lease = await agent_turn_coordinator.acquire_async(
+        agent_turn_key(str(prepared[0].id))
+    )
+    try:
+        handler, _, agent = await prepare_chat_agent(
+            session,
+            item_id,
+            current_user,
+            prepared=prepared,
+        )
+    except Exception:
+        lease.release()
+        raise
+
+    def serialized_stream() -> Generator[str, None, None]:
+        try:
+            yield from generate_stream(
+                message=request.message,
+                history=request.history,
+                handler=handler,
+                item_id=item_id,
+                agent=agent,
+                turn_serialized=True,
+            )
+        finally:
+            lease.release()
 
     return StreamingResponse(
-        generate_stream(
-            message=request.message,
-            history=request.history,
-            handler=handler,
-            item_id=item_id,
-            agent=agent,
-        ),
+        serialized_stream(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -1971,8 +2124,20 @@ async def get_matched_skills(
     session: SessionDep,
     current_user: CurrentUser,
 ):
-    _, _, agent = await prepare_chat_agent(session, item_id, current_user)
-    matched = agent.match_skills(query)
+    prepared = _require_chat_handler(session, item_id, current_user)
+    lease = await agent_turn_coordinator.acquire_async(
+        agent_turn_key(str(prepared[0].id))
+    )
+    try:
+        _, _, agent = await prepare_chat_agent(
+            session,
+            item_id,
+            current_user,
+            prepared=prepared,
+        )
+        matched = agent.match_skills(query)
+    finally:
+        lease.release()
     return {
         "matched_skills": [
             {

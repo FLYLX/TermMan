@@ -91,6 +91,10 @@ class FilePathRequest(BaseModel):
     path: str
 
 
+class TerminalCommandStateRequest(BaseModel):
+    command: str
+
+
 class UploadTicketRequest(FilePathRequest):
     allow_overwrite: bool = False
 
@@ -1036,6 +1040,47 @@ def get_item_output(
         "lines": lines,
         "output": sanitize_terminal_text(output) if output else output
     }
+
+
+@router.get("/{id}/terminal-command-state")
+def get_terminal_command_state(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    from app.services.terminal_command_state import terminal_command_state_manager
+
+    return terminal_command_state_manager.snapshot(str(id))
+
+
+@router.post("/{id}/terminal-command-state")
+def record_terminal_command_state(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    body: TerminalCommandStateRequest,
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    command = body.command.strip()
+    if not command:
+        raise HTTPException(status_code=400, detail="command is required")
+
+    from app.services.terminal_command_state import terminal_command_state_manager
+
+    return terminal_command_state_manager.record(
+        str(id),
+        command,
+        source="web",
+    )
 
 
 @router.post("/{id}/generate-filter", response_model=GenerateFilterResponse)

@@ -199,7 +199,6 @@ class RobotService:
         self._pending_memory_candidates: dict[tuple[str, str, str], PendingRobotMemoryCandidate] = {}
         self._pending_chat_inputs: dict[tuple[str, str], list[PendingRobotChatInput]] = {}
         self._pending_task_replies: dict[tuple[str, str], list[PendingRobotTaskReply]] = {}
-        self._item_chat_locks: dict[str, threading.Lock] = {}
         self._lock = threading.RLock()
         self._dispatch_queue: queue.Queue[QueuedRobotChatJob] = queue.Queue(
             maxsize=max(1, settings.ROBOT_BACKEND_DISPATCH_QUEUE_SIZE)
@@ -427,15 +426,6 @@ class RobotService:
             else:
                 self._pending_task_replies.pop(key, None)
 
-    def _item_chat_lock(self, item_id: uuid.UUID | str) -> threading.Lock:
-        key = str(item_id)
-        with self._lock:
-            lock = self._item_chat_locks.get(key)
-            if lock is None:
-                lock = threading.Lock()
-                self._item_chat_locks[key] = lock
-            return lock
-
     def _dispatch_worker_loop(self) -> None:
         while True:
             job = self._dispatch_queue.get()
@@ -502,21 +492,20 @@ class RobotService:
                     item=item,
                     job=job,
                 )
-                with self._item_chat_lock(job.item_id):
-                    response = asyncio.run(
-                        self._chat_with_item(
-                            session=session,
-                            robot=robot,
-                            item=item,
-                            message=chat_message,
-                            sender_key=job.sender_key,
-                            reply_target=job.reply_target,
-                            conversation_key=job.conversation_key,
-                            conversation_generation=job.conversation_generation,
-                            reply_requires_awake=job.reply_requires_awake,
-                            reply_ticket_id=job.reply_ticket_id,
-                        )
+                response = asyncio.run(
+                    self._chat_with_item(
+                        session=session,
+                        robot=robot,
+                        item=item,
+                        message=chat_message,
+                        sender_key=job.sender_key,
+                        reply_target=job.reply_target,
+                        conversation_key=job.conversation_key,
+                        conversation_generation=job.conversation_generation,
+                        reply_requires_awake=job.reply_requires_awake,
+                        reply_ticket_id=job.reply_ticket_id,
                     )
+                )
                 response_text = self._visible_agent_response_text(response)
                 robot_message_sent = response.robot_message_sent
                 if response_text and not robot_message_sent:

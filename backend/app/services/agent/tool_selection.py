@@ -204,9 +204,15 @@ def _wants_robot_tools(text: str, *, source: TurnSource, agent: Any) -> bool:
     return _matches_any(text, ROBOT_PATTERNS)
 
 
-def _has_active_task_workflow(agent: Any) -> bool:
-    context = getattr(agent, "_context", None)
-    ticket_id = str(getattr(context, "reply_ticket_id", "") or "").strip()
+def _has_active_task_workflow(
+    agent: Any,
+    *,
+    reply_ticket_id: str = "",
+) -> bool:
+    ticket_id = str(reply_ticket_id or "").strip()
+    if not ticket_id:
+        context = getattr(agent, "_context", None)
+        ticket_id = str(getattr(context, "reply_ticket_id", "") or "").strip()
     if not ticket_id:
         return False
     try:
@@ -224,6 +230,7 @@ def select_tools_for_turn(
     source: TurnSource,
     query: str = "",
     agent: Any = None,
+    reply_ticket_id: str = "",
 ) -> list[dict[str, Any]]:
     text = str(query or "")
     include_robot = _wants_robot_tools(text, source=source, agent=agent)
@@ -236,7 +243,10 @@ def select_tools_for_turn(
     )
     include_local_history = _wants_history_tools(text)
     include_local_memory = _wants_memory_tools(text) and source != "qq"
-    include_local_workflow = _has_active_task_workflow(agent)
+    include_local_workflow = _has_active_task_workflow(
+        agent,
+        reply_ticket_id=reply_ticket_id,
+    )
     include_local_pending_replies = _wants_pending_reply_tools(text)
 
     selected: list[dict[str, Any]] = []

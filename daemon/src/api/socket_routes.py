@@ -1,6 +1,7 @@
 import socketio
 import uuid as uuid_lib
 import requests
+import re
 from service.socket_service import SocketService
 from service.terminal_manager import terminal_manager
 from service.job_runner import job_runner
@@ -29,6 +30,119 @@ def _normalize_terminal_write_payload(command: str) -> str:
         return command
 
     return f"{command}\n"
+
+
+def _terminal_completion_token_start(command: str, cursor: int) -> int:
+    token_start = 0
+    quote = None
+    escaped = False
+
+    for index, char in enumerate(command[:cursor]):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and quote != "'":
+            escaped = True
+            continue
+        if quote:
+            if char == quote:
+                quote = None
+            continue
+        if char in ("'", '"'):
+            quote = char
+        elif char.isspace():
+            token_start = index + 1
+
+    return token_start
+
+
+def _unescape_terminal_path(value: str) -> str:
+    result = []
+    escaped = False
+    for char in value:
+        if escaped:
+            result.append(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        else:
+            result.append(char)
+    if escaped:
+        result.append("\\")
+    return "".join(result)
+
+
+def _escape_terminal_path(value: str) -> str:
+    return re.sub(r"([\s\\'\"`$&;|<>*?()\[\]{}!])", r"\\\1", value)
+
+
+def _complete_terminal_command(command: str, cursor: int, current_workdir: str) -> dict:
+    cursor = max(0, min(cursor, len(command)))
+    token_start = _terminal_completion_token_start(command, cursor)
+    raw_token = command[token_start:cursor]
+    quote = raw_token[0] if raw_token.startswith(("'", '"')) else ""
+    token = raw_token[1:] if quote else _unescape_terminal_path(raw_token)
+
+    slash_index = token.rfind("/")
+    if slash_index >= 0:
+        directory_fragment = token[: slash_index + 1]
+        name_prefix = token[slash_index + 1 :]
+    else:
+        directory_fragment = ""
+        name_prefix = token
+
+    if directory_fragment.startswith("~"):
+        search_directory = os.path.expanduser(directory_fragment)
+    elif os.path.isabs(directory_fragment):
+        search_directory = directory_fragment
+    else:
+        search_directory = os.path.join(current_workdir, directory_fragment)
+
+    candidates = []
+    try:
+        for entry in os.scandir(search_directory or current_workdir):
+            if not name_prefix.startswith(".") and entry.name.startswith("."):
+                continue
+            if not entry.name.startswith(name_prefix):
+                continue
+            suffix = "/" if entry.is_dir(follow_symlinks=True) else ""
+            candidates.append(f"{directory_fragment}{entry.name}{suffix}")
+    except OSError:
+        return {
+            "success": True,
+            "value": command,
+            "cursor": cursor,
+            "candidates": [],
+        }
+
+    candidates.sort()
+    candidates = candidates[:100]
+    if not candidates:
+        return {
+            "success": True,
+            "value": command,
+            "cursor": cursor,
+            "candidates": [],
+        }
+
+    completion = os.path.commonprefix(candidates)
+    if len(candidates) == 1:
+        completion = candidates[0]
+
+    rendered_completion = (
+        f"{quote}{completion}" if quote else _escape_terminal_path(completion)
+    )
+    completed_command = (
+        command[:token_start] + rendered_completion + command[cursor:]
+    )
+    completed_cursor = token_start + len(rendered_completion)
+
+    return {
+        "success": True,
+        "value": completed_command,
+        "cursor": completed_cursor,
+        "candidates": candidates,
+    }
 
 
 async def verify_temp_token_with_backend(temp_token: str, item_uuid: str) -> dict:
@@ -564,12 +678,8 @@ async def on_terminal_write(sid, data):
                         )
                         return
                 terminal = terminal_manager.get_terminal(item_uuid)
-                if terminal and terminal.write(command):
-                    socket_service.sync_broadcast(
-                        item_uuid,
-                        "stream",
-                        {"stdin": command, "stdout": "", "stderr": "", "source": "browser"},
-                    )
+                if terminal:
+                    terminal.write(command)
                 return
     
     room_listen_conns = daemon_conn_pool.get_all_backend_room_listen_conns()
@@ -595,6 +705,30 @@ async def on_terminal_write(sid, data):
             if terminal:
                 terminal.write(command)
             return
+
+
+@sio.on("terminal/complete")
+async def on_terminal_complete(sid, data):
+    for item_uuid, conns in daemon_conn_pool.get_all_browser_terminal_conns().items():
+        if not any(conn.sid == sid for conn in conns):
+            continue
+
+        terminal = terminal_manager.get_terminal(item_uuid)
+        if not terminal:
+            return {"success": False, "error": "Terminal is not running"}
+
+        command = str(data.get("command", ""))
+        try:
+            cursor = int(data.get("cursor", len(command)))
+        except (TypeError, ValueError):
+            cursor = len(command)
+        return _complete_terminal_command(
+            command,
+            cursor,
+            terminal.current_workdir(),
+        )
+
+    return {"success": False, "error": "Terminal connection was not found"}
 
 
 @sio.on("item/subscribers")

@@ -45,12 +45,6 @@ class ReplyTicket:
     scheduled_execution_id: str = ""
     terminal_target: str = ""
     pending_reply_active: bool = False
-    pending_reply_status: str = "pending"
-    pending_reply_requester: str = ""
-    pending_reply_plan: list[str] = field(default_factory=list)
-    pending_reply_awaiting_kind: str = ""
-    pending_reply_awaiting_key: str = ""
-    pending_reply_created_at: datetime | None = None
 
     @property
     def is_qq(self) -> bool:
@@ -80,6 +74,12 @@ class ReplyTicketManager:
     def reset(self) -> None:
         with self._lock:
             self._tickets.clear()
+        try:
+            from app.services.agent.task_workflow import task_workflow_manager
+
+            task_workflow_manager.reset()
+        except Exception:
+            pass
 
     @staticmethod
     def _robot_request_message(reply_target: Any, fallback: str) -> str:
@@ -255,6 +255,15 @@ class ReplyTicketManager:
         return ticket.source_label or "TermMan web chat"
 
     @staticmethod
+    def _sanitize_delivery_text(content: Any) -> str:
+        try:
+            from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+
+            return sanitize_robot_visible_text(content).strip()
+        except Exception:
+            return str(content or "").strip()
+
+    @staticmethod
     def _broadcast_pending_reply_change(
         ticket: ReplyTicket,
         *,
@@ -291,6 +300,11 @@ class ReplyTicketManager:
         awaiting_kind: str = "",
         awaiting_key: str = "",
     ) -> dict[str, Any]:
+        normalized_plan = [
+            str(step).strip()[:500]
+            for step in (task_plan or [])
+            if str(step).strip()
+        ][:12]
         with self._lock:
             ticket = self._tickets.get(str(ticket_id))
             if not ticket:
@@ -298,30 +312,48 @@ class ReplyTicketManager:
             was_active = ticket.pending_reply_active
             now = datetime.now()
             ticket.pending_reply_active = True
-            ticket.pending_reply_status = str(status or "working")[:32]
-            ticket.pending_reply_requester = str(
+            if request_summary:
+                ticket.request_message = str(request_summary)[:500]
+            ticket.updated_at = now
+            if ticket.status == "delivered":
+                ticket.status = "running"
+
+        from app.services.agent.task_workflow import task_workflow_manager
+
+        workflow = task_workflow_manager.get_by_ticket(ticket.ticket_id)
+        workflow_created = workflow is None
+        if workflow is None:
+            workflow = task_workflow_manager.create(
+                item_id=ticket.item_id,
+                handler_id=ticket.handler_id,
+                reply_ticket_id=ticket.ticket_id,
+                objective=ticket.request_message or "Complete requested task",
+                source_type=ticket.source_type,
+                source_label=ticket.source_label,
+                step_titles=normalized_plan,
+                workflow_id=ticket.task_request_id or None,
+            )
+            ticket.task_request_id = workflow.workflow_id
+        task_workflow_manager.update_queue_metadata(
+            ticket.ticket_id,
+            requester=(
                 requester
                 or ticket.sender_label
                 or ticket.sender_key
                 or ticket.source_label
-            )[:200]
-            if request_summary:
-                ticket.request_message = str(request_summary)[:500]
-            if task_plan is not None:
-                ticket.pending_reply_plan = [
-                    str(step).strip()[:500]
-                    for step in task_plan
-                    if str(step).strip()
-                ][:12]
-            if awaiting_kind:
-                ticket.pending_reply_awaiting_kind = str(awaiting_kind)[:64]
-            if awaiting_key:
-                ticket.pending_reply_awaiting_key = str(awaiting_key)[:200]
-            ticket.pending_reply_created_at = ticket.pending_reply_created_at or now
-            ticket.updated_at = now
-            if ticket.status == "delivered":
-                ticket.status = "running"
-            snapshot = self._pending_reply_snapshot(ticket)
+            ),
+            status=status or "working",
+            awaiting_kind=awaiting_kind,
+            awaiting_key=awaiting_key,
+        )
+        if workflow_created and str(status or "").lower() == "ready":
+            while workflow.status == "active" and workflow.current_step() is not None:
+                task_workflow_manager.update(
+                    ticket.ticket_id,
+                    action="complete_current_step",
+                    note="Queue-only task is ready for delivery.",
+                )
+        snapshot = self._pending_reply_snapshot(ticket)
         self._broadcast_pending_reply_change(
             ticket,
             action="updated" if was_active else "created",
@@ -345,6 +377,39 @@ class ReplyTicketManager:
         except Exception:
             pass
         self._broadcast_pending_reply_change(ticket, action="removed")
+        return True
+
+    def rebind_pending_reply(self, old_ticket_id: str, new_ticket_id: str) -> bool:
+        if not old_ticket_id or old_ticket_id == new_ticket_id:
+            return True
+        with self._lock:
+            old_ticket = self._tickets.get(str(old_ticket_id))
+            new_ticket = self._tickets.get(str(new_ticket_id))
+            if not new_ticket:
+                return False
+            was_active = bool(old_ticket and old_ticket.pending_reply_active)
+            if old_ticket:
+                self._tickets.pop(str(old_ticket_id), None)
+            new_ticket.pending_reply_active = was_active
+            new_ticket.status = "running"
+            new_ticket.updated_at = datetime.now()
+        if was_active:
+            try:
+                from app.services.agent.task_workflow import task_workflow_manager
+
+                task_workflow_manager.update_queue_metadata(
+                    new_ticket_id,
+                    requester=(
+                        new_ticket.sender_label
+                        or new_ticket.sender_key
+                        or new_ticket.source_label
+                    ),
+                )
+            except Exception:
+                pass
+            if old_ticket:
+                self._broadcast_pending_reply_change(old_ticket, action="removed")
+            self._broadcast_pending_reply_change(new_ticket, action="created")
         return True
 
     def complete_pending_reply_after_external_delivery(self, ticket_id: str) -> bool:
@@ -378,31 +443,29 @@ class ReplyTicketManager:
             workflow = task_workflow_manager.snapshot_for_ticket(ticket.ticket_id)
         except Exception:
             pass
-        plan = list(ticket.pending_reply_plan)
-        if not plan and isinstance(workflow, dict):
-            plan = [
-                str(step.get("title") or "")
-                for step in workflow.get("steps") or []
-                if isinstance(step, dict) and step.get("title")
-            ]
+        plan = [
+            str(step.get("title") or "")
+            for step in (workflow or {}).get("steps") or []
+            if isinstance(step, dict) and step.get("title")
+        ]
         return {
             "id": ticket.ticket_id,
             "item_id": ticket.item_id,
-            "requester": ticket.pending_reply_requester
+            "requester": str((workflow or {}).get("requester") or "")
             or ticket.sender_label
             or ticket.sender_key
             or ticket.source_label,
-            "request_summary": ticket.request_message,
+            "request_summary": str((workflow or {}).get("objective") or "")
+            or ticket.request_message,
             "task_plan": plan,
             "destination_type": ticket.source_type,
             "destination_label": self._destination_label(ticket),
-            "status": ticket.pending_reply_status,
-            "awaiting_kind": ticket.pending_reply_awaiting_kind,
-            "awaiting_key": ticket.pending_reply_awaiting_key,
+            "status": str((workflow or {}).get("queue_status") or "working"),
+            "awaiting_kind": str((workflow or {}).get("awaiting_kind") or ""),
+            "awaiting_key": str((workflow or {}).get("awaiting_key") or ""),
             "last_error": ticket.delivery_error,
-            "created_at": (
-                ticket.pending_reply_created_at or ticket.created_at
-            ).isoformat(),
+            "created_at": str((workflow or {}).get("created_at") or "")
+            or ticket.created_at.isoformat(),
             "updated_at": ticket.updated_at.isoformat(),
             "workflow": workflow,
         }
@@ -423,20 +486,15 @@ class ReplyTicketManager:
         current_input: str,
     ) -> dict[str, Any] | None:
         text = str(current_input or "")
-        with self._lock:
-            candidates = [
-                ticket
-                for ticket in self._tickets.values()
-                if ticket.item_id == str(item_id)
-                and ticket.pending_reply_active
-                and ticket.pending_reply_awaiting_key
-            ]
-        candidates.sort(
-            key=lambda ticket: ticket.pending_reply_created_at or ticket.created_at
-        )
-        for ticket in candidates:
-            key = ticket.pending_reply_awaiting_key
-            if ticket.pending_reply_awaiting_kind == "minecraft_player":
+        candidates = [
+            entry
+            for entry in self.list_pending_replies(item_id)
+            if str(entry.get("awaiting_key") or "")
+        ]
+        candidates.sort(key=lambda entry: str(entry.get("created_at") or ""))
+        for entry in candidates:
+            key = str(entry.get("awaiting_key") or "")
+            if entry.get("awaiting_kind") == "minecraft_player":
                 if not re.search(
                     rf"<\s*{re.escape(key)}\s*>\s+\S",
                     text,
@@ -445,7 +503,7 @@ class ReplyTicketManager:
                     continue
             elif key.casefold() not in text.casefold():
                 continue
-            return self._pending_reply_snapshot(ticket)
+            return entry
         return None
 
     def build_pending_reply_prompt(
@@ -453,45 +511,68 @@ class ReplyTicketManager:
         item_id: str,
         *,
         current_input: str = "",
+        current_ticket_id: str = "",
     ) -> str:
         entries = self.list_pending_replies(item_id)
         if not entries:
             return ""
-        normalized_input = str(current_input or "").casefold()
-        lines = [
-            "Authoritative task queue:",
-            "Each entry locks requester, task plan, and return destination together.",
-        ]
-        for entry in entries[:8]:
-            awaiting_key = str(entry.get("awaiting_key") or "")
-            matched = bool(awaiting_key and awaiting_key.casefold() in normalized_input)
-            lines.append(
-                f"- id={entry['id']}; requester={entry['requester']}; "
-                f"destination={entry['destination_label']}; status={entry['status']}; "
-                f"current_input_matches_awaiting={'yes' if matched else 'no'}"
-            )
-            lines.append(f"  request={entry['request_summary']}")
-            if entry.get("task_plan"):
-                lines.append("  plan=" + " -> ".join(entry["task_plan"]))
-            if entry.get("awaiting_kind") or awaiting_key:
-                lines.append(
-                    f"  awaiting={entry.get('awaiting_kind') or 'event'}:"
-                    f"{awaiting_key or 'unspecified'}"
+        selected = next(
+            (
+                entry
+                for entry in entries
+                if entry["id"] == str(current_ticket_id or "")
+            ),
+            None,
+        )
+        if selected is None and current_input:
+            matched = self.match_pending_reply(item_id, current_input)
+            if matched:
+                selected = next(
+                    (entry for entry in entries if entry["id"] == matched["id"]),
+                    None,
                 )
+
+        if selected is None:
+            lines = [
+                f"Background task index: {len(entries)} unfinished task(s).",
+                "The current turn is not linked to them. Handle the current message normally; "
+                "do not switch destination or resume a task unless the user explicitly refers "
+                "to it. Use mcp_local_list_pending_replies for full details when needed.",
+            ]
+            for entry in entries[:3]:
+                summary = re.sub(
+                    r"\s+",
+                    " ",
+                    str(entry.get("request_summary") or ""),
+                ).strip()[:100]
+                lines.append(
+                    f"- id={entry['id']}; status={entry['status']}; task={summary}"
+                )
+            if len(entries) > 3:
+                lines.append(f"- {len(entries) - 3} more task(s) hidden from this prompt.")
+            return "\n".join(lines)
+
+        lines = [
+            "Authoritative task queue entry for this turn:",
+            f"- id={selected['id']}",
+            f"- requester={selected['requester']}",
+            f"- destination={selected['destination_label']}",
+            f"- status={selected['status']}",
+            f"- request={selected['request_summary']}",
+        ]
+        if selected.get("task_plan"):
+            lines.append("- plan=" + " -> ".join(selected["task_plan"]))
+        if selected.get("awaiting_kind") or selected.get("awaiting_key"):
+            lines.append(
+                f"- awaiting={selected.get('awaiting_kind') or 'event'}:"
+                f"{selected.get('awaiting_key') or 'unspecified'}"
+            )
         lines.extend(
             [
-                "Queue rules:",
-                "1. For delegated, multi-step, asynchronous, or wait-for-response work, "
-                "call mcp_local_write_pending_reply before or when starting the work.",
-                "2. Update the same entry when the plan or awaited target changes; never "
-                "create a different destination for the same task.",
-                "3. When evidence completes the task, mark the task workflow ready and call "
-                "mcp_local_send_pending_reply with the matching entry id.",
-                "4. send_pending_reply uses the stored destination, sends first, and removes "
-                "the entry only after success. Do not separately call QQ/tell/web delivery "
-                "tools for the same final report.",
-                "5. If current_input_matches_awaiting=yes, decide whether the new input really "
-                "answers that entry. If yes, finish and send that entry; if unrelated, keep it.",
+                "Complete or explicitly fail this task, then call "
+                "mcp_local_send_pending_reply with this id. Delivery uses the stored immutable "
+                "destination and removes the task only after success. A failed delivery keeps "
+                "the task for retry.",
             ]
         )
         return "\n".join(lines)
@@ -551,6 +632,15 @@ class ReplyTicketManager:
             ticket.updated_at = datetime.now()
             pending_reply_active = ticket.pending_reply_active
         if pending_reply_active:
+            try:
+                from app.services.agent.task_workflow import task_workflow_manager
+
+                task_workflow_manager.update_queue_metadata(
+                    ticket_id,
+                    status="failed",
+                )
+            except Exception:
+                pass
             self._broadcast_pending_reply_change(ticket, action="updated")
 
     def mark_delivered(self, ticket_id: str) -> bool:
@@ -578,7 +668,6 @@ class ReplyTicketManager:
                 return False
             if ticket.pending_reply_active:
                 ticket.status = "running"
-                ticket.pending_reply_status = "working"
                 ticket.updated_at = datetime.now()
                 ticket.delivery_error = ""
                 pending_reply_active = True
@@ -590,6 +679,10 @@ class ReplyTicketManager:
                 ticket.updated_at = now
                 ticket.delivery_error = ""
         if pending_reply_active:
+            task_workflow_manager.update_queue_metadata(
+                ticket_id,
+                status="working",
+            )
             self._broadcast_pending_reply_change(ticket, action="updated")
             return True
         try:
@@ -669,7 +762,7 @@ class ReplyTicketManager:
         )
 
     def deliver(self, ticket_id: str, content: str) -> bool:
-        text = str(content or "").strip()
+        text = self._sanitize_delivery_text(content)
         if not ticket_id or not text:
             return False
         with self._lock:
@@ -719,9 +812,9 @@ class ReplyTicketManager:
         return True
 
     def send_pending_reply(self, ticket_id: str, content: str) -> tuple[bool, str]:
-        text = str(content or "").strip()
+        text = self._sanitize_delivery_text(content)
         if not text:
-            return False, "reply content is required"
+            return False, "reply content contains no visible text"
         with self._lock:
             ticket = self._tickets.get(str(ticket_id))
             if not ticket or not ticket.pending_reply_active:
@@ -741,8 +834,11 @@ class ReplyTicketManager:
             if not current or not current.pending_reply_active:
                 return False, "pending reply not found"
             current.status = "sending"
-            current.pending_reply_status = "sending"
             current.updated_at = datetime.now()
+        task_workflow_manager.update_queue_metadata(
+            ticket.ticket_id,
+            status="sending",
+        )
         self._broadcast_pending_reply_change(ticket, action="updated")
 
         try:
@@ -789,13 +885,16 @@ class ReplyTicketManager:
                 current = self._tickets.get(str(ticket_id))
                 if current:
                     current.status = "failed"
-                    current.pending_reply_status = "failed"
                     current.delivery_error = str(exc)[:1000]
                     current.updated_at = datetime.now()
             try:
                 from app.services.agent.task_workflow import task_workflow_manager
 
                 task_workflow_manager.mark_delivery_failed(ticket.ticket_id, str(exc))
+                task_workflow_manager.update_queue_metadata(
+                    ticket.ticket_id,
+                    status="failed",
+                )
             except Exception:
                 pass
             self._broadcast_pending_reply_change(ticket, action="updated")
@@ -847,11 +946,23 @@ class ReplyTicketManager:
                     "scheduled_task_id": ticket.scheduled_task_id,
                     "scheduled_execution_id": ticket.scheduled_execution_id,
                     "pending_reply_active": ticket.pending_reply_active,
-                    "pending_reply_status": ticket.pending_reply_status,
-                    "pending_reply_requester": ticket.pending_reply_requester,
-                    "pending_reply_plan": list(ticket.pending_reply_plan),
-                    "pending_reply_awaiting_kind": ticket.pending_reply_awaiting_kind,
-                    "pending_reply_awaiting_key": ticket.pending_reply_awaiting_key,
+                    "pending_reply_status": str(
+                        (workflow or {}).get("queue_status") or ""
+                    ),
+                    "pending_reply_requester": str(
+                        (workflow or {}).get("requester") or ""
+                    ),
+                    "pending_reply_plan": [
+                        str(step.get("title") or "")
+                        for step in (workflow or {}).get("steps") or []
+                        if isinstance(step, dict) and step.get("title")
+                    ],
+                    "pending_reply_awaiting_kind": str(
+                        (workflow or {}).get("awaiting_kind") or ""
+                    ),
+                    "pending_reply_awaiting_key": str(
+                        (workflow or {}).get("awaiting_key") or ""
+                    ),
                     "robot_id": ticket.robot_id,
                     "sender_key": ticket.sender_key,
                     "sender_label": ticket.sender_label,

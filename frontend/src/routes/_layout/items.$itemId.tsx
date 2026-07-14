@@ -132,6 +132,16 @@ type BackgroundJobsResponse = {
   error?: string | null
 }
 
+type TerminalCommandStateResponse = {
+  item_id: string
+  command: string
+  source: string
+  sent_at: string
+  expected_output?: string
+  expected_regex?: string
+  timeout_seconds?: number
+}
+
 type TerminalOutputGroup =
   | {
       kind: "terminal"
@@ -256,6 +266,42 @@ async function requestItemJobs<T>(
   }
 
   return payload as T
+}
+
+async function requestTerminalCommandState(
+  itemId: string,
+  init: RequestInit = {},
+): Promise<TerminalCommandStateResponse> {
+  const token = localStorage.getItem("access_token") || ""
+  const headers = new Headers(init.headers)
+  headers.set("Authorization", `Bearer ${token}`)
+  if (init.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json")
+  }
+
+  const response = await fetch(
+    `${OpenAPI.BASE}/api/v1/items/${itemId}/terminal-command-state`,
+    { ...init, headers },
+  )
+  if (!response.ok) {
+    const payload = await response.json().catch(() => undefined)
+    throw new Error(
+      payload && typeof payload === "object" && "detail" in payload
+        ? String((payload as { detail?: unknown }).detail)
+        : `HTTP ${response.status}`,
+    )
+  }
+  return response.json()
+}
+
+function getTerminalCommandSourceLabel(source: string): string {
+  if (source === "agent") {
+    return "Agent"
+  }
+  if (source === "web") {
+    return "网页"
+  }
+  return source || "未知来源"
 }
 
 function formatJobElapsed(seconds: number | undefined): string {
@@ -1713,11 +1759,14 @@ function ItemDetailPage({
   }, [robotControllerActive])
 
   const [command, setCommand] = useState("")
+  const [completionCandidates, setCompletionCandidates] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState<ItemDetailTab>("terminal")
   const [visitedTabs, setVisitedTabs] = useState<Set<ItemDetailTab>>(
     () => new Set<ItemDetailTab>(["terminal"]),
   )
   const outputRef = useRef<HTMLDivElement>(null)
+  const commandInputRef = useRef<HTMLInputElement>(null)
+  const terminalStickToBottomRef = useRef(true)
   const terminalConnectedRef = useRef(false)
   const previousItemIdRef = useRef(item.id)
   const itemUpdatedAtRef = useRef(item.updated_at || "")
@@ -1808,6 +1857,9 @@ function ItemDetailPage({
   )
   const activateTab = (value: string) => {
     const nextTab = value as ItemDetailTab
+    if (nextTab === "terminal") {
+      terminalStickToBottomRef.current = true
+    }
     setActiveTab(nextTab)
     setVisitedTabs((current) => {
       if (current.has(nextTab)) {
@@ -1828,6 +1880,7 @@ function ItemDetailPage({
       return
     }
     setActiveTab("terminal")
+    terminalStickToBottomRef.current = true
     setVisitedTabs(new Set<ItemDetailTab>(["terminal"]))
     setTerminalWsForm(createTerminalWsForm(currentItemTitle))
     setTerminalWsServers([])
@@ -1937,12 +1990,21 @@ function ItemDetailPage({
     retry: false,
   })
 
+  const { data: terminalCommandState } = useQuery({
+    queryKey: ["items", "terminal-command-state", item.id],
+    queryFn: () => requestTerminalCommandState(item.id),
+    enabled: activeTab === "terminal",
+    refetchInterval: activeTab === "terminal" ? 3_000 : false,
+    retry: false,
+  })
+
   const {
     isConnected,
     isConnecting,
     error: connectionError,
     output,
     sendCommand,
+    completeCommand,
     sendCtrlC,
     reconnect,
     disconnect,
@@ -1969,13 +2031,25 @@ function ItemDetailPage({
   )
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (outputRef.current) {
-        outputRef.current.scrollTop = outputRef.current.scrollHeight
+    if (activeTab !== "terminal" || !terminalStickToBottomRef.current) {
+      return
+    }
+
+    let secondFrame = 0
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        if (outputRef.current) {
+          outputRef.current.scrollTop = outputRef.current.scrollHeight
+        }
+      })
+    })
+    return () => {
+      window.cancelAnimationFrame(firstFrame)
+      if (secondFrame) {
+        window.cancelAnimationFrame(secondFrame)
       }
-    }, 100)
-    return () => clearTimeout(timer)
-  }, [output])
+    }
+  }, [activeTab, isConnected, output])
 
   const refreshItemDetail = useCallback(async () => {
     const refreshed = (await ItemsService.readItem({
@@ -2053,8 +2127,33 @@ function ItemDetailPage({
 
   const handleSendCommand = () => {
     if (command.trim()) {
-      sendCommand(command)
+      const sentCommand = command.trim()
+      sendCommand(sentCommand)
+      const optimisticState: TerminalCommandStateResponse = {
+        item_id: item.id,
+        command: sentCommand,
+        source: "web",
+        sent_at: new Date().toISOString(),
+      }
+      queryClient.setQueryData(
+        ["items", "terminal-command-state", item.id],
+        optimisticState,
+      )
+      void requestTerminalCommandState(item.id, {
+        method: "POST",
+        body: JSON.stringify({ command: sentCommand }),
+      })
+        .then((state) => {
+          queryClient.setQueryData(
+            ["items", "terminal-command-state", item.id],
+            state,
+          )
+        })
+        .catch((error) => {
+          console.error("Failed to record terminal command state:", error)
+        })
       setCommand("")
+      setCompletionCandidates([])
     }
   }
 
@@ -2291,7 +2390,30 @@ function ItemDetailPage({
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Tab" && !e.shiftKey) {
+      e.preventDefault()
+      const requestedCommand = command
+      const cursor = e.currentTarget.selectionStart ?? requestedCommand.length
+      const completion = await completeCommand(requestedCommand, cursor)
+      if (
+        !completion ||
+        commandInputRef.current?.value !== requestedCommand
+      ) {
+        return
+      }
+
+      setCommand(completion.value)
+      setCompletionCandidates(completion.candidates)
+      window.requestAnimationFrame(() => {
+        commandInputRef.current?.setSelectionRange(
+          completion.cursor,
+          completion.cursor,
+        )
+      })
+      return
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSendCommand()
@@ -2979,6 +3101,41 @@ function ItemDetailPage({
                           nowMs={robotCountdownNowMs}
                         />
 
+                        {terminalCommandState?.command && (
+                          <div className="mb-3 flex min-w-0 items-center gap-2 border-y border-zinc-800/80 bg-zinc-950/50 px-2 py-1.5 text-xs text-slate-400">
+                            <span className="shrink-0 text-slate-500">
+                              上一条命令
+                            </span>
+                            <code
+                              className="min-w-0 flex-1 truncate text-slate-200"
+                              title={terminalCommandState.command}
+                            >
+                              {terminalCommandState.command}
+                            </code>
+                            <span className="shrink-0 text-slate-500">
+                              {getTerminalCommandSourceLabel(
+                                terminalCommandState.source,
+                              )}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 shrink-0 text-slate-400 hover:bg-zinc-800 hover:text-slate-100"
+                              onClick={() =>
+                                void copy(terminalCommandState.command)
+                              }
+                              title="复制上一条命令"
+                            >
+                              {copiedText === terminalCommandState.command ? (
+                                <Check className="size-3.5" />
+                              ) : (
+                                <Copy className="size-3.5" />
+                              )}
+                            </Button>
+                          </div>
+                        )}
+
                         {isConnecting ? (
                           <div className="h-[34rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] flex flex-col items-center justify-center gap-4 px-4 py-8">
                             <Loader2 className="size-8 text-blue-400 animate-spin" />
@@ -2995,6 +3152,15 @@ function ItemDetailPage({
                           <>
                             <div
                               ref={outputRef}
+                              data-testid="terminal-output"
+                              onScroll={(event) => {
+                                const element = event.currentTarget
+                                terminalStickToBottomRef.current =
+                                  element.scrollHeight -
+                                    element.scrollTop -
+                                    element.clientHeight <
+                                  64
+                              }}
                               className="h-[30rem] overflow-y-auto rounded-xl border border-zinc-800 bg-[#121212] px-4 py-3 font-mono text-[15px] leading-[1.45] tracking-[0.01em]"
                             >
                               {output.length === 0 ? (
@@ -3037,13 +3203,24 @@ function ItemDetailPage({
                             </div>
 
                             <div className="mt-4 flex flex-col gap-3 lg:flex-row">
-                              <Input
-                                value={command}
-                                onChange={(e) => setCommand(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                placeholder={t("items.detail.enterCommand")}
-                                className="h-10 border-zinc-700 bg-zinc-900/80 font-mono text-sm text-slate-100 placeholder:text-slate-500"
-                              />
+                              <div className="min-w-0 flex-1">
+                                <Input
+                                  ref={commandInputRef}
+                                  value={command}
+                                  onChange={(e) => {
+                                    setCommand(e.target.value)
+                                    setCompletionCandidates([])
+                                  }}
+                                  onKeyDown={handleKeyDown}
+                                  placeholder={t("items.detail.enterCommand")}
+                                  className="h-10 border-zinc-700 bg-zinc-900/80 font-mono text-sm text-slate-100 placeholder:text-slate-500"
+                                />
+                                {completionCandidates.length > 1 && (
+                                  <div className="mt-1.5 max-h-20 overflow-auto rounded border border-zinc-800 bg-zinc-950/80 px-2.5 py-1.5 font-mono text-xs text-slate-400">
+                                    {completionCandidates.slice(0, 20).join("  ")}
+                                  </div>
+                                )}
+                              </div>
                               <div className="flex gap-2">
                                 <Button
                                   type="button"
