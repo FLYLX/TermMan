@@ -250,7 +250,9 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
       refreshInstalledSoftware()
     },
     onError: (error) =>
-      showErrorToast(error instanceof Error ? error.message : "更新已安装列表失败"),
+      showErrorToast(
+        error instanceof Error ? error.message : "更新已安装列表失败",
+      ),
   })
 
   const deleteInstalledSoftwareMutation = useMutation({
@@ -382,7 +384,10 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
       })
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement("a")
-      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")
+      const timestamp = new Date()
+        .toISOString()
+        .slice(0, 19)
+        .replace(/[:T]/g, "-")
       link.href = url
       link.download = `termman-memory-${itemId}-${timestamp}.json`
       document.body.appendChild(link)
@@ -518,7 +523,7 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
   const totalMemoryCount =
     searchQuery.trim() && searchResults
       ? displayedMemories.length
-      : memoriesData?.pages[0]?.count ?? 0
+      : (memoriesData?.pages[0]?.count ?? 0)
   const loadedMemoryCount = displayedMemories.length
   const clearableMemoryCount = stats?.total ?? totalMemoryCount
   const visibleTotalMemoryCount = totalMemoryCount || clearableMemoryCount
@@ -579,7 +584,9 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="truncate font-medium">{item.name}</span>
-                      <Badge variant="secondary">{item.manager || "unknown"}</Badge>
+                      <Badge variant="secondary">
+                        {item.manager || "unknown"}
+                      </Badge>
                       {item.version ? (
                         <Badge variant="outline" className="font-mono">
                           {item.version}
@@ -592,10 +599,15 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                       </p>
                     ) : null}
                     {item.notes ? (
-                      <p className="text-xs text-muted-foreground">{item.notes}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.notes}
+                      </p>
                     ) : null}
                     <p className="text-[11px] text-muted-foreground">
-                      更新: {item.updated_at ? new Date(item.updated_at).toLocaleString() : "-"}
+                      更新:{" "}
+                      {item.updated_at
+                        ? new Date(item.updated_at).toLocaleString()
+                        : "-"}
                     </p>
                   </div>
                   <div className="flex justify-end gap-1">
@@ -804,253 +816,255 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
             </div>
           ) : (
             <>
-          <div className="mb-4 flex flex-wrap gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
-              <Input
-                placeholder="搜索记忆..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                className="pl-9"
-              />
-            </div>
-            <Select
-              value={filterType}
-              onValueChange={(v) => setFilterType(v as MemoryType | "all")}
-            >
-              <SelectTrigger className="w-32">
-                <Filter className="mr-2 size-4" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部</SelectItem>
-                {Object.entries(MEMORY_TYPE_LABELS).map(([type, label]) => (
-                  <SelectItem key={type} value={type}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={filterStatus}
-              onValueChange={(v) =>
-                setFilterStatus(v as ManagedMemoryStatus | "all")
-              }
-            >
-              <SelectTrigger className="w-36">
-                <SelectValue placeholder="状态" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="active">进行中</SelectItem>
-                <SelectItem value="completed">已完成</SelectItem>
-                <SelectItem value="resolved">已解决</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
-              size="sm"
-              variant={filterStatus === "active" ? "default" : "outline"}
-              onClick={() => {
-                setFilterStatus((current) =>
-                  current === "active" ? "all" : "active",
-                )
-                if (
-                  filterType !== "all" &&
-                  filterType !== "task" &&
-                  filterType !== "error"
-                ) {
-                  setFilterType("all")
-                }
-              }}
-            >
-              只看活跃
-            </Button>
-            {searchQuery && (
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => {
-                  setSearchQuery("")
-                  queryClient.invalidateQueries({
-                    queryKey: ["memories", itemId],
-                  })
-                }}
-              >
-                <X className="size-4" />
-              </Button>
-            )}
-          </div>
-
-          {memoriesLoading || searchLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="size-8 animate-spin" />
-            </div>
-          ) : displayedMemories.length === 0 ? (
-            <div className="py-8 text-center text-zinc-400">暂无记忆</div>
-          ) : (
-            <div className="max-h-96 space-y-2 overflow-y-auto">
-              {displayedMemories.map((memory) => {
-                const memoryStatus = memory.metadata.status
-                const statusAction = getStatusAction(memory)
-                const StatusActionIcon = statusAction?.icon
-                const statusTone =
-                  memoryStatus === "active"
-                    ? "border-emerald-500/30 bg-emerald-500/5"
-                    : memoryStatus === "completed" ||
-                        memoryStatus === "resolved"
-                      ? "border-zinc-700 bg-zinc-900/60"
-                      : "border-zinc-700 bg-zinc-800/50"
-
-                return (
-                  <div
-                    key={memory.id}
-                    className={`flex items-start justify-between rounded-lg border p-3 ${statusTone}`}
-                  >
-                    <div className="flex-1">
-                      <div className="mb-1 flex items-center gap-2">
-                        <Badge
-                          variant="secondary"
-                          className={`${MEMORY_TYPE_COLORS[memory.metadata.memory_type]} text-white`}
-                        >
-                          {MEMORY_TYPE_LABELS[memory.metadata.memory_type]}
-                        </Badge>
-                        {memoryStatus && (
-                          <Badge
-                            variant="outline"
-                            className={MEMORY_STATUS_COLORS[memoryStatus]}
-                          >
-                            {MEMORY_STATUS_LABELS[memoryStatus]}
-                          </Badge>
-                        )}
-                        {memory.metadata.verified && (
-                          <Badge
-                            variant="outline"
-                            className="border-emerald-500/30 text-emerald-300"
-                          >
-                            已验证
-                          </Badge>
-                        )}
-                        <span className="text-xs text-zinc-400">
-                          {memory.metadata.created_at &&
-                            new Date(
-                              memory.metadata.created_at,
-                            ).toLocaleString()}
-                        </span>
-                        {memory.metadata.updated_at &&
-                          memory.metadata.updated_at !==
-                            memory.metadata.created_at && (
-                            <span className="text-xs text-zinc-500">
-                              更新:{" "}
-                              {new Date(
-                                memory.metadata.updated_at,
-                              ).toLocaleString()}
-                            </span>
-                          )}
-                        {memory.metadata.expires_at && (
-                          <span className="text-xs text-zinc-500">
-                            过期:{" "}
-                            {new Date(
-                              memory.metadata.expires_at,
-                            ).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm">{memory.content}</p>
-                      {memory.metadata.memory_key && (
-                        <p className="mt-2 text-xs text-zinc-500">
-                          key:{" "}
-                          <span className="font-mono">
-                            {memory.metadata.memory_key}
-                          </span>
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex gap-1">
-                      {statusAction && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 gap-1"
-                          onClick={() =>
-                            updateMemoryStatusMutation.mutate({
-                              memoryId: memory.id,
-                              status: statusAction.status,
-                            })
-                          }
-                          disabled={updateMemoryStatusMutation.isPending}
-                        >
-                          {StatusActionIcon && (
-                            <StatusActionIcon className="size-3.5" />
-                          )}
-                          {statusAction.label}
-                        </Button>
-                      )}
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="size-8"
-                        onClick={() => handleEditMemory(memory)}
-                      >
-                        <RefreshCw className="size-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="size-8 text-red-400 hover:text-red-300"
-                        onClick={() => deleteMemoryMutation.mutate(memory.id)}
-                        disabled={deleteMemoryMutation.isPending}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {!searchQuery.trim() && hasNextPage ? (
-            <div className="mt-3 flex justify-center">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => fetchNextPage()}
-                disabled={isFetchingNextPage}
-              >
-                {isFetchingNextPage ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : null}
-                加载更多
-              </Button>
-            </div>
-          ) : null}
-
-          {!memoriesLoading && clearableMemoryCount > 0 && (
-            <div className="mt-4 flex justify-between border-t border-zinc-700 pt-4">
-              <span className="text-sm text-zinc-400">
-                当前显示 {loadedMemoryCount} / 总计 {visibleTotalMemoryCount}{" "}
-                条记忆
-              </span>
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={() => {
-                  if (confirm("确定要清除所有记忆吗？此操作不可恢复。")) {
-                    clearMemoriesMutation.mutate()
+              <div className="mb-4 flex flex-wrap gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+                  <Input
+                    placeholder="搜索记忆..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                    className="pl-9"
+                  />
+                </div>
+                <Select
+                  value={filterType}
+                  onValueChange={(v) => setFilterType(v as MemoryType | "all")}
+                >
+                  <SelectTrigger className="w-32">
+                    <Filter className="mr-2 size-4" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部</SelectItem>
+                    {Object.entries(MEMORY_TYPE_LABELS).map(([type, label]) => (
+                      <SelectItem key={type} value={type}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={filterStatus}
+                  onValueChange={(v) =>
+                    setFilterStatus(v as ManagedMemoryStatus | "all")
                   }
-                }}
-                disabled={clearMemoriesMutation.isPending}
-              >
-                {clearMemoriesMutation.isPending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Trash2 className="size-4" />
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="状态" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部状态</SelectItem>
+                    <SelectItem value="active">进行中</SelectItem>
+                    <SelectItem value="completed">已完成</SelectItem>
+                    <SelectItem value="resolved">已解决</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  variant={filterStatus === "active" ? "default" : "outline"}
+                  onClick={() => {
+                    setFilterStatus((current) =>
+                      current === "active" ? "all" : "active",
+                    )
+                    if (
+                      filterType !== "all" &&
+                      filterType !== "task" &&
+                      filterType !== "error"
+                    ) {
+                      setFilterType("all")
+                    }
+                  }}
+                >
+                  只看活跃
+                </Button>
+                {searchQuery && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => {
+                      setSearchQuery("")
+                      queryClient.invalidateQueries({
+                        queryKey: ["memories", itemId],
+                      })
+                    }}
+                  >
+                    <X className="size-4" />
+                  </Button>
                 )}
-                清除所有
-              </Button>
-            </div>
-          )}
+              </div>
+
+              {memoriesLoading || searchLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="size-8 animate-spin" />
+                </div>
+              ) : displayedMemories.length === 0 ? (
+                <div className="py-8 text-center text-zinc-400">暂无记忆</div>
+              ) : (
+                <div className="max-h-96 space-y-2 overflow-y-auto">
+                  {displayedMemories.map((memory) => {
+                    const memoryStatus = memory.metadata.status
+                    const statusAction = getStatusAction(memory)
+                    const StatusActionIcon = statusAction?.icon
+                    const statusTone =
+                      memoryStatus === "active"
+                        ? "border-emerald-500/30 bg-emerald-500/5"
+                        : memoryStatus === "completed" ||
+                            memoryStatus === "resolved"
+                          ? "border-zinc-700 bg-zinc-900/60"
+                          : "border-zinc-700 bg-zinc-800/50"
+
+                    return (
+                      <div
+                        key={memory.id}
+                        className={`flex items-start justify-between rounded-lg border p-3 ${statusTone}`}
+                      >
+                        <div className="flex-1">
+                          <div className="mb-1 flex items-center gap-2">
+                            <Badge
+                              variant="secondary"
+                              className={`${MEMORY_TYPE_COLORS[memory.metadata.memory_type]} text-white`}
+                            >
+                              {MEMORY_TYPE_LABELS[memory.metadata.memory_type]}
+                            </Badge>
+                            {memoryStatus && (
+                              <Badge
+                                variant="outline"
+                                className={MEMORY_STATUS_COLORS[memoryStatus]}
+                              >
+                                {MEMORY_STATUS_LABELS[memoryStatus]}
+                              </Badge>
+                            )}
+                            {memory.metadata.verified && (
+                              <Badge
+                                variant="outline"
+                                className="border-emerald-500/30 text-emerald-300"
+                              >
+                                已验证
+                              </Badge>
+                            )}
+                            <span className="text-xs text-zinc-400">
+                              {memory.metadata.created_at &&
+                                new Date(
+                                  memory.metadata.created_at,
+                                ).toLocaleString()}
+                            </span>
+                            {memory.metadata.updated_at &&
+                              memory.metadata.updated_at !==
+                                memory.metadata.created_at && (
+                                <span className="text-xs text-zinc-500">
+                                  更新:{" "}
+                                  {new Date(
+                                    memory.metadata.updated_at,
+                                  ).toLocaleString()}
+                                </span>
+                              )}
+                            {memory.metadata.expires_at && (
+                              <span className="text-xs text-zinc-500">
+                                过期:{" "}
+                                {new Date(
+                                  memory.metadata.expires_at,
+                                ).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm">{memory.content}</p>
+                          {memory.metadata.memory_key && (
+                            <p className="mt-2 text-xs text-zinc-500">
+                              key:{" "}
+                              <span className="font-mono">
+                                {memory.metadata.memory_key}
+                              </span>
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex gap-1">
+                          {statusAction && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 gap-1"
+                              onClick={() =>
+                                updateMemoryStatusMutation.mutate({
+                                  memoryId: memory.id,
+                                  status: statusAction.status,
+                                })
+                              }
+                              disabled={updateMemoryStatusMutation.isPending}
+                            >
+                              {StatusActionIcon && (
+                                <StatusActionIcon className="size-3.5" />
+                              )}
+                              {statusAction.label}
+                            </Button>
+                          )}
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-8"
+                            onClick={() => handleEditMemory(memory)}
+                          >
+                            <RefreshCw className="size-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-8 text-red-400 hover:text-red-300"
+                            onClick={() =>
+                              deleteMemoryMutation.mutate(memory.id)
+                            }
+                            disabled={deleteMemoryMutation.isPending}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {!searchQuery.trim() && hasNextPage ? (
+                <div className="mt-3 flex justify-center">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => fetchNextPage()}
+                    disabled={isFetchingNextPage}
+                  >
+                    {isFetchingNextPage ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : null}
+                    加载更多
+                  </Button>
+                </div>
+              ) : null}
+
+              {!memoriesLoading && clearableMemoryCount > 0 && (
+                <div className="mt-4 flex justify-between border-t border-zinc-700 pt-4">
+                  <span className="text-sm text-zinc-400">
+                    当前显示 {loadedMemoryCount} / 总计{" "}
+                    {visibleTotalMemoryCount} 条记忆
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => {
+                      if (confirm("确定要清除所有记忆吗？此操作不可恢复。")) {
+                        clearMemoriesMutation.mutate()
+                      }
+                    }}
+                    disabled={clearMemoriesMutation.isPending}
+                  >
+                    {clearMemoriesMutation.isPending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="size-4" />
+                    )}
+                    清除所有
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </CardContent>

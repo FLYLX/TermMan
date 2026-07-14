@@ -2934,11 +2934,14 @@ class RobotService:
             seen_content.add(content)
             if len(content) > 160:
                 content = f"{content[:157]}..."
-            tags = [str(metadata.get("memory_type") or "fact")]
-            status = str(metadata.get("status") or "").strip()
-            if status:
-                tags.append(status)
-            lines.append(f"- [{', '.join(tags)}] {content}")
+            sender = str(
+                metadata.get("speaker")
+                or metadata.get("speaker_label")
+                or metadata.get("sender")
+                or ""
+            ).strip()
+            prefix = f"{sender}: " if sender and not content.startswith(sender) else ""
+            lines.append(f"- {prefix}{content}")
         if len(lines) == 1:
             return ""
         return "\n".join(lines)

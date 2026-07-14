@@ -74,6 +74,7 @@ from app.services.agent.tool_arguments import (
 )
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 from app.services.agent.tool_selection import select_tools_for_turn
+from app.core.tool_markup import extract_dsml_tool_calls
 
 if TYPE_CHECKING:
     from app.services.agent.agent import Agent
@@ -105,8 +106,6 @@ BACKGROUND_JOB_RUNNING_RESPONSE = (
     "\u4f60\u53ef\u4ee5\u7ee7\u7eed\u95ee\u522b\u7684\uff0c"
     "\u4efb\u52a1\u5b8c\u6210\u540e\u6211\u4f1a\u56de\u5230\u5bf9\u5e94\u6765\u6e90\u3002"
 )
-AUTO_TASK_SOURCE = "agent_plan"
-AUTO_TASK_TTL_DAYS = 7
 MAX_AUTO_TASKS = 5
 INTERNAL_QQ_BACKGROUND_JOB_PREFIX = (
     "[Background terminal job result for this QQ conversation]"
@@ -131,6 +130,12 @@ ROBOT_SEND_FOLLOW_UP_RE = re.compile(
 )
 ROBOT_CONTEXT_HISTORY_RE = re.compile(
     r"(?:\[Robot message;|\bQQ\b|QQ群|群里|群号|私聊|转发|发给)",
+    re.IGNORECASE,
+)
+DEFERRED_TASK_RE = re.compile(
+    r"(?:安装|下载|构建|编译|部署|升级|等待|后台|定时|任务|问问|转问|"
+    r"完成后|结束后|成功后|失败后|收到.+后|等.+后|之后再|"
+    r"\b(?:install|download|build|compile|deploy|wait|background|after|when|job)\b)",
     re.IGNORECASE,
 )
 
@@ -175,6 +180,24 @@ def _build_tool_selection_query(
     return f"{current}\nRecent forwarding context:\n{recent_context}"
 
 
+def _is_immediate_web_qq_forward_request(
+    message: str,
+    *,
+    source_type: str,
+    tools: list[dict[str, Any]],
+) -> bool:
+    text = str(message or "").strip()
+    return bool(
+        source_type == SOURCE_WEB
+        and ROBOT_SEND_FOLLOW_UP_RE.search(text)
+        and not DEFERRED_TASK_RE.search(text)
+        and any(
+            tool.get("function", {}).get("name") == ROBOT_SEND_TOOL_NAME
+            for tool in tools
+        )
+    )
+
+
 class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = []
@@ -186,18 +209,9 @@ class ChatStreamRequest(BaseModel):
 
 
 @dataclass
-class PlannedTask:
-    memory_id: str
-    order: int
-
-
-@dataclass
 class PlannedTaskRuntime:
     request_id: str
-    tasks: list[PlannedTask]
-    current_index: int = 0
     tool_started: bool = False
-    tool_finished: bool = False
     reply_ticket_id: str = ""
     workflow_id: str = ""
 
@@ -471,6 +485,20 @@ def _deliver_reply_ticket_final_response(
     return events
 
 
+def _complete_confirmed_external_delivery(ticket_id: str) -> bool:
+    can_finalize, _ = task_workflow_manager.can_finalize(ticket_id)
+    if not can_finalize:
+        return False
+    ticket = reply_ticket_manager.get(ticket_id)
+    if not ticket:
+        return True
+    if ticket.pending_reply_active:
+        return reply_ticket_manager.complete_pending_reply_after_external_delivery(
+            ticket_id
+        )
+    return reply_ticket_manager.mark_delivered(ticket_id)
+
+
 def _run_async_from_sync(coro_factory):
     try:
         asyncio.get_running_loop()
@@ -725,82 +753,6 @@ def _current_task_origin(agent: "Agent") -> dict[str, str]:
     }
 
 
-def _clear_existing_agent_plan_tasks(item_id: str) -> None:
-    try:
-        memories = vector_store.get_all_memories(item_id, memory_type="task")
-    except Exception as exc:
-        logger.warning("[Chat] Failed to load existing task plan memories for item %s: %s", item_id, exc)
-        return
-
-    for memory in memories:
-        metadata = memory.get("metadata") or {}
-        if metadata.get("source") != AUTO_TASK_SOURCE:
-            continue
-        try:
-            vector_store.delete_memory(memory["id"])
-        except Exception as exc:
-            logger.warning("[Chat] Failed to delete stale task plan memory %s: %s", memory.get("id"), exc)
-
-
-def _update_agent_plan_memory(
-    memory_id: str,
-    *,
-    status: str | None = None,
-    task_state: str | None = None,
-) -> None:
-    memory = vector_store.get_memory(memory_id)
-    if not memory:
-        return
-
-    metadata = dict(memory.get("metadata") or {})
-    changed = False
-
-    if status and metadata.get("status") != status:
-        metadata["status"] = status
-        metadata["status_updated_at"] = datetime.now().isoformat()
-        changed = True
-
-    if task_state and metadata.get("task_state") != task_state:
-        metadata["task_state"] = task_state
-        changed = True
-
-    if not changed:
-        return
-
-    metadata["source"] = AUTO_TASK_SOURCE
-    metadata["type"] = AUTO_TASK_SOURCE
-    metadata["verified"] = True
-    metadata["updated_at"] = datetime.now().isoformat()
-
-    try:
-        vector_store.update_memory(
-            memory_id=memory_id,
-            content=str(memory.get("content") or ""),
-            metadata=metadata,
-        )
-    except Exception as exc:
-        logger.warning("[Chat] Failed to update task plan memory %s: %s", memory_id, exc)
-
-
-def _advance_agent_task_plan(plan: PlannedTaskRuntime | None, target_index: int) -> None:
-    if not plan or not plan.tasks:
-        return
-
-    bounded_index = max(0, min(target_index, len(plan.tasks) - 1))
-    if bounded_index == plan.current_index:
-        return
-
-    for index, task in enumerate(plan.tasks):
-        if index < bounded_index:
-            _update_agent_plan_memory(task.memory_id, status="completed", task_state="completed")
-        elif index == bounded_index:
-            _update_agent_plan_memory(task.memory_id, status="active", task_state="running")
-        else:
-            _update_agent_plan_memory(task.memory_id, status="active", task_state="pending")
-
-    plan.current_index = bounded_index
-
-
 def _complete_agent_task_plan(plan: PlannedTaskRuntime | None) -> None:
     if not plan:
         return
@@ -813,8 +765,6 @@ def _complete_agent_task_plan(plan: PlannedTaskRuntime | None) -> None:
     }:
         return
 
-    for task in plan.tasks:
-        _update_agent_plan_memory(task.memory_id, status="completed", task_state="completed")
     if plan.reply_ticket_id:
         reply_ticket_manager.mark_completed(plan.reply_ticket_id)
 
@@ -833,27 +783,6 @@ def _mark_agent_task_plan_failed(
             note=reason,
         )
 
-    if plan.tasks:
-        current_index = max(0, min(plan.current_index, len(plan.tasks) - 1))
-        for index, task in enumerate(plan.tasks):
-            if index < current_index:
-                _update_agent_plan_memory(
-                    task.memory_id,
-                    status="completed",
-                    task_state="completed",
-                )
-            elif index == current_index:
-                _update_agent_plan_memory(
-                    task.memory_id,
-                    status="active",
-                    task_state="failed",
-                )
-            else:
-                _update_agent_plan_memory(
-                    task.memory_id,
-                    status="active",
-                    task_state="pending",
-                )
     if plan.reply_ticket_id:
         reply_ticket_manager.mark_failed(plan.reply_ticket_id, reason)
 
@@ -902,7 +831,6 @@ def _create_agent_task_plan(
         )
         return PlannedTaskRuntime(
             request_id=resumable.workflow_id,
-            tasks=[],
             workflow_id=resumable.workflow_id,
         )
     if not TASK_WORKFLOW_REQUEST_RE.search(message):
@@ -912,34 +840,7 @@ def _create_agent_task_plan(
     if not task_titles:
         return None
 
-    prefers_chinese = _contains_cjk(message)
     request_id = str(uuid4())
-    planned_tasks: list[PlannedTask] = []
-
-    for index, title in enumerate(task_titles, start=1):
-        content = f"{'任务' if prefers_chinese else 'Task'} {index}{'：' if prefers_chinese else ': '} {title}"
-        memory_id = vector_store.add_memory(
-            item_id=item_id,
-            content=content,
-            memory_type="task",
-            metadata={
-                "source": AUTO_TASK_SOURCE,
-                "type": AUTO_TASK_SOURCE,
-                "verified": True,
-                "status": "active",
-                "task_state": "running" if index == 1 else "pending",
-                "task_order": index,
-                "task_title": title,
-                "task_total": len(task_titles),
-                "task_request_id": request_id,
-                "task_origin_type": origin["type"],
-                "task_origin_label": origin["label"],
-                "task_reply_rule": origin["reply_rule"],
-            },
-            ttl_days=AUTO_TASK_TTL_DAYS,
-        )
-        if memory_id:
-            planned_tasks.append(PlannedTask(memory_id=memory_id, order=index))
 
     workflow = task_workflow_manager.create(
         item_id=item_id,
@@ -951,10 +852,15 @@ def _create_agent_task_plan(
         step_titles=task_titles,
         workflow_id=request_id,
     )
+    if reply_ticket is not None:
+        reply_ticket_manager.upsert_pending_reply(
+            reply_ticket.ticket_id,
+            request_summary=message,
+            task_plan=task_titles,
+            status="working",
+        )
     return PlannedTaskRuntime(
         request_id=request_id,
-        tasks=planned_tasks,
-        current_index=0,
         workflow_id=workflow.workflow_id,
     )
 
@@ -1238,6 +1144,11 @@ def generate_stream(
         )
 
     agent_context = getattr(agent, "_context", None)
+    immediate_web_qq_forward = _is_immediate_web_qq_forward_request(
+        message,
+        source_type=normalized_source_type,
+        tools=tools,
+    )
     if agent_context is not None:
         agent_context.robot_backend_target_resolution_enabled = bool(
             normalized_source_type == SOURCE_WEB
@@ -1279,6 +1190,7 @@ def generate_stream(
     final_response = ""
     tool_called_this_turn = False
     delivery_tool_sent_by_integration = False
+    confirmed_external_delivery_to_qq = False
     delivery_retry_used_by_integration: dict[str, bool] = {}
     pending_reply_delivery_retry_used = False
 
@@ -1409,11 +1321,21 @@ def generate_stream(
                     if function_arguments:
                         accumulator["function"]["arguments"] += function_arguments
 
+            iteration_content, dsml_tool_calls = extract_dsml_tool_calls(
+                iteration_content,
+                allowed_tool_names={
+                    str(tool.get("function", {}).get("name") or "").strip()
+                    for tool in tools
+                    if str(tool.get("function", {}).get("name") or "").strip()
+                },
+            )
             ordered_tool_calls = [
                 tool_calls_map[index]
                 for index in sorted(tool_calls_map)
                 if tool_calls_map[index].get("function", {}).get("name")
             ]
+            if not ordered_tool_calls:
+                ordered_tool_calls = dsml_tool_calls
 
             if not ordered_tool_calls:
                 final_response = guard_ungrounded_tool_claim(
@@ -1729,13 +1651,31 @@ def generate_stream(
                         command=str(tool_args.get("command") or ""),
                     )
 
-                result = _run_async_from_sync(
-                    lambda tool_name=tool_name, tool_args=tool_args: agent.execute_tool(
-                        tool_name,
-                        tool_args,
-                    )
+                pending_write_skipped = bool(
+                    immediate_web_qq_forward
+                    and tool_name == "mcp_local_write_pending_reply"
                 )
-                tool_called_this_turn = True
+                if pending_write_skipped:
+                    result = {
+                        "success": True,
+                        "result": [
+                            {
+                                "type": "text",
+                                "text": (
+                                    "Pending reply not created: this is an immediate "
+                                    "one-step QQ forward. Call mcp_robot_send_message directly."
+                                ),
+                            }
+                        ],
+                    }
+                else:
+                    result = _run_async_from_sync(
+                        lambda tool_name=tool_name, tool_args=tool_args: agent.execute_tool(
+                            tool_name,
+                            tool_args,
+                        )
+                    )
+                    tool_called_this_turn = True
                 result_text = _format_tool_result(result)
                 if is_pending_reply_sent_result(result):
                     delivery_tool_sent_by_integration = True
@@ -1747,15 +1687,27 @@ def generate_stream(
                     tool_name,
                     result_text,
                 )
+                complete_pending_after_external_delivery = False
                 if result_text and fallback_is_delivery_result(result_text):
+                    if tool_name == ROBOT_SEND_TOOL_NAME:
+                        confirmed_external_delivery_to_qq = True
                     delivery_is_final, _ = task_workflow_manager.can_finalize(
                         reply_ticket.ticket_id
                     )
                     if delivery_is_final:
                         delivery_tool_sent_by_integration = True
-                        reply_ticket_manager.mark_delivered(
+                        current_ticket = reply_ticket_manager.get(
                             reply_ticket.ticket_id
                         )
+                        complete_pending_after_external_delivery = bool(
+                            tool_name == ROBOT_SEND_TOOL_NAME
+                            and current_ticket
+                            and current_ticket.pending_reply_active
+                        )
+                        if not complete_pending_after_external_delivery:
+                            reply_ticket_manager.mark_delivered(
+                                reply_ticket.ticket_id
+                            )
                     else:
                         task_workflow_manager.update(
                             reply_ticket.ticket_id,
@@ -1773,6 +1725,10 @@ def generate_stream(
                                 "qq_delivery": True,
                             },
                         )
+                        if complete_pending_after_external_delivery:
+                            reply_ticket_manager.complete_pending_reply_after_external_delivery(
+                                reply_ticket.ticket_id
+                            )
                         yield _to_sse(reply_event)
 
                 if result_text and not command_dispatch_pending:
@@ -1844,6 +1800,12 @@ def generate_stream(
                         success=tool_success,
                         result_summary=result_text,
                     )
+
+                if confirmed_external_delivery_to_qq:
+                    if _complete_confirmed_external_delivery(
+                        reply_ticket.ticket_id
+                    ):
+                        delivery_tool_sent_by_integration = True
 
                 if (
                     tool_name in COMMAND_TOOL_NAMES

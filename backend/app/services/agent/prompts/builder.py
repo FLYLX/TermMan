@@ -15,7 +15,7 @@ from app.services.agent.integrations import (
     integration_history_event_matches_scopes,
 )
 from app.services.agent.knowledge.service import knowledge_base_service
-from app.services.agent.memory.vector_store import vector_store
+from app.services.agent.memory.vector_store import MEMORY_TYPES, vector_store
 from app.services.agent.prompts.policy import (
     PromptTurnType,
     resolve_memory_status,
@@ -43,8 +43,6 @@ NON_MODEL_CONTEXT_TYPES = {
 }
 
 TERMINAL_CRITICAL_ALERT_SKILL_ID = "terminal_mcp"
-AUTO_TASK_SOURCE = "agent_plan"
-ACTIVE_TASK_LEDGER_LABEL = "Active task ledger"
 CURRENT_SOURCE_ROUTE_LABEL = "Current source route"
 
 CRITICAL_TERMINAL_PATTERNS = (
@@ -436,6 +434,9 @@ def _collect_long_term_memories(
     n_results: int,
     agent: "Agent | None" = None,
 ) -> str:
+    allowed_types = tuple(
+        memory_type for memory_type in allowed_types if memory_type in MEMORY_TYPES
+    )
     if not allowed_types or n_results <= 0:
         return ""
 
@@ -619,15 +620,15 @@ def _select_long_term_memories(
 
 def _format_long_term_memory(memory: dict[str, Any]) -> str:
     metadata = memory.get("metadata") or {}
-    tags = [_memory_type(memory)]
-    status = resolve_memory_status(memory)
-    if status:
-        tags.append(str(status))
-    if metadata.get("verified") is True:
-        tags.append("verified")
-
     content = str(memory.get("content") or "").strip()
-    return f"- [{', '.join(tags)}] {content}"
+    sender = str(
+        metadata.get("speaker")
+        or metadata.get("speaker_label")
+        or metadata.get("sender")
+        or ""
+    ).strip()
+    prefix = f"{sender}: " if sender and not content.startswith(sender) else ""
+    return f"- {prefix}{content}"
 
 
 def _collect_handler_knowledge(
@@ -744,68 +745,7 @@ def _build_active_task_ledger_context(
         item_id=item_id,
         reply_ticket_id=reply_ticket_id,
     )
-    if workflow_context:
-        return workflow_context
-
-    try:
-        memories = vector_store.get_all_memories(item_id, memory_type="task")
-    except Exception as exc:
-        logger.warning(
-            "[PromptBuilder] Failed to load active task ledger for item=%s: %s",
-            item_id,
-            exc,
-        )
-        return ""
-
-    active_tasks: list[dict[str, Any]] = []
-    for memory in memories:
-        metadata = memory.get("metadata") or {}
-        if metadata.get("source") != AUTO_TASK_SOURCE:
-            continue
-        if not memory.get("content"):
-            continue
-        if _is_memory_expired(memory):
-            continue
-        status = str(resolve_memory_status(memory) or "").lower()
-        task_state = str(metadata.get("task_state") or status or "").lower()
-        if status == "completed" or task_state in {"completed", "cancelled"}:
-            continue
-        active_tasks.append(memory)
-
-    if not active_tasks:
-        return ""
-
-    def sort_key(memory: dict[str, Any]) -> tuple[str, int, float]:
-        metadata = memory.get("metadata") or {}
-        request_id = str(metadata.get("task_request_id") or "")
-        try:
-            order = int(metadata.get("task_order") or 0)
-        except (TypeError, ValueError):
-            order = 0
-        return (request_id, order, -_memory_timestamp(memory))
-
-    active_tasks.sort(key=sort_key)
-    lines = [
-        f"{ACTIVE_TASK_LEDGER_LABEL}:",
-        "This is an authoritative short-term task ledger, not a vague long-term memory.",
-        "Use it to remember unfinished work across turns; do not rely on vector recall for these tasks.",
-    ]
-    for memory in active_tasks[:6]:
-        metadata = memory.get("metadata") or {}
-        title = str(metadata.get("task_title") or memory.get("content") or "").strip()
-        if not title:
-            continue
-        status = str(metadata.get("task_state") or metadata.get("status") or "active")
-        order = metadata.get("task_order") or "?"
-        total = metadata.get("task_total") or "?"
-        origin = str(metadata.get("task_origin_label") or "").strip()
-        route_note = f" origin={origin}" if origin else ""
-        lines.append(f"- [{status}] {order}/{total}: {title}{route_note}")
-    lines.append(
-        "Rules: finish or update the active task before declaring it done; when a task "
-        "was started from QQ/server/web, report completion back to that same source route."
-    )
-    return "\n".join(lines)
+    return workflow_context or ""
 
 def _dedupe_adjacent_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
     deduped: list[dict[str, str]] = []

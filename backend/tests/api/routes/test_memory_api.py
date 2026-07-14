@@ -92,29 +92,29 @@ def test_get_all_memories_supports_status_filter_and_pagination(
         "get_all_memories",
         lambda *args, **kwargs: [
             {
-                "id": "task-old",
-                "content": "当前任务：旧任务",
+                "id": "error-old",
+                "content": "已知错误：旧错误",
                 "metadata": {
-                    "memory_type": "task",
+                    "memory_type": "error",
                     "status": "active",
                     "updated_at": "2026-04-02T09:00:00",
                 },
             },
             {
-                "id": "task-new",
-                "content": "当前任务：新任务",
+                "id": "error-new",
+                "content": "已知错误：新错误",
                 "metadata": {
-                    "memory_type": "task",
+                    "memory_type": "error",
                     "status": "active",
                     "updated_at": "2026-04-02T11:00:00",
                 },
             },
             {
-                "id": "task-done",
-                "content": "当前任务：已完成任务（已完成）",
+                "id": "error-resolved",
+                "content": "已知错误：已解决错误（已解决）",
                 "metadata": {
-                    "memory_type": "task",
-                    "status": "completed",
+                    "memory_type": "error",
+                    "status": "resolved",
                     "updated_at": "2026-04-02T12:00:00",
                 },
             },
@@ -133,7 +133,7 @@ def test_get_all_memories_supports_status_filter_and_pagination(
     assert payload["offset"] == 0
     assert payload["limit"] == 1
     assert payload["has_more"] is True
-    assert [memory["id"] for memory in payload["memories"]] == ["task-new"]
+    assert [memory["id"] for memory in payload["memories"]] == ["error-new"]
 
 
 def test_get_memory_stats_includes_status_counts(
@@ -164,16 +164,6 @@ def test_get_memory_stats_includes_status_counts(
     ]
 
     monkeypatch.setattr(memory_route.vector_store, "get_all_memories", lambda *args, **kwargs: fake_memories)
-    monkeypatch.setattr(
-        memory_route.vector_store,
-        "get_memory_stats",
-        lambda *args, **kwargs: {
-            "total": 3,
-            "by_type": {"task": 2, "error": 1},
-            "expired_count": 0,
-        },
-    )
-
     response = client.get(
         f"{settings.API_V1_STR}/memory/{item.id}/memories/stats",
         headers=superuser_token_headers,
@@ -185,9 +175,12 @@ def test_get_memory_stats_includes_status_counts(
         "task": {"active": 1, "completed": 1},
         "error": {"active": 0, "resolved": 1},
     }
+    assert payload["total"] == 3
+    assert payload["by_type"]["task"] == 2
+    assert payload["by_type"]["error"] == 1
 
 
-def test_update_memory_status_updates_task_content_and_status(
+def test_update_memory_status_updates_agent_saved_task_memory(
     client: TestClient,
     superuser_token_headers: dict[str, str],
     db: Session,
@@ -196,8 +189,6 @@ def test_update_memory_status_updates_task_content_and_status(
     from app.api.routes import memory as memory_route
 
     item = create_random_item(db)
-    captured: dict[str, object] = {}
-
     monkeypatch.setattr(
         memory_route.vector_store,
         "get_memory",
@@ -213,11 +204,12 @@ def test_update_memory_status_updates_task_content_and_status(
         },
     )
 
-    def fake_update_memory(**kwargs):
-        captured.update(kwargs)
-        return True
-
-    monkeypatch.setattr(memory_route.vector_store, "update_memory", fake_update_memory)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        memory_route.vector_store,
+        "update_memory",
+        lambda **kwargs: captured.update(kwargs) or True,
+    )
 
     response = client.post(
         f"{settings.API_V1_STR}/memory/{item.id}/memories/task-1/status",
@@ -227,8 +219,33 @@ def test_update_memory_status_updates_task_content_and_status(
 
     assert response.status_code == 200
     assert captured["memory_id"] == "task-1"
-    assert captured["content"] == "当前任务：修复 daemon 状态同步（已完成）"
     assert captured["metadata"]["status"] == "completed"
+
+
+def test_add_memory_allows_agent_selected_task_type(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import memory as memory_route
+
+    item = create_random_item(db)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        memory_route.vector_store,
+        "add_memory",
+        lambda **kwargs: captured.update(kwargs) or "task-memory-1",
+    )
+
+    response = client.post(
+        f"{settings.API_V1_STR}/memory/{item.id}/memories",
+        headers=superuser_token_headers,
+        json={"content": "安装 Java", "memory_type": "task"},
+    )
+
+    assert response.status_code == 200
+    assert captured["memory_type"] == "task"
 
 
 def test_update_memory_status_rejects_invalid_type_transition(

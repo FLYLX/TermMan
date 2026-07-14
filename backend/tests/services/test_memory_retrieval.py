@@ -249,11 +249,34 @@ def test_prompt_long_term_memory_recall_ranks_and_formats(monkeypatch) -> None:
         n_results=3,
     )
 
-    assert "[task, active]" in memories
-    assert "[preference, verified]" in memories
-    assert "Robot bridge 通过 OneBot V11 WebSocket 接入 NapCat" in memories
+    assert "- 当前任务：修复 robot bridge 卡顿" in memories
+    assert "- 用户偏好：以后回复简洁中文" in memories
+    assert "- Robot bridge 通过 OneBot V11 WebSocket 接入 NapCat" in memories
     assert "旧任务" not in memories
     assert "旧错误" not in memories
+    assert "verified" not in memories
+
+
+def test_long_term_memory_prompt_keeps_sender_and_content_only() -> None:
+    formatted = prompt_builder._format_long_term_memory(
+        {
+            "id": "internal-memory-id",
+            "content": '问"你怎么看的"是在问查看方法，不是在问观点',
+            "metadata": {
+                "memory_type": "preference",
+                "speaker": "Ac国常务腐管理（2537134688）",
+                "created_at": "2026-07-06T12:04:24.279188",
+                "expires_at": "2026-08-05T12:04:24.279188",
+                "imported_from_memory_id": "legacy-memory-id",
+            },
+        }
+    )
+
+    assert formatted == (
+        '- Ac国常务腐管理（2537134688）: 问"你怎么看的"是在问查看方法，不是在问观点'
+    )
+    assert "2026-" not in formatted
+    assert "memory-id" not in formatted
 
 
 def test_preference_memories_are_always_included_without_query_match(monkeypatch) -> None:

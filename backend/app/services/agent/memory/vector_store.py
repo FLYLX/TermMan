@@ -543,7 +543,7 @@ class VectorStoreService:
         all_memories = self.get_all_memories(item_id)
 
         stats = {
-            "total": len(all_memories),
+            "total": 0,
             "by_type": {},
             "expired_count": 0,
         }
@@ -552,6 +552,9 @@ class VectorStoreService:
         for memory in all_memories:
             meta = memory.get("metadata", {})
             m_type = meta.get("memory_type", "fact")
+            if m_type not in MEMORY_TYPES:
+                continue
+            stats["total"] += 1
             stats["by_type"][m_type] = stats["by_type"].get(m_type, 0) + 1
 
             expires_at = meta.get("expires_at")

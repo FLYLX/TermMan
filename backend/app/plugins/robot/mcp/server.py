@@ -273,7 +273,10 @@ class RobotMCPServer:
                 "when the live QQ message contains an explicit remember request, "
                 "stable names/nicknames, bot identity/name rules, durable user "
                 "preferences, relationships, ongoing tasks, reusable facts, or "
-                "recurring group context. Do not save trivial chat, images, short "
+                "recurring group context. Active execution state is tracked in the "
+                "task queue, but task-related information may still be saved when "
+                "it is genuinely worth remembering long term. Do not save trivial "
+                "chat, images, short "
                 "reactions, temporary chatter, raw logs, or sensitive secrets."
             ),
             input_schema={
@@ -1483,30 +1486,20 @@ class RobotMCPServer:
                 }
             ]
 
-        lines = [
-            "TermMan long-term memory "
-            f"({len(selected)} result(s)"
-        ]
-        if conversation_key:
-            lines[0] += f", current QQ {conversation_key}"
-        lines[0] += "):"
+        lines = ["Relevant long-term memory:"]
         for memory in selected:
             metadata = memory.get("metadata") or {}
-            tags = [str(metadata.get("memory_type") or "fact")]
-            status = str(metadata.get("status") or "").strip()
-            if status:
-                tags.append(status)
-            if metadata.get("verified") is True:
-                tags.append("verified")
-            memory_conversation_key = self._memory_conversation_key(memory)
-            if memory_conversation_key:
-                tags.append(memory_conversation_key)
             content = sanitize_robot_visible_text(str(memory.get("content") or "")).strip()
             if not content:
                 continue
-            lines.append(
-                f"- [{', '.join(tags)}{self._memory_similarity_label(memory)}] {content}"
-            )
+            sender = str(
+                metadata.get("speaker")
+                or metadata.get("speaker_label")
+                or metadata.get("sender")
+                or ""
+            ).strip()
+            prefix = f"{sender}: " if sender and not content.startswith(sender) else ""
+            lines.append(f"- {prefix}{content}")
         return [{"type": "text", "text": "\n".join(lines)}]
 
     def _read_conversation_memory(self, args: dict) -> list[dict[str, str]]:

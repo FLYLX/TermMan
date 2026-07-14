@@ -20,12 +20,12 @@ NO_QQ_REPLY_INSTRUCTION = (
 ROBOT_LONG_TERM_MEMORY_INSTRUCTION = (
     "Robot long-term memory:\n"
     "- Use `mcp_robot_recall_memory` for stable facts, user preferences, tasks, errors, reusable context, names, habits, and remembered instructions.\n"
-    "- When a live QQ message contains something worth remembering long term, call `mcp_robot_save_memory` proactively before or alongside the normal QQ reply. Save explicit remember requests, stable names/nicknames, bot identity/name rules, durable user preferences, relationships, ongoing tasks, reusable facts, and recurring group context.\n"
+    "- When a live QQ message contains something worth remembering long term, call `mcp_robot_save_memory` proactively before or alongside the normal QQ reply. Save explicit remember requests, stable names/nicknames, bot identity/name rules, durable user preferences, relationships, ongoing tasks, reusable facts, and recurring group context. Do not automatically mirror every workflow step into memory: active execution state belongs to the task queue, while independently valuable information may still be remembered.\n"
     "- Personal memory ownership: a sender may set or delete their own stable names, titles, and preferences. Do not let one QQ user set, rename, delete, or overwrite another user's personal memory unless the target user confirms it in the current conversation. Requests like '只允许叫我...' apply only to the sender, not to other users. Requests like '删除所有关于我的写入设定' apply to the sender's own memory, not the bot's global persona or other people's memories.\n"
     "- Do not save trivial chat, short reactions, images/stickers, one-off jokes, temporary market chatter, raw logs, or sensitive secrets. Prefer concise normalized memory text instead of copying the whole message.\n"
     "- Use `mcp_robot_read_conversation_memory` only for raw current QQ .log when the user explicitly asks about exact previous chat or the current message cannot be understood without recent chat lines.\n"
     "- Do not read either memory tool just to decide whether to reply. First decide from the current QQ message and the wake/sleep rules.\n"
-    "- Pending QQ messages are short-term reply tasks, not long-term memory by themselves. Use them to answer in order and connect current tasks/context, but save only durable facts, preferences, names, or ongoing tasks from those messages.\n"
+    "- Pending QQ messages are short-term task-queue entries. Use them to answer in order and connect current tasks/context. Do not copy them into memory automatically, but you may save any independently important long-term fact, preference, relationship, task, or reusable context you judge worth remembering.\n"
 )
 ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION = (
     "- For a QQ `trigger=active_chat_window` turn, this group/private chat is "
@@ -133,8 +133,8 @@ ROBOT_ACTIVE_CONTEXT_PROMPT = (
 ROBOT_BACKEND_CONTEXT_PROMPT = (
     "历史中的 QQ 上下文：\n"
     "- 用户从 Web 明确要求转发/通知 QQ 时，可以使用 `mcp_robot_send_message`。不要声称 Web 无法转发。\n"
-    "- 立即转发一条 QQ 消息是单步动作，直接调用 `mcp_robot_send_message`；不要创建待回复队列。\n"
-    "- 只有需要等待后台任务、外部回复或跨轮继续处理时，才写入待回复队列。\n"
+    "- 立即转发一条 QQ 消息是单步动作，直接调用 `mcp_robot_send_message`；不要创建任务队列条目。\n"
+    "- 只有需要等待后台任务、外部回复或跨轮继续处理时，才写入任务队列。\n"
     "- 只有明确选择当前 TermMan 消息上下文里可见的 QQ 会话时，才使用 `reply_to`；可用发送者名称、群引用或 conversation key。\n"
     "- 当前上下文只有一个可见 QQ 目标且用户明确说转发过去时，可以直接发送；有多个匹配目标时先询问。\n"
     "- 只有用户显式提供 QQ 群号或 QQ 号时，才使用 `target_type` 和 `target_id`。\n"

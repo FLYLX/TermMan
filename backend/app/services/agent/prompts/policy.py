@@ -648,7 +648,7 @@ def _auto_memory_base_score(payload: str) -> tuple[str, float] | None:
     if _contains_any(normalized, AUTO_PREFERENCE_CUES):
         memory_type = "preference"
         score = max(score, 0.80)
-    if _contains_any(normalized, AUTO_TASK_CUES):
+    if _contains_any(normalized, AUTO_TASK_CUES) and score < 0.74:
         memory_type = "task"
         score = max(score, 0.72)
     if _contains_any(normalized, AUTO_ERROR_CUES):
@@ -961,7 +961,6 @@ def build_conversation_memory_candidate(
     if _is_generic_memory_payload(payload):
         logger.debug("[MemoryPolicy] Skip explicit memory candidate: generic payload")
         return None
-
     memory_type = infer_explicit_memory_type(user_message)
     content = _build_memory_content(payload, memory_type)
     if should_reject_long_term_memory(content):
@@ -1128,7 +1127,6 @@ def persist_memory_candidate(
 ) -> str | None:
     if candidate is None:
         return None
-
     content_hash = candidate.metadata.get("content_hash")
     try:
         existing_memories = store.get_all_memories(item_id, memory_type=candidate.memory_type)

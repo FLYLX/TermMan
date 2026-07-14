@@ -314,7 +314,7 @@ def test_pending_reply_mcp_tools_manage_current_reply_ticket() -> None:
         task_workflow_manager.reset()
 
 
-def test_delegated_question_creates_queue_only_after_agent_requests_it(
+def test_delegated_question_enters_task_queue_with_workflow(
     monkeypatch,
 ) -> None:
     from app.api.routes import chat as chat_route
@@ -355,27 +355,68 @@ def test_delegated_question_creates_queue_only_after_agent_requests_it(
         )
 
         assert runtime is not None
-        assert reply_ticket_manager.list_pending_replies("item-1") == []
-        server = LocalMCPServer()
-        result = server.call_tool(
-            "write_pending_reply",
-            {
-                "item_id": "item-1",
-                "_reply_ticket_id": ticket.ticket_id,
-                "request_summary": "你问问汉堡猪要玩到几点",
-                "task_plan": ["Ask player", "Wait for response", "Report result"],
-                "status": "working",
-            },
-        )
-        assert result[0]["text"].startswith("Pending reply saved:")
         entry = reply_ticket_manager.list_pending_replies("item-1")[0]
         assert entry["id"] == ticket.ticket_id
+        assert entry["request_summary"] == "你问问汉堡猪要玩到几点"
         assert entry["task_plan"] == [
             "Ask player",
             "Wait for response",
             "Report result",
         ]
         assert task_workflow_manager.get_by_ticket(ticket.ticket_id) is not None
+    finally:
+        reply_ticket_manager.reset()
+        task_workflow_manager.reset()
+
+
+def test_confirmed_external_delivery_removes_pending_after_workflow_finishes() -> None:
+    from app.api.routes.chat import _complete_confirmed_external_delivery
+
+    reply_ticket_manager.reset()
+    task_workflow_manager.reset()
+    agent = _agent()
+    ticket = reply_ticket_manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="发群里说个你好",
+        source_type="web",
+    )
+    reply_ticket_manager.upsert_pending_reply(
+        ticket.ticket_id,
+        request_summary="发群里说个你好",
+        task_plan=["发送消息", "确认发送"],
+        status="working",
+    )
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id=ticket.ticket_id,
+        objective="发群里说个你好",
+        source_type="web",
+        source_label="TermMan web chat",
+        step_titles=["发送消息", "确认发送"],
+    )
+
+    try:
+        assert _complete_confirmed_external_delivery(ticket.ticket_id) is False
+        assert reply_ticket_manager.list_pending_replies("item-1")
+
+        task_workflow_manager.update(
+            ticket.ticket_id,
+            action="complete_current_step",
+            note="QQ send succeeded",
+        )
+        task_workflow_manager.update(
+            ticket.ticket_id,
+            action="complete_current_step",
+            note="Send result confirmed",
+        )
+
+        assert _complete_confirmed_external_delivery(ticket.ticket_id) is True
+        assert reply_ticket_manager.get(ticket.ticket_id) is None
+        assert reply_ticket_manager.list_pending_replies("item-1") == []
+        assert task_workflow_manager.get(workflow.workflow_id).status == "completed"
     finally:
         reply_ticket_manager.reset()
         task_workflow_manager.reset()

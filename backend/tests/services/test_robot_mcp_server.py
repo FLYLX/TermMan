@@ -246,6 +246,38 @@ def test_robot_mcp_send_message_blocks_internal_tool_trace(monkeypatch) -> None:
     assert sent == []
 
 
+def test_robot_mcp_send_message_blocks_dsml_tool_trace(monkeypatch) -> None:
+    server = RobotMCPServer()
+    sent: list[str] = []
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        lambda _robot_id, _reply_target, text: sent.append(text),
+    )
+
+    result = server.call_tool(
+        "send_message",
+        {
+            "text": (
+                '<｜｜DSML｜｜tool_calls>\n'
+                '<｜｜DSML｜｜invoke name="mcp_local_update_task_workflow">\n'
+                '<｜｜DSML｜｜parameter name="action" string="true">'
+                'complete_current_step</｜｜DSML｜｜parameter>\n'
+                '</｜｜DSML｜｜invoke>\n'
+                '</｜｜DSML｜｜tool_calls>'
+            ),
+            "target_type": "group",
+            "target_id": "123456",
+            "_termman_user_id": "user-1",
+        },
+    )
+
+    assert result == [
+        {"type": "text", "text": "No QQ message sent: internal tool trace."}
+    ]
+    assert sent == []
+
+
 def test_robot_mcp_send_message_sanitizes_mixed_internal_trace(
     monkeypatch,
 ) -> None:
@@ -870,13 +902,14 @@ def test_robot_mcp_recalls_long_term_memory_scoped_to_active_context(monkeypatch
     assert calls[0]["query"] == "nickname"
     assert calls[0]["n_results"] == 18
     text = result[0]["text"]
-    assert "current QQ group:current-group" in text
     assert "nickname is XiaoChai" in text
     assert "call this QQ user Master" in text
     assert "general robot preference" in text
     assert "other group secret" not in text
     assert "call another user Boss" not in text
     assert "other robot memory" not in text
+    assert "verified" not in text
+    assert "group:current-group" not in text
     assert text.index("nickname is XiaoChai") < text.index("call this QQ user Master")
     assert text.index("call this QQ user Master") < text.index("general robot preference")
 
@@ -1059,6 +1092,13 @@ def test_robot_mcp_save_memory_persists_scoped_long_term_memory(monkeypatch) -> 
     assert metadata["speaker_global_key"] == "onebot_v11:user:user-1"
     assert metadata["memory_scope"] == "robot"
     assert metadata["content_hash"]
+
+
+def test_robot_mcp_save_memory_exposes_agent_selected_task_type() -> None:
+    server = RobotMCPServer()
+    save_tool = next(tool for tool in server.list_tools() if tool["name"] == "save_memory")
+
+    assert "task" in save_tool["inputSchema"]["properties"]["memory_type"]["enum"]
 
 
 def test_robot_mcp_reads_registered_context_conversation_memory(

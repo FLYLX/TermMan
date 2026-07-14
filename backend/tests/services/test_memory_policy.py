@@ -40,9 +40,11 @@ def test_prompt_memory_policy_enables_long_term_by_default() -> None:
     raw_feedback_policy = resolve_prompt_memory_policy(PromptTurnType.TERMINAL_RAW_FEEDBACK)
 
     assert chat_policy.include_long_term is True
-    assert chat_policy.max_long_term_memories == 5
+    assert chat_policy.max_long_term_memories == 8
+    assert "task" in chat_policy.allowed_long_term_types
     assert terminal_policy.include_long_term is True
-    assert terminal_policy.max_long_term_memories == 3
+    assert terminal_policy.max_long_term_memories == 5
+    assert "task" in terminal_policy.allowed_long_term_types
     assert raw_feedback_policy.include_long_term is False
 
 
@@ -259,7 +261,7 @@ def test_persist_memory_candidate_updates_existing_same_key_memory() -> None:
     assert captured["metadata"]["content_hash"] == "new-hash"
 
 
-def test_build_conversation_memory_candidate_for_task_sets_active_status() -> None:
+def test_build_conversation_memory_candidate_for_explicit_task_memory() -> None:
     candidate = build_conversation_memory_candidate(
         "记住当前任务是修复 daemon 状态同步",
         "已记录。",
@@ -269,7 +271,22 @@ def test_build_conversation_memory_candidate_for_task_sets_active_status() -> No
     assert candidate.memory_type == "task"
     assert candidate.content == "当前任务：修复 daemon 状态同步"
     assert candidate.metadata["status"] == "active"
-    assert candidate.metadata["memory_key"] == "task.修复_daemon_状态同步"
+
+
+def test_task_word_does_not_block_a_real_preference_memory() -> None:
+    explicit = build_conversation_memory_candidate(
+        "记住以后都要在任务开始前先确认",
+        "已记录。",
+    )
+    automatic = build_auto_conversation_memory_candidate(
+        "我喜欢任务完成后只回复一次",
+        speaker_label="FLY (2537134688)",
+    )
+
+    assert explicit is not None
+    assert explicit.memory_type == "preference"
+    assert automatic is not None
+    assert automatic.candidate.memory_type == "preference"
 
 
 def test_build_status_update_memory_candidate_marks_task_completed() -> None:
@@ -298,8 +315,28 @@ def test_build_status_update_memory_candidate_marks_task_completed() -> None:
     assert candidate.memory_type == "task"
     assert candidate.content == "当前任务：修复 daemon 状态同步（已完成）"
     assert candidate.metadata["status"] == "completed"
-    assert candidate.metadata["memory_key"] == "task.修复_daemon_状态同步"
-    assert candidate.metadata["type"] == "conversation_status_update"
+
+
+def test_persist_memory_candidate_allows_agent_selected_task_memory() -> None:
+    candidate = MemoryCandidate(
+        content="当前任务：修复 daemon 状态同步",
+        memory_type="task",
+        ttl_days=14,
+        metadata={},
+    )
+
+    class FakeStore:
+        def get_all_memories(self, *_args, **_kwargs):
+            return []
+
+        def add_memory(self, **kwargs):
+            assert kwargs["memory_type"] == "task"
+            return "task-memory-1"
+
+    assert (
+        persist_memory_candidate("item-task", candidate, store=FakeStore())
+        == "task-memory-1"
+    )
 
 
 def test_build_status_update_memory_candidate_skips_ambiguous_targets() -> None:

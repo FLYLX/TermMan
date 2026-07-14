@@ -186,7 +186,11 @@ export class MemoryService {
   public static deleteInstalledSoftware(
     itemId: string,
     request: InstalledSoftwareDeleteRequest,
-  ): CancelablePromise<{ message: string; count: number; removed: InstalledSoftwareItem[] }> {
+  ): CancelablePromise<{
+    message: string
+    count: number
+    removed: InstalledSoftwareItem[]
+  }> {
     return __request(OpenAPI, {
       method: "DELETE",
       url: "/api/v1/memory/{item_id}/installed-software",

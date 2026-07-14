@@ -190,6 +190,27 @@ def test_short_send_follow_up_inherits_recent_qq_tool_context() -> None:
     assert chat_route._build_tool_selection_query("现在呢", history) == "现在呢"
 
 
+def test_immediate_qq_forward_does_not_need_pending_reply() -> None:
+    from app.api.routes import chat as chat_route
+
+    tools = [
+        {
+            "type": "function",
+            "function": {"name": "mcp_robot_send_message"},
+        }
+    ]
+    assert chat_route._is_immediate_web_qq_forward_request(
+        "发群里说个你好",
+        source_type="web",
+        tools=tools,
+    )
+    assert not chat_route._is_immediate_web_qq_forward_request(
+        "Java 安装完成后发群里说装好了",
+        source_type="web",
+        tools=tools,
+    )
+
+
 def test_web_chat_keeps_visible_qq_targets_without_active_qq_context() -> None:
     from app.plugins.robot.agent.integration import RobotAgentIntegration
 
@@ -241,13 +262,23 @@ def test_generate_stream_allows_short_web_forward_follow_up_to_visible_qq_target
     monkeypatch,
 ) -> None:
     from app.api.routes import chat as chat_route
+    from app.services.agent.reply_ticket import reply_ticket_manager
 
     item, handler = _create_linked_item_and_handler(db)
     tool_name = "mcp_robot_send_message"
+    pending_tool_name = "mcp_local_write_pending_reply"
     completion_calls = {"value": 0}
     executed: list[dict] = []
     fake_agent = _make_fake_agent(
         tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": pending_tool_name,
+                    "description": "Write a pending reply",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
             {
                 "type": "function",
                 "function": {
@@ -274,6 +305,42 @@ def test_generate_stream_allows_short_web_forward_follow_up_to_visible_qq_target
     def fake_completion(**_kwargs):
         completion_calls["value"] += 1
         if completion_calls["value"] == 1:
+            return iter(
+                [
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(
+                                    content="",
+                                    tool_calls=[
+                                        SimpleNamespace(
+                                            index=0,
+                                            id="call_pending",
+                                            function=SimpleNamespace(
+                                                name=pending_tool_name,
+                                                arguments=json.dumps(
+                                                    {
+                                                        "status": "working",
+                                                        "request_summary": "发群里说个你好",
+                                                        "task_plan": [
+                                                            "写入待回复队列",
+                                                            "发送消息到QQ群",
+                                                            "确认发送成功",
+                                                        ],
+                                                    },
+                                                    ensure_ascii=False,
+                                                ),
+                                            ),
+                                        )
+                                    ],
+                                ),
+                                finish_reason=None,
+                            )
+                        ]
+                    )
+                ]
+            )
+        if completion_calls["value"] == 2:
             return iter(
                 [
                     SimpleNamespace(
@@ -337,34 +404,39 @@ def test_generate_stream_allows_short_web_forward_follow_up_to_visible_qq_target
     )
     monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
 
-    chunks = list(
-        chat_route.generate_stream(
-            message="发你好",
-            history=[
-                chat_route.ChatMessage(
-                    role="user",
-                    content="帮我往群里的 baka 发一条消息",
-                ),
-                chat_route.ChatMessage(
-                    role="assistant",
-                    content="你想发什么内容？",
-                ),
-            ],
-            handler=handler,
-            item_id=str(item.id),
-            agent=fake_agent,
-            source_type="web",
+    reply_ticket_manager.reset()
+    try:
+        chunks = list(
+            chat_route.generate_stream(
+                message="发你好",
+                history=[
+                    chat_route.ChatMessage(
+                        role="user",
+                        content="帮我往群里的 baka 发一条消息",
+                    ),
+                    chat_route.ChatMessage(
+                        role="assistant",
+                        content="你想发什么内容？",
+                    ),
+                ],
+                handler=handler,
+                item_id=str(item.id),
+                agent=fake_agent,
+                source_type="web",
+            )
         )
-    )
-    payloads = _sse_payloads(chunks)
+        payloads = _sse_payloads(chunks)
 
-    assert completion_calls["value"] == 2
-    assert len(executed) == 1
-    assert executed[0]["reply_to"] == "baka"
-    assert executed[0]["text"] == "你好"
-    assert any(event.get("type") == "agent_qq_reply" for event in payloads)
-    assert not any(event.get("type") == "agent_warning" for event in payloads)
-    assert not any(event.get("type") == "agent_response" for event in payloads)
+        assert completion_calls["value"] == 3
+        assert len(executed) == 1
+        assert executed[0]["reply_to"] == "baka"
+        assert executed[0]["text"] == "你好"
+        assert reply_ticket_manager.list_pending_replies(str(item.id)) == []
+        assert any(event.get("type") == "agent_qq_reply" for event in payloads)
+        assert not any(event.get("type") == "agent_warning" for event in payloads)
+        assert not any(event.get("type") == "agent_response" for event in payloads)
+    finally:
+        reply_ticket_manager.reset()
 
 
 def test_generate_stream_replaces_fabricated_tool_transcript_when_no_tool_ran(
@@ -429,6 +501,100 @@ def test_generate_stream_replaces_fabricated_tool_transcript_when_no_tool_ran(
     assert not any("mcp_local_append_pending_reply" in chunk for chunk in chunks)
     assert not any("mcp_robot_send_group_message" in chunk for chunk in chunks)
     assert not any("发送成功" in chunk for chunk in chunks)
+
+
+def test_generate_stream_executes_dsml_tool_call_without_exposing_markup(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+
+    item, handler = _create_linked_item_and_handler(db)
+    tool_name = "mcp_local_update_task_workflow"
+    completion_calls = {"value": 0}
+    executed: list[dict] = []
+    fake_agent = _make_fake_agent(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": "Update workflow progress",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        execute_tool_result=lambda _name, args: (
+            executed.append(dict(args))
+            or {
+                "success": True,
+                "result": [{"type": "text", "text": "progress recorded"}],
+            }
+        ),
+    )
+
+    def fake_completion(**_kwargs):
+        completion_calls["value"] += 1
+        content = (
+            '<｜｜DSML｜｜tool_calls>\n'
+            f'<｜｜DSML｜｜invoke name="{tool_name}">\n'
+            '<｜｜DSML｜｜parameter name="action" string="true">'
+            'complete_current_step</｜｜DSML｜｜parameter>\n'
+            '<｜｜DSML｜｜parameter name="note" string="true">'
+            '结果检查完成，无需QQ回复</｜｜DSML｜｜parameter>\n'
+            '</｜｜DSML｜｜invoke>\n'
+            '</｜｜DSML｜｜tool_calls>'
+            if completion_calls["value"] == 1
+            else "处理完成"
+        )
+        return iter(
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(content=content, tool_calls=None),
+                            finish_reason="stop",
+                        )
+                    ]
+                )
+            ]
+        )
+
+    monkeypatch.setattr(chat_route, "completion", fake_completion)
+    monkeypatch.setattr(
+        chat_route,
+        "select_tools_for_turn",
+        lambda available_tools, **_kwargs: available_tools,
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "build_chat_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "更新任务状态"}],
+    )
+    monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
+
+    chunks = list(
+        chat_route.generate_stream(
+            message="更新任务状态",
+            history=[],
+            handler=handler,
+            item_id=str(item.id),
+            agent=fake_agent,
+        )
+    )
+    payloads = _sse_payloads(chunks)
+
+    assert completion_calls["value"] == 2
+    assert len(executed) == 1
+    assert executed[0]["action"] == "complete_current_step"
+    assert executed[0]["note"] == "结果检查完成，无需QQ回复"
+    assert executed[0]["item_id"] == str(item.id)
+    assert any(
+        payload.get("type") == "agent_response"
+        and payload.get("content") == "处理完成"
+        for payload in payloads
+    )
+    assert not any("DSML" in chunk for chunk in chunks)
 
 
 def test_generate_stream_reports_instead_of_exposing_tool_loop_warning(
@@ -2229,7 +2395,7 @@ def test_stream_chat_confirmation_persists_previous_assistant_fact(
     assert captured_memory["metadata"]["memory_key"] == "fact.cron_job.py"
 
 
-def test_stream_chat_task_resolution_updates_existing_memory(
+def test_stream_chat_can_update_agent_selected_task_memory(
     client: TestClient,
     superuser_token_headers: dict[str, str],
     db: Session,
@@ -2240,7 +2406,6 @@ def test_stream_chat_task_resolution_updates_existing_memory(
     item, _ = _create_linked_item_and_handler(db)
     fake_agent = _make_fake_agent()
     captured_update: dict[str, object] = {}
-
     monkeypatch.setattr(chat_route.agent_manager, "get_or_create", lambda _: fake_agent)
     monkeypatch.setattr(chat_route, "completion", _fake_stream_completion)
 
@@ -2265,12 +2430,16 @@ def test_stream_chat_task_resolution_updates_existing_memory(
         captured_update.update(kwargs)
         return True
 
-    monkeypatch.setattr(chat_route.vector_store, "update_memory", fake_update_memory)
+    monkeypatch.setattr(
+        chat_route.vector_store,
+        "update_memory",
+        fake_update_memory,
+    )
     monkeypatch.setattr(
         chat_route.vector_store,
         "add_memory",
         lambda **kwargs: (_ for _ in ()).throw(
-            AssertionError("task resolution should update existing memory instead of add")
+            AssertionError("task state must not write long-term memory")
         ),
     )
 
@@ -2284,17 +2453,12 @@ def test_stream_chat_task_resolution_updates_existing_memory(
         list(response.iter_text())
 
     assert captured_update["memory_id"] == "task-1"
-    assert captured_update["content"] == "当前任务：修复 daemon 状态同步（已完成）"
     assert captured_update["metadata"]["status"] == "completed"
-    assert captured_update["metadata"]["type"] == "conversation_status_update"
-    assert captured_update["metadata"]["memory_key"] == "task.修复_daemon_状态同步"
-
 
 def test_agent_task_plan_records_reply_origin(monkeypatch) -> None:
     from app.api.routes import chat as chat_route
     from app.services.agent.task_workflow import task_workflow_manager
 
-    captured: list[dict[str, object]] = []
     handler = SimpleNamespace(id="handler-1")
     agent = SimpleNamespace(
         _context=SimpleNamespace(
@@ -2311,11 +2475,13 @@ def test_agent_task_plan_records_reply_origin(monkeypatch) -> None:
         lambda handler, message, history: ["install Java", "report result"],
     )
 
-    def fake_add_memory(**kwargs):
-        captured.append(kwargs)
-        return f"task-{len(captured)}"
-
-    monkeypatch.setattr(chat_route.vector_store, "add_memory", fake_add_memory)
+    monkeypatch.setattr(
+        chat_route.vector_store,
+        "add_memory",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("task plans must not be stored as long-term memory")
+        ),
+    )
 
     plan = chat_route._create_agent_task_plan(
         "item-1",
@@ -2327,12 +2493,6 @@ def test_agent_task_plan_records_reply_origin(monkeypatch) -> None:
     )
 
     assert plan is not None
-    assert len(captured) == 2
-    assert captured[0]["metadata"]["task_origin_type"] == "qq"
-    assert captured[0]["metadata"]["task_origin_label"] == "QQ group:770362397"
-    assert captured[0]["metadata"]["task_reply_rule"] == (
-        "reply through the locked current QQ robot context"
-    )
     workflow = task_workflow_manager.get(plan.workflow_id)
     assert workflow is not None
     assert workflow.objective == "install Java"
@@ -2340,7 +2500,7 @@ def test_agent_task_plan_records_reply_origin(monkeypatch) -> None:
     task_workflow_manager.reset()
 
 
-def test_agent_task_plan_does_not_auto_create_pending_reply(monkeypatch) -> None:
+def test_agent_task_plan_creates_task_queue_entry(monkeypatch) -> None:
     from app.api.routes import chat as chat_route
     from app.services.agent.reply_ticket import reply_ticket_manager
     from app.services.agent.task_workflow import task_workflow_manager
@@ -2376,7 +2536,9 @@ def test_agent_task_plan_does_not_auto_create_pending_reply(monkeypatch) -> None
     monkeypatch.setattr(
         chat_route.vector_store,
         "add_memory",
-        lambda **kwargs: f"task-{kwargs['metadata']['task_order']}",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("task plans must not be stored as long-term memory")
+        ),
     )
 
     try:
@@ -2390,8 +2552,12 @@ def test_agent_task_plan_does_not_auto_create_pending_reply(monkeypatch) -> None
         )
 
         assert plan is not None
-        assert ticket.pending_reply_active is False
-        assert reply_ticket_manager.list_pending_replies("item-1") == []
+        assert ticket.pending_reply_active is True
+        entries = reply_ticket_manager.list_pending_replies("item-1")
+        assert len(entries) == 1
+        assert entries[0]["id"] == ticket.ticket_id
+        assert entries[0]["request_summary"] == "install Java"
+        assert entries[0]["task_plan"] == ["install Java", "verify Java"]
     finally:
         reply_ticket_manager.reset()
         task_workflow_manager.reset()
@@ -2417,7 +2583,13 @@ def test_agent_task_workflow_does_not_depend_on_vector_memory_write(
         "_plan_agent_task_titles",
         lambda handler, message, history: ["install Java", "verify Java"],
     )
-    monkeypatch.setattr(chat_route.vector_store, "add_memory", lambda **kwargs: None)
+    monkeypatch.setattr(
+        chat_route.vector_store,
+        "add_memory",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("task plans must not be stored as long-term memory")
+        ),
+    )
 
     plan = chat_route._create_agent_task_plan(
         "item-1",
@@ -2429,7 +2601,6 @@ def test_agent_task_workflow_does_not_depend_on_vector_memory_write(
     )
 
     assert plan is not None
-    assert plan.tasks == []
     workflow = task_workflow_manager.get(plan.workflow_id)
     assert workflow is not None
     assert workflow.objective == "install Java 17"

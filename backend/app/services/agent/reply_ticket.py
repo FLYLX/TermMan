@@ -313,6 +313,28 @@ class ReplyTicketManager:
             pass
         return True
 
+    def complete_pending_reply_after_external_delivery(self, ticket_id: str) -> bool:
+        with self._lock:
+            ticket = self._tickets.get(str(ticket_id))
+            if not ticket or not ticket.pending_reply_active:
+                return False
+            now = datetime.now()
+            ticket.status = "delivered"
+            ticket.delivered_at = now
+            ticket.updated_at = now
+            ticket.delivery_error = ""
+            self._tickets.pop(str(ticket_id), None)
+        try:
+            from app.services.agent.task_workflow import task_workflow_manager
+
+            task_workflow_manager.on_delivery(ticket_id)
+        except Exception:
+            logger.exception(
+                "[ReplyTicket] Failed to complete workflow after external delivery: ticket=%s",
+                ticket_id,
+            )
+        return True
+
     def _pending_reply_snapshot(self, ticket: ReplyTicket) -> dict[str, Any]:
         workflow = None
         try:
@@ -402,7 +424,7 @@ class ReplyTicketManager:
             return ""
         normalized_input = str(current_input or "").casefold()
         lines = [
-            "Authoritative pending-reply task queue:",
+            "Authoritative task queue:",
             "Each entry locks requester, task plan, and return destination together.",
         ]
         for entry in entries[:8]:
@@ -545,7 +567,7 @@ class ReplyTicketManager:
         if ticket.pending_reply_active:
             entry = self._pending_reply_snapshot(ticket)
             return (
-                "Authoritative pending-reply queue entry:\n"
+                "Authoritative task queue entry:\n"
                 f"- entry_id: {entry['id']}\n"
                 f"- requester: {entry['requester']}\n"
                 f"- request: {entry['request_summary']}\n"

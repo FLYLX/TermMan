@@ -11,7 +11,6 @@ from app.api.deps import CurrentUser, SessionDep
 from app.models import Item, ItemChatSession, ItemChatSessionPublic
 from app.services.agent.memory.vector_store import (
     MEMORY_TYPES,
-    MemoryType,
     vector_store,
 )
 from app.services.agent.prompts.policy import (
@@ -23,13 +22,14 @@ from app.services.agent.prompts.policy import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+LongTermMemoryType = Literal["fact", "preference", "task", "error", "context"]
 STATUS_MEMORY_TYPES = {"task", "error"}
 INACTIVE_MEMORY_STATUSES = {"completed", "resolved"}
 
 
 class MemoryCreate(BaseModel):
     content: str
-    memory_type: MemoryType = "fact"
+    memory_type: LongTermMemoryType = "fact"
     metadata: dict[str, Any] | None = None
     ttl_days: int | None = None
 
@@ -42,7 +42,7 @@ class MemoryUpdate(BaseModel):
 class MemorySearch(BaseModel):
     query: str
     n_results: int = 5
-    memory_type: MemoryType | None = None
+    memory_type: LongTermMemoryType | None = None
 
 
 class MemoryStatusUpdate(BaseModel):
@@ -192,11 +192,49 @@ def _get_item_memory_or_404(item_id: uuid.UUID, memory_id: str) -> dict[str, Any
     return memory
 
 
-def _coerce_memory_type(value: Any) -> MemoryType:
+def _coerce_memory_type(value: Any) -> LongTermMemoryType:
     memory_type = str(value or "fact")
     if memory_type not in MEMORY_TYPES:
         return "fact"
     return memory_type  # type: ignore[return-value]
+
+
+def _is_visible_long_term_memory(memory: dict[str, Any]) -> bool:
+    memory_type = str((memory.get("metadata") or {}).get("memory_type") or "fact")
+    return memory_type in MEMORY_TYPES
+
+
+def _visible_long_term_memories(
+    memories: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [memory for memory in memories if _is_visible_long_term_memory(memory)]
+
+
+def _visible_memory_stats(memories: list[dict[str, Any]]) -> dict[str, Any]:
+    now = datetime.now()
+    by_type = {memory_type: 0 for memory_type in MEMORY_TYPES}
+    expired_count = 0
+    for memory in memories:
+        metadata = memory.get("metadata") or {}
+        memory_type = str(metadata.get("memory_type") or "fact")
+        if memory_type not in MEMORY_TYPES:
+            continue
+        by_type[memory_type] += 1
+        expires_at = metadata.get("expires_at")
+        if not expires_at:
+            continue
+        try:
+            parsed = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        current = datetime.now(parsed.tzinfo) if parsed.tzinfo else now
+        if parsed < current:
+            expired_count += 1
+    return {
+        "total": len(memories),
+        "by_type": by_type,
+        "expired_count": expired_count,
+    }
 
 
 def _sanitize_import_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
@@ -468,7 +506,7 @@ def remove_scheduled_task(
 @router.get("/{item_id}/memories")
 def get_all_memories(
     item_id: uuid.UUID,
-    memory_type: MemoryType | None = None,
+    memory_type: LongTermMemoryType | None = None,
     memory_status: Literal["active", "completed", "resolved"] | None = None,
     offset: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=200),
@@ -481,7 +519,10 @@ def get_all_memories(
         item_id=str(item_id),
         memory_type=memory_type,
     )
-    filtered_memories = _filter_memories_by_status(memories, memory_status)
+    filtered_memories = _filter_memories_by_status(
+        _visible_long_term_memories(memories),
+        memory_status,
+    )
     sorted_memories = _sort_memories(filtered_memories)
     page_memories = sorted_memories[offset : offset + limit]
     return {
@@ -496,7 +537,7 @@ def get_all_memories(
 @router.get("/{item_id}/memories/export")
 def export_memories(
     item_id: uuid.UUID,
-    memory_type: MemoryType | None = None,
+    memory_type: LongTermMemoryType | None = None,
     session: SessionDep = None,
     current_user: CurrentUser = None,
 ) -> Any:
@@ -506,7 +547,7 @@ def export_memories(
         item_id=str(item_id),
         memory_type=memory_type,
     )
-    sorted_memories = _sort_memories(memories)
+    sorted_memories = _sort_memories(_visible_long_term_memories(memories))
     return {
         "version": 1,
         "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -541,12 +582,12 @@ def import_memories(
         metadata["imported_at"] = imported_at
         if memory.id:
             metadata["imported_from_memory_id"] = memory.id
-
+        raw_memory_type = str(memory.metadata.get("memory_type") or "fact")
         try:
             memory_id = vector_store.add_memory(
                 item_id=str(item_id),
                 content=content,
-                memory_type=_coerce_memory_type(memory.metadata.get("memory_type")),
+                memory_type=_coerce_memory_type(raw_memory_type),
                 metadata=metadata,
                 allow_duplicate=True,
             )
@@ -578,8 +619,10 @@ def get_memory_stats(
 ) -> Any:
     _get_accessible_item(item_id, session, current_user)
 
-    memories = vector_store.get_all_memories(str(item_id))
-    stats = vector_store.get_memory_stats(str(item_id))
+    memories = _visible_long_term_memories(
+        vector_store.get_all_memories(str(item_id))
+    )
+    stats = _visible_memory_stats(memories)
     stats["memory_types"] = MEMORY_TYPES
     stats["status_counts"] = _build_status_counts(memories)
     return stats
@@ -608,7 +651,7 @@ def search_memories(
         active_only=False,
     )
 
-    return {"memories": _sort_memories(memories)}
+    return {"memories": _sort_memories(_visible_long_term_memories(memories))}
 
 
 @router.post("/{item_id}/memories")
@@ -669,6 +712,11 @@ def update_memory_status(
     memory = _get_item_memory_or_404(item_id, memory_id)
 
     memory_type = str((memory.get("metadata") or {}).get("memory_type") or "")
+    if memory_type not in MEMORY_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="Task state belongs to the task queue, not long-term memory",
+        )
     allowed_statuses = get_allowed_memory_statuses(memory_type)
     if request.status not in allowed_statuses:
         raise HTTPException(

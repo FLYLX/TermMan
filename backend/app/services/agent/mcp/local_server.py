@@ -153,7 +153,7 @@ class LocalMCPServer:
         self.register_tool(
             name="read_pending_replies",
             description=(
-                "Read the authoritative pending-reply queue for the current terminal item. "
+                "Read the authoritative task queue for the current terminal item. "
                 "Each entry contains the requester, task plan, immutable destination, status, "
                 "and any external event being awaited."
             ),
@@ -173,7 +173,7 @@ class LocalMCPServer:
         self.register_tool(
             name="write_pending_reply",
             description=(
-                "Create or update the pending-reply entry linked to the current message source. "
+                "Create or update the task-queue entry linked to the current message source. "
                 "Use this only for delegated, multi-step, asynchronous, background-job, or "
                 "wait-for-reply work where the main objective or return destination could be "
                 "forgotten between turns. Do not create an entry for ordinary chat or an "
@@ -220,7 +220,7 @@ class LocalMCPServer:
         self.register_tool(
             name="delete_pending_reply",
             description=(
-                "Delete one pending-reply entry without sending. Use only when the user cancels "
+                "Delete one task-queue entry without sending. Use only when the user cancels "
                 "the task or the task is confirmed obsolete."
             ),
             input_schema={
@@ -563,7 +563,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="save_memory",
-            description="保存稳定、可复用、已验证的重要信息到长期记忆中。不要保存原生日志、命令回显、等待态消息或敏感信息。",
+            description="保存稳定、可复用、已验证的重要信息到长期记忆中。执行中的任务状态以任务队列为准，但如果任务相关信息本身值得长期记住，可以主动保存。不要保存原生日志、命令回显、等待态消息或敏感信息。",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -1012,9 +1012,9 @@ class LocalMCPServer:
 
             entries = reply_ticket_manager.list_pending_replies(item_id)
             if not entries:
-                return [{"type": "text", "text": "Pending reply queue is empty."}]
+                return [{"type": "text", "text": "Task queue is empty."}]
             lines = [
-                "Authoritative pending reply queue:",
+                "Authoritative task queue:",
                 "Send with mcp_local_send_pending_reply; successful send removes the entry.",
             ]
             for entry in entries:
@@ -2320,11 +2320,13 @@ class LocalMCPServer:
 
     def _save_memory(self, args: dict) -> list:
         content = args.get("content", "")
-        memory_type = args.get("memory_type", "fact")
+        memory_type = str(args.get("memory_type", "fact") or "fact")
         item_id = args.get("item_id", "")
         
         if not content or not item_id:
             return [{"type": "text", "text": "Error: content and item_id required"}]
+        if memory_type not in {"fact", "preference", "task", "error", "context"}:
+            return [{"type": "text", "text": f"Error: invalid memory_type: {memory_type}"}]
         
         try:
             from app.services.agent.memory.vector_store import vector_store
@@ -2345,7 +2347,7 @@ class LocalMCPServer:
             memory_key = memory_policy.infer_memory_key(str(content), str(memory_type))
             if memory_key:
                 metadata["memory_key"] = memory_key
-            if str(memory_type) in {"task", "error"}:
+            if memory_type in {"task", "error"}:
                 metadata["status"] = "active"
 
             memory_id = vector_store.add_memory(
@@ -2379,16 +2381,30 @@ class LocalMCPServer:
                 n_results=n_results,
                 memory_type=memory_type
             )
+            results = [
+                memory
+                for memory in results
+                if str((memory.get("metadata") or {}).get("memory_type") or "fact")
+                in {"fact", "preference", "task", "error", "context"}
+            ]
             
             if not results:
                 return [{"type": "text", "text": "未找到相关记忆"}]
             
-            lines = [f"=== 找到 {len(results)} 条相关记忆 ==="]
-            for i, m in enumerate(results, 1):
-                m_type = m.get("metadata", {}).get("memory_type", "unknown")
-                distance = m.get("distance", 0)
-                lines.append(f"\n[{i}] ({m_type}, 相关度: {1-distance:.2%})")
-                lines.append(f"    {m['content']}")
+            lines = ["相关长期记忆："]
+            for memory in results:
+                metadata = memory.get("metadata") or {}
+                sender = str(
+                    metadata.get("speaker")
+                    or metadata.get("speaker_label")
+                    or metadata.get("sender")
+                    or ""
+                ).strip()
+                content = str(memory.get("content") or "").strip()
+                if not content:
+                    continue
+                prefix = f"{sender}: " if sender and not content.startswith(sender) else ""
+                lines.append(f"- {prefix}{content}")
             
             return [{"type": "text", "text": "\n".join(lines)}]
         except Exception as e:
@@ -2404,6 +2420,12 @@ class LocalMCPServer:
         try:
             from app.services.agent.memory.vector_store import vector_store
             memories = vector_store.get_all_memories(item_id, memory_type=memory_type)
+            memories = [
+                memory
+                for memory in memories
+                if str((memory.get("metadata") or {}).get("memory_type") or "fact")
+                in {"fact", "preference", "task", "error", "context"}
+            ]
             
             if not memories:
                 return [{"type": "text", "text": "暂无记忆"}]

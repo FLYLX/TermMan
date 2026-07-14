@@ -4,6 +4,11 @@ import ast
 import json
 from typing import Any
 
+from app.core.tool_markup import (
+    contains_dsml_tool_markup,
+    strip_dsml_tool_markup,
+)
+
 ROBOT_SEND_TOOL_NAME = "mcp_robot_send_message"
 ROBOT_SLEEP_TOOL_NAME = "mcp_robot_sleep_conversation"
 NO_QQ_REPLY_MARKER = "[no_qq_reply]"
@@ -125,6 +130,10 @@ def is_robot_internal_trace_text(value: str) -> bool:
     if not lines:
         return False
 
+    normalized = normalize_robot_message_text(value)
+    if contains_dsml_tool_markup(normalized):
+        return not strip_dsml_tool_markup(normalized).strip()
+
     if _is_robot_send_success_line(lines[0]):
         return True
 
@@ -143,7 +152,7 @@ def sanitize_robot_visible_text(value: Any) -> str:
     """Remove robot tool traces from text that may be sent or shown as chat memory."""
     cleaned_lines: list[str] = []
     previous_blank = False
-    normalized = normalize_robot_message_text(value)
+    normalized = strip_dsml_tool_markup(normalize_robot_message_text(value))
     for raw_line in normalized.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         line = raw_line.rstrip()
         stripped = line.strip()
