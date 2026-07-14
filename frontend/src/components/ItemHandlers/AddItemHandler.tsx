@@ -158,10 +158,7 @@ const AddItemHandler = ({
                     <FormControl>
                       <PasswordInput
                         placeholder={t("common.apiKey")}
-                        copyable
-                        copyLabel={t("common.copyLabel", {
-                          label: t("common.apiKey"),
-                        })}
+                        autoComplete="new-password"
                         {...field}
                       />
                     </FormControl>

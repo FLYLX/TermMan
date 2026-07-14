@@ -54,7 +54,7 @@ class TerminalStreamPipeline:
         self._event_bus = event_bus
 
     def publish_stream(self, item_uuid: str, data: dict[str, Any]) -> int:
-        logger.info("[TerminalStreamPipeline] publish_stream called for item %s", item_uuid)
+        logger.debug("[TerminalStreamPipeline] publish_stream called for item %s", item_uuid)
         data = sanitize_terminal_stream_data(data)
         event = SubscriptionEvent(
             event_type=SubscriptionEventType.STREAM,

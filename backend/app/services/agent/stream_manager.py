@@ -293,7 +293,7 @@ class TerminalStreamManager:
         *,
         raw_output: str = "",
     ):
-        logger.info(
+        logger.debug(
             f"[StreamManager] process_stream: item={item_id}, handler={handler_id}, "
             f"output_len={len(filtered_output) if filtered_output else 0}"
         )

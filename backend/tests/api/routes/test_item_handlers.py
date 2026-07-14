@@ -33,7 +33,8 @@ def test_create_item_handler(
     content = response.json()
     assert content["name"] == data["name"]
     assert content["model"] == data["model"]
-    assert content["api_key"] == data["api_key"]
+    assert "api_key" not in content
+    assert content["has_api_key"] is True
     assert content["api_url"] == data["api_url"]
     assert "id" in content
     assert "owner_id" in content
@@ -58,6 +59,8 @@ def test_read_item_handler(
     assert content["model"] == item_handler.model
     assert content["id"] == str(item_handler.id)
     assert content["owner_id"] == str(item_handler.owner_id)
+    assert "api_key" not in content
+    assert content["has_api_key"] is bool(item_handler.api_key)
 
 
 def test_read_item_handler_not_found(
@@ -93,6 +96,8 @@ def test_read_item_handlers(
     content = response.json()
     assert isinstance(content, list)
     assert len(content) >= 2
+    assert all("api_key" not in handler for handler in content)
+    assert all("has_api_key" in handler for handler in content)
     
     # 检查创建的item handlers是否在响应中
     item_handler_ids = {str(item_handler1.id), str(item_handler2.id)}
@@ -160,8 +165,73 @@ def test_update_item_handler(
     assert content["model"] == update_data["model"]
     assert content["id"] == str(item_handler.id)
     # 确保其他字段保持不变
-    assert content["api_key"] == item_handler.api_key
+    assert "api_key" not in content
+    assert content["has_api_key"] is bool(item_handler.api_key)
     assert content["api_url"] == item_handler.api_url
+
+
+def test_update_item_handler_blank_key_preserves_saved_key(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    item_handler = create_random_item_handler(db)
+    original_key = item_handler.api_key
+
+    response = client.put(
+        f"{settings.API_V1_STR}/item-handlers/{item_handler.id}",
+        headers=superuser_token_headers,
+        json={"api_key": ""},
+    )
+
+    assert response.status_code == 200
+    assert "api_key" not in response.json()
+    assert response.json()["has_api_key"] is bool(original_key)
+    db.refresh(item_handler)
+    assert item_handler.api_key == original_key
+
+
+def test_update_item_handler_can_replace_and_clear_saved_key(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    item_handler = create_random_item_handler(db)
+
+    replace_response = client.put(
+        f"{settings.API_V1_STR}/item-handlers/{item_handler.id}",
+        headers=superuser_token_headers,
+        json={"api_key": "replacement-secret-key"},
+    )
+    assert replace_response.status_code == 200
+    assert "api_key" not in replace_response.json()
+    assert replace_response.json()["has_api_key"] is True
+    db.refresh(item_handler)
+    assert item_handler.api_key == "replacement-secret-key"
+
+    clear_response = client.put(
+        f"{settings.API_V1_STR}/item-handlers/{item_handler.id}",
+        headers=superuser_token_headers,
+        json={"clear_api_key": True},
+    )
+    assert clear_response.status_code == 200
+    assert "api_key" not in clear_response.json()
+    assert clear_response.json()["has_api_key"] is False
+    db.refresh(item_handler)
+    assert item_handler.api_key is None
+
+
+def test_item_handler_public_openapi_schema_never_contains_api_key(
+    client: TestClient,
+) -> None:
+    schemas = client.get("/api/v1/openapi.json").json()["components"]["schemas"]
+
+    public_properties = schemas["ItemHandlerPublic"]["properties"]
+    summary_properties = schemas["ItemHandlerSummaryPublic"]["properties"]
+    assert "api_key" not in public_properties
+    assert "api_key" not in summary_properties
+    assert "has_api_key" in public_properties
+    assert "has_api_key" in summary_properties
 
 
 def test_update_item_handler_normalizes_enabled_knowledge_files(

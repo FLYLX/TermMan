@@ -26,6 +26,7 @@ import {
 } from "react"
 import {
   ApiError,
+  type ItemHandlerUpdate,
   ItemHandlerAssociationsService,
   ItemHandlersService,
   ItemsService,
@@ -53,7 +54,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { PasswordInput } from "@/components/ui/password-input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { SecretValue } from "@/components/ui/secret-value"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
 import { extractErrorMessage } from "@/utils"
@@ -2081,7 +2081,7 @@ function ItemHandlerDetail() {
       setEditForm({
         name: itemHandler.name,
         model: itemHandler.model ?? "",
-        api_key: itemHandler.api_key ?? "",
+        api_key: "",
         api_url: itemHandler.api_url ?? "",
         enabled_skills: (itemHandler as any).enabled_skills ?? [],
         agent_profile: createAgentProfileForm((itemHandler as any).agent_profile),
@@ -2094,7 +2094,7 @@ function ItemHandlerDetail() {
       setEditForm({
         name: itemHandler.name,
         model: itemHandler.model ?? "",
-        api_key: itemHandler.api_key ?? "",
+        api_key: "",
         api_url: itemHandler.api_url ?? "",
         enabled_skills: enabledSkills,
         agent_profile: createAgentProfileForm((itemHandler as any).agent_profile),
@@ -2115,13 +2115,16 @@ function ItemHandlerDetail() {
       return
     }
 
-    const requestBody = {
+    const replacementApiKey = normalizeOptionalText(editForm.api_key)
+    const requestBody: ItemHandlerUpdate & { agent_profile?: Record<string, unknown> } = {
       name,
       model: normalizeOptionalText(editForm.model),
-      api_key: normalizeOptionalText(editForm.api_key),
       api_url: normalizeOptionalText(editForm.api_url),
       enabled_skills: editForm.enabled_skills,
       agent_profile: serializeAgentProfile(editForm.agent_profile),
+    }
+    if (replacementApiKey) {
+      requestBody.api_key = replacementApiKey
     }
 
     setIsSaving(true)
@@ -2134,7 +2137,7 @@ function ItemHandlerDetail() {
         ...current,
         name,
         model: requestBody.model ?? "",
-        api_key: requestBody.api_key ?? "",
+        api_key: "",
         api_url: requestBody.api_url ?? "",
         agent_profile: createAgentProfileForm(requestBody.agent_profile),
       }))
@@ -2641,11 +2644,12 @@ function ItemHandlerDetail() {
                               api_key: e.target.value,
                             })
                           }
-                          placeholder={t("common.apiKey")}
-                          copyable
-                          copyLabel={t("common.copyLabel", {
-                            label: t("common.apiKey"),
-                          })}
+                          placeholder={
+                            (itemHandler as any).has_api_key
+                              ? t("common.replaceApiKey")
+                              : t("common.apiKey")
+                          }
+                          autoComplete="new-password"
                         />
                       </div>
                       <div className="space-y-2">
@@ -2811,11 +2815,11 @@ function ItemHandlerDetail() {
                       <KeyValue
                         label={t("common.apiKey")}
                         value={
-                          <SecretValue
-                            value={itemHandler.api_key}
-                            label={t("common.apiKey")}
-                            emptyText={t("common.noApiKey")}
-                          />
+                          <Badge variant="outline">
+                            {(itemHandler as any).has_api_key
+                              ? t("common.apiKeySaved")
+                              : t("common.noApiKey")}
+                          </Badge>
                         }
                       />
                       <KeyValue

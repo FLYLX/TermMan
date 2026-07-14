@@ -44,7 +44,7 @@ class AgentInputBridge:
                 handler_id,
                 raw_output=raw_output,
             )
-            logger.info(
+            logger.debug(
                 "[AgentInputBridge] Processed stream for item=%s, handler=%s, output_len=%s",
                 item_uuid,
                 handler_id,

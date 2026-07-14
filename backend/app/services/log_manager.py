@@ -92,7 +92,11 @@ class LogManager:
         with lock:
             try:
                 log_path = self.get_log_path(item_uuid)
-                self.logger.info(f"[LogManager] Writing to log: {log_path}, content length: {len(content)}")
+                self.logger.debug(
+                    "[LogManager] Writing to log: %s, content length: %s",
+                    log_path,
+                    len(content),
+                )
                 
                 if os.path.exists(log_path):
                     file_size = os.path.getsize(log_path)

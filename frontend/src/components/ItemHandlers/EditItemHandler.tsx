@@ -84,7 +84,7 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
     defaultValues: {
       name: itemHandler.name,
       model: itemHandler.model ?? "",
-      api_key: itemHandler.api_key ?? "",
+      api_key: "",
       api_url: itemHandler.api_url ?? "",
       enabled_skills: itemHandler.enabled_skills ?? [],
       enabled_mcp_servers: (itemHandler as any).enabled_mcp_servers ?? [],
@@ -92,11 +92,14 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
   })
 
   const mutation = useMutation({
-    mutationFn: (data: FormData) =>
-      ItemHandlersService.updateItemHandler({
+    mutationFn: (data: FormData) => {
+      const replacementApiKey = data.api_key?.trim()
+      const requestBody = { ...data, api_key: replacementApiKey || undefined }
+      return ItemHandlersService.updateItemHandler({
         id: itemHandler.id,
-        requestBody: data,
-      }),
+        requestBody,
+      })
+    },
     onSuccess: () => {
       showSuccessToast("TermHandler updated successfully")
       setIsOpen(false)
@@ -169,9 +172,12 @@ const EditItemHandler = ({ itemHandler, onSuccess }: EditItemHandlerProps) => {
                     <FormLabel>API Key</FormLabel>
                     <FormControl>
                       <PasswordInput
-                        placeholder="API Key"
-                        copyable
-                        copyLabel="Copy API Key"
+                        placeholder={
+                          itemHandler.has_api_key
+                            ? "Enter a new key to replace the saved key"
+                            : "API Key"
+                        }
+                        autoComplete="new-password"
                         {...field}
                       />
                     </FormControl>

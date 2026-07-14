@@ -229,6 +229,7 @@ class ItemHandlerUpdate(ItemHandlerBase):
     enabled_mcp_servers: Optional[List[str]] = Field(default=None, sa_type=JSON)
     enabled_knowledge_files: Optional[List[str]] = Field(default=None, sa_type=JSON)
     agent_profile: Optional[dict] = Field(default=None, sa_type=JSON)
+    clear_api_key: bool = False
 
 
 class ItemHandler(ItemHandlerBase, table=True):
@@ -250,7 +251,15 @@ class ItemHandler(ItemHandlerBase, table=True):
     owner: Optional[User] = Relationship(back_populates="owned_handlers")
 
 
-class ItemHandlerPublic(ItemHandlerBase):
+class ItemHandlerPublic(SQLModel):
+    name: str
+    model: Optional[str] = None
+    api_url: Optional[str] = None
+    enabled_skills: Optional[List[str]] = None
+    enabled_mcp_servers: Optional[List[str]] = None
+    enabled_knowledge_files: Optional[List[str]] = None
+    agent_profile: dict = Field(default_factory=dict)
+    has_api_key: bool = False
     id: uuid.UUID
     owner_id: uuid.UUID
     created_at: Optional[datetime] = None

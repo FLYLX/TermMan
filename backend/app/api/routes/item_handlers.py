@@ -61,6 +61,18 @@ class ItemHandlerSummaryPublic(ItemHandlerPublic):
     user_count: int = 0
 
 
+def _normalized_api_key(value: str | None) -> str | None:
+    normalized = str(value or "").strip()
+    return normalized or None
+
+
+def _build_item_handler_public(item_handler: ItemHandler) -> ItemHandlerPublic:
+    return ItemHandlerPublic.model_validate(
+        item_handler,
+        update={"has_api_key": bool(_normalized_api_key(item_handler.api_key))},
+    )
+
+
 def _get_item_handler_or_404(session: SessionDep, item_handler_id: uuid.UUID) -> ItemHandler:
     item_handler = session.get(ItemHandler, item_handler_id)
     if not item_handler:
@@ -98,6 +110,7 @@ def _build_item_handler_summaries(
         ItemHandlerSummaryPublic.model_validate(
             handler,
             update={
+                "has_api_key": bool(_normalized_api_key(handler.api_key)),
                 "item_count": item_counts.get(handler.id, 0),
                 "user_count": user_counts.get(handler.id, 0),
             },
@@ -210,16 +223,15 @@ def create_item_handler(
             detail="An item handler with this name already exists for your account.",
         )
 
-    item_handler = ItemHandler.model_validate(
-        item_handler_in,
-        update={"owner_id": current_user.id},
-    )
+    create_data = item_handler_in.model_dump()
+    create_data["api_key"] = _normalized_api_key(create_data.get("api_key"))
+    item_handler = ItemHandler(**create_data, owner_id=current_user.id)
 
     session.add(item_handler)
     session.commit()
     session.refresh(item_handler)
 
-    return item_handler
+    return _build_item_handler_public(item_handler)
 
 
 @router.put("/{id}", response_model=ItemHandlerPublic)
@@ -253,6 +265,15 @@ def update_item_handler(
             )
 
     update_dict = item_handler_in.model_dump(exclude_unset=True)
+    clear_api_key = bool(update_dict.pop("clear_api_key", False))
+    if clear_api_key:
+        update_dict["api_key"] = None
+    elif "api_key" in update_dict:
+        replacement_api_key = _normalized_api_key(update_dict.get("api_key"))
+        if replacement_api_key:
+            update_dict["api_key"] = replacement_api_key
+        else:
+            update_dict.pop("api_key", None)
     if "enabled_knowledge_files" in update_dict:
         update_dict["enabled_knowledge_files"] = knowledge_base_service.normalize_enabled_files(
             update_dict.get("enabled_knowledge_files")
@@ -270,7 +291,7 @@ def update_item_handler(
     if update_dict:
         agent_manager.refresh_cached(item_handler)
 
-    return item_handler
+    return _build_item_handler_public(item_handler)
 
 
 @router.delete("/{id}")

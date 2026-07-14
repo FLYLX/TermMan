@@ -5,7 +5,6 @@ import type { ItemHandlerPublic } from "@/client"
 import { ItemHandlerAssociationsService } from "@/client"
 import { useI18n } from "@/components/locale-provider"
 import { Badge } from "@/components/ui/badge"
-import { SecretValue } from "@/components/ui/secret-value"
 import { cn } from "@/lib/utils"
 import { ItemHandlerActionsMenu } from "./ItemHandlerActionsMenu"
 
@@ -112,17 +111,14 @@ export function useItemHandlerColumns() {
       },
       {
         id: "api_key",
-        accessorKey: "api_key",
         header: t("common.apiKey"),
         cell: ({ row }) => {
-          const apiKey = row.original.api_key
           return (
-            <SecretValue
-              value={apiKey}
-              label={t("common.apiKey")}
-              emptyText={t("common.noApiKey")}
-              compact
-            />
+            <Badge variant="outline">
+              {row.original.has_api_key
+                ? t("common.apiKeySaved")
+                : t("common.noApiKey")}
+            </Badge>
           )
         },
       },

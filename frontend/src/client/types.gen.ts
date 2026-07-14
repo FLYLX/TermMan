@@ -151,10 +151,14 @@ export type ItemHandlerCreate = {
 export type ItemHandlerPublic = {
     name: string;
     model?: (string | null);
-    api_key?: (string | null);
     api_url?: (string | null);
     enabled_skills?: (Array<(string)> | null);
     enabled_mcp_servers?: (Array<(string)> | null);
+    enabled_knowledge_files?: (Array<(string)> | null);
+    agent_profile?: {
+        [key: string]: unknown;
+    };
+    has_api_key?: boolean;
     id: string;
     owner_id: string;
     created_at?: (string | null);
@@ -168,6 +172,11 @@ export type ItemHandlerUpdate = {
     api_url?: (string | null);
     enabled_skills?: (Array<(string)> | null);
     enabled_mcp_servers?: (Array<(string)> | null);
+    enabled_knowledge_files?: (Array<(string)> | null);
+    agent_profile?: ({
+        [key: string]: unknown;
+    } | null);
+    clear_api_key?: boolean;
 };
 
 export type ItemPublic = {

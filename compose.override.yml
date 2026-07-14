@@ -62,23 +62,9 @@ services:
       dockerfile: backend/Dockerfile
       args:
         - USE_CHINA_MIRRORS=${USE_CHINA_MIRRORS:-true}
-    # command: sleep infinity  # Infinite loop to keep container alive doing nothing
     command:
       - bash
       - scripts/run_backend.sh
-      - uvicorn
-      - app.main:app
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8000"
-      - --reload
-      - --reload-dir
-      - app
-      - --reload-include
-      - "*.py"
-      - --reload-exclude
-      - "app/services/log/*"
     develop:
       watch:
         - path: ./backend
@@ -102,6 +88,8 @@ services:
       SMTP_TLS: "${SMTP_TLS:-false}"
       EMAILS_FROM_EMAIL: "${EMAILS_FROM_EMAIL:-noreply@example.com}"
       BACKEND_LOG_DIR: "/app/backend/app/services/log"
+      BACKEND_AUTO_RELOAD: "${BACKEND_AUTO_RELOAD:-false}"
+      BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: "${BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS:-5}"
       ROBOT_PLUGIN_ENABLED: "${ROBOT_PLUGIN_ENABLED:-true}"
       ROBOT_BRIDGE_EMBEDDED: "${ROBOT_BRIDGE_EMBEDDED:-false}"
       ROBOT_BACKEND_URL: "${ROBOT_BACKEND_URL:-http://backend:8000}"
