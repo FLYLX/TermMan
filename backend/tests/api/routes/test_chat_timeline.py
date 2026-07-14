@@ -110,6 +110,425 @@ def _sse_payloads(chunks: list[str]) -> list[dict]:
     return payloads
 
 
+def test_tool_loop_detection_ignores_changing_workflow_notes() -> None:
+    from app.api.routes import chat as chat_route
+
+    history: list[tuple[str, str]] = []
+    for index in range(2):
+        detected, _ = chat_route._detect_tool_loop(
+            history,
+            "mcp_local_update_task_workflow",
+            json.dumps(
+                {
+                    "action": "record_progress",
+                    "note": f"progress note {index}",
+                }
+            ),
+        )
+        assert detected is False
+
+    detected, reason = chat_route._detect_tool_loop(
+        history,
+        "mcp_local_update_task_workflow",
+        json.dumps(
+            {
+                "action": "record_progress",
+                "note": "another differently worded note",
+            }
+        ),
+    )
+
+    assert detected is True
+    assert "mcp_local_update_task_workflow" in reason
+
+
+def test_explicit_web_qq_send_accepts_visible_context_reference() -> None:
+    from app.api.routes import chat as chat_route
+
+    assert chat_route._explicit_web_qq_send_requested(
+        "跟群里的 baka 说服务器没开",
+        {"reply_to": "baka", "text": "服务器没开"},
+    )
+    assert chat_route._explicit_web_qq_send_requested(
+        "帮我转发过去",
+        {"reply_to": "baka", "text": "服务器没开"},
+    )
+    assert not chat_route._explicit_web_qq_send_requested(
+        "现在呢",
+        {"reply_to": "baka", "text": "误发"},
+    )
+
+
+def test_web_chat_keeps_visible_qq_targets_without_active_qq_context() -> None:
+    from app.plugins.robot.agent.integration import RobotAgentIntegration
+
+    context = SimpleNamespace(
+        robot_id="",
+        robot_known_targets=[],
+        current_user_id="user-1",
+        current_user_is_superuser=True,
+        item_id="item-1",
+        robot_context_token="",
+    )
+    agent = SimpleNamespace(_context=context)
+    integration = RobotAgentIntegration()
+    integration.extract_context_targets(
+        agent,
+        [
+            {
+                "role": "user",
+                "content": (
+                    "[Robot message; conversation=group:770362397; "
+                    "sender=baka (1874419565)]\n服务器开了吗"
+                ),
+            }
+        ],
+    )
+
+    assert context.robot_known_targets == [
+        {
+            "conversation": "group:770362397",
+            "target_type": "group",
+            "target_id": "770362397",
+            "sender": "baka (1874419565)",
+        }
+    ]
+    args: dict = {}
+    integration.inject_tool_args(
+        agent,
+        server_name="robot",
+        tool_name="send_message",
+        args=args,
+    )
+    assert args["_robot_known_targets"] == context.robot_known_targets
+
+
+def test_generate_stream_allows_explicit_web_forward_to_visible_qq_target(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+
+    item, handler = _create_linked_item_and_handler(db)
+    tool_name = "mcp_robot_send_message"
+    completion_calls = {"value": 0}
+    executed: list[dict] = []
+    fake_agent = _make_fake_agent(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": "Send QQ message",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        execute_tool_result=lambda _name, args: (
+            executed.append(dict(args))
+            or {
+                "success": True,
+                "result": [
+                    {
+                        "type": "text",
+                        "text": "Message sent to QQ group 770362397 from chat context.",
+                    }
+                ],
+            }
+        ),
+    )
+
+    def fake_completion(**_kwargs):
+        completion_calls["value"] += 1
+        if completion_calls["value"] == 1:
+            return iter(
+                [
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(
+                                    content="",
+                                    tool_calls=[
+                                        SimpleNamespace(
+                                            index=0,
+                                            id="call_forward",
+                                            function=SimpleNamespace(
+                                                name=tool_name,
+                                                arguments=json.dumps(
+                                                    {
+                                                        "reply_to": "baka",
+                                                        "text": "服务器没开",
+                                                    },
+                                                    ensure_ascii=False,
+                                                ),
+                                            ),
+                                        )
+                                    ],
+                                ),
+                                finish_reason=None,
+                            )
+                        ]
+                    )
+                ]
+            )
+        return iter(
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content="已经转发。",
+                                tool_calls=None,
+                            ),
+                            finish_reason="stop",
+                        )
+                    ]
+                )
+            ]
+        )
+
+    monkeypatch.setattr(chat_route, "completion", fake_completion)
+    monkeypatch.setattr(
+        chat_route,
+        "build_chat_turn_messages",
+        lambda *args, **kwargs: [
+            {
+                "role": "user",
+                "content": (
+                    "[Robot message; conversation=group:770362397; "
+                    "sender=baka (1874419565)]\n服务器开了吗"
+                ),
+            },
+            {"role": "user", "content": "跟群里的 baka 说服务器没开"},
+        ],
+    )
+    monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
+
+    chunks = list(
+        chat_route.generate_stream(
+            message="跟群里的 baka 说服务器没开",
+            history=[],
+            handler=handler,
+            item_id=str(item.id),
+            agent=fake_agent,
+            source_type="web",
+        )
+    )
+    payloads = _sse_payloads(chunks)
+
+    assert completion_calls["value"] == 2
+    assert len(executed) == 1
+    assert executed[0]["reply_to"] == "baka"
+    assert executed[0]["text"] == "服务器没开"
+    assert any(event.get("type") == "agent_qq_reply" for event in payloads)
+    assert not any(event.get("type") == "agent_warning" for event in payloads)
+    assert not any(event.get("type") == "agent_response" for event in payloads)
+
+
+def test_generate_stream_reports_instead_of_exposing_tool_loop_warning(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+
+    item, handler = _create_linked_item_and_handler(db)
+    tool_name = "mcp_local_update_task_workflow"
+    stream_calls = {"value": 0}
+    executed_tools: list[dict] = []
+
+    fake_agent = _make_fake_agent(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": "Update workflow progress",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        execute_tool_result=lambda _name, args: (
+            executed_tools.append(dict(args))
+            or {
+                "success": True,
+                "result": [{"type": "text", "text": "progress recorded"}],
+            }
+        ),
+    )
+
+    def fake_completion(**kwargs):
+        if kwargs.get("stream") is False:
+            assert "tools" not in kwargs
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content="这次操作还没有完成，我已停止重复执行，请稍后重试。",
+                            tool_calls=None,
+                        )
+                    )
+                ]
+            )
+
+        stream_calls["value"] += 1
+        arguments = json.dumps(
+            {
+                "action": "record_progress",
+                "note": f"wording changed on call {stream_calls['value']}",
+            }
+        )
+        return iter(
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content="",
+                                tool_calls=[
+                                    SimpleNamespace(
+                                        index=0,
+                                        id=f"call_{stream_calls['value']}",
+                                        function=SimpleNamespace(
+                                            name=tool_name,
+                                            arguments=arguments,
+                                        ),
+                                    )
+                                ],
+                            ),
+                            finish_reason=None,
+                        )
+                    ]
+                )
+            ]
+        )
+
+    monkeypatch.setattr(chat_route, "completion", fake_completion)
+    monkeypatch.setattr(
+        chat_route,
+        "build_chat_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "test operation"}],
+    )
+    monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
+
+    chunks = list(
+        chat_route.generate_stream(
+            message="测试操作",
+            history=[],
+            handler=handler,
+            item_id=str(item.id),
+            agent=fake_agent,
+        )
+    )
+    payloads = _sse_payloads(chunks)
+
+    assert stream_calls["value"] == 3
+    assert len(executed_tools) == 2
+    assert any(
+        event.get("type") == "agent_response"
+        and "停止重复执行" in event.get("content", "")
+        for event in payloads
+    )
+    assert not any(event.get("type") == "agent_warning" for event in payloads)
+    assert not any("max iteration limit" in chunk for chunk in chunks)
+    assert not any("Detected repeated tool loop" in chunk for chunk in chunks)
+
+
+def test_generate_stream_reports_after_unique_tool_calls_exhaust_budget(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+
+    item, handler = _create_linked_item_and_handler(db)
+    tool_name = "mcp_local_list_memories"
+    stream_calls = {"value": 0}
+
+    fake_agent = _make_fake_agent(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": "Inspect memory",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        execute_tool_result={
+            "success": True,
+            "result": [{"type": "text", "text": "memory page"}],
+        },
+    )
+
+    def fake_completion(**kwargs):
+        if kwargs.get("stream") is False:
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content="检查没有完成，我已停止继续调用工具。",
+                            tool_calls=None,
+                        )
+                    )
+                ]
+            )
+
+        stream_calls["value"] += 1
+        arguments = json.dumps({"query": f"unique-{stream_calls['value']}"})
+        return iter(
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content="",
+                                tool_calls=[
+                                    SimpleNamespace(
+                                        index=0,
+                                        id=f"call_{stream_calls['value']}",
+                                        function=SimpleNamespace(
+                                            name=tool_name,
+                                            arguments=arguments,
+                                        ),
+                                    )
+                                ],
+                            ),
+                            finish_reason=None,
+                        )
+                    ]
+                )
+            ]
+        )
+
+    monkeypatch.setattr(chat_route, "completion", fake_completion)
+    monkeypatch.setattr(
+        chat_route,
+        "build_chat_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "test operation"}],
+    )
+    monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
+
+    chunks = list(
+        chat_route.generate_stream(
+            message="测试操作",
+            history=[],
+            handler=handler,
+            item_id=str(item.id),
+            agent=fake_agent,
+        )
+    )
+    payloads = _sse_payloads(chunks)
+
+    assert stream_calls["value"] == chat_route.MAX_ITERATIONS
+    assert any(
+        event.get("type") == "agent_response"
+        and "停止继续调用工具" in event.get("content", "")
+        for event in payloads
+    )
+    assert not any(event.get("type") == "agent_warning" for event in payloads)
+    assert not any("max iteration limit" in chunk for chunk in chunks)
+
+
 def test_generate_stream_executes_tool_inside_running_event_loop(
     db: Session,
     monkeypatch,
@@ -1813,6 +2232,63 @@ def test_agent_task_plan_records_reply_origin(monkeypatch) -> None:
     assert workflow.objective == "install Java"
     assert workflow.source_label == "QQ group:770362397"
     task_workflow_manager.reset()
+
+
+def test_agent_task_plan_does_not_auto_create_pending_reply(monkeypatch) -> None:
+    from app.api.routes import chat as chat_route
+    from app.services.agent.reply_ticket import reply_ticket_manager
+    from app.services.agent.task_workflow import task_workflow_manager
+
+    handler = SimpleNamespace(id="handler-1")
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_conversation_key="",
+            reply_ticket_id="",
+        )
+    )
+
+    reply_ticket_manager.reset()
+    task_workflow_manager.reset()
+    ticket = reply_ticket_manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="install Java",
+        source_type="web",
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "_plan_agent_task_titles",
+        lambda handler, message, history: ["install Java", "verify Java"],
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "build_status_update_memory_candidate",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        chat_route.vector_store,
+        "add_memory",
+        lambda **kwargs: f"task-{kwargs['metadata']['task_order']}",
+    )
+
+    try:
+        plan = chat_route._create_agent_task_plan(
+            "item-1",
+            handler=handler,
+            agent=agent,
+            message="install Java",
+            history=[],
+            tools=[{"type": "function", "function": {"name": "mcp_local_run_job"}}],
+        )
+
+        assert plan is not None
+        assert ticket.pending_reply_active is False
+        assert reply_ticket_manager.list_pending_replies("item-1") == []
+    finally:
+        reply_ticket_manager.reset()
+        task_workflow_manager.reset()
 
 
 def test_agent_task_workflow_does_not_depend_on_vector_memory_write(

@@ -314,7 +314,7 @@ def test_pending_reply_mcp_tools_manage_current_reply_ticket() -> None:
         task_workflow_manager.reset()
 
 
-def test_delegated_question_automatically_creates_workflow_and_queue(
+def test_delegated_question_creates_queue_only_after_agent_requests_it(
     monkeypatch,
 ) -> None:
     from app.api.routes import chat as chat_route
@@ -355,6 +355,19 @@ def test_delegated_question_automatically_creates_workflow_and_queue(
         )
 
         assert runtime is not None
+        assert reply_ticket_manager.list_pending_replies("item-1") == []
+        server = LocalMCPServer()
+        result = server.call_tool(
+            "write_pending_reply",
+            {
+                "item_id": "item-1",
+                "_reply_ticket_id": ticket.ticket_id,
+                "request_summary": "你问问汉堡猪要玩到几点",
+                "task_plan": ["Ask player", "Wait for response", "Report result"],
+                "status": "working",
+            },
+        )
+        assert result[0]["text"].startswith("Pending reply saved:")
         entry = reply_ticket_manager.list_pending_replies("item-1")[0]
         assert entry["id"] == ticket.ticket_id
         assert entry["task_plan"] == [

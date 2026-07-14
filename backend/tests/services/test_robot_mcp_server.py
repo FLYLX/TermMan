@@ -40,6 +40,56 @@ def test_robot_mcp_send_message_requires_context_or_explicit_target() -> None:
     assert "target_type and target_id" in result[0]["text"]
 
 
+def test_robot_mcp_send_message_resolves_visible_web_context_target(monkeypatch) -> None:
+    server = RobotMCPServer()
+    sent: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        server,
+        "_get_accessible_robot_id",
+        lambda args, fallback_robot_id="": fallback_robot_id or "robot-1",
+    )
+
+    def fake_send_message(robot_id, reply_target, text):
+        sent["robot_id"] = robot_id
+        sent["reply_target"] = reply_target
+        sent["text"] = text
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+
+    result = server.call_tool(
+        "send_message",
+        {
+            "text": "服务器没开",
+            "reply_to": "baka",
+            "_robot_known_targets": [
+                {
+                    "conversation": "group:770362397",
+                    "target_type": "group",
+                    "target_id": "770362397",
+                    "sender": "baka (1874419565)",
+                    "robot_id": "robot-1",
+                }
+            ],
+        },
+    )
+
+    assert result == [
+        {
+            "type": "text",
+            "text": "Message sent to QQ group 770362397 from chat context.",
+        }
+    ]
+    assert sent["robot_id"] == "robot-1"
+    assert sent["text"] == "服务器没开"
+    assert isinstance(sent["reply_target"], RobotReplyTarget)
+    assert sent["reply_target"].target_type == "group"
+    assert sent["reply_target"].target_id == "770362397"
+
+
 def test_robot_mcp_send_message_noops_no_reply_intent(monkeypatch) -> None:
     server = RobotMCPServer()
     sent: list[str] = []
@@ -473,14 +523,19 @@ def test_robot_mcp_send_message_accepts_stamped_target_aliases(monkeypatch) -> N
     assert alias_result == [
         {"type": "text", "text": "Message sent to QQ private 654321."}
     ]
-    assert conversation_result[0]["type"] == "text"
-    assert "no active QQ robot conversation context" in conversation_result[0]["text"]
+    assert conversation_result == [
+        {
+            "type": "text",
+            "text": "Message sent to QQ group 123456 from chat context.",
+        }
+    ]
     assert [(robot_id, target.target_type, target.target_id, text) for robot_id, target, text in sent] == [
         ("robot-2", "private", "654321", "alias target"),
+        ("robot-2", "group", "123456", "conversation target"),
     ]
 
 
-def test_robot_mcp_send_message_blocks_context_reply_to_without_active_context(monkeypatch) -> None:
+def test_robot_mcp_send_message_allows_visible_context_reply_to_without_active_context(monkeypatch) -> None:
     server = RobotMCPServer()
     sent: list[tuple[str, RobotReplyTarget, str]] = []
 
@@ -522,9 +577,17 @@ def test_robot_mcp_send_message_blocks_context_reply_to_without_active_context(m
         },
     )
 
-    assert result[0]["type"] == "text"
-    assert "no active QQ robot conversation context" in result[0]["text"]
-    assert sent == []
+    assert result == [
+        {
+            "type": "text",
+            "text": "Message sent to QQ group 123456 from chat context.",
+        }
+    ]
+    assert len(sent) == 1
+    assert sent[0][0] == "robot-1"
+    assert sent[0][1].target_type == "group"
+    assert sent[0][1].target_id == "123456"
+    assert sent[0][2] == "tell Alice"
 
 
 def test_robot_mcp_send_message_blocks_only_context_target_without_active_context(

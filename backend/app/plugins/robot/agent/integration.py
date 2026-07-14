@@ -250,9 +250,6 @@ class RobotAgentIntegration:
         context = _robot_context(agent)
         if context is None:
             return
-        if not getattr(context, "robot_id", ""):
-            context.robot_known_targets = []
-            return
 
         targets_by_key: dict[str, dict[str, str]] = {}
         for message in messages:
@@ -419,10 +416,7 @@ class RobotAgentIntegration:
             args["_termman_is_superuser"] = context.current_user_is_superuser
         if getattr(context, "item_id", ""):
             args["_termman_item_id"] = context.item_id
-        if (
-            getattr(context, "robot_id", "")
-            and getattr(context, "robot_known_targets", None)
-        ):
+        if getattr(context, "robot_known_targets", None):
             args["_robot_known_targets"] = [
                 dict(target) for target in context.robot_known_targets
             ]

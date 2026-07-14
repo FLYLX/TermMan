@@ -174,9 +174,11 @@ class LocalMCPServer:
             name="write_pending_reply",
             description=(
                 "Create or update the pending-reply entry linked to the current message source. "
-                "Use this before starting delegated, multi-step, asynchronous, or wait-for-reply "
-                "work. The destination is copied from the authoritative reply ticket and cannot "
-                "be changed by tool arguments."
+                "Use this only for delegated, multi-step, asynchronous, background-job, or "
+                "wait-for-reply work where the main objective or return destination could be "
+                "forgotten between turns. Do not create an entry for ordinary chat or an "
+                "immediate one-step reply. The destination is copied from the authoritative "
+                "reply ticket and cannot be changed by tool arguments."
             ),
             input_schema={
                 "type": "object",
@@ -1258,6 +1260,20 @@ class LocalMCPServer:
                     return [{"type": "text", "text": f"Error: {result.get('error', 'daemon job failed')}"}]
                 return [{"type": "text", "text": self._format_job_result(result)}]
 
+            if reply_ticket_id:
+                try:
+                    from app.services.agent.reply_ticket import reply_ticket_manager
+
+                    reply_ticket_manager.upsert_pending_reply(
+                        reply_ticket_id,
+                        status="working",
+                    )
+                except Exception as exc:
+                    debug_log(
+                        f"[LocalMCPServer] failed to register background job pending reply: "
+                        f"ticket={reply_ticket_id}, error={exc}"
+                    )
+
             self._start_background_job_thread(
                 item_id=str(item_id),
                 command=command,
@@ -1547,6 +1563,13 @@ class LocalMCPServer:
             from app.services.agent.reply_ticket import reply_ticket_manager
 
             message = self._format_background_job_reply_ticket_message(command, result)
+            ticket = reply_ticket_manager.get(reply_ticket_id)
+            if ticket and ticket.pending_reply_active:
+                delivered, _ = reply_ticket_manager.send_pending_reply(
+                    reply_ticket_id,
+                    message,
+                )
+                return delivered
             return reply_ticket_manager.deliver(reply_ticket_id, message)
         except Exception as exc:
             debug_log(

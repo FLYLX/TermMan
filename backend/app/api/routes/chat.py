@@ -86,6 +86,8 @@ REQUEST_TIMEOUT = 120
 MAX_ITERATIONS = 10
 LOOP_DETECTION_WINDOW = 6
 LOOP_THRESHOLD = 3
+TOOL_LOOP_STOP_REASON = "任务因重复调用同类工具且没有产生新进展而暂停。"
+TOOL_BUDGET_STOP_REASON = "任务在本轮未能收敛，已暂停并保留当前进度。"
 SILENT_TOOL_NAMES = {
     "mcp_local_read_terminal_log",
     RUN_JOB_TOOL_NAME,
@@ -371,16 +373,31 @@ def _current_reply_ticket_id(agent: Any) -> str:
 
 def _explicit_web_qq_send_requested(message: str, tool_args: dict[str, Any]) -> bool:
     text = str(message or "").lower()
-    has_target = bool(
+    has_explicit_target = bool(
         str(tool_args.get("target_type") or "").strip()
         and str(tool_args.get("target_id") or "").strip()
     )
+    has_context_target = bool(
+        str(tool_args.get("reply_to") or tool_args.get("conversation") or "").strip()
+    )
+    has_target = has_explicit_target or has_context_target
     if not has_target:
         return False
-    send_words = ("发送", "发给", "转发", "通知", "告诉", "send", "message")
+    send_words = (
+        "发送",
+        "发给",
+        "转发",
+        "通知",
+        "告诉",
+        "跟",
+        "说",
+        "send",
+        "message",
+    )
     qq_words = ("qq", "群", "群号", "qq号", "group")
-    return any(word in text for word in send_words) and any(
-        word in text for word in qq_words
+    has_send_intent = any(word in text for word in send_words)
+    return has_send_intent and (
+        has_context_target or any(word in text for word in qq_words)
     )
 
 
@@ -911,21 +928,6 @@ def _create_agent_task_plan(
         step_titles=task_titles,
         workflow_id=request_id,
     )
-    if reply_ticket_id:
-        try:
-            reply_ticket_manager.upsert_pending_reply(
-                reply_ticket_id,
-                request_summary=message,
-                task_plan=task_titles,
-                status="working",
-            )
-        except Exception:
-            logger.exception(
-                "[Chat] Failed to create pending reply queue entry: item=%s ticket=%s",
-                item_id,
-                reply_ticket_id,
-            )
-
     return PlannedTaskRuntime(
         request_id=request_id,
         tasks=planned_tasks,
@@ -995,7 +997,8 @@ def _detect_tool_loop(
     tool_name: str,
     tool_args_str: str,
 ) -> tuple[bool, str]:
-    tool_call_history.append((tool_name, tool_args_str))
+    tool_fingerprint = _tool_loop_fingerprint(tool_name, tool_args_str)
+    tool_call_history.append((tool_name, tool_fingerprint))
     if len(tool_call_history) > LOOP_DETECTION_WINDOW:
         del tool_call_history[:-LOOP_DETECTION_WINDOW]
 
@@ -1008,6 +1011,136 @@ def _detect_tool_loop(
             return True, f"Detected repeated tool loop for {repeated_name} ({count} times)"
 
     return False, ""
+
+
+def _tool_loop_fingerprint(tool_name: str, tool_args_str: str) -> str:
+    try:
+        payload = json.loads(tool_args_str or "{}")
+    except json.JSONDecodeError:
+        return " ".join(str(tool_args_str or "").split())
+
+    if not isinstance(payload, dict):
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+    normalized = dict(payload)
+    normalized.pop("item_id", None)
+    normalized.pop("_reply_ticket_id", None)
+
+    if tool_name == "mcp_local_update_task_workflow":
+        # Notes are descriptive and often vary even when the model repeats the
+        # same state transition without making progress.
+        normalized = {
+            key: normalized.get(key)
+            for key in ("action", "step_index", "title")
+            if normalized.get(key) not in (None, "")
+        }
+
+    return json.dumps(
+        normalized,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _generate_stopped_turn_report(
+    handler: ItemHandler,
+    messages: list[dict[str, Any]],
+    *,
+    reason: str,
+    prefers_chinese: bool,
+) -> str:
+    fallback = (
+        "这次操作没有完成，我已停止重复执行。当前进度已保留，请稍后重试。"
+        if prefers_chinese
+        else "The operation did not complete. I stopped repeating it and kept the current progress. Please retry shortly."
+    )
+    final_messages = [*messages]
+    final_messages.append(
+        {
+            "role": "system",
+            "content": (
+                "Tool execution is now disabled because this turn did not converge. "
+                f"Internal stop reason: {reason} "
+                "Give the user one concise final status in the user's language. Summarize only "
+                "confirmed results already present in the conversation, clearly say whether the "
+                "main objective remains incomplete, and mention at most one useful next action. "
+                "Do not call tools. Do not mention iteration limits, MCP, reply tickets, internal "
+                "workflows, or tool-loop detection."
+            ),
+        }
+    )
+    try:
+        kwargs = _build_completion_kwargs(
+            handler,
+            messages=final_messages,
+            tools=[],
+            stream=False,
+        )
+        kwargs["max_tokens"] = 300
+        response = completion(**kwargs)
+        content = (
+            response.choices[0].message.content
+            if response and getattr(response, "choices", None)
+            else ""
+        )
+        return str(content or "").strip() or fallback
+    except Exception as exc:
+        logger.warning("[Chat] Failed to generate stopped-turn report: %s", exc)
+        return fallback
+
+
+def _finalize_stopped_turn(
+    *,
+    agent: Any,
+    handler: ItemHandler,
+    item_id: str,
+    messages: list[dict[str, Any]],
+    planned_task_runtime: PlannedTaskRuntime | None,
+    reason: str,
+    prefers_chinese: bool,
+    include_hidden_tool_results: bool,
+) -> list[dict[str, Any]]:
+    _mark_agent_task_plan_failed(planned_task_runtime, reason)
+    report = _generate_stopped_turn_report(
+        handler,
+        messages,
+        reason=reason,
+        prefers_chinese=prefers_chinese,
+    )
+
+    ticket_id = _current_reply_ticket_id(agent)
+    ticket = reply_ticket_manager.get(ticket_id)
+    delivered = False
+    if ticket and ticket.source_type == SOURCE_QQ:
+        if ticket.pending_reply_active:
+            delivered, _ = reply_ticket_manager.send_pending_reply(ticket_id, report)
+        else:
+            delivered = reply_ticket_manager.deliver(ticket_id, report)
+        if delivered:
+            events = [
+                _persist_and_broadcast_event(
+                    item_id,
+                    role="assistant",
+                    content=f"已回复 QQ：{report}",
+                    message_type=ROBOT_QQ_REPLY_EVENT_TYPE,
+                    extra={"tool_name": "reply_ticket", "qq_delivery": True},
+                )
+            ]
+            if include_hidden_tool_results:
+                events.append(_ticket_delivery_trace())
+            return events
+
+    if ticket and ticket.source_type != SOURCE_QQ:
+        reply_ticket_manager.mark_delivered(ticket_id)
+    return [
+        _persist_and_broadcast_event(
+            item_id,
+            role="assistant",
+            content=report,
+            message_type="agent_response",
+        )
+    ]
 
 
 def generate_stream(
@@ -1410,15 +1543,24 @@ def generate_stream(
                     tool_args_str,
                 )
                 if in_loop:
-                    _mark_agent_task_plan_failed(planned_task_runtime)
-                    warning_event = _persist_and_broadcast_event(
+                    logger.warning(
+                        "[Chat] %s item=%s ticket=%s tool=%s",
+                        loop_message,
                         item_id,
-                        role="assistant",
-                        content=loop_message,
-                        message_type="agent_warning",
-                        extra={"tool_name": tool_name},
+                        reply_ticket.ticket_id,
+                        tool_name,
                     )
-                    yield _to_sse(warning_event)
+                    for event in _finalize_stopped_turn(
+                        agent=agent,
+                        handler=handler,
+                        item_id=item_id,
+                        messages=messages,
+                        planned_task_runtime=planned_task_runtime,
+                        reason=TOOL_LOOP_STOP_REASON,
+                        prefers_chinese=_contains_cjk(message),
+                        include_hidden_tool_results=include_hidden_tool_results,
+                    ):
+                        yield _to_sse(event)
                     _broadcast_agent_status(item_id, "idle")
                     yield _to_sse({"done": True})
                     return
@@ -1718,14 +1860,23 @@ def generate_stream(
             messages.append(assistant_message)
             messages.extend(tool_messages)
 
-        warning_event = _persist_and_broadcast_event(
+        logger.warning(
+            "[Chat] Tool iteration budget exhausted item=%s ticket=%s iterations=%s",
             item_id,
-            role="assistant",
-            content=f"Stopped after reaching the max iteration limit ({MAX_ITERATIONS})",
-            message_type="agent_warning",
+            reply_ticket.ticket_id,
+            MAX_ITERATIONS,
         )
-        _mark_agent_task_plan_failed(planned_task_runtime)
-        yield _to_sse(warning_event)
+        for event in _finalize_stopped_turn(
+            agent=agent,
+            handler=handler,
+            item_id=item_id,
+            messages=messages,
+            planned_task_runtime=planned_task_runtime,
+            reason=TOOL_BUDGET_STOP_REASON,
+            prefers_chinese=_contains_cjk(message),
+            include_hidden_tool_results=include_hidden_tool_results,
+        ):
+            yield _to_sse(event)
         _broadcast_agent_status(item_id, "idle")
         yield _to_sse({"done": True})
     except Exception as exc:

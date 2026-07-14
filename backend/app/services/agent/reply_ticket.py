@@ -138,6 +138,7 @@ class ReplyTicketManager:
             handler_id=str(handler_id),
             source_type=SOURCE_WEB,
             source_label="TermMan web chat",
+            request_message=str(message or "").strip()[:500],
         )
 
         if forced_source_type == SOURCE_WEB:

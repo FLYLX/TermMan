@@ -843,6 +843,67 @@ def test_run_job_reports_final_daemon_result(monkeypatch) -> None:
     }
 
 
+def test_background_run_job_registers_pending_reply_only_after_start(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from app.services.agent.reply_ticket import reply_ticket_manager
+
+    item_id = "item-background-pending"
+    server = LocalMCPServer()
+    started: list[dict] = []
+    fake_agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_context_token="",
+            reply_ticket_id="",
+        )
+    )
+
+    monkeypatch.setattr(
+        server,
+        "_get_item_daemon_context",
+        lambda _item_id: (
+            SimpleNamespace(owner_id="user-1", working_directory="/workspace/item"),
+            SimpleNamespace(),
+        ),
+    )
+    monkeypatch.setattr(
+        server,
+        "_start_background_job_thread",
+        lambda **kwargs: started.append(kwargs),
+    )
+
+    reply_ticket_manager.reset()
+    try:
+        ticket = reply_ticket_manager.create_for_agent(
+            fake_agent,
+            item_id=item_id,
+            handler_id="handler-1",
+            message="安装 Temurin Java 17",
+            source_type="web",
+        )
+        result = server.call_tool(
+            "run_job",
+            {
+                "item_id": item_id,
+                "command": "apt-get install -y temurin-17-jdk",
+                "_reply_ticket_id": ticket.ticket_id,
+            },
+        )
+
+        assert "后台任务已启动" in result[0]["text"]
+        assert len(started) == 1
+        assert ticket.pending_reply_active is True
+        entries = reply_ticket_manager.list_pending_replies(item_id)
+        assert len(entries) == 1
+        assert entries[0]["request_summary"] == "安装 Temurin Java 17"
+        assert entries[0]["destination_type"] == "web"
+    finally:
+        reply_ticket_manager.reset()
+
+
 def test_tool_descriptions_guide_foreground_background_command_choice() -> None:
     server = LocalMCPServer()
 

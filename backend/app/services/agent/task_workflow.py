@@ -762,6 +762,9 @@ class TaskWorkflowManager:
                 "4. Do not give a final completion answer while this workflow is active or "
                 "waiting_job. Finish verification first, or mark a genuine blocker.",
                 "5. Report success/failure back only through the linked reply ticket source.",
+                "6. Create a pending-reply queue entry only for asynchronous, delegated, "
+                "multi-step, or wait-for-response work that may span turns. Ordinary chat and "
+                "immediate one-step actions use the normal reply ticket without a queue entry.",
             ]
         )
         return "\n".join(lines)

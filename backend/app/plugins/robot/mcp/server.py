@@ -79,7 +79,10 @@ class RobotMCPServer:
                 "Outside an active QQ-triggered context, never infer the QQ "
                 "destination from prior chat history. Use target_type and target_id "
                 "only when the user explicitly provided a QQ group number or QQ "
-                "number. If multiple robots are available, provide robot_id."
+                "number. In backend web chat, reply_to may select one QQ conversation "
+                "that is visibly present in the current chat context, such as a sender "
+                "name or group reference. If the visible target is missing or ambiguous, "
+                "ask the user instead. If multiple robots are available, provide robot_id."
             ),
             input_schema={
                 "type": "object",
@@ -137,8 +140,10 @@ class RobotMCPServer:
                     "reply_to": {
                         "type": "string",
                         "description": (
-                            "Deprecated for sending. Do not use this for delivery; "
-                            "it will not select a QQ target from prior chat history."
+                            "Backend web chat only: a sender name, conversation key, "
+                            "or group reference that uniquely matches a QQ conversation "
+                            "visible in the current TermMan chat context. Never infer a "
+                            "target that is not visible in the current request context."
                         ),
                     },
                     "robot_id": {
@@ -1750,7 +1755,12 @@ class RobotMCPServer:
             explicit_target = None
             context_reference = ""
 
-        if explicit_target is None and not broadcast and context is not None and context_reference:
+        if (
+            explicit_target is None
+            and not broadcast
+            and context is None
+            and context_reference
+        ):
             try:
                 context_target, context_target_robot_id = self._resolve_context_target(args)
             except Exception as exc:
