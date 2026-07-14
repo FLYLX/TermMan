@@ -153,10 +153,41 @@ def test_explicit_web_qq_send_accepts_visible_context_reference() -> None:
         "帮我转发过去",
         {"reply_to": "baka", "text": "服务器没开"},
     )
+    assert chat_route._explicit_web_qq_send_requested(
+        "发你好",
+        {"reply_to": "baka", "text": "你好"},
+    )
     assert not chat_route._explicit_web_qq_send_requested(
         "现在呢",
         {"reply_to": "baka", "text": "误发"},
     )
+
+
+def test_short_send_follow_up_inherits_recent_qq_tool_context() -> None:
+    from app.api.routes import chat as chat_route
+    from app.services.agent.tool_selection import select_tools_for_turn
+
+    history = [
+        chat_route.ChatMessage(role="user", content="帮我往群里发咕咕嘎嘎"),
+        chat_route.ChatMessage(role="assistant", content="你想发什么内容？"),
+    ]
+    query = chat_route._build_tool_selection_query("发你好", history)
+    tools = [
+        {
+            "type": "function",
+            "function": {"name": "mcp_robot_send_message"},
+        },
+        {
+            "type": "function",
+            "function": {"name": "mcp_local_execute_command"},
+        },
+    ]
+    selected = select_tools_for_turn(tools, source="web", query=query)
+
+    assert [tool["function"]["name"] for tool in selected] == [
+        "mcp_robot_send_message"
+    ]
+    assert chat_route._build_tool_selection_query("现在呢", history) == "现在呢"
 
 
 def test_web_chat_keeps_visible_qq_targets_without_active_qq_context() -> None:
@@ -169,6 +200,7 @@ def test_web_chat_keeps_visible_qq_targets_without_active_qq_context() -> None:
         current_user_is_superuser=True,
         item_id="item-1",
         robot_context_token="",
+        robot_backend_target_resolution_enabled=True,
     )
     agent = SimpleNamespace(_context=context)
     integration = RobotAgentIntegration()
@@ -201,9 +233,10 @@ def test_web_chat_keeps_visible_qq_targets_without_active_qq_context() -> None:
         args=args,
     )
     assert args["_robot_known_targets"] == context.robot_known_targets
+    assert integration._has_delivery_context(agent, []) is True
 
 
-def test_generate_stream_allows_explicit_web_forward_to_visible_qq_target(
+def test_generate_stream_allows_short_web_forward_follow_up_to_visible_qq_target(
     db: Session,
     monkeypatch,
 ) -> None:
@@ -257,7 +290,7 @@ def test_generate_stream_allows_explicit_web_forward_to_visible_qq_target(
                                                 arguments=json.dumps(
                                                     {
                                                         "reply_to": "baka",
-                                                        "text": "服务器没开",
+                                                        "text": "你好",
                                                     },
                                                     ensure_ascii=False,
                                                 ),
@@ -299,15 +332,24 @@ def test_generate_stream_allows_explicit_web_forward_to_visible_qq_target(
                     "sender=baka (1874419565)]\n服务器开了吗"
                 ),
             },
-            {"role": "user", "content": "跟群里的 baka 说服务器没开"},
+            {"role": "user", "content": "发你好"},
         ],
     )
     monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
 
     chunks = list(
         chat_route.generate_stream(
-            message="跟群里的 baka 说服务器没开",
-            history=[],
+            message="发你好",
+            history=[
+                chat_route.ChatMessage(
+                    role="user",
+                    content="帮我往群里的 baka 发一条消息",
+                ),
+                chat_route.ChatMessage(
+                    role="assistant",
+                    content="你想发什么内容？",
+                ),
+            ],
             handler=handler,
             item_id=str(item.id),
             agent=fake_agent,
@@ -319,10 +361,74 @@ def test_generate_stream_allows_explicit_web_forward_to_visible_qq_target(
     assert completion_calls["value"] == 2
     assert len(executed) == 1
     assert executed[0]["reply_to"] == "baka"
-    assert executed[0]["text"] == "服务器没开"
+    assert executed[0]["text"] == "你好"
     assert any(event.get("type") == "agent_qq_reply" for event in payloads)
     assert not any(event.get("type") == "agent_warning" for event in payloads)
     assert not any(event.get("type") == "agent_response" for event in payloads)
+
+
+def test_generate_stream_replaces_fabricated_tool_transcript_when_no_tool_ran(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+
+    item, handler = _create_linked_item_and_handler(db)
+    fake_agent = _make_fake_agent(tools=[])
+    fabricated = (
+        "Executing tool: mcp_local_append_pending_reply\n"
+        "```json\n{\"group_id\":\"770362397\",\"content\":\"你好\"}\n```\n"
+        "Executing tool: mcp_robot_send_group_message\n"
+        "已经发送成功。"
+    )
+
+    monkeypatch.setattr(
+        chat_route,
+        "completion",
+        lambda **kwargs: iter(
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content=fabricated,
+                                tool_calls=None,
+                            ),
+                            finish_reason="stop",
+                        )
+                    ]
+                )
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "build_chat_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "发你好"}],
+    )
+    monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
+
+    chunks = list(
+        chat_route.generate_stream(
+            message="发你好",
+            history=[],
+            handler=handler,
+            item_id=str(item.id),
+            agent=fake_agent,
+            source_type="web",
+        )
+    )
+    payloads = _sse_payloads(chunks)
+    responses = [
+        event.get("content", "")
+        for event in payloads
+        if event.get("type") == "agent_response"
+    ]
+
+    assert responses == ["我没有实际调用工具，因此这次外部操作没有执行。"]
+    assert not any("mcp_local_append_pending_reply" in chunk for chunk in chunks)
+    assert not any("mcp_robot_send_group_message" in chunk for chunk in chunks)
+    assert not any("发送成功" in chunk for chunk in chunks)
 
 
 def test_generate_stream_reports_instead_of_exposing_tool_loop_warning(

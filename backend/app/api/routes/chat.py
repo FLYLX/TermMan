@@ -125,6 +125,14 @@ TASK_WORKFLOW_CONTINUATION_RE = re.compile(
     r"\b(?:continue|retry|resume|next|try again)\b)",
     re.IGNORECASE,
 )
+ROBOT_SEND_FOLLOW_UP_RE = re.compile(
+    r"(?:转发|发送|发(?!现|生|布|挥|明|烧|呆|票|热)|通知|告诉|(?:跟|向|对).{0,24}说)",
+    re.IGNORECASE,
+)
+ROBOT_CONTEXT_HISTORY_RE = re.compile(
+    r"(?:\[Robot message;|\bQQ\b|QQ群|群里|群号|私聊|转发|发给)",
+    re.IGNORECASE,
+)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -141,6 +149,30 @@ def _is_internal_agent_callback(message: str, source_type: str) -> bool:
 class ChatMessage(BaseModel):
     role: str
     content: str
+
+
+def _build_tool_selection_query(
+    message: str,
+    history: list[ChatMessage | dict[str, Any]],
+) -> str:
+    current = str(message or "").strip()
+    if not current or len(current) > 80 or not ROBOT_SEND_FOLLOW_UP_RE.search(current):
+        return current
+
+    recent_parts: list[str] = []
+    for entry in history[-6:]:
+        raw_content = (
+            entry.get("content")
+            if isinstance(entry, dict)
+            else getattr(entry, "content", "")
+        )
+        content = str(raw_content or "").strip()
+        if content:
+            recent_parts.append(content)
+    recent_context = "\n".join(recent_parts)
+    if not recent_context or not ROBOT_CONTEXT_HISTORY_RE.search(recent_context):
+        return current
+    return f"{current}\nRecent forwarding context:\n{recent_context}"
 
 
 class ChatRequest(BaseModel):
@@ -383,19 +415,10 @@ def _explicit_web_qq_send_requested(message: str, tool_args: dict[str, Any]) -> 
     has_target = has_explicit_target or has_context_target
     if not has_target:
         return False
-    send_words = (
-        "发送",
-        "发给",
-        "转发",
-        "通知",
-        "告诉",
-        "跟",
-        "说",
-        "send",
-        "message",
-    )
     qq_words = ("qq", "群", "群号", "qq号", "group")
-    has_send_intent = any(word in text for word in send_words)
+    has_send_intent = bool(ROBOT_SEND_FOLLOW_UP_RE.search(text)) or any(
+        word in text for word in ("send", "message")
+    )
     return has_send_intent and (
         has_context_target or any(word in text for word in qq_words)
     )
@@ -1183,10 +1206,11 @@ def generate_stream(
     else:
         reply_ticket_manager.attach_to_agent(agent, reply_ticket.ticket_id)
     matched_skills = agent.match_skills(message)
+    tool_selection_query = _build_tool_selection_query(message, history)
     tools = select_tools_for_turn(
         agent.get_tools_for_litellm(),
         source="qq" if normalized_source_type == SOURCE_QQ else "web",
-        query=message,
+        query=tool_selection_query,
         agent=agent,
     )
 
@@ -1209,8 +1233,19 @@ def generate_stream(
         tools = select_tools_for_turn(
             agent.get_tools_for_litellm(),
             source="qq" if normalized_source_type == SOURCE_QQ else "web",
-            query=message,
+            query=tool_selection_query,
             agent=agent,
+        )
+
+    agent_context = getattr(agent, "_context", None)
+    if agent_context is not None:
+        agent_context.robot_backend_target_resolution_enabled = bool(
+            normalized_source_type == SOURCE_WEB
+            and ROBOT_SEND_FOLLOW_UP_RE.search(str(message or ""))
+            and any(
+                tool.get("function", {}).get("name") == ROBOT_SEND_TOOL_NAME
+                for tool in tools
+            )
         )
 
     pending_context = build_pending_terminal_continuation_prompt(item_id, message)

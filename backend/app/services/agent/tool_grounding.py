@@ -68,14 +68,20 @@ _ENGLISH_TOOL_CLAIM_PATTERNS = (
         re.IGNORECASE,
     ),
 )
+_FABRICATED_TOOL_TRACE_RE = re.compile(
+    r"(?:Executing tool:|执行工具:)\s*mcp_[a-z0-9_]+",
+    re.IGNORECASE,
+)
 
 
 def has_ungrounded_tool_claim(content: str) -> bool:
     text = (content or "").strip()
     if not text:
         return False
-    return any(pattern.search(text) for pattern in _CHINESE_TOOL_CLAIM_PATTERNS) or any(
-        pattern.search(text) for pattern in _ENGLISH_TOOL_CLAIM_PATTERNS
+    return (
+        bool(_FABRICATED_TOOL_TRACE_RE.search(text))
+        or any(pattern.search(text) for pattern in _CHINESE_TOOL_CLAIM_PATTERNS)
+        or any(pattern.search(text) for pattern in _ENGLISH_TOOL_CLAIM_PATTERNS)
     )
 
 
@@ -88,11 +94,6 @@ def guard_ungrounded_tool_claim(
     if not text or tool_called or not has_ungrounded_tool_claim(text):
         return text
 
-    return (
-        "\u6211\u6ca1\u6709\u5b9e\u9645\u8c03\u7528 MCP/\u5de5\u5177\uff0c"
-        "\u56e0\u6b64\u4e0d\u80fd\u786e\u8ba4\u5916\u90e8\u64cd\u4f5c"
-        "\u5df2\u7ecf\u5b8c\u6210\u3002"
-        "\u4e0b\u9762\u53ea\u57fa\u4e8e\u5f53\u524d\u4e0a\u4e0b\u6587"
-        "\u4f5c\u7b54\uff1a\n"
-        f"{text}"
-    )
+    if re.search(r"[\u4e00-\u9fff]", text):
+        return "我没有实际调用工具，因此这次外部操作没有执行。"
+    return "I did not call a tool, so the external operation was not performed."

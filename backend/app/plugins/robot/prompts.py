@@ -133,6 +133,8 @@ ROBOT_ACTIVE_CONTEXT_PROMPT = (
 ROBOT_BACKEND_CONTEXT_PROMPT = (
     "历史中的 QQ 上下文：\n"
     "- 用户从 Web 明确要求转发/通知 QQ 时，可以使用 `mcp_robot_send_message`。不要声称 Web 无法转发。\n"
+    "- 立即转发一条 QQ 消息是单步动作，直接调用 `mcp_robot_send_message`；不要创建待回复队列。\n"
+    "- 只有需要等待后台任务、外部回复或跨轮继续处理时，才写入待回复队列。\n"
     "- 只有明确选择当前 TermMan 消息上下文里可见的 QQ 会话时，才使用 `reply_to`；可用发送者名称、群引用或 conversation key。\n"
     "- 当前上下文只有一个可见 QQ 目标且用户明确说转发过去时，可以直接发送；有多个匹配目标时先询问。\n"
     "- 只有用户显式提供 QQ 群号或 QQ 号时，才使用 `target_type` 和 `target_id`。\n"

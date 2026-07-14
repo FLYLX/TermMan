@@ -116,6 +116,14 @@ class AgentContext:
     def robot_known_targets(self, value: list[dict[str, str]]) -> None:
         self._set_robot_value("known_targets", value)
 
+    @property
+    def robot_backend_target_resolution_enabled(self) -> bool:
+        return bool(self._get_robot_value("backend_target_resolution_enabled", False))
+
+    @robot_backend_target_resolution_enabled.setter
+    def robot_backend_target_resolution_enabled(self, value: bool) -> None:
+        self._set_robot_value("backend_target_resolution_enabled", bool(value))
+
 
 class Agent:
     _instances: dict[str, Agent] = {}

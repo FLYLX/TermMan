@@ -250,6 +250,11 @@ class RobotAgentIntegration:
         context = _robot_context(agent)
         if context is None:
             return
+        if not getattr(context, "robot_id", "") and not bool(
+            getattr(context, "robot_backend_target_resolution_enabled", False)
+        ):
+            context.robot_known_targets = []
+            return
 
         targets_by_key: dict[str, dict[str, str]] = {}
         for message in messages:
@@ -372,6 +377,7 @@ class RobotAgentIntegration:
         agent_context.robot_context_token = ""
         agent_context.robot_reply_context_summary = ""
         agent_context.robot_known_targets = []
+        agent_context.robot_backend_target_resolution_enabled = False
         agent_context.robot_mcp_server_transient = False
         if should_remove_robot_mcp and ROBOT_MCP_SERVER_NAME in agent._mcp_servers:
             agent._mcp_servers = [
@@ -737,7 +743,19 @@ class RobotAgentIntegration:
     ) -> bool:
         context = _robot_context(agent)
         if context is not None:
-            return bool(getattr(context, "robot_id", ""))
+            return bool(
+                getattr(context, "robot_id", "")
+                or (
+                    bool(
+                        getattr(
+                            context,
+                            "robot_backend_target_resolution_enabled",
+                            False,
+                        )
+                    )
+                    and getattr(context, "robot_known_targets", None)
+                )
+            )
 
         return False
 
