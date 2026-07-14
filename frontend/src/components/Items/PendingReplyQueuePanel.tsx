@@ -1,6 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronRight, ListTodo, Loader2, Send, Trash2 } from "lucide-react"
-import { useState } from "react"
+import {
+  AlertCircle,
+  ChevronRight,
+  ListTodo,
+  Loader2,
+  RefreshCw,
+  Send,
+  Trash2,
+} from "lucide-react"
+import { useEffect, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,6 +22,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
 import {
+  PENDING_REPLY_QUEUE_EVENT,
   type PendingReplyEntry,
   PendingReplyService,
 } from "@/services/pending-replies"
@@ -48,6 +57,8 @@ const COPY = {
   sendTo: "\u53d1\u9001\u5230",
   placeholder: "\u8f93\u5165\u6700\u7ec8\u6c47\u62a5\u5185\u5bb9",
   cancel: "\u53d6\u6d88",
+  loadFailed: "\u4efb\u52a1\u961f\u5217\u52a0\u8f7d\u5931\u8d25",
+  retry: "\u91cd\u8bd5",
 } as const
 
 function formatTime(value: string): string {
@@ -101,9 +112,26 @@ export function PendingReplyQueuePanel({
     queryKey: ["pending-replies", itemId],
     queryFn: () => PendingReplyService.list(itemId),
     refetchInterval: 5_000,
+    refetchOnWindowFocus: true,
   })
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["pending-replies", itemId] })
+
+  useEffect(() => {
+    const handleQueueChanged = (event: Event) => {
+      const changedItemId = (event as CustomEvent<{ itemId?: string }>).detail
+        ?.itemId
+      if (changedItemId === itemId) {
+        void queryClient.invalidateQueries({
+          queryKey: ["pending-replies", itemId],
+        })
+      }
+    }
+
+    window.addEventListener(PENDING_REPLY_QUEUE_EVENT, handleQueueChanged)
+    return () =>
+      window.removeEventListener(PENDING_REPLY_QUEUE_EVENT, handleQueueChanged)
+  }, [itemId, queryClient])
 
   const deleteMutation = useMutation({
     mutationFn: (entryId: string) =>
@@ -130,7 +158,7 @@ export function PendingReplyQueuePanel({
   const entries = query.data?.items ?? []
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border/60 bg-card/80">
+    <div className="shrink-0 overflow-hidden rounded-lg border border-border/60 bg-card/80">
       <button
         type="button"
         className="flex h-10 w-full items-center justify-between gap-3 px-3 text-left text-sm"
@@ -153,9 +181,30 @@ export function PendingReplyQueuePanel({
 
       {open ? (
         <div className="max-h-[18rem] overflow-y-auto border-t border-border/60 p-2">
-          {entries.length === 0 ? (
+          {query.isError ? (
+            <div className="flex items-center justify-between gap-3 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+              <span className="flex min-w-0 items-center gap-2">
+                <AlertCircle className="size-4 shrink-0" />
+                <span className="truncate">{COPY.loadFailed}</span>
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 shrink-0 gap-1 px-2"
+                onClick={() => void query.refetch()}
+              >
+                <RefreshCw className="size-3.5" />
+                {COPY.retry}
+              </Button>
+            </div>
+          ) : entries.length === 0 ? (
             <div className="py-5 text-center text-xs text-muted-foreground">
-              {COPY.empty}
+              {query.isPending ? (
+                <Loader2 className="mx-auto size-4 animate-spin" />
+              ) : (
+                COPY.empty
+              )}
             </div>
           ) : (
             <div className="space-y-2">

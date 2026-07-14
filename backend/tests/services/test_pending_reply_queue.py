@@ -85,19 +85,55 @@ def test_pending_reply_locks_requester_plan_and_destination() -> None:
         unregister_robot_mcp_context(token)
 
 
+def test_pending_reply_broadcasts_created_updated_and_removed_events(
+    monkeypatch,
+) -> None:
+    from app.services.agent.stream_manager import stream_manager
+
+    manager = ReplyTicketManager()
+    events: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        stream_manager,
+        "broadcast_chat_event",
+        lambda item_id, event: events.append((item_id, event)),
+    )
+    ticket = manager.create_for_agent(
+        _agent(),
+        item_id="item-1",
+        handler_id="handler-1",
+        message="Install Java",
+        source_type="web",
+    )
+
+    manager.upsert_pending_reply(ticket.ticket_id, status="working")
+    manager.upsert_pending_reply(ticket.ticket_id, status="waiting")
+    assert manager.delete_pending_reply(ticket.ticket_id) is True
+
+    assert [event[1]["action"] for event in events] == [
+        "created",
+        "updated",
+        "removed",
+    ]
+    assert all(event[0] == "item-1" for event in events)
+    assert all(event[1]["type"] == "task_queue_changed" for event in events)
+
+
 def test_pending_reply_sends_to_original_qq_then_removes_entry(monkeypatch) -> None:
     from app.plugins.robot.bridge_client import robot_bridge_client
     from app.plugins.robot.conversation_memory import robot_conversation_memory
+    from app.services.agent.stream_manager import stream_manager
 
     manager = ReplyTicketManager()
     token, ticket = _create_qq_ticket(manager)
     sent: list[tuple[str, str, str]] = []
     memory: list[tuple[str, str, str]] = []
+    lifecycle: list[str] = []
     monkeypatch.setattr(
         robot_bridge_client,
         "send_message",
-        lambda robot_id, target, text: sent.append(
-            (str(robot_id), target.target_id, text)
+        lambda robot_id, target, text: (
+            lifecycle.append("delivered"),
+            sent.append((str(robot_id), target.target_id, text)),
         ),
     )
     monkeypatch.setattr(
@@ -106,6 +142,11 @@ def test_pending_reply_sends_to_original_qq_then_removes_entry(monkeypatch) -> N
         lambda robot_id, conversation_key, text: memory.append(
             (str(robot_id), conversation_key, text)
         ),
+    )
+    monkeypatch.setattr(
+        stream_manager,
+        "broadcast_chat_event",
+        lambda _item_id, event: lifecycle.append(str(event.get("action") or "")),
     )
     try:
         manager.upsert_pending_reply(ticket.ticket_id, status="ready")
@@ -130,6 +171,7 @@ def test_pending_reply_sends_to_original_qq_then_removes_entry(monkeypatch) -> N
                 "The player said they will play until bedtime.",
             )
         ]
+        assert lifecycle == ["created", "updated", "delivered", "removed"]
         assert manager.get(ticket.ticket_id) is None
     finally:
         unregister_robot_mcp_context(token)
@@ -365,6 +407,60 @@ def test_delegated_question_enters_task_queue_with_workflow(
         ]
         assert task_workflow_manager.get_by_ticket(ticket.ticket_id) is not None
     finally:
+        reply_ticket_manager.reset()
+        task_workflow_manager.reset()
+
+
+def test_qq_task_plan_enters_queue_with_original_qq_destination(
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+
+    reply_ticket_manager.reset()
+    task_workflow_manager.reset()
+    token, ticket = _create_qq_ticket(reply_ticket_manager)
+    agent = _agent(robot_id="robot-1", token=token)
+    agent._context.reply_ticket_id = ticket.ticket_id
+    monkeypatch.setattr(
+        chat_route,
+        "build_status_update_memory_candidate",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "_plan_agent_task_titles",
+        lambda *args, **kwargs: ["Install Java", "Verify Java", "Report result"],
+    )
+
+    try:
+        runtime = chat_route._create_agent_task_plan(
+            "item-1",
+            handler=SimpleNamespace(id="handler-1"),
+            agent=agent,
+            message="安装 Temurin Java 17",
+            history=[],
+            tools=[
+                {
+                    "type": "function",
+                    "function": {"name": "mcp_local_run_job"},
+                }
+            ],
+        )
+
+        assert runtime is not None
+        entries = reply_ticket_manager.list_pending_replies("item-1")
+        assert len(entries) == 1
+        assert entries[0]["id"] == ticket.ticket_id
+        assert entries[0]["destination_type"] == "qq"
+        assert entries[0]["destination_label"] == "QQ group:770362397"
+        assert entries[0]["requester"] == "FLY (2537134688)"
+        assert entries[0]["task_plan"] == [
+            "Install Java",
+            "Verify Java",
+            "Report result",
+        ]
+    finally:
+        unregister_robot_mcp_context(token)
         reply_ticket_manager.reset()
         task_workflow_manager.reset()
 

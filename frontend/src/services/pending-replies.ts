@@ -2,6 +2,16 @@ import type { CancelablePromise } from "@/client/core/CancelablePromise"
 import { OpenAPI } from "@/client/core/OpenAPI"
 import { request as __request } from "@/client/core/request"
 
+export const PENDING_REPLY_QUEUE_EVENT = "termman:pending-replies-changed"
+
+export function notifyPendingReplyQueueChanged(itemId: string): void {
+  window.dispatchEvent(
+    new CustomEvent(PENDING_REPLY_QUEUE_EVENT, {
+      detail: { itemId },
+    }),
+  )
+}
+
 export interface PendingReplyWorkflow {
   workflow_id?: string
   objective?: string

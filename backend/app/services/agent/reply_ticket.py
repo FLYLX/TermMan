@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 SOURCE_QQ = "qq"
 SOURCE_WEB = "web"
 SOURCE_TERMINAL = "terminal"
+TASK_QUEUE_EVENT_TYPE = "task_queue_changed"
 
 TICKET_TTL = timedelta(hours=6)
 CURRENT_QQ_MESSAGE_MARKER = "[Current QQ message]"
@@ -253,6 +254,32 @@ class ReplyTicketManager:
             return f"Minecraft tell {ticket.terminal_target or ticket.sender_label}"
         return ticket.source_label or "TermMan web chat"
 
+    @staticmethod
+    def _broadcast_pending_reply_change(
+        ticket: ReplyTicket,
+        *,
+        action: str,
+    ) -> None:
+        try:
+            from app.services.agent.stream_manager import stream_manager
+
+            stream_manager.broadcast_chat_event(
+                ticket.item_id,
+                {
+                    "type": TASK_QUEUE_EVENT_TYPE,
+                    "item_id": ticket.item_id,
+                    "entry_id": ticket.ticket_id,
+                    "action": action,
+                    "timestamp": datetime.now().isoformat(),
+                },
+            )
+        except Exception:
+            logger.exception(
+                "[ReplyTicket] Failed to broadcast task queue change: ticket=%s action=%s",
+                ticket.ticket_id,
+                action,
+            )
+
     def upsert_pending_reply(
         self,
         ticket_id: str,
@@ -268,6 +295,7 @@ class ReplyTicketManager:
             ticket = self._tickets.get(str(ticket_id))
             if not ticket:
                 raise KeyError(f"reply ticket not found: {ticket_id}")
+            was_active = ticket.pending_reply_active
             now = datetime.now()
             ticket.pending_reply_active = True
             ticket.pending_reply_status = str(status or "working")[:32]
@@ -293,7 +321,12 @@ class ReplyTicketManager:
             ticket.updated_at = now
             if ticket.status == "delivered":
                 ticket.status = "running"
-            return self._pending_reply_snapshot(ticket)
+            snapshot = self._pending_reply_snapshot(ticket)
+        self._broadcast_pending_reply_change(
+            ticket,
+            action="updated" if was_active else "created",
+        )
+        return snapshot
 
     def delete_pending_reply(self, ticket_id: str, *, reason: str = "") -> bool:
         with self._lock:
@@ -311,6 +344,7 @@ class ReplyTicketManager:
             )
         except Exception:
             pass
+        self._broadcast_pending_reply_change(ticket, action="removed")
         return True
 
     def complete_pending_reply_after_external_delivery(self, ticket_id: str) -> bool:
@@ -333,6 +367,7 @@ class ReplyTicketManager:
                 "[ReplyTicket] Failed to complete workflow after external delivery: ticket=%s",
                 ticket_id,
             )
+        self._broadcast_pending_reply_change(ticket, action="removed")
         return True
 
     def _pending_reply_snapshot(self, ticket: ReplyTicket) -> dict[str, Any]:
@@ -514,6 +549,9 @@ class ReplyTicketManager:
             ticket.status = "failed"
             ticket.delivery_error = str(error or "")
             ticket.updated_at = datetime.now()
+            pending_reply_active = ticket.pending_reply_active
+        if pending_reply_active:
+            self._broadcast_pending_reply_change(ticket, action="updated")
 
     def mark_delivered(self, ticket_id: str) -> bool:
         try:
@@ -543,12 +581,17 @@ class ReplyTicketManager:
                 ticket.pending_reply_status = "working"
                 ticket.updated_at = datetime.now()
                 ticket.delivery_error = ""
-                return True
-            now = datetime.now()
-            ticket.status = "delivered"
-            ticket.delivered_at = now
-            ticket.updated_at = now
-            ticket.delivery_error = ""
+                pending_reply_active = True
+            else:
+                pending_reply_active = False
+                now = datetime.now()
+                ticket.status = "delivered"
+                ticket.delivered_at = now
+                ticket.updated_at = now
+                ticket.delivery_error = ""
+        if pending_reply_active:
+            self._broadcast_pending_reply_change(ticket, action="updated")
+            return True
         try:
             from app.services.agent.task_workflow import task_workflow_manager
 
@@ -700,6 +743,7 @@ class ReplyTicketManager:
             current.status = "sending"
             current.pending_reply_status = "sending"
             current.updated_at = datetime.now()
+        self._broadcast_pending_reply_change(ticket, action="updated")
 
         try:
             if ticket.source_type == SOURCE_QQ:
@@ -754,6 +798,7 @@ class ReplyTicketManager:
                 task_workflow_manager.mark_delivery_failed(ticket.ticket_id, str(exc))
             except Exception:
                 pass
+            self._broadcast_pending_reply_change(ticket, action="updated")
             return False, str(exc)
 
         with self._lock:
@@ -764,6 +809,7 @@ class ReplyTicketManager:
             task_workflow_manager.on_delivery(ticket.ticket_id)
         except Exception:
             pass
+        self._broadcast_pending_reply_change(ticket, action="removed")
         return True, self._destination_label(ticket)
 
     def snapshot(self, item_id: str | None = None) -> list[dict[str, Any]]:

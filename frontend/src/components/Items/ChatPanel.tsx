@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { notifyPendingReplyQueueChanged } from "@/services/pending-replies"
 
 type TimelineRole = "user" | "assistant" | "terminal"
 type TerminalSource = "filtered_output" | "raw_feedback"
@@ -1097,6 +1098,11 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       content?: unknown
       terminal_source?: unknown
       tool_name?: unknown
+    }
+
+    if (data.type === "task_queue_changed") {
+      notifyPendingReplyQueueChanged(itemId)
+      return
     }
 
     if (data.done === true) {
