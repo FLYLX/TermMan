@@ -30,7 +30,7 @@ from app.services.agent.integrations import (
     setup_integration_chat_contexts,
     should_enable_terminal_alert_integrations,
 )
-from app.services.agent.model_parameters import normalize_model_parameters
+from app.services.agent.model_parameters import normalize_model_parameters_for_model
 from app.services.agent.pending_context import (
     attach_terminal_feedback_to_pending_continuation,
     build_pending_terminal_continuation_prompt,
@@ -2797,8 +2797,9 @@ class AgentSession:
         }
 
         kwargs.update(
-            normalize_model_parameters(
-                getattr(agent._context, "model_parameters", {})
+            normalize_model_parameters_for_model(
+                agent._context.model,
+                getattr(agent._context, "model_parameters", {}),
             )
         )
 

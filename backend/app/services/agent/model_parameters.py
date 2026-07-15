@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 PROTECTED_COMPLETION_PARAMETERS = {
@@ -12,6 +13,7 @@ PROTECTED_COMPLETION_PARAMETERS = {
     "tool_choice",
     "tools",
 }
+GPT5_MODEL_PATTERN = re.compile(r"(?:^|/)gpt-5(?:[._-]|$)", re.IGNORECASE)
 
 
 def normalize_model_parameters(value: Any) -> dict[str, Any]:
@@ -34,4 +36,19 @@ def normalize_model_parameters(value: Any) -> dict[str, Any]:
             )
         except (TypeError, ValueError):
             continue
+    return normalized
+
+
+def normalize_model_parameters_for_model(
+    model: str | None,
+    value: Any,
+) -> dict[str, Any]:
+    normalized = normalize_model_parameters(value)
+    if not GPT5_MODEL_PATTERN.search(str(model or "").strip()):
+        return normalized
+
+    if normalized.get("temperature") != 1:
+        normalized.pop("temperature", None)
+    if normalized.get("top_p") != 1:
+        normalized.pop("top_p", None)
     return normalized
