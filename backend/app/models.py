@@ -210,6 +210,7 @@ class ItemHandlerBase(SQLModel):
     model: Optional[str] = Field(default=None, max_length=255)
     api_key: Optional[str] = Field(default=None, max_length=255)
     api_url: Optional[str] = Field(default=None, max_length=255)
+    model_parameters: dict = Field(default_factory=dict, sa_type=JSON)
     enabled_skills: Optional[List[str]] = Field(default=None, sa_type=JSON)
     enabled_mcp_servers: Optional[List[str]] = Field(default=None, sa_type=JSON)
     enabled_knowledge_files: Optional[List[str]] = Field(default=None, sa_type=JSON)
@@ -225,6 +226,7 @@ class ItemHandlerUpdate(ItemHandlerBase):
     model: Optional[str] = Field(default=None, max_length=255)
     api_key: Optional[str] = Field(default=None, max_length=255)
     api_url: Optional[str] = Field(default=None, max_length=255)
+    model_parameters: Optional[dict] = Field(default=None, sa_type=JSON)
     enabled_skills: Optional[List[str]] = Field(default=None, sa_type=JSON)
     enabled_mcp_servers: Optional[List[str]] = Field(default=None, sa_type=JSON)
     enabled_knowledge_files: Optional[List[str]] = Field(default=None, sa_type=JSON)
@@ -255,6 +257,7 @@ class ItemHandlerPublic(SQLModel):
     name: str
     model: Optional[str] = None
     api_url: Optional[str] = None
+    model_parameters: dict = Field(default_factory=dict)
     enabled_skills: Optional[List[str]] = None
     enabled_mcp_servers: Optional[List[str]] = None
     enabled_knowledge_files: Optional[List[str]] = None

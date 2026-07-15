@@ -19,6 +19,7 @@ from app.models import (
 )
 from app.services.agent.agent import agent_manager
 from app.services.agent.knowledge import knowledge_base_service
+from app.services.agent.model_parameters import normalize_model_parameters
 from app.services.agent.profile import normalize_agent_profile
 from app.services.llm_health_service import llm_health_service
 
@@ -225,6 +226,9 @@ def create_item_handler(
 
     create_data = item_handler_in.model_dump()
     create_data["api_key"] = _normalized_api_key(create_data.get("api_key"))
+    create_data["model_parameters"] = normalize_model_parameters(
+        create_data.get("model_parameters")
+    )
     item_handler = ItemHandler(**create_data, owner_id=current_user.id)
 
     session.add(item_handler)
@@ -281,6 +285,10 @@ def update_item_handler(
     if "agent_profile" in update_dict:
         update_dict["agent_profile"] = normalize_agent_profile(
             update_dict.get("agent_profile")
+        )
+    if "model_parameters" in update_dict:
+        update_dict["model_parameters"] = normalize_model_parameters(
+            update_dict.get("model_parameters")
         )
     item_handler.sqlmodel_update(update_dict)
 

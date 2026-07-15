@@ -54,6 +54,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { PasswordInput } from "@/components/ui/password-input"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
 import { extractErrorMessage } from "@/utils"
@@ -84,6 +91,57 @@ function formatDate(dateString: string | undefined | null, localeTag: string) {
 function normalizeOptionalText(value: string) {
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : null
+}
+
+function parseModelParameters(value: string): Record<string, unknown> {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return {}
+  }
+  const parsed = JSON.parse(trimmed)
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("模型参数必须是 JSON 对象")
+  }
+  return parsed as Record<string, unknown>
+}
+
+type ModelConfigExample = {
+  label: string
+  model: string
+  apiUrl: string
+  parameters: Record<string, unknown>
+  note: string
+}
+
+const MODEL_CONFIG_EXAMPLES: Record<string, ModelConfigExample> = {
+  "openai-gpt5": {
+    label: "OpenAI GPT-5",
+    model: "openai/gpt-5",
+    apiUrl: "",
+    parameters: {},
+    note: "官方 OpenAI API 可留空 API URL。GPT-5 不要配置 temperature=0.1。",
+  },
+  "openai-codex": {
+    label: "OpenAI GPT-5 Codex",
+    model: "openai/gpt-5-codex",
+    apiUrl: "",
+    parameters: {},
+    note: "Codex 使用空参数对象，由模型采用默认采样与推理配置。",
+  },
+  "deepseek-chat": {
+    label: "DeepSeek Chat",
+    model: "deepseek/deepseek-chat",
+    apiUrl: "https://api.deepseek.com",
+    parameters: { temperature: 0.1 },
+    note: "DeepSeek Chat 可按需要设置 temperature；这里给出偏稳定的 0.1 示例。",
+  },
+  "openai-compatible": {
+    label: "OpenAI 兼容代理",
+    model: "openai/your-model-name",
+    apiUrl: "https://your-api.example.com/v1",
+    parameters: {},
+    note: "模型名前加 openai/，API URL 填兼容接口的 /v1 地址，参数按服务商文档填写。",
+  },
 }
 
 type AgentProfileForm = {
@@ -2072,6 +2130,7 @@ function ItemHandlerDetail() {
     model: "",
     api_key: "",
     api_url: "",
+    model_parameters_json: "{}",
     enabled_skills: [] as string[],
     agent_profile: createAgentProfileForm(),
   })
@@ -2083,6 +2142,11 @@ function ItemHandlerDetail() {
         model: itemHandler.model ?? "",
         api_key: "",
         api_url: itemHandler.api_url ?? "",
+        model_parameters_json: JSON.stringify(
+          (itemHandler as any).model_parameters ?? {},
+          null,
+          2,
+        ),
         enabled_skills: (itemHandler as any).enabled_skills ?? [],
         agent_profile: createAgentProfileForm((itemHandler as any).agent_profile),
       })
@@ -2096,6 +2160,11 @@ function ItemHandlerDetail() {
         model: itemHandler.model ?? "",
         api_key: "",
         api_url: itemHandler.api_url ?? "",
+        model_parameters_json: JSON.stringify(
+          (itemHandler as any).model_parameters ?? {},
+          null,
+          2,
+        ),
         enabled_skills: enabledSkills,
         agent_profile: createAgentProfileForm((itemHandler as any).agent_profile),
       })
@@ -2115,11 +2184,25 @@ function ItemHandlerDetail() {
       return
     }
 
+    let modelParameters: Record<string, unknown>
+    try {
+      modelParameters = parseModelParameters(editForm.model_parameters_json)
+    } catch (error) {
+      showErrorToast(
+        error instanceof Error ? error.message : "模型参数 JSON 格式不正确",
+      )
+      return
+    }
+
     const replacementApiKey = normalizeOptionalText(editForm.api_key)
-    const requestBody: ItemHandlerUpdate & { agent_profile?: Record<string, unknown> } = {
+    const requestBody: ItemHandlerUpdate & {
+      agent_profile?: Record<string, unknown>
+      model_parameters?: Record<string, unknown>
+    } = {
       name,
       model: normalizeOptionalText(editForm.model),
       api_url: normalizeOptionalText(editForm.api_url),
+      model_parameters: modelParameters,
       enabled_skills: editForm.enabled_skills,
       agent_profile: serializeAgentProfile(editForm.agent_profile),
     }
@@ -2139,6 +2222,11 @@ function ItemHandlerDetail() {
         model: requestBody.model ?? "",
         api_key: "",
         api_url: requestBody.api_url ?? "",
+        model_parameters_json: JSON.stringify(
+          requestBody.model_parameters ?? {},
+          null,
+          2,
+        ),
         agent_profile: createAgentProfileForm(requestBody.agent_profile),
       }))
       showSuccessToast(t("itemHandlers.detail.itemHandlerUpdated"))
@@ -2156,6 +2244,26 @@ function ItemHandlerDetail() {
     } finally {
       setIsSaving(false)
     }
+  }
+
+  const [selectedModelExampleKey, setSelectedModelExampleKey] = useState(
+    "openai-gpt5",
+  )
+  const selectedModelExample =
+    MODEL_CONFIG_EXAMPLES[selectedModelExampleKey] ??
+    MODEL_CONFIG_EXAMPLES["openai-gpt5"]
+
+  const applyModelExample = () => {
+    setEditForm((current) => ({
+      ...current,
+      model: selectedModelExample.model,
+      api_url: selectedModelExample.apiUrl,
+      model_parameters_json: JSON.stringify(
+        selectedModelExample.parameters,
+        null,
+        2,
+      ),
+    }))
   }
 
   const handleSkillToggle = async (skillId: string, enable: boolean) => {
@@ -2668,6 +2776,27 @@ function ItemHandlerDetail() {
                         />
                       </div>
                     </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        模型参数 JSON
+                      </label>
+                      <textarea
+                        value={editForm.model_parameters_json}
+                        onChange={(event) =>
+                          setEditForm({
+                            ...editForm,
+                            model_parameters_json: event.target.value,
+                          })
+                        }
+                        className="min-h-28 w-full rounded-md border bg-background px-3 py-2 font-mono text-sm"
+                        placeholder="{}"
+                        spellCheck={false}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        留空或填写 {"{}"} 表示不传可选参数。可配置
+                        temperature、reasoning_effort、top_p 等 LiteLLM 参数。
+                      </p>
+                    </div>
                     <div className="border-t pt-4">
                       <h3 className="mb-3 text-sm font-semibold">
                         Agent Profile
@@ -2826,6 +2955,16 @@ function ItemHandlerDetail() {
                         label={t("common.apiUrl")}
                         value={itemHandler.api_url}
                       />
+                      <div className="sm:col-span-2">
+                        <ProfileValue
+                          label="模型参数 JSON"
+                          value={JSON.stringify(
+                            (itemHandler as any).model_parameters ?? {},
+                            null,
+                            2,
+                          )}
+                        />
+                      </div>
                     </div>
                     <div className="border-t pt-4">
                       <h3 className="mb-3 text-sm font-semibold">
@@ -2892,6 +3031,77 @@ function ItemHandlerDetail() {
                       }
                     />
                   </div>
+                </div>
+                <div className="mt-4 border-t pt-4">
+                  <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="w-full max-w-sm space-y-2">
+                      <label className="text-sm font-semibold">配置示例</label>
+                      <Select
+                        value={selectedModelExampleKey}
+                        onValueChange={setSelectedModelExampleKey}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(MODEL_CONFIG_EXAMPLES).map(
+                            ([key, example]) => (
+                              <SelectItem key={key} value={key}>
+                                {example.label}
+                              </SelectItem>
+                            ),
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {isEditing && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={applyModelExample}
+                      >
+                        应用到当前表单
+                      </Button>
+                    )}
+                  </div>
+                  <div className="grid gap-3 text-sm lg:grid-cols-3">
+                    <div className="min-w-0">
+                      <div className="mb-1 text-xs text-muted-foreground">
+                        Model
+                      </div>
+                      <code
+                        className="block truncate font-mono"
+                        title={selectedModelExample.model}
+                      >
+                        {selectedModelExample.model}
+                      </code>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="mb-1 text-xs text-muted-foreground">
+                        API URL
+                      </div>
+                      <code
+                        className="block truncate font-mono"
+                        title={selectedModelExample.apiUrl || "留空"}
+                      >
+                        {selectedModelExample.apiUrl || "留空"}
+                      </code>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="mb-1 text-xs text-muted-foreground">
+                        模型参数
+                      </div>
+                      <code
+                        className="block truncate font-mono"
+                        title={JSON.stringify(selectedModelExample.parameters)}
+                      >
+                        {JSON.stringify(selectedModelExample.parameters)}
+                      </code>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    {selectedModelExample.note}
+                  </p>
                 </div>
               </CardContent>
             </Card>

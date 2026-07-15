@@ -38,6 +38,7 @@ class AgentContext:
     model: str | None = None
     api_key: str | None = None
     api_url: str | None = None
+    model_parameters: dict[str, Any] = field(default_factory=dict)
     enabled_skills: list[str] = field(default_factory=list)
     enabled_mcp_servers: list[str] = field(default_factory=list)
     enabled_knowledge_files: list[str] = field(default_factory=list)
@@ -156,6 +157,7 @@ class Agent:
             model=handler.model,
             api_key=handler.api_key,
             api_url=handler.api_url,
+            model_parameters=handler.model_parameters or {},
             enabled_skills=handler.enabled_skills or [],
             enabled_mcp_servers=handler.enabled_mcp_servers or [],
             enabled_knowledge_files=handler.enabled_knowledge_files or [],
@@ -343,6 +345,7 @@ class Agent:
         self._context.model = handler.model
         self._context.api_key = handler.api_key
         self._context.api_url = handler.api_url
+        self._context.model_parameters = handler.model_parameters or {}
         self._context.enabled_skills = handler.enabled_skills or []
         self._context.enabled_mcp_servers = handler.enabled_mcp_servers or []
         self._context.enabled_knowledge_files = handler.enabled_knowledge_files or []
@@ -484,6 +487,7 @@ class AgentManager:
                 context.model != handler.model
                 or context.api_key != handler.api_key
                 or context.api_url != handler.api_url
+                or context.model_parameters != (handler.model_parameters or {})
                 or context.enabled_skills != (handler.enabled_skills or [])
                 or context.enabled_mcp_servers != (handler.enabled_mcp_servers or [])
                 or context.enabled_knowledge_files != (handler.enabled_knowledge_files or [])
