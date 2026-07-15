@@ -30,7 +30,6 @@ from app.services.agent.integrations import (
     setup_integration_chat_contexts,
     should_enable_terminal_alert_integrations,
 )
-from app.services.agent.model_parameters import normalize_model_parameters_for_model
 from app.services.agent.pending_context import (
     attach_terminal_feedback_to_pending_continuation,
     build_pending_terminal_continuation_prompt,
@@ -57,6 +56,7 @@ from app.services.agent.tool_arguments import (
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 from app.services.agent.tool_selection import select_tools_for_turn
 from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
+from app.services.llm_completion import build_litellm_completion_kwargs
 from app.services.terminal_command_state import terminal_command_state_manager
 
 logger = logging.getLogger(__name__)
@@ -2790,28 +2790,17 @@ class AgentSession:
         *,
         tools: list[dict] | None = None,
     ):
-        kwargs: dict[str, Any] = {
-            "model": agent._context.model,
-            "messages": messages,
-            "timeout": REQUEST_TIMEOUT,
-        }
-
-        kwargs.update(
-            normalize_model_parameters_for_model(
-                agent._context.model,
-                getattr(agent._context, "model_parameters", {}),
-            )
-        )
-
-        if agent._context.api_key:
-            kwargs["api_key"] = agent._context.api_key
-        if agent._context.api_url:
-            kwargs["api_base"] = agent._context.api_url
-
         effective_tools = agent.get_tools_for_litellm() if tools is None else tools
-        if effective_tools:
-            kwargs["tools"] = effective_tools
-            kwargs["tool_choice"] = "auto"
+        kwargs = build_litellm_completion_kwargs(
+            model=agent._context.model,
+            messages=messages,
+            timeout=REQUEST_TIMEOUT,
+            tools=effective_tools,
+            tool_choice="auto",
+            api_key=agent._context.api_key,
+            api_base=agent._context.api_url,
+            model_parameters=getattr(agent._context, "model_parameters", {}),
+        )
 
         return completion(**kwargs)
 

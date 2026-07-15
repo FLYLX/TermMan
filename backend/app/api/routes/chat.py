@@ -76,6 +76,7 @@ from app.services.agent.tool_arguments import (
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 from app.services.agent.tool_selection import select_tools_for_turn
 from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
+from app.services.llm_completion import build_litellm_completion_kwargs
 
 if TYPE_CHECKING:
     from app.services.agent.agent import Agent
@@ -539,21 +540,18 @@ def _build_completion_kwargs(
     tools: list[dict],
     stream: bool,
 ) -> dict[str, Any]:
-    kwargs: dict[str, Any] = {
-        "model": handler.model,
-        "messages": messages,
-        "stream": stream,
-        "timeout": REQUEST_TIMEOUT,
-        "temperature": 0.1,
-    }
-    if tools:
-        kwargs["tools"] = tools
-        kwargs["tool_choice"] = "auto"
-    if handler.api_key:
-        kwargs["api_key"] = handler.api_key
-    if handler.api_url:
-        kwargs["api_base"] = handler.api_url
-    return kwargs
+    return build_litellm_completion_kwargs(
+        model=handler.model,
+        messages=messages,
+        stream=stream,
+        timeout=REQUEST_TIMEOUT,
+        tools=tools,
+        tool_choice="auto",
+        api_key=handler.api_key,
+        api_base=handler.api_url,
+        model_parameters=getattr(handler, "model_parameters", {}),
+        default_parameters={"temperature": 0.1},
+    )
 
 
 def _contains_cjk(text: str) -> bool:
@@ -993,48 +991,74 @@ def _tool_loop_fingerprint(tool_name: str, tool_args_str: str) -> str:
     )
 
 
+def _sanitize_model_error(reason: str) -> str:
+    detail = re.sub(
+        r"^Agent request failed:\s*",
+        "",
+        str(reason or "").strip(),
+        flags=re.IGNORECASE,
+    )
+    detail = re.sub(
+        r"(?i)\bbearer\s+[a-z0-9._~+/=-]+",
+        "Bearer [REDACTED]",
+        detail,
+    )
+    detail = re.sub(
+        r"(?i)\bsk-[a-z0-9_-]{8,}\b",
+        "[REDACTED]",
+        detail,
+    )
+    detail = re.sub(
+        r"(?i)\b(api[_-]?key|authorization)\s*[:=]\s*['\"]?[^,\s'\"}]+",
+        r"\1=[REDACTED]",
+        detail,
+    )
+    return re.sub(r"\s+", " ", detail).strip()[:1200]
+
+
 def _stopped_turn_fallback(reason: str, *, prefers_chinese: bool) -> str:
     normalized_reason = str(reason or "").casefold()
+    error_detail = _sanitize_model_error(reason)
     if "unsupportedparamserror" in normalized_reason or (
         "temperature" in normalized_reason and "support" in normalized_reason
     ):
         return (
-            "模型参数不兼容，当前消息未能处理。请检查 TermHandler 的模型参数配置后重试。"
+            f"模型参数不兼容：{error_detail}"
             if prefers_chinese
-            else "The model parameters are incompatible, so this message could not be processed. Check the TermHandler model parameters and retry."
+            else f"Incompatible model parameters: {error_detail}"
         )
     if "no available channel" in normalized_reason or "serviceunavailable" in normalized_reason:
         return (
-            "当前模型通道不可用，当前消息未能处理。请切换可用模型或检查接口服务后重试。"
+            f"模型通道不可用：{error_detail}"
             if prefers_chinese
-            else "The selected model channel is unavailable, so this message could not be processed. Select an available model or check the API service and retry."
+            else f"Model channel unavailable: {error_detail}"
         )
     if any(
         marker in normalized_reason
         for marker in ("authentication", "unauthorized", "invalid api key", "status code: 401")
     ):
         return (
-            "模型接口认证失败，当前消息未能处理。请检查 API 密钥后重试。"
+            f"模型接口认证失败：{error_detail}"
             if prefers_chinese
-            else "Model API authentication failed, so this message could not be processed. Check the API key and retry."
+            else f"Model API authentication failed: {error_detail}"
         )
     if "rate limit" in normalized_reason or "status code: 429" in normalized_reason:
         return (
-            "模型接口请求过于频繁，当前消息未能处理。请稍后重试。"
+            f"模型接口请求过于频繁：{error_detail}"
             if prefers_chinese
-            else "The model API rate limit was reached, so this message could not be processed. Retry shortly."
+            else f"Model API rate limit reached: {error_detail}"
         )
     if "timeout" in normalized_reason or "timed out" in normalized_reason:
         return (
-            "模型接口响应超时，当前消息未能处理。请稍后重试。"
+            f"模型接口响应超时：{error_detail}"
             if prefers_chinese
-            else "The model API timed out, so this message could not be processed. Retry shortly."
+            else f"Model API timed out: {error_detail}"
         )
     if "agent request failed:" in normalized_reason:
         return (
-            "模型请求失败，当前消息未能处理。请检查 TermHandler 模型配置和接口状态后重试。"
+            f"模型请求失败：{error_detail}"
             if prefers_chinese
-            else "The model request failed, so this message could not be processed. Check the TermHandler model configuration and API status, then retry."
+            else f"Model request failed: {error_detail}"
         )
     if any(
         marker in normalized_reason

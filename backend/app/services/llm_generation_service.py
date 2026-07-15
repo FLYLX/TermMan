@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 
 from app.api.deps import CurrentUser
 from app.models import Item, ItemHandler, ItemHandlerItem
+from app.services.llm_completion import build_litellm_completion_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -89,18 +90,16 @@ def _build_completion_kwargs(
     *,
     messages: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    kwargs: dict[str, Any] = {
-        "model": item_handler.model,
-        "messages": messages,
-        "stream": False,
-        "timeout": REQUEST_TIMEOUT,
-        "temperature": 0.2,
-    }
-    if item_handler.api_key:
-        kwargs["api_key"] = item_handler.api_key
-    if item_handler.api_url:
-        kwargs["api_base"] = item_handler.api_url
-    return kwargs
+    return build_litellm_completion_kwargs(
+        model=item_handler.model,
+        messages=messages,
+        stream=False,
+        timeout=REQUEST_TIMEOUT,
+        api_key=item_handler.api_key,
+        api_base=item_handler.api_url,
+        model_parameters=getattr(item_handler, "model_parameters", {}),
+        default_parameters={"temperature": 0.2},
+    )
 
 
 def _extract_json_payload(text: str) -> dict[str, Any]:

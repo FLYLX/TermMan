@@ -8,6 +8,7 @@ from typing import Any, Literal
 from litellm import completion
 
 from app.models import ItemHandler
+from app.services.llm_completion import build_litellm_completion_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -55,18 +56,16 @@ class LlmHealthService:
                 message="No model configured",
             )
 
-        kwargs: dict[str, Any] = {
-            "model": item_handler.model,
-            "messages": [{"role": "user", "content": "Reply with OK."}],
-            "stream": False,
-            "timeout": self.REQUEST_TIMEOUT_SECONDS,
-            "temperature": 0,
-            "max_tokens": 1,
-        }
-        if item_handler.api_key:
-            kwargs["api_key"] = item_handler.api_key
-        if item_handler.api_url:
-            kwargs["api_base"] = item_handler.api_url
+        kwargs = build_litellm_completion_kwargs(
+            model=item_handler.model,
+            messages=[{"role": "user", "content": "Reply with OK."}],
+            stream=False,
+            timeout=self.REQUEST_TIMEOUT_SECONDS,
+            api_key=item_handler.api_key,
+            api_base=item_handler.api_url,
+            model_parameters=getattr(item_handler, "model_parameters", {}),
+            default_parameters={"temperature": 0, "max_tokens": 1},
+        )
 
         try:
             completion(**kwargs)
@@ -137,4 +136,3 @@ class LlmHealthService:
 
 
 llm_health_service = LlmHealthService()
-

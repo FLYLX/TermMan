@@ -4,6 +4,7 @@ from app.services.agent.model_parameters import (
     normalize_model_parameters,
     normalize_model_parameters_for_model,
 )
+from app.services.llm_completion import build_litellm_completion_kwargs
 
 
 def test_model_parameters_drop_protected_completion_fields() -> None:
@@ -37,6 +38,47 @@ def test_gpt5_model_parameters_keep_supported_default_sampling_values() -> None:
         "gpt-5.2",
         {"temperature": 1, "top_p": 1},
     ) == {"temperature": 1, "top_p": 1}
+
+
+def test_shared_completion_builder_drops_gpt5_sampling_defaults() -> None:
+    kwargs = build_litellm_completion_kwargs(
+        model="openai/gpt-5.6-luna",
+        messages=[{"role": "user", "content": "你好"}],
+        default_parameters={"temperature": 0.1, "top_p": 0.8},
+    )
+
+    assert "temperature" not in kwargs
+    assert "top_p" not in kwargs
+
+
+def test_shared_completion_builder_keeps_deepseek_sampling_defaults() -> None:
+    kwargs = build_litellm_completion_kwargs(
+        model="deepseek/deepseek-chat",
+        messages=[{"role": "user", "content": "你好"}],
+        default_parameters={"temperature": 0.1},
+    )
+
+    assert kwargs["temperature"] == 0.1
+
+
+def test_web_chat_completion_builder_drops_gpt5_temperature() -> None:
+    from app.api.routes.chat import _build_completion_kwargs
+
+    kwargs = _build_completion_kwargs(
+        SimpleNamespace(
+            model="openai/gpt-5.6-luna",
+            api_key="key",
+            api_url="https://example.com/v1",
+            model_parameters={"temperature": 0.1},
+        ),
+        messages=[{"role": "user", "content": "你好"}],
+        tools=[],
+        stream=True,
+    )
+
+    assert "temperature" not in kwargs
+    assert kwargs["api_key"] == "key"
+    assert kwargs["api_base"] == "https://example.com/v1"
 
 
 def test_call_llm_does_not_send_temperature_by_default(monkeypatch) -> None:

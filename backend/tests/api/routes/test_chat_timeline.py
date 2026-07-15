@@ -2673,10 +2673,8 @@ def test_model_parameter_failure_uses_specific_fallback_without_retrying_llm(
         prefers_chinese=True,
     )
 
-    assert report == (
-        "模型参数不兼容，当前消息未能处理。"
-        "请检查 TermHandler 的模型参数配置后重试。"
-    )
+    assert report.startswith("模型参数不兼容：litellm.UnsupportedParamsError:")
+    assert "temperature=0.1" in report
 
 
 def test_service_unavailable_failure_uses_channel_fallback() -> None:
@@ -2688,6 +2686,19 @@ def test_service_unavailable_failure_uses_channel_fallback() -> None:
     )
 
     assert "模型通道不可用" in report
+
+
+def test_model_error_fallback_redacts_api_credentials() -> None:
+    from app.api.routes import chat as chat_route
+
+    report = chat_route._stopped_turn_fallback(
+        "Agent request failed: AuthenticationError api_key=sk-secret123456 Bearer token.value",
+        prefers_chinese=True,
+    )
+
+    assert "sk-secret123456" not in report
+    assert "token.value" not in report
+    assert "[REDACTED]" in report
 
 
 def test_agent_task_workflow_does_not_depend_on_vector_memory_write(
