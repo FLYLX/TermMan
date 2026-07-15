@@ -2653,6 +2653,43 @@ def test_stopped_web_task_reports_failure_then_removes_queue_entry(
         task_workflow_manager.reset()
 
 
+def test_model_parameter_failure_uses_specific_fallback_without_retrying_llm(
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+
+    def unexpected_completion(**_kwargs):
+        raise AssertionError("failure reporting must not call the broken model again")
+
+    monkeypatch.setattr(chat_route, "completion", unexpected_completion)
+
+    report = chat_route._generate_stopped_turn_report(
+        SimpleNamespace(),
+        [{"role": "user", "content": "你好"}],
+        reason=(
+            "Agent request failed: litellm.UnsupportedParamsError: "
+            "gpt-5 models don't support temperature=0.1"
+        ),
+        prefers_chinese=True,
+    )
+
+    assert report == (
+        "模型参数不兼容，当前消息未能处理。"
+        "请检查 TermHandler 的模型参数配置后重试。"
+    )
+
+
+def test_service_unavailable_failure_uses_channel_fallback() -> None:
+    from app.api.routes import chat as chat_route
+
+    report = chat_route._stopped_turn_fallback(
+        "Agent request failed: ServiceUnavailableError: No available channel",
+        prefers_chinese=True,
+    )
+
+    assert "模型通道不可用" in report
+
+
 def test_agent_task_workflow_does_not_depend_on_vector_memory_write(
     monkeypatch,
 ) -> None:

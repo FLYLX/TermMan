@@ -17,6 +17,7 @@ from litellm import completion
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, SessionDep
+from app.core.tool_markup import extract_dsml_tool_calls
 from app.models import Item, ItemHandler
 from app.services.agent.agent import agent_manager
 from app.services.agent.chat_runtime import (
@@ -75,7 +76,6 @@ from app.services.agent.tool_arguments import (
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 from app.services.agent.tool_selection import select_tools_for_turn
 from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
-from app.core.tool_markup import extract_dsml_tool_calls
 
 if TYPE_CHECKING:
     from app.services.agent.agent import Agent
@@ -993,6 +993,65 @@ def _tool_loop_fingerprint(tool_name: str, tool_args_str: str) -> str:
     )
 
 
+def _stopped_turn_fallback(reason: str, *, prefers_chinese: bool) -> str:
+    normalized_reason = str(reason or "").casefold()
+    if "unsupportedparamserror" in normalized_reason or (
+        "temperature" in normalized_reason and "support" in normalized_reason
+    ):
+        return (
+            "模型参数不兼容，当前消息未能处理。请检查 TermHandler 的模型参数配置后重试。"
+            if prefers_chinese
+            else "The model parameters are incompatible, so this message could not be processed. Check the TermHandler model parameters and retry."
+        )
+    if "no available channel" in normalized_reason or "serviceunavailable" in normalized_reason:
+        return (
+            "当前模型通道不可用，当前消息未能处理。请切换可用模型或检查接口服务后重试。"
+            if prefers_chinese
+            else "The selected model channel is unavailable, so this message could not be processed. Select an available model or check the API service and retry."
+        )
+    if any(
+        marker in normalized_reason
+        for marker in ("authentication", "unauthorized", "invalid api key", "status code: 401")
+    ):
+        return (
+            "模型接口认证失败，当前消息未能处理。请检查 API 密钥后重试。"
+            if prefers_chinese
+            else "Model API authentication failed, so this message could not be processed. Check the API key and retry."
+        )
+    if "rate limit" in normalized_reason or "status code: 429" in normalized_reason:
+        return (
+            "模型接口请求过于频繁，当前消息未能处理。请稍后重试。"
+            if prefers_chinese
+            else "The model API rate limit was reached, so this message could not be processed. Retry shortly."
+        )
+    if "timeout" in normalized_reason or "timed out" in normalized_reason:
+        return (
+            "模型接口响应超时，当前消息未能处理。请稍后重试。"
+            if prefers_chinese
+            else "The model API timed out, so this message could not be processed. Retry shortly."
+        )
+    if "agent request failed:" in normalized_reason:
+        return (
+            "模型请求失败，当前消息未能处理。请检查 TermHandler 模型配置和接口状态后重试。"
+            if prefers_chinese
+            else "The model request failed, so this message could not be processed. Check the TermHandler model configuration and API status, then retry."
+        )
+    if any(
+        marker in normalized_reason
+        for marker in ("repeat", "loop", "did not converge", "iteration", "no progress")
+    ):
+        return (
+            "这次操作没有完成，我已停止重复执行。当前进度已保留，请稍后重试。"
+            if prefers_chinese
+            else "The operation did not complete. I stopped repeating it and kept the current progress. Please retry shortly."
+        )
+    return (
+        "这次操作没有完成。当前进度已保留，请稍后重试。"
+        if prefers_chinese
+        else "The operation did not complete. The current progress was kept. Please retry shortly."
+    )
+
+
 def _generate_stopped_turn_report(
     handler: ItemHandler,
     messages: list[dict[str, Any]],
@@ -1000,11 +1059,9 @@ def _generate_stopped_turn_report(
     reason: str,
     prefers_chinese: bool,
 ) -> str:
-    fallback = (
-        "这次操作没有完成，我已停止重复执行。当前进度已保留，请稍后重试。"
-        if prefers_chinese
-        else "The operation did not complete. I stopped repeating it and kept the current progress. Please retry shortly."
-    )
+    fallback = _stopped_turn_fallback(reason, prefers_chinese=prefers_chinese)
+    if str(reason or "").casefold().startswith("agent request failed:"):
+        return fallback
     final_messages = [*messages]
     final_messages.append(
         {
