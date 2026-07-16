@@ -1537,6 +1537,61 @@ def test_robot_mcp_send_message_blocks_broadcast_without_active_context(monkeypa
     assert sent == []
 
 
+@pytest.mark.parametrize(
+    "partial_target",
+    [
+        {"target_type": "group"},
+        {"target_id": "other-group"},
+    ],
+)
+def test_robot_mcp_ignores_partial_target_in_active_robot_turn(
+    monkeypatch,
+    partial_target,
+) -> None:
+    server = RobotMCPServer()
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="current-group",
+        metadata={"target": {"id": "current-group"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:current-group:user-1",
+            reply_target=target,
+        )
+    )
+    sent: list[tuple[str, RobotReplyTarget, str]] = []
+
+    def fake_send_message(robot_id, reply_target, text):
+        sent.append((robot_id, reply_target, text))
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+
+    try:
+        result = server.call_tool(
+            "send_message",
+            {
+                "text": "我是一只猪",
+                "_robot_context_token": token,
+                **partial_target,
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert result == [
+        {"type": "text", "text": "Message sent to current robot conversation."}
+    ]
+    assert len(sent) == 1
+    assert sent[0][0] == "robot-current"
+    assert sent[0][1].target_id == "current-group"
+    assert sent[0][2] == "我是一只猪"
+
+
 def test_robot_mcp_broadcast_requires_context_target() -> None:
     server = RobotMCPServer()
 

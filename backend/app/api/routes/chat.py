@@ -1319,7 +1319,23 @@ def _generate_stream_unserialized(
     pending_reply_delivery_retry_used = False
 
     try:
-        for _ in range(MAX_ITERATIONS):
+        for iteration_index in range(MAX_ITERATIONS + 1):
+            finalization_only = iteration_index == MAX_ITERATIONS
+            iteration_tools = [] if finalization_only else tools
+            if finalization_only:
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "The tool-call budget is finished. Do not call any more tools. "
+                            "Use the latest confirmed tool results to give the user one concise "
+                            "final answer now. If the latest result confirms the requested check "
+                            "or action succeeded, report that success instead of saying the task "
+                            "is incomplete. Mention a failure only when the tool result actually "
+                            "shows a failure."
+                        ),
+                    }
+                )
             if AgentMessageQueue.is_aborted(item_id):
                 stopped_events = _finalize_stopped_turn(
                     agent=agent,
@@ -1352,7 +1368,7 @@ def _generate_stream_unserialized(
                         **_build_completion_kwargs(
                             handler,
                             messages=messages,
-                            tools=tools,
+                            tools=iteration_tools,
                             stream=True,
                         )
                     )
@@ -1458,7 +1474,7 @@ def _generate_stream_unserialized(
                 iteration_content,
                 allowed_tool_names={
                     str(tool.get("function", {}).get("name") or "").strip()
-                    for tool in tools
+                    for tool in iteration_tools
                     if str(tool.get("function", {}).get("name") or "").strip()
                 },
             )
@@ -1467,7 +1483,9 @@ def _generate_stream_unserialized(
                 for index in sorted(tool_calls_map)
                 if tool_calls_map[index].get("function", {}).get("name")
             ]
-            if not ordered_tool_calls:
+            if finalization_only:
+                ordered_tool_calls = []
+            elif not ordered_tool_calls:
                 ordered_tool_calls = dsml_tool_calls
 
             if not ordered_tool_calls:
@@ -1475,12 +1493,14 @@ def _generate_stream_unserialized(
                     iteration_content,
                     tool_called=tool_called_this_turn,
                 )
+                if finalization_only and not final_response:
+                    break
                 delivery_retry_decision = None
                 if not delivery_tool_sent_by_integration:
                     delivery_retry_decision = get_delivery_retry_decision(
                         agent=agent,
                         messages=messages,
-                        tools=tools,
+                        tools=iteration_tools,
                         final_response=final_response,
                         retry_used_by_integration=delivery_retry_used_by_integration,
                     )

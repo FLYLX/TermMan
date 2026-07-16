@@ -7,6 +7,7 @@ import litellm
 from app.services.agent.model_parameters import normalize_model_parameters_for_model
 
 litellm.drop_params = True
+litellm.suppress_debug_info = True
 
 
 def build_litellm_completion_kwargs(

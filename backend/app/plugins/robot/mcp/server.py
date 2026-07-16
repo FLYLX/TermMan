@@ -1704,6 +1704,25 @@ class RobotMCPServer:
 
         context_token = str(args.get("_robot_context_token") or "").strip()
         context = get_robot_mcp_context(context_token)
+        if context is not None:
+            has_explicit_target_type = bool(
+                self._normalize_target_type(
+                    args.get("target_type") or args.get("mcp_target_type")
+                )
+            )
+            has_explicit_target_id = bool(
+                str(
+                    args.get("target_id") or args.get("mcp_target_id") or ""
+                ).strip()
+            )
+            if has_explicit_target_type != has_explicit_target_id:
+                for key in (
+                    "target_type",
+                    "target_id",
+                    "mcp_target_type",
+                    "mcp_target_id",
+                ):
+                    args.pop(key, None)
         try:
             explicit_target = self._build_explicit_target(args)
         except Exception as exc:

@@ -80,6 +80,7 @@ def test_shared_completion_builder_keeps_tools_without_explicit_tool_choice() ->
     assert kwargs["tools"] == tools
     assert "tool_choice" not in kwargs
     assert litellm.drop_params is True
+    assert litellm.suppress_debug_info is True
 
 
 def test_web_chat_completion_builder_drops_gpt5_temperature() -> None:

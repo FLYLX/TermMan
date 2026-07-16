@@ -746,6 +746,22 @@ def test_generate_stream_reports_after_unique_tool_calls_exhaust_budget(
             )
 
         stream_calls["value"] += 1
+        if "tools" not in kwargs:
+            return iter(
+                [
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(
+                                    content="检查完成，最后一次工具结果已确认。",
+                                    tool_calls=None,
+                                ),
+                                finish_reason="stop",
+                            )
+                        ]
+                    )
+                ]
+            )
         arguments = json.dumps({"query": f"unique-{stream_calls['value']}"})
         return iter(
             [
@@ -791,10 +807,10 @@ def test_generate_stream_reports_after_unique_tool_calls_exhaust_budget(
     )
     payloads = _sse_payloads(chunks)
 
-    assert stream_calls["value"] == chat_route.MAX_ITERATIONS
+    assert stream_calls["value"] == chat_route.MAX_ITERATIONS + 1
     assert any(
         event.get("type") == "agent_response"
-        and "停止继续调用工具" in event.get("content", "")
+        and "最后一次工具结果已确认" in event.get("content", "")
         for event in payloads
     )
     assert not any(event.get("type") == "agent_warning" for event in payloads)
