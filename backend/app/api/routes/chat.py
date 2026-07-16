@@ -77,6 +77,11 @@ from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 from app.services.agent.tool_selection import select_tools_for_turn
 from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
 from app.services.llm_completion import build_litellm_completion_kwargs
+from app.services.terminal_runtime_state import (
+    get_terminal_runtime_state,
+    is_terminal_action_request,
+    is_terminal_status_query,
+)
 
 if TYPE_CHECKING:
     from app.services.agent.agent import Agent
@@ -92,6 +97,7 @@ LOOP_THRESHOLD = 3
 TOOL_LOOP_STOP_REASON = "任务因重复调用同类工具且没有产生新进展而暂停。"
 TOOL_BUDGET_STOP_REASON = "任务在本轮未能收敛，已暂停并保留当前进度。"
 SILENT_TOOL_NAMES = {
+    "mcp_local_get_terminal_status",
     "mcp_local_read_terminal_log",
     RUN_JOB_TOOL_NAME,
     "mcp_robot_send_message",
@@ -109,6 +115,13 @@ BACKGROUND_JOB_RUNNING_RESPONSE = (
     "\u4efb\u52a1\u5b8c\u6210\u540e\u6211\u4f1a\u56de\u5230\u5bf9\u5e94\u6765\u6e90\u3002"
 )
 MAX_AUTO_TASKS = 5
+TERMINAL_STATUS_TOOL_NAME = "mcp_local_get_terminal_status"
+TERMINAL_ACTION_EVIDENCE_TOOLS = {
+    "mcp_local_execute_command",
+    "mcp_local_run_job",
+    "mcp_local_interrupt_command",
+    "mcp_local_cancel_job",
+}
 INTERNAL_QQ_BACKGROUND_JOB_PREFIX = (
     "[Background terminal job result for this QQ conversation]"
 )
@@ -1340,6 +1353,23 @@ def _generate_stream_unserialized(
         latest_only_context=latest_only_context,
         pending_context=pending_context,
     )
+    terminal_status_required = is_terminal_status_query(message)
+    terminal_action_required = is_terminal_action_request(message)
+    if terminal_status_required:
+        try:
+            live_terminal_state = get_terminal_runtime_state(item_id)
+            messages.insert(
+                max(len(messages) - 1, 0),
+                {
+                    "role": "system",
+                    "content": live_terminal_state.prompt_context(),
+                },
+            )
+        except Exception:
+            logger.exception(
+                "[Chat] Failed to inject live terminal state: item=%s",
+                item_id,
+            )
     reply_ticket_prompt = reply_ticket_manager.build_prompt(reply_ticket.ticket_id)
     if reply_ticket_prompt:
         messages.insert(1, {"role": "system", "content": reply_ticket_prompt})
@@ -1361,6 +1391,8 @@ def _generate_stream_unserialized(
     tool_call_history: list[tuple[str, str]] = []
     final_response = ""
     tool_called_this_turn = False
+    called_tool_names: set[str] = set()
+    terminal_grounding_retry_used = False
     delivery_tool_sent_by_integration = False
     confirmed_external_delivery_to_qq = False
     delivery_retry_used_by_integration: dict[str, bool] = {}
@@ -1541,6 +1573,47 @@ def _generate_stream_unserialized(
                     iteration_content,
                     tool_called=tool_called_this_turn,
                 )
+                missing_terminal_evidence = bool(
+                    (
+                        terminal_status_required
+                        and TERMINAL_STATUS_TOOL_NAME not in called_tool_names
+                    )
+                    or (
+                        terminal_action_required
+                        and not called_tool_names.intersection(
+                            TERMINAL_ACTION_EVIDENCE_TOOLS
+                        )
+                    )
+                )
+                if (
+                    missing_terminal_evidence
+                    and not terminal_grounding_retry_used
+                    and not finalization_only
+                ):
+                    if final_response:
+                        messages.append(
+                            {"role": "assistant", "content": final_response}
+                        )
+                    required_tool = (
+                        TERMINAL_STATUS_TOOL_NAME
+                        if terminal_status_required
+                        and TERMINAL_STATUS_TOOL_NAME not in called_tool_names
+                        else "mcp_local_execute_command or mcp_local_run_job"
+                    )
+                    messages.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "This request requires authoritative live terminal evidence, "
+                                f"but you did not call {required_tool}. Call the appropriate "
+                                "terminal tool now. Do not claim the terminal is open, a command "
+                                "was sent, or output is pending without a tool result."
+                            ),
+                        }
+                    )
+                    terminal_grounding_retry_used = True
+                    final_response = ""
+                    continue
                 if finalization_only and not final_response:
                     break
                 delivery_retry_decision = None
@@ -1893,6 +1966,7 @@ def _generate_stream_unserialized(
                     )
                     tool_called_this_turn = True
                 result_text = _format_tool_result(result)
+                called_tool_names.add(tool_name)
                 if is_pending_reply_sent_result(result):
                     delivery_tool_sent_by_integration = True
                 command_dispatch_failed = is_command_dispatch_failure_result(

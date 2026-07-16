@@ -77,6 +77,8 @@ class SocketService:
         for conn in room_listen_conns:
             if conn.conn_id == sid:
                 daemon_conn_pool.remove_backend_room_listen_conn(conn.item_uuid)
+                await self.leave_item_room(sid, conn.item_uuid)
+                item_uuid_to_notify = conn.item_uuid
                 logger.info(f"  类型: Backend Room监听连接, Item: {conn.item_uuid}")
         
         for item_uuid, conns in daemon_conn_pool.get_all_browser_terminal_conns().items():

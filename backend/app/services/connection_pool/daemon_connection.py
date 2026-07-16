@@ -266,13 +266,21 @@ class DaemonConnection:
         
         return self._emit_and_wait_sync("terminal/restart", data)
 
-    def terminal_status_http(self, item_uuid: str) -> Dict[str, Any]:
+    def terminal_status_http(
+        self,
+        item_uuid: str,
+        timeout: float = 30.0,
+    ) -> Dict[str, Any]:
         """
         鏌ヨ缁堢鐘舵€?- 鍚屾鏂规硶
         """
         if not self.is_connected():
             return {"success": False, "error": "Not connected to daemon"}
-        return self._emit_and_wait_sync("terminal/status", {"item_uuid": item_uuid})
+        return self._emit_and_wait_sync(
+            "terminal/status",
+            {"item_uuid": item_uuid},
+            timeout=timeout,
+        )
 
     def terminal_list_http(self) -> Dict[str, Any]:
         """
@@ -464,7 +472,11 @@ class DaemonConnection:
             logger.error("[DaemonConnection] Daemon job cancel failed: item=%s error=%s", item_uuid, exc)
             return {"success": False, "error": str(exc)}
 
-    def get_item_subscribers_http(self, item_uuid: str) -> Dict[str, Any]:
+    def get_item_subscribers_http(
+        self,
+        item_uuid: str,
+        timeout: float = 30.0,
+    ) -> Dict[str, Any]:
         """
         鑾峰彇item鐨勮闃呰€呬俊鎭?- 鍚屾鏂规硶
         
@@ -478,7 +490,11 @@ class DaemonConnection:
         """
         if not self.is_connected():
             return {"success": False, "error": "Not connected to daemon"}
-        return self._emit_and_wait_sync("item/subscribers", {"item_uuid": item_uuid})
+        return self._emit_and_wait_sync(
+            "item/subscribers",
+            {"item_uuid": item_uuid},
+            timeout=timeout,
+        )
 
     def _sync_all_connections(self):
         def run_sync():

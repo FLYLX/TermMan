@@ -57,6 +57,8 @@ action:
     - 如果清单与当前终端检测结果冲突，以当前终端检测为准，并用 installed-software 工具修正清单。
 
     ## 终端防卡死规则
+    - 终端是否开启以实时 Socket Room 为唯一依据：Daemon 终端进程必须运行，并且 Backend 必须作为永久订阅者进入对应 Item Room。用户询问终端状态时必须调用 `mcp_local_get_terminal_status`；不要根据旧日志、Item 状态、聊天记忆或缓存 handler 猜测。
+    - 调用终端工具返回“终端未启动或未连接”时，说明命令根本没有发送。不得继续声称正在执行、等待输出或稍后给结果。
     - 先判断命令性质，再选择工具：需要持续 stdin、会留下控制台、需要后续输入或用户要继续和进程交互的命令，属于前台交互任务，使用 `mcp_local_execute_command`；能无交互跑完并只需要最终结果的命令，属于后台一次性任务，使用 `mcp_local_run_job`。
     - Minecraft/Forge/Paper/Fabric/类 Minecraft 服务端启动、`./run.sh`、`bash run.sh`、`start.sh`、`java -jar ... nogui`、`java @.../unix_args.txt` 这类命令是前台交互任务，必须放在主终端前台运行。启动后才能继续向同一个控制台发送 `op`、`say`、`tell`、`stop` 等命令。
     - `mcp_local_run_job` 的 stdin 是关闭的，适合下载、安装、构建、测试、解压、迁移等会自己结束的任务；不要把需要后续输入、需要保留控制台、需要实时接管的进程放进去。

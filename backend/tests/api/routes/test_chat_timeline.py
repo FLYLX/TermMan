@@ -503,6 +503,225 @@ def test_generate_stream_replaces_fabricated_tool_transcript_when_no_tool_ran(
     assert not any("发送成功" in chunk for chunk in chunks)
 
 
+def test_generate_stream_forces_live_terminal_status_tool(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.services.terminal_runtime_state import TerminalRuntimeState
+
+    item, handler = _create_linked_item_and_handler(db)
+    completion_calls = {"value": 0}
+    tool_calls = []
+    tool_name = "mcp_local_get_terminal_status"
+    fake_agent = _make_fake_agent(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": "Read live terminal state",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        execute_tool_result=lambda name, args: (
+            tool_calls.append((name, dict(args)))
+            or {
+                "success": True,
+                "result": [
+                    {
+                        "type": "text",
+                        "text": "终端未启动或未连接。Backend 与 Daemon 当前没有 Socket 连接。",
+                    }
+                ],
+            }
+        ),
+    )
+
+    def chunk(*, content="", tool_calls_value=None):
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        content=content,
+                        tool_calls=tool_calls_value,
+                    ),
+                    finish_reason="stop",
+                )
+            ]
+        )
+
+    def fake_completion(**kwargs):
+        completion_calls["value"] += 1
+        if completion_calls["value"] == 1:
+            return iter([chunk(content="终端开着，当前可用。")])
+        if completion_calls["value"] == 2:
+            assert any(
+                "requires authoritative live terminal evidence" in message["content"]
+                for message in kwargs["messages"]
+                if message.get("role") == "system"
+            )
+            return iter(
+                [
+                    chunk(
+                        tool_calls_value=[
+                            SimpleNamespace(
+                                index=0,
+                                id="call_terminal_status",
+                                function=SimpleNamespace(name=tool_name, arguments="{}"),
+                            )
+                        ]
+                    )
+                ]
+            )
+        return iter([chunk(content="终端没开，Backend 和 Daemon 当前没有连接。")])
+
+    monkeypatch.setattr(chat_route, "completion", fake_completion)
+    monkeypatch.setattr(
+        chat_route,
+        "build_chat_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "终端开了吗"}],
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "get_terminal_runtime_state",
+        lambda item_id: TerminalRuntimeState(
+            item_id=item_id,
+            active=False,
+            daemon_connected=False,
+            reason="daemon_not_connected",
+        ),
+    )
+    monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
+
+    chunks = list(
+        chat_route.generate_stream(
+            message="终端开了吗",
+            history=[],
+            handler=handler,
+            item_id=str(item.id),
+            agent=fake_agent,
+        )
+    )
+
+    assert completion_calls["value"] == 3
+    assert len(tool_calls) == 1
+    assert tool_calls[0][0] == tool_name
+    assert tool_calls[0][1]["item_id"] == str(item.id)
+    assert any("终端没开" in chunk_text for chunk_text in chunks)
+    assert not any("终端开着，当前可用" in chunk_text for chunk_text in chunks)
+
+
+def test_generate_stream_forces_terminal_action_tool_before_claiming_execution(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.services.agent.session import COMMAND_DISPATCH_FAILURE_MESSAGE
+
+    item, handler = _create_linked_item_and_handler(db)
+    completion_calls = {"value": 0}
+    tool_calls = []
+    tool_name = "mcp_local_run_job"
+    fake_agent = _make_fake_agent(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": "Run one shell job",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        execute_tool_result=lambda name, args: (
+            tool_calls.append((name, dict(args)))
+            or {
+                "success": True,
+                "result": [{"type": "text", "text": COMMAND_DISPATCH_FAILURE_MESSAGE}],
+            }
+        ),
+    )
+
+    def fake_completion(**kwargs):
+        completion_calls["value"] += 1
+        if completion_calls["value"] == 1:
+            return iter(
+                [
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(
+                                    content="我先执行 ls，等一下给你结果。",
+                                    tool_calls=None,
+                                ),
+                                finish_reason="stop",
+                            )
+                        ]
+                    )
+                ]
+            )
+        assert any(
+            "requires authoritative live terminal evidence" in message["content"]
+            for message in kwargs["messages"]
+            if message.get("role") == "system"
+        )
+        return iter(
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content="",
+                                tool_calls=[
+                                    SimpleNamespace(
+                                        index=0,
+                                        id="call_ls",
+                                        function=SimpleNamespace(
+                                            name=tool_name,
+                                            arguments='{"command":"ls"}',
+                                        ),
+                                    )
+                                ],
+                            ),
+                            finish_reason=None,
+                        )
+                    ]
+                )
+            ]
+        )
+
+    agent_session_manager.remove_session(str(item.id))
+    monkeypatch.setattr(chat_route, "completion", fake_completion)
+    monkeypatch.setattr(
+        chat_route,
+        "build_chat_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "跑一下ls"}],
+    )
+    monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
+
+    try:
+        chunks = list(
+            chat_route.generate_stream(
+                message="跑一下ls",
+                history=[],
+                handler=handler,
+                item_id=str(item.id),
+                agent=fake_agent,
+            )
+        )
+    finally:
+        agent_session_manager.remove_session(str(item.id))
+
+    assert completion_calls["value"] == 2
+    assert len(tool_calls) == 1
+    assert tool_calls[0][0] == tool_name
+    assert tool_calls[0][1]["command"] == "ls"
+    assert any(COMMAND_DISPATCH_FAILURE_MESSAGE in chunk_text for chunk_text in chunks)
+    assert not any("等一下给你结果" in chunk_text for chunk_text in chunks)
+
+
 def test_generate_stream_executes_dsml_tool_call_without_exposing_markup(
     db: Session,
     monkeypatch,

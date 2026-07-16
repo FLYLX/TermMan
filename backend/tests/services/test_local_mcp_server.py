@@ -12,6 +12,7 @@ from app.services.agent.session import (
 )
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.skills import skill_loader
+from app.services.terminal_runtime_state import TerminalRuntimeState
 
 
 def _allow_main_terminal(monkeypatch, server: LocalMCPServer) -> None:
@@ -20,6 +21,84 @@ def _allow_main_terminal(monkeypatch, server: LocalMCPServer) -> None:
         "_ensure_terminal_input_handler",
         lambda _item_id: True,
     )
+
+
+def _allow_live_terminal_room(monkeypatch) -> None:
+    import app.services.terminal_runtime_state as runtime_state_module
+
+    monkeypatch.setattr(
+        runtime_state_module,
+        "get_terminal_runtime_state",
+        lambda item_id: TerminalRuntimeState(
+            item_id=item_id,
+            active=True,
+            daemon_connected=True,
+            terminal_process_active=True,
+            process_status="running",
+            backend_room_connected=True,
+            permanent_subscriber_count=1,
+            reason="active",
+        ),
+    )
+
+
+def test_get_terminal_status_uses_live_socket_room_state(monkeypatch) -> None:
+    import app.services.terminal_runtime_state as runtime_state_module
+
+    monkeypatch.setattr(
+        runtime_state_module,
+        "get_terminal_runtime_state",
+        lambda item_id: TerminalRuntimeState(
+            item_id=item_id,
+            active=False,
+            daemon_connected=True,
+            terminal_process_active=True,
+            process_status="running",
+            backend_room_connected=False,
+            permanent_subscriber_count=0,
+            reason="backend_room_not_connected",
+        ),
+    )
+
+    server = LocalMCPServer()
+    result = server.call_tool(
+        "get_terminal_status",
+        {"item_id": "item-1"},
+    )
+
+    assert "终端未启动或未连接" in result[0]["text"]
+    assert "Socket Room" in result[0]["text"]
+    assert result[1]["terminal_active"] is False
+    assert result[1]["backend_room_connected"] is False
+
+
+def test_terminal_input_handler_rejects_stale_handler_without_live_room(
+    monkeypatch,
+) -> None:
+    import app.services.terminal_runtime_state as runtime_state_module
+    from app.services.socket_pool.input_center import input_center
+
+    server = LocalMCPServer()
+    monkeypatch.setattr(
+        runtime_state_module,
+        "get_terminal_runtime_state",
+        lambda item_id: TerminalRuntimeState(
+            item_id=item_id,
+            active=False,
+            daemon_connected=False,
+            reason="daemon_not_connected",
+        ),
+    )
+    monkeypatch.setattr(input_center, "has_handler", lambda _item_id: True)
+    removed = []
+    monkeypatch.setattr(
+        input_center,
+        "unregister_all_by_item",
+        lambda item_id: removed.append(item_id) or 1,
+    )
+
+    assert server._ensure_terminal_input_handler("item-1") is False
+    assert removed == ["item-1"]
 
 
 def test_read_chat_history_tool_returns_recent_trimmed_context(monkeypatch) -> None:
@@ -211,6 +290,7 @@ def test_execute_command_only_reports_dispatch(monkeypatch) -> None:
 
     monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
     monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: True)
+    _allow_live_terminal_room(monkeypatch)
 
     server = LocalMCPServer()
     result = server.call_tool(
@@ -297,6 +377,7 @@ def test_execute_command_blocks_when_busy_terminal_command_pending(monkeypatch) 
 
     monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
     monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: True)
+    _allow_live_terminal_room(monkeypatch)
 
     agent_session_manager.remove_session(item_id)
     session = agent_session_manager.get_or_create_session(item_id, "handler-1")
@@ -349,6 +430,7 @@ def test_execute_command_auto_routes_busy_command_to_background_job(monkeypatch)
 
     monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
     monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: True)
+    _allow_live_terminal_room(monkeypatch)
 
     agent_session_manager.remove_session(item_id)
     session = agent_session_manager.get_or_create_session(item_id, "handler-1")
@@ -403,6 +485,7 @@ def test_execute_command_sends_shell_like_input_to_active_console(
 
     monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
     monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: True)
+    _allow_live_terminal_room(monkeypatch)
 
     agent_session_manager.remove_session(item_id)
     session = agent_session_manager.get_or_create_session(item_id, "handler-1")
@@ -462,6 +545,7 @@ def test_execute_command_sends_cd_then_server_launcher_when_console_context_is_s
 
     monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
     monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: True)
+    _allow_live_terminal_room(monkeypatch)
 
     agent_session_manager.remove_session(item_id)
     session = agent_session_manager.get_or_create_session(item_id, "handler-1")
@@ -592,6 +676,7 @@ def test_execute_command_reports_disconnected_without_handler(monkeypatch) -> No
 
     monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
     monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: False)
+    _allow_live_terminal_room(monkeypatch)
 
     server = LocalMCPServer()
     restore_calls: list[str] = []
@@ -640,6 +725,7 @@ def test_execute_command_restores_existing_terminal_input_handler(monkeypatch) -
 
     monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
     monkeypatch.setattr(input_center_module.input_center, "has_handler", fake_has_handler)
+    _allow_live_terminal_room(monkeypatch)
 
     server = LocalMCPServer()
     monkeypatch.setattr(

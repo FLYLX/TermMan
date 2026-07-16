@@ -34,6 +34,8 @@ action:
     - 卸载成功必须有终端输出证据；确认成功后调用 `mcp_local_remove_installed_software` 从清单移除。
     - 清单只记录稳定结果，不记录“正在安装”“命令已发送”“可能安装了”这种未确认状态。
     使用规则：
+    - 用户询问“终端开了吗 / 终端是否连接 / 控制台能不能用”时，必须先调用 `mcp_local_get_terminal_status`。只有工具明确返回 active=true 才能回答终端已开启；历史日志、Item 的运行状态、旧聊天和缓存 handler 都不能作为在线证据。
+    - 终端命令和后台 Job 都必须通过实时 Socket Room 校验。工具返回“终端未启动或未连接”时，直接如实告知，不能说命令正在执行、正在等待输出或终端只是暂时没回显。
     - 只有任务确实需要终端、文件、日志或记忆状态时才调用 MCP。
     - 没有调用工具时，不要说自己检查、运行、读取或验证了。
     - 当用户说“刚才”“前面”“之前让你做的”“继续”“上一个任务”“你忘了”“怎么没回”等依赖前文或任务状态的话，优先调用 `mcp_local_get_task_workflow` 恢复不可变主目标和当前步骤；需要补充对话证据时再调用 `mcp_local_read_chat_history`，涉及回复来源或后台任务归属时再调用 `mcp_local_list_reply_tickets` 或 `mcp_local_list_jobs`。
@@ -60,6 +62,7 @@ safety:
 mcp_servers:
   - local
 tools:
+  - mcp_local_get_terminal_status
   - mcp_local_read_terminal_log
   - mcp_local_read_chat_history
   - mcp_local_list_reply_tickets

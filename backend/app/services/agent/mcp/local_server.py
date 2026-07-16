@@ -27,6 +27,19 @@ class LocalMCPServer:
     
     def _register_builtin_tools(self):
         self.register_tool(
+            name="get_terminal_status",
+            description=(
+                "Read the authoritative live terminal state. The terminal is open only when "
+                "the Daemon terminal process is active and Backend is currently joined to the "
+                "Item Socket Room as a permanent subscriber. Use this whenever the user asks "
+                "whether the terminal is open, connected, online, or usable. Never infer that "
+                "state from chat history, logs, Item status, or cached handlers."
+            ),
+            input_schema={"type": "object", "properties": {}, "required": []},
+            handler=self._get_terminal_status,
+            skip_memory=True,
+        )
+        self.register_tool(
             name="execute_command",
             description="在主终端前台执行一条命令或向当前交互式控制台发送输入。适合 shell 短命令、Minecraft/Forge/Paper/Fabric 服务端启动、run.sh/start.sh、REPL、长期服务，以及 MC 控制台里的 op/say/stop 等后续输入。当前台已经是 Minecraft/Java server/REPL 等交互式控制台时，系统不会硬拦截或自动改写 execute_command；所填内容会原样发送，由你根据终端回显判断是否是有效控制台命令。若明确需要在 shell 中执行 ls/pwd/find/cat/java -version 等一次性查询，优先自行选择 run_job。优先一次只发一条命令，不要默认用 &&、||、;、管道或换行拼接多步操作；多步操作应等待上一条终端反馈后再继续。可设置 expected_output/expected_regex 和 timeout_seconds；超时未匹配默认只汇报，不中断进程。",
             input_schema={
@@ -625,6 +638,30 @@ class LocalMCPServer:
             "handler": handler,
             "skip_memory": skip_memory
         }
+
+    def _get_terminal_status(self, args: dict) -> list:
+        item_id = str(args.get("item_id") or "").strip()
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id required"}]
+        try:
+            from app.services.terminal_runtime_state import get_terminal_runtime_state
+
+            state = get_terminal_runtime_state(item_id)
+            return [
+                {"type": "text", "text": state.user_message()},
+                {
+                    "type": "metadata",
+                    "terminal_active": state.active,
+                    "daemon_connected": state.daemon_connected,
+                    "process_status": state.process_status,
+                    "backend_room_connected": state.backend_room_connected,
+                    "permanent_subscriber_count": state.permanent_subscriber_count,
+                    "reason": state.reason,
+                },
+            ]
+        except Exception as exc:
+            debug_log(f"[LocalMCPServer] get_terminal_status error: {exc}")
+            return [{"type": "text", "text": f"Error: {exc}"}]
     
     def _restore_existing_terminal_input(self, item_id: str) -> bool:
         try:
@@ -697,11 +734,25 @@ class LocalMCPServer:
 
     def _ensure_terminal_input_handler(self, item_id: str) -> bool:
         from app.services.socket_pool.input_center import input_center
+        from app.services.terminal_runtime_state import get_terminal_runtime_state
 
-        if input_center.has_handler(item_id):
+        state = get_terminal_runtime_state(item_id)
+        if state.active and input_center.has_handler(item_id):
             return True
-        if self._restore_existing_terminal_input(item_id):
-            return input_center.has_handler(item_id)
+
+        # A live PTY can survive a Backend restart. Rejoin its Item Room before
+        # accepting input, then verify the Room state again instead of trusting
+        # the newly registered local handler.
+        if state.daemon_connected and state.terminal_process_active:
+            self._restore_existing_terminal_input(item_id)
+            state = get_terminal_runtime_state(item_id)
+            if state.active and input_center.has_handler(item_id):
+                return True
+
+        # Cached handlers are not connection evidence. Remove them so a later
+        # command cannot be reported as sent through a dead socket callback.
+        if input_center.has_handler(item_id):
+            input_center.unregister_all_by_item(item_id)
         return False
 
     def _get_item_daemon_context(self, item_id: str):

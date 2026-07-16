@@ -26,6 +26,18 @@ sys.path.append(str(Path(__file__).resolve().parent / "src"))
 from api import http_routes
 
 
+def _allow_backend_room_socket(monkeypatch) -> None:
+    class ConnectedRoomSocket:
+        def is_connected(self):
+            return True
+
+    monkeypatch.setattr(
+        http_routes.daemon_conn_pool,
+        "get_backend_room_listen_conn",
+        lambda item_uuid: ConnectedRoomSocket() if item_uuid == "item-1" else None,
+    )
+
+
 @pytest.mark.parametrize("terminal_status", [None, {"status": "stopped"}])
 def test_run_item_job_requires_active_main_terminal(
     monkeypatch,
@@ -76,6 +88,12 @@ def test_run_item_job_allows_active_main_terminal(monkeypatch) -> None:
 
     monkeypatch.setattr(http_routes, "terminal_manager", FakeTerminalManager())
     monkeypatch.setattr(http_routes, "job_runner", FakeJobRunner())
+    monkeypatch.setattr(
+        http_routes.room_manager,
+        "has_permanent_subscribers",
+        lambda item_uuid: item_uuid == "item-1",
+    )
+    _allow_backend_room_socket(monkeypatch)
 
     result = http_routes.run_item_job(
         "item-1",
@@ -88,3 +106,35 @@ def test_run_item_job_allows_active_main_terminal(monkeypatch) -> None:
 
     assert result == {"success": True, "job_id": "job-1"}
     assert captured["working_directory"] == "/workspace/item"
+
+
+def test_run_item_job_rejects_terminal_without_backend_room(monkeypatch) -> None:
+    class FakeTerminalManager:
+        def get_terminal_status(self, item_uuid):
+            assert item_uuid == "item-1"
+            return {"status": "running"}
+
+    class FakeJobRunner:
+        def run_job(self, **_kwargs):
+            raise AssertionError("job runner must not start without a Backend Room")
+
+    monkeypatch.setattr(http_routes, "terminal_manager", FakeTerminalManager())
+    monkeypatch.setattr(http_routes, "job_runner", FakeJobRunner())
+    monkeypatch.setattr(
+        http_routes.room_manager,
+        "has_permanent_subscribers",
+        lambda _item_uuid: False,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        http_routes.run_item_job(
+            "item-1",
+            http_routes.InternalJobRunRequest(
+                user_uuid="user-1",
+                command="ls",
+            ),
+            _api_key="test",
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "Backend Item Room" in str(exc_info.value.detail)

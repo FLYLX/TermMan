@@ -204,6 +204,12 @@ class DaemonRoomManager:
             if room:
                 return room.get_subscriber_info()
             return None
+
+    def has_permanent_subscribers(self, room_id: str) -> bool:
+        """Return whether Backend is currently joined to the Item Room."""
+        with self.lock:
+            room = self.rooms.get(room_id)
+        return bool(room and room.has_permanent_subscribers())
     
     def get_all_rooms_info(self) -> Dict[str, Dict[str, Any]]:
         """获取所有 Room 信息"""

@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from core import config
+from core import config, daemon_conn_pool
 from service.file_service import FileServiceError, file_service
 from service.job_runner import job_runner
+from service.room_manager import room_manager
 from service.terminal_manager import terminal_manager
 from runtime_monitor import collect_runtime_stats
 from utils.logger import logger
@@ -69,6 +70,22 @@ def _require_active_main_terminal(item_uuid: str) -> None:
             status_code=409,
             detail=(
                 "Main terminal is not running. Start and connect the main terminal "
+                "before starting a background job."
+            ),
+        )
+    room_connection = daemon_conn_pool.get_backend_room_listen_conn(item_uuid)
+    room_socket_connected = bool(
+        room_connection and room_connection.is_connected()
+    )
+    if (
+        not room_socket_connected
+        or not room_manager.has_permanent_subscribers(item_uuid)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Main terminal is not connected to the Backend Item Room. "
+                "Start the terminal and wait for the Backend Socket Room connection "
                 "before starting a background job."
             ),
         )

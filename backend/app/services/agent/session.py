@@ -55,6 +55,10 @@ from app.services.agent.tool_arguments import (
 )
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 from app.services.agent.tool_selection import select_tools_for_turn
+from app.services.terminal_runtime_state import (
+    get_terminal_runtime_state,
+    is_terminal_status_query,
+)
 from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
 from app.services.llm_completion import build_litellm_completion_kwargs
 from app.services.terminal_command_state import terminal_command_state_manager
@@ -188,6 +192,7 @@ MINECRAFT_CONSOLE_COMMANDS = frozenset(
     }
 )
 SILENT_TOOL_NAMES = {
+    "mcp_local_get_terminal_status",
     READ_LOG_TOOL_NAME,
     RUN_JOB_TOOL_NAME,
     "mcp_robot_send_message",
@@ -2734,6 +2739,19 @@ class AgentSession:
             query=input_msg.query or input_msg.content,
             pending_context=pending_context,
         )
+        query = input_msg.query or input_msg.content
+        if is_terminal_status_query(query):
+            try:
+                state = get_terminal_runtime_state(self.item_id)
+                messages.insert(
+                    max(len(messages) - 1, 0),
+                    {"role": "system", "content": state.prompt_context()},
+                )
+            except Exception:
+                logger.exception(
+                    "[AgentSession] Failed to inject live terminal state: item=%s",
+                    self.item_id,
+                )
         self.inject_active_jobs_prompt_context(messages)
         return messages
 

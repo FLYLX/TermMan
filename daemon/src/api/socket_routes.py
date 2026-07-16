@@ -472,6 +472,20 @@ async def on_terminal_status(sid, data):
         return
     
     status = terminal.get_status()
+    room_info = room_manager.get_room_info(item_uuid)
+    room_connection = daemon_conn_pool.get_backend_room_listen_conn(item_uuid)
+    backend_room_connected = bool(
+        room_info
+        and int(room_info.get("permanent_count") or 0) > 0
+        and room_connection
+        and room_connection.is_connected()
+    )
+    status["room_info"] = room_info
+    status["backend_room_connected"] = backend_room_connected
+    status["active"] = bool(
+        str(status.get("status") or "") in {"running", "waiting_backend"}
+        and backend_room_connected
+    )
     await sio.emit("terminal/status", {
         "success": True,
         "data": status,

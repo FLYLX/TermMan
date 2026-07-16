@@ -30,6 +30,9 @@ class FakeDaemonConnPool:
     def get_all_backend_room_listen_conns(self):
         return []
 
+    def get_backend_room_listen_conn(self, _item_uuid):
+        return None
+
 
 class FakeTerminal:
     def __init__(self, current_workdir=None):
@@ -174,6 +177,20 @@ def test_internal_job_run_route_delegates_to_job_runner(monkeypatch):
         "get_terminal_status",
         lambda item_uuid: {"status": "running"},
     )
+    monkeypatch.setattr(
+        http_routes.room_manager,
+        "has_permanent_subscribers",
+        lambda item_uuid: item_uuid == "item-1",
+    )
+    monkeypatch.setattr(
+        http_routes.daemon_conn_pool,
+        "get_backend_room_listen_conn",
+        lambda item_uuid: (
+            SimpleNamespace(is_connected=lambda: True)
+            if item_uuid == "item-1"
+            else None
+        ),
+    )
 
     payload = http_routes.InternalJobRunRequest(
         user_uuid="user-1",
@@ -219,6 +236,20 @@ def test_internal_job_run_route_prefers_terminal_current_workdir(monkeypatch):
 
     monkeypatch.setattr(http_routes, "job_runner", FakeJobRunner())
     monkeypatch.setattr(http_routes, "terminal_manager", FakeTerminalManager())
+    monkeypatch.setattr(
+        http_routes.room_manager,
+        "has_permanent_subscribers",
+        lambda item_uuid: item_uuid == "item-1",
+    )
+    monkeypatch.setattr(
+        http_routes.daemon_conn_pool,
+        "get_backend_room_listen_conn",
+        lambda item_uuid: (
+            SimpleNamespace(is_connected=lambda: True)
+            if item_uuid == "item-1"
+            else None
+        ),
+    )
 
     payload = http_routes.InternalJobRunRequest(
         user_uuid="user-1",
@@ -229,6 +260,46 @@ def test_internal_job_run_route_prefers_terminal_current_workdir(monkeypatch):
 
     assert result["success"] is True
     assert captured["working_directory"] == "/work/user/item/temp_extract"
+
+
+def test_terminal_status_requires_backend_room(monkeypatch):
+    emitted = []
+
+    class FakeSio:
+        async def emit(self, event, data, to=None):
+            emitted.append((event, data, to))
+
+    class StatusTerminal:
+        def get_status(self):
+            return {"status": "running", "token": "token-1"}
+
+    class StatusTerminalManager:
+        def get_terminal(self, item_uuid):
+            assert item_uuid == "item-1"
+            return StatusTerminal()
+
+    class EmptyRoomManager:
+        def get_room_info(self, item_uuid):
+            assert item_uuid == "item-1"
+            return {"permanent_count": 0, "temporary_count": 1}
+
+    monkeypatch.setattr(socket_routes, "sio", FakeSio())
+    monkeypatch.setattr(socket_routes, "terminal_manager", StatusTerminalManager())
+    monkeypatch.setattr(socket_routes, "room_manager", EmptyRoomManager())
+    monkeypatch.setattr(socket_routes, "daemon_conn_pool", FakeDaemonConnPool())
+
+    asyncio.run(
+        socket_routes.on_terminal_status(
+            "backend-main-sid",
+            {"item_uuid": "item-1", "request_id": "request-1"},
+        )
+    )
+
+    payload = emitted[0][1]
+    assert payload["success"] is True
+    assert payload["data"]["status"] == "running"
+    assert payload["data"]["backend_room_connected"] is False
+    assert payload["data"]["active"] is False
 
 
 def test_internal_job_list_route_delegates_to_job_runner(monkeypatch):
