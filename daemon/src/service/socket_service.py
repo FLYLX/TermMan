@@ -1,12 +1,13 @@
 import asyncio
-import socketio
 import queue
 import threading
-from typing import Dict, Any, List, Optional
-from datetime import datetime
+from typing import Any, Dict, Optional
+
+import socketio
+
 from core import config, daemon_conn_pool
-from utils.logger import logger
 from service.room_manager import room_manager, Subscriber
+from utils.logger import logger
 
 
 class SocketService:
@@ -71,7 +72,7 @@ class SocketService:
         backend_main_conn = daemon_conn_pool.get_backend_main_conn(config.get("API_KEY"))
         if backend_main_conn and backend_main_conn.conn_id == sid:
             daemon_conn_pool.remove_backend_main_conn(config.get("API_KEY"))
-            logger.info(f"  类型: Backend主连接")
+            logger.info("  类型: Backend主连接")
         
         room_listen_conns = daemon_conn_pool.get_all_backend_room_listen_conns()
         for conn in room_listen_conns:
@@ -217,7 +218,7 @@ class SocketService:
             }
             
             for conn in backend_conns:
-                if conn.is_connected() and conn.conn:
+                if conn.is_connected():
                     try:
                         await self.sio.emit("connection_update", update_data, to=conn.conn_id)
                     except Exception as e:

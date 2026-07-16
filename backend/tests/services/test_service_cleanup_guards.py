@@ -1,3 +1,5 @@
+from sqlmodel import Session
+
 from app.services.connection_pool.connection_models import DaemonConfig
 from app.services.connection_pool.daemon_connection import DaemonConnection
 from app.services.socket_pool.input_center import input_center
@@ -10,6 +12,7 @@ from app.services.socket_pool.subscription_center import (
     subscription_center,
 )
 from app.services.terminal_service import TerminalService
+from tests.utils.item import create_random_item
 
 
 def test_log_subscriber_persists_stdout_and_stderr() -> None:
@@ -175,3 +178,76 @@ def test_terminal_service_connect_terminal_uses_facade_token_lookup() -> None:
     )
 
     assert result == {"success": True, "item_uuid": "item-1"}
+
+
+def test_terminal_start_fails_when_backend_room_does_not_connect(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+
+    class FakeConnection:
+        def is_connected(self) -> bool:
+            return True
+
+        def terminal_start_http(self, *args, **kwargs):
+            return {
+                "success": True,
+                "item_uuid": str(item.id),
+                "token": "terminal-token",
+            }
+
+    class FakeConnectionManager:
+        def get_or_create_connection(self, daemon_config):
+            return FakeConnection()
+
+    class FakeSocketPool:
+        def register_item_token(self, daemon_id, item_uuid, token):
+            return None
+
+    service = TerminalService(FakeConnectionManager(), FakeSocketPool())
+    monkeypatch.setattr(service, "_create_backend_room_subscriber", lambda *args: False)
+
+    result = service.start_terminal(
+        item_uuid=str(item.id),
+        user_uuid=str(item.owner_id),
+        daemon_config=DaemonConfig("daemon", 9000, "secret"),
+    )
+
+    assert result["success"] is False
+    assert result["terminal_started"] is True
+    assert "Backend 未能进入对应 Socket Room" in result["error"]
+
+
+def test_restore_running_terminal_rejoins_backend_room(monkeypatch) -> None:
+    calls = []
+
+    class FakeConnection:
+        def is_connected(self) -> bool:
+            return True
+
+        def terminal_status_http(self, item_uuid):
+            return {
+                "success": True,
+                "data": {"status": "running", "token": "restored-token"},
+            }
+
+    class FakeConnectionManager:
+        def get_or_create_connection(self, daemon_config):
+            return FakeConnection()
+
+    service = TerminalService(FakeConnectionManager(), socket_pool=None)
+    monkeypatch.setattr(
+        service,
+        "restore_terminal_session",
+        lambda **kwargs: calls.append(kwargs) or True,
+    )
+
+    restored = service.restore_running_terminal(
+        item_uuid="item-1",
+        owner_uuid="user-1",
+        daemon_config=DaemonConfig("daemon", 9000, "secret"),
+    )
+
+    assert restored is True
+    assert calls[0]["token"] == "restored-token"

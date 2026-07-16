@@ -68,13 +68,23 @@ class TerminalService:
             terminal_token,
         )
         
-        self._create_backend_room_subscriber(
+        backend_room_connected = self._create_backend_room_subscriber(
             actual_item_uuid,
             terminal_token,
             daemon_config.base_url,
             daemon_config.api_key,
             user_uuid
         )
+        if not backend_room_connected:
+            return {
+                "success": False,
+                "error": (
+                    "终端进程已创建，但 Backend 未能进入对应 Socket Room。"
+                    "请重试启动或检查 Backend 到 Daemon 的 WebSocket 连接。"
+                ),
+                "terminal_started": True,
+                "item_uuid": actual_item_uuid,
+            }
 
         response = {
             "success": True,
@@ -160,6 +170,47 @@ class TerminalService:
             daemon_url=daemon_config.base_url,
             api_key=daemon_config.api_key,
             owner_uuid=owner_uuid,
+        )
+
+    def restore_running_terminal(
+        self,
+        *,
+        item_uuid: str,
+        owner_uuid: str,
+        daemon_config: DaemonConfig,
+    ) -> bool:
+        connection = self.connection_manager.get_or_create_connection(daemon_config)
+        if not connection.is_connected():
+            logger.warning(
+                "[TerminalService] Cannot restore terminal because daemon is offline: item=%s",
+                item_uuid,
+            )
+            return False
+
+        try:
+            status_result = connection.terminal_status_http(item_uuid)
+        except Exception as exc:
+            logger.warning(
+                "[TerminalService] Failed to read daemon terminal status during restore: "
+                "item=%s error=%s",
+                item_uuid,
+                exc,
+            )
+            return False
+        if not status_result.get("success"):
+            return False
+
+        status_data = status_result.get("data") or {}
+        terminal_status = str(status_data.get("status") or "")
+        token = str(status_data.get("token") or "").strip()
+        if terminal_status not in {"running", "waiting_backend"} or not token:
+            return False
+
+        return self.restore_terminal_session(
+            item_uuid=item_uuid,
+            owner_uuid=owner_uuid,
+            daemon_config=daemon_config,
+            token=token,
         )
 
     def stop_terminal(self, daemon_id: str, item_uuid: str) -> dict[str, Any]:

@@ -3058,6 +3058,9 @@ class RobotService:
         if not prefix:
             return message_text
         parts = [prefix]
+        sender_identity_card = self._agent_sender_identity_context_card(inbound_message)
+        if sender_identity_card:
+            parts.append(sender_identity_card)
         identity_card = self._agent_identity_context_card(
             inbound_message,
             trigger_reason=trigger_reason,
@@ -3073,6 +3076,43 @@ class RobotService:
             parts.append(reply_reference_card)
         parts.append(f"[Current QQ message]\n{message_text}")
         return "\n".join(parts)
+
+    def _agent_sender_identity_context_card(
+        self,
+        message: RobotInboundMessage,
+    ) -> str:
+        sender_data = message.reply_target.metadata.get("sender")
+        if not isinstance(sender_data, dict):
+            return ""
+
+        sender_id = str(
+            sender_data.get("user_id")
+            or sender_data.get("qq")
+            or sender_data.get("id")
+            or ""
+        ).strip()
+        display_name = str(
+            sender_data.get("display_name")
+            or sender_data.get("card")
+            or sender_data.get("nickname")
+            or sender_id
+            or "unknown"
+        ).strip()
+        sender_label = display_name
+        if sender_id and sender_id != display_name:
+            sender_label = f"{display_name} ({sender_id})"
+
+        return "\n".join(
+            [
+                "[Current QQ sender; authoritative for this turn]",
+                f"- sender: {sender_label}",
+                (
+                    "- first_person_rule: In [Current QQ message], "
+                    f"'我/我的/我是谁' refers to {sender_label}, not the bot "
+                    "or another person from recent context."
+                ),
+            ]
+        )
 
     def _agent_reply_reference_context_card(
         self,

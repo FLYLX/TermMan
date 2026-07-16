@@ -613,7 +613,26 @@ def get_terminal_token(
     _check_item_permission(item, current_user)
     
     daemon_id, daemon_token = socket_pool_facade.get_item_token(str(item.id))
-    
+
+    if (
+        not daemon_token
+        and item.socket_host
+        and item.socket_port
+        and item.api_key
+    ):
+        daemon_config = DaemonConfig(
+            ip=item.socket_host,
+            port=item.socket_port,
+            api_key=item.api_key,
+        )
+        terminal_service = TerminalService(connection_manager, socket_pool_facade)
+        terminal_service.restore_running_terminal(
+            item_uuid=str(item.id),
+            owner_uuid=str(item.owner_id),
+            daemon_config=daemon_config,
+        )
+        daemon_id, daemon_token = socket_pool_facade.get_item_token(str(item.id))
+
     if not daemon_token:
         raise HTTPException(status_code=400, detail="Item not running or token not available")
     

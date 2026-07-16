@@ -212,7 +212,15 @@ class Agent:
         if self._context:
             self._context.skill_revision = skill_loader.revision
 
-        logger.info(f"[Agent] Loaded {len(self._skills)} skills, {len(self._mcp_servers)} MCP servers ({self._mcp_servers}), {len(self._mcp_tools)} tools for handler {self.handler_id}")
+        logger.info(
+            "[Agent] Loaded %s skills (%s), %s MCP servers (%s), %s tools for handler %s",
+            len(self._skills),
+            sorted(self._skills),
+            len(self._mcp_servers),
+            self._mcp_servers,
+            len(self._mcp_tools),
+            self.handler_id,
+        )
 
     def _load_mcp_tools(self):
         self._mcp_tools.clear()

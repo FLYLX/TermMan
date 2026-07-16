@@ -758,6 +758,30 @@ def test_agent_message_context_marks_bot_self_mention_for_agent() -> None:
     assert "- mentioned_self: true" in text
     assert "- replied_to_self: false" in text
     assert "QQ mentions/replies to this self_id are addressing you" in text
+    assert "[Current QQ sender; authoritative for this turn]" in text
+    assert "- sender: Alice (u1)" in text
+    assert "'我/我的/我是谁' refers to Alice (u1)" in text
+
+
+def test_agent_message_identity_question_is_anchored_to_current_sender() -> None:
+    message = _message(
+        "我是谁",
+        sender={"user_id": "20002", "display_name": "EX_GuguX"},
+        conversation={"type": "group", "id": "g1"},
+        mentions=[{"id": "10001", "qq": "10001", "name": "Bot"}],
+        mentioned_bot=True,
+        bot_self_ids=["10001"],
+    )
+
+    text = robot_service._agent_message_with_context(
+        message,
+        message.text,
+        trigger_reason="mention_bot",
+    )
+
+    assert "- sender: EX_GuguX (20002)" in text
+    assert "'我/我的/我是谁' refers to EX_GuguX (20002)" in text
+    assert text.endswith("[Current QQ message]\n我是谁")
 
 
 def test_agent_message_context_includes_replied_message_reference() -> None:
@@ -806,6 +830,8 @@ def test_robot_reply_context_summary_marks_reply_to_self() -> None:
     assert "- mentioned_self: false" in summary
     assert "- replied_to_self: true" in summary
     assert "QQ mentions/replies to this self_id are addressing you" in summary
+    assert "'我/我的/我是谁' refer to Alice (u1)" in summary
+    assert "Never answer with a tautology" in summary
     assert "reference rule" in summary
     assert "pronouns" in summary
 

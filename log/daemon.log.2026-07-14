@@ -1,0 +1,8 @@
+2026-07-14 18:38:26,970 - termman-daemon - INFO - [JobHTTP] run request: item=item-1 user=user-1 timeout=30 tail_lines=7 command='echo done' cwd='workdir'
+2026-07-14 18:38:26,974 - termman-daemon - INFO - [JobHTTP] run request: item=item-1 user=user-1 timeout=600 tail_lines=80 command='find . -maxdepth 1 -name server.properties' cwd='workdir'
+2026-07-14 18:38:27,000 - termman-daemon - INFO - [JobHTTP] cancel request: item=item-1 job_id='job-1'
+2026-07-14 18:38:27,006 - termman-daemon - WARNING - [JobRunner] Cancelling active job: job_id=job-1 item=item-1 pid=1234
+2026-07-14 18:48:48,269 - termman-daemon - INFO - [JobHTTP] run request: item=item-1 user=user-1 timeout=30 tail_lines=7 command='echo done' cwd='workdir'
+2026-07-14 18:48:48,273 - termman-daemon - INFO - [JobHTTP] run request: item=item-1 user=user-1 timeout=600 tail_lines=80 command='find . -maxdepth 1 -name server.properties' cwd='workdir'
+2026-07-14 18:48:48,291 - termman-daemon - INFO - [JobHTTP] cancel request: item=item-1 job_id='job-1'
+2026-07-14 18:48:48,295 - termman-daemon - WARNING - [JobRunner] Cancelling active job: job_id=job-1 item=item-1 pid=1234

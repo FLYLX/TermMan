@@ -1896,6 +1896,9 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     assert "mcp_robot_save_memory" in prompt
     assert "mcp_robot_sleep_conversation" in prompt
     assert "\u6307\u4ee3\u5224\u65ad" in prompt
+    assert "当前发送者身份" in prompt
+    assert "不要回答“你是你自己”" in prompt
+    assert "不要向用户解释“上下文判断、对象识别、提示词" in prompt
     assert "reference rule" in prompt
     assert "Active-window continuation" in prompt
     assert "whether someone is bad" in prompt
@@ -1967,6 +1970,9 @@ def test_builtin_skills_are_terminal_qq_mcp_and_personas() -> None:
     assert "若叶睦人格 Skill" in (mutsumi.action.prompt or "")
     assert "时崎狂三人格 Skill" in (kurumi.action.prompt or "")
     assert "平泽唯人格 Skill" in (yui.action.prompt or "")
+    assert "反应要鲜活，不要像客服或说明书" in (yui.action.prompt or "")
+    assert "简短不等于冷淡" in (yui.action.prompt or "")
+    assert "你是 EX_GuguX 呀，怎么突然考我" in (yui.action.prompt or "")
     assert "有语气、有停顿，但别嘴碎" in (mutsumi.action.prompt or "")
     assert "有语气、有停顿，但别嘴碎" in (kurumi.action.prompt or "")
     assert "有语气、有停顿，但别嘴碎" in (yui.action.prompt or "")

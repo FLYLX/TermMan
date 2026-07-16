@@ -56,7 +56,10 @@ class BackendMainConnection:
 
     def is_connected(self) -> bool:
         with self.lock:
-            return self.status == ConnectionStatus.CONNECTED and self.conn is not None
+            return (
+                self.status == ConnectionStatus.CONNECTED
+                and bool(self.conn_id)
+            )
 
     def to_dict(self) -> Dict[str, Any]:
         with self.lock:
@@ -160,7 +163,10 @@ class BackendRoomListenConnection:
 
     def is_connected(self) -> bool:
         with self.lock:
-            return self.status == ConnectionStatus.CONNECTED and self.conn is not None
+            return (
+                self.status == ConnectionStatus.CONNECTED
+                and bool(self.conn_id)
+            )
 
     def to_dict(self) -> Dict[str, Any]:
         with self.lock:

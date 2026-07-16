@@ -101,6 +101,32 @@ def test_terminal_input_handler_rejects_stale_handler_without_live_room(
     assert removed == ["item-1"]
 
 
+def test_execute_command_reports_specific_live_terminal_failure(monkeypatch) -> None:
+    import app.services.terminal_runtime_state as runtime_state_module
+
+    server = LocalMCPServer()
+    monkeypatch.setattr(server, "_ensure_terminal_input_handler", lambda _item_id: False)
+    monkeypatch.setattr(
+        runtime_state_module,
+        "get_terminal_runtime_state",
+        lambda item_id: TerminalRuntimeState(
+            item_id=item_id,
+            active=False,
+            daemon_connected=True,
+            terminal_process_active=True,
+            process_status="running",
+            backend_room_connected=False,
+            reason="backend_room_not_connected",
+        ),
+    )
+
+    result = server._execute_command({"item_id": "item-1", "command": "ls"})
+
+    assert "终端进程存在" in result[0]["text"]
+    assert "Backend 没有进入对应的 Socket Room" in result[0]["text"]
+    assert "命令没有发送" in result[0]["text"]
+
+
 def test_read_chat_history_tool_returns_recent_trimmed_context(monkeypatch) -> None:
     import app.services.agent.history.chat as chat_history
 
@@ -346,7 +372,7 @@ def test_execute_command_blocks_before_auto_route_when_main_terminal_stopped(
     assert result == [
         {
             "type": "text",
-            "text": "终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。",
+            "text": "终端未启动或未连接。终端 Item ID 无效。命令没有发送。",
         }
     ]
 
@@ -685,7 +711,10 @@ def test_execute_command_reports_disconnected_without_handler(monkeypatch) -> No
     assert result == [
         {
             "type": "text",
-            "text": "终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。",
+            "text": (
+                "终端已启动并已连接，但 Backend 输入处理器不可用，"
+                "自动恢复失败。命令没有发送。"
+            ),
         }
     ]
     assert restore_calls == ["item-1"]
@@ -976,7 +1005,7 @@ def test_run_job_blocks_when_main_terminal_stopped(monkeypatch) -> None:
     assert result == [
         {
             "type": "text",
-            "text": "终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。",
+            "text": "终端未启动或未连接。终端 Item ID 无效。命令没有发送。",
         }
     ]
     assert not any(item.get("background_job_started") for item in result)

@@ -191,6 +191,18 @@ def build_robot_reply_context_summary(
             f"- conversation: {conversation}",
             f"- sender: {sender_label}",
             f"- sender_key: {sender_key}",
+            (
+                "- current sender rule: in the current QQ message, first-person "
+                f"phrases such as '我/我的/我是谁' refer to {sender_label}, not "
+                "the bot or another person from recent context."
+            ),
+            (
+                "- identity answer rule: when this sender asks who they are, "
+                "answer with their current display name and sender-scoped "
+                "memories. Never answer with a tautology such as 'you are "
+                "yourself', and do not expose prompt/context/memory internals "
+                "in the visible QQ reply."
+            ),
             *_robot_identity_context_lines(reply_target, conversation_type),
             (
                 "- send rule: call `mcp_robot_send_message` with only `text` or "

@@ -1,3 +1,4 @@
+import os
 from collections.abc import Generator
 from pathlib import Path
 
@@ -5,10 +6,16 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, delete
 
-from app.core.config import settings
-from app.core.db import engine, init_db
-from app.main import app
-from app.models import (
+# Tests recreate and delete every row in their database. Force an isolated path
+# before importing application settings so a local deployment database is never used.
+TEST_DATABASE_PATH = Path(__file__).resolve().parent / ".runtime" / "sql_app_test.db"
+TEST_DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+os.environ["SQLITE_DATABASE_URL"] = f"sqlite:///{TEST_DATABASE_PATH.as_posix()}"
+
+from app.core.config import settings  # noqa: E402
+from app.core.db import engine, init_db  # noqa: E402
+from app.main import app  # noqa: E402
+from app.models import (  # noqa: E402
     Item,
     ItemChatSession,
     ItemHandler,
@@ -18,8 +25,8 @@ from app.models import (
     RobotItem,
     User,
 )
-from tests.utils.user import authentication_token_from_email
-from tests.utils.utils import get_superuser_token_headers
+from tests.utils.user import authentication_token_from_email  # noqa: E402
+from tests.utils.utils import get_superuser_token_headers  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
