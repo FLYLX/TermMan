@@ -3,8 +3,8 @@ import type { CancelablePromise } from "@/client/core/CancelablePromise"
 import { OpenAPI } from "@/client/core/OpenAPI"
 import { request as __request } from "@/client/core/request"
 
-export type MemoryType = "fact" | "preference" | "task" | "error" | "context"
-export type ManagedMemoryStatus = "active" | "completed" | "resolved"
+export type MemoryType = "fact" | "preference" | "error" | "context"
+export type ManagedMemoryStatus = "active" | "resolved"
 
 export interface Memory {
   id: string
@@ -13,7 +13,7 @@ export interface Memory {
     item_id: string
     memory_type: MemoryType
     created_at: string
-    expires_at: string
+    expires_at?: string | null
     updated_at?: string
     status?: ManagedMemoryStatus
     memory_key?: string
@@ -57,10 +57,6 @@ export interface MemoryStats {
   expired_count: number
   memory_types: Record<MemoryType, string>
   status_counts: {
-    task: {
-      active: number
-      completed: number
-    }
     error: {
       active: number
       resolved: number
@@ -134,7 +130,6 @@ export interface MemoryImportResponse {
 export const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
   fact: "事实",
   preference: "偏好",
-  task: "任务",
   error: "错误",
   context: "上下文",
 }
@@ -142,20 +137,17 @@ export const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
 export const MEMORY_TYPE_COLORS: Record<MemoryType, string> = {
   fact: "bg-blue-500",
   preference: "bg-purple-500",
-  task: "bg-green-500",
   error: "bg-red-500",
   context: "bg-yellow-500",
 }
 
 export const MEMORY_STATUS_LABELS: Record<ManagedMemoryStatus, string> = {
   active: "进行中",
-  completed: "已完成",
   resolved: "已解决",
 }
 
 export const MEMORY_STATUS_COLORS: Record<ManagedMemoryStatus, string> = {
   active: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  completed: "bg-zinc-700/70 text-zinc-200 border-zinc-500/40",
   resolved: "bg-sky-500/15 text-sky-300 border-sky-500/30",
 }
 

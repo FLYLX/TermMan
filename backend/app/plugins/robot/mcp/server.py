@@ -40,14 +40,15 @@ ACTIVE_CONTEXT_MEMORY_MAX_LINES = 12
 GENERAL_MEMORY_MAX_LINES = 500
 DEFAULT_LONG_TERM_MEMORY_RESULTS = 5
 MAX_LONG_TERM_MEMORY_RESULTS = 8
+DEFAULT_LONG_TERM_MEMORY_LIST_RESULTS = 10
+MAX_LONG_TERM_MEMORY_LIST_RESULTS = 20
 LONG_TERM_MEMORY_CANDIDATE_MULTIPLIER = 6
-LONG_TERM_MEMORY_TYPES = {"fact", "preference", "task", "error", "context"}
-LONG_TERM_MEMORY_TYPE_ORDER = ("preference", "fact", "context", "task", "error")
+LONG_TERM_MEMORY_TYPES = {"fact", "preference", "error", "context"}
+LONG_TERM_MEMORY_TYPE_ORDER = ("preference", "fact", "context", "error")
 LONG_TERM_MEMORY_TYPE_RANK = {
     "preference": 5,
     "fact": 4,
     "context": 3,
-    "task": 2,
     "error": 2,
 }
 ROBOT_SEND_DEDUPE_SECONDS = 10
@@ -231,14 +232,45 @@ class RobotMCPServer:
             skip_memory=True,
         )
         self.register_tool(
+            name="list_memories",
+            description=(
+                "List durable TermMan long-term memories visible in the current "
+                "QQ robot scope without requiring a semantic search query. Use "
+                "this when the user asks what the bot remembers, asks to view "
+                "all/current memories, or says the bot cannot see its memories. "
+                "Results are restricted to the current TermMan item and active "
+                "QQ robot/conversation/sender scope. This is not raw QQ chat "
+                "history; use read_conversation_memory for exact recent lines."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": MAX_LONG_TERM_MEMORY_LIST_RESULTS,
+                        "description": "Maximum memories to return. Default is 10.",
+                    },
+                    "memory_type": {
+                        "type": "string",
+                        "enum": sorted(LONG_TERM_MEMORY_TYPES),
+                        "description": "Optional memory type filter.",
+                    },
+                },
+            },
+            handler=self._list_memories,
+            skip_memory=True,
+        )
+        self.register_tool(
             name="recall_memory",
             description=(
                 "Search TermMan long-term memory for stable facts, user "
-                "preferences, tasks, errors, and reusable context. This is "
+                "preferences, errors, and reusable context. This is "
                 "not raw QQ .log history. In an incoming QQ-triggered turn, "
-                "use this when the current message asks what the bot remembers, "
-                "refers to a known preference/person/fact, or needs durable "
-                "context. Omit target arguments; results are scoped to the "
+                "use this when the current message refers to a specific known "
+                "preference/person/fact or needs durable context. Use "
+                "list_memories instead when the user asks what the bot remembers "
+                "in general. Omit target arguments; results are scoped to the "
                 "current TermMan item and prefer the current QQ conversation."
             ),
             input_schema={
@@ -272,10 +304,9 @@ class RobotMCPServer:
                 "TermMan long-term memory for the bound terminal item. Use this "
                 "when the live QQ message contains an explicit remember request, "
                 "stable names/nicknames, bot identity/name rules, durable user "
-                "preferences, relationships, ongoing tasks, reusable facts, or "
-                "recurring group context. Active execution state is tracked in the "
-                "task queue, but task-related information may still be saved when "
-                "it is genuinely worth remembering long term. Do not save trivial "
+                "preferences, relationships, reusable facts, or recurring group "
+                "context. Active execution state belongs only to the task queue. "
+                "Do not save trivial "
                 "chat, images, short "
                 "reactions, temporary chatter, raw logs, or sensitive secrets."
             ),
@@ -295,7 +326,7 @@ class RobotMCPServer:
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 3650,
-                        "description": "Optional retention days; defaults by memory type.",
+                        "description": "Optional retention days for fact/context. Preference and error memories are permanent.",
                     },
                 },
                 "required": ["content"],
@@ -1069,6 +1100,14 @@ class RobotMCPServer:
             value = DEFAULT_LONG_TERM_MEMORY_RESULTS
         return max(1, min(MAX_LONG_TERM_MEMORY_RESULTS, value))
 
+    def _long_term_memory_list_limit(self, args: dict) -> int:
+        raw_value = args.get("limit") or DEFAULT_LONG_TERM_MEMORY_LIST_RESULTS
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            value = DEFAULT_LONG_TERM_MEMORY_LIST_RESULTS
+        return max(1, min(MAX_LONG_TERM_MEMORY_LIST_RESULTS, value))
+
     @staticmethod
     def _memory_distance(memory: dict[str, Any]) -> float:
         try:
@@ -1118,6 +1157,8 @@ class RobotMCPServer:
 
     @classmethod
     def _memory_expired(cls, memory: dict[str, Any]) -> bool:
+        if cls._memory_type(memory) in {"preference", "error"}:
+            return False
         parsed = cls._parse_memory_datetime(
             cls._memory_metadata(memory).get("expires_at")
         )
@@ -1131,10 +1172,7 @@ class RobotMCPServer:
         metadata = cls._memory_metadata(memory)
         memory_type = str(metadata.get("memory_type") or "")
         status = str(metadata.get("status") or "").lower()
-        return (
-            (memory_type == "task" and status == "completed")
-            or (memory_type == "error" and status == "resolved")
-        )
+        return memory_type == "task" and status == "completed"
 
     @staticmethod
     def _memory_tokens(value: str) -> set[str]:
@@ -1344,11 +1382,14 @@ class RobotMCPServer:
 
             default_ttl_days = memory_policy.resolve_memory_ttl_days(memory_type)
             raw_ttl_days = args.get("ttl_days")
-            if raw_ttl_days in (None, ""):
+            if default_ttl_days is None:
+                ttl_days = None
+            elif raw_ttl_days in (None, ""):
                 ttl_days = default_ttl_days
             else:
                 ttl_days = int(raw_ttl_days)
-            ttl_days = max(1, min(3650, ttl_days))
+            if ttl_days is not None:
+                ttl_days = max(1, min(3650, ttl_days))
 
             context_token = str(args.get("_robot_context_token") or "").strip()
             context = get_robot_mcp_context(context_token)
@@ -1374,6 +1415,8 @@ class RobotMCPServer:
             memory_key = memory_policy.infer_memory_key(content, memory_type)
             if memory_key:
                 metadata["memory_key"] = memory_key
+            if memory_type == "error":
+                metadata["status"] = "active"
             if robot_id:
                 metadata["robot_id"] = robot_id
             if conversation_key:
@@ -1414,6 +1457,101 @@ class RobotMCPServer:
                 "text": f"Memory saved to TermMan long-term memory (ID: {str(memory_id)[:8]}...).",
             }
         ]
+
+    def _list_memories(self, args: dict) -> list[dict[str, str]]:
+        memory_type = str(args.get("memory_type") or "").strip() or None
+        if memory_type is not None and memory_type not in LONG_TERM_MEMORY_TYPES:
+            return [{"type": "text", "text": f"Error: invalid memory_type: {memory_type}"}]
+
+        item_id = str(args.get("_termman_item_id") or args.get("item_id") or "").strip()
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id unavailable"}]
+
+        context_token = str(args.get("_robot_context_token") or "").strip()
+        context = get_robot_mcp_context(context_token)
+        if context is None:
+            return [
+                {
+                    "type": "text",
+                    "text": "Error: list_memories requires an active QQ robot conversation context.",
+                }
+            ]
+
+        robot_id = str(context.robot_id or "").strip()
+        active_target = self._context_target_from_active_context(context)
+        conversation_key = str(
+            getattr(context, "conversation_key", "")
+            or (active_target or {}).get("conversation", "")
+        ).strip()
+        speaker_global_key = speaker_global_key_from_context(
+            str(getattr(context, "sender_key", "") or ""),
+            getattr(context, "reply_target", None),
+        )
+
+        try:
+            from app.services.agent.memory.vector_store import vector_store
+
+            vector_store.maintain_memories(item_id)
+            memories = self._collect_scoped_long_term_memory_candidates(
+                store=vector_store,
+                item_id=item_id,
+                memory_type=memory_type,
+                robot_id=robot_id,
+                conversation_key=conversation_key,
+                speaker_global_key=speaker_global_key,
+            )
+        except Exception as exc:
+            return [{"type": "text", "text": f"Error: {exc}"}]
+
+        by_key: dict[str, dict[str, Any]] = {}
+        for memory in memories:
+            memory_id = str(memory.get("id") or "").strip()
+            content = str(memory.get("content") or "").strip()
+            key = memory_id or f"content:{content}"
+            by_key.setdefault(key, memory)
+
+        ranked = sorted(
+            by_key.values(),
+            key=lambda memory: (
+                self._memory_scope_rank(
+                    memory,
+                    robot_id=robot_id,
+                    conversation_key=conversation_key,
+                    speaker_global_key=speaker_global_key,
+                ),
+                self._memory_timestamp(memory),
+                LONG_TERM_MEMORY_TYPE_RANK.get(self._memory_type(memory), 1),
+                str(memory.get("id") or ""),
+            ),
+            reverse=True,
+        )
+        limit = self._long_term_memory_list_limit(args)
+        selected = ranked[:limit]
+        if not selected:
+            return [
+                {
+                    "type": "text",
+                    "text": "No long-term memories are visible in the current QQ scope.",
+                }
+            ]
+
+        lines = [
+            f"Long-term memories visible in current QQ scope (showing {len(selected)} of {len(ranked)}):"
+        ]
+        for index, memory in enumerate(selected, start=1):
+            metadata = self._memory_metadata(memory)
+            sender = str(
+                metadata.get("speaker")
+                or metadata.get("speaker_label")
+                or metadata.get("sender")
+                or ""
+            ).strip()
+            content = str(memory.get("content") or "").strip()
+            prefix = f"{sender}: " if sender and not content.startswith(sender) else ""
+            lines.append(
+                f"{index}. [{self._memory_type(memory)}] {prefix}{content}"
+            )
+        return [{"type": "text", "text": "\n".join(lines)}]
 
     def _recall_memory(self, args: dict) -> list[dict[str, str]]:
         query = str(args.get("query") or "").strip()

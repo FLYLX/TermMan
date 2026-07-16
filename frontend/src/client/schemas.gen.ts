@@ -1550,7 +1550,7 @@ export const MemoryCreateSchema = {
         },
         memory_type: {
             type: 'string',
-            enum: ['fact', 'preference', 'task', 'error', 'context'],
+            enum: ['fact', 'preference', 'error', 'context'],
             title: 'Memory Type',
             default: 'fact'
         },
@@ -1598,7 +1598,7 @@ export const MemorySearchSchema = {
             anyOf: [
                 {
                     type: 'string',
-                    enum: ['fact', 'preference', 'task', 'error', 'context']
+                    enum: ['fact', 'preference', 'error', 'context']
                 },
                 {
                     type: 'null'

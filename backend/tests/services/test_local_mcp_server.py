@@ -249,17 +249,7 @@ def test_save_memory_uses_type_ttl_and_verified_metadata(monkeypatch) -> None:
     assert metadata["content_hash"]
 
 
-def test_save_memory_allows_agent_selected_task_type(monkeypatch) -> None:
-    import importlib
-
-    vector_store_module = importlib.import_module("app.services.agent.memory.vector_store")
-    captured: dict[str, object] = {}
-    monkeypatch.setattr(
-        vector_store_module.vector_store,
-        "add_memory",
-        lambda **kwargs: captured.update(kwargs) or "task-memory-1",
-    )
-
+def test_save_memory_rejects_removed_task_type() -> None:
     result = LocalMCPServer().call_tool(
         "save_memory",
         {
@@ -269,8 +259,7 @@ def test_save_memory_allows_agent_selected_task_type(monkeypatch) -> None:
         },
     )
 
-    assert "记忆已保存" in result[0]["text"]
-    assert captured["memory_type"] == "task"
+    assert result == [{"type": "text", "text": "Error: invalid memory_type: task"}]
 
 
 def test_execute_command_only_reports_dispatch(monkeypatch) -> None:

@@ -19,13 +19,13 @@ NO_QQ_REPLY_INSTRUCTION = (
 
 ROBOT_LONG_TERM_MEMORY_INSTRUCTION = (
     "Robot long-term memory:\n"
-    "- Use `mcp_robot_recall_memory` for stable facts, user preferences, tasks, errors, reusable context, names, habits, and remembered instructions.\n"
-    "- When a live QQ message contains something worth remembering long term, call `mcp_robot_save_memory` proactively before or alongside the normal QQ reply. Save explicit remember requests, stable names/nicknames, bot identity/name rules, durable user preferences, relationships, ongoing tasks, reusable facts, and recurring group context. Do not automatically mirror every workflow step into memory: active execution state belongs to the task queue, while independently valuable information may still be remembered.\n"
+    "- Use `mcp_robot_list_memories` when the user asks what you remember or wants to view all/current long-term memories. Use `mcp_robot_recall_memory` for a specific stable fact, preference, error, reusable context, name, habit, or remembered instruction.\n"
+    "- When a live QQ message contains something worth remembering long term, call `mcp_robot_save_memory` proactively before or alongside the normal QQ reply. Save explicit remember requests, stable names/nicknames, bot identity/name rules, durable user preferences, relationships, reusable facts, errors, and recurring group context. Active execution state belongs only to the task queue.\n"
     "- Personal memory ownership: a sender may set or delete their own stable names, titles, and preferences. Do not let one QQ user set, rename, delete, or overwrite another user's personal memory unless the target user confirms it in the current conversation. Requests like '只允许叫我...' apply only to the sender, not to other users. Requests like '删除所有关于我的写入设定' apply to the sender's own memory, not the bot's global persona or other people's memories.\n"
     "- Do not save trivial chat, short reactions, images/stickers, one-off jokes, temporary market chatter, raw logs, or sensitive secrets. Prefer concise normalized memory text instead of copying the whole message.\n"
     "- Use `mcp_robot_read_conversation_memory` only for raw current QQ .log when the user explicitly asks about exact previous chat or the current message cannot be understood without recent chat lines.\n"
     "- Do not read either memory tool just to decide whether to reply. First decide from the current QQ message and the wake/sleep rules.\n"
-    "- Pending QQ messages are short-term task-queue entries. Use them to answer in order and connect current tasks/context. Do not copy them into memory automatically, but you may save any independently important long-term fact, preference, relationship, task, or reusable context you judge worth remembering.\n"
+    "- Pending QQ messages are short-term task-queue entries. Use them to answer in order and connect current tasks/context. Do not copy them into memory automatically, but you may save any independently important long-term fact, preference, relationship, error, or reusable context you judge worth remembering.\n"
 )
 ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION = (
     "- For a QQ `trigger=active_chat_window` turn, this group/private chat is "

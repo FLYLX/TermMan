@@ -1,8 +1,11 @@
 FROM python:3.11-slim
 
 ARG USE_CHINA_MIRRORS=true
+ARG EMBEDDING_MODEL_NAME=BAAI/bge-small-zh-v1.5
 
 ENV PYTHONUNBUFFERED=1
+ENV EMBEDDING_MODEL_NAME=${EMBEDDING_MODEL_NAME}
+ENV HF_HUB_DOWNLOAD_TIMEOUT=120
 
 # Install uv
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#installing-uv
@@ -50,6 +53,25 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     fi \
     && uv sync --frozen --no-install-workspace --package app
 
+# Cache the embedding model before application source is copied so normal code
+# changes do not trigger another network download. China builds try the mirror
+# first and then the official endpoint; runtime only reads the baked cache.
+RUN set -u; \
+    download_embedding_model() { \
+        endpoint="$1"; \
+        echo "Downloading embedding model ${EMBEDDING_MODEL_NAME} from ${endpoint}"; \
+        HF_ENDPOINT="$endpoint" timeout 240s python -c \
+            "import os; from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ['EMBEDDING_MODEL_NAME'])"; \
+    }; \
+    if [ "$USE_CHINA_MIRRORS" = "true" ]; then \
+        download_embedding_model https://hf-mirror.com \
+        || download_embedding_model https://huggingface.co \
+        || echo "Warning: Failed to cache ${EMBEDDING_MODEL_NAME}; runtime will use lexical/fallback memory search"; \
+    else \
+        download_embedding_model https://huggingface.co \
+        || echo "Warning: Failed to cache ${EMBEDDING_MODEL_NAME}; runtime will use lexical/fallback memory search"; \
+    fi
+
 COPY ./backend/scripts /app/backend/scripts
 
 COPY ./backend/pyproject.toml ./backend/alembic.ini /app/backend/
@@ -82,13 +104,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
             uv.lock pyproject.toml backend/pyproject.toml; \
     fi \
     && uv sync --frozen --package app
-
-# Pre-download sentence-transformers model during build
-RUN if [ "$USE_CHINA_MIRRORS" = "true" ]; then \
-        export HF_ENDPOINT=https://hf-mirror.com; \
-    fi \
-    && python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" || \
-    echo "Warning: Failed to download model, will download at runtime"
 
 WORKDIR /app/backend/
 

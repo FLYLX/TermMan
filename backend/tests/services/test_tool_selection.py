@@ -44,6 +44,10 @@ ALL_TOOLS = [
     _tool("mcp_local_delete_scheduled_task"),
     _tool("mcp_robot_send_message"),
     _tool("mcp_robot_sleep_conversation"),
+    _tool("mcp_robot_read_conversation_memory"),
+    _tool("mcp_robot_list_memories"),
+    _tool("mcp_robot_recall_memory"),
+    _tool("mcp_robot_save_memory"),
 ]
 
 
@@ -66,6 +70,10 @@ def test_qq_casual_turn_keeps_only_robot_tools() -> None:
     assert _names(selected) == [
         "mcp_robot_send_message",
         "mcp_robot_sleep_conversation",
+        "mcp_robot_read_conversation_memory",
+        "mcp_robot_list_memories",
+        "mcp_robot_recall_memory",
+        "mcp_robot_save_memory",
     ]
 
 
@@ -141,6 +149,10 @@ def test_web_explicit_qq_request_keeps_robot_tools() -> None:
     assert _names(selected) == [
         "mcp_robot_send_message",
         "mcp_robot_sleep_conversation",
+        "mcp_robot_read_conversation_memory",
+        "mcp_robot_list_memories",
+        "mcp_robot_recall_memory",
+        "mcp_robot_save_memory",
     ]
 
 

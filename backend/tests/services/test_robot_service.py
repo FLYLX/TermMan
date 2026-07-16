@@ -1212,7 +1212,7 @@ def test_robot_message_includes_current_conversation_impression_card(
 
     def fake_get_all_memories(item_id, memory_type=None):
         assert item_id == str(item.id)
-        if memory_type != "preference":
+        if memory_type not in {None, "preference"}:
             return []
         return [
             {
@@ -1250,6 +1250,7 @@ def test_robot_message_includes_current_conversation_impression_card(
         ]
 
     monkeypatch.setattr(vector_store, "get_all_memories", fake_get_all_memories)
+    monkeypatch.setattr(vector_store, "search_memories", lambda **_kwargs: [])
 
     response = robot_service.handle_inbound_message(
         db,
@@ -1271,6 +1272,62 @@ def test_robot_message_includes_current_conversation_impression_card(
     assert text.index("Alice 喜欢短回复") < text.index("Alice 以后叫她主人")
     assert "other group secret" not in text
     assert text.endswith("[Current QQ message]\nhello")
+
+
+def test_robot_impression_card_prioritizes_query_relevant_memory(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    scoped_metadata = {
+        "robot_id": str(robot.id),
+        "robot_conversation_key": "group:g1",
+    }
+    stable = {
+        "id": "stable-preference",
+        "content": "用户偏好：回答保持简洁",
+        "metadata": {**scoped_metadata, "memory_type": "preference"},
+    }
+    relevant = {
+        "id": "relevant-port",
+        "content": "Minecraft 服务端口是 43906",
+        "metadata": {**scoped_metadata, "memory_type": "fact"},
+        "distance": 0.1,
+    }
+    unrelated = {
+        "id": "unrelated-recent",
+        "content": "最近修改了机器人颜色",
+        "metadata": {
+            **scoped_metadata,
+            "memory_type": "fact",
+            "updated_at": "2026-07-16T12:00:00",
+        },
+    }
+    monkeypatch.setattr(
+        vector_store,
+        "get_all_memories",
+        lambda *_args, **_kwargs: [stable, unrelated, relevant],
+    )
+    monkeypatch.setattr(
+        vector_store,
+        "search_memories",
+        lambda **_kwargs: [relevant],
+    )
+
+    card = robot_service._conversation_impression_card(
+        item_id=item.id,
+        robot=robot,
+        conversation_key="group:g1",
+        sender_key="onebot_v11:user:u1",
+        query="服务器端口是多少",
+    )
+
+    assert "回答保持简洁" in card
+    assert "服务端口是 43906" in card
+    assert card.index("服务端口是 43906") < card.index("最近修改了机器人颜色")
+
+
 def test_robot_message_passes_sender_prefix_to_agent(
     db: Session,
     monkeypatch,

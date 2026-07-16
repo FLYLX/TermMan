@@ -2738,7 +2738,7 @@ def test_stream_chat_persists_explicit_preference_memory(
     assert captured_memory["item_id"] == str(item.id)
     assert captured_memory["content"] == "用户偏好：以后都用中文并且回复简洁"
     assert captured_memory["memory_type"] == "preference"
-    assert captured_memory["ttl_days"] == 180
+    assert captured_memory["ttl_days"] is None
     assert captured_memory["metadata"]["type"] == "conversation_explicit"
     assert captured_memory["metadata"]["source"] == "chat_user"
     assert captured_memory["metadata"]["verified"] is True
@@ -2792,7 +2792,7 @@ def test_stream_chat_confirmation_persists_previous_assistant_fact(
     assert captured_memory["metadata"]["memory_key"] == "fact.cron_job.py"
 
 
-def test_stream_chat_can_update_agent_selected_task_memory(
+def test_stream_chat_does_not_update_removed_task_memory_type(
     client: TestClient,
     superuser_token_headers: dict[str, str],
     db: Session,
@@ -2849,8 +2849,7 @@ def test_stream_chat_can_update_agent_selected_task_memory(
         assert response.status_code == 200
         list(response.iter_text())
 
-    assert captured_update["memory_id"] == "task-1"
-    assert captured_update["metadata"]["status"] == "completed"
+    assert captured_update == {}
 
 def test_agent_task_plan_records_reply_origin(monkeypatch) -> None:
     from app.api.routes import chat as chat_route

@@ -719,6 +719,7 @@ class RobotService:
                 conversation_key=job.conversation_key,
                 sender_key=job.sender_key,
                 reply_target=job.reply_target,
+                query=message_text,
             ),
             live_context_card=self._recent_live_context_card(
                 robot=robot,
@@ -1420,6 +1421,7 @@ class RobotService:
                     conversation_key=conversation_key,
                     sender_key=latest.sender_key,
                     reply_target=latest.reply_target,
+                    query=self._pending_chat_batch_text(entries),
                 ),
                 live_context_card="",
             ),
@@ -2794,6 +2796,8 @@ class RobotService:
         metadata = memory.get("metadata") if isinstance(memory, dict) else {}
         if not isinstance(metadata, dict):
             return False
+        if str(metadata.get("memory_type") or "") in {"preference", "error"}:
+            return False
         expires_at = metadata.get("expires_at")
         if not expires_at:
             return False
@@ -2811,10 +2815,7 @@ class RobotService:
             return False
         memory_type = str(metadata.get("memory_type") or "")
         status = str(metadata.get("status") or "").lower()
-        return (
-            (memory_type == "task" and status == "completed")
-            or (memory_type == "error" and status == "resolved")
-        )
+        return memory_type == "task" and status == "completed"
 
     @staticmethod
     def _memory_matches_robot_conversation(
@@ -2843,7 +2844,6 @@ class RobotService:
             "preference": 5,
             "fact": 4,
             "context": 3,
-            "task": 2,
             "error": 2,
         }.get(memory_type, 1)
         verified_rank = 1 if metadata.get("verified") is True else 0
@@ -2858,6 +2858,7 @@ class RobotService:
         conversation_key: str,
         sender_key: str = "",
         reply_target: RobotReplyTarget | None = None,
+        query: str = "",
         limit: int = 6,
     ) -> str:
         if not conversation_key:
@@ -2870,39 +2871,65 @@ class RobotService:
             return ""
 
         speaker_global_key = speaker_global_key_from_context(sender_key, reply_target)
-        memories: list[dict[str, object]] = []
-        for memory_type in ("preference", "fact", "context", "task", "error"):
+        vector_store.maintain_memories(str(item_id))
+        try:
+            all_memories = vector_store.get_all_memories(str(item_id))
+        except Exception as exc:
+            logger.debug(
+                "[RobotService] Failed to load robot impression memories item=%s: %s",
+                item_id,
+                exc,
+            )
+            all_memories = []
+
+        scoped_memories = [
+            memory
+            for memory in all_memories
+            if isinstance(memory, dict)
+            and not self._memory_expired(memory)
+            and not self._memory_inactive(memory)
+            and self._memory_matches_robot_conversation(
+                memory,
+                robot=robot,
+                conversation_key=conversation_key,
+                speaker_global_key=speaker_global_key,
+            )
+        ]
+        if not scoped_memories:
+            return ""
+
+        query_text = re.sub(r"\s+", " ", str(query or "")).strip()
+        relevant_memories: list[dict[str, object]] = []
+        if query_text:
             try:
-                typed_memories = vector_store.get_all_memories(
-                    str(item_id),
-                    memory_type=memory_type,
+                recalled = vector_store.search_memories(
+                    item_id=str(item_id),
+                    query=query_text,
+                    n_results=max(12, limit * 4),
+                    include_expired=False,
+                    active_only=True,
+                    min_similarity=0.18,
                 )
             except Exception as exc:
                 logger.debug(
-                    "[RobotService] Failed to load robot impression memories item=%s type=%s: %s",
+                    "[RobotService] Failed to query robot impression memories item=%s: %s",
                     item_id,
-                    memory_type,
                     exc,
                 )
-                continue
-            for memory in typed_memories:
-                if not isinstance(memory, dict):
-                    continue
-                if self._memory_expired(memory) or self._memory_inactive(memory):
-                    continue
-                if not self._memory_matches_robot_conversation(
+                recalled = []
+            relevant_memories = [
+                memory
+                for memory in recalled
+                if isinstance(memory, dict)
+                and self._memory_matches_robot_conversation(
                     memory,
                     robot=robot,
                     conversation_key=conversation_key,
                     speaker_global_key=speaker_global_key,
-                ):
-                    continue
-                memories.append(memory)
+                )
+            ]
 
-        if not memories:
-            return ""
-
-        memories.sort(
+        scoped_memories.sort(
             key=lambda memory: (
                 memory_scope_rank(
                     memory,
@@ -2914,20 +2941,60 @@ class RobotService:
             ),
             reverse=True,
         )
+        relevant_memories.sort(
+            key=lambda memory: (
+                memory_scope_rank(
+                    memory,
+                    robot_id=str(robot.id),
+                    conversation_key=conversation_key,
+                    speaker_global_key=speaker_global_key,
+                ),
+                max(
+                    0.0,
+                    1.0
+                    - float(
+                        memory.get("distance")
+                        if memory.get("distance") is not None
+                        else 1.0
+                    ),
+                ),
+                *self._impression_memory_sort_key(memory),
+            ),
+            reverse=True,
+        )
+
+        stable_memories = [
+            memory
+            for memory in scoped_memories
+            if str((memory.get("metadata") or {}).get("memory_type") or "")
+            in {"preference", "error"}
+            or (memory.get("metadata") or {}).get("verified") is True
+        ][:2]
+        ordered_memories = [*stable_memories, *relevant_memories, *scoped_memories]
         lines = [
             "[Current QQ conversation impression card; background only, do not answer old items]"
         ]
         seen_content: set[str] = set()
-        for memory in memories:
+        seen_ids: set[str] = set()
+        for memory in ordered_memories:
             if len(lines) > limit:
                 break
+            memory_id = str(memory.get("id") or "")
+            if memory_id and memory_id in seen_ids:
+                continue
             metadata = memory.get("metadata") if isinstance(memory, dict) else {}
             if not isinstance(metadata, dict):
                 metadata = {}
             content = sanitize_robot_visible_text(str(memory.get("content") or "")).strip()
             content = re.sub(r"\s+", " ", content)
-            if not content or content in seen_content:
+            if (
+                not content
+                or content in seen_content
+                or (query_text and content.casefold() == query_text.casefold())
+            ):
                 continue
+            if memory_id:
+                seen_ids.add(memory_id)
             seen_content.add(content)
             if len(content) > 160:
                 content = f"{content[:157]}..."

@@ -73,7 +73,6 @@ def test_get_all_memories_sorts_active_status_first(
     assert [memory["id"] for memory in payload["memories"]] == [
         "error-active",
         "fact-1",
-        "task-closed",
     ]
 
 
@@ -172,15 +171,14 @@ def test_get_memory_stats_includes_status_counts(
     assert response.status_code == 200
     payload = response.json()
     assert payload["status_counts"] == {
-        "task": {"active": 1, "completed": 1},
         "error": {"active": 0, "resolved": 1},
     }
-    assert payload["total"] == 3
-    assert payload["by_type"]["task"] == 2
+    assert payload["total"] == 1
+    assert "task" not in payload["by_type"]
     assert payload["by_type"]["error"] == 1
 
 
-def test_update_memory_status_updates_agent_saved_task_memory(
+def test_update_memory_status_rejects_removed_task_memory(
     client: TestClient,
     superuser_token_headers: dict[str, str],
     db: Session,
@@ -204,25 +202,16 @@ def test_update_memory_status_updates_agent_saved_task_memory(
         },
     )
 
-    captured: dict[str, object] = {}
-    monkeypatch.setattr(
-        memory_route.vector_store,
-        "update_memory",
-        lambda **kwargs: captured.update(kwargs) or True,
-    )
-
     response = client.post(
         f"{settings.API_V1_STR}/memory/{item.id}/memories/task-1/status",
         headers=superuser_token_headers,
-        json={"status": "completed"},
+        json={"status": "resolved"},
     )
 
-    assert response.status_code == 200
-    assert captured["memory_id"] == "task-1"
-    assert captured["metadata"]["status"] == "completed"
+    assert response.status_code == 400
 
 
-def test_add_memory_allows_agent_selected_task_type(
+def test_add_memory_rejects_removed_task_type(
     client: TestClient,
     superuser_token_headers: dict[str, str],
     db: Session,
@@ -244,8 +233,8 @@ def test_add_memory_allows_agent_selected_task_type(
         json={"content": "安装 Java", "memory_type": "task"},
     )
 
-    assert response.status_code == 200
-    assert captured["memory_type"] == "task"
+    assert response.status_code == 422
+    assert captured == {}
 
 
 def test_update_memory_status_rejects_invalid_type_transition(
@@ -275,7 +264,7 @@ def test_update_memory_status_rejects_invalid_type_transition(
     response = client.post(
         f"{settings.API_V1_STR}/memory/{item.id}/memories/fact-1/status",
         headers=superuser_token_headers,
-        json={"status": "completed"},
+        json={"status": "resolved"},
     )
 
     assert response.status_code == 400
@@ -296,10 +285,10 @@ def test_update_memory_status_requires_memory_belongs_to_item(
         "get_memory",
         lambda memory_id: {
             "id": memory_id,
-            "content": "当前任务：修复 daemon 状态同步",
+            "content": "已知错误：daemon 状态同步失败",
             "metadata": {
                 "item_id": "another-item",
-                "memory_type": "task",
+                "memory_type": "error",
                 "status": "active",
                 "created_at": "2026-04-02T09:00:00",
             },
@@ -307,9 +296,9 @@ def test_update_memory_status_requires_memory_belongs_to_item(
     )
 
     response = client.post(
-        f"{settings.API_V1_STR}/memory/{item.id}/memories/task-2/status",
+        f"{settings.API_V1_STR}/memory/{item.id}/memories/error-2/status",
         headers=superuser_token_headers,
-        json={"status": "completed"},
+        json={"status": "resolved"},
     )
 
     assert response.status_code == 404

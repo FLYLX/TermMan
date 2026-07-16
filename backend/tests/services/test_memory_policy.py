@@ -26,7 +26,7 @@ def test_build_conversation_memory_candidate_for_preference() -> None:
     assert candidate is not None
     assert candidate.content == "用户偏好：以后都用中文并且回复简洁"
     assert candidate.memory_type == "preference"
-    assert candidate.ttl_days == 180
+    assert candidate.ttl_days is None
     assert candidate.metadata["type"] == "conversation_explicit"
     assert candidate.metadata["source"] == "chat_user"
     assert candidate.metadata["verified"] is True
@@ -40,11 +40,11 @@ def test_prompt_memory_policy_enables_long_term_by_default() -> None:
     raw_feedback_policy = resolve_prompt_memory_policy(PromptTurnType.TERMINAL_RAW_FEEDBACK)
 
     assert chat_policy.include_long_term is True
-    assert chat_policy.max_long_term_memories == 8
-    assert "task" in chat_policy.allowed_long_term_types
+    assert chat_policy.max_long_term_memories == 5
+    assert "task" not in chat_policy.allowed_long_term_types
     assert terminal_policy.include_long_term is True
-    assert terminal_policy.max_long_term_memories == 5
-    assert "task" in terminal_policy.allowed_long_term_types
+    assert terminal_policy.max_long_term_memories == 4
+    assert "task" not in terminal_policy.allowed_long_term_types
     assert raw_feedback_policy.include_long_term is False
 
 
@@ -144,7 +144,7 @@ def test_persist_memory_candidate_skips_duplicate_hash() -> None:
     candidate = MemoryCandidate(
         content="用户偏好：以后回复简洁",
         memory_type="preference",
-        ttl_days=180,
+        ttl_days=None,
         metadata={"content_hash": "same-hash"},
     )
 
@@ -214,7 +214,7 @@ def test_build_confirmation_memory_candidate_skips_generic_previous_reply() -> N
 def test_infer_memory_key_detects_preference_axes() -> None:
     assert infer_memory_key("用户偏好：以后都用中文", "preference") == "preference.language"
     assert infer_memory_key("用户偏好：回复简洁", "preference") == "preference.verbosity"
-    assert infer_memory_key("当前任务：修复 daemon 状态同步", "task") == "task.修复_daemon_状态同步"
+    assert infer_memory_key("当前任务：修复 daemon 状态同步", "task") is None
     assert infer_memory_key("已知错误：cron_job.py 找不到", "error") == "error.cron_job.py_找不到"
 
 
@@ -222,7 +222,7 @@ def test_persist_memory_candidate_updates_existing_same_key_memory() -> None:
     candidate = MemoryCandidate(
         content="用户偏好：以后都用英文",
         memory_type="preference",
-        ttl_days=180,
+        ttl_days=None,
         metadata={
             "content_hash": "new-hash",
             "memory_key": "preference.language",
@@ -261,16 +261,16 @@ def test_persist_memory_candidate_updates_existing_same_key_memory() -> None:
     assert captured["metadata"]["content_hash"] == "new-hash"
 
 
-def test_build_conversation_memory_candidate_for_explicit_task_memory() -> None:
+def test_build_conversation_memory_candidate_maps_explicit_task_to_context() -> None:
     candidate = build_conversation_memory_candidate(
         "记住当前任务是修复 daemon 状态同步",
         "已记录。",
     )
 
     assert candidate is not None
-    assert candidate.memory_type == "task"
-    assert candidate.content == "当前任务：修复 daemon 状态同步"
-    assert candidate.metadata["status"] == "active"
+    assert candidate.memory_type == "context"
+    assert candidate.content == "当前任务是修复 daemon 状态同步"
+    assert "status" not in candidate.metadata
 
 
 def test_task_word_does_not_block_a_real_preference_memory() -> None:
@@ -289,7 +289,7 @@ def test_task_word_does_not_block_a_real_preference_memory() -> None:
     assert automatic.candidate.memory_type == "preference"
 
 
-def test_build_status_update_memory_candidate_marks_task_completed() -> None:
+def test_build_status_update_memory_candidate_ignores_task_queue_state() -> None:
     class FakeStore:
         def get_all_memories(self, item_id: str, memory_type: str | None = None):
             return [
@@ -311,13 +311,10 @@ def test_build_status_update_memory_candidate_marks_task_completed() -> None:
         store=FakeStore(),
     )
 
-    assert candidate is not None
-    assert candidate.memory_type == "task"
-    assert candidate.content == "当前任务：修复 daemon 状态同步（已完成）"
-    assert candidate.metadata["status"] == "completed"
+    assert candidate is None
 
 
-def test_persist_memory_candidate_allows_agent_selected_task_memory() -> None:
+def test_persist_memory_candidate_rejects_removed_task_memory_type() -> None:
     candidate = MemoryCandidate(
         content="当前任务：修复 daemon 状态同步",
         memory_type="task",
@@ -330,13 +327,9 @@ def test_persist_memory_candidate_allows_agent_selected_task_memory() -> None:
             return []
 
         def add_memory(self, **kwargs):
-            assert kwargs["memory_type"] == "task"
-            return "task-memory-1"
+            raise AssertionError("removed task memory type must not be written")
 
-    assert (
-        persist_memory_candidate("item-task", candidate, store=FakeStore())
-        == "task-memory-1"
-    )
+    assert persist_memory_candidate("item-task", candidate, store=FakeStore()) is None
 
 
 def test_build_status_update_memory_candidate_skips_ambiguous_targets() -> None:
@@ -396,11 +389,11 @@ def test_build_manual_status_update_marks_error_resolved() -> None:
     assert updated_metadata["content_hash"]
 
 
-def test_resolve_memory_status_uses_content_suffix_for_legacy_memory() -> None:
+def test_resolve_memory_status_ignores_removed_legacy_task_memory() -> None:
     memory = {
         "id": "task-legacy",
         "content": "当前任务：补中断按钮（已完成）",
         "metadata": {"memory_type": "task"},
     }
 
-    assert resolve_memory_status(memory) == "completed"
+    assert resolve_memory_status(memory) is None

@@ -5,7 +5,7 @@ from typing import Any
 from app.plugins.robot.contracts import RobotReplyTarget
 
 SPEAKER_SCOPED_MEMORY_TYPES = {"fact", "preference"}
-CONVERSATION_SCOPED_MEMORY_TYPES = {"context", "task", "error"}
+CONVERSATION_SCOPED_MEMORY_TYPES = {"context", "error"}
 
 
 def speaker_global_key_from_context(

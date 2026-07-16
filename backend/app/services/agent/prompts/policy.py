@@ -34,8 +34,8 @@ def resolve_prompt_memory_policy(turn_type: PromptTurnType) -> PromptMemoryPolic
             include_recent_history=True,
             include_long_term=True,
             max_recent_messages=10,
-            max_long_term_memories=8,
-            allowed_long_term_types=("fact", "preference", "task", "error", "context"),
+            max_long_term_memories=5,
+            allowed_long_term_types=("fact", "preference", "error", "context"),
         )
 
     if turn_type == PromptTurnType.TERMINAL_RAW_FEEDBACK:
@@ -53,8 +53,8 @@ def resolve_prompt_memory_policy(turn_type: PromptTurnType) -> PromptMemoryPolic
         include_recent_history=True,
         include_long_term=True,
         max_recent_messages=8,
-        max_long_term_memories=5,
-        allowed_long_term_types=("preference", "task", "error", "context"),
+        max_long_term_memories=4,
+        allowed_long_term_types=("preference", "error", "context"),
     )
 
 
@@ -62,7 +62,7 @@ def resolve_prompt_memory_policy(turn_type: PromptTurnType) -> PromptMemoryPolic
 class MemoryCandidate:
     content: str
     memory_type: str
-    ttl_days: int
+    ttl_days: int | None
     metadata: dict[str, Any]
 
 
@@ -210,12 +210,12 @@ LOG_NOISE_PATTERNS = (
 )
 
 MEMORY_TTL_DAYS = {
-    "preference": 180,
+    "preference": None,
     "fact": 90,
-    "task": 14,
-    "error": 45,
+    "error": None,
     "context": 30,
 }
+SUPPORTED_LONG_TERM_MEMORY_TYPES = frozenset(MEMORY_TTL_DAYS)
 
 MAX_MEMORY_CONTENT_LENGTH = 240
 MAX_MEMORY_LINE_COUNT = 4
@@ -238,7 +238,6 @@ STATUS_UPDATE_STOPWORDS = {
 }
 
 STATUS_BY_MEMORY_TYPE: dict[str, tuple[str, ...]] = {
-    "task": ("active", "completed"),
     "error": ("active", "resolved"),
 }
 
@@ -363,7 +362,7 @@ AUTO_TRANSIENT_PREFIXES = (
 )
 
 
-def resolve_memory_ttl_days(memory_type: str) -> int:
+def resolve_memory_ttl_days(memory_type: str) -> int | None:
     return MEMORY_TTL_DAYS.get(memory_type, 30)
 
 
@@ -424,11 +423,6 @@ def _build_memory_content(payload: str, memory_type: str) -> str:
     normalized = _normalize_text(payload)
     if memory_type == "preference" and not normalized.startswith("用户偏好"):
         return f"用户偏好：{normalized}"
-    if memory_type == "task":
-        normalized = re.sub(r"^(?:当前)?任务(?:是|为|[:：])?\s*", "", normalized)
-        if normalized.startswith("当前任务："):
-            return normalized
-        return f"当前任务：{normalized}"
     if memory_type == "error":
         normalized = re.sub(r"^(?:这个|当前)?(?:错误|报错|异常|问题)(?:是|为|[:：])?\s*", "", normalized)
         if normalized.startswith("已知错误："):
@@ -496,16 +490,6 @@ def _extract_fact_subject(content: str) -> str:
     return ""
 
 
-def _extract_task_subject(content: str) -> str:
-    normalized = _normalize_text(content)
-    if normalized.startswith("当前任务："):
-        return normalized.removeprefix("当前任务：").strip()
-    match = re.match(r"^(?:当前)?任务[:：]?\s*(.+)$", normalized)
-    if match:
-        return match.group(1).strip()
-    return ""
-
-
 def _extract_error_subject(content: str) -> str:
     normalized = _normalize_text(content)
     if normalized.startswith("已知错误："):
@@ -514,16 +498,6 @@ def _extract_error_subject(content: str) -> str:
     if match:
         return match.group(1).strip()
     return ""
-
-
-def _infer_task_memory_key(content: str) -> str | None:
-    subject = _extract_task_subject(content)
-    if not subject:
-        return None
-    subject_key = _normalize_memory_key_fragment(subject)
-    if subject_key:
-        return f"task.{subject_key}"
-    return None
 
 
 def _infer_error_memory_key(content: str) -> str | None:
@@ -545,8 +519,6 @@ def infer_memory_key(content: str, memory_type: str) -> str | None:
             subject_key = _normalize_memory_key_fragment(subject)
             if subject_key:
                 return f"fact.{subject_key}"
-    if memory_type == "task":
-        return _infer_task_memory_key(content)
     if memory_type == "error":
         return _infer_error_memory_key(content)
     return None
@@ -586,7 +558,7 @@ def infer_explicit_memory_type(user_message: str) -> str:
     if any(cue in user_message or cue in normalized for cue in PREFERENCE_MEMORY_CUES):
         return "preference"
     if any(cue in user_message or cue in normalized for cue in TASK_MEMORY_CUES):
-        return "task"
+        return "context"
     if any(cue in user_message or cue in normalized for cue in ERROR_MEMORY_CUES):
         return "error"
     return "fact"
@@ -649,7 +621,7 @@ def _auto_memory_base_score(payload: str) -> tuple[str, float] | None:
         memory_type = "preference"
         score = max(score, 0.80)
     if _contains_any(normalized, AUTO_TASK_CUES) and score < 0.74:
-        memory_type = "task"
+        memory_type = "context"
         score = max(score, 0.72)
     if _contains_any(normalized, AUTO_ERROR_CUES):
         memory_type = "error"
@@ -756,7 +728,7 @@ def build_auto_conversation_memory_candidate(
         metadata["speaker_key"] = speaker_key
     if conversation_key:
         metadata["conversation_key"] = conversation_key
-    if memory_type in {"task", "error"}:
+    if memory_type == "error":
         metadata["status"] = "active"
     if matched_skills:
         skill_ids = [
@@ -811,8 +783,6 @@ def _get_memory_sort_key(memory: dict[str, Any]) -> tuple[str, str]:
 
 def _resolve_target_memory_type(user_message: str) -> str | None:
     normalized = _normalize_text(user_message).lower()
-    if any(cue in normalized for cue in TASK_RESOLVED_CUES) or "任务" in normalized:
-        return "task"
     if any(cue in normalized for cue in ERROR_RESOLVED_CUES) or any(
         cue in normalized for cue in ("错误", "报错", "异常", "bug", "问题")
     ):
@@ -822,10 +792,6 @@ def _resolve_target_memory_type(user_message: str) -> str | None:
 
 def _resolve_status_transition(user_message: str, memory_type: str) -> str | None:
     normalized = _normalize_text(user_message).lower()
-    if memory_type == "task":
-        if any(cue in normalized for cue in TASK_RESOLVED_CUES):
-            return "completed"
-        return None
     if memory_type == "error":
         if any(cue in normalized for cue in ERROR_RESOLVED_CUES):
             return "resolved"
@@ -835,8 +801,6 @@ def _resolve_status_transition(user_message: str, memory_type: str) -> str | Non
 
 def _is_active_memory(memory: dict[str, Any], memory_type: str) -> bool:
     status = resolve_memory_status(memory)
-    if memory_type == "task":
-        return status not in {"completed"}
     if memory_type == "error":
         return status not in {"resolved"}
     return True
@@ -876,8 +840,6 @@ def _select_memory_for_status_update(
 def _apply_memory_status_to_content(content: str, memory_type: str, status: str) -> str:
     normalized = _normalize_text(content)
     normalized = re.sub(r"（已完成|已解决）$", "", normalized).strip()
-    if memory_type == "task" and status == "completed":
-        return f"{normalized}（已完成）"
     if memory_type == "error" and status == "resolved":
         return f"{normalized}（已解决）"
     return normalized
@@ -895,10 +857,6 @@ def resolve_memory_status(memory: dict[str, Any]) -> str | None:
         return normalized_status
 
     content = _normalize_text(str(memory.get("content") or ""))
-    if memory_type == "task":
-        if content.endswith("（已完成）"):
-            return "completed"
-        return "active"
     if memory_type == "error":
         if content.endswith("（已解决）"):
             return "resolved"
@@ -970,12 +928,10 @@ def build_conversation_memory_candidate(
     metadata: dict[str, Any] = {
         "type": "conversation_explicit",
         "source": "chat_user",
-        "verified": memory_type in {"preference", "task"},
+        "verified": memory_type == "preference",
         "content_hash": _build_content_hash(content),
     }
-    if memory_type == "task":
-        metadata["status"] = "active"
-    elif memory_type == "error":
+    if memory_type == "error":
         metadata["status"] = "active"
     if matched_skills:
         skill_ids = [
@@ -1126,6 +1082,13 @@ def persist_memory_candidate(
     store: Any,
 ) -> str | None:
     if candidate is None:
+        return None
+    if candidate.memory_type not in SUPPORTED_LONG_TERM_MEMORY_TYPES:
+        logger.info(
+            "[MemoryPolicy] Skip unsupported long-term memory type=%s for item=%s",
+            candidate.memory_type,
+            item_id,
+        )
         return None
     content_hash = candidate.metadata.get("content_hash")
     try:

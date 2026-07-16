@@ -677,7 +677,6 @@ def test_latest_only_chat_prompt_skips_stored_context(monkeypatch) -> None:
         ),
     )
     monkeypatch.setattr(prompt_builder, "get_chat_messages", fail_context_read)
-    monkeypatch.setattr(prompt_builder, "get_latest_session_summary", fail_context_read)
     monkeypatch.setattr(prompt_builder, "build_integration_history_prompt", fail_context_read)
     monkeypatch.setattr(prompt_builder, "_collect_long_term_memories", fail_context_read)
     monkeypatch.setattr(prompt_builder, "_collect_handler_knowledge", fail_context_read)
@@ -726,7 +725,6 @@ def test_latest_only_chat_prompt_keeps_pending_terminal_continuation(monkeypatch
         ),
     )
     monkeypatch.setattr(prompt_builder, "get_chat_messages", fail_context_read)
-    monkeypatch.setattr(prompt_builder, "get_latest_session_summary", fail_context_read)
     monkeypatch.setattr(prompt_builder, "build_integration_history_prompt", fail_context_read)
     monkeypatch.setattr(prompt_builder, "_collect_long_term_memories", fail_context_read)
     monkeypatch.setattr(prompt_builder, "_collect_handler_knowledge", fail_context_read)
@@ -1894,6 +1892,7 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     assert "sender: Alice (u1)" in prompt
     assert "最终 assistant 文本是 TermMan 内部回复" in prompt
     assert "mcp_robot_send_message" in prompt
+    assert "mcp_robot_list_memories" in prompt
     assert "mcp_robot_save_memory" in prompt
     assert "mcp_robot_sleep_conversation" in prompt
     assert "\u6307\u4ee3\u5224\u65ad" in prompt
@@ -1921,6 +1920,7 @@ def test_robot_plugin_registers_builtin_skill() -> None:
     assert skill.category == "mcp"
     assert skill.mcp_servers == ["robot"]
     assert "mcp_robot_send_message" in (skill.action.prompt or "")
+    assert "mcp_robot_list_memories" in (skill.action.prompt or "")
     assert "mcp_robot_save_memory" in (skill.action.prompt or "")
 
 

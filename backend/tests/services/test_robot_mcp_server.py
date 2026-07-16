@@ -914,6 +914,122 @@ def test_robot_mcp_recalls_long_term_memory_scoped_to_active_context(monkeypatch
     assert text.index("call this QQ user Master") < text.index("general robot preference")
 
 
+def test_robot_mcp_lists_long_term_memory_scoped_to_active_context(monkeypatch) -> None:
+    server = RobotMCPServer()
+    tools = {tool["name"]: tool for tool in server.list_tools()}
+    assert "list_memories" in tools
+    assert tools["list_memories"]["skip_memory"] is True
+
+    memories_by_type = {
+        "fact": [
+            {
+                "id": "current-conversation",
+                "content": "the bot name is XiaoChai",
+                "metadata": {
+                    "memory_type": "fact",
+                    "robot_id": "robot-current",
+                    "robot_conversation_key": "group:current-group",
+                    "memory_scope": "conversation",
+                    "speaker": "Alice (user-1)",
+                },
+            },
+            {
+                "id": "other-robot",
+                "content": "other robot memory",
+                "metadata": {
+                    "memory_type": "fact",
+                    "robot_id": "robot-other",
+                },
+            },
+        ],
+        "preference": [
+            {
+                "id": "same-speaker-other-group",
+                "content": "call this QQ user Master",
+                "metadata": {
+                    "memory_type": "preference",
+                    "robot_id": "robot-current",
+                    "robot_conversation_key": "group:other-group",
+                    "speaker_global_key": "onebot_v11:user:user-1",
+                    "memory_scope": "speaker",
+                },
+            },
+            {
+                "id": "other-speaker",
+                "content": "call another QQ user Boss",
+                "metadata": {
+                    "memory_type": "preference",
+                    "robot_id": "robot-current",
+                    "robot_conversation_key": "group:other-group",
+                    "speaker_global_key": "onebot_v11:user:user-2",
+                    "memory_scope": "speaker",
+                },
+            },
+        ],
+        "context": [
+            {
+                "id": "other-conversation",
+                "content": "other group server port is 19999",
+                "metadata": {
+                    "memory_type": "context",
+                    "robot_id": "robot-current",
+                    "robot_conversation_key": "group:other-group",
+                    "memory_scope": "conversation",
+                },
+            }
+        ],
+    }
+
+    def fake_get_all_memories(item_id, memory_type=None):
+        assert item_id == "item-1"
+        return memories_by_type.get(memory_type, [])
+
+    monkeypatch.setattr(vector_store, "get_all_memories", fake_get_all_memories)
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="current-group",
+        metadata={"target": {"id": "current-group"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:current-group:user-1",
+            reply_target=target,
+            conversation_key="group:current-group",
+        )
+    )
+
+    try:
+        result = server.call_tool(
+            "list_memories",
+            {
+                "_robot_context_token": token,
+                "_termman_item_id": "item-1",
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    text = result[0]["text"]
+    assert "the bot name is XiaoChai" in text
+    assert "call this QQ user Master" in text
+    assert "other robot memory" not in text
+    assert "call another QQ user Boss" not in text
+    assert "other group server port is 19999" not in text
+    assert text.index("the bot name is XiaoChai") < text.index("call this QQ user Master")
+
+
+def test_robot_mcp_list_memories_requires_active_qq_context() -> None:
+    server = RobotMCPServer()
+
+    result = server.call_tool(
+        "list_memories",
+        {"_termman_item_id": "item-1"},
+    )
+
+    assert "requires an active QQ robot conversation context" in result[0]["text"]
+
+
 def test_robot_mcp_recall_uses_scoped_memory_fallback(monkeypatch) -> None:
     server = RobotMCPServer()
     calls: list[tuple[str, str | None]] = []
@@ -1094,11 +1210,11 @@ def test_robot_mcp_save_memory_persists_scoped_long_term_memory(monkeypatch) -> 
     assert metadata["content_hash"]
 
 
-def test_robot_mcp_save_memory_exposes_agent_selected_task_type() -> None:
+def test_robot_mcp_save_memory_does_not_expose_removed_task_type() -> None:
     server = RobotMCPServer()
     save_tool = next(tool for tool in server.list_tools() if tool["name"] == "save_memory")
 
-    assert "task" in save_tool["inputSchema"]["properties"]["memory_type"]["enum"]
+    assert "task" not in save_tool["inputSchema"]["properties"]["memory_type"]["enum"]
 
 
 def test_robot_mcp_reads_registered_context_conversation_memory(

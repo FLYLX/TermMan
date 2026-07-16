@@ -22,9 +22,9 @@ from app.services.agent.prompts.policy import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-LongTermMemoryType = Literal["fact", "preference", "task", "error", "context"]
-STATUS_MEMORY_TYPES = {"task", "error"}
-INACTIVE_MEMORY_STATUSES = {"completed", "resolved"}
+LongTermMemoryType = Literal["fact", "preference", "error", "context"]
+STATUS_MEMORY_TYPES = {"error"}
+INACTIVE_MEMORY_STATUSES = {"resolved"}
 
 
 class MemoryCreate(BaseModel):
@@ -46,7 +46,7 @@ class MemorySearch(BaseModel):
 
 
 class MemoryStatusUpdate(BaseModel):
-    status: Literal["active", "completed", "resolved"]
+    status: Literal["active", "resolved"]
 
 
 class InstalledSoftwareUpsert(BaseModel):
@@ -158,7 +158,6 @@ def _filter_memories_by_status(
 
 def _build_status_counts(memories: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
     counts: dict[str, dict[str, int]] = {
-        "task": {"active": 0, "completed": 0},
         "error": {"active": 0, "resolved": 0},
     }
 
@@ -166,12 +165,7 @@ def _build_status_counts(memories: list[dict[str, Any]]) -> dict[str, dict[str, 
         metadata = memory.get("metadata") or {}
         memory_type = str(metadata.get("memory_type") or "")
         status = str(resolve_memory_status(memory) or "").lower()
-        if memory_type == "task":
-            if status == "completed":
-                counts["task"]["completed"] += 1
-            else:
-                counts["task"]["active"] += 1
-        elif memory_type == "error":
+        if memory_type == "error":
             if status == "resolved":
                 counts["error"]["resolved"] += 1
             else:
@@ -194,6 +188,8 @@ def _get_item_memory_or_404(item_id: uuid.UUID, memory_id: str) -> dict[str, Any
 
 def _coerce_memory_type(value: Any) -> LongTermMemoryType:
     memory_type = str(value or "fact")
+    if memory_type == "task":
+        return "context"
     if memory_type not in MEMORY_TYPES:
         return "fact"
     return memory_type  # type: ignore[return-value]
@@ -212,7 +208,7 @@ def _visible_long_term_memories(
 
 def _visible_memory_stats(memories: list[dict[str, Any]]) -> dict[str, Any]:
     now = datetime.now()
-    by_type = {memory_type: 0 for memory_type in MEMORY_TYPES}
+    by_type = dict.fromkeys(MEMORY_TYPES, 0)
     expired_count = 0
     for memory in memories:
         metadata = memory.get("metadata") or {}
@@ -220,6 +216,8 @@ def _visible_memory_stats(memories: list[dict[str, Any]]) -> dict[str, Any]:
         if memory_type not in MEMORY_TYPES:
             continue
         by_type[memory_type] += 1
+        if memory_type in {"preference", "error"}:
+            continue
         expires_at = metadata.get("expires_at")
         if not expires_at:
             continue
@@ -804,28 +802,10 @@ def summarize_memories(
     session: SessionDep = None,
     current_user: CurrentUser = None,
 ) -> Any:
-    from sqlmodel import select
-
-    from app.models import ItemHandler, ItemHandlerItem
-
     _get_accessible_item(item_id, session, current_user)
-
-    handler_item = session.exec(
-        select(ItemHandlerItem).where(ItemHandlerItem.item_id == item_id)
-    ).first()
-
-    if not handler_item:
-        raise HTTPException(status_code=404, detail="No handler associated with this item")
-
-    handler = session.get(ItemHandler, handler_item.item_handler_id)
-    if not handler:
-        raise HTTPException(status_code=404, detail="Handler not found")
 
     result = vector_store.summarize_memories(
         item_id=str(item_id),
-        model=handler.model or "deepseek/deepseek-chat",
-        api_key=handler.api_key,
-        api_base=handler.api_url,
         threshold=threshold,
     )
 

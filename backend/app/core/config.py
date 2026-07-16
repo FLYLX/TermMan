@@ -86,6 +86,7 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER_PASSWORD: str
 
     CHROMA_PERSIST_DIR: str = str(BACKEND_DIR / "chroma_data")
+    EMBEDDING_MODEL_NAME: str = "BAAI/bge-small-zh-v1.5"
     EMBEDDING_ALLOW_REMOTE_LOAD: bool = False
     KNOWLEDGE_BASE_DIR: str = str(BACKEND_DIR / "knowledge")
     ROBOT_PLUGIN_ENABLED: bool = True

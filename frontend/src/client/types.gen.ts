@@ -268,19 +268,19 @@ export type MCPServerUpdateBody = {
 
 export type MemoryCreate = {
     content: string;
-    memory_type?: 'fact' | 'preference' | 'task' | 'error' | 'context';
+    memory_type?: 'fact' | 'preference' | 'error' | 'context';
     metadata?: ({
     [key: string]: unknown;
 } | null);
     ttl_days?: (number | null);
 };
 
-export type memory_type = 'fact' | 'preference' | 'task' | 'error' | 'context';
+export type memory_type = 'fact' | 'preference' | 'error' | 'context';
 
 export type MemorySearch = {
     query: string;
     n_results?: number;
-    memory_type?: ('fact' | 'preference' | 'task' | 'error' | 'context' | null);
+    memory_type?: ('fact' | 'preference' | 'error' | 'context' | null);
 };
 
 export type MemoryUpdate = {
@@ -764,7 +764,7 @@ export type MemoryClearAllSessionDataResponse = (unknown);
 
 export type MemoryGetAllMemoriesData = {
     itemId: string;
-    memoryType?: ('fact' | 'preference' | 'task' | 'error' | 'context' | null);
+    memoryType?: ('fact' | 'preference' | 'error' | 'context' | null);
 };
 
 export type MemoryGetAllMemoriesResponse = (unknown);

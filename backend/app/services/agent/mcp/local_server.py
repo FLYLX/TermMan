@@ -576,13 +576,13 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="save_memory",
-            description="保存稳定、可复用、已验证的重要信息到长期记忆中。执行中的任务状态以任务队列为准，但如果任务相关信息本身值得长期记住，可以主动保存。不要保存原生日志、命令回显、等待态消息或敏感信息。",
+            description="保存稳定、可复用、已验证的重要信息到长期记忆中。执行中的任务状态只放任务队列。不要保存原生日志、命令回显、等待态消息或敏感信息。",
             input_schema={
                 "type": "object",
                 "properties": {
                     "content": {"type": "string", "description": "要保存的记忆内容"},
-                    "memory_type": {"type": "string", "enum": ["fact", "preference", "task", "error", "context"], "description": "记忆类型: fact(事实), preference(偏好), task(任务), error(错误), context(上下文)"},
-                    "ttl_days": {"type": "integer", "description": "过期天数，默认 30 天", "default": 30}
+                    "memory_type": {"type": "string", "enum": ["fact", "preference", "error", "context"], "description": "记忆类型: fact(事实), preference(偏好), error(错误), context(上下文)"},
+                    "ttl_days": {"type": "integer", "description": "事实或上下文的过期天数；偏好和错误永久保存"}
                 },
                 "required": ["content"]
             },
@@ -597,7 +597,7 @@ class LocalMCPServer:
                 "properties": {
                     "query": {"type": "string", "description": "搜索关键词或问题"},
                     "n_results": {"type": "integer", "description": "返回结果数量，默认 5", "default": 5},
-                    "memory_type": {"type": "string", "enum": ["fact", "preference", "task", "error", "context"], "description": "可选：限定记忆类型"}
+                    "memory_type": {"type": "string", "enum": ["fact", "preference", "error", "context"], "description": "可选：限定记忆类型"}
                 },
                 "required": ["query"]
             },
@@ -610,7 +610,7 @@ class LocalMCPServer:
             input_schema={
                 "type": "object",
                 "properties": {
-                    "memory_type": {"type": "string", "enum": ["fact", "preference", "task", "error", "context"], "description": "可选：限定记忆类型"}
+                    "memory_type": {"type": "string", "enum": ["fact", "preference", "error", "context"], "description": "可选：限定记忆类型"}
                 },
                 "required": []
             },
@@ -2404,7 +2404,7 @@ class LocalMCPServer:
         
         if not content or not item_id:
             return [{"type": "text", "text": "Error: content and item_id required"}]
-        if memory_type not in {"fact", "preference", "task", "error", "context"}:
+        if memory_type not in {"fact", "preference", "error", "context"}:
             return [{"type": "text", "text": f"Error: invalid memory_type: {memory_type}"}]
         
         try:
@@ -2413,8 +2413,11 @@ class LocalMCPServer:
 
             default_ttl_days = memory_policy.resolve_memory_ttl_days(str(memory_type))
             raw_ttl_days = args.get("ttl_days")
-            ttl_days = default_ttl_days if raw_ttl_days in (None, "") else int(raw_ttl_days)
-            ttl_days = max(1, min(3650, ttl_days))
+            if default_ttl_days is None:
+                ttl_days = None
+            else:
+                ttl_days = default_ttl_days if raw_ttl_days in (None, "") else int(raw_ttl_days)
+                ttl_days = max(1, min(3650, ttl_days))
 
             metadata: dict[str, Any] = {
                 "type": "agent_saved",
@@ -2426,7 +2429,7 @@ class LocalMCPServer:
             memory_key = memory_policy.infer_memory_key(str(content), str(memory_type))
             if memory_key:
                 metadata["memory_key"] = memory_key
-            if memory_type in {"task", "error"}:
+            if memory_type == "error":
                 metadata["status"] = "active"
 
             memory_id = vector_store.add_memory(
@@ -2439,7 +2442,8 @@ class LocalMCPServer:
             )
             if not memory_id:
                 return [{"type": "text", "text": "Memory was not saved."}]
-            return [{"type": "text", "text": f"✓ 记忆已保存 (ID: {memory_id[:8]}..., 类型: {memory_type}, 有效期: {ttl_days}天)"}]
+            lifetime = "永久" if ttl_days is None else f"{ttl_days}天"
+            return [{"type": "text", "text": f"✓ 记忆已保存 (ID: {memory_id[:8]}..., 类型: {memory_type}, 有效期: {lifetime})"}]
         except Exception as e:
             return [{"type": "text", "text": f"Error: {e}"}]
     
@@ -2464,7 +2468,7 @@ class LocalMCPServer:
                 memory
                 for memory in results
                 if str((memory.get("metadata") or {}).get("memory_type") or "fact")
-                in {"fact", "preference", "task", "error", "context"}
+                in {"fact", "preference", "error", "context"}
             ]
             
             if not results:
@@ -2503,7 +2507,7 @@ class LocalMCPServer:
                 memory
                 for memory in memories
                 if str((memory.get("metadata") or {}).get("memory_type") or "fact")
-                in {"fact", "preference", "task", "error", "context"}
+                in {"fact", "preference", "error", "context"}
             ]
             
             if not memories:

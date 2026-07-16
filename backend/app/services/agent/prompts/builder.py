@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 from app.services.agent.history.chat import (
     SESSION_SUMMARY_TYPE,
     get_chat_messages,
-    get_latest_session_summary,
 )
 from app.services.agent.installed_software import build_installed_software_prompt
 from app.services.agent.integrations import (
@@ -88,11 +87,15 @@ SESSION_SUMMARY_LABEL = "会话摘要"
 LONG_TERM_MEMORY_LABEL = "相关长期记忆"
 FILTERED_TERMINAL_LABEL = "终端过滤输出"
 RAW_TERMINAL_LABEL = "原生日志反馈"
-MIN_LONG_TERM_MEMORY_RELEVANCE = 0.08
+MIN_LONG_TERM_MEMORY_RELEVANCE = 0.32
+LONG_TERM_MEMORY_SCORE_MARGIN = 0.18
+LONG_TERM_MEMORY_DIVERSITY_PENALTY = 0.22
+MAX_LONG_TERM_MEMORIES_PER_TYPE = 2
+DEFAULT_RECENT_CONTEXT_MESSAGES = 4
 ALWAYS_ON_SKILL_CATEGORIES: set[str] = set()
-ALWAYS_ON_MEMORY_TYPES = {"preference", "fact", "context", "task", "error"}
-MAX_ALWAYS_ON_MEMORIES_PER_TYPE = 3
-MAX_ALWAYS_ON_MEMORIES_TOTAL = 8
+ALWAYS_ON_MEMORY_TYPES = {"preference", "fact", "context", "error"}
+MAX_ALWAYS_ON_MEMORIES_PER_TYPE = 2
+MAX_ALWAYS_ON_MEMORIES_TOTAL = 2
 ALWAYS_ON_RECENT_DAYS = 14
 PREFERENCE_LIKE_MEMORY_TYPES = ("preference", "fact", "context")
 PREFERENCE_LIKE_MEMORY_MARKERS = (
@@ -109,12 +112,11 @@ PREFERENCE_LIKE_MEMORY_MARKERS = (
 )
 MEMORY_TYPE_RANK_BONUS = {
     "preference": 0.18,
-    "task": 0.16,
     "error": 0.14,
     "context": 0.08,
     "fact": 0.04,
 }
-PINNED_MEMORY_TYPES = ("preference", "task", "error")
+PINNED_MEMORY_TYPES = ("preference", "error")
 ALWAYS_ON_MEMORY_SOURCES = {
     "chat_user",
     "local_agent_saved",
@@ -130,6 +132,12 @@ ALWAYS_ON_MEMORY_RECORD_TYPES = {
     "conversation_auto_promoted",
     "robot_agent_saved",
 }
+CONTEXT_DEPENDENT_QUERY_RE = re.compile(
+    r"(?:为什么|怎么回事|什么意思|然后呢|后来呢|继续|接着|刚才|刚刚|上面|前面|之前|"
+    r"这个|那个|这件事|那件事|现在呢|怎么样了|完成了吗|好了吗|成功了吗|失败了吗|"
+    r"\b(?:why|continue|again|then|that|this|it|he|she|done|ready|status|what about)\b)",
+    re.IGNORECASE,
+)
 
 
 def _build_skill_prompt(
@@ -271,7 +279,7 @@ def _is_sticky_long_term_memory(memory: dict[str, Any]) -> bool:
 
     if _looks_like_preference_memory(memory):
         return True
-    if memory_type in {"task", "error"} and status in {"active", ""}:
+    if memory_type == "error" and status in {"active", ""}:
         return True
     if metadata.get("verified") is True:
         return True
@@ -313,22 +321,21 @@ def _collect_always_on_memories(
         for memory_type in allowed_types
         if memory_type in ALWAYS_ON_MEMORY_TYPES
     ]
+    try:
+        all_memories = vector_store.get_all_memories(item_id)
+    except Exception as exc:
+        logger.warning(
+            "[PromptBuilder] Failed to load always-on memories for item=%s: %s",
+            item_id,
+            exc,
+        )
+        return collected
     for memory_type in memory_types:
-        try:
-            memories = vector_store.get_all_memories(item_id, memory_type=memory_type)
-        except Exception as exc:
-            logger.warning(
-                "[PromptBuilder] Failed to load always-on memories for item=%s, type=%s: %s",
-                item_id,
-                memory_type,
-                exc,
-            )
-            continue
-
         active_memories = [
             memory
-            for memory in memories
+            for memory in all_memories
             if memory.get("content")
+            and _memory_type(memory) == memory_type
             and _is_sticky_long_term_memory(memory)
             and not _is_memory_expired(memory)
             and not _is_inactive_status_memory(memory)
@@ -383,14 +390,68 @@ def _event_to_model_message(event: dict[str, Any]) -> dict[str, str] | None:
     return None
 
 
+def _message_needs_expanded_history(message: str) -> bool:
+    compact = re.sub(r"\s+", "", str(message or "").strip())
+    if not compact:
+        return False
+    if CONTEXT_DEPENDENT_QUERY_RE.search(compact):
+        return True
+    return len(compact) <= 6 and bool(
+        re.search(r"(?:呢|吗|了|它|他|她|这|那)$", compact, flags=re.IGNORECASE)
+    )
+
+
+def _recent_context_limit(message: str, maximum: int) -> int:
+    if maximum <= 0:
+        return 0
+    if _message_needs_expanded_history(message):
+        return maximum
+    return min(DEFAULT_RECENT_CONTEXT_MESSAGES, maximum)
+
+
+def _latest_session_summary_from_messages(
+    messages: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    for message in reversed(messages):
+        if message.get("type") == SESSION_SUMMARY_TYPE:
+            return message
+    return None
+
+
+def _build_memory_retrieval_query(
+    query: str,
+    recent_context_messages: list[dict[str, str]],
+) -> str:
+    normalized_query = str(query or "").strip()
+    if not normalized_query or not _message_needs_expanded_history(normalized_query):
+        return normalized_query
+
+    prior_parts: list[str] = []
+    for message in reversed(recent_context_messages):
+        if message.get("role") not in {"user", "assistant"}:
+            continue
+        content = re.sub(r"\s+", " ", str(message.get("content") or "")).strip()
+        if not content or content == normalized_query:
+            continue
+        prior_parts.append(content[:240])
+        if len(prior_parts) >= 2:
+            break
+    if not prior_parts:
+        return normalized_query
+    prior_parts.reverse()
+    return f"{normalized_query}\nPrevious conversation context:\n" + "\n".join(prior_parts)
+
+
 def _collect_recent_context_messages(
     agent: "Agent",
     item_id: str,
     *,
     max_messages: int,
     exclude_terminal_content: str = "",
+    all_messages: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, str]]:
-    all_messages = get_chat_messages(item_id)
+    if all_messages is None:
+        all_messages = get_chat_messages(item_id)
     if not all_messages or max_messages <= 0:
         return []
 
@@ -455,32 +516,32 @@ def _collect_long_term_memories(
         collected.append(memory)
 
     if query:
-        for memory_type in allowed_types:
-            try:
-                memories = vector_store.search_memories(
-                    item_id=item_id,
-                    query=query,
-                    n_results=n_results,
-                    memory_type=memory_type,
-                    include_expired=False,
-                    active_only=True,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "[PromptBuilder] Failed to query long-term memories for item=%s, type=%s: %s",
-                    item_id,
-                    memory_type,
-                    exc,
-                )
+        try:
+            memories = vector_store.search_memories(
+                item_id=item_id,
+                query=query,
+                n_results=max(12, n_results * 4),
+                include_expired=False,
+                active_only=True,
+                min_similarity=0.18,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[PromptBuilder] Failed to query long-term memories for item=%s: %s",
+                item_id,
+                exc,
+            )
+            memories = []
+        for memory in memories:
+            if _memory_type(memory) not in allowed_types:
                 continue
-            for memory in memories:
-                if not _query_memory_scope_usable(agent, memory):
-                    continue
-                memory_id = memory.get("id")
-                if memory_id in seen_ids:
-                    continue
-                seen_ids.add(memory_id)
-                collected.append(memory)
+            if not _query_memory_scope_usable(agent, memory):
+                continue
+            memory_id = memory.get("id")
+            if memory_id in seen_ids:
+                continue
+            seen_ids.add(memory_id)
+            collected.append(memory)
 
     trimmed = _select_long_term_memories(
         collected,
@@ -517,10 +578,10 @@ def _memory_relevance_score(memory: dict[str, Any]) -> float:
     if distance is None:
         return 0.25
     try:
-        normalized_distance = min(max(float(distance), 0.0), 2.0)
+        normalized_distance = min(max(float(distance), 0.0), 1.0)
     except (TypeError, ValueError):
         return 0.25
-    return max(0.0, 1.0 - normalized_distance / 2.0)
+    return max(0.0, 1.0 - normalized_distance)
 
 
 def _memory_recency_score(memory: dict[str, Any]) -> float:
@@ -544,6 +605,8 @@ def _memory_recency_score(memory: dict[str, Any]) -> float:
 
 def _is_memory_expired(memory: dict[str, Any]) -> bool:
     metadata = memory.get("metadata") or {}
+    if _memory_type(memory) in {"preference", "error"}:
+        return False
     expires_at = _parse_memory_datetime(metadata.get("expires_at"))
     if expires_at is None:
         return False
@@ -554,10 +617,7 @@ def _is_memory_expired(memory: dict[str, Any]) -> bool:
 def _is_inactive_status_memory(memory: dict[str, Any]) -> bool:
     memory_type = _memory_type(memory)
     status = str(resolve_memory_status(memory) or "").lower()
-    return (
-        (memory_type == "task" and status == "completed")
-        or (memory_type == "error" and status == "resolved")
-    )
+    return memory_type == "task" and status == "completed"
 
 
 def _memory_rank_score(memory: dict[str, Any]) -> float:
@@ -571,12 +631,46 @@ def _memory_rank_score(memory: dict[str, Any]) -> float:
     )
 
 
+def _memory_content_tokens(memory: dict[str, Any]) -> set[str]:
+    content = str(memory.get("content") or "").casefold()
+    chinese = re.findall(r"[\u4e00-\u9fff]", content)
+    tokens = set(chinese)
+    tokens.update(
+        "".join(chinese[index : index + 2])
+        for index in range(max(len(chinese) - 1, 0))
+    )
+    tokens.update(re.findall(r"[a-z0-9][a-z0-9_.:/-]*", content))
+    return {token for token in tokens if token}
+
+
+def _memory_content_similarity(
+    left: dict[str, Any],
+    right: dict[str, Any],
+) -> float:
+    left_tokens = _memory_content_tokens(left)
+    right_tokens = _memory_content_tokens(right)
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+
 def _select_long_term_memories(
     memories: list[dict[str, Any]],
     *,
     allowed_types: tuple[str, ...],
     n_results: int,
 ) -> list[dict[str, Any]]:
+    query_relevances = [
+        _memory_relevance_score(memory)
+        for memory in memories
+        if memory.get("distance") is not None
+    ]
+    dynamic_threshold = MIN_LONG_TERM_MEMORY_RELEVANCE
+    if query_relevances:
+        dynamic_threshold = max(
+            MIN_LONG_TERM_MEMORY_RELEVANCE,
+            max(query_relevances) - LONG_TERM_MEMORY_SCORE_MARGIN,
+        )
     candidates = [
         memory
         for memory in memories
@@ -584,7 +678,13 @@ def _select_long_term_memories(
         and _memory_type(memory) in allowed_types
         and not _is_memory_expired(memory)
         and not _is_inactive_status_memory(memory)
-        and _memory_relevance_score(memory) >= MIN_LONG_TERM_MEMORY_RELEVANCE
+        and (
+            (
+                memory.get("distance") is None
+                and _is_sticky_long_term_memory(memory)
+            )
+            or _memory_relevance_score(memory) >= dynamic_threshold
+        )
     ]
     if not candidates:
         return []
@@ -592,6 +692,7 @@ def _select_long_term_memories(
     candidates.sort(key=_memory_rank_score, reverse=True)
     selected: list[dict[str, Any]] = []
     selected_ids: set[str] = set()
+    selected_type_counts: dict[str, int] = {}
 
     for memory_type in PINNED_MEMORY_TYPES:
         if memory_type not in allowed_types or len(selected) >= n_results:
@@ -604,15 +705,37 @@ def _select_long_term_memories(
             continue
         selected.append(typed_memory)
         selected_ids.add(str(typed_memory.get("id") or id(typed_memory)))
+        selected_type_counts[memory_type] = selected_type_counts.get(memory_type, 0) + 1
 
-    for memory in candidates:
-        if len(selected) >= n_results:
+    remaining = [
+        memory
+        for memory in candidates
+        if str(memory.get("id") or id(memory)) not in selected_ids
+    ]
+    while remaining and len(selected) < n_results:
+        scored: list[tuple[float, float, dict[str, Any]]] = []
+        for memory in remaining:
+            memory_type = _memory_type(memory)
+            if selected_type_counts.get(memory_type, 0) >= MAX_LONG_TERM_MEMORIES_PER_TYPE:
+                continue
+            max_similarity = max(
+                (_memory_content_similarity(memory, chosen) for chosen in selected),
+                default=0.0,
+            )
+            adjusted_score = (
+                _memory_rank_score(memory)
+                - LONG_TERM_MEMORY_DIVERSITY_PENALTY * max_similarity
+            )
+            scored.append((adjusted_score, _memory_timestamp(memory), memory))
+        if not scored:
             break
-        memory_id = str(memory.get("id") or id(memory))
-        if memory_id in selected_ids:
-            continue
-        selected.append(memory)
-        selected_ids.add(memory_id)
+        scored.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
+        chosen = scored[0][2]
+        selected.append(chosen)
+        selected_ids.add(str(chosen.get("id") or id(chosen)))
+        chosen_type = _memory_type(chosen)
+        selected_type_counts[chosen_type] = selected_type_counts.get(chosen_type, 0) + 1
+        remaining = [memory for memory in remaining if memory is not chosen]
 
     selected.sort(key=_memory_rank_score, reverse=True)
     return selected[:n_results]
@@ -776,13 +899,26 @@ def build_chat_turn_messages(
 ) -> list[dict[str, str]]:
     effective_query = query or message
     policy = resolve_prompt_memory_policy(PromptTurnType.CHAT)
+    history_events: list[dict[str, Any]] = []
     recent_context_messages: list[dict[str, str]] = []
+    if not latest_only_context and (
+        policy.include_recent_history or policy.include_session_summary
+    ):
+        history_events = get_chat_messages(item_id)
     if not latest_only_context and policy.include_recent_history:
         recent_context_messages = _collect_recent_context_messages(
             agent,
             item_id,
-            max_messages=policy.max_recent_messages,
+            max_messages=_recent_context_limit(
+                message,
+                policy.max_recent_messages,
+            ),
+            all_messages=history_events,
         )
+    retrieval_query = _build_memory_retrieval_query(
+        effective_query,
+        recent_context_messages,
+    )
 
     extra_prompt_parts: list[str] = []
     source_route_context = _build_current_source_route_context(agent, source="chat")
@@ -818,7 +954,7 @@ def build_chat_turn_messages(
     ]
 
     if not latest_only_context and policy.include_session_summary:
-        summary = get_latest_session_summary(item_id)
+        summary = _latest_session_summary_from_messages(history_events)
         if summary and summary.get("content"):
             prompt_messages.append(
                 {"role": "system", "content": f"{SESSION_SUMMARY_LABEL}:\n{summary['content']}"}
@@ -830,7 +966,7 @@ def build_chat_turn_messages(
     if not latest_only_context and policy.include_long_term:
         memories = _collect_long_term_memories(
             item_id,
-            effective_query,
+            retrieval_query,
             allowed_types=policy.allowed_long_term_types,
             n_results=policy.max_long_term_memories,
             agent=agent,
@@ -873,6 +1009,25 @@ def build_terminal_turn_messages(
     )
     policy = resolve_prompt_memory_policy(turn_type)
     effective_query = query or terminal_content
+    history_events: list[dict[str, Any]] = []
+    recent_context_messages: list[dict[str, str]] = []
+    if policy.include_recent_history or policy.include_session_summary:
+        history_events = get_chat_messages(item_id)
+    if policy.include_recent_history:
+        recent_context_messages = _collect_recent_context_messages(
+            agent,
+            item_id,
+            max_messages=_recent_context_limit(
+                effective_query,
+                policy.max_recent_messages,
+            ),
+            exclude_terminal_content=terminal_content,
+            all_messages=history_events,
+        )
+    retrieval_query = _build_memory_retrieval_query(
+        effective_query,
+        recent_context_messages,
+    )
     extra_prompt_parts: list[str] = []
     source_route_context = _build_current_source_route_context(agent, source="terminal")
     if source_route_context:
@@ -933,26 +1088,19 @@ def build_terminal_turn_messages(
         prompt_messages.append({"role": "system", "content": terminal_source_notice})
 
     if policy.include_session_summary:
-        summary = get_latest_session_summary(item_id)
+        summary = _latest_session_summary_from_messages(history_events)
         if summary and summary.get("content"):
             prompt_messages.append(
                 {"role": "system", "content": f"{SESSION_SUMMARY_LABEL}:\n{summary['content']}"}
             )
 
     if policy.include_recent_history:
-        prompt_messages.extend(
-            _collect_recent_context_messages(
-                agent,
-                item_id,
-                max_messages=policy.max_recent_messages,
-                exclude_terminal_content=terminal_content,
-            )
-        )
+        prompt_messages.extend(recent_context_messages)
 
     if policy.include_long_term:
         memories = _collect_long_term_memories(
             item_id,
-            effective_query,
+            retrieval_query,
             allowed_types=policy.allowed_long_term_types,
             n_results=policy.max_long_term_memories,
             agent=agent,

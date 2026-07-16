@@ -281,7 +281,10 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
       MemoryService.addMemory(itemId, {
         content: newMemoryContent,
         memory_type: newMemoryType,
-        ttl_days: newMemoryTtl,
+        ttl_days:
+          newMemoryType === "preference" || newMemoryType === "error"
+            ? undefined
+            : newMemoryTtl,
       }),
     onSuccess: (result) => {
       if (result.memory_id) {
@@ -479,21 +482,6 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
   }
 
   const getStatusAction = (memory: Memory) => {
-    if (memory.metadata.memory_type === "task") {
-      if (memory.metadata.status === "completed") {
-        return {
-          label: "恢复",
-          status: "active" as ManagedMemoryStatus,
-          icon: RotateCcw,
-        }
-      }
-      return {
-        label: "完成",
-        status: "completed" as ManagedMemoryStatus,
-        icon: CheckCircle2,
-      }
-    }
-
     if (memory.metadata.memory_type === "error") {
       if (memory.metadata.status === "resolved") {
         return {
@@ -652,7 +640,7 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
               <Loader2 className="size-6 animate-spin" />
             </div>
           ) : stats ? (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
               <div className="rounded-lg bg-zinc-800 p-3">
                 <div className="text-2xl font-bold">{stats.total}</div>
                 <div className="text-sm text-zinc-400">总记忆数</div>
@@ -662,18 +650,6 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                   {stats.expired_count}
                 </div>
                 <div className="text-sm text-zinc-400">已过期</div>
-              </div>
-              <div className="rounded-lg bg-zinc-800 p-3">
-                <div className="text-2xl font-bold text-emerald-400">
-                  {stats.status_counts.task.active}
-                </div>
-                <div className="text-sm text-zinc-400">进行中任务</div>
-              </div>
-              <div className="rounded-lg bg-zinc-800 p-3">
-                <div className="text-2xl font-bold text-zinc-200">
-                  {stats.status_counts.task.completed}
-                </div>
-                <div className="text-sm text-zinc-400">已完成任务</div>
               </div>
               <div className="rounded-lg bg-zinc-800 p-3">
                 <div className="text-2xl font-bold text-orange-300">
@@ -687,7 +663,7 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                 </div>
                 <div className="text-sm text-zinc-400">已解决错误</div>
               </div>
-              <div className="col-span-2 rounded-lg bg-zinc-800 p-3 md:col-span-3 xl:col-span-6">
+              <div className="col-span-2 rounded-lg bg-zinc-800 p-3 md:col-span-4">
                 <div className="mb-2 text-sm text-zinc-400">按类型分布</div>
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(stats.by_type).map(([type, count]) => (
@@ -856,7 +832,6 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                   <SelectContent>
                     <SelectItem value="all">全部状态</SelectItem>
                     <SelectItem value="active">进行中</SelectItem>
-                    <SelectItem value="completed">已完成</SelectItem>
                     <SelectItem value="resolved">已解决</SelectItem>
                   </SelectContent>
                 </Select>
@@ -869,7 +844,6 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                     )
                     if (
                       filterType !== "all" &&
-                      filterType !== "task" &&
                       filterType !== "error"
                     ) {
                       setFilterType("all")
@@ -909,8 +883,7 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                     const statusTone =
                       memoryStatus === "active"
                         ? "border-emerald-500/30 bg-emerald-500/5"
-                        : memoryStatus === "completed" ||
-                            memoryStatus === "resolved"
+                        : memoryStatus === "resolved"
                           ? "border-zinc-700 bg-zinc-900/60"
                           : "border-zinc-700 bg-zinc-800/50"
 
@@ -959,7 +932,9 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                                   ).toLocaleString()}
                                 </span>
                               )}
-                            {memory.metadata.expires_at && (
+                            {memory.metadata.expires_at &&
+                              memory.metadata.memory_type !== "preference" &&
+                              memory.metadata.memory_type !== "error" && (
                               <span className="text-xs text-zinc-500">
                                 过期:{" "}
                                 {new Date(
@@ -1216,16 +1191,25 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
                 rows={4}
               />
             </div>
-            <div>
-              <Label>有效期（天）</Label>
-              <Input
-                type="number"
-                value={newMemoryTtl}
-                onChange={(e) => setNewMemoryTtl(Number(e.target.value))}
-                min={1}
-                max={365}
-              />
-            </div>
+            {newMemoryType === "preference" || newMemoryType === "error" ? (
+              <div>
+                <Label>有效期</Label>
+                <div className="mt-2">
+                  <Badge variant="secondary">永久</Badge>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <Label>有效期（天）</Label>
+                <Input
+                  type="number"
+                  value={newMemoryTtl}
+                  onChange={(e) => setNewMemoryTtl(Number(e.target.value))}
+                  min={1}
+                  max={365}
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
