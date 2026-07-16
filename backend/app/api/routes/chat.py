@@ -1856,6 +1856,7 @@ def _generate_stream_unserialized(
                     result_text,
                 )
                 complete_pending_after_external_delivery = False
+                stop_after_final_robot_delivery = False
                 if result_text and fallback_is_delivery_result(result_text):
                     if tool_name == ROBOT_SEND_TOOL_NAME:
                         confirmed_external_delivery_to_qq = True
@@ -1894,10 +1895,20 @@ def _generate_stream_unserialized(
                             },
                         )
                         if complete_pending_after_external_delivery:
-                            reply_ticket_manager.complete_pending_reply_after_external_delivery(
-                                reply_ticket.ticket_id
+                            completed = (
+                                reply_ticket_manager.complete_pending_reply_after_external_delivery(
+                                    reply_ticket.ticket_id
+                                )
                             )
+                            if not completed:
+                                logger.warning(
+                                    "[Chat] QQ delivery succeeded but pending task cleanup failed: "
+                                    "item=%s ticket=%s",
+                                    item_id,
+                                    reply_ticket.ticket_id,
+                                )
                         yield _to_sse(reply_event)
+                        stop_after_final_robot_delivery = delivery_is_final
 
                 if result_text and not command_dispatch_pending:
                     if hide_tool_details:
@@ -1974,6 +1985,12 @@ def _generate_stream_unserialized(
                         reply_ticket.ticket_id
                     ):
                         delivery_tool_sent_by_integration = True
+
+                if stop_after_final_robot_delivery:
+                    _complete_agent_task_plan(planned_task_runtime)
+                    _broadcast_agent_status(item_id, "idle")
+                    yield _to_sse({"done": True})
+                    return
 
                 if (
                     tool_name in COMMAND_TOOL_NAMES

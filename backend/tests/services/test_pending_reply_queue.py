@@ -458,7 +458,7 @@ def test_minecraft_reply_matches_waiting_pending_reply() -> None:
     assert "mcp_local_send_pending_reply" in prompt
 
 
-def test_casual_prompt_uses_compact_task_index_and_loads_selected_task() -> None:
+def test_casual_prompt_hides_unrelated_task_details_and_loads_selected_task() -> None:
     manager = ReplyTicketManager()
     ticket_ids: list[str] = []
     for index in range(10):
@@ -479,7 +479,9 @@ def test_casual_prompt_uses_compact_task_index_and_loads_selected_task() -> None
     )
 
     assert "Background task index: 10 unfinished task(s)." in compact_prompt
-    assert "7 more task(s) hidden" in compact_prompt
+    assert "not linked to any background task" in compact_prompt
+    assert "task 0" not in compact_prompt
+    assert all(ticket_id not in compact_prompt for ticket_id in ticket_ids)
     assert len(compact_prompt) < 1200
     assert "Authoritative task queue entry for this turn" in selected_prompt
     assert ticket_ids[0] in selected_prompt

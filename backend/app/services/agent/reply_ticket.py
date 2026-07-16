@@ -533,24 +533,16 @@ class ReplyTicketManager:
                 )
 
         if selected is None:
-            lines = [
-                f"Background task index: {len(entries)} unfinished task(s).",
-                "The current turn is not linked to them. Handle the current message normally; "
-                "do not switch destination or resume a task unless the user explicitly refers "
-                "to it. Use mcp_local_list_pending_replies for full details when needed.",
-            ]
-            for entry in entries[:3]:
-                summary = re.sub(
-                    r"\s+",
-                    " ",
-                    str(entry.get("request_summary") or ""),
-                ).strip()[:100]
-                lines.append(
-                    f"- id={entry['id']}; status={entry['status']}; task={summary}"
-                )
-            if len(entries) > 3:
-                lines.append(f"- {len(entries) - 3} more task(s) hidden from this prompt.")
-            return "\n".join(lines)
+            return "\n".join(
+                [
+                    f"Background task index: {len(entries)} unfinished task(s).",
+                    "The current turn is not linked to any background task. Handle only the "
+                    "current message. Do not mention, inspect, resume, update, or deliver a "
+                    "background task unless the user explicitly refers to it or a matching "
+                    "awaited event is present. Use mcp_local_list_pending_replies only when "
+                    "that explicit link exists.",
+                ]
+            )
 
         lines = [
             "Authoritative task queue entry for this turn:",

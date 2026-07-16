@@ -427,7 +427,7 @@ def test_generate_stream_allows_short_web_forward_follow_up_to_visible_qq_target
         )
         payloads = _sse_payloads(chunks)
 
-        assert completion_calls["value"] == 3
+        assert completion_calls["value"] == 2
         assert len(executed) == 1
         assert executed[0]["reply_to"] == "baka"
         assert executed[0]["text"] == "你好"
@@ -1239,6 +1239,151 @@ def test_generate_stream_delivers_qq_final_response_via_reply_ticket(
         for payload in payloads
     )
     assert not any(payload.get("type") == "agent_response" for payload in payloads)
+
+
+def test_generate_stream_stops_after_successful_qq_send_tool(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.plugins.robot.contracts import RobotReplyTarget
+    from app.plugins.robot.mcp.context import (
+        RobotMCPContext,
+        register_robot_mcp_context,
+        unregister_robot_mcp_context,
+    )
+    from app.services.agent.reply_ticket import reply_ticket_manager
+
+    item, handler = _create_linked_item_and_handler(db)
+    tool_name = "mcp_robot_send_message"
+    completion_calls = {"value": 0}
+    executed: list[dict] = []
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="770362397",
+        metadata={"conversation": {"type": "group", "id": "770362397"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-1",
+            sender_key="onebot_v11:group:770362397:2537134688",
+            reply_target=target,
+            conversation_key="group:770362397",
+            conversation_generation=3,
+        )
+    )
+    fake_agent = _make_fake_agent(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": "Send QQ message",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        execute_tool_result=lambda _name, args: (
+            executed.append(dict(args))
+            or {
+                "success": True,
+                "result": [
+                    {
+                        "type": "text",
+                        "text": "Message sent to current robot conversation.",
+                    }
+                ],
+            }
+        ),
+    )
+    fake_agent._context = SimpleNamespace(
+        model="fake-model",
+        api_key=None,
+        api_url=None,
+        robot_id="robot-1",
+        robot_context_token=token,
+        robot_conversation_key="group:770362397",
+        agent_profile={},
+        enabled_knowledge_files=[],
+        skill_revision=0,
+        reply_ticket_id="",
+    )
+
+    def fake_completion(**_kwargs):
+        completion_calls["value"] += 1
+        return iter(
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content="",
+                                tool_calls=[
+                                    SimpleNamespace(
+                                        index=0,
+                                        id=f"call_send_{completion_calls['value']}",
+                                        function=SimpleNamespace(
+                                            name=tool_name,
+                                            arguments=json.dumps(
+                                                {"text": "莫西莫西，我在。"},
+                                                ensure_ascii=False,
+                                            ),
+                                        ),
+                                    )
+                                ],
+                            ),
+                            finish_reason=None,
+                        )
+                    ]
+                )
+            ]
+        )
+
+    monkeypatch.setattr(chat_route, "completion", fake_completion)
+    monkeypatch.setattr(
+        chat_route,
+        "build_chat_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "莫西莫西"}],
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "extract_integration_context_targets",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "record_integration_context_targets",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(chat_route, "get_relevant_memories", lambda *args, **kwargs: "")
+    monkeypatch.setattr(chat_route, "extract_important_info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(chat_route, "_create_agent_task_plan", lambda *args, **kwargs: None)
+    monkeypatch.setattr(chat_route, "_append_conversation_memory", lambda *args, **kwargs: None)
+    reply_ticket_manager.reset()
+
+    try:
+        chunks = list(
+            chat_route.generate_stream(
+                message="[Robot message; conversation=group:770362397]\n莫西莫西",
+                history=[],
+                handler=handler,
+                item_id=str(item.id),
+                agent=fake_agent,
+                include_hidden_tool_results=True,
+                latest_only_context=True,
+                source_type="qq",
+            )
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+        reply_ticket_manager.reset()
+
+    payloads = _sse_payloads(chunks)
+    assert completion_calls["value"] == 1
+    assert len(executed) == 1
+    assert executed[0]["text"] == "莫西莫西，我在。"
+    assert sum(payload.get("type") == "agent_qq_reply" for payload in payloads) == 1
+    assert any(payload.get("done") is True for payload in payloads)
 
 
 def test_generate_stream_hides_internal_qq_background_job_callback(
