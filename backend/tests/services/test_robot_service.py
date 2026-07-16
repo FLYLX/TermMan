@@ -19,11 +19,37 @@ from app.plugins.robot.platforms import (
     build_inbound_message,
     send_text_with_bot,
 )
-from app.plugins.robot.service import robot_service
+from app.plugins.robot.service import RobotService, robot_service
 from app.services.agent.chat_runtime import ChatResponseResult
 from app.services.agent.memory.vector_store import vector_store
 from tests.utils.item import create_random_item
 from tests.utils.robot import create_random_robot
+
+
+def test_dispatch_workers_keep_parallel_capacity_when_configured_as_one(
+    monkeypatch,
+) -> None:
+    from app.plugins.robot import service as service_module
+
+    started: list[str] = []
+
+    class FakeThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+            self.name = name
+            self.daemon = daemon
+
+        def start(self):
+            started.append(self.name)
+
+    service = RobotService()
+    monkeypatch.setattr(service_module.settings, "ROBOT_BACKEND_DISPATCH_WORKERS", 1)
+    monkeypatch.setattr(service_module.threading, "Thread", FakeThread)
+
+    service._ensure_dispatch_workers()
+
+    assert len(started) == 2
+    assert service.dispatch_queue_snapshot()["workers"] == 2
 
 
 def test_dispatch_filtered_output_does_not_send_to_robot(
@@ -2757,7 +2783,7 @@ def test_direct_wakeup_countdown_starts_after_agent_result(
 
 
 
-def test_messages_arriving_while_processing_are_batched_in_pending_queue(
+def test_direct_wakeup_messages_dispatch_immediately_while_processing(
     db: Session,
     monkeypatch,
 ) -> None:
@@ -2829,46 +2855,93 @@ def test_messages_arriving_while_processing_are_batched_in_pending_queue(
         ),
     )
 
-    assert second.reason == "queued_pending"
-    assert third.reason == "queued_pending"
-    assert len(queued_jobs) == 1
+    assert second.reason == "queued"
+    assert third.reason == "queued"
+    assert len(queued_jobs) == 3
+    assert queued_jobs[1].direct_reply_trigger is True
+    assert queued_jobs[2].direct_reply_trigger is True
+    assert first_job.conversation_generation < queued_jobs[1].conversation_generation
+    assert queued_jobs[1].conversation_generation < queued_jobs[2].conversation_generation
     snapshots = robot_service.conversation_controller_snapshots(
         {robot.id},
         item_ids={item.id},
     )
     assert len(snapshots) == 1
-    assert snapshots[0]["pending_count"] == 2
-    assert [
-        message["sender_label"]
-        for message in snapshots[0]["pending_messages"]
-    ] == ["Bob (u2)", "Carol (u3)"]
-    assert [
-        message["message_preview"]
-        for message in snapshots[0]["pending_messages"]
-    ] == ["第二个人也问", "第三个人继续问"]
-    assert snapshots[0]["pending_messages"][0]["direct_wakeup"] is True
+    assert snapshots[0]["pending_count"] == 0
 
-    robot_service._apply_reply_context_result(
-        robot,
-        first_job.conversation_key,
-        robot_message_sent=True,
-        reply_target=first_job.reply_target,
-        conversation_generation=first_job.conversation_generation,
+
+def test_plain_task_control_message_dispatches_immediately_while_processing(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    robot.config = {
+        "credentials": dict(robot.config.get("credentials", {})),
+        "options": {
+            "reply_message_types": ["mention"],
+            "reply_context_window_seconds": 15,
+        },
+    }
+    db.add(robot)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
     )
-    assert robot_service._enqueue_pending_chat_followup(
-        robot=robot,
-        conversation_key=first_job.conversation_key,
-    ) is True
+    db.commit()
 
+    queued_jobs: list[Any] = []
+    monkeypatch.setattr(
+        robot_service,
+        "_enqueue_chat_job",
+        lambda job: queued_jobs.append(job) or True,
+    )
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
+    monkeypatch.setattr(
+        robot_service,
+        "_persist_inbound_long_term_memory",
+        lambda **_: None,
+    )
+
+    first = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "安装 Temurin Java 17",
+            sender_key="onebot_v11:group:g1:u1",
+            target={"id": "g1"},
+            sender={"user_id": "u1", "display_name": "Alice"},
+            mentioned_bot=True,
+        ),
+    )
+    assert first.reason == "queued"
+
+    change = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message(
+            "先别下，换个国内镜像",
+            sender_key="onebot_v11:group:g1:u1",
+            target={"id": "g1"},
+            sender={"user_id": "u1", "display_name": "Alice"},
+        ),
+    )
+
+    assert change.reason == "queued"
     assert len(queued_jobs) == 2
-    pending_job = queued_jobs[-1]
-    assert pending_job.reply_context_active is True
-    assert pending_job.direct_reply_trigger is False
-    assert "trigger=pending_queue" in pending_job.message
-    assert "[Pending QQ messages; answer each unanswered item in order]" in pending_job.message
-    assert "1. sender=Bob (u2); trigger=mention_bot: 第二个人也问" in pending_job.message
-    assert "2. sender=Carol (u3); trigger=mention_bot: 第三个人继续问" in pending_job.message
-    assert pending_job.message.index("第二个人也问") < pending_job.message.index("第三个人继续问")
+    assert queued_jobs[1].direct_reply_trigger is False
+    assert queued_jobs[1].reply_context_active is True
+    snapshots = robot_service.conversation_controller_snapshots(
+        {robot.id},
+        item_ids={item.id},
+    )
+    assert snapshots[0]["pending_count"] == 0
 
 
 def test_direct_wakeup_pending_messages_continue_after_first_job_sends_no_reply(
@@ -2914,7 +2987,6 @@ def test_direct_wakeup_pending_messages_continue_after_first_job_sends_no_reply(
         ),
     )
     assert first.ignored is False
-    first_job = queued_jobs[-1]
 
     active_plain = robot_service.handle_inbound_message(
         db,
@@ -2950,30 +3022,15 @@ def test_direct_wakeup_pending_messages_continue_after_first_job_sends_no_reply(
     )
 
     assert active_plain.reason == "queued_pending"
-    assert second_wakeup.reason == "queued_pending"
-    assert third_wakeup.reason == "queued_pending"
-    assert len(queued_jobs) == 1
-
-    robot_service._apply_reply_context_result(
-        robot,
-        first_job.conversation_key,
-        robot_message_sent=False,
-        reply_target=first_job.reply_target,
-        conversation_generation=first_job.conversation_generation,
+    assert second_wakeup.reason == "queued"
+    assert third_wakeup.reason == "queued"
+    assert len(queued_jobs) == 3
+    snapshots = robot_service.conversation_controller_snapshots(
+        {robot.id},
+        item_ids={item.id},
     )
-    assert robot_service._enqueue_pending_chat_followup(
-        robot=robot,
-        conversation_key=first_job.conversation_key,
-        direct_wakeup_only=True,
-    ) is True
-
-    assert len(queued_jobs) == 2
-    pending_message = queued_jobs[-1].message
-    assert "trigger=pending_queue" in pending_message
-    assert "旁边人闲聊一句" not in pending_message
-    assert "1. sender=Carol (u3); trigger=mention_bot: 第二个人也叫你" in pending_message
-    assert "2. sender=Dave (u4); trigger=mention_bot: 第三个人继续叫你" in pending_message
-    assert pending_message.index("第二个人也叫你") < pending_message.index("第三个人继续叫你")
+    assert snapshots[0]["pending_count"] == 1
+    assert snapshots[0]["pending_messages"][0]["message_preview"] == "旁边人闲聊一句"
 def test_pure_qq_image_message_is_ignored_before_agent_dispatch(
     db: Session,
     monkeypatch,
@@ -3161,7 +3218,6 @@ def test_pending_chat_queue_keeps_latest_five_messages(
                 sender_key=f"onebot_v11:group:g1:u{index}",
                 target={"id": "g1"},
                 sender={"user_id": f"u{index}", "display_name": f"User{index}"},
-                mentioned_bot=True,
             ),
         )
         assert response.reason == "queued_pending"
@@ -3184,7 +3240,7 @@ def test_pending_chat_queue_keeps_latest_five_messages(
     assert "pending 2" not in message
     for index in range(3, 8):
         assert f"pending {index}" in message
-    assert message.count("trigger=mention_bot: pending") == 5
+    assert message.count("trigger=active_chat_window: pending") == 5
 def test_processing_controller_timeout_sleeps_group_and_blocks_plain_message(
     db: Session,
     monkeypatch,

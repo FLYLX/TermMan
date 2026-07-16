@@ -14,6 +14,14 @@ from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.skills import skill_loader
 
 
+def _allow_main_terminal(monkeypatch, server: LocalMCPServer) -> None:
+    monkeypatch.setattr(
+        server,
+        "_ensure_terminal_input_handler",
+        lambda _item_id: True,
+    )
+
+
 def test_read_chat_history_tool_returns_recent_trimmed_context(monkeypatch) -> None:
     import app.services.agent.history.chat as chat_history
 
@@ -234,6 +242,46 @@ def test_execute_command_only_reports_dispatch(monkeypatch) -> None:
 
 
 
+def test_execute_command_blocks_before_auto_route_when_main_terminal_stopped(
+    monkeypatch,
+) -> None:
+    server = LocalMCPServer()
+    monkeypatch.setattr(
+        server,
+        "_ensure_terminal_input_handler",
+        lambda _item_id: False,
+    )
+    monkeypatch.setattr(
+        server,
+        "_should_auto_route_execute_command_to_job",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("inactive terminal must be checked before auto-routing")
+        ),
+    )
+    monkeypatch.setattr(
+        server,
+        "_run_job",
+        lambda _args: (_ for _ in ()).throw(
+            AssertionError("inactive terminal must not start a background job")
+        ),
+    )
+
+    result = server.call_tool(
+        "execute_command",
+        {
+            "item_id": "item-terminal-stopped",
+            "command": "apt-get install -y temurin-17-jdk",
+        },
+    )
+
+    assert result == [
+        {
+            "type": "text",
+            "text": "终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。",
+        }
+    ]
+
+
 def test_execute_command_blocks_when_busy_terminal_command_pending(monkeypatch) -> None:
     import importlib
 
@@ -294,7 +342,10 @@ def test_execute_command_auto_routes_busy_command_to_background_job(monkeypatch)
 
     def fake_run_job(args: dict):
         routed.update(args)
-        return [{"type": "text", "text": "\u540e\u53f0\u4efb\u52a1\u5df2\u542f\u52a8"}]
+        return [
+            {"type": "text", "text": "\u540e\u53f0\u4efb\u52a1\u5df2\u542f\u52a8"},
+            {"type": "metadata", "background_job_started": True},
+        ]
 
     monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
     monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: True)
@@ -817,10 +868,78 @@ def test_chat_prompt_includes_installed_software_list(monkeypatch, tmp_path) -> 
     assert "openjdk-21-jdk-headless" in messages[0]["content"]
     assert "version=21" in messages[0]["content"]
 
+def test_run_job_blocks_when_main_terminal_stopped(monkeypatch) -> None:
+    server = LocalMCPServer()
+    monkeypatch.setattr(
+        server,
+        "_ensure_terminal_input_handler",
+        lambda _item_id: False,
+    )
+    monkeypatch.setattr(
+        server,
+        "_get_item_daemon_context",
+        lambda _item_id: (_ for _ in ()).throw(
+            AssertionError("inactive terminal must not contact the daemon job API")
+        ),
+    )
+    monkeypatch.setattr(
+        server,
+        "_start_background_job_thread",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("inactive terminal must not create a background thread")
+        ),
+    )
+
+    result = server.call_tool(
+        "run_job",
+        {
+            "item_id": "item-terminal-stopped",
+            "command": "java -version",
+        },
+    )
+
+    assert result == [
+        {
+            "type": "text",
+            "text": "终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。",
+        }
+    ]
+    assert not any(item.get("background_job_started") for item in result)
+
+
+def test_run_job_blocks_superseded_reply_ticket(monkeypatch) -> None:
+    from app.services.agent.reply_ticket import reply_ticket_manager
+
+    server = LocalMCPServer()
+    _allow_main_terminal(monkeypatch, server)
+    monkeypatch.setattr(
+        server,
+        "_get_item_daemon_context",
+        lambda _item_id: (_ for _ in ()).throw(
+            AssertionError("superseded task must not contact the daemon job API")
+        ),
+    )
+    reply_ticket_manager.reset()
+
+    result = server.call_tool(
+        "run_job",
+        {
+            "item_id": "item-1",
+            "command": "wget https://old.example/jdk.tar.gz",
+            "_reply_ticket_id": "superseded-ticket",
+        },
+    )
+
+    assert len(result) == 1
+    assert "superseded by a newer message" in result[0]["text"]
+    assert not any(item.get("background_job_started") for item in result)
+
+
 def test_run_job_reports_final_daemon_result(monkeypatch) -> None:
     from types import SimpleNamespace
 
     server = LocalMCPServer()
+    _allow_main_terminal(monkeypatch, server)
     captured: dict[str, object] = {}
 
     class FakeConnection:
@@ -883,6 +1002,7 @@ def test_background_run_job_registers_pending_reply_only_after_start(
 
     item_id = "item-background-pending"
     server = LocalMCPServer()
+    _allow_main_terminal(monkeypatch, server)
     started: list[dict] = []
     fake_agent = SimpleNamespace(
         _context=SimpleNamespace(
@@ -968,6 +1088,7 @@ def test_run_job_defaults_to_background_and_notifies_session(monkeypatch) -> Non
 
     item_id = "item-background-job"
     server = LocalMCPServer()
+    _allow_main_terminal(monkeypatch, server)
     delivered: list[object] = []
     started = threading.Event()
     allow_finish = threading.Event()
@@ -1036,6 +1157,7 @@ def test_background_run_job_queues_robot_completion(monkeypatch) -> None:
 
     item_id = "item-background-job-robot"
     server = LocalMCPServer()
+    _allow_main_terminal(monkeypatch, server)
     queued: list[dict] = []
     started = threading.Event()
     done = threading.Event()
@@ -1126,6 +1248,7 @@ def test_background_run_job_queues_robot_result_instead_of_direct_raw_reply(
 
     item_id = "item-background-job-ticket"
     server = LocalMCPServer()
+    _allow_main_terminal(monkeypatch, server)
     started = threading.Event()
     queued_event = threading.Event()
     cleared: list[str] = []
@@ -1274,6 +1397,7 @@ def test_background_run_job_passes_web_reply_ticket_to_terminal_feedback(
 
     item_id = "item-background-job-web-ticket"
     server = LocalMCPServer()
+    _allow_main_terminal(monkeypatch, server)
     started = threading.Event()
     delivered = threading.Event()
     processed_inputs: list[object] = []
@@ -1465,6 +1589,7 @@ def test_run_job_allows_distinct_background_jobs_but_blocks_duplicates(monkeypat
 
     item_id = "item-running-job"
     server = LocalMCPServer()
+    _allow_main_terminal(monkeypatch, server)
     commands: list[str] = []
     first_started = threading.Event()
     second_started = threading.Event()

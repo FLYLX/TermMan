@@ -45,7 +45,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="run_job",
-            description="Start a non-interactive one-shot shell job in a daemon background process with stdin closed. Use this for downloads, package installs, builds, tests, archive extraction, and other commands that can finish without later user input; the final result and tail output will be delivered back to the agent after completion. Multiple different background jobs may run at the same time; exact duplicate commands are rejected. For apt/dpkg or other package-manager installs that share global locks, prefer waiting for an existing same-manager install to finish or inspect with list_jobs first. Also use run_job for shell inspection commands such as ls, pwd, local find, cat, head, tail, grep, du, df, and java -version while the main terminal is already occupied by an interactive server console. For file discovery, start from the current working directory with pwd and ls -la, then use find . -maxdepth 2 only if needed; do not scan /, ~, /opt, or /srv unless the user explicitly asks for a wider search. Before using it, decide whether the command needs an interactive foreground console. Do not choose run_job for Minecraft/Forge/Paper/Fabric server startup, run.sh/start.sh server launchers, REPLs, shells, watch/dev servers, or any process that should remain open for later commands such as op/say/stop; choose execute_command in the main terminal for those. Prefer one clear operation per job; avoid very long &&/pipe chains when a later step may need diagnosis.",
+            description="Start a non-interactive one-shot shell job in a daemon background process with stdin closed. The main terminal must already be started and connected; run_job is rejected while the main terminal is stopped. Use this for downloads, package installs, builds, tests, archive extraction, and other commands that can finish without later user input; the final result and tail output will be delivered back to the agent after completion. Multiple different background jobs may run at the same time; exact duplicate commands are rejected. For apt/dpkg or other package-manager installs that share global locks, prefer waiting for an existing same-manager install to finish or inspect with list_jobs first. Also use run_job for shell inspection commands such as ls, pwd, local find, cat, head, tail, grep, du, df, and java -version while the main terminal is already occupied by an interactive server console. For file discovery, start from the current working directory with pwd and ls -la, then use find . -maxdepth 2 only if needed; do not scan /, ~, /opt, or /srv unless the user explicitly asks for a wider search. Before using it, decide whether the command needs an interactive foreground console. Do not choose run_job for Minecraft/Forge/Paper/Fabric server startup, run.sh/start.sh server launchers, REPLs, shells, watch/dev servers, or any process that should remain open for later commands such as op/say/stop; choose execute_command in the main terminal for those. Prefer one clear operation per job; avoid very long &&/pipe chains when a later step may need diagnosis.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -1189,6 +1189,13 @@ class LocalMCPServer:
         if not command or not item_id:
             return [{"type": "text", "text": "Error: command and item_id required"}]
 
+        if not self._ensure_terminal_input_handler(str(item_id)):
+            debug_log(
+                f"[LocalMCPServer] run_job blocked because main terminal is inactive: "
+                f"item={item_id}, command={command}"
+            )
+            return [{"type": "text", "text": TERMINAL_NOT_CONNECTED_MESSAGE}]
+
         timeout_seconds = self._coerce_job_int(args.get("timeout_seconds"), 600, 1, 3600)
         tail_lines = self._coerce_job_int(args.get("tail_lines"), 80, 1, 300)
         wait_for_completion = bool(args.get("wait_for_completion"))
@@ -1198,6 +1205,16 @@ class LocalMCPServer:
             try:
                 from app.services.agent.reply_ticket import reply_ticket_manager
 
+                if reply_ticket_manager.get(reply_ticket_id) is None:
+                    return [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Task request was superseded by a newer message; "
+                                "the background job was not started."
+                            ),
+                        }
+                    ]
                 reply_ticket_manager.mark_command(reply_ticket_id, command)
             except Exception:
                 pass
@@ -1631,6 +1648,11 @@ class LocalMCPServer:
             return [{"type": "text", "text": "Error: command and item_id required"}]
         
         try:
+            has_handler = self._ensure_terminal_input_handler(str(item_id))
+            debug_log(f"[LocalMCPServer] has_handler={has_handler}")
+            if not has_handler:
+                return [{"type": "text", "text": TERMINAL_NOT_CONNECTED_MESSAGE}]
+
             if self._should_auto_route_execute_command_to_job(str(command), str(item_id)):
                 debug_log(
                     f"[LocalMCPServer] auto-routing execute_command to run_job: item={item_id}, command={command}"
@@ -1647,6 +1669,13 @@ class LocalMCPServer:
                 job_args.setdefault("tail_lines", 80)
                 job_args["wait_for_completion"] = False
                 result = self._run_job(job_args)
+                job_started = any(
+                    isinstance(item, dict)
+                    and bool(item.get(BACKGROUND_JOB_STARTED_MARKER))
+                    for item in result
+                )
+                if not job_started:
+                    return result
                 result_text = "\n".join(
                     item.get("text", "")
                     for item in result
@@ -1687,10 +1716,6 @@ class LocalMCPServer:
                 debug_log(f"[LocalMCPServer] terminal input guard error: {guard_error}")
 
             from app.services.socket_pool import InputSDK
-            has_handler = self._ensure_terminal_input_handler(item_id)
-            debug_log(f"[LocalMCPServer] has_handler={has_handler}")
-            if not has_handler:
-                return [{"type": "text", "text": TERMINAL_NOT_CONNECTED_MESSAGE}]
             
             if not command.endswith("\n"):
                 command = command + "\n"

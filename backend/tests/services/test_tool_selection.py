@@ -24,6 +24,8 @@ def _names(tools: list[dict]) -> list[str]:
 ALL_TOOLS = [
     _tool("mcp_local_execute_command"),
     _tool("mcp_local_run_job"),
+    _tool("mcp_local_list_jobs"),
+    _tool("mcp_local_cancel_job"),
     _tool("mcp_local_read_terminal_log"),
     _tool("mcp_local_read_chat_history"),
     _tool("mcp_local_list_reply_tickets"),
@@ -75,6 +77,20 @@ def test_qq_terminal_request_keeps_robot_and_local_tools() -> None:
     assert "mcp_local_execute_command" in names
     assert "mcp_local_run_job" in names
     assert "mcp_local_read_terminal_log" in names
+
+
+def test_qq_task_change_keeps_job_control_tools() -> None:
+    selected = select_tools_for_turn(
+        ALL_TOOLS,
+        source="qq",
+        query="先别下，换个国内镜像",
+    )
+    names = _names(selected)
+
+    assert "mcp_local_list_jobs" in names
+    assert "mcp_local_cancel_job" in names
+    assert "mcp_local_run_job" in names
+    assert "mcp_robot_send_message" in names
 
 
 def test_web_history_request_keeps_only_history_tools() -> None:

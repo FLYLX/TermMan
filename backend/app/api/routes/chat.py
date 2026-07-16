@@ -129,6 +129,14 @@ TASK_WORKFLOW_CONTINUATION_RE = re.compile(
     r"\b(?:continue|retry|resume|next|try again)\b)",
     re.IGNORECASE,
 )
+TASK_WORKFLOW_CHANGE_RE = re.compile(
+    r"(换源|换个源|用国内源|换(?:个)?(?:国内|国外)?镜像|改用.{0,20}镜像)",
+    re.IGNORECASE,
+)
+TASK_WORKFLOW_PAUSE_RE = re.compile(
+    r"(先别|别下|不要下|暂停|取消|停一下|停止下载|\b(?:pause|cancel|stop)\b)",
+    re.IGNORECASE,
+)
 ROBOT_SEND_FOLLOW_UP_RE = re.compile(
     r"(?:转发|发送|发(?!现|生|布|挥|明|烧|呆|票|热)|通知|告诉|(?:跟|向|对).{0,24}说)",
     re.IGNORECASE,
@@ -801,6 +809,8 @@ def _should_create_task_workflow(message: str, tools: list[dict[str, Any]]) -> b
     return bool(
         TASK_WORKFLOW_REQUEST_RE.search(text)
         or TASK_WORKFLOW_CONTINUATION_RE.search(text)
+        or TASK_WORKFLOW_CHANGE_RE.search(text)
+        or TASK_WORKFLOW_PAUSE_RE.search(text)
     )
 
 
@@ -817,13 +827,26 @@ def _create_agent_task_plan(
     if not _should_create_task_workflow(message, tools):
         return None
 
-    if build_status_update_memory_candidate(item_id, message, store=vector_store) is not None:
-        return None
-
     locked_reply_ticket_id = str(reply_ticket_id or "").strip()
     if not locked_reply_ticket_id:
         locked_reply_ticket_id = _current_reply_ticket_id(agent)
     reply_ticket = reply_ticket_manager.get(locked_reply_ticket_id)
+    task_message = str(message or "").strip()
+    if (
+        reply_ticket is not None
+        and reply_ticket.source_type == SOURCE_QQ
+        and reply_ticket.request_message
+    ):
+        task_message = reply_ticket.request_message
+    if (
+        build_status_update_memory_candidate(
+            item_id,
+            task_message,
+            store=vector_store,
+        )
+        is not None
+    ):
+        return None
     origin = _current_task_origin(agent)
     source_type = reply_ticket.source_type if reply_ticket else origin["type"]
     source_label = reply_ticket.source_label if reply_ticket else origin["label"]
@@ -832,7 +855,11 @@ def _create_agent_task_plan(
         source_type=source_type,
         source_label=source_label,
     )
-    if resumable and TASK_WORKFLOW_CONTINUATION_RE.search(message):
+    if resumable and (
+        TASK_WORKFLOW_CONTINUATION_RE.search(task_message)
+        or TASK_WORKFLOW_CHANGE_RE.search(task_message)
+        or TASK_WORKFLOW_PAUSE_RE.search(task_message)
+    ):
         previous_ticket_id = resumable.reply_ticket_id
         task_workflow_manager.attach_ticket(
             resumable.workflow_id,
@@ -842,19 +869,40 @@ def _create_agent_task_plan(
             previous_ticket_id,
             locked_reply_ticket_id,
         )
-        task_workflow_manager.update(
-            locked_reply_ticket_id,
-            action="resume",
-            note=f"User follow-up: {message.strip()[:500]}",
-        )
+        follow_up = task_message[:500]
+        if TASK_WORKFLOW_CHANGE_RE.search(task_message):
+            task_workflow_manager.update(
+                locked_reply_ticket_id,
+                action="insert_recovery_step",
+                title=f"Apply requested source/mirror change: {follow_up}",
+                note=(
+                    "The user changed the execution method. Stop or cancel any obsolete "
+                    "download job before starting the replacement."
+                ),
+            )
+        elif TASK_WORKFLOW_PAUSE_RE.search(task_message):
+            task_workflow_manager.update(
+                locked_reply_ticket_id,
+                action="record_progress",
+                note=(
+                    f"User requested pause/cancellation: {follow_up}. Inspect and cancel "
+                    "any running background job before reporting back."
+                ),
+            )
+        else:
+            task_workflow_manager.update(
+                locked_reply_ticket_id,
+                action="resume",
+                note=f"User follow-up: {follow_up}",
+            )
         return PlannedTaskRuntime(
             request_id=resumable.workflow_id,
             workflow_id=resumable.workflow_id,
         )
-    if not TASK_WORKFLOW_REQUEST_RE.search(message):
+    if not TASK_WORKFLOW_REQUEST_RE.search(task_message):
         return None
 
-    task_titles = _plan_agent_task_titles(handler, message, history)
+    task_titles = _plan_agent_task_titles(handler, task_message, history)
     if not task_titles:
         return None
 
@@ -864,7 +912,7 @@ def _create_agent_task_plan(
         item_id=item_id,
         handler_id=str(handler.id),
         reply_ticket_id=locked_reply_ticket_id,
-        objective=message,
+        objective=task_message,
         source_type=source_type,
         source_label=source_label,
         step_titles=task_titles,
@@ -873,7 +921,7 @@ def _create_agent_task_plan(
     if reply_ticket is not None:
         reply_ticket_manager.upsert_pending_reply(
             reply_ticket.ticket_id,
-            request_summary=message,
+            request_summary=task_message,
             task_plan=task_titles,
             status="working",
         )

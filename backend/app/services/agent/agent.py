@@ -150,8 +150,13 @@ class Agent:
         logger.info(f"[Agent] Created agent for handler {handler_id}")
 
     @classmethod
-    def from_handler(cls, handler: ItemHandler) -> Agent:
-        agent = cls(str(handler.id))
+    def from_handler(
+        cls,
+        handler: ItemHandler,
+        *,
+        instance_key: str | None = None,
+    ) -> Agent:
+        agent = cls(instance_key or str(handler.id))
         agent._context = AgentContext(
             handler_id=str(handler.id),
             model=handler.model,
@@ -165,6 +170,12 @@ class Agent:
         )
         agent._load_skills()
         return agent
+
+    @classmethod
+    def release_instance(cls, agent: Agent | Any) -> None:
+        instance_key = str(getattr(agent, "handler_id", "") or "")
+        if instance_key and cls._instances.get(instance_key) is agent:
+            cls._instances.pop(instance_key, None)
 
     def _load_skills(self):
         self._skills.clear()

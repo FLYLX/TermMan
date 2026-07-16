@@ -2741,6 +2741,151 @@ def test_agent_task_plan_creates_task_queue_entry(monkeypatch) -> None:
         task_workflow_manager.reset()
 
 
+def test_agent_task_plan_inserts_source_change_into_running_workflow(
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.services.agent.reply_ticket import reply_ticket_manager
+    from app.services.agent.task_workflow import task_workflow_manager
+
+    handler = SimpleNamespace(id="handler-1")
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_conversation_key="",
+            reply_ticket_id="",
+        )
+    )
+    tools = [{"type": "function", "function": {"name": "mcp_local_run_job"}}]
+
+    reply_ticket_manager.reset()
+    task_workflow_manager.reset()
+    monkeypatch.setattr(
+        chat_route,
+        "_plan_agent_task_titles",
+        lambda handler, message, history: ["download Java", "install Java"],
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "build_status_update_memory_candidate",
+        lambda *args, **kwargs: None,
+    )
+    try:
+        first_ticket = reply_ticket_manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="安装 Temurin Java 17",
+            source_type="web",
+        )
+        first_plan = chat_route._create_agent_task_plan(
+            "item-1",
+            handler=handler,
+            agent=agent,
+            message="安装 Temurin Java 17",
+            history=[],
+            tools=tools,
+            reply_ticket_id=first_ticket.ticket_id,
+        )
+        assert first_plan is not None
+
+        second_ticket = reply_ticket_manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="先别下，换个国内镜像",
+            source_type="web",
+        )
+        resumed_plan = chat_route._create_agent_task_plan(
+            "item-1",
+            handler=handler,
+            agent=agent,
+            message="先别下，换个国内镜像",
+            history=[],
+            tools=tools,
+            reply_ticket_id=second_ticket.ticket_id,
+        )
+
+        assert resumed_plan is not None
+        assert resumed_plan.workflow_id == first_plan.workflow_id
+        workflow = task_workflow_manager.get(resumed_plan.workflow_id)
+        assert workflow is not None
+        assert workflow.objective == "安装 Temurin Java 17"
+        assert workflow.reply_ticket_id == second_ticket.ticket_id
+        assert workflow.steps[0].recovery is True
+        assert "source/mirror change" in workflow.steps[0].title
+        assert "先别下，换个国内镜像" in workflow.steps[0].title
+        assert reply_ticket_manager.get(first_ticket.ticket_id) is None
+        entries = reply_ticket_manager.list_pending_replies("item-1")
+        assert [entry["id"] for entry in entries] == [second_ticket.ticket_id]
+    finally:
+        reply_ticket_manager.reset()
+        task_workflow_manager.reset()
+
+
+def test_qq_task_plan_uses_current_message_instead_of_robot_context_card(
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.services.agent.reply_ticket import SOURCE_QQ, reply_ticket_manager
+    from app.services.agent.task_workflow import task_workflow_manager
+
+    handler = SimpleNamespace(id="handler-1")
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="robot-1",
+            robot_conversation_key="private:2537134688",
+            reply_ticket_id="",
+        )
+    )
+    reply_ticket_manager.reset()
+    task_workflow_manager.reset()
+    monkeypatch.setattr(
+        chat_route,
+        "_plan_agent_task_titles",
+        lambda handler, message, history: ["download Java", "verify Java"],
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "build_status_update_memory_candidate",
+        lambda *args, **kwargs: None,
+    )
+    try:
+        ticket = reply_ticket_manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="decorated message",
+            source_type="web",
+        )
+        ticket.source_type = SOURCE_QQ
+        ticket.source_label = "QQ private:2537134688"
+        ticket.request_message = "安装 Temurin Java 17"
+
+        plan = chat_route._create_agent_task_plan(
+            "item-1",
+            handler=handler,
+            agent=agent,
+            message=(
+                "[Robot message; conversation=private:2537134688]\n"
+                "[Robot identity; background only] lots of metadata\n"
+                "[Current QQ message]\n安装 Temurin Java 17"
+            ),
+            history=[],
+            tools=[{"type": "function", "function": {"name": "mcp_local_run_job"}}],
+            reply_ticket_id=ticket.ticket_id,
+        )
+
+        assert plan is not None
+        workflow = task_workflow_manager.get(plan.workflow_id)
+        assert workflow is not None
+        assert workflow.objective == "安装 Temurin Java 17"
+        assert "Robot identity" not in workflow.objective
+    finally:
+        reply_ticket_manager.reset()
+        task_workflow_manager.reset()
+
+
 def test_stopped_web_task_reports_failure_then_removes_queue_entry(
     monkeypatch,
 ) -> None:
@@ -3536,6 +3681,7 @@ def test_publish_stream_writes_log_subscribers_before_agent_handler(monkeypatch)
 
 def test_terminal_prompt_matches_relevant_skills_instead_of_loading_all_skills(monkeypatch) -> None:
     from app.services.agent import session as session_module
+    from app.services.terminal_command_state import terminal_command_state_manager
 
     relevant_skill = SimpleNamespace(
         category="general",
@@ -3566,14 +3712,18 @@ def test_terminal_prompt_matches_relevant_skills_instead_of_loading_all_skills(m
         lambda *args, **kwargs: [{"role": "user", "content": "terminal command"}],
     )
 
-    session = session_module.AgentSession("item-1", "handler-1")
-    messages = session._build_terminal_messages(
-        fake_agent,
-        session_module.InputMessage(
-            input_type=session_module.InputType.TERMINAL,
-            content="python: can't open file '/app/items/5/cron_job.py'",
-        ),
-    )
+    terminal_command_state_manager.clear("item-1")
+    try:
+        session = session_module.AgentSession("item-1", "handler-1")
+        messages = session._build_terminal_messages(
+            fake_agent,
+            session_module.InputMessage(
+                input_type=session_module.InputType.TERMINAL,
+                content="python: can't open file '/app/items/5/cron_job.py'",
+            ),
+        )
+    finally:
+        terminal_command_state_manager.clear("item-1")
 
     assert messages[0]["role"] == "system"
     assert "relevant skill prompt" in messages[0]["content"]

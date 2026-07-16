@@ -4,12 +4,13 @@ import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from app.models import Item, ItemHandler, ItemHandlerItem, User
-from app.services.agent.agent import agent_manager, item_handler_context
+from app.services.agent.agent import Agent, agent_manager, item_handler_context
 from app.services.agent.integrations import (
     clear_integration_chat_contexts,
     ensure_integration_chat_context_tools,
@@ -91,6 +92,7 @@ async def prepare_chat_agent(
     item_id: str,
     current_user: User,
     prepared: tuple[ItemHandler, Item] | None = None,
+    isolated: bool = False,
 ) -> tuple[ItemHandler, Item, Agent]:
     result = prepared or get_item_handler_llm_config(session, item_id, current_user)
     if not result:
@@ -106,7 +108,14 @@ async def prepare_chat_agent(
             detail=f"ItemHandler '{handler.name}' has no model configured.",
         )
 
-    agent = agent_manager.get_or_create(handler)
+    agent = (
+        Agent.from_handler(
+            handler,
+            instance_key=f"{handler.id}:turn:{uuid4().hex}",
+        )
+        if isolated
+        else agent_manager.get_or_create(handler)
+    )
     agent.set_item_context(item_id, item)
     agent.set_user_context(str(current_user.id), bool(current_user.is_superuser))
     clear_robot_context = getattr(agent, "clear_robot_context", None)
@@ -281,6 +290,36 @@ async def collect_chat_response(
         prepared = get_item_handler_llm_config(session, item_id, current_user)
     except AttributeError:
         prepared = None
+
+    if robot_id:
+        prepared_agent = await prepare_chat_agent(
+            session,
+            item_id,
+            current_user,
+            prepared=prepared,
+            isolated=True,
+        )
+        try:
+            return await _collect_chat_response_unserialized(
+                session=session,
+                item_id=item_id,
+                current_user=current_user,
+                message=message,
+                history=history,
+                robot_id=robot_id,
+                robot_sender_key=robot_sender_key,
+                robot_reply_target=robot_reply_target,
+                robot_conversation_key=robot_conversation_key,
+                robot_conversation_generation=robot_conversation_generation,
+                robot_reply_requires_awake=robot_reply_requires_awake,
+                reply_ticket_id=reply_ticket_id,
+                return_result=return_result,
+                prepared=prepared,
+                prepared_agent=prepared_agent,
+            )
+        finally:
+            Agent.release_instance(prepared_agent[2])
+
     if prepared:
         handler_id = str(prepared[0].id)
     else:

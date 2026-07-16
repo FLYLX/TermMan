@@ -169,6 +169,11 @@ def test_internal_job_run_route_delegates_to_job_runner(monkeypatch):
             }
 
     monkeypatch.setattr(http_routes, "job_runner", FakeJobRunner())
+    monkeypatch.setattr(
+        http_routes.terminal_manager,
+        "get_terminal_status",
+        lambda item_uuid: {"status": "running"},
+    )
 
     payload = http_routes.InternalJobRunRequest(
         user_uuid="user-1",
@@ -204,6 +209,10 @@ def test_internal_job_run_route_prefers_terminal_current_workdir(monkeypatch):
             return {"success": True, "job_id": "job-1", "exit_code": 0}
 
     class FakeTerminalManager:
+        def get_terminal_status(self, item_uuid):
+            assert item_uuid == "item-1"
+            return {"status": "running"}
+
         def get_terminal_current_workdir(self, item_uuid):
             assert item_uuid == "item-1"
             return "/work/user/item/temp_extract"

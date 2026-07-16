@@ -223,7 +223,7 @@ TERMINAL_NO_REPLY_MARKERS = (
 
 
 def is_command_dispatch_failure_result(tool_name: str, result_text: str) -> bool:
-    if tool_name not in COMMAND_TOOL_NAMES:
+    if tool_name not in COMMAND_TOOL_NAMES and tool_name != RUN_JOB_TOOL_NAME:
         return False
     return any(marker in (result_text or "") for marker in COMMAND_DISPATCH_FAILURE_MARKERS)
 

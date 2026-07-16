@@ -62,6 +62,18 @@ def _resolve_job_working_directory(item_uuid: str, fallback: Optional[str]) -> O
     return fallback
 
 
+def _require_active_main_terminal(item_uuid: str) -> None:
+    status = terminal_manager.get_terminal_status(item_uuid) or {}
+    if str(status.get("status") or "") not in {"running", "waiting_backend"}:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Main terminal is not running. Start and connect the main terminal "
+                "before starting a background job."
+            ),
+        )
+
+
 def _extract_bearer_token(request: Request) -> str:
     authorization = request.headers.get("Authorization", "").strip()
     if not authorization.lower().startswith("bearer "):
@@ -152,6 +164,7 @@ def run_item_job(
         f"timeout={payload.timeout_seconds} tail_lines={payload.tail_lines} "
         f"command={payload.command!r} cwd={payload.working_directory!r}"
     )
+    _require_active_main_terminal(item_uuid)
     working_directory = _resolve_job_working_directory(
         item_uuid,
         payload.working_directory,

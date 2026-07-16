@@ -45,6 +45,11 @@ PENDING_DIRECT_WAKE_TRIGGER_REASONS = frozenset({
     "reply_to_bot",
     "private_chat",
 })
+TASK_CONTROL_MESSAGE_RE = re.compile(
+    r"(先别|别下|不要下|暂停|取消|停一下|停止下载|换源|换个源|"
+    r"换(?:个)?(?:国内|国外)?镜像|改用.{0,20}镜像|\b(?:pause|cancel|stop)\b)",
+    re.IGNORECASE,
+)
 RECENT_LIVE_CONTEXT_ACTIVE_LINES = 6
 RECENT_LIVE_CONTEXT_EXPANDED_LINES = 12
 RECENT_LIVE_CONTEXT_LINES = RECENT_LIVE_CONTEXT_EXPANDED_LINES
@@ -204,15 +209,14 @@ class RobotService:
             maxsize=max(1, settings.ROBOT_BACKEND_DISPATCH_QUEUE_SIZE)
         )
         self._dispatch_workers_started = False
+        self._dispatch_worker_count = 0
         self._dispatch_worker_lock = threading.Lock()
 
     def dispatch_queue_snapshot(self) -> dict[str, int]:
         return {
             "size": self._dispatch_queue.qsize(),
             "max_size": self._dispatch_queue.maxsize,
-            "workers": settings.ROBOT_BACKEND_DISPATCH_WORKERS
-            if self._dispatch_workers_started
-            else 0,
+            "workers": self._dispatch_worker_count,
         }
 
     def _ensure_dispatch_workers(self) -> None:
@@ -221,7 +225,7 @@ class RobotService:
         with self._dispatch_worker_lock:
             if self._dispatch_workers_started:
                 return
-            worker_count = max(1, min(settings.ROBOT_BACKEND_DISPATCH_WORKERS, 8))
+            worker_count = max(2, min(settings.ROBOT_BACKEND_DISPATCH_WORKERS, 8))
             for index in range(worker_count):
                 worker = threading.Thread(
                     target=self._dispatch_worker_loop,
@@ -229,6 +233,7 @@ class RobotService:
                     daemon=True,
                 )
                 worker.start()
+            self._dispatch_worker_count = worker_count
             self._dispatch_workers_started = True
 
     def _enqueue_chat_job(self, job: QueuedRobotChatJob) -> bool:
@@ -981,10 +986,13 @@ class RobotService:
                 reply_context_active=reply_context_active,
                 mention_match_mode=mention_match_mode,
             )
+            task_control_message = bool(TASK_CONTROL_MESSAGE_RE.search(message_text))
             if (
                 command.mode == "chat"
                 and controller_gate.processing
-                and (direct_reply_trigger or reply_context_active)
+                and reply_context_active
+                and not direct_reply_trigger
+                and not task_control_message
             ):
                 pending_size = self._record_pending_chat_input(
                     robot=robot,

@@ -121,6 +121,7 @@ def test_agent_manager_refreshes_cached_agent_when_skill_revision_changes(monkey
         model="model-a",
         api_key=None,
         api_url=None,
+        model_parameters={},
         enabled_skills=["quiet_style"],
         enabled_mcp_servers=[],
         enabled_knowledge_files=[],
@@ -149,6 +150,37 @@ def test_agent_manager_refreshes_cached_agent_when_skill_revision_changes(monkey
         agent_module.skill_loader._revision = original_revision
         manager._agents.pop(handler_id, None)
         agent_module.Agent._instances.pop(handler_id, None)
+
+
+def test_isolated_agents_do_not_share_mutable_context() -> None:
+    handler = SimpleNamespace(
+        id=f"handler-{uuid4()}",
+        model="model-a",
+        api_key=None,
+        api_url=None,
+        model_parameters={},
+        enabled_skills=[],
+        enabled_mcp_servers=[],
+        enabled_knowledge_files=[],
+        agent_profile={},
+    )
+    first = agent_module.Agent.from_handler(
+        handler,
+        instance_key=f"{handler.id}:turn:first",
+    )
+    second = agent_module.Agent.from_handler(
+        handler,
+        instance_key=f"{handler.id}:turn:second",
+    )
+    try:
+        assert first is not second
+        first._context.reply_ticket_id = "ticket-first"
+        second._context.reply_ticket_id = "ticket-second"
+        assert first._context.reply_ticket_id == "ticket-first"
+        assert second._context.reply_ticket_id == "ticket-second"
+    finally:
+        agent_module.Agent.release_instance(first)
+        agent_module.Agent.release_instance(second)
 
 
 def test_robot_context_temporarily_exposes_send_message_tool(monkeypatch) -> None:
@@ -1406,8 +1438,10 @@ def test_robot_collect_response_sends_plain_final_reply_for_direct_mention(
             self.context_cleared = True
 
     fake_agent = FakeAgent()
+    prepare_calls: list[dict[str, object]] = []
 
-    async def fake_prepare_chat_agent(*_args, **_kwargs):
+    async def fake_prepare_chat_agent(*_args, **kwargs):
+        prepare_calls.append(dict(kwargs))
         return SimpleNamespace(name="handler"), SimpleNamespace(id="item-1"), fake_agent
 
     def fake_generate_stream(**_kwargs):
@@ -1464,11 +1498,75 @@ def test_robot_collect_response_sends_plain_final_reply_for_direct_mention(
     assert fake_agent.context_set is True
     assert fake_agent.tools_requested is True
     assert fake_agent.context_cleared is True
+    assert prepare_calls == [{"prepared": None, "isolated": True}]
     assert sent == {
         "robot_id": "robot-1",
         "target": reply_target,
         "text": "pong",
     }
+
+
+def test_robot_collect_responses_can_overlap_without_handler_turn_lock(
+    monkeypatch,
+) -> None:
+    import threading
+
+    barrier = threading.Barrier(2)
+    prepare_calls: list[dict[str, object]] = []
+    results: list[ChatResponseResult] = []
+    errors: list[BaseException] = []
+
+    async def fake_prepare_chat_agent(*_args, **kwargs):
+        prepare_calls.append(dict(kwargs))
+        return (
+            SimpleNamespace(name="handler"),
+            SimpleNamespace(id="item-1"),
+            SimpleNamespace(handler_id=f"isolated-{len(prepare_calls)}"),
+        )
+
+    async def fake_collect_unserialized(**_kwargs):
+        await asyncio.to_thread(barrier.wait, 2)
+        return ChatResponseResult(content="ok", robot_message_sent=True)
+
+    monkeypatch.setattr(chat_runtime, "prepare_chat_agent", fake_prepare_chat_agent)
+    monkeypatch.setattr(
+        chat_runtime,
+        "_collect_chat_response_unserialized",
+        fake_collect_unserialized,
+    )
+
+    def run_turn(index: int) -> None:
+        try:
+            result = asyncio.run(
+                collect_chat_response(
+                    session=SimpleNamespace(),
+                    item_id="item-1",
+                    current_user=SimpleNamespace(),
+                    message=f"message-{index}",
+                    robot_id="robot-1",
+                    robot_sender_key=f"private:user-{index}",
+                    robot_reply_target=RobotReplyTarget(
+                        target_type="private",
+                        target_id=f"user-{index}",
+                    ),
+                    return_result=True,
+                )
+            )
+            results.append(result)
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run_turn, args=(index,)) for index in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert errors == []
+    assert len(results) == 2
+    assert len(prepare_calls) == 2
+    assert all(call == {"prepared": None, "isolated": True} for call in prepare_calls)
 
 
 def test_robot_collect_response_does_not_return_send_tool_trace(
@@ -2063,6 +2161,10 @@ def test_command_dispatch_failure_result_detects_terminal_failure() -> None:
     assert is_command_dispatch_failure_result(
         "mcp_local_interrupt_command",
         "终端未收到命令",
+    )
+    assert is_command_dispatch_failure_result(
+        "mcp_local_run_job",
+        COMMAND_DISPATCH_FAILURE_MESSAGE,
     )
     assert not is_command_dispatch_failure_result(
         "mcp_local_read_terminal_log",
