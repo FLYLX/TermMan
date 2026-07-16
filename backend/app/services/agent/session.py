@@ -2796,7 +2796,6 @@ class AgentSession:
             messages=messages,
             timeout=REQUEST_TIMEOUT,
             tools=effective_tools,
-            tool_choice="auto",
             api_key=agent._context.api_key,
             api_base=agent._context.api_url,
             model_parameters=getattr(agent._context, "model_parameters", {}),

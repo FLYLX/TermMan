@@ -546,7 +546,6 @@ def _build_completion_kwargs(
         stream=stream,
         timeout=REQUEST_TIMEOUT,
         tools=tools,
-        tool_choice="auto",
         api_key=handler.api_key,
         api_base=handler.api_url,
         model_parameters=getattr(handler, "model_parameters", {}),

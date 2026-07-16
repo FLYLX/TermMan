@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import litellm
+
 from app.services.agent.model_parameters import (
     normalize_model_parameters,
     normalize_model_parameters_for_model,
@@ -59,6 +61,25 @@ def test_shared_completion_builder_keeps_deepseek_sampling_defaults() -> None:
     )
 
     assert kwargs["temperature"] == 0.1
+
+
+def test_shared_completion_builder_keeps_tools_without_explicit_tool_choice() -> None:
+    tools = [
+        {
+            "type": "function",
+            "function": {"name": "test_tool", "parameters": {"type": "object"}},
+        }
+    ]
+
+    kwargs = build_litellm_completion_kwargs(
+        model="openai/gpt-5.3-codex-spark",
+        messages=[{"role": "user", "content": "你好"}],
+        tools=tools,
+    )
+
+    assert kwargs["tools"] == tools
+    assert "tool_choice" not in kwargs
+    assert litellm.drop_params is True
 
 
 def test_web_chat_completion_builder_drops_gpt5_temperature() -> None:

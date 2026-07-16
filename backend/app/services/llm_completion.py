@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import litellm
+
 from app.services.agent.model_parameters import normalize_model_parameters_for_model
+
+litellm.drop_params = True
 
 
 def build_litellm_completion_kwargs(
@@ -14,7 +18,6 @@ def build_litellm_completion_kwargs(
     timeout: float | int | None = None,
     stream: bool | None = None,
     tools: list[dict[str, Any]] | None = None,
-    tool_choice: str | None = None,
     model_parameters: dict[str, Any] | None = None,
     default_parameters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -37,6 +40,4 @@ def build_litellm_completion_kwargs(
         kwargs["api_base"] = api_base
     if tools:
         kwargs["tools"] = tools
-        if tool_choice:
-            kwargs["tool_choice"] = tool_choice
     return kwargs
