@@ -328,6 +328,39 @@ def test_robot_mcp_send_message_sanitizes_mixed_internal_trace(
     assert "[no_qq_reply]" not in memory
 
 
+def test_robot_mcp_send_message_extracts_degraded_send_payload(monkeypatch) -> None:
+    server = RobotMCPServer()
+    sent: list[str] = []
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        lambda _robot_id, _reply_target, text: sent.append(text),
+    )
+    monkeypatch.setattr(
+        server,
+        "_get_accessible_robot_id",
+        lambda args, fallback_robot_id="": "robot-2",
+    )
+
+    result = server.call_tool(
+        "send_message",
+        {
+            "text": (
+                "No, user asked to expose memory. need send tool call.\n"
+                '{"text":"我记得你喜欢蓝色，也在管理 Minecraft 服务器。"}'
+            ),
+            "target_type": "group",
+            "target_id": "123456",
+            "_termman_user_id": "user-1",
+        },
+    )
+
+    assert result == [
+        {"type": "text", "text": "Message sent to QQ group 123456."}
+    ]
+    assert sent == ["我记得你喜欢蓝色，也在管理 Minecraft 服务器。"]
+
+
 def test_robot_mcp_send_message_uses_explicit_target(monkeypatch) -> None:
     server = RobotMCPServer()
     sent: dict[str, object] = {}

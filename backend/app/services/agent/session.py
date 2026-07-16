@@ -55,13 +55,13 @@ from app.services.agent.tool_arguments import (
 )
 from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
 from app.services.agent.tool_selection import select_tools_for_turn
+from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
+from app.services.llm_completion import build_litellm_completion_kwargs
+from app.services.terminal_command_state import terminal_command_state_manager
 from app.services.terminal_runtime_state import (
     get_terminal_runtime_state,
     is_terminal_status_query,
 )
-from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
-from app.services.llm_completion import build_litellm_completion_kwargs
-from app.services.terminal_command_state import terminal_command_state_manager
 
 logger = logging.getLogger(__name__)
 
@@ -2923,6 +2923,23 @@ class AgentSession:
             if not self._should_auto_route_tool_to_job(tool_name, tool_args):
                 terminal_input_error = self._validate_terminal_command_input(tool_name, tool_args)
             if terminal_input_error:
+                if reply_ticket_id:
+                    try:
+                        from app.services.agent.reply_ticket import reply_ticket_manager
+
+                        reply_ticket_manager.mark_pending_reply_waiting(
+                            reply_ticket_id,
+                            awaiting_kind="terminal_connection",
+                            awaiting_key=self.item_id,
+                            reason=terminal_input_error,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "[AgentSession] Failed to keep terminal-blocked task active: "
+                            "item=%s ticket=%s",
+                            self.item_id,
+                            reply_ticket_id,
+                        )
                 self._send_pending_integration_response(
                     pending_command_for_delivery,
                     terminal_input_error,
@@ -3024,6 +3041,23 @@ class AgentSession:
                     message=COMMAND_DISPATCH_FAILURE_MESSAGE,
                     tool_name=tool_name,
                 )
+                if reply_ticket_id:
+                    try:
+                        from app.services.agent.reply_ticket import reply_ticket_manager
+
+                        reply_ticket_manager.mark_pending_reply_waiting(
+                            reply_ticket_id,
+                            awaiting_kind="terminal_connection",
+                            awaiting_key=self.item_id,
+                            reason=COMMAND_DISPATCH_FAILURE_MESSAGE,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "[AgentSession] Failed to keep disconnected-terminal task active: "
+                            "item=%s ticket=%s",
+                            self.item_id,
+                            reply_ticket_id,
+                        )
                 self.emit_output(
                     COMMAND_DISPATCH_FAILURE_MESSAGE,
                     "agent_warning",

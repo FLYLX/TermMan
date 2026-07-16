@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 from typing import Any
 
 from app.core.tool_markup import (
@@ -12,6 +13,12 @@ from app.core.tool_markup import (
 ROBOT_SEND_TOOL_NAME = "mcp_robot_send_message"
 ROBOT_SLEEP_TOOL_NAME = "mcp_robot_sleep_conversation"
 NO_QQ_REPLY_MARKER = "[no_qq_reply]"
+_DEGRADED_SEND_PREAMBLE_RE = re.compile(
+    r"(?:\b(?:need|must|should)\b.{0,80}\b(?:tool|function)\s*call\b"
+    r"|\b(?:send|delivery)\s+tool\b"
+    r"|(?:调用|使用).{0,16}(?:发送)?工具)",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _parse_structured_text_string(value: str) -> Any | None:
@@ -26,6 +33,32 @@ def _parse_structured_text_string(value: str) -> Any | None:
         except (SyntaxError, ValueError):
             return None
     return parsed if isinstance(parsed, (dict, list, tuple)) else None
+
+
+def _extract_degraded_send_payload(value: str) -> str:
+    """Recover visible text when a provider prints send-tool args as content."""
+    if "{" not in value or not _DEGRADED_SEND_PREAMBLE_RE.search(value):
+        return value
+
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", value):
+        candidate = value[match.start():]
+        try:
+            payload, end = decoder.raw_decode(candidate)
+        except json.JSONDecodeError:
+            continue
+        if candidate[end:].strip().strip("`").strip():
+            continue
+        if not isinstance(payload, dict) or not ({"text", "messages"} & payload.keys()):
+            continue
+
+        preamble = value[: match.start()].strip().strip("`").strip()
+        if not preamble or not _DEGRADED_SEND_PREAMBLE_RE.search(preamble):
+            continue
+        extracted = normalize_robot_message_text(payload)
+        if extracted.strip():
+            return extracted.strip()
+    return value
 
 
 def normalize_robot_message_text(value: Any, *, _depth: int = 0) -> str:
@@ -152,7 +185,9 @@ def sanitize_robot_visible_text(value: Any) -> str:
     """Remove robot tool traces from text that may be sent or shown as chat memory."""
     cleaned_lines: list[str] = []
     previous_blank = False
-    normalized = strip_dsml_tool_markup(normalize_robot_message_text(value))
+    normalized = normalize_robot_message_text(value)
+    normalized = _extract_degraded_send_payload(normalized)
+    normalized = strip_dsml_tool_markup(normalized)
     for raw_line in normalized.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         line = raw_line.rstrip()
         stripped = line.strip()

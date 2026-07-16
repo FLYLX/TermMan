@@ -220,6 +220,32 @@ class TaskWorkflowManager:
             workflow.updated_at = _utcnow()
             return True
 
+    def mark_waiting(
+        self,
+        ticket_id: str,
+        *,
+        awaiting_kind: str,
+        awaiting_key: str = "",
+        note: str = "",
+    ) -> bool:
+        with self._lock:
+            workflow = self.get_by_ticket(ticket_id)
+            if not workflow:
+                return False
+            step = workflow.current_step()
+            if step and step.status not in {"completed", "cancelled"}:
+                step.status = "waiting"
+                if note:
+                    step.note = str(note)[:2000]
+            workflow.status = "blocked"
+            workflow.queue_status = "waiting"
+            workflow.awaiting_kind = str(awaiting_kind or "external_input")[:64]
+            workflow.awaiting_key = str(awaiting_key or "")[:200]
+            workflow.blocker = str(note or "Waiting for an external prerequisite.")[:2000]
+            workflow.latest_progress = workflow.blocker
+            workflow.updated_at = _utcnow()
+            return True
+
     def find_resumable(
         self,
         *,
@@ -463,6 +489,9 @@ class TaskWorkflowManager:
                     step.note = note
             elif normalized_action == "resume":
                 workflow.status = "active"
+                workflow.queue_status = "working"
+                workflow.awaiting_kind = ""
+                workflow.awaiting_key = ""
                 workflow.blocker = ""
                 if step:
                     step.status = "running"
@@ -482,6 +511,13 @@ class TaskWorkflowManager:
         workflow = self.get_by_ticket(ticket_id)
         if not workflow:
             return True, ""
+        if workflow.status == "blocked" and workflow.awaiting_kind:
+            return (
+                False,
+                "The task is waiting for a recoverable prerequisite and must remain in "
+                f"the task queue. Awaiting: {workflow.awaiting_kind}"
+                f"{f' ({workflow.awaiting_key})' if workflow.awaiting_key else ''}.",
+            )
         if workflow.status in {
             "ready_to_report",
             "blocked",
@@ -503,6 +539,10 @@ class TaskWorkflowManager:
         with self._lock:
             workflow = self.get_by_ticket(ticket_id)
             if not workflow:
+                return
+            if workflow.status == "blocked" and workflow.awaiting_kind:
+                workflow.queue_status = "waiting"
+                workflow.updated_at = _utcnow()
                 return
             now = _utcnow()
             workflow.delivered_at = now

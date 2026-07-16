@@ -1416,6 +1416,37 @@ def test_robot_plain_reply_bridge_fallback_sends_active_window_reply(monkeypatch
     }
     assert allowed_calls == [("robot-1", "group:123456", 7, True)]
 
+
+def test_robot_plain_reply_fallback_extracts_degraded_send_payload(monkeypatch) -> None:
+    sent: list[str] = []
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        lambda _robot_id, _target, text: sent.append(text),
+    )
+    monkeypatch.setattr(
+        "app.plugins.robot.conversation_memory.robot_conversation_memory.append_assistant_message",
+        lambda *_args, **_kwargs: None,
+    )
+
+    delivered = get_robot_agent_integration().send_final_response_fallback(
+        {
+            "robot_id": "robot-1",
+            "reply_target": RobotReplyTarget(
+                target_type="group",
+                target_id="123456",
+                metadata={"mentioned_bot": True},
+            ),
+        },
+        content=(
+            "No, user asked to expose memory. need send tool call.\n"
+            '{"text":"我记得你喜欢蓝色。"}'
+        ),
+        message_sent=False,
+    )
+
+    assert delivered is True
+    assert sent == ["我记得你喜欢蓝色。"]
+
 def test_robot_collect_response_sends_plain_final_reply_for_direct_mention(
     monkeypatch,
 ) -> None:
@@ -1969,8 +2000,13 @@ def test_builtin_skills_are_terminal_qq_mcp_and_personas() -> None:
     assert "QQ MCP Skill" in (qq_mcp.action.prompt or "")
     assert "若叶睦人格 Skill" in (mutsumi.action.prompt or "")
     assert "时崎狂三人格 Skill" in (kurumi.action.prompt or "")
-    assert "平泽唯人格 Skill" in (yui.action.prompt or "")
-    assert "反应要鲜活，不要像客服或说明书" in (yui.action.prompt or "")
+    assert "你就是平泽唯" in (yui.action.prompt or "")
+    assert "不是需要向别人解释的" in (yui.action.prompt or "")
+    assert "不要主动说自己是 AI、bot、机器人" in (yui.action.prompt or "")
+    assert "不要追加能力清单或 TermMan 介绍" in (yui.action.prompt or "")
+    assert "不要旁白自己的说话步骤" in (yui.action.prompt or "")
+    assert "只是消息路由" in (yui.action.prompt or "")
+    assert "反应要鲜活，不要像客服、说明书或任务播报器" in (yui.action.prompt or "")
     assert "简短不等于冷淡" in (yui.action.prompt or "")
     assert "你是 EX_GuguX 呀，怎么突然考我" in (yui.action.prompt or "")
     assert "有语气、有停顿，但别嘴碎" in (mutsumi.action.prompt or "")

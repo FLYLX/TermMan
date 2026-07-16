@@ -3041,6 +3041,114 @@ def test_agent_task_plan_inserts_source_change_into_running_workflow(
         task_workflow_manager.reset()
 
 
+def test_terminal_reconnect_follow_up_rebinds_waiting_task_queue_entry(
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.services.agent.reply_ticket import SOURCE_QQ, reply_ticket_manager
+    from app.services.agent.task_workflow import task_workflow_manager
+
+    handler = SimpleNamespace(id="handler-1")
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_conversation_key="",
+            reply_ticket_id="",
+        )
+    )
+    tools = [{"type": "function", "function": {"name": "mcp_local_run_job"}}]
+
+    reply_ticket_manager.reset()
+    task_workflow_manager.reset()
+    monkeypatch.setattr(
+        chat_route,
+        "_plan_agent_task_titles",
+        lambda handler, message, history: ["安装 Java", "验证 java -version"],
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "build_status_update_memory_candidate",
+        lambda *args, **kwargs: None,
+    )
+    try:
+        install_ticket = reply_ticket_manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="安装java",
+            source_type="web",
+        )
+        install_ticket.source_type = SOURCE_QQ
+        install_ticket.source_label = "QQ private:2537134688"
+        install_ticket.sender_key = "2537134688"
+        install_ticket.sender_label = "FLY (2537134688)"
+        install_plan = chat_route._create_agent_task_plan(
+            "item-1",
+            handler=handler,
+            agent=agent,
+            message="安装java",
+            history=[],
+            tools=tools,
+            reply_ticket_id=install_ticket.ticket_id,
+        )
+        assert install_plan is not None
+
+        chat_route._mark_agent_task_plan_waiting_for_terminal(
+            chat_route.PlannedTaskRuntime(
+                request_id=install_plan.request_id,
+                reply_ticket_id=install_ticket.ticket_id,
+                workflow_id=install_plan.workflow_id,
+            ),
+            item_id="item-1",
+            reason="终端未连接或未打开",
+        )
+        waiting_entries = reply_ticket_manager.list_pending_replies("item-1")
+        assert len(waiting_entries) == 1
+        assert waiting_entries[0]["status"] == "waiting"
+        assert waiting_entries[0]["awaiting_kind"] == "terminal_connection"
+
+        opened_ticket = reply_ticket_manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="开了",
+            source_type="web",
+        )
+        opened_ticket.source_type = SOURCE_QQ
+        opened_ticket.source_label = "QQ private:2537134688"
+        opened_ticket.sender_key = "2537134688"
+        opened_ticket.sender_label = "FLY (2537134688)"
+        resumed_plan = chat_route._create_agent_task_plan(
+            "item-1",
+            handler=handler,
+            agent=agent,
+            message="开了",
+            history=[],
+            tools=tools,
+            reply_ticket_id=opened_ticket.ticket_id,
+        )
+
+        assert resumed_plan is not None
+        assert resumed_plan.workflow_id == install_plan.workflow_id
+        workflow = task_workflow_manager.get(resumed_plan.workflow_id)
+        assert workflow is not None
+        assert workflow.objective == "安装java"
+        assert workflow.source_type == SOURCE_QQ
+        assert workflow.source_label == "QQ private:2537134688"
+        assert workflow.reply_ticket_id == opened_ticket.ticket_id
+        assert workflow.status == "active"
+        assert workflow.queue_status == "working"
+        assert workflow.awaiting_kind == ""
+        assert reply_ticket_manager.get(install_ticket.ticket_id) is None
+        entries = reply_ticket_manager.list_pending_replies("item-1")
+        assert [entry["id"] for entry in entries] == [opened_ticket.ticket_id]
+        assert entries[0]["request_summary"] == "安装java"
+        assert entries[0]["workflow"]["objective"] == "安装java"
+    finally:
+        reply_ticket_manager.reset()
+        task_workflow_manager.reset()
+
+
 def test_qq_task_plan_uses_current_message_instead_of_robot_context_card(
     monkeypatch,
 ) -> None:

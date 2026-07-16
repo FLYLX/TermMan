@@ -815,6 +815,22 @@ def _mark_agent_task_plan_failed(
         reply_ticket_manager.mark_failed(plan.reply_ticket_id, reason)
 
 
+def _mark_agent_task_plan_waiting_for_terminal(
+    plan: PlannedTaskRuntime | None,
+    *,
+    item_id: str,
+    reason: str,
+) -> None:
+    if not plan or not plan.reply_ticket_id:
+        return
+    reply_ticket_manager.mark_pending_reply_waiting(
+        plan.reply_ticket_id,
+        awaiting_kind="terminal_connection",
+        awaiting_key=str(item_id),
+        reason=reason,
+    )
+
+
 def _should_create_task_workflow(message: str, tools: list[dict[str, Any]]) -> bool:
     if not tools:
         return False
@@ -1909,7 +1925,11 @@ def _generate_stream_unserialized(
                             _broadcast_agent_status(item_id, "idle")
                             yield _to_sse({"done": True})
                             return
-                        _mark_agent_task_plan_failed(planned_task_runtime)
+                        _mark_agent_task_plan_waiting_for_terminal(
+                            planned_task_runtime,
+                            item_id=item_id,
+                            reason=terminal_input_error,
+                        )
                         warning_event = _persist_and_broadcast_event(
                             item_id,
                             role="assistant",
@@ -2065,7 +2085,11 @@ def _generate_stream_unserialized(
                         message=COMMAND_DISPATCH_FAILURE_MESSAGE,
                         tool_name=tool_name,
                     )
-                    _mark_agent_task_plan_failed(planned_task_runtime)
+                    _mark_agent_task_plan_waiting_for_terminal(
+                        planned_task_runtime,
+                        item_id=item_id,
+                        reason=COMMAND_DISPATCH_FAILURE_MESSAGE,
+                    )
                     warning_event = _persist_and_broadcast_event(
                         item_id,
                         role="assistant",

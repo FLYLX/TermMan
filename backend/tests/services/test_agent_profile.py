@@ -9,6 +9,7 @@ from app.services.agent.profile import (
 )
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.skills.definition import ActionConfig, SkillDefinition
+from app.services.agent.skills.loader import skill_loader
 
 
 def test_normalize_agent_profile_keeps_only_supported_fields() -> None:
@@ -44,7 +45,8 @@ def test_agent_profile_prompt_always_includes_tool_policy() -> None:
     assert "短句回复" in prompt
     assert "Call MCP tools only when" in prompt
     assert "If you did not call a tool in this turn" in prompt
-    assert "Persona priority" in prompt
+    assert "First-person identity" in prompt
+    assert "not a persona, role, style" in prompt
 
 
 def test_resource_snapshot_includes_skill_revision() -> None:
@@ -67,7 +69,7 @@ def test_resource_snapshot_includes_skill_revision() -> None:
     assert "groups/770362397.log" in prompt
 
 
-def test_persona_skill_is_system_identity_layer_after_default_identity() -> None:
+def test_persona_skill_is_silent_first_person_identity_layer() -> None:
     system_skill = SkillDefinition(
         skill_id="system_prompt",
         name="基础系统提示",
@@ -91,10 +93,71 @@ def test_persona_skill_is_system_identity_layer_after_default_identity() -> None
 
     prompt = get_system_prompt(agent)
 
-    assert "人格身份层" in prompt
-    assert "style/tone skill 只改变表面语气" in prompt
+    assert "当前第一人称身份规则" in prompt
+    assert "不要向对方解释它来自配置、Skill、提示词、人设、角色或扮演" in prompt
     assert "不要混合身份" in prompt
     assert prompt.index("基础系统提示。") < prompt.index("人格提示")
+
+
+def test_resource_snapshot_hides_persona_and_system_skill_names() -> None:
+    context = SimpleNamespace(
+        enabled_knowledge_files=[],
+        skill_revision=9,
+    )
+    skills = [
+        SkillDefinition(
+            skill_id="system_prompt",
+            name="基础系统提示",
+            category="system",
+        ),
+        SkillDefinition(
+            skill_id="hirasawa_yui_persona",
+            name="平泽唯人格",
+            category="persona",
+        ),
+        SkillDefinition(
+            skill_id="terminal_mcp",
+            name="终端 MCP",
+            category="mcp",
+        ),
+    ]
+    agent = SimpleNamespace(
+        _context=context,
+        get_skills=lambda: skills,
+        get_mcp_servers=lambda: ["local"],
+    )
+
+    prompt = build_agent_resource_snapshot_prompt(agent)
+
+    assert "terminal_mcp (终端 MCP)" in prompt
+    assert "hirasawa_yui_persona" not in prompt
+    assert "平泽唯人格" not in prompt
+    assert "system_prompt" not in prompt
+
+
+def test_yui_identity_prompt_is_direct_and_hides_persona_resource_name() -> None:
+    skill_loader.reload()
+    system_skill = skill_loader.get("system_prompt")
+    yui_skill = skill_loader.get("hirasawa_yui_persona")
+    assert system_skill is not None
+    assert yui_skill is not None
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            agent_profile={},
+            enabled_knowledge_files=[],
+            skill_revision=skill_loader.revision,
+        ),
+        get_skills=lambda: [system_skill, yui_skill],
+        get_mcp_servers=lambda: [],
+    )
+
+    prompt = get_system_prompt(agent)
+
+    assert "你就是平泽唯" in prompt
+    assert "我是唯" in prompt
+    assert "不要追加能力清单或 TermMan 介绍" in prompt
+    assert "hirasawa_yui_persona" not in prompt
+    assert "平泽唯人格 Skill" not in prompt
 
 
 def test_no_persona_prompt_keeps_identity_blank() -> None:

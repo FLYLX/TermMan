@@ -132,6 +132,44 @@ def test_follow_up_ticket_reattaches_same_workflow() -> None:
     assert workflow.objective == "安装 Temurin Java 17，使用可用的国内源"
 
 
+def test_recoverable_terminal_wait_cannot_finalize_and_resume_clears_wait() -> None:
+    manager = TaskWorkflowManager()
+    workflow = _create_java_workflow(manager)
+
+    assert manager.mark_waiting(
+        "ticket-java",
+        awaiting_kind="terminal_connection",
+        awaiting_key="item-java",
+        note="终端未连接或未打开",
+    ) is True
+
+    assert workflow.status == "blocked"
+    assert workflow.queue_status == "waiting"
+    assert workflow.awaiting_kind == "terminal_connection"
+    assert workflow.current_step().status == "waiting"
+    can_finalize, reason = manager.can_finalize("ticket-java")
+    assert can_finalize is False
+    assert "terminal_connection" in reason
+
+    manager.on_delivery("ticket-java")
+    assert workflow.status == "blocked"
+    assert workflow.delivered_at is None
+
+    assert manager.attach_ticket(workflow.workflow_id, "ticket-opened") is True
+    resumed, _ = manager.update(
+        "ticket-opened",
+        action="resume",
+        note="用户已打开终端，继续安装",
+    )
+
+    assert resumed is True
+    assert workflow.status == "active"
+    assert workflow.queue_status == "working"
+    assert workflow.awaiting_kind == ""
+    assert workflow.awaiting_key == ""
+    assert workflow.current_step().status == "running"
+
+
 def test_full_task_workflow_is_loaded_only_for_linked_turn() -> None:
     from app.services.agent.prompts import builder as prompt_builder
     from app.services.agent.task_workflow import task_workflow_manager

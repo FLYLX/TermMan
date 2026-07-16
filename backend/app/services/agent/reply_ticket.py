@@ -635,6 +635,42 @@ class ReplyTicketManager:
                 pass
             self._broadcast_pending_reply_change(ticket, action="updated")
 
+    def mark_pending_reply_waiting(
+        self,
+        ticket_id: str,
+        *,
+        awaiting_kind: str,
+        awaiting_key: str = "",
+        reason: str = "",
+    ) -> bool:
+        with self._lock:
+            ticket = self._tickets.get(str(ticket_id))
+            if not ticket or not ticket.pending_reply_active:
+                return False
+            ticket.status = "waiting"
+            ticket.delivery_error = ""
+            ticket.updated_at = datetime.now()
+
+        try:
+            from app.services.agent.task_workflow import task_workflow_manager
+
+            if not task_workflow_manager.mark_waiting(
+                ticket_id,
+                awaiting_kind=awaiting_kind,
+                awaiting_key=awaiting_key,
+                note=reason,
+            ):
+                return False
+        except Exception:
+            logger.exception(
+                "[ReplyTicket] Failed to mark pending task waiting: ticket=%s",
+                ticket_id,
+            )
+            return False
+
+        self._broadcast_pending_reply_change(ticket, action="updated")
+        return True
+
     def mark_delivered(self, ticket_id: str) -> bool:
         try:
             from app.services.agent.task_workflow import task_workflow_manager
