@@ -1355,10 +1355,16 @@ class RobotService:
     def _pending_chat_entry_is_direct_wakeup(self, entry: PendingRobotChatInput) -> bool:
         return entry.trigger_reason in PENDING_DIRECT_WAKE_TRIGGER_REASONS
 
-    def _pending_chat_batch_text(self, entries: list[PendingRobotChatInput]) -> str:
+    def _pending_chat_batch_text(
+        self,
+        entries: list[PendingRobotChatInput],
+        *,
+        conversation_key: str = "",
+    ) -> str:
         lines = [
             "[Pending QQ messages; answer each unanswered item in order]",
             "These messages arrived while the bot was already thinking. Treat them as current live QQ messages, not old log history.",
+            f"source=QQ; conversation={conversation_key or 'current'}",
         ]
         index = 1
         for entry in entries[:PENDING_CHAT_QUEUE_LIMIT]:
@@ -1370,7 +1376,8 @@ class RobotService:
             if len(text) > 220:
                 text = f"{text[:217]}..."
             lines.append(
-                f"{index}. sender={entry.sender_label}; trigger={entry.trigger_reason}: {text}"
+                f"{index}. sender={entry.sender_label}; sender_key={entry.sender_key}; "
+                f"trigger={entry.trigger_reason}: {text}"
             )
             index += 1
         lines.append(
@@ -1409,7 +1416,10 @@ class RobotService:
             )
 
         latest = entries[-1]
-        batch_text = self._pending_chat_batch_text(entries)
+        batch_text = self._pending_chat_batch_text(
+            entries,
+            conversation_key=conversation_key,
+        )
         live_context_card = self._recent_live_context_card(
             robot=robot,
             conversation_key=conversation_key,

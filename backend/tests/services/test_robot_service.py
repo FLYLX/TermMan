@@ -3055,6 +3055,75 @@ def test_pending_followup_includes_recent_live_context_without_duplicate(
     assert message.count(current_question) == 1
 
 
+def test_pending_qq_batch_keeps_senders_and_isolates_conversations(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    queued_jobs: list[Any] = []
+
+    monkeypatch.setattr(
+        robot_service,
+        "_enqueue_chat_job",
+        lambda job: queued_jobs.append(job) or True,
+    )
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
+    monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
+    monkeypatch.setattr(robot_conversation_memory, "read_recent", lambda *_args, **_kwargs: "")
+
+    def target(group_id: str, user_id: str, display_name: str) -> RobotReplyTarget:
+        return RobotReplyTarget(
+            target_type="group",
+            target_id=group_id,
+            metadata={
+                "conversation": {"type": "group", "id": group_id},
+                "sender": {"user_id": user_id, "display_name": display_name},
+            },
+        )
+
+    for conversation_key, group_id, user_id, display_name, text in (
+        ("group:g1", "g1", "u1", "Alice", "A 的问题"),
+        ("group:g1", "g1", "u2", "Bob", "B 的问题"),
+        ("group:g2", "g2", "u3", "Carol", "另一个群的问题"),
+    ):
+        robot_service._record_pending_chat_input(
+            robot=robot,
+            conversation_key=conversation_key,
+            item_id=item.id,
+            route_key="alpha",
+            message_text=text,
+            sender_key=f"onebot_v11:{conversation_key}:{user_id}",
+            sender_label=f"{display_name} ({user_id})",
+            trigger_reason="mention_bot",
+            reply_target=target(group_id, user_id, display_name),
+        )
+
+    assert robot_service._enqueue_pending_chat_followup(
+        robot=robot,
+        conversation_key="group:g1",
+    )
+    assert len(queued_jobs) == 1
+    message = queued_jobs[0].message
+    assert "source=QQ; conversation=group:g1" in message
+    assert "sender=Alice (u1)" in message
+    assert "sender_key=onebot_v11:group:g1:u1" in message
+    assert "sender=Bob (u2)" in message
+    assert "sender_key=onebot_v11:group:g1:u2" in message
+    assert "A 的问题" in message
+    assert "B 的问题" in message
+    assert "Carol" not in message
+    assert "另一个群的问题" not in message
+
+    other_pending, _ = robot_service._pending_chat_snapshot_locked(
+        robot.id,
+        "group:g2",
+    )
+    assert len(other_pending) == 1
+    assert other_pending[0]["sender_label"] == "Carol (u3)"
+    robot_service._drain_pending_chat_inputs(robot.id, "group:g2")
+
+
 def test_plain_task_control_message_dispatches_immediately_while_processing(
     db: Session,
     monkeypatch,
