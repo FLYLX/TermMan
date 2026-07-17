@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.plugins.robot.contracts import RobotReplyTarget
@@ -61,9 +62,31 @@ def memory_scope_for_content(content: str, memory_type: str) -> str:
     if normalized_type in CONVERSATION_SCOPED_MEMORY_TYPES:
         return "conversation"
     normalized = str(content or "").strip().lower()
-    if any(token in normalized for token in ("你叫", "你是", "bot name", "robot name")):
+    payload = re.sub(r"^[^:：\n]{1,80}[:：]\s*", "", normalized)
+    if any(token in payload for token in ("你叫", "你是", "bot name", "robot name")):
         return "robot"
-    if normalized_type in SPEAKER_SCOPED_MEMORY_TYPES:
+    if normalized_type == "preference":
+        return "speaker"
+    if normalized_type == "fact":
+        if re.search(
+            r"^(?:我|本人|咱|俺)(?:叫|是|住在|来自|喜欢|不喜欢|讨厌|的)",
+            payload,
+        ):
+            return "speaker"
+        if re.search(
+            r"(?:猫娘|主人|管理员|群主|昵称|外号|名字|身份|本人)"
+            r"[\s\S]{0,48}(?:是|就是|叫|指的是|对应)"
+            r"|(?:是|就是|叫|指的是|对应)[\s\S]{0,48}"
+            r"(?:猫娘|主人|管理员|群主|昵称|外号|名字|身份|本人)",
+            payload,
+        ):
+            return "conversation"
+        if re.search(
+            r"(?:@QQ\([^)]+\)|^[\u4e00-\u9fffA-Za-z0-9_·.-]{1,32}\s*)"
+            r"(?:是|就是|叫|指的是|对应)",
+            payload,
+        ):
+            return "conversation"
         return "speaker"
     return "conversation"
 
@@ -91,6 +114,12 @@ def memory_scope_rank(
     if scope == "conversation":
         return 4 if memory_conversation and memory_conversation == conversation_key else -1
     if scope == "speaker":
+        if (
+            memory_type == "fact"
+            and memory_scope_for_content(str(memory.get("content") or ""), memory_type)
+            == "conversation"
+        ):
+            return 4 if memory_conversation == conversation_key else -1
         if memory_speaker:
             return 5 if speaker_global_key and memory_speaker == speaker_global_key else -1
         # Legacy speaker-scoped records may not have a stable speaker key.

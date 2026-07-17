@@ -143,6 +143,26 @@ def test_build_auto_conversation_memory_candidate_for_named_person_alias() -> No
     assert "\u82b1\u7cd5\u53eb\u5c0f\u82b1" in candidate.candidate.content
 
 
+def test_auto_memory_keeps_identity_fact_with_qq_mention() -> None:
+    candidate = build_auto_conversation_memory_candidate(
+        (
+            "\u6211\u660e\u786e\u7684\u544a\u8bc9\u4f60\uff0c"
+            "\u732b\u5a18\u662f\u5979 [CQ:at,qq=3385417251] "
+            "\u5979\u5c31\u662f\u6708\u5f71\u6c49\u5821\u732b\u5a18"
+        ),
+        speaker_label="New+7 (2206406352)",
+        speaker_key="onebot_v11:group:770362397:2206406352",
+        conversation_key="group:770362397",
+    )
+
+    assert candidate is not None
+    assert candidate.confidence >= 0.74
+    assert candidate.candidate.memory_type == "fact"
+    assert "[CQ:" not in candidate.candidate.content
+    assert "@QQ(3385417251)" in candidate.candidate.content
+    assert "\u6708\u5f71\u6c49\u5821\u732b\u5a18" in candidate.candidate.content
+
+
 def test_build_auto_conversation_memory_candidate_promotes_stable_person_fact_after_repeats() -> None:
     candidate = build_auto_conversation_memory_candidate("\u82b1\u7cd5\u662f\u7fa4\u7ba1\u7406\u5458")
 

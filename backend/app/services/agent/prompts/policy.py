@@ -290,6 +290,17 @@ AUTO_NAMED_PERSON_ALIAS_PATTERNS = (
 AUTO_STABLE_PERSON_FACT_PATTERNS = (
     r"^[\u4e00-\u9fffA-Za-z0-9_\u00b7.-]{1,24}\s*(?:是|住在|来自|在|喜欢|不喜欢|讨厌)\s*[^，。,.!?！？]{2,80}$",
 )
+AUTO_RELATION_FACT_PATTERNS = (
+    r"(?:\u732b\u5a18|\u4e3b\u4eba|\u6635\u79f0|\u5916\u53f7|\u540d\u5b57|\u8eab\u4efd|\u672c\u4eba)"
+    r"[\s\S]{0,48}(?:\u662f|\u5c31\u662f|\u53eb|\u6307\u7684\u662f|\u5bf9\u5e94)",
+    r"(?:\u662f|\u5c31\u662f|\u53eb|\u6307\u7684\u662f|\u5bf9\u5e94)[\s\S]{0,48}"
+    r"(?:\u732b\u5a18|\u4e3b\u4eba|\u6635\u79f0|\u5916\u53f7|\u540d\u5b57|\u8eab\u4efd|\u672c\u4eba)",
+)
+AUTO_MEMORY_CQ_AT_RE = re.compile(
+    r"\[CQ:at,[^\]]*?(?:qq|user_id)=([^,\]]+)[^\]]*\]",
+    re.IGNORECASE,
+)
+AUTO_MEMORY_CQ_RE = re.compile(r"\[CQ:[^\]]+\]", re.IGNORECASE)
 AUTO_PREFERENCE_CUES = (
     "我喜欢",
     "我不喜欢",
@@ -598,10 +609,20 @@ def _looks_like_auto_memory_noise(value: str) -> bool:
     return False
 
 
+def _normalize_memory_message_text(value: str) -> str:
+    normalized = AUTO_MEMORY_CQ_AT_RE.sub(
+        lambda match: f" @QQ({match.group(1).strip()}) ",
+        str(value or ""),
+    )
+    normalized = AUTO_MEMORY_CQ_RE.sub(" ", normalized)
+    return _normalize_text(normalized)
+
+
 def _auto_memory_base_score(payload: str) -> tuple[str, float] | None:
     normalized = _normalize_text(payload)
-    lowered = normalized.casefold()
     if _looks_like_auto_memory_noise(normalized):
+        return None
+    if "?" in normalized or "\uff1f" in normalized:
         return None
 
     memory_type = "context"
@@ -616,6 +637,9 @@ def _auto_memory_base_score(payload: str) -> tuple[str, float] | None:
     if _matches_any(normalized, AUTO_STABLE_PERSON_FACT_PATTERNS):
         memory_type = "fact"
         score = max(score, 0.68)
+    if _matches_any(normalized, AUTO_RELATION_FACT_PATTERNS):
+        memory_type = "fact"
+        score = max(score, 0.86)
     if _matches_any(normalized, AUTO_PROFILE_PATTERNS):
         memory_type = "preference"
         score = max(score, 0.86)
@@ -640,8 +664,6 @@ def _auto_memory_base_score(payload: str) -> tuple[str, float] | None:
         score = max(score, group_score)
 
     if score <= 0:
-        return None
-    if ("?" in lowered or "？" in normalized) and score < 0.80:
         return None
     if len(normalized) > AUTO_MEMORY_MAX_PAYLOAD_LENGTH:
         score -= 0.12
@@ -700,7 +722,7 @@ def build_auto_conversation_memory_candidate(
     conversation_key: str = "",
     matched_skills: list[Any] | None = None,
 ) -> ScoredMemoryCandidate | None:
-    payload = _normalize_text(user_message)
+    payload = _normalize_memory_message_text(user_message)
     if not payload:
         return None
     if should_auto_persist_conversation_memory(user_message, assistant_message or "recorded"):
@@ -923,7 +945,9 @@ def build_conversation_memory_candidate(
     if not should_auto_persist_conversation_memory(user_message, assistant_message):
         return None
 
-    payload = _extract_explicit_memory_payload(user_message)
+    payload = _normalize_memory_message_text(
+        _extract_explicit_memory_payload(user_message)
+    )
     if _is_generic_memory_payload(payload):
         logger.debug("[MemoryPolicy] Skip explicit memory candidate: generic payload")
         return None

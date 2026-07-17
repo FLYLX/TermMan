@@ -51,6 +51,7 @@ TASK_CONTROL_MESSAGE_RE = re.compile(
     re.IGNORECASE,
 )
 RECENT_LIVE_CONTEXT_ACTIVE_LINES = 6
+RECENT_LIVE_CONTEXT_BASE_LINES = 4
 RECENT_LIVE_CONTEXT_EXPANDED_LINES = 12
 RECENT_LIVE_CONTEXT_LINES = RECENT_LIVE_CONTEXT_EXPANDED_LINES
 DEFAULT_MAX_MESSAGE_LENGTH = 1200
@@ -992,7 +993,6 @@ class RobotService:
                 command.mode == "chat"
                 and controller_gate.processing
                 and reply_context_active
-                and not direct_reply_trigger
                 and not task_control_message
             ):
                 pending_size = self._record_pending_chat_input(
@@ -1395,7 +1395,29 @@ class RobotService:
         if not entries:
             return False
 
+        for entry in entries:
+            self._persist_inbound_long_term_memory(
+                item_id=entry.item_id,
+                robot=robot,
+                message=RobotInboundMessage(
+                    sender_key=entry.sender_key,
+                    text=entry.message_text,
+                    reply_target=entry.reply_target.model_copy(deep=True),
+                ),
+                conversation_key=conversation_key,
+                message_text=entry.message_text,
+            )
+
         latest = entries[-1]
+        batch_text = self._pending_chat_batch_text(entries)
+        live_context_card = self._recent_live_context_card(
+            robot=robot,
+            conversation_key=conversation_key,
+            lines=RECENT_LIVE_CONTEXT_EXPANDED_LINES,
+            trigger_reason="pending_queue",
+            current_message_text=latest.message_text,
+            excluded_message_texts=[entry.message_text for entry in entries],
+        )
         synthetic_message = RobotInboundMessage(
             sender_key=latest.sender_key,
             text=latest.message_text,
@@ -1413,7 +1435,7 @@ class RobotService:
             route_key=latest.route_key,
             message=self._agent_message_with_context(
                 synthetic_message,
-                self._pending_chat_batch_text(entries),
+                batch_text,
                 trigger_reason="pending_queue",
                 impression_card=self._conversation_impression_card(
                     item_id=latest.item_id,
@@ -1421,9 +1443,9 @@ class RobotService:
                     conversation_key=conversation_key,
                     sender_key=latest.sender_key,
                     reply_target=latest.reply_target,
-                    query=self._pending_chat_batch_text(entries),
+                    query=batch_text,
                 ),
-                live_context_card="",
+                live_context_card=live_context_card,
             ),
             sender_key=latest.sender_key,
             reply_target=latest.reply_target.model_copy(deep=True),
@@ -1479,6 +1501,7 @@ class RobotService:
         lines: int | None = None,
         trigger_reason: str = "",
         current_message_text: str = "",
+        excluded_message_texts: list[str] | None = None,
     ) -> str:
         if not conversation_key:
             return ""
@@ -1514,6 +1537,7 @@ class RobotService:
         recent_lines = self._recent_context_lines_without_current(
             recent,
             current_message_text=current_message_text,
+            excluded_message_texts=excluded_message_texts,
         )
         if not recent_lines:
             return ""
@@ -1556,7 +1580,11 @@ class RobotService:
                 "active wake window needs a small same-conversation sample to decide reply vs sleep",
             )
 
-        return 0, "current_only", "current QQ message is clear enough without recent context"
+        return (
+            RECENT_LIVE_CONTEXT_BASE_LINES,
+            "baseline",
+            "keep a small same-conversation window for natural continuity",
+        )
 
     @staticmethod
     def _message_needs_progressive_context(message_text: str) -> bool:
@@ -1578,8 +1606,23 @@ class RobotService:
         recent: str,
         *,
         current_message_text: str = "",
+        excluded_message_texts: list[str] | None = None,
     ) -> list[str]:
         recent_lines = [line for line in str(recent or "").splitlines() if line.strip()]
+        excluded_texts = {
+            self._normalize_live_context_message_text(value)
+            for value in (excluded_message_texts or [])
+            if self._normalize_live_context_message_text(value)
+        }
+        if excluded_texts:
+            return [
+                line
+                for line in recent_lines
+                if self._normalize_live_context_message_text(
+                    self._conversation_memory_line_text(line)
+                )
+                not in excluded_texts
+            ]
         current_text = self._normalize_live_context_message_text(current_message_text)
         if recent_lines and current_text:
             last_line_text = self._normalize_live_context_message_text(

@@ -584,6 +584,58 @@ def test_long_term_memory_prompt_keeps_sender_and_content_only() -> None:
     assert "memory-id" not in formatted
 
 
+def test_latest_only_robot_turn_still_includes_long_term_memory(monkeypatch) -> None:
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            reply_ticket_id="",
+            robot_id="robot-1",
+            robot_conversation_key="group:770362397",
+            robot_sender_key="onebot_v11:group:770362397:2206406352",
+        ),
+        match_skills=lambda _query: [],
+        get_skills=lambda: [],
+    )
+    monkeypatch.setattr(prompt_builder, "get_system_prompt", lambda _agent: "system")
+    monkeypatch.setattr(
+        prompt_builder,
+        "get_chat_messages",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("latest-only robot turns must not load SQLite chat history")
+        ),
+    )
+    monkeypatch.setattr(
+        prompt_builder,
+        "_collect_long_term_memories",
+        lambda *_args, **_kwargs: "- 猫娘是月影汉堡猫娘",
+    )
+    monkeypatch.setattr(
+        prompt_builder,
+        "_build_installed_software_context",
+        lambda *args, **kwargs: "",
+    )
+    monkeypatch.setattr(
+        prompt_builder,
+        "_build_pending_reply_context",
+        lambda *args, **kwargs: "",
+    )
+    monkeypatch.setattr(
+        prompt_builder,
+        "_build_active_task_ledger_context",
+        lambda *args, **kwargs: "",
+    )
+
+    messages = prompt_builder.build_chat_turn_messages(
+        agent,
+        item_id="item-1",
+        message="谁是猫娘",
+        query="谁是猫娘",
+        latest_only_context=True,
+    )
+
+    combined = "\n".join(message["content"] for message in messages)
+    assert "猫娘是月影汉堡猫娘" in combined
+
+
 def test_preference_memories_are_always_included_without_query_match(monkeypatch) -> None:
     def fake_get_all_memories(*_args, memory_type: str | None = None, **_kwargs):
         if memory_type not in {None, "preference"}:

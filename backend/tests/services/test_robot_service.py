@@ -1547,11 +1547,12 @@ def test_recent_live_context_uses_progressive_budget(
         current_message_text="今天群里在聊服务器配置",
     )
 
-    assert clear_direct_card == ""
+    assert "context_budget: baseline" in clear_direct_card
+    assert "上一条" in clear_direct_card
     assert "context_budget: expanded" in expanded_card
     assert "上一条" in expanded_card
     assert "context_budget: active_window" in active_card
-    assert calls == [12, 6]
+    assert calls == [4, 12, 6]
 
 
 def test_term_command_routes_to_named_item_agent(
@@ -2879,7 +2880,7 @@ def test_direct_wakeup_countdown_starts_after_agent_result(
 
 
 
-def test_direct_wakeup_messages_dispatch_immediately_while_processing(
+def test_direct_wakeup_messages_queue_without_superseding_active_reply(
     db: Session,
     monkeypatch,
 ) -> None:
@@ -2951,19 +2952,107 @@ def test_direct_wakeup_messages_dispatch_immediately_while_processing(
         ),
     )
 
-    assert second.reason == "queued"
-    assert third.reason == "queued"
-    assert len(queued_jobs) == 3
-    assert queued_jobs[1].direct_reply_trigger is True
-    assert queued_jobs[2].direct_reply_trigger is True
-    assert first_job.conversation_generation < queued_jobs[1].conversation_generation
-    assert queued_jobs[1].conversation_generation < queued_jobs[2].conversation_generation
+    assert second.reason == "queued_pending"
+    assert third.reason == "queued_pending"
+    assert len(queued_jobs) == 1
+    assert robot_service.conversation_controller_allows_completion_reply(
+        robot.id,
+        first_job.conversation_key,
+        first_job.conversation_generation,
+        requires_awake=True,
+    )
     snapshots = robot_service.conversation_controller_snapshots(
         {robot.id},
         item_ids={item.id},
     )
     assert len(snapshots) == 1
-    assert snapshots[0]["pending_count"] == 0
+    assert snapshots[0]["pending_count"] == 2
+
+    robot_service._apply_reply_context_result(
+        robot,
+        first_job.conversation_key,
+        robot_message_sent=True,
+        reply_target=first_job.reply_target,
+        conversation_generation=first_job.conversation_generation,
+    )
+    assert robot_service._enqueue_pending_chat_followup(
+        robot=robot,
+        conversation_key=first_job.conversation_key,
+    )
+    assert len(queued_jobs) == 2
+    followup_job = queued_jobs[-1]
+    assert followup_job.conversation_generation > first_job.conversation_generation
+    assert "Bob" in followup_job.message
+    assert "Carol" in followup_job.message
+    assert robot_service.conversation_controller_snapshots(
+        {robot.id},
+        item_ids={item.id},
+    )[0]["pending_count"] == 0
+
+
+def test_pending_followup_includes_recent_live_context_without_duplicate(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="770362397",
+        metadata={
+            "conversation": {"type": "group", "id": "770362397"},
+            "sender": {"user_id": "2206406352", "display_name": "New+7"},
+        },
+    )
+    queued_jobs: list[Any] = []
+    persisted_messages: list[str] = []
+    current_question = "\u8c01\u662f\u732b\u5a18"
+    fact = "\u732b\u5a18\u5c31\u662f\u6708\u5f71\u6c49\u5821\u732b\u5a18"
+    confirmation = "\u6536\u5230\uff0c\u732b\u5a18\u5c31\u662f\u6708\u5f71\u6c49\u5821\u732b\u5a18"
+
+    monkeypatch.setattr(
+        robot_service,
+        "_enqueue_chat_job",
+        lambda job: queued_jobs.append(job) or True,
+    )
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
+    monkeypatch.setattr(
+        robot_service,
+        "_persist_inbound_long_term_memory",
+        lambda **kwargs: persisted_messages.append(kwargs["message_text"]),
+    )
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "read_recent",
+        lambda *_args, **_kwargs: (
+            f"[2026-07-17T15:36:11+00:00] user New+7: {fact}\n"
+            f"[2026-07-17T15:36:12+00:00] assistant: {confirmation}\n"
+            f"[2026-07-17T15:36:31+00:00] user New+7: {current_question}"
+        ),
+    )
+    robot_service._record_pending_chat_input(
+        robot=robot,
+        conversation_key="group:770362397",
+        item_id=item.id,
+        route_key="alpha",
+        message_text=current_question,
+        sender_key="onebot_v11:group:770362397:2206406352",
+        sender_label="New+7 (2206406352)",
+        trigger_reason="mention_bot",
+        reply_target=target,
+    )
+
+    assert robot_service._enqueue_pending_chat_followup(
+        robot=robot,
+        conversation_key="group:770362397",
+    )
+    assert len(queued_jobs) == 1
+    assert persisted_messages == [current_question]
+    message = queued_jobs[0].message
+    assert "[Recent QQ live context; background only" in message
+    assert fact in message
+    assert confirmation in message
+    assert message.count(current_question) == 1
 
 
 def test_plain_task_control_message_dispatches_immediately_while_processing(
