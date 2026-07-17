@@ -1061,7 +1061,7 @@ def test_run_job_blocks_superseded_reply_ticket(monkeypatch) -> None:
     assert not any(item.get("background_job_started") for item in result)
 
 
-def test_run_job_reports_final_daemon_result(monkeypatch) -> None:
+def test_run_job_is_always_asynchronous_even_when_wait_requested(monkeypatch) -> None:
     from types import SimpleNamespace
 
     server = LocalMCPServer()
@@ -1070,25 +1070,22 @@ def test_run_job_reports_final_daemon_result(monkeypatch) -> None:
 
     class FakeConnection:
         def run_job_http(self, **kwargs):
-            captured.update(kwargs)
-            return {
-                "success": True,
-                "job_id": "job-123",
-                "command": kwargs["command"],
-                "cwd": "/workspace/item",
-                "exit_code": 0,
-                "timed_out": False,
-                "duration_seconds": 1.25,
-                "output_tail": "download complete\nbuild complete",
-            }
+            raise AssertionError("run_job must not wait synchronously")
+
+    connection = FakeConnection()
 
     monkeypatch.setattr(
         server,
         "_get_item_daemon_context",
         lambda item_id: (
             SimpleNamespace(owner_id="user-1", working_directory="/workspace/item"),
-            FakeConnection(),
+            connection,
         ),
+    )
+    monkeypatch.setattr(
+        server,
+        "_start_background_job_thread",
+        lambda **kwargs: captured.update(kwargs),
     )
 
     result = server.call_tool(
@@ -1102,14 +1099,11 @@ def test_run_job_reports_final_daemon_result(monkeypatch) -> None:
         },
     )
 
-    assert len(result) == 1
-    assert result[0]["type"] == "text"
-    text = result[0]["text"]
-    assert "Job succeeded" in text
-    assert "job_id: job-123" in text
-    assert "exit_code: 0" in text
-    assert "download complete" in text
-    assert captured == {
+    assert result[1]["background_job_started"] is True
+    assert captured["item_id"] == "item-1"
+    assert captured["command"] == "bun install"
+    assert captured["connection"] is connection
+    assert captured["request_kwargs"] == {
         "item_uuid": "item-1",
         "user_uuid": "user-1",
         "command": "bun install",
@@ -1117,6 +1111,8 @@ def test_run_job_reports_final_daemon_result(monkeypatch) -> None:
         "timeout_seconds": 12,
         "tail_lines": 5,
     }
+    run_job_tool = next(tool for tool in server.list_tools() if tool["name"] == "run_job")
+    assert "wait_for_completion" not in run_job_tool["inputSchema"]["properties"]
 
 
 def test_background_run_job_registers_pending_reply_only_after_start(

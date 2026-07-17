@@ -60,14 +60,13 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="run_job",
-            description="Start a non-interactive one-shot shell job in a daemon background process with stdin closed. The main terminal must already be started and connected; run_job is rejected while the main terminal is stopped. Use this for downloads, package installs, builds, tests, archive extraction, and other commands that can finish without later user input; the final result and tail output will be delivered back to the agent after completion. Multiple different background jobs may run at the same time; exact duplicate commands are rejected. For apt/dpkg or other package-manager installs that share global locks, prefer waiting for an existing same-manager install to finish or inspect with list_jobs first. Also use run_job for shell inspection commands such as ls, pwd, local find, cat, head, tail, grep, du, df, and java -version while the main terminal is already occupied by an interactive server console. For file discovery, start from the current working directory with pwd and ls -la, then use find . -maxdepth 2 only if needed; do not scan /, ~, /opt, or /srv unless the user explicitly asks for a wider search. Before using it, decide whether the command needs an interactive foreground console. Do not choose run_job for Minecraft/Forge/Paper/Fabric server startup, run.sh/start.sh server launchers, REPLs, shells, watch/dev servers, or any process that should remain open for later commands such as op/say/stop; choose execute_command in the main terminal for those. Prefer one clear operation per job; avoid very long &&/pipe chains when a later step may need diagnosis.",
+            description="Start a non-interactive one-shot shell job in a daemon background process with stdin closed. This tool always returns immediately after scheduling; never wait synchronously for completion. The main terminal must already be started and connected; run_job is rejected while the main terminal is stopped. Use this for downloads, package installs, builds, tests, archive extraction, and other commands that can finish without later user input; the final result and tail output will be delivered back to the agent after completion. Multiple different background jobs may run at the same time; exact duplicate commands are rejected. For apt/dpkg or other package-manager installs that share global locks, prefer waiting for an existing same-manager install to finish or inspect with list_jobs first. Also use run_job for shell inspection commands such as ls, pwd, local find, cat, head, tail, grep, du, df, and java -version while the main terminal is already occupied by an interactive server console. For file discovery, start from the current working directory with pwd and ls -la, then use find . -maxdepth 2 only if needed; do not scan /, ~, /opt, or /srv unless the user explicitly asks for a wider search. Before using it, decide whether the command needs an interactive foreground console. Do not choose run_job for Minecraft/Forge/Paper/Fabric server startup, run.sh/start.sh server launchers, REPLs, shells, watch/dev servers, or any process that should remain open for later commands such as op/say/stop; choose execute_command in the main terminal for those. Prefer one clear operation per job; avoid very long &&/pipe chains when a later step may need diagnosis.",
             input_schema={
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "Non-interactive shell command to run as a one-shot job."},
                     "timeout_seconds": {"type": "integer", "description": "Maximum seconds before the job is terminated. Default 600, max 3600.", "default": 600},
-                    "tail_lines": {"type": "integer", "description": "Number of final output lines returned to the agent. Default 80, max 300.", "default": 80},
-                    "wait_for_completion": {"type": "boolean", "description": "Optional. Default false. When false, return immediately and deliver the final result as a later terminal event.", "default": False}
+                    "tail_lines": {"type": "integer", "description": "Number of final output lines returned to the agent. Default 80, max 300.", "default": 80}
                 },
                 "required": ["command"]
             },
@@ -1263,7 +1262,7 @@ class LocalMCPServer:
 
         timeout_seconds = self._coerce_job_int(args.get("timeout_seconds"), 600, 1, 3600)
         tail_lines = self._coerce_job_int(args.get("tail_lines"), 80, 1, 300)
-        wait_for_completion = bool(args.get("wait_for_completion"))
+        requested_wait_for_completion = bool(args.get("wait_for_completion"))
         robot_job_context = self._robot_job_context_from_args(args)
         reply_ticket_id = str(args.get("_reply_ticket_id") or "").strip()
         if reply_ticket_id:
@@ -1284,8 +1283,15 @@ class LocalMCPServer:
             except Exception:
                 pass
         debug_log(
-            f"[LocalMCPServer] _run_job: item={item_id}, timeout={timeout_seconds}, tail_lines={tail_lines}, wait={wait_for_completion}, command={command}"
+            f"[LocalMCPServer] _run_job: item={item_id}, timeout={timeout_seconds}, "
+            f"tail_lines={tail_lines}, requested_wait={requested_wait_for_completion}, "
+            f"command={command}"
         )
+        if requested_wait_for_completion:
+            debug_log(
+                "[LocalMCPServer] run_job ignored wait_for_completion=True; "
+                "all daemon jobs are asynchronous"
+            )
         agent_session = None
         try:
             from app.services.agent.session import (
@@ -1332,15 +1338,6 @@ class LocalMCPServer:
                 "timeout_seconds": timeout_seconds,
                 "tail_lines": tail_lines,
             }
-
-            if wait_for_completion:
-                result = connection.run_job_http(**request_kwargs)
-                debug_log(
-                    f"[LocalMCPServer] run_job result: item={item_id}, success={result.get('success')}, exit_code={result.get('exit_code')}, timed_out={result.get('timed_out')}"
-                )
-                if not result.get("success"):
-                    return [{"type": "text", "text": f"Error: {result.get('error', 'daemon job failed')}"}]
-                return [{"type": "text", "text": self._format_job_result(result)}]
 
             if reply_ticket_id:
                 try:
@@ -1389,9 +1386,6 @@ class LocalMCPServer:
             if agent_session:
                 agent_session.clear_terminal_job(command)
             return [{"type": "text", "text": f"Error: {e}"}]
-        finally:
-            if wait_for_completion and agent_session:
-                agent_session.clear_terminal_job(command)
 
     def _start_background_job_thread(
         self,

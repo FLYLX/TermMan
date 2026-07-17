@@ -9,7 +9,7 @@ from collections.abc import Generator
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -2735,29 +2735,6 @@ async def agent_events(
     )
 
 
-def _cancel_running_daemon_job(session: SessionDep, item_id: str) -> dict[str, Any]:
-    try:
-        item_uuid = UUID(str(item_id))
-    except ValueError:
-        return {"success": False, "error": "Invalid item_id"}
-
-    item = session.get(Item, item_uuid)
-    if not item:
-        return {"success": False, "error": "Item not found"}
-    if not item.socket_host or not item.socket_port or not item.api_key:
-        return {"success": False, "error": "Daemon is not configured"}
-
-    try:
-        from app.services import DaemonConfig, connection_manager
-
-        daemon_config = DaemonConfig(item.socket_host, item.socket_port, item.api_key)
-        connection = connection_manager.get_or_create_connection(daemon_config)
-        return connection.cancel_job_http(item_uuid=str(item_uuid))
-    except Exception as exc:
-        logger.warning("Failed to cancel daemon job for item %s: %s", item_id, exc)
-        return {"success": False, "error": str(exc)}
-
-
 @router.post("/{item_id}/abort")
 async def abort_chat(
     item_id: str,
@@ -2771,28 +2748,14 @@ async def abort_chat(
     stream_manager.reset_session(item_id)
 
     active_session = agent_session_manager.get_session(item_id)
-    cancel_result: dict[str, Any] | None = None
     if active_session:
-        has_running_job = active_session.has_running_terminal_job()
         active_session.abort(clear_queue=True)
-        if has_running_job:
-            cancel_result = _cancel_running_daemon_job(session, item_id)
-            if (
-                cancel_result.get("success")
-                or cancel_result.get("cancelled")
-                or cancel_result.get("error") == "No running job for item"
-            ):
-                active_session.clear_terminal_job()
-                active_session.emit_output(
-                    "\u540e\u53f0\u4efb\u52a1\u5df2\u4e2d\u65ad\uff0c\u7ec8\u7aef\u9501\u5df2\u91ca\u653e\u3002",
-                    "agent_warning",
-                )
-            else:
-                active_session.emit_output(
-                    f"\u540e\u53f0\u4efb\u52a1\u4e2d\u65ad\u5931\u8d25: {cancel_result.get('error', 'unknown error')}",
-                    "agent_warning",
-                )
         active_session.emit_output("\u672c\u6b21\u4f1a\u8bdd\u5df2\u4e2d\u65ad", "agent_warning")
         active_session.emit_status("idle", "")
 
-    return {"success": True, "message": "Chat aborted", "cancel_result": cancel_result}
+    return {
+        "success": True,
+        "message": "Chat aborted; background jobs continue running",
+        "cancel_result": None,
+        "background_jobs_preserved": True,
+    }

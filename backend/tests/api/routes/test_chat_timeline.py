@@ -729,6 +729,59 @@ def test_generate_stream_forces_terminal_action_tool_before_claiming_execution(
     assert not any("等一下给你结果" in chunk_text for chunk_text in chunks)
 
 
+def test_abort_chat_preserves_running_background_jobs(monkeypatch) -> None:
+    from app.api.routes import chat as chat_route
+
+    events: list[tuple[str, object]] = []
+
+    class FakeSession:
+        def abort(self, *, clear_queue: bool) -> None:
+            events.append(("abort", clear_queue))
+
+        def emit_output(self, content: str, message_type: str) -> None:
+            events.append((message_type, content))
+
+        def emit_status(self, status: str, text: str) -> None:
+            events.append((status, text))
+
+        def clear_terminal_job(self, *_args, **_kwargs) -> None:
+            raise AssertionError("chat abort must not clear a running background job")
+
+    monkeypatch.setattr(
+        chat_route,
+        "get_item_handler_llm_config",
+        lambda *_args, **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        chat_route.agent_session_manager,
+        "get_session",
+        lambda _item_id: FakeSession(),
+    )
+    monkeypatch.setattr(
+        chat_route.AgentMessageQueue,
+        "set_abort",
+        lambda item_id, aborted: events.append((item_id, aborted)),
+    )
+    monkeypatch.setattr(
+        chat_route.stream_manager,
+        "reset_session",
+        lambda item_id: events.append(("reset", item_id)),
+    )
+
+    result = asyncio.run(
+        chat_route.abort_chat(
+            "item-1",
+            session=SimpleNamespace(),
+            current_user=SimpleNamespace(),
+        )
+    )
+
+    assert result["success"] is True
+    assert result["cancel_result"] is None
+    assert result["background_jobs_preserved"] is True
+    assert ("abort", True) in events
+
+
 def test_structured_terminal_unavailable_failure_reports_and_clears_task_queue(
     db: Session,
     monkeypatch,
