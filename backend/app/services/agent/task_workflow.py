@@ -71,11 +71,13 @@ class TaskWorkflow:
     status: str = "active"
     current_step_index: int = 0
     latest_progress: str = ""
+    latest_user_instruction: str = ""
     blocker: str = ""
     last_tool_name: str = ""
     last_command: str = ""
     auto_resume_attempts: int = 0
     jobs: list[WorkflowJob] = field(default_factory=list)
+    reply_ticket_ids: list[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=_utcnow)
     updated_at: datetime = field(default_factory=_utcnow)
     delivered_at: datetime | None = None
@@ -172,6 +174,7 @@ class TaskWorkflowManager:
             source_type=str(source_type or "web"),
             source_label=str(source_label or ""),
             steps=steps,
+            reply_ticket_ids=[str(reply_ticket_id)] if reply_ticket_id else [],
             created_at=now,
             updated_at=now,
         )
@@ -198,15 +201,64 @@ class TaskWorkflowManager:
             workflow = self._workflows.get(str(workflow_id or ""))
             if not workflow:
                 return False
-            if workflow.reply_ticket_id:
-                self._ticket_to_workflow[workflow.reply_ticket_id] = (
-                    workflow.workflow_id
-                )
-            workflow.reply_ticket_id = str(ticket_id or "")
+            normalized_ticket_id = str(ticket_id or "")
+            if normalized_ticket_id and normalized_ticket_id not in workflow.reply_ticket_ids:
+                workflow.reply_ticket_ids.append(normalized_ticket_id)
+            workflow.reply_ticket_id = normalized_ticket_id
             workflow.auto_resume_attempts = 0
             workflow.updated_at = _utcnow()
-            if ticket_id:
-                self._ticket_to_workflow[str(ticket_id)] = workflow.workflow_id
+            if normalized_ticket_id:
+                self._ticket_to_workflow[normalized_ticket_id] = workflow.workflow_id
+            return True
+
+    def ticket_ids(self, workflow_id: str) -> list[str]:
+        with self._lock:
+            workflow = self._workflows.get(str(workflow_id or ""))
+            if not workflow:
+                return []
+            return list(workflow.reply_ticket_ids)
+
+    def detach_ticket(self, ticket_id: str) -> bool:
+        normalized_ticket_id = str(ticket_id or "")
+        with self._lock:
+            workflow_id = self._ticket_to_workflow.get(normalized_ticket_id)
+            workflow = self._workflows.get(workflow_id or "")
+            if not workflow:
+                return False
+            workflow.reply_ticket_ids = [
+                candidate
+                for candidate in workflow.reply_ticket_ids
+                if candidate != normalized_ticket_id
+            ]
+            if workflow.reply_ticket_id == normalized_ticket_id:
+                workflow.reply_ticket_id = (
+                    workflow.reply_ticket_ids[-1] if workflow.reply_ticket_ids else ""
+                )
+            workflow.updated_at = _utcnow()
+            return True
+
+    def replace_ticket(self, old_ticket_id: str, new_ticket_id: str) -> bool:
+        old_id = str(old_ticket_id or "")
+        new_id = str(new_ticket_id or "")
+        if not old_id or not new_id:
+            return False
+        with self._lock:
+            workflow_id = self._ticket_to_workflow.get(old_id)
+            workflow = self._workflows.get(workflow_id or "")
+            if not workflow:
+                return False
+            workflow.reply_ticket_ids = [
+                candidate
+                for candidate in workflow.reply_ticket_ids
+                if candidate != old_id
+            ]
+            if new_id not in workflow.reply_ticket_ids:
+                workflow.reply_ticket_ids.append(new_id)
+            self._ticket_to_workflow[old_id] = workflow.workflow_id
+            self._ticket_to_workflow[new_id] = workflow.workflow_id
+            workflow.reply_ticket_id = new_id
+            workflow.auto_resume_attempts = 0
+            workflow.updated_at = _utcnow()
             return True
 
     def update_queue_metadata(
@@ -306,17 +358,43 @@ class TaskWorkflowManager:
         source_type: str,
         source_label: str,
     ) -> TaskWorkflow | None:
+        candidates = self.list_resumable(
+            item_id=item_id,
+            source_type=source_type,
+            source_label=source_label,
+        )
+        return candidates[0] if candidates else None
+
+    def list_resumable(
+        self,
+        *,
+        item_id: str,
+        source_type: str = "",
+        source_label: str = "",
+    ) -> list[TaskWorkflow]:
         with self._lock:
             candidates = [
                 workflow
                 for workflow in self._workflows.values()
                 if workflow.item_id == str(item_id)
-                and workflow.source_type == str(source_type)
-                and workflow.source_label == str(source_label)
+                and (not source_type or workflow.source_type == str(source_type))
+                and (not source_label or workflow.source_label == str(source_label))
                 and workflow.status in {"blocked", "active", "waiting_job", "verifying"}
             ]
         candidates.sort(key=lambda workflow: workflow.updated_at, reverse=True)
-        return candidates[0] if candidates else None
+        return candidates
+
+    def record_user_instruction(self, ticket_id: str, instruction: str) -> bool:
+        normalized = str(instruction or "").strip()[:1000]
+        if not normalized:
+            return False
+        with self._lock:
+            workflow = self.get_by_ticket(ticket_id)
+            if not workflow:
+                return False
+            workflow.latest_user_instruction = normalized
+            workflow.updated_at = _utcnow()
+            return True
 
     def record_tool_call(
         self,
@@ -657,6 +735,7 @@ class TaskWorkflowManager:
             "item_id": workflow.item_id,
             "handler_id": workflow.handler_id,
             "reply_ticket_id": workflow.reply_ticket_id,
+            "reply_ticket_ids": list(workflow.reply_ticket_ids),
             "objective": workflow.objective,
             "source_type": workflow.source_type,
             "source_label": workflow.source_label,
@@ -669,6 +748,7 @@ class TaskWorkflowManager:
             "current_step_index": workflow.current_step_index,
             "current_step": current.title if current else "",
             "latest_progress": workflow.latest_progress,
+            "latest_user_instruction": workflow.latest_user_instruction,
             "blocker": workflow.blocker,
             "last_tool_name": workflow.last_tool_name,
             "last_command": workflow.last_command,
@@ -704,12 +784,17 @@ class TaskWorkflowManager:
             f"- main_objective: {workflow.objective}",
             f"- status: {workflow.status}",
             f"- return_source: {workflow.source_label or workflow.source_type}",
+            f"- return_target_count: {len(workflow.reply_ticket_ids)}",
             f"- report_policy: {workflow.report_policy}",
             f"- current_step: {workflow.current_step_index + 1}/{len(workflow.steps)} "
             f"{current.title if current else '(none)'}",
         ]
         if workflow.latest_progress:
             lines.append(f"- latest_progress: {workflow.latest_progress}")
+        if workflow.latest_user_instruction:
+            lines.append(
+                f"- latest_user_instruction: {workflow.latest_user_instruction}"
+            )
         if workflow.blocker:
             lines.append(f"- blocker: {workflow.blocker}")
         lines.append("- steps:")
@@ -753,6 +838,12 @@ class TaskWorkflowManager:
                 "11. Never leave a task paused because a model turn did not converge. Continue "
                 "automatically within the retry limit; after that, report the actual failure to "
                 "the immutable source and remove the task queue entry.",
+                "12. A repeated request for this same objective reuses this workflow. Read the "
+                "current step, latest_progress, evidence, and running_jobs before acting; never "
+                "restart an operation merely because the user repeated the request.",
+                "13. This workflow may have multiple immutable return targets. Final delivery "
+                "through mcp_local_send_pending_reply fans out to every target; do not send "
+                "separate duplicate reports manually.",
             ]
         )
         return "\n".join(lines)

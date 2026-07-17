@@ -1264,6 +1264,18 @@ def test_robot_message_includes_current_conversation_impression_card(
                 },
             },
             {
+                "id": "other-speaker-same-group",
+                "content": "用户偏好：Bob 以后叫他大主人",
+                "metadata": {
+                    "memory_type": "preference",
+                    "robot_id": str(robot.id),
+                    "robot_conversation_key": "group:g1",
+                    "speaker_global_key": "onebot_v11:user:u2",
+                    "memory_scope": "speaker",
+                    "updated_at": "2026-07-07T00:00:01",
+                },
+            },
+            {
                 "id": "other-group",
                 "content": "other group secret",
                 "metadata": {
@@ -1295,7 +1307,8 @@ def test_robot_message_includes_current_conversation_impression_card(
     assert "Current QQ conversation impression card" in text
     assert "Alice 喜欢短回复" in text
     assert "Alice 以后叫她主人" in text
-    assert text.index("Alice 喜欢短回复") < text.index("Alice 以后叫她主人")
+    assert text.index("Alice 以后叫她主人") < text.index("Alice 喜欢短回复")
+    assert "Bob 以后叫他大主人" not in text
     assert "other group secret" not in text
     assert text.endswith("[Current QQ message]\nhello")
 

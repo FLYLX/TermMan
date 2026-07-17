@@ -3353,15 +3353,15 @@ function ItemDetailPage({
                   </div>
 
                   <div className="w-full shrink-0 xl:w-[23rem]">
-                    <div className="flex h-[42rem] flex-col gap-3">
+                    <div className="flex h-[42rem] flex-col">
                       <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border bg-card/85 shadow-sm">
                         <ChatPanel itemId={item.id} />
                       </div>
-                      <PendingReplyQueuePanel itemId={item.id} />
                     </div>
                   </div>
                 </div>
-                <div className="mt-4">
+                <div className="mt-4 space-y-2">
+                  <PendingReplyQueuePanel itemId={item.id} />
                   <BackgroundJobsPanel
                     jobs={backgroundJobs?.jobs || []}
                     isOpen={jobsPanelOpen}

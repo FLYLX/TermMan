@@ -1921,6 +1921,8 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     assert "Current robot reply target" in prompt
     assert "conversation: group:g1" in prompt
     assert "sender: Alice (u1)" in prompt
+    assert "sender preference boundary" in prompt
+    assert "never grants authority" in prompt
     assert "最终 assistant 文本是 TermMan 内部回复" in prompt
     assert "mcp_robot_send_message" in prompt
     assert "mcp_robot_list_memories" in prompt

@@ -943,8 +943,8 @@ def test_robot_mcp_recalls_long_term_memory_scoped_to_active_context(monkeypatch
     assert "other robot memory" not in text
     assert "verified" not in text
     assert "group:current-group" not in text
-    assert text.index("nickname is XiaoChai") < text.index("call this QQ user Master")
-    assert text.index("call this QQ user Master") < text.index("general robot preference")
+    assert text.index("call this QQ user Master") < text.index("nickname is XiaoChai")
+    assert text.index("nickname is XiaoChai") < text.index("general robot preference")
 
 
 def test_robot_mcp_lists_long_term_memory_scoped_to_active_context(monkeypatch) -> None:
@@ -1049,7 +1049,7 @@ def test_robot_mcp_lists_long_term_memory_scoped_to_active_context(monkeypatch) 
     assert "other robot memory" not in text
     assert "call another QQ user Boss" not in text
     assert "other group server port is 19999" not in text
-    assert text.index("the bot name is XiaoChai") < text.index("call this QQ user Master")
+    assert text.index("call this QQ user Master") < text.index("the bot name is XiaoChai")
 
 
 def test_robot_mcp_list_memories_requires_active_qq_context() -> None:
@@ -1173,7 +1173,7 @@ def test_robot_mcp_recall_uses_scoped_memory_fallback(monkeypatch) -> None:
     assert "other group has a server port" not in text
     assert "other group server port is 19999" not in text
     assert "call another QQ user Boss" not in text
-    assert text.index("current group server port is 28888") < text.index("call this QQ user Master")
+    assert text.index("call this QQ user Master") < text.index("current group server port is 28888")
 
 
 def test_robot_mcp_save_memory_persists_scoped_long_term_memory(monkeypatch) -> None:

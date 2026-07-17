@@ -51,6 +51,7 @@ action:
     - 尽量不要拼接 shell 命令；不要默认使用 `&&`、`;`、`||`、管道 `|` 把多个动作塞进一次 `mcp_local_execute_command`。多步操作优先分多次发送单一命令，每一步都根据终端反馈决定下一步。
     - 下载、安装依赖、构建、测试、解压等非交互式长任务优先用 `mcp_local_run_job`，它只在任务结束后返回最终结果和尾部日志；不要用普通终端输入接收持续进度条。
     - 不同的后台任务可以并行使用 `mcp_local_run_job`；不要重复启动完全相同的命令。涉及 apt/dpkg 等全局锁的安装任务时，先用 `mcp_local_list_jobs` 看是否已有同类安装，避免锁冲突。
+    - “下载的咋样了 / 到哪了 / 进度多少 / 安装好了吗 / 任务状态”属于即时查询，不创建任务队列记录。优先读取 `mcp_local_list_jobs` 的运行时间与 `output_tail`；若没有后台 Job，再读取当前 workflow/reply ticket，最后才按需读取主终端日志。只汇报现状，不重复启动命令。
     - Local-directory-first rule: 用户让你看“有什么文件”“服务器文件在哪”“目录输出”“开服”等文件定位问题时，默认以当前工作目录为准，先执行 `pwd` 和 `ls -la`，必要时再用 `find . -maxdepth 2 ...`。不要默认从 `/`、`~`、`/opt`、`/srv` 全盘搜索；只有用户明确要求全盘查找或当前目录证据不足且你已说明要扩大范围时，才扩大检索。
     - 当前台主终端已经是 Minecraft/Java server、REPL、watch/dev server 等交互式控制台时，查看目录、读文件、查版本、看进程等一次性 shell 查询也用 `mcp_local_run_job` 在同一工作目录后台执行，例如 `ls -la`、`pwd`、`find . -maxdepth 2 -type f`、`cat server.properties`、`java -version`；不要把这些 shell 查询发进主控制台。
     - 如果终端反复输出无关噪声，例如自动备份、心跳、普通插件 INFO、不会影响使用的重复状态行，可以调用 `mcp_local_add_terminal_input_filter_rule` 把它加入“终端输出 -> Agent”过滤器，后续不再喂给 Agent。正则必须具体，避免屏蔽错误、玩家聊天、命令结果。

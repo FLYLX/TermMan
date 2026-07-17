@@ -131,6 +131,11 @@ TERMINAL_PATTERNS = (
     r"\bfabric\b",
 )
 
+TERMINAL_STATUS_QUERY_PATTERNS = (
+    r"^(?:好了吗|完成了吗|结束了吗|怎么样了|咋样了|到哪了|进度呢)[啊呀吧呢。！!?？]*$",
+    r"(?:下载|安装|更新|升级|构建|编译|解压|上传|启动|运行|任务|进度|job).{0,10}(?:咋样|怎么样|如何|到哪|到多少|多少了|几成|状态|完成了吗|好了吗|结束了吗)",
+)
+
 PENDING_REPLY_PATTERNS = (
     "\u5f85\u56de\u590d",
     "\u56de\u590d\u961f\u5217",
@@ -181,7 +186,10 @@ def _matches_any(text: str, patterns: tuple[str, ...]) -> bool:
 def _wants_terminal_tools(text: str, *, source: TurnSource) -> bool:
     if source == "terminal":
         return True
-    return _matches_any(text, TERMINAL_PATTERNS)
+    return _matches_any(text, TERMINAL_PATTERNS) or _matches_any(
+        text,
+        TERMINAL_STATUS_QUERY_PATTERNS,
+    )
 
 
 def _wants_history_tools(text: str) -> bool:

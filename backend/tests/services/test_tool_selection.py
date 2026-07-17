@@ -87,6 +87,28 @@ def test_qq_terminal_request_keeps_robot_and_local_tools() -> None:
     assert "mcp_local_read_terminal_log" in names
 
 
+def test_qq_download_status_query_keeps_inspection_tools() -> None:
+    selected = select_tools_for_turn(
+        ALL_TOOLS,
+        source="qq",
+        query="[CQ:reply,id=741045517]下载的咋样了",
+    )
+    names = _names(selected)
+
+    assert "mcp_local_list_jobs" in names
+    assert "mcp_local_read_terminal_log" in names
+    assert "mcp_local_get_task_workflow" in names
+    assert "mcp_robot_send_message" in names
+
+
+def test_short_task_status_query_keeps_inspection_tools() -> None:
+    selected = select_tools_for_turn(ALL_TOOLS, source="web", query="好了吗")
+    names = _names(selected)
+
+    assert "mcp_local_list_jobs" in names
+    assert "mcp_local_get_task_workflow" in names
+
+
 def test_qq_task_change_keeps_job_control_tools() -> None:
     selected = select_tools_for_turn(
         ALL_TOOLS,

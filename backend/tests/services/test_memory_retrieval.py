@@ -709,6 +709,62 @@ def test_robot_scoped_always_on_memory_does_not_cross_conversations(monkeypatch)
     assert "另一个群在聊股票" not in memories
 
 
+def test_robot_speaker_memory_does_not_cross_users_in_same_group(monkeypatch) -> None:
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="robot-1",
+            robot_conversation_key="group:g1",
+            robot_sender_key="onebot_v11:group:g1:u1",
+        )
+    )
+    current_user = {
+        "id": "pref-u1",
+        "content": "用户偏好：Alice 以后叫她主人",
+        "metadata": {
+            "memory_type": "preference",
+            "robot_id": "robot-1",
+            "robot_conversation_key": "group:g1",
+            "speaker_global_key": "onebot_v11:user:u1",
+            "memory_scope": "speaker",
+            "updated_at": datetime.now().isoformat(),
+        },
+    }
+    other_user = {
+        "id": "pref-u2",
+        "content": "用户偏好：Bob 以后叫他大主人",
+        "metadata": {
+            "memory_type": "preference",
+            "robot_id": "robot-1",
+            "robot_conversation_key": "group:g1",
+            "speaker_global_key": "onebot_v11:user:u2",
+            "memory_scope": "speaker",
+            "updated_at": datetime.now().isoformat(),
+        },
+    }
+
+    monkeypatch.setattr(
+        prompt_builder.vector_store,
+        "get_all_memories",
+        lambda *_args, **_kwargs: [current_user, other_user],
+    )
+    monkeypatch.setattr(
+        prompt_builder.vector_store,
+        "search_memories",
+        lambda **_kwargs: [other_user, current_user],
+    )
+
+    memories = prompt_builder._collect_long_term_memories(
+        "item-1",
+        "我是谁",
+        allowed_types=("fact", "preference", "error", "context"),
+        n_results=5,
+        agent=agent,
+    )
+
+    assert "Alice 以后叫她主人" in memories
+    assert "Bob 以后叫他大主人" not in memories
+
+
 def test_persona_skill_is_not_duplicated_as_regular_skill_prompt(monkeypatch) -> None:
     persona_skill = SkillDefinition(
         skill_id="quiet_persona",

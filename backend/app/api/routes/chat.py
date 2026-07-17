@@ -131,6 +131,8 @@ TERMINAL_ACTION_EVIDENCE_TOOLS = {
 INTERNAL_QQ_BACKGROUND_JOB_PREFIX = (
     "[Background terminal job result for this QQ conversation]"
 )
+CURRENT_QQ_MESSAGE_MARKER = "[Current QQ message]"
+CQ_CODE_RE = re.compile(r"\[CQ:[^\]]+\]", re.IGNORECASE)
 DUPLICATE_QQ_SEND_SUPPRESSED_TEXT = (
     "Duplicate QQ send skipped: this turn already delivered a visible QQ reply."
 )
@@ -185,6 +187,14 @@ TASK_WORKFLOW_STATUS_QUESTION_RE = re.compile(
     r"(你在.{0,12}(?:启动|运行|安装|下载|执行|做|弄)什么|"
     r"(?:启动|运行|安装|下载|执行)的?是什么|现在在干嘛|当前在做什么|"
     r"(?:什么|哪个).{0,8}(?:任务|服务|程序).{0,4}(?:在跑|在启动|在运行))",
+    re.IGNORECASE,
+)
+TASK_WORKFLOW_PROGRESS_QUERY_RE = re.compile(
+    r"((?:下载|安装|更新|升级|构建|编译|解压|上传|启动|运行|任务|进度|job)"
+    r".{0,10}(?:咋样|怎么样|如何|到哪|到哪里|到多少|多少了|几成|状态|完成了吗|好了吗|结束了吗)|"
+    r"(?:现在|当前).{0,8}(?:下载|安装|更新|构建|任务|进度).{0,8}(?:呢|咋样|怎么样|如何)|"
+    r"^(?:好了吗|完成了吗|结束了吗|怎么样了|咋样了|到哪了|进度呢)[啊呀吧呢。！!?？]*$|"
+    r"(?:how is|status of|progress of).{0,40}(?:download|install|build|job|task))",
     re.IGNORECASE,
 )
 TASK_WORKFLOW_VAGUE_ACK_RE = re.compile(
@@ -884,9 +894,10 @@ def _mark_agent_task_plan_failed(
 def _should_create_task_workflow(message: str, tools: list[dict[str, Any]]) -> bool:
     if not tools:
         return False
-    text = str(message or "").strip()
+    text = _task_classification_message(message)
     if (
         TASK_WORKFLOW_STATUS_QUESTION_RE.search(text)
+        or TASK_WORKFLOW_PROGRESS_QUERY_RE.search(text)
         or TASK_WORKFLOW_VAGUE_ACK_RE.fullmatch(text)
         or TASK_WORKFLOW_VAGUE_COMMAND_RE.fullmatch(text)
     ):
@@ -901,24 +912,86 @@ def _should_create_task_workflow(message: str, tools: list[dict[str, Any]]) -> b
 
 
 def _is_same_task_follow_up(message: str, objective: str) -> bool:
-    text = str(message or "").strip()
+    text = _task_classification_message(message)
     objective_text = str(objective or "").strip()
     if not text or not objective_text:
         return False
-    if TASK_WORKFLOW_EXECUTION_COMMIT_RE.search(text):
+    message_domains = _task_domain_keys(text)
+    objective_domains = _task_domain_keys(objective_text)
+    if message_domains:
+        if not message_domains.intersection(objective_domains):
+            return False
+        message_actions = _task_action_keys(text)
+        objective_actions = _task_action_keys(objective_text)
+        if message_actions and objective_actions:
+            return bool(message_actions.intersection(objective_actions))
         return True
-    message_domains = {
-        match.group(0).casefold() for match in TASK_WORKFLOW_DOMAIN_RE.finditer(text)
-    }
-    objective_domains = {
-        match.group(0).casefold()
-        for match in TASK_WORKFLOW_DOMAIN_RE.finditer(objective_text)
-    }
-    if message_domains.intersection(objective_domains):
+    if TASK_WORKFLOW_EXECUTION_COMMIT_RE.search(text):
         return True
     normalized_text = re.sub(r"\s+", "", text).casefold()
     normalized_objective = re.sub(r"\s+", "", objective_text).casefold()
     return len(normalized_text) >= 4 and normalized_text in normalized_objective
+
+
+def _task_domain_keys(text: str) -> set[str]:
+    normalized = str(text or "")
+    families = {
+        "java": r"(?:temurin|openjdk|java|jdk)",
+        "minecraft": r"(?:minecraft|forge|fabric|paper|\u670d\u52a1\u5668|\u670d\u52a1\u7aef)",
+        "docker": r"(?:docker|compose)",
+        "python": r"(?:python|pip|uv)",
+        "node": r"(?:node|npm|bun)",
+        "database": r"(?:sqlite|database|\u6570\u636e\u5e93)",
+        "frontend": r"(?:frontend|\u524d\u7aef)",
+        "backend": r"(?:backend|\u540e\u7aef)",
+        "robot": r"(?:robot|qq|\u673a\u5668\u4eba)",
+    }
+    matched = {
+        family
+        for family, pattern in families.items()
+        if re.search(pattern, normalized, flags=re.IGNORECASE)
+    }
+    if matched:
+        return matched
+    return {
+        match.group(0).casefold()
+        for match in TASK_WORKFLOW_DOMAIN_RE.finditer(normalized)
+    }
+
+
+def _task_action_keys(text: str) -> set[str]:
+    normalized = str(text or "")
+    patterns = {
+        "uninstall": r"(?:\buninstall\b|\bremove\b|\u5378\u8f7d)",
+        "restart": r"(?:\brestart\b|\u91cd\u65b0\u542f\u52a8|\u91cd\u542f)",
+        "install": r"(?:\binstall\b|\u5b89\u88c5|\u88c5\u4e0a|\u88c5\u5b8c)",
+        "download": r"(?:\bdownload\b|\u4e0b\u8f7d)",
+        "start": r"(?:\bstart\b|\brun\b|\u542f\u52a8|\u5f00\u670d)",
+        "stop": r"(?:\bstop\b|\u505c\u6b62|\u5173\u670d)",
+        "build": r"(?:\bbuild\b|\bcompile\b|\u6784\u5efa|\u7f16\u8bd1)",
+        "configure": r"(?:\bconfigure\b|\bconfig\b|\u914d\u7f6e|\u4fee\u6539)",
+        "fix": r"(?:\bfix\b|\brepair\b|\u4fee\u590d)",
+        "create": r"(?:\bcreate\b|\u521b\u5efa|\u65b0\u5efa)",
+        "delete": r"(?:\bdelete\b|\u5220\u9664)",
+        "test": r"(?:\btest\b|\u6d4b\u8bd5|\u9a8c\u8bc1)",
+    }
+    actions = {
+        action
+        for action, pattern in patterns.items()
+        if re.search(pattern, normalized, flags=re.IGNORECASE)
+    }
+    if "restart" in actions:
+        actions.discard("start")
+        actions.discard("stop")
+    return actions
+
+
+def _task_classification_message(message: str) -> str:
+    text = str(message or "").strip()
+    if CURRENT_QQ_MESSAGE_MARKER in text:
+        text = text.rsplit(CURRENT_QQ_MESSAGE_MARKER, 1)[-1].strip()
+    text = CQ_CODE_RE.sub(" ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _create_agent_task_plan(
@@ -938,13 +1011,13 @@ def _create_agent_task_plan(
     if not locked_reply_ticket_id:
         locked_reply_ticket_id = _current_reply_ticket_id(agent)
     reply_ticket = reply_ticket_manager.get(locked_reply_ticket_id)
-    task_message = str(message or "").strip()
+    task_message = _task_classification_message(message)
     if (
         reply_ticket is not None
         and reply_ticket.source_type == SOURCE_QQ
         and reply_ticket.request_message
     ):
-        task_message = reply_ticket.request_message
+        task_message = _task_classification_message(reply_ticket.request_message)
     if (
         build_status_update_memory_candidate(
             item_id,
@@ -957,12 +1030,15 @@ def _create_agent_task_plan(
     origin = _current_task_origin(agent)
     source_type = reply_ticket.source_type if reply_ticket else origin["type"]
     source_label = reply_ticket.source_label if reply_ticket else origin["label"]
-    resumable = task_workflow_manager.find_resumable(
+    source_resumable_candidates = task_workflow_manager.list_resumable(
         item_id=item_id,
         source_type=source_type,
         source_label=source_label,
     )
+    resumable_candidates = task_workflow_manager.list_resumable(item_id=item_id)
     if TASK_WORKFLOW_STATUS_QUESTION_RE.search(task_message):
+        return None
+    if TASK_WORKFLOW_PROGRESS_QUERY_RE.search(task_message):
         return None
     if TASK_WORKFLOW_VAGUE_ACK_RE.fullmatch(task_message):
         return None
@@ -970,6 +1046,25 @@ def _create_agent_task_plan(
         return None
     if not _should_create_task_workflow(task_message, tools):
         return None
+    resumable = next(
+        (
+            candidate
+            for candidate in resumable_candidates
+            if _is_same_task_follow_up(task_message, candidate.objective)
+        ),
+        None,
+    )
+    if resumable is None and (
+        TASK_WORKFLOW_CONTINUATION_RE.search(task_message)
+        or TASK_WORKFLOW_CHANGE_RE.search(task_message)
+        or TASK_WORKFLOW_PAUSE_RE.search(task_message)
+        or TASK_WORKFLOW_EXECUTION_COMMIT_RE.search(task_message)
+    ):
+        resumable = (
+            source_resumable_candidates[0]
+            if source_resumable_candidates
+            else None
+        )
     resumable_follow_up = bool(
         resumable
         and (
@@ -981,15 +1076,26 @@ def _create_agent_task_plan(
         )
     )
     if resumable and resumable_follow_up:
-        previous_ticket_id = resumable.reply_ticket_id
+        matching_ticket_id = reply_ticket_manager.find_matching_pending_destination(
+            resumable.workflow_id,
+            locked_reply_ticket_id,
+        )
         task_workflow_manager.attach_ticket(
             resumable.workflow_id,
             locked_reply_ticket_id,
         )
-        reply_ticket_manager.rebind_pending_reply(
-            previous_ticket_id,
-            locked_reply_ticket_id,
-        )
+        if matching_ticket_id:
+            reply_ticket_manager.rebind_pending_reply(
+                matching_ticket_id,
+                locked_reply_ticket_id,
+            )
+        elif reply_ticket is not None:
+            reply_ticket_manager.upsert_pending_reply(
+                reply_ticket.ticket_id,
+                request_summary=resumable.objective,
+                task_plan=[step.title for step in resumable.steps],
+                status=resumable.queue_status,
+            )
         follow_up = task_message[:500]
         if TASK_WORKFLOW_FINAL_ONLY_RE.search(task_message):
             task_workflow_manager.set_report_policy(
@@ -1023,11 +1129,16 @@ def _create_agent_task_plan(
                 ),
             )
         else:
-            task_workflow_manager.update(
+            task_workflow_manager.record_user_instruction(
                 locked_reply_ticket_id,
-                action="resume",
-                note=f"User follow-up: {follow_up}",
+                follow_up,
             )
+            if resumable.status == "blocked":
+                task_workflow_manager.update(
+                    locked_reply_ticket_id,
+                    action="resume",
+                    note=f"User follow-up: {follow_up}",
+                )
         return PlannedTaskRuntime(
             request_id=resumable.workflow_id,
             workflow_id=resumable.workflow_id,

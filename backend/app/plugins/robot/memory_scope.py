@@ -91,24 +91,21 @@ def memory_scope_rank(
     if scope == "conversation":
         return 4 if memory_conversation and memory_conversation == conversation_key else -1
     if scope == "speaker":
-        if speaker_global_key and memory_speaker == speaker_global_key:
-            return 3
-        return 4 if memory_conversation and memory_conversation == conversation_key else -1
+        if memory_speaker:
+            return 5 if speaker_global_key and memory_speaker == speaker_global_key else -1
+        # Legacy speaker-scoped records may not have a stable speaker key.
+        return 3 if memory_conversation and memory_conversation == conversation_key else -1
     if scope == "robot":
         return 2 if (memory_robot_id or not robot_id) else -1
 
+    if memory_speaker and memory_type in SPEAKER_SCOPED_MEMORY_TYPES:
+        return 5 if speaker_global_key and memory_speaker == speaker_global_key else -1
     if memory_conversation:
         if memory_conversation == conversation_key:
             return 4
-        if (
-            speaker_global_key
-            and memory_speaker == speaker_global_key
-            and memory_type in SPEAKER_SCOPED_MEMORY_TYPES
-        ):
-            return 3
         return -1
     if speaker_global_key and memory_speaker == speaker_global_key:
-        return 3
+        return 5
     if memory_robot_id:
         return 2
     return 1

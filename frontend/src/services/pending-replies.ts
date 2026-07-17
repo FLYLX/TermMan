@@ -18,6 +18,24 @@ export interface PendingReplyWorkflow {
   status?: string
   current_step?: string
   latest_progress?: string
+  current_step_index?: number
+  steps?: Array<{
+    step_id?: string
+    title: string
+    status: string
+    evidence?: string
+    last_error?: string
+    recovery?: boolean
+  }>
+}
+
+export interface PendingReplyDestination {
+  id: string
+  type: "qq" | "web" | "terminal" | string
+  label: string
+  requester: string
+  status: string
+  last_error?: string
 }
 
 export interface PendingReplyEntry {
@@ -28,6 +46,7 @@ export interface PendingReplyEntry {
   task_plan: string[]
   destination_type: "qq" | "web" | "terminal" | string
   destination_label: string
+  destinations?: PendingReplyDestination[]
   status: string
   awaiting_kind?: string
   awaiting_key?: string
@@ -48,7 +67,10 @@ export const PendingReplyService = {
     })
   },
 
-  delete(itemId: string, entryId: string): CancelablePromise<{ message: string }> {
+  delete(
+    itemId: string,
+    entryId: string,
+  ): CancelablePromise<{ message: string }> {
     return __request(OpenAPI, {
       method: "DELETE",
       url: "/api/v1/pending-replies/{item_id}/{entry_id}",

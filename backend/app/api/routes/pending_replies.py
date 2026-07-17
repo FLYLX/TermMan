@@ -35,7 +35,7 @@ def list_pending_replies(
     current_user: CurrentUser,
 ) -> Any:
     _get_accessible_item(item_id, session, current_user)
-    items = reply_ticket_manager.list_pending_replies(str(item_id))
+    items = reply_ticket_manager.list_pending_tasks(str(item_id))
     return {"items": items, "count": len(items)}
 
 

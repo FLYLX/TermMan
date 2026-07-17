@@ -3251,7 +3251,14 @@ def test_vague_start_messages_and_status_questions_do_not_create_tasks(
     reply_ticket_manager.reset()
     task_workflow_manager.reset()
     try:
-        for message in ("启动", "启动了", "你在启动什么"):
+        for message in (
+            "启动",
+            "启动了",
+            "你在启动什么",
+            "[CQ:reply,id=741045517]下载的咋样了",
+            "[Current QQ message]\n[CQ:reply,id=741045517]安装到哪了",
+            "好了吗",
+        ):
             ticket = reply_ticket_manager.create_for_agent(
                 agent,
                 item_id="item-1",
@@ -3547,6 +3554,223 @@ def test_repeated_install_request_reuses_same_active_workflow(monkeypatch) -> No
         assert workflow.report_policy == "normal"
         assert len(task_workflow_manager.snapshot("item-1")) == 1
     finally:
+        reply_ticket_manager.reset()
+        task_workflow_manager.reset()
+
+
+def test_repeated_task_reuses_matching_workflow_and_preserves_job_progress(
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.services.agent.reply_ticket import reply_ticket_manager
+    from app.services.agent.task_workflow import task_workflow_manager
+
+    handler = SimpleNamespace(id="handler-1")
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_conversation_key="",
+            reply_ticket_id="",
+        )
+    )
+    tools = [{"type": "function", "function": {"name": "mcp_local_run_job"}}]
+
+    reply_ticket_manager.reset()
+    task_workflow_manager.reset()
+    monkeypatch.setattr(
+        chat_route,
+        "_plan_agent_task_titles",
+        lambda handler, message, history: [message, f"verify {message}"],
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "build_status_update_memory_candidate",
+        lambda *args, **kwargs: None,
+    )
+    try:
+        java_ticket = reply_ticket_manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="install Java",
+            source_type="web",
+        )
+        java_plan = chat_route._create_agent_task_plan(
+            "item-1",
+            handler=handler,
+            agent=agent,
+            message="install Java",
+            history=[],
+            tools=tools,
+            reply_ticket_id=java_ticket.ticket_id,
+        )
+        assert java_plan is not None
+        task_workflow_manager.mark_job_started(
+            java_ticket.ticket_id,
+            command="apt-get install -y openjdk-17-jdk",
+        )
+        java_workflow = task_workflow_manager.get(java_plan.workflow_id)
+        assert java_workflow is not None
+        original_progress = java_workflow.latest_progress
+
+        python_ticket = reply_ticket_manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="install Python",
+            source_type="web",
+        )
+        python_plan = chat_route._create_agent_task_plan(
+            "item-1",
+            handler=handler,
+            agent=agent,
+            message="install Python",
+            history=[],
+            tools=tools,
+            reply_ticket_id=python_ticket.ticket_id,
+        )
+        assert python_plan is not None
+        assert python_plan.workflow_id != java_plan.workflow_id
+
+        repeated_ticket = reply_ticket_manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="install Java",
+            source_type="web",
+        )
+        repeated_plan = chat_route._create_agent_task_plan(
+            "item-1",
+            handler=handler,
+            agent=agent,
+            message="install Java",
+            history=[],
+            tools=tools,
+            reply_ticket_id=repeated_ticket.ticket_id,
+        )
+
+        assert repeated_plan is not None
+        assert repeated_plan.workflow_id == java_plan.workflow_id
+        java_workflow = task_workflow_manager.get(java_plan.workflow_id)
+        assert java_workflow is not None
+        assert java_workflow.status == "waiting_job"
+        assert java_workflow.latest_progress == original_progress
+        assert java_workflow.latest_user_instruction == "install Java"
+        assert len(java_workflow.jobs) == 1
+        assert java_workflow.jobs[0].status == "running"
+        assert len(task_workflow_manager.snapshot("item-1")) == 2
+    finally:
+        reply_ticket_manager.reset()
+        task_workflow_manager.reset()
+
+
+def test_same_task_from_web_and_qq_adds_second_return_target(monkeypatch) -> None:
+    from app.api.routes import chat as chat_route
+    from app.plugins.robot.contracts import RobotReplyTarget
+    from app.plugins.robot.mcp.context import (
+        RobotMCPContext,
+        register_robot_mcp_context,
+        unregister_robot_mcp_context,
+    )
+    from app.services.agent.reply_ticket import reply_ticket_manager
+    from app.services.agent.task_workflow import task_workflow_manager
+
+    handler = SimpleNamespace(id="handler-1")
+    web_agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_context_token="",
+            robot_conversation_key="",
+            reply_ticket_id="",
+        )
+    )
+    tools = [{"type": "function", "function": {"name": "mcp_local_run_job"}}]
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="770362397",
+        metadata={
+            "conversation": {"type": "group", "id": "770362397"},
+            "sender": {"user_id": "2537134688", "display_name": "FLY"},
+            "message": {"raw_message": "install Java"},
+        },
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-1",
+            sender_key="onebot_v11:group:770362397:2537134688",
+            reply_target=target,
+            conversation_key="group:770362397",
+            conversation_generation=1,
+        )
+    )
+    qq_agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="robot-1",
+            robot_context_token=token,
+            robot_conversation_key="group:770362397",
+            reply_ticket_id="",
+        )
+    )
+
+    reply_ticket_manager.reset()
+    task_workflow_manager.reset()
+    monkeypatch.setattr(
+        chat_route,
+        "_plan_agent_task_titles",
+        lambda handler, message, history: ["install Java", "verify Java"],
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "build_status_update_memory_candidate",
+        lambda *args, **kwargs: None,
+    )
+    try:
+        web_ticket = reply_ticket_manager.create_for_agent(
+            web_agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="install Java",
+            source_type="web",
+        )
+        web_plan = chat_route._create_agent_task_plan(
+            "item-1",
+            handler=handler,
+            agent=web_agent,
+            message="install Java",
+            history=[],
+            tools=tools,
+            reply_ticket_id=web_ticket.ticket_id,
+        )
+        assert web_plan is not None
+
+        qq_ticket = reply_ticket_manager.create_for_agent(
+            qq_agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="install Java",
+            source_type="qq",
+        )
+        qq_plan = chat_route._create_agent_task_plan(
+            "item-1",
+            handler=handler,
+            agent=qq_agent,
+            message="install Java",
+            history=[],
+            tools=tools,
+            reply_ticket_id=qq_ticket.ticket_id,
+        )
+
+        assert qq_plan is not None
+        assert qq_plan.workflow_id == web_plan.workflow_id
+        assert len(task_workflow_manager.snapshot("item-1")) == 1
+        tasks = reply_ticket_manager.list_pending_tasks("item-1")
+        assert len(tasks) == 1
+        assert {target["type"] for target in tasks[0]["destinations"]} == {
+            "qq",
+            "web",
+        }
+    finally:
+        unregister_robot_mcp_context(token)
         reply_ticket_manager.reset()
         task_workflow_manager.reset()
 

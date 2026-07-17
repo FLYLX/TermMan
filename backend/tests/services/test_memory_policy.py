@@ -88,6 +88,21 @@ def test_build_auto_conversation_memory_candidate_for_preference() -> None:
     assert candidate.candidate.metadata["speaker_key"] == "onebot_v11:group:g1:u1"
 
 
+def test_build_auto_conversation_memory_candidate_for_personal_reply_style() -> None:
+    candidate = build_auto_conversation_memory_candidate(
+        "\u5728\u56de\u590d\u6211\u7684\u65f6\u5019\uff0c\u4f60\u8981\u5728\u6bcf\u53e5\u8bdd\u7684\u672b\u5c3e\u52a0\u4e0a\u55b5",
+        speaker_label="EX_GuguX (u2)",
+        speaker_key="onebot_v11:group:g1:u2",
+        conversation_key="group:g1",
+    )
+
+    assert candidate is not None
+    assert candidate.confidence >= 0.74
+    assert candidate.candidate.memory_type == "preference"
+    assert "EX_GuguX (u2)" in candidate.candidate.content
+    assert candidate.candidate.ttl_days is None
+
+
 def test_build_auto_conversation_memory_candidate_skips_noise_and_questions() -> None:
     assert build_auto_conversation_memory_candidate("666") is None
     assert build_auto_conversation_memory_candidate("要是跌了能不能再入一点？") is None

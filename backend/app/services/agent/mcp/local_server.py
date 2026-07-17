@@ -75,7 +75,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="list_jobs",
-            description="List currently running daemon background jobs for this terminal item. Use before deciding which job to cancel.",
+            description="List currently running daemon background jobs for this terminal item, including elapsed time and recent output tails. For questions such as download/install/build progress, status, or 'how is it going', call this first and answer from the existing job snapshot. A status query is not a new task: do not start another job or create a workflow just to inspect progress. Also use this before deciding which job to cancel.",
             input_schema={
                 "type": "object",
                 "properties": {},
@@ -191,8 +191,10 @@ class LocalMCPServer:
                 "Use this only for delegated, multi-step, asynchronous, background-job, or "
                 "wait-for-reply work where the main objective or return destination could be "
                 "forgotten between turns. Do not create an entry for ordinary chat or an "
-                "immediate one-step reply. The destination is copied from the authoritative "
-                "reply ticket and cannot be changed by tool arguments."
+                "immediate one-step reply. The original destination is copied from the "
+                "authoritative reply ticket and cannot be replaced. When the user explicitly "
+                "asks for the final result to also go to another QQ conversation or Minecraft "
+                "player, add it with additional_target; final delivery will fan out once."
             ),
             input_schema={
                 "type": "object",
@@ -224,6 +226,31 @@ class LocalMCPServer:
                     "awaiting_key": {
                         "type": "string",
                         "description": "Optional exact awaited target, such as yueyinghanbo or a job id.",
+                    },
+                    "additional_target": {
+                        "type": "object",
+                        "description": "Optional extra immutable final-report destination requested by the user.",
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": ["qq", "terminal"],
+                            },
+                            "target_id": {
+                                "type": "string",
+                                "description": "QQ group/user id or Minecraft player name.",
+                            },
+                            "robot_id": {
+                                "type": "string",
+                                "description": "Required for QQ targets.",
+                            },
+                            "target_kind": {
+                                "type": "string",
+                                "enum": ["group", "private"],
+                                "default": "group",
+                            },
+                            "label": {"type": "string"},
+                        },
+                        "required": ["type", "target_id"],
                     },
                 },
                 "required": [],
@@ -1136,18 +1163,38 @@ class LocalMCPServer:
                 awaiting_kind=str(args.get("awaiting_kind") or ""),
                 awaiting_key=str(args.get("awaiting_key") or ""),
             )
+            additional_target = args.get("additional_target")
+            if isinstance(additional_target, dict):
+                reply_ticket_manager.add_pending_reply_target(
+                    entry_id,
+                    destination_type=str(additional_target.get("type") or ""),
+                    target_id=str(additional_target.get("target_id") or ""),
+                    robot_id=str(additional_target.get("robot_id") or ""),
+                    target_kind=str(additional_target.get("target_kind") or "group"),
+                    label=str(additional_target.get("label") or ""),
+                )
             if status == "ready":
                 task_workflow_manager.update(
                     entry_id,
                     action="mark_ready_to_report",
                     note="Pending reply is ready for final delivery.",
                 )
+            grouped_entry = next(
+                (
+                    candidate
+                    for candidate in reply_ticket_manager.list_pending_tasks(item_id)
+                    if (candidate.get("workflow") or {}).get("workflow_id")
+                    == (entry.get("workflow") or {}).get("workflow_id")
+                ),
+                entry,
+            )
+            destinations = grouped_entry.get("destinations") or [grouped_entry]
             return [
                 {
                     "type": "text",
                     "text": (
                         f"Pending reply saved: id={entry['id']} requester={entry['requester']} "
-                        f"destination={entry['destination_label']} status={entry['status']}"
+                        f"destinations={len(destinations)} status={entry['status']}"
                     ),
                 }
             ]

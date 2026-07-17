@@ -25,6 +25,25 @@ def _agent(*, robot_id: str = "", token: str = "") -> SimpleNamespace:
     )
 
 
+def test_robot_request_message_strips_cq_control_codes() -> None:
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="770362397",
+        metadata={
+            "message": {
+                "raw_message": (
+                    "[CQ:reply,id=741045517][CQ:at,qq=2900669542] 下载的咋样了"
+                )
+            }
+        },
+    )
+
+    assert (
+        ReplyTicketManager._robot_request_message(target, "fallback")
+        == "下载的咋样了"
+    )
+
+
 def _create_qq_ticket(
     manager: ReplyTicketManager,
 ) -> tuple[str, object]:
@@ -275,6 +294,170 @@ def test_pending_reply_sends_to_original_qq_then_removes_entry(monkeypatch) -> N
         assert manager.get(ticket.ticket_id) is None
     finally:
         unregister_robot_mcp_context(token)
+
+
+def test_task_queue_groups_multiple_destinations_and_fans_out(monkeypatch) -> None:
+    from app.plugins.robot.bridge_client import robot_bridge_client
+    from app.plugins.robot.conversation_memory import robot_conversation_memory
+    from app.services.agent.history import chat as chat_history
+    from app.services.agent.stream_manager import stream_manager
+
+    manager = ReplyTicketManager()
+    web_ticket = manager.create_for_agent(
+        _agent(),
+        item_id="item-1",
+        handler_id="handler-1",
+        message="Install Java",
+        source_type="web",
+    )
+    token, qq_ticket = _create_qq_ticket(manager)
+    qq_messages: list[str] = []
+    web_messages: list[str] = []
+    monkeypatch.setattr(
+        robot_bridge_client,
+        "send_message",
+        lambda _robot_id, _target, text: qq_messages.append(text),
+    )
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "append_assistant_message",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        chat_history,
+        "append_chat_message",
+        lambda _item_id, **kwargs: web_messages.append(kwargs["content"])
+        or {"type": "agent_response", "content": kwargs["content"]},
+    )
+    monkeypatch.setattr(
+        stream_manager,
+        "broadcast_chat_event",
+        lambda *_args, **_kwargs: None,
+    )
+    task_workflow_manager.reset()
+    try:
+        manager.upsert_pending_reply(
+            web_ticket.ticket_id,
+            request_summary="Install Java",
+            task_plan=["Install Java", "Verify Java"],
+            status="ready",
+        )
+        workflow = task_workflow_manager.get_by_ticket(web_ticket.ticket_id)
+        assert workflow is not None
+        assert task_workflow_manager.attach_ticket(
+            workflow.workflow_id,
+            qq_ticket.ticket_id,
+        )
+        manager.upsert_pending_reply(
+            qq_ticket.ticket_id,
+            request_summary="Install Java",
+            status="ready",
+        )
+
+        tasks = manager.list_pending_tasks("item-1")
+        assert len(tasks) == 1
+        assert len(tasks[0]["destinations"]) == 2
+        assert {target["type"] for target in tasks[0]["destinations"]} == {
+            "qq",
+            "web",
+        }
+
+        delivered, destinations = manager.send_pending_reply(
+            qq_ticket.ticket_id,
+            "Java is installed.",
+        )
+
+        assert delivered is True
+        assert "QQ" in destinations
+        assert "web" in destinations.lower()
+        assert qq_messages == ["Java is installed."]
+        assert web_messages == ["Java is installed."]
+        assert manager.list_pending_tasks("item-1") == []
+        assert workflow.status == "completed"
+    finally:
+        unregister_robot_mcp_context(token)
+        task_workflow_manager.reset()
+
+
+def test_multi_destination_delivery_retries_only_failed_target(monkeypatch) -> None:
+    from app.plugins.robot.bridge_client import robot_bridge_client
+    from app.plugins.robot.conversation_memory import robot_conversation_memory
+    from app.services.agent.history import chat as chat_history
+    from app.services.agent.stream_manager import stream_manager
+
+    manager = ReplyTicketManager()
+    web_ticket = manager.create_for_agent(
+        _agent(),
+        item_id="item-1",
+        handler_id="handler-1",
+        message="Install Java",
+        source_type="web",
+    )
+    token, qq_ticket = _create_qq_ticket(manager)
+    qq_attempts = 0
+    web_messages: list[str] = []
+
+    def send_qq(*_args, **_kwargs) -> None:
+        nonlocal qq_attempts
+        qq_attempts += 1
+        if qq_attempts == 1:
+            raise RuntimeError("bridge offline")
+
+    monkeypatch.setattr(robot_bridge_client, "send_message", send_qq)
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "append_assistant_message",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        chat_history,
+        "append_chat_message",
+        lambda _item_id, **kwargs: web_messages.append(kwargs["content"])
+        or {"type": "agent_response", "content": kwargs["content"]},
+    )
+    monkeypatch.setattr(
+        stream_manager,
+        "broadcast_chat_event",
+        lambda *_args, **_kwargs: None,
+    )
+    task_workflow_manager.reset()
+    try:
+        manager.upsert_pending_reply(
+            web_ticket.ticket_id,
+            request_summary="Install Java",
+            task_plan=["Install Java", "Verify Java"],
+            status="ready",
+        )
+        workflow = task_workflow_manager.get_by_ticket(web_ticket.ticket_id)
+        assert workflow is not None
+        task_workflow_manager.attach_ticket(workflow.workflow_id, qq_ticket.ticket_id)
+        manager.upsert_pending_reply(qq_ticket.ticket_id, status="ready")
+
+        delivered, detail = manager.send_pending_reply(
+            qq_ticket.ticket_id,
+            "Java is installed.",
+        )
+        assert delivered is False
+        assert "bridge offline" in detail
+        assert web_messages == ["Java is installed."]
+        remaining = manager.list_pending_tasks("item-1")
+        assert len(remaining) == 1
+        assert [target["type"] for target in remaining[0]["destinations"]] == [
+            "qq"
+        ]
+
+        delivered, _ = manager.send_pending_reply(
+            qq_ticket.ticket_id,
+            "Java is installed.",
+        )
+        assert delivered is True
+        assert qq_attempts == 2
+        assert web_messages == ["Java is installed."]
+        assert manager.list_pending_tasks("item-1") == []
+        assert workflow.status == "completed"
+    finally:
+        unregister_robot_mcp_context(token)
+        task_workflow_manager.reset()
 
 
 def test_pending_reply_delivery_failure_keeps_entry(monkeypatch) -> None:
@@ -595,9 +778,21 @@ def test_pending_reply_mcp_tools_manage_current_reply_ticket() -> None:
                 "status": "waiting",
                 "awaiting_kind": "minecraft_player",
                 "awaiting_key": "yueyinghanbo",
+                "additional_target": {
+                    "type": "terminal",
+                    "target_id": "yueyinghanbo",
+                    "label": "Minecraft yueyinghanbo",
+                },
             },
         )
         assert "Pending reply saved" in saved[0]["text"]
+        assert "destinations=2" in saved[0]["text"]
+        tasks = reply_ticket_manager.list_pending_tasks("item-1")
+        assert len(tasks) == 1
+        assert {target["type"] for target in tasks[0]["destinations"]} == {
+            "terminal",
+            "web",
+        }
 
         listed = server.call_tool("read_pending_replies", {"item_id": "item-1"})
         assert ticket.ticket_id in listed[0]["text"]

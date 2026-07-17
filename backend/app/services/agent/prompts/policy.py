@@ -269,6 +269,11 @@ AUTO_PROFILE_PATTERNS = (
     r"(?:我叫|叫我|喊我|称呼我|我的名字是)\s*[^\s，。,.!?！？]{1,32}",
     r"\b(?:call me|my name is|i am called)\b\s+.{1,48}",
 )
+AUTO_REPLY_STYLE_PATTERNS = (
+    r"(?:回复|回答)(?:我|我的时候)[\s\S]{0,48}(?:每句话|每次|句末|末尾|结尾|语气|口吻|口癖|称呼)",
+    r"(?:跟我|和我|对我)(?:说话|聊天|回复)[\s\S]{0,48}(?:语气|口吻|口癖|称呼|句末|末尾|结尾)",
+    r"(?:每句话|每次回复)[\s\S]{0,32}(?:句末|末尾|结尾)[\s\S]{0,32}(?:加|带|写|说)",
+)
 AUTO_IDENTITY_PATTERNS = (
     r"(?:我是|我现在是|我主要是|我这边是)\s*[^？?。!！]{2,60}",
     r"\b(?:i am|i'm|i work as|i mainly)\b\s+.{2,80}",
@@ -614,6 +619,9 @@ def _auto_memory_base_score(payload: str) -> tuple[str, float] | None:
     if _matches_any(normalized, AUTO_PROFILE_PATTERNS):
         memory_type = "preference"
         score = max(score, 0.86)
+    if _matches_any(normalized, AUTO_REPLY_STYLE_PATTERNS):
+        memory_type = "preference"
+        score = max(score, 0.88)
     if _matches_any(normalized, AUTO_IDENTITY_PATTERNS):
         memory_type = "fact"
         score = max(score, 0.78)
