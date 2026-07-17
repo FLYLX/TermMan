@@ -54,7 +54,30 @@ class ReplyTicket:
 class ReplyTicketManager:
     def __init__(self) -> None:
         self._tickets: dict[str, ReplyTicket] = {}
+        self._ticket_aliases: dict[str, str] = {}
         self._lock = threading.RLock()
+
+    def _resolve_ticket_id_locked(self, ticket_id: str) -> str:
+        current = str(ticket_id or "")
+        visited: set[str] = set()
+        while current in self._ticket_aliases and current not in visited:
+            visited.add(current)
+            current = self._ticket_aliases[current]
+        return current
+
+    def resolve_ticket_id(self, ticket_id: str) -> str:
+        with self._lock:
+            return self._resolve_ticket_id_locked(ticket_id)
+
+    def _remove_aliases_for_locked(self, ticket_id: str) -> None:
+        resolved = self._resolve_ticket_id_locked(ticket_id)
+        stale_aliases = [
+            alias
+            for alias, target in self._ticket_aliases.items()
+            if alias == resolved or self._resolve_ticket_id_locked(target) == resolved
+        ]
+        for alias in stale_aliases:
+            self._ticket_aliases.pop(alias, None)
 
     def _prune_locked(self, now: datetime) -> None:
         cutoff = now - TICKET_TTL
@@ -70,10 +93,12 @@ class ReplyTicketManager:
         ]
         for ticket_id in stale_ids:
             self._tickets.pop(ticket_id, None)
+            self._remove_aliases_for_locked(ticket_id)
 
     def reset(self) -> None:
         with self._lock:
             self._tickets.clear()
+            self._ticket_aliases.clear()
         try:
             from app.services.agent.task_workflow import task_workflow_manager
 
@@ -306,7 +331,8 @@ class ReplyTicketManager:
             if str(step).strip()
         ][:12]
         with self._lock:
-            ticket = self._tickets.get(str(ticket_id))
+            ticket_id = self._resolve_ticket_id_locked(ticket_id)
+            ticket = self._tickets.get(ticket_id)
             if not ticket:
                 raise KeyError(f"reply ticket not found: {ticket_id}")
             was_active = ticket.pending_reply_active
@@ -362,10 +388,12 @@ class ReplyTicketManager:
 
     def delete_pending_reply(self, ticket_id: str, *, reason: str = "") -> bool:
         with self._lock:
-            ticket = self._tickets.get(str(ticket_id))
+            ticket_id = self._resolve_ticket_id_locked(ticket_id)
+            ticket = self._tickets.get(ticket_id)
             if not ticket or not ticket.pending_reply_active:
                 return False
-            self._tickets.pop(str(ticket_id), None)
+            self._tickets.pop(ticket_id, None)
+            self._remove_aliases_for_locked(ticket_id)
         try:
             from app.services.agent.task_workflow import task_workflow_manager
 
@@ -383,13 +411,19 @@ class ReplyTicketManager:
         if not old_ticket_id or old_ticket_id == new_ticket_id:
             return True
         with self._lock:
-            old_ticket = self._tickets.get(str(old_ticket_id))
-            new_ticket = self._tickets.get(str(new_ticket_id))
+            old_ticket_id = self._resolve_ticket_id_locked(old_ticket_id)
+            new_ticket_id = self._resolve_ticket_id_locked(new_ticket_id)
+            old_ticket = self._tickets.get(old_ticket_id)
+            new_ticket = self._tickets.get(new_ticket_id)
             if not new_ticket:
                 return False
             was_active = bool(old_ticket and old_ticket.pending_reply_active)
             if old_ticket:
-                self._tickets.pop(str(old_ticket_id), None)
+                self._tickets.pop(old_ticket_id, None)
+            for alias, target in list(self._ticket_aliases.items()):
+                if self._resolve_ticket_id_locked(target) == old_ticket_id:
+                    self._ticket_aliases[alias] = new_ticket_id
+            self._ticket_aliases[old_ticket_id] = new_ticket_id
             new_ticket.pending_reply_active = was_active
             new_ticket.status = "running"
             new_ticket.updated_at = datetime.now()
@@ -414,7 +448,8 @@ class ReplyTicketManager:
 
     def complete_pending_reply_after_external_delivery(self, ticket_id: str) -> bool:
         with self._lock:
-            ticket = self._tickets.get(str(ticket_id))
+            ticket_id = self._resolve_ticket_id_locked(ticket_id)
+            ticket = self._tickets.get(ticket_id)
             if not ticket or not ticket.pending_reply_active:
                 return False
             now = datetime.now()
@@ -422,7 +457,8 @@ class ReplyTicketManager:
             ticket.delivered_at = now
             ticket.updated_at = now
             ticket.delivery_error = ""
-            self._tickets.pop(str(ticket_id), None)
+            self._tickets.pop(ticket_id, None)
+            self._remove_aliases_for_locked(ticket_id)
         try:
             from app.services.agent.task_workflow import task_workflow_manager
 
@@ -572,24 +608,29 @@ class ReplyTicketManager:
     def attach_to_agent(self, agent: Any, ticket_id: str) -> None:
         context = getattr(agent, "_context", None)
         if context is not None:
-            context.reply_ticket_id = ticket_id
+            context.reply_ticket_id = self.resolve_ticket_id(ticket_id)
 
     def detach_from_agent(self, agent: Any, ticket_id: str) -> None:
         context = getattr(agent, "_context", None)
         if context is None:
             return
-        if str(getattr(context, "reply_ticket_id", "") or "") == ticket_id:
+        resolved_ticket_id = self.resolve_ticket_id(ticket_id)
+        if str(getattr(context, "reply_ticket_id", "") or "") in {
+            str(ticket_id or ""),
+            resolved_ticket_id,
+        }:
             context.reply_ticket_id = ""
 
     def get(self, ticket_id: str) -> ReplyTicket | None:
         if not ticket_id:
             return None
         with self._lock:
-            return self._tickets.get(str(ticket_id))
+            return self._tickets.get(self._resolve_ticket_id_locked(ticket_id))
 
     def mark_task_plan(self, ticket_id: str, task_request_id: str) -> None:
         with self._lock:
-            ticket = self._tickets.get(str(ticket_id))
+            ticket_id = self._resolve_ticket_id_locked(ticket_id)
+            ticket = self._tickets.get(ticket_id)
             if not ticket:
                 return
             ticket.task_request_id = str(task_request_id or "")
@@ -598,7 +639,8 @@ class ReplyTicketManager:
 
     def mark_command(self, ticket_id: str, command: str) -> None:
         with self._lock:
-            ticket = self._tickets.get(str(ticket_id))
+            ticket_id = self._resolve_ticket_id_locked(ticket_id)
+            ticket = self._tickets.get(ticket_id)
             if not ticket:
                 return
             ticket.command = str(command or "")
@@ -607,7 +649,8 @@ class ReplyTicketManager:
 
     def mark_completed(self, ticket_id: str) -> None:
         with self._lock:
-            ticket = self._tickets.get(str(ticket_id))
+            ticket_id = self._resolve_ticket_id_locked(ticket_id)
+            ticket = self._tickets.get(ticket_id)
             if not ticket:
                 return
             if ticket.status != "delivered":
@@ -616,7 +659,8 @@ class ReplyTicketManager:
 
     def mark_failed(self, ticket_id: str, error: str = "") -> None:
         with self._lock:
-            ticket = self._tickets.get(str(ticket_id))
+            ticket_id = self._resolve_ticket_id_locked(ticket_id)
+            ticket = self._tickets.get(ticket_id)
             if not ticket:
                 return
             ticket.status = "failed"
@@ -644,7 +688,8 @@ class ReplyTicketManager:
         reason: str = "",
     ) -> bool:
         with self._lock:
-            ticket = self._tickets.get(str(ticket_id))
+            ticket_id = self._resolve_ticket_id_locked(ticket_id)
+            ticket = self._tickets.get(ticket_id)
             if not ticket or not ticket.pending_reply_active:
                 return False
             ticket.status = "waiting"
@@ -672,6 +717,7 @@ class ReplyTicketManager:
         return True
 
     def mark_delivered(self, ticket_id: str) -> bool:
+        ticket_id = self.resolve_ticket_id(ticket_id)
         try:
             from app.services.agent.task_workflow import task_workflow_manager
 
@@ -691,7 +737,7 @@ class ReplyTicketManager:
             return False
 
         with self._lock:
-            ticket = self._tickets.get(str(ticket_id))
+            ticket = self._tickets.get(ticket_id)
             if not ticket:
                 return False
             if ticket.pending_reply_active:
@@ -794,7 +840,8 @@ class ReplyTicketManager:
         if not ticket_id or not text:
             return False
         with self._lock:
-            ticket = self._tickets.get(str(ticket_id))
+            ticket_id = self._resolve_ticket_id_locked(ticket_id)
+            ticket = self._tickets.get(ticket_id)
             if not ticket or ticket.status == "delivered":
                 return False
             if not ticket.is_qq:
@@ -823,7 +870,7 @@ class ReplyTicketManager:
                 exc,
             )
             with self._lock:
-                current = self._tickets.get(str(ticket_id))
+                current = self._tickets.get(ticket_id)
                 if current:
                     current.status = "failed"
                     current.delivery_error = str(exc)
@@ -844,7 +891,8 @@ class ReplyTicketManager:
         if not text:
             return False, "reply content contains no visible text"
         with self._lock:
-            ticket = self._tickets.get(str(ticket_id))
+            ticket_id = self._resolve_ticket_id_locked(ticket_id)
+            ticket = self._tickets.get(ticket_id)
             if not ticket or not ticket.pending_reply_active:
                 return False, "pending reply not found"
 
@@ -858,7 +906,7 @@ class ReplyTicketManager:
             return False, f"failed to validate task workflow: {exc}"
 
         with self._lock:
-            current = self._tickets.get(str(ticket_id))
+            current = self._tickets.get(ticket_id)
             if not current or not current.pending_reply_active:
                 return False, "pending reply not found"
             current.status = "sending"
@@ -910,7 +958,7 @@ class ReplyTicketManager:
                 raise ValueError(f"unsupported destination type: {ticket.source_type}")
         except Exception as exc:
             with self._lock:
-                current = self._tickets.get(str(ticket_id))
+                current = self._tickets.get(ticket_id)
                 if current:
                     current.status = "failed"
                     current.delivery_error = str(exc)[:1000]
@@ -929,7 +977,8 @@ class ReplyTicketManager:
             return False, str(exc)
 
         with self._lock:
-            self._tickets.pop(str(ticket_id), None)
+            self._tickets.pop(ticket_id, None)
+            self._remove_aliases_for_locked(ticket_id)
         try:
             from app.services.agent.task_workflow import task_workflow_manager
 

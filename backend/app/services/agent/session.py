@@ -94,6 +94,9 @@ RUN_JOB_TOOL_NAME = "mcp_local_run_job"
 AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
 BACKGROUND_JOB_STARTED_MARKER = "background_job_started"
 PENDING_REPLY_SENT_MARKER = "pending_reply_sent"
+DUPLICATE_QQ_SEND_SUPPRESSED_TEXT = (
+    "Duplicate QQ send skipped: this turn already delivered a visible QQ reply."
+)
 BACKGROUND_JOB_STARTED_RESPONSE = (
     "\u540e\u53f0\u4efb\u52a1\u5df2\u542f\u52a8\uff0c"
     "\u5b8c\u6210\u540e\u6211\u4f1a\u6839\u636e\u7ed3\u679c\u7ee7\u7eed\u5904\u7406"
@@ -231,6 +234,20 @@ def is_command_dispatch_failure_result(tool_name: str, result_text: str) -> bool
     if tool_name not in COMMAND_TOOL_NAMES and tool_name != RUN_JOB_TOOL_NAME:
         return False
     return any(marker in (result_text or "") for marker in COMMAND_DISPATCH_FAILURE_MARKERS)
+
+
+def is_terminal_unavailable_error(message: str) -> bool:
+    normalized = str(message or "").casefold()
+    return any(
+        marker in normalized
+        for marker in (
+            "终端未连接",
+            "终端未打开",
+            "terminal is not connected",
+            "terminal not connected",
+            "terminal unavailable",
+        )
+    )
 
 
 def is_command_dispatch_pending_result(tool_name: str, result_text: str) -> bool:
@@ -446,6 +463,7 @@ class InputType(Enum):
     TERMINAL = "terminal"
     CHAT = "chat"
     SCHEDULED_TASK = "scheduled_task"
+    TASK_CONTINUATION = "task_continuation"
 
 
 @dataclass
@@ -468,6 +486,7 @@ class TurnGuard:
     started_at: datetime = field(default_factory=datetime.now)
     tool_call_count: int = 0
     waiting_for_terminal_feedback: bool = False
+    qq_message_sent: bool = False
     no_progress_steps: int = 0
     last_progress_token: str | None = None
     last_log_fingerprint: str | None = None
@@ -1104,7 +1123,16 @@ class AgentSession:
     def _clear_pending_command(self):
         self._cancel_pending_command_recheck()
         with self.lock:
+            had_pending_command = self._pending_command is not None
             self._pending_command = None
+        if not had_pending_command:
+            return
+        resumed_ticket_ids = task_workflow_manager.resume_waiting_dependencies(
+            item_id=self.item_id,
+            awaiting_kind="terminal_dependency",
+        )
+        for ticket_id in resumed_ticket_ids:
+            self.schedule_task_workflow_continuation(ticket_id)
 
     def _get_pending_command(self) -> PendingCommand | None:
         with self.lock:
@@ -1252,7 +1280,13 @@ class AgentSession:
             from app.services.agent.reply_ticket import reply_ticket_manager
 
             if ticket.source_type == "qq":
-                delivered = reply_ticket_manager.deliver(ticket_id, content)
+                if ticket.pending_reply_active:
+                    delivered, _ = reply_ticket_manager.send_pending_reply(
+                        ticket_id,
+                        content,
+                    )
+                else:
+                    delivered = reply_ticket_manager.deliver(ticket_id, content)
                 if delivered:
                     self.emit_output(
                         f"已回复 QQ：{content.strip()}",
@@ -1985,6 +2019,29 @@ class AgentSession:
 
         return True
 
+    def schedule_task_workflow_continuation(self, ticket_id: str) -> bool:
+        normalized_ticket_id = str(ticket_id or "").strip()
+        if not normalized_ticket_id:
+            return False
+        if not task_workflow_manager.claim_auto_resume(normalized_ticket_id):
+            return False
+        input_msg = InputMessage(
+            input_type=InputType.TASK_CONTINUATION,
+            content=(
+                "[Internal task workflow continuation]\n"
+                "Resume the authoritative workflow from its current step. Execute one "
+                "concrete safe action now; do not provide a next-step narration."
+            ),
+            query="Resume the unfinished authoritative task workflow with one concrete action.",
+            reply_ticket_id=normalized_ticket_id,
+        )
+        threading.Thread(
+            target=self.process_input,
+            args=(input_msg,),
+            daemon=True,
+        ).start()
+        return True
+
     def clear_queued_inputs(self) -> int:
         cleared = 0
         while True:
@@ -2098,7 +2155,7 @@ class AgentSession:
 
         self._last_activity = datetime.now()
 
-        if input_msg.input_type == InputType.TERMINAL:
+        if input_msg.input_type in {InputType.TERMINAL, InputType.TASK_CONTINUATION}:
             self._attach_reply_ticket_to_agent(agent, input_msg.reply_ticket_id)
             try:
                 self._process_terminal_input(input_msg, agent)
@@ -2127,6 +2184,9 @@ class AgentSession:
             self._process_chat_input(input_msg, agent)
 
     def _process_terminal_input(self, input_msg: InputMessage, agent: Agent):
+        internal_task_continuation = (
+            input_msg.input_type == InputType.TASK_CONTINUATION
+        )
         combined_input = "\n".join(
             part
             for part in (input_msg.content, input_msg.raw_content)
@@ -2135,10 +2195,12 @@ class AgentSession:
         try:
             from app.services.agent.reply_ticket import reply_ticket_manager
 
-            matched_entry = reply_ticket_manager.match_pending_reply(
-                self.item_id,
-                combined_input,
-            )
+            matched_entry = None
+            if not internal_task_continuation:
+                matched_entry = reply_ticket_manager.match_pending_reply(
+                    self.item_id,
+                    combined_input,
+                )
             if matched_entry:
                 input_msg.reply_ticket_id = str(matched_entry["id"])
                 self._attach_reply_ticket_to_agent(agent, input_msg.reply_ticket_id)
@@ -2161,6 +2223,9 @@ class AgentSession:
                 self.item_id,
             )
 
+        if not internal_task_continuation and input_msg.reply_ticket_id:
+            task_workflow_manager.reset_auto_resume(input_msg.reply_ticket_id)
+
         reply_ticket = self._get_reply_ticket(input_msg.reply_ticket_id)
         reply_ticket_is_web = bool(
             reply_ticket and getattr(reply_ticket, "source_type", "") == "web"
@@ -2174,10 +2239,17 @@ class AgentSession:
             clear_robot_context = getattr(agent, "clear_robot_context", None)
             if callable(clear_robot_context):
                 clear_robot_context()
-        analysis = self._resolve_terminal_analysis_content(input_msg)
-        if input_msg.content:
+        analysis = (
+            TerminalAnalysisResult(
+                content=input_msg.content,
+                terminal_source=TERMINAL_SOURCE_FILTERED,
+            )
+            if internal_task_continuation
+            else self._resolve_terminal_analysis_content(input_msg)
+        )
+        if input_msg.content and not internal_task_continuation:
             attach_terminal_feedback_to_pending_continuation(self.item_id, input_msg.content)
-        should_emit_terminal_output = bool(input_msg.content) and (
+        should_emit_terminal_output = bool(input_msg.content) and not internal_task_continuation and (
             not had_pending_command
             or bool(analysis.content)
             or self._should_display_pending_held_output(
@@ -2253,11 +2325,10 @@ class AgentSession:
             self._current_turn_id = turn_guard.turn_id
             self._emit_running_terminal_status(analysis.terminal_source)
             terminal_delivery_retry_used = False
-            pending_reply_delivery_retry_used = False
             integration_tool_results: list[str] = []
             terminal_failure_report = ""
 
-            for _ in range(MAX_ITERATIONS):
+            for iteration_index in range(MAX_ITERATIONS):
                 timed_out, timeout_reason = turn_guard.check_timeout()
                 if timed_out:
                     terminal_failure_report = "任务未能完成：本轮处理超时，已停止该任务。"
@@ -2273,6 +2344,24 @@ class AgentSession:
                     self.emit_output("当前轮已中断", "agent_warning")
                     self.emit_status("interrupted", "当前轮已中断")
                     break
+
+                if iteration_index == MAX_ITERATIONS - 1:
+                    can_finalize, _ = task_workflow_manager.can_finalize(
+                        input_msg.reply_ticket_id
+                    )
+                    if not can_finalize:
+                        messages.append(
+                            {
+                                "role": "system",
+                                "content": (
+                                    "This is the action-recovery pass for an unfinished task. "
+                                    "Do not answer with a diagnosis, recommendation, promise, or "
+                                    "next-step sentence. Call exactly one concrete execution tool "
+                                    "that advances the current workflow. If the previous method "
+                                    "failed, execute a safe recovery action now."
+                                ),
+                            }
+                        )
 
                 response = self._call_llm(agent, messages, tools=tools)
                 message = self._normalize_dsml_tool_message(
@@ -2305,33 +2394,6 @@ class AgentSession:
                         reply_ticket = self._get_reply_ticket(
                             input_msg.reply_ticket_id
                         )
-                        if reply_ticket and reply_ticket.pending_reply_active:
-                            if not pending_reply_delivery_retry_used:
-                                messages.append(
-                                    {"role": "assistant", "content": final_content}
-                                )
-                                messages.append(
-                                    {
-                                        "role": "system",
-                                        "content": (
-                                            "The task belongs to an active pending-reply queue entry. "
-                                            "Do not return normal final text. Call "
-                                            "mcp_local_write_pending_reply(status=ready) if needed, "
-                                            "then call mcp_local_send_pending_reply with entry_id="
-                                            f"{reply_ticket.ticket_id} and the concise final report."
-                                        ),
-                                    }
-                                )
-                                pending_reply_delivery_retry_used = True
-                                continue
-                            self.emit_output(
-                                "待回复任务尚未通过发送工具汇报，队列记录已保留。",
-                                "agent_warning",
-                            )
-                            terminal_failure_report = (
-                                "任务未能完成：Agent 未能生成有效的最终汇报，已停止该任务。"
-                            )
-                            break
                         if should_retry_terminal_source_delivery(
                             agent=agent,
                             terminal_content=analysis.content,
@@ -2406,9 +2468,23 @@ class AgentSession:
                     break
                 messages = next_messages
             else:
-                terminal_failure_report = (
-                    "任务未能完成：Agent 达到本轮处理次数上限，已停止该任务。"
+                can_finalize, _ = task_workflow_manager.can_finalize(
+                    input_msg.reply_ticket_id
                 )
+                if not can_finalize:
+                    continuation_scheduled = (
+                        self.schedule_task_workflow_continuation(
+                            input_msg.reply_ticket_id
+                        )
+                    )
+                    if not continuation_scheduled:
+                        terminal_failure_report = (
+                            "任务未完成：自动执行后仍没有得到可验证结果，任务已结束。"
+                        )
+                else:
+                    terminal_failure_report = (
+                        "任务未能完成：Agent 达到本轮处理次数上限，已停止该任务。"
+                    )
 
             if terminal_failure_report:
                 self._fail_and_report_pending_reply(
@@ -2883,10 +2959,21 @@ class AgentSession:
             tool_name = tool_call.function.name
             tool_args_str = tool_call.function.arguments
 
-            should_stop, reason = turn_guard.before_tool(tool_name, tool_args_str)
-            if should_stop:
-                self.emit_output(reason, "agent_warning", {"tool_name": tool_name})
-                return None
+            duplicate_qq_send_suppressed = bool(
+                tool_name == ROBOT_SEND_TOOL_NAME and turn_guard.qq_message_sent
+            )
+            intermediate_delivery_suppressed = bool(
+                tool_name
+                in {ROBOT_SEND_TOOL_NAME, "mcp_local_send_pending_reply"}
+                and task_workflow_manager.should_suppress_intermediate_delivery(
+                    reply_ticket_id
+                )
+            )
+            if not duplicate_qq_send_suppressed and not intermediate_delivery_suppressed:
+                should_stop, reason = turn_guard.before_tool(tool_name, tool_args_str)
+                if should_stop:
+                    self.emit_output(reason, "agent_warning", {"tool_name": tool_name})
+                    return None
 
             try:
                 tool_args = parse_tool_arguments(tool_name, tool_args_str)
@@ -2923,19 +3010,26 @@ class AgentSession:
             if not self._should_auto_route_tool_to_job(tool_name, tool_args):
                 terminal_input_error = self._validate_terminal_command_input(tool_name, tool_args)
             if terminal_input_error:
-                if reply_ticket_id:
+                failure_reported = False
+                if is_terminal_unavailable_error(terminal_input_error):
+                    failure_reported = self._fail_and_report_pending_reply(
+                        reply_ticket_id,
+                        report=terminal_input_error,
+                        reason=terminal_input_error,
+                    )
+                elif reply_ticket_id:
                     try:
                         from app.services.agent.reply_ticket import reply_ticket_manager
 
                         reply_ticket_manager.mark_pending_reply_waiting(
                             reply_ticket_id,
-                            awaiting_kind="terminal_connection",
+                            awaiting_kind="terminal_dependency",
                             awaiting_key=self.item_id,
                             reason=terminal_input_error,
                         )
                     except Exception:
                         logger.exception(
-                            "[AgentSession] Failed to keep terminal-blocked task active: "
+                            "[AgentSession] Failed to mark terminal dependency: "
                             "item=%s ticket=%s",
                             self.item_id,
                             reply_ticket_id,
@@ -2944,11 +3038,12 @@ class AgentSession:
                     pending_command_for_delivery,
                     terminal_input_error,
                 )
-                self.emit_output(
-                    terminal_input_error,
-                    "agent_warning",
-                    {"tool_name": tool_name},
-                )
+                if not failure_reported:
+                    self.emit_output(
+                        terminal_input_error,
+                        "agent_warning",
+                        {"tool_name": tool_name},
+                    )
                 return None
             hide_tool_details = self._should_hide_tool_details(tool_name)
 
@@ -2962,15 +3057,51 @@ class AgentSession:
                     {"tool_name": tool_name},
                 )
 
-            if tool_name != "mcp_local_update_task_workflow":
+            if (
+                tool_name != "mcp_local_update_task_workflow"
+                and not duplicate_qq_send_suppressed
+            ):
                 task_workflow_manager.record_tool_call(
                     reply_ticket_id,
                     tool_name=tool_name,
                     command=str(tool_args.get("command") or ""),
                 )
 
-            result = loop.run_until_complete(agent.execute_tool(tool_name, tool_args))
-            logger.info(f"[AgentSession] Tool {tool_name} executed")
+            if duplicate_qq_send_suppressed:
+                result = {
+                    "success": True,
+                    "result": [
+                        {
+                            "type": "text",
+                            "text": DUPLICATE_QQ_SEND_SUPPRESSED_TEXT,
+                        },
+                        {
+                            "type": "metadata",
+                            "duplicate_qq_send_suppressed": True,
+                        },
+                    ],
+                }
+            elif intermediate_delivery_suppressed:
+                result = {
+                    "success": True,
+                    "result": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Intermediate task report suppressed by final_only policy. "
+                                "Continue executing the workflow and send one report after "
+                                "verified completion or final failure."
+                            ),
+                        },
+                        {
+                            "type": "metadata",
+                            "intermediate_delivery_suppressed": True,
+                        },
+                    ],
+                }
+            else:
+                result = loop.run_until_complete(agent.execute_tool(tool_name, tool_args))
+                logger.info(f"[AgentSession] Tool {tool_name} executed")
             if tool_name == RUN_JOB_TOOL_NAME:
                 turn_guard.reset_timeout_window()
 
@@ -2989,10 +3120,10 @@ class AgentSession:
             if (
                 tool_results_sink is not None
                 and result_text
-                and not (robot_delivery_result and not delivery_is_final)
             ):
                 tool_results_sink.append(result_text)
             if robot_delivery_result:
+                turn_guard.qq_message_sent = True
                 if delivery_is_final:
                     try:
                         from app.services.agent.reply_ticket import (
@@ -3041,28 +3172,17 @@ class AgentSession:
                     message=COMMAND_DISPATCH_FAILURE_MESSAGE,
                     tool_name=tool_name,
                 )
-                if reply_ticket_id:
-                    try:
-                        from app.services.agent.reply_ticket import reply_ticket_manager
-
-                        reply_ticket_manager.mark_pending_reply_waiting(
-                            reply_ticket_id,
-                            awaiting_kind="terminal_connection",
-                            awaiting_key=self.item_id,
-                            reason=COMMAND_DISPATCH_FAILURE_MESSAGE,
-                        )
-                    except Exception:
-                        logger.exception(
-                            "[AgentSession] Failed to keep disconnected-terminal task active: "
-                            "item=%s ticket=%s",
-                            self.item_id,
-                            reply_ticket_id,
-                        )
-                self.emit_output(
-                    COMMAND_DISPATCH_FAILURE_MESSAGE,
-                    "agent_warning",
-                    {"tool_name": tool_name},
+                failure_reported = self._fail_and_report_pending_reply(
+                    reply_ticket_id,
+                    report=COMMAND_DISPATCH_FAILURE_MESSAGE,
+                    reason=COMMAND_DISPATCH_FAILURE_MESSAGE,
                 )
+                if not failure_reported:
+                    self.emit_output(
+                        COMMAND_DISPATCH_FAILURE_MESSAGE,
+                        "agent_warning",
+                        {"tool_name": tool_name},
+                    )
                 return None
 
             if is_background_job_started_result(result):
@@ -3076,7 +3196,10 @@ class AgentSession:
                 )
                 return None
 
-            if tool_name != "mcp_local_update_task_workflow":
+            if (
+                tool_name != "mcp_local_update_task_workflow"
+                and not duplicate_qq_send_suppressed
+            ):
                 task_workflow_manager.record_tool_result(
                     reply_ticket_id,
                     tool_name=tool_name,

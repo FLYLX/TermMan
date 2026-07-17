@@ -21,6 +21,7 @@ from app.services.agent.integrations import (
     send_integration_final_response_fallback,
     setup_integration_chat_contexts,
 )
+from app.services.agent.persona_guard import enforce_persona_identity_response
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +223,8 @@ async def _collect_chat_response_unserialized(
         content = ""
     if integration_contexts and content:
         content = _sanitize_integration_response(content)
+    if content:
+        content = enforce_persona_identity_response(agent, message, content)
     robot_message_sent = bool(integration_contexts) and integration_message_sent(tool_results)
     if robot_message_sent and content.strip():
         logger.info(

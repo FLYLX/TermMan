@@ -300,7 +300,11 @@ class LocalMCPServer:
                 "Update the authoritative task state after observing real evidence. "
                 "The main objective cannot be replaced. Complete the current step only "
                 "after evidence, insert a recovery step when changing source/method, and "
-                "mark blocked only when user or external input is genuinely required."
+                "mark blocked only when user or external input is genuinely required. "
+                "Action=cancel cancels the whole objective and is allowed only when the user "
+                "explicitly abandons it; use cancel_job to stop an obsolete execution while "
+                "keeping the main objective active. Updating workflow state is not execution, "
+                "so call the concrete terminal/job tool immediately afterward."
             ),
             input_schema={
                 "type": "object",
@@ -981,7 +985,12 @@ class LocalMCPServer:
             return [
                 {
                     "type": "text",
-                    "text": f"Task workflow updated: {detail}\n{context}",
+                    "text": (
+                        f"Task workflow updated: {detail}\n{context}\n"
+                        "Workflow bookkeeping is not task progress by itself. If a safe "
+                        "execution action is available, call that tool now instead of "
+                        "describing the next step."
+                    ),
                 }
             ]
         except Exception as exc:

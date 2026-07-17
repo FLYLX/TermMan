@@ -41,6 +41,7 @@ from app.services.agent.pending_context import (
     clear_pending_terminal_continuation,
     record_pending_terminal_continuation,
 )
+from app.services.agent.persona_guard import enforce_persona_identity_robot_tool_args
 from app.services.agent.prompts.builder import build_chat_turn_messages
 from app.services.agent.prompts.policy import (
     build_confirmation_memory_candidate,
@@ -64,6 +65,7 @@ from app.services.agent.session import (
     is_command_dispatch_failure_result,
     is_command_dispatch_pending_result,
     is_pending_reply_sent_result,
+    is_terminal_unavailable_error,
     is_tool_result_auto_routed_to_job,
     should_auto_route_terminal_tool_to_job,
 )
@@ -94,8 +96,12 @@ REQUEST_TIMEOUT = 120
 MAX_ITERATIONS = 10
 LOOP_DETECTION_WINDOW = 6
 LOOP_THRESHOLD = 3
-TOOL_LOOP_STOP_REASON = "任务因重复调用同类工具且没有产生新进展而暂停。"
-TOOL_BUDGET_STOP_REASON = "任务在本轮未能收敛，已暂停并保留当前进度。"
+TOOL_LOOP_STOP_REASON = (
+    "Task failed because repeated tool calls produced no new executable progress."
+)
+TOOL_BUDGET_STOP_REASON = (
+    "Task failed after automatic continuation attempts without a verified result."
+)
 SILENT_TOOL_NAMES = {
     "mcp_local_get_terminal_status",
     "mcp_local_read_terminal_log",
@@ -125,6 +131,9 @@ TERMINAL_ACTION_EVIDENCE_TOOLS = {
 INTERNAL_QQ_BACKGROUND_JOB_PREFIX = (
     "[Background terminal job result for this QQ conversation]"
 )
+DUPLICATE_QQ_SEND_SUPPRESSED_TEXT = (
+    "Duplicate QQ send skipped: this turn already delivered a visible QQ reply."
+)
 TASK_WORKFLOW_REQUEST_RE = re.compile(
     r"(安装|装(?:个|一下|好)?|下载|部署|构建|编译|配置|修改|修复|创建|删除|启动|停止|重启|"
     r"更新|升级|迁移|解压|上传|运行|执行|测试|开服|换源|"
@@ -148,6 +157,28 @@ TASK_WORKFLOW_CHANGE_RE = re.compile(
 )
 TASK_WORKFLOW_PAUSE_RE = re.compile(
     r"(先别|别下|不要下|暂停|取消|停一下|停止下载|\b(?:pause|cancel|stop)\b)",
+    re.IGNORECASE,
+)
+TASK_WORKFLOW_EXECUTION_COMMIT_RE = re.compile(
+    r"(做啊|继续做|接着做|直接做|开始做|赶紧做|想办法.{0,20}(?:做完|装完|完成)|"
+    r"(?:装|做|弄|处理|跑|执行)完.{0,20}(?:告诉|跟我说|通知|回报)|"
+    r"完成后.{0,20}(?:告诉|跟我说|通知|回报)|只要.{0,30}(?:装完|做完|完成)|"
+    r"不用问我|自己处理|你看着办|就按这个做|就这样做|\b(?:do it|finish it|keep going)\b)",
+    re.IGNORECASE,
+)
+TASK_WORKFLOW_FINAL_ONLY_RE = re.compile(
+    r"((?:装|做|弄|处理|跑|执行)完.{0,20}(?:告诉|跟我说|通知|回报)|"
+    r"完成后.{0,20}(?:告诉|跟我说|通知|回报)|只要.{0,30}(?:装完|做完|完成))",
+    re.IGNORECASE,
+)
+TASK_WORKFLOW_MAIN_CANCEL_RE = re.compile(
+    r"(整个任务.{0,8}(?:取消|停止|不做)|(?:java|jdk|安装|下载).{0,10}(?:不用了|别装了|不要装了|不做了)|"
+    r"这件事.{0,8}(?:不用做|不做了)|主任务.{0,8}(?:取消|停止)|\b(?:cancel the whole task|abandon the task)\b)",
+    re.IGNORECASE,
+)
+TASK_WORKFLOW_DOMAIN_RE = re.compile(
+    r"(temurin|openjdk|java|jdk|minecraft|forge|fabric|paper|服务器|服务端|"
+    r"docker|python|pip|node|npm|bun|数据库|sqlite|前端|后端|机器人|qq)",
     re.IGNORECASE,
 )
 ROBOT_SEND_FOLLOW_UP_RE = re.compile(
@@ -501,7 +532,14 @@ def _deliver_reply_ticket_final_response(
     visible_content = sanitize_robot_visible_text(content).strip()
     if not visible_content:
         return []
-    if not reply_ticket_manager.deliver(ticket_id, visible_content):
+    if ticket.pending_reply_active:
+        delivered, _ = reply_ticket_manager.send_pending_reply(
+            ticket_id,
+            visible_content,
+        )
+    else:
+        delivered = reply_ticket_manager.deliver(ticket_id, visible_content)
+    if not delivered:
         return []
     events: list[dict[str, Any]] = [
         _persist_and_broadcast_event(
@@ -675,6 +713,20 @@ def _build_fallback_task_titles(message: str) -> list[str]:
     normalized = (message or "").lower()
     prefers_chinese = _contains_cjk(message)
 
+    if any(
+        token in normalized
+        for token in ("安装", "install", "java", "jdk", "软件", "package")
+    ):
+        return (
+            ["确认当前安装状态与系统环境", "安装用户要求的软件", "验证版本并汇报结果"]
+            if prefers_chinese
+            else [
+                "Check the current installation and system environment",
+                "Install the requested software",
+                "Verify the version and report the result",
+            ]
+        )
+
     if "python" in normalized or ".py" in normalized:
         return (
             ["编写 Python 代码", "执行 Python 脚本", "检查输出是否正确"]
@@ -815,22 +867,6 @@ def _mark_agent_task_plan_failed(
         reply_ticket_manager.mark_failed(plan.reply_ticket_id, reason)
 
 
-def _mark_agent_task_plan_waiting_for_terminal(
-    plan: PlannedTaskRuntime | None,
-    *,
-    item_id: str,
-    reason: str,
-) -> None:
-    if not plan or not plan.reply_ticket_id:
-        return
-    reply_ticket_manager.mark_pending_reply_waiting(
-        plan.reply_ticket_id,
-        awaiting_kind="terminal_connection",
-        awaiting_key=str(item_id),
-        reason=reason,
-    )
-
-
 def _should_create_task_workflow(message: str, tools: list[dict[str, Any]]) -> bool:
     if not tools:
         return False
@@ -840,7 +876,29 @@ def _should_create_task_workflow(message: str, tools: list[dict[str, Any]]) -> b
         or TASK_WORKFLOW_CONTINUATION_RE.search(text)
         or TASK_WORKFLOW_CHANGE_RE.search(text)
         or TASK_WORKFLOW_PAUSE_RE.search(text)
+        or TASK_WORKFLOW_EXECUTION_COMMIT_RE.search(text)
     )
+
+
+def _is_same_task_follow_up(message: str, objective: str) -> bool:
+    text = str(message or "").strip()
+    objective_text = str(objective or "").strip()
+    if not text or not objective_text:
+        return False
+    if TASK_WORKFLOW_EXECUTION_COMMIT_RE.search(text):
+        return True
+    message_domains = {
+        match.group(0).casefold() for match in TASK_WORKFLOW_DOMAIN_RE.finditer(text)
+    }
+    objective_domains = {
+        match.group(0).casefold()
+        for match in TASK_WORKFLOW_DOMAIN_RE.finditer(objective_text)
+    }
+    if message_domains.intersection(objective_domains):
+        return True
+    normalized_text = re.sub(r"\s+", "", text).casefold()
+    normalized_objective = re.sub(r"\s+", "", objective_text).casefold()
+    return len(normalized_text) >= 4 and normalized_text in normalized_objective
 
 
 def _create_agent_task_plan(
@@ -884,11 +942,17 @@ def _create_agent_task_plan(
         source_type=source_type,
         source_label=source_label,
     )
-    if resumable and (
-        TASK_WORKFLOW_CONTINUATION_RE.search(task_message)
-        or TASK_WORKFLOW_CHANGE_RE.search(task_message)
-        or TASK_WORKFLOW_PAUSE_RE.search(task_message)
-    ):
+    resumable_follow_up = bool(
+        resumable
+        and (
+            TASK_WORKFLOW_CONTINUATION_RE.search(task_message)
+            or TASK_WORKFLOW_CHANGE_RE.search(task_message)
+            or TASK_WORKFLOW_PAUSE_RE.search(task_message)
+            or TASK_WORKFLOW_EXECUTION_COMMIT_RE.search(task_message)
+            or _is_same_task_follow_up(task_message, resumable.objective)
+        )
+    )
+    if resumable and resumable_follow_up:
         previous_ticket_id = resumable.reply_ticket_id
         task_workflow_manager.attach_ticket(
             resumable.workflow_id,
@@ -899,14 +963,25 @@ def _create_agent_task_plan(
             locked_reply_ticket_id,
         )
         follow_up = task_message[:500]
-        if TASK_WORKFLOW_CHANGE_RE.search(task_message):
+        if TASK_WORKFLOW_FINAL_ONLY_RE.search(task_message):
+            task_workflow_manager.set_report_policy(
+                locked_reply_ticket_id,
+                "final_only",
+            )
+        if TASK_WORKFLOW_MAIN_CANCEL_RE.search(task_message):
+            task_workflow_manager.update(
+                locked_reply_ticket_id,
+                action="cancel",
+                note=f"User explicitly cancelled the whole objective: {follow_up}",
+            )
+        elif TASK_WORKFLOW_CHANGE_RE.search(task_message):
             task_workflow_manager.update(
                 locked_reply_ticket_id,
                 action="insert_recovery_step",
-                title=f"Apply requested source/mirror change: {follow_up}",
+                title=f"Cancel obsolete execution and apply requested source/mirror change: {follow_up}",
                 note=(
-                    "The user changed the execution method. Stop or cancel any obsolete "
-                    "download job before starting the replacement."
+                    "The user changed the execution method. Cancel any obsolete running job, "
+                    "apply the replacement, then continue the unchanged main objective."
                 ),
             )
         elif TASK_WORKFLOW_PAUSE_RE.search(task_message):
@@ -914,8 +989,9 @@ def _create_agent_task_plan(
                 locked_reply_ticket_id,
                 action="record_progress",
                 note=(
-                    f"User requested pause/cancellation: {follow_up}. Inspect and cancel "
-                    "any running background job before reporting back."
+                    f"User requested cancellation of the current execution: {follow_up}. "
+                    "Cancel the obsolete command/job, but preserve the main objective unless "
+                    "the user explicitly cancels the whole goal."
                 ),
             )
         else:
@@ -947,6 +1023,11 @@ def _create_agent_task_plan(
         step_titles=task_titles,
         workflow_id=request_id,
     )
+    if TASK_WORKFLOW_FINAL_ONLY_RE.search(task_message):
+        task_workflow_manager.set_report_policy(
+            locked_reply_ticket_id,
+            "final_only",
+        )
     if reply_ticket is not None:
         reply_ticket_manager.upsert_pending_reply(
             reply_ticket.ticket_id,
@@ -1136,19 +1217,33 @@ def _stopped_turn_fallback(reason: str, *, prefers_chinese: bool) -> str:
             if prefers_chinese
             else f"Model request failed: {error_detail}"
         )
+    if normalized_reason.startswith("terminal unavailable:"):
+        terminal_error = error_detail.split(":", 1)[-1].strip()
+        return (
+            f"任务未完成：{terminal_error} 本次任务已结束。"
+            if prefers_chinese
+            else f"Task failed because the terminal is unavailable: {terminal_error}"
+        )
     if any(
         marker in normalized_reason
-        for marker in ("repeat", "loop", "did not converge", "iteration", "no progress")
+        for marker in (
+            "repeat",
+            "loop",
+            "did not converge",
+            "iteration",
+            "no progress",
+            "automatic continuation attempts",
+        )
     ):
         return (
-            "这次操作没有完成，我已停止重复执行。当前进度已保留，请稍后重试。"
+            "任务未完成：自动执行后仍没有得到可验证结果，任务已结束。"
             if prefers_chinese
-            else "The operation did not complete. I stopped repeating it and kept the current progress. Please retry shortly."
+            else "The task did not complete after automatic attempts and has ended."
         )
     return (
-        "这次操作没有完成。当前进度已保留，请稍后重试。"
+        f"任务未完成：{error_detail}"
         if prefers_chinese
-        else "The operation did not complete. The current progress was kept. Please retry shortly."
+        else f"Task failed: {error_detail}"
     )
 
 
@@ -1160,18 +1255,22 @@ def _generate_stopped_turn_report(
     prefers_chinese: bool,
 ) -> str:
     fallback = _stopped_turn_fallback(reason, prefers_chinese=prefers_chinese)
-    if str(reason or "").casefold().startswith("agent request failed:"):
+    normalized_reason = str(reason or "").casefold()
+    if normalized_reason.startswith(
+        ("agent request failed:", "terminal unavailable:")
+    ):
         return fallback
     final_messages = [*messages]
     final_messages.append(
         {
             "role": "system",
             "content": (
-                "Tool execution is now disabled because this turn did not converge. "
+                "Tool execution has ended after bounded automatic continuation attempts. "
                 f"Internal stop reason: {reason} "
-                "Give the user one concise final status in the user's language. Summarize only "
-                "confirmed results already present in the conversation, clearly say whether the "
-                "main objective remains incomplete, and mention at most one useful next action. "
+                "Give the user one concise final failure status in the user's language. Summarize "
+                "only confirmed results already present in the conversation and state the actual "
+                "error or why the objective could not be completed. The task will be removed after "
+                "this report, so do not say it is paused, waiting, preserved, or will resume later. "
                 "Do not call tools. Do not mention iteration limits, MCP, reply tickets, internal "
                 "workflows, or tool-loop detection."
             ),
@@ -1410,15 +1509,38 @@ def _generate_stream_unserialized(
     called_tool_names: set[str] = set()
     terminal_grounding_retry_used = False
     delivery_tool_sent_by_integration = False
+    qq_message_sent_this_turn = False
     confirmed_external_delivery_to_qq = False
     delivery_retry_used_by_integration: dict[str, bool] = {}
-    pending_reply_delivery_retry_used = False
+    tool_loop_recovery_used = False
 
     try:
         for iteration_index in range(MAX_ITERATIONS + 1):
-            finalization_only = iteration_index == MAX_ITERATIONS
+            workflow_can_finalize, _ = task_workflow_manager.can_finalize(
+                reply_ticket.ticket_id
+            )
+            action_recovery_only = bool(
+                iteration_index == MAX_ITERATIONS and not workflow_can_finalize
+            )
+            finalization_only = bool(
+                iteration_index == MAX_ITERATIONS and workflow_can_finalize
+            )
             iteration_tools = [] if finalization_only else tools
-            if finalization_only:
+            if action_recovery_only:
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "This is the action-recovery pass for an unfinished task. "
+                            "Do not write a status summary, recommendation, promise, or next-step "
+                            "sentence. Call exactly one concrete execution tool that advances the "
+                            "current workflow. If the prior method failed, use a safe recovery "
+                            "action now. Only mark blocked when user input, permission, or an "
+                            "external prerequisite is truly required."
+                        ),
+                    }
+                )
+            elif finalization_only:
                 messages.append(
                     {
                         "role": "system",
@@ -1633,7 +1755,7 @@ def _generate_stream_unserialized(
                 if finalization_only and not final_response:
                     break
                 delivery_retry_decision = None
-                if not delivery_tool_sent_by_integration:
+                if not delivery_tool_sent_by_integration and not qq_message_sent_this_turn:
                     delivery_retry_decision = get_delivery_retry_decision(
                         agent=agent,
                         messages=messages,
@@ -1668,54 +1790,7 @@ def _generate_stream_unserialized(
                         final_response = ""
                         continue
 
-                    current_ticket = reply_ticket_manager.get(
-                        reply_ticket.ticket_id
-                    )
-                    if (
-                        current_ticket
-                        and current_ticket.pending_reply_active
-                        and not delivery_tool_sent_by_integration
-                    ):
-                        if not pending_reply_delivery_retry_used:
-                            messages.append(
-                                {"role": "assistant", "content": final_response}
-                            )
-                            messages.append(
-                                {
-                                    "role": "system",
-                                    "content": (
-                                        "This task has an active pending-reply queue entry. "
-                                        "Do not answer with normal final text. Call "
-                                        "mcp_local_write_pending_reply(status=ready) if needed, "
-                                        "then mcp_local_send_pending_reply with entry_id="
-                                        f"{current_ticket.ticket_id}. The send tool must deliver "
-                                        "to the stored destination and remove the entry."
-                                    ),
-                                }
-                            )
-                            pending_reply_delivery_retry_used = True
-                            final_response = ""
-                            continue
-                        stopped_events = _finalize_stopped_turn(
-                            agent=agent,
-                            handler=handler,
-                            item_id=item_id,
-                            messages=messages,
-                            planned_task_runtime=planned_task_runtime,
-                            reason=(
-                                "Agent did not produce a valid final task report after retry."
-                            ),
-                            prefers_chinese=_contains_cjk(message),
-                            include_hidden_tool_results=include_hidden_tool_results,
-                            reply_ticket_id=reply_ticket.ticket_id,
-                        )
-                        for stopped_event in stopped_events:
-                            yield _to_sse(stopped_event)
-                        _broadcast_agent_status(item_id, "idle")
-                        yield _to_sse({"done": True})
-                        return
-
-                    if delivery_tool_sent_by_integration:
+                    if delivery_tool_sent_by_integration or qq_message_sent_this_turn:
                         logger.info(
                             "[Chat] Suppressed final response after source delivery tool sent for item %s",
                             item_id,
@@ -1806,6 +1881,52 @@ def _generate_stream_unserialized(
                         reply_ticket.ticket_id,
                         tool_name,
                     )
+                    workflow_can_finalize, _ = task_workflow_manager.can_finalize(
+                        reply_ticket.ticket_id
+                    )
+                    if not workflow_can_finalize:
+                        if not tool_loop_recovery_used:
+                            messages.append(
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "The repeated tool call was blocked because it produced "
+                                        "no new progress. Do not repeat the same workflow update, "
+                                        "status check, or command. Choose a different concrete "
+                                        "recovery action that advances the immutable main objective."
+                                    ),
+                                }
+                            )
+                            tool_loop_recovery_used = True
+                            continue
+                        terminal_session = agent_session_manager.get_or_create_session(
+                            item_id,
+                            str(handler.id),
+                        )
+                        continuation_scheduled = (
+                            terminal_session.schedule_task_workflow_continuation(
+                                reply_ticket.ticket_id
+                            )
+                        )
+                        if continuation_scheduled:
+                            _broadcast_agent_status(item_id, "idle")
+                            yield _to_sse({"done": True})
+                            return
+                        for event in _finalize_stopped_turn(
+                            agent=agent,
+                            handler=handler,
+                            item_id=item_id,
+                            messages=messages,
+                            planned_task_runtime=planned_task_runtime,
+                            reason=TOOL_LOOP_STOP_REASON,
+                            prefers_chinese=_contains_cjk(message),
+                            include_hidden_tool_results=include_hidden_tool_results,
+                            reply_ticket_id=reply_ticket.ticket_id,
+                        ):
+                            yield _to_sse(event)
+                        _broadcast_agent_status(item_id, "idle")
+                        yield _to_sse({"done": True})
+                        return
                     for event in _finalize_stopped_turn(
                         agent=agent,
                         handler=handler,
@@ -1847,6 +1968,13 @@ def _generate_stream_unserialized(
                         }
                     )
                     return
+
+                if tool_name == ROBOT_SEND_TOOL_NAME and normalized_source_type == SOURCE_QQ:
+                    tool_args = enforce_persona_identity_robot_tool_args(
+                        agent,
+                        message,
+                        tool_args,
+                    )
 
                 if (
                     tool_name == ROBOT_SEND_TOOL_NAME
@@ -1925,19 +2053,35 @@ def _generate_stream_unserialized(
                             _broadcast_agent_status(item_id, "idle")
                             yield _to_sse({"done": True})
                             return
-                        _mark_agent_task_plan_waiting_for_terminal(
-                            planned_task_runtime,
-                            item_id=item_id,
-                            reason=terminal_input_error,
-                        )
-                        warning_event = _persist_and_broadcast_event(
-                            item_id,
-                            role="assistant",
-                            content=terminal_input_error,
-                            message_type="agent_warning",
-                            extra={"tool_name": tool_name},
-                        )
-                        yield _to_sse(warning_event)
+                        if is_terminal_unavailable_error(terminal_input_error):
+                            for event in _finalize_stopped_turn(
+                                agent=agent,
+                                handler=handler,
+                                item_id=item_id,
+                                messages=messages,
+                                planned_task_runtime=planned_task_runtime,
+                                reason=f"Terminal unavailable: {terminal_input_error}",
+                                prefers_chinese=_contains_cjk(message),
+                                include_hidden_tool_results=include_hidden_tool_results,
+                                reply_ticket_id=reply_ticket.ticket_id,
+                            ):
+                                yield _to_sse(event)
+                        else:
+                            if planned_task_runtime:
+                                reply_ticket_manager.mark_pending_reply_waiting(
+                                    reply_ticket.ticket_id,
+                                    awaiting_kind="terminal_dependency",
+                                    awaiting_key=item_id,
+                                    reason=terminal_input_error,
+                                )
+                            warning_event = _persist_and_broadcast_event(
+                                item_id,
+                                role="assistant",
+                                content=terminal_input_error,
+                                message_type="agent_warning",
+                                extra={"tool_name": tool_name},
+                            )
+                            yield _to_sse(warning_event)
                         _broadcast_agent_status(item_id, "idle")
                         yield _to_sse({"done": True})
                         return
@@ -1964,6 +2108,16 @@ def _generate_stream_unserialized(
                     immediate_web_qq_forward
                     and tool_name == "mcp_local_write_pending_reply"
                 )
+                duplicate_qq_send_suppressed = bool(
+                    tool_name == ROBOT_SEND_TOOL_NAME and qq_message_sent_this_turn
+                )
+                intermediate_delivery_suppressed = bool(
+                    tool_name
+                    in {ROBOT_SEND_TOOL_NAME, "mcp_local_send_pending_reply"}
+                    and task_workflow_manager.should_suppress_intermediate_delivery(
+                        reply_ticket.ticket_id
+                    )
+                )
                 if pending_write_skipped:
                     result = {
                         "success": True,
@@ -1975,6 +2129,38 @@ def _generate_stream_unserialized(
                                     "one-step QQ forward. Call mcp_robot_send_message directly."
                                 ),
                             }
+                        ],
+                    }
+                elif duplicate_qq_send_suppressed:
+                    result = {
+                        "success": True,
+                        "result": [
+                            {
+                                "type": "text",
+                                "text": DUPLICATE_QQ_SEND_SUPPRESSED_TEXT,
+                            },
+                            {
+                                "type": "metadata",
+                                "duplicate_qq_send_suppressed": True,
+                            },
+                        ],
+                    }
+                elif intermediate_delivery_suppressed:
+                    result = {
+                        "success": True,
+                        "result": [
+                            {
+                                "type": "text",
+                                "text": (
+                                    "Intermediate task report suppressed by final_only policy. "
+                                    "Continue executing the workflow and send one report after "
+                                    "verified completion or final failure."
+                                ),
+                            },
+                            {
+                                "type": "metadata",
+                                "intermediate_delivery_suppressed": True,
+                            },
                         ],
                     }
                 else:
@@ -2002,6 +2188,7 @@ def _generate_stream_unserialized(
                 if result_text and fallback_is_delivery_result(result_text):
                     if tool_name == ROBOT_SEND_TOOL_NAME:
                         confirmed_external_delivery_to_qq = True
+                        qq_message_sent_this_turn = True
                     delivery_is_final, _ = task_workflow_manager.can_finalize(
                         reply_ticket.ticket_id
                     )
@@ -2085,19 +2272,20 @@ def _generate_stream_unserialized(
                         message=COMMAND_DISPATCH_FAILURE_MESSAGE,
                         tool_name=tool_name,
                     )
-                    _mark_agent_task_plan_waiting_for_terminal(
-                        planned_task_runtime,
+                    for event in _finalize_stopped_turn(
+                        agent=agent,
+                        handler=handler,
                         item_id=item_id,
-                        reason=COMMAND_DISPATCH_FAILURE_MESSAGE,
-                    )
-                    warning_event = _persist_and_broadcast_event(
-                        item_id,
-                        role="assistant",
-                        content=COMMAND_DISPATCH_FAILURE_MESSAGE,
-                        message_type="agent_warning",
-                        extra={"tool_name": tool_name},
-                    )
-                    yield _to_sse(warning_event)
+                        messages=messages,
+                        planned_task_runtime=planned_task_runtime,
+                        reason=(
+                            f"Terminal unavailable: {COMMAND_DISPATCH_FAILURE_MESSAGE}"
+                        ),
+                        prefers_chinese=_contains_cjk(message),
+                        include_hidden_tool_results=include_hidden_tool_results,
+                        reply_ticket_id=reply_ticket.ticket_id,
+                    ):
+                        yield _to_sse(event)
                     _broadcast_agent_status(item_id, "idle")
                     yield _to_sse({"done": True})
                     return
@@ -2194,6 +2382,23 @@ def _generate_stream_unserialized(
             reply_ticket.ticket_id,
             MAX_ITERATIONS,
         )
+        workflow_can_finalize, _ = task_workflow_manager.can_finalize(
+            reply_ticket.ticket_id
+        )
+        if not workflow_can_finalize:
+            terminal_session = agent_session_manager.get_or_create_session(
+                item_id,
+                str(handler.id),
+            )
+            continuation_scheduled = (
+                terminal_session.schedule_task_workflow_continuation(
+                    reply_ticket.ticket_id
+                )
+            )
+            if continuation_scheduled:
+                _broadcast_agent_status(item_id, "idle")
+                yield _to_sse({"done": True})
+                return
         for event in _finalize_stopped_turn(
             agent=agent,
             handler=handler,

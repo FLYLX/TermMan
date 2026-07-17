@@ -88,6 +88,61 @@ def test_workflow_completes_only_after_verification_and_delivery() -> None:
     assert workflow.delivered_at is not None
 
 
+def test_final_only_policy_suppresses_intermediate_delivery_until_ready() -> None:
+    manager = TaskWorkflowManager()
+    workflow = _create_java_workflow(manager)
+
+    assert manager.set_report_policy("ticket-java", "final_only") is True
+    assert workflow.report_policy == "final_only"
+    assert manager.should_suppress_intermediate_delivery("ticket-java") is True
+
+    manager.update(
+        "ticket-java",
+        action="complete_current_step",
+        note="Java installed",
+    )
+    manager.update(
+        "ticket-java",
+        action="complete_current_step",
+        note='openjdk version "17.0.12"',
+    )
+
+    assert workflow.status == "ready_to_report"
+    assert manager.should_suppress_intermediate_delivery("ticket-java") is False
+
+
+def test_unfinished_workflow_requires_execution_instead_of_next_step_narration() -> None:
+    manager = TaskWorkflowManager()
+    _create_java_workflow(manager)
+
+    can_finalize, correction = manager.can_finalize("ticket-java")
+
+    assert can_finalize is False
+    assert "Call one concrete execution tool now" in correction
+    assert "Package, mirror, dependency" in correction
+
+
+def test_auto_resume_is_bounded_and_resets_on_new_evidence() -> None:
+    manager = TaskWorkflowManager()
+    workflow = _create_java_workflow(manager)
+
+    assert manager.claim_auto_resume("ticket-java", max_attempts=2) is True
+    assert manager.claim_auto_resume("ticket-java", max_attempts=2) is True
+    assert manager.claim_auto_resume("ticket-java", max_attempts=2) is False
+    assert workflow.auto_resume_attempts == 2
+
+    manager.record_job_result(
+        "ticket-java",
+        command="apt-get install -y openjdk-17-jdk",
+        success=False,
+        result_summary="Unable to locate package",
+        exit_code=100,
+    )
+
+    assert workflow.auto_resume_attempts == 0
+    assert manager.claim_auto_resume("ticket-java", max_attempts=2) is True
+
+
 def test_reset_discards_active_workflow() -> None:
     manager = TaskWorkflowManager()
     workflow = _create_java_workflow(manager)
@@ -126,7 +181,7 @@ def test_follow_up_ticket_reattaches_same_workflow() -> None:
         note="用户要求换国内源继续",
     )
 
-    assert manager.get_by_ticket("ticket-java") is None
+    assert manager.get_by_ticket("ticket-java") is workflow
     assert manager.get_by_ticket("ticket-follow-up") is workflow
     assert workflow.status == "active"
     assert workflow.objective == "安装 Temurin Java 17，使用可用的国内源"
@@ -168,6 +223,58 @@ def test_recoverable_terminal_wait_cannot_finalize_and_resume_clears_wait() -> N
     assert workflow.awaiting_kind == ""
     assert workflow.awaiting_key == ""
     assert workflow.current_step().status == "running"
+
+
+def test_terminal_dependency_resumes_only_after_predecessor_clears() -> None:
+    manager = TaskWorkflowManager()
+    workflow = _create_java_workflow(manager)
+
+    assert manager.mark_waiting(
+        "ticket-java",
+        awaiting_kind="terminal_dependency",
+        awaiting_key="item-java",
+        note="前一个终端任务仍在执行",
+    ) is True
+    assert workflow.status == "blocked"
+    assert workflow.current_step().status == "waiting"
+
+    resumed = manager.resume_waiting_dependencies(
+        item_id="item-java",
+        awaiting_kind="terminal_dependency",
+    )
+
+    assert resumed == ["ticket-java"]
+    assert workflow.status == "active"
+    assert workflow.awaiting_kind == ""
+    assert workflow.current_step().status == "running"
+
+
+def test_independent_workflows_can_have_parallel_background_jobs() -> None:
+    manager = TaskWorkflowManager()
+    first = _create_java_workflow(manager)
+    second = manager.create(
+        item_id="item-java",
+        handler_id="handler-java",
+        reply_ticket_id="ticket-download",
+        objective="下载独立配置包",
+        source_type="qq",
+        source_label="QQ private:2537134688",
+        step_titles=["下载配置包", "验证文件"],
+    )
+
+    manager.mark_job_started(
+        first.reply_ticket_id,
+        command="apt-get install -y openjdk-17-jdk",
+    )
+    manager.mark_job_started(
+        second.reply_ticket_id,
+        command="curl -O https://example.invalid/config.zip",
+    )
+
+    assert first.status == "waiting_job"
+    assert second.status == "waiting_job"
+    assert first.jobs[-1].status == "running"
+    assert second.jobs[-1].status == "running"
 
 
 def test_full_task_workflow_is_loaded_only_for_linked_turn() -> None:

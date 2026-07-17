@@ -126,7 +126,61 @@ def test_pending_task_rebinds_to_follow_up_ticket_without_losing_plan() -> None:
             "Verify version",
             "Report result",
         ]
-        assert manager.get(first.ticket_id) is None
+        assert manager.resolve_ticket_id(first.ticket_id) == second.ticket_id
+        assert manager.get(first.ticket_id) is second
+        assert task_workflow_manager.get_by_ticket(first.ticket_id) is workflow
+    finally:
+        task_workflow_manager.reset()
+
+
+def test_background_job_old_ticket_alias_updates_current_workflow() -> None:
+    manager = ReplyTicketManager()
+    task_workflow_manager.reset()
+    first = manager.create_for_agent(
+        _agent(),
+        item_id="item-1",
+        handler_id="handler-1",
+        message="安装 Java",
+        source_type="web",
+    )
+    second = manager.create_for_agent(
+        _agent(),
+        item_id="item-1",
+        handler_id="handler-1",
+        message="直接换成国内源",
+        source_type="web",
+    )
+    try:
+        manager.upsert_pending_reply(
+            first.ticket_id,
+            request_summary="安装 Java",
+            task_plan=["安装 Java", "验证 java -version"],
+        )
+        workflow = task_workflow_manager.get_by_ticket(first.ticket_id)
+        assert workflow is not None
+        task_workflow_manager.mark_job_started(
+            first.ticket_id,
+            command="apt-get install -y openjdk-17-jdk",
+        )
+
+        assert task_workflow_manager.attach_ticket(
+            workflow.workflow_id,
+            second.ticket_id,
+        ) is True
+        assert manager.rebind_pending_reply(first.ticket_id, second.ticket_id) is True
+
+        task_workflow_manager.record_job_result(
+            first.ticket_id,
+            command="apt-get install -y openjdk-17-jdk",
+            success=False,
+            result_summary="Unable to locate package openjdk-17-jdk",
+            exit_code=100,
+        )
+
+        assert manager.get(first.ticket_id) is second
+        assert workflow.reply_ticket_id == second.ticket_id
+        assert workflow.status == "active"
+        assert "Unable to locate package" in workflow.latest_progress
     finally:
         task_workflow_manager.reset()
 

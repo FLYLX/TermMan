@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from app.services.agent.reply_ticket import reply_ticket_manager
 from app.services.agent.session import AgentSession, InputMessage, InputType
+from app.services.agent.task_workflow import task_workflow_manager
 
 
 def test_agent_session_converts_dsml_content_into_tool_call() -> None:
@@ -97,3 +98,147 @@ def test_terminal_callback_attaches_original_ticket_during_processing(
     assert observed == [ticket.ticket_id]
     assert agent._context.reply_ticket_id == ""
     reply_ticket_manager.reset()
+
+
+def test_old_background_job_ticket_attaches_rebound_current_ticket(
+    monkeypatch,
+) -> None:
+    reply_ticket_manager.reset()
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_context_token="",
+            reply_ticket_id="",
+        )
+    )
+    first = reply_ticket_manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="安装 Java",
+        source_type="web",
+    )
+    second = reply_ticket_manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="直接换成国内源",
+        source_type="web",
+    )
+    reply_ticket_manager.upsert_pending_reply(
+        first.ticket_id,
+        request_summary="安装 Java",
+        task_plan=["安装 Java", "验证版本"],
+    )
+    workflow = task_workflow_manager.get_by_ticket(first.ticket_id)
+    assert workflow is not None
+    task_workflow_manager.attach_ticket(workflow.workflow_id, second.ticket_id)
+    reply_ticket_manager.rebind_pending_reply(first.ticket_id, second.ticket_id)
+    reply_ticket_manager.detach_from_agent(agent, second.ticket_id)
+
+    session = AgentSession("item-1", "handler-1")
+    observed: list[str] = []
+    monkeypatch.setattr(session, "get_agent", lambda: agent)
+    monkeypatch.setattr(
+        session,
+        "_process_terminal_input",
+        lambda _input, current_agent: observed.append(
+            current_agent._context.reply_ticket_id
+        ),
+    )
+
+    try:
+        session._process_input(
+            InputMessage(
+                input_type=InputType.TERMINAL,
+                content="old job failed",
+                reply_ticket_id=first.ticket_id,
+            )
+        )
+
+        assert observed == [second.ticket_id]
+        assert agent._context.reply_ticket_id == ""
+    finally:
+        reply_ticket_manager.reset()
+
+
+def test_schedule_task_workflow_continuation_is_internal_and_bounded(
+    monkeypatch,
+) -> None:
+    from app.services.agent import session as session_module
+
+    task_workflow_manager.reset()
+    task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="ticket-java",
+        objective="安装 Java",
+        source_type="qq",
+        source_label="QQ private:2537134688",
+        step_titles=["安装 Java", "验证 java -version"],
+    )
+    captured: list[tuple] = []
+
+    class FakeThread:
+        def __init__(self, *, target, args, daemon):
+            captured.append((target, args, daemon))
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr(session_module.threading, "Thread", FakeThread)
+    session = AgentSession("item-1", "handler-1")
+
+    try:
+        assert session.schedule_task_workflow_continuation("ticket-java") is True
+        assert session.schedule_task_workflow_continuation("ticket-java") is True
+        assert session.schedule_task_workflow_continuation("ticket-java") is False
+
+        queued_input = captured[0][1][0]
+        assert queued_input.input_type == InputType.TASK_CONTINUATION
+        assert queued_input.reply_ticket_id == "ticket-java"
+        assert "Internal task workflow continuation" in queued_input.content
+        assert captured[0][2] is True
+    finally:
+        task_workflow_manager.reset()
+
+
+def test_clearing_predecessor_command_resumes_dependent_task(monkeypatch) -> None:
+    task_workflow_manager.reset()
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="ticket-dependent",
+        objective="安装 Java 后启动服务器",
+        source_type="qq",
+        source_label="QQ private:2537134688",
+        step_titles=["等待安装完成", "启动服务器"],
+    )
+    task_workflow_manager.mark_waiting(
+        workflow.reply_ticket_id,
+        awaiting_kind="terminal_dependency",
+        awaiting_key="item-1",
+        note="前一个终端任务仍在执行",
+    )
+    session = AgentSession("item-1", "handler-1")
+    monkeypatch.setattr(session, "_schedule_pending_command_recheck", lambda: None)
+    monkeypatch.setattr(session, "_get_log_line_count", lambda: 0)
+    session.mark_terminal_command_dispatched(
+        "mcp_local_execute_command",
+        {"command": "apt-get update"},
+    )
+    scheduled: list[str] = []
+    monkeypatch.setattr(
+        session,
+        "schedule_task_workflow_continuation",
+        lambda ticket_id: scheduled.append(ticket_id) or True,
+    )
+
+    try:
+        session._clear_pending_command()
+
+        assert scheduled == ["ticket-dependent"]
+        assert workflow.status == "active"
+        assert workflow.awaiting_kind == ""
+    finally:
+        task_workflow_manager.reset()
