@@ -2220,6 +2220,7 @@ def _generate_stream_unserialized(
                 command_dispatch_failed = is_command_dispatch_failure_result(
                     tool_name,
                     result_text,
+                    result,
                 )
                 command_dispatch_pending = is_command_dispatch_pending_result(
                     tool_name,

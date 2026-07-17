@@ -2213,6 +2213,20 @@ def test_command_dispatch_failure_result_detects_terminal_failure() -> None:
         "mcp_local_run_job",
         COMMAND_DISPATCH_FAILURE_MESSAGE,
     )
+    assert is_command_dispatch_failure_result(
+        "mcp_local_run_job",
+        "main terminal is inactive",
+        {
+            "success": True,
+            "result": [
+                {
+                    "type": "metadata",
+                    "command_dispatch_failed": True,
+                    "reason": "terminal_unavailable",
+                }
+            ],
+        },
+    )
     assert not is_command_dispatch_failure_result(
         "mcp_local_read_terminal_log",
         COMMAND_DISPATCH_FAILURE_MESSAGE,

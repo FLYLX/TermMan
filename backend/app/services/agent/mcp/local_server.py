@@ -18,6 +18,8 @@ TERMINAL_NOT_CONNECTED_MESSAGE = "终端未连接或未打开，命令没有发�
 AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
 BACKGROUND_JOB_STARTED_MARKER = "background_job_started"
 PENDING_REPLY_SENT_MARKER = "pending_reply_sent"
+COMMAND_DISPATCH_FAILED_MARKER = "command_dispatch_failed"
+TERMINAL_UNAVAILABLE_RESULT_MARKER = "terminal_unavailable"
 
 
 class LocalMCPServer:
@@ -749,6 +751,19 @@ class LocalMCPServer:
         except Exception:
             return TERMINAL_NOT_CONNECTED_MESSAGE
 
+    def _terminal_unavailable_result(self, item_id: str) -> list[dict[str, Any]]:
+        return [
+            {"type": "text", "text": self._terminal_unavailable_message(item_id)},
+            {
+                "type": "metadata",
+                COMMAND_DISPATCH_FAILED_MARKER: True,
+                TERMINAL_UNAVAILABLE_RESULT_MARKER: True,
+                "reason": TERMINAL_UNAVAILABLE_RESULT_MARKER,
+                "terminal_active": False,
+                "command_sent": False,
+            },
+        ]
+
     def _get_item_daemon_context(self, item_id: str):
         import uuid
 
@@ -1244,7 +1259,7 @@ class LocalMCPServer:
                 f"[LocalMCPServer] run_job blocked because main terminal is inactive: "
                 f"item={item_id}, command={command}"
             )
-            return [{"type": "text", "text": self._terminal_unavailable_message(str(item_id))}]
+            return self._terminal_unavailable_result(str(item_id))
 
         timeout_seconds = self._coerce_job_int(args.get("timeout_seconds"), 600, 1, 3600)
         tail_lines = self._coerce_job_int(args.get("tail_lines"), 80, 1, 300)
@@ -1701,7 +1716,7 @@ class LocalMCPServer:
             has_handler = self._ensure_terminal_input_handler(str(item_id))
             debug_log(f"[LocalMCPServer] has_handler={has_handler}")
             if not has_handler:
-                return [{"type": "text", "text": self._terminal_unavailable_message(str(item_id))}]
+                return self._terminal_unavailable_result(str(item_id))
 
             if self._should_auto_route_execute_command_to_job(str(command), str(item_id)):
                 debug_log(
@@ -1851,7 +1866,7 @@ class LocalMCPServer:
             has_handler = self._ensure_terminal_input_handler(item_id)
             debug_log(f"[LocalMCPServer] interrupt has_handler={has_handler}")
             if not has_handler:
-                return [{"type": "text", "text": self._terminal_unavailable_message(str(item_id))}]
+                return self._terminal_unavailable_result(str(item_id))
             
             success = InputSDK().send(item_id, "\x03")
             debug_log(f"[LocalMCPServer] interrupt result: success={success}")

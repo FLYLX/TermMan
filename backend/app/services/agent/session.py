@@ -94,6 +94,8 @@ RUN_JOB_TOOL_NAME = "mcp_local_run_job"
 AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
 BACKGROUND_JOB_STARTED_MARKER = "background_job_started"
 PENDING_REPLY_SENT_MARKER = "pending_reply_sent"
+COMMAND_DISPATCH_FAILED_MARKER = "command_dispatch_failed"
+TERMINAL_UNAVAILABLE_RESULT_MARKER = "terminal_unavailable"
 DUPLICATE_QQ_SEND_SUPPRESSED_TEXT = (
     "Duplicate QQ send skipped: this turn already delivered a visible QQ reply."
 )
@@ -230,9 +232,28 @@ TERMINAL_NO_REPLY_MARKERS = (
 )
 
 
-def is_command_dispatch_failure_result(tool_name: str, result_text: str) -> bool:
+def is_command_dispatch_failure_result(
+    tool_name: str,
+    result_text: str,
+    result: Any = None,
+) -> bool:
     if tool_name not in COMMAND_TOOL_NAMES and tool_name != RUN_JOB_TOOL_NAME:
         return False
+    if isinstance(result, dict):
+        result_data = result.get("result")
+        if isinstance(result_data, list):
+            for item in result_data:
+                if not isinstance(item, dict) or item.get("type") != "metadata":
+                    continue
+                if bool(item.get(COMMAND_DISPATCH_FAILED_MARKER)):
+                    return True
+                if bool(item.get(TERMINAL_UNAVAILABLE_RESULT_MARKER)):
+                    return True
+                if item.get("reason") in {
+                    TERMINAL_UNAVAILABLE_RESULT_MARKER,
+                    "terminal_status_unavailable",
+                }:
+                    return True
     return any(marker in (result_text or "") for marker in COMMAND_DISPATCH_FAILURE_MARKERS)
 
 
@@ -246,6 +267,11 @@ def is_terminal_unavailable_error(message: str) -> bool:
             "terminal is not connected",
             "terminal not connected",
             "terminal unavailable",
+            "terminal_unavailable",
+            "terminal_status_unavailable",
+            "\u7ec8\u7aef\u672a\u542f\u52a8",
+            "\u7ec8\u7aef\u672a\u8fde\u63a5",
+            "\u547d\u4ee4\u6ca1\u6709\u53d1\u9001",
         )
     )
 
@@ -3140,7 +3166,11 @@ class AgentSession:
                 self.emit_status("idle", "")
                 return None
             auto_routed_to_job = is_tool_result_auto_routed_to_job(result)
-            command_dispatch_failed = is_command_dispatch_failure_result(tool_name, result_text)
+            command_dispatch_failed = is_command_dispatch_failure_result(
+                tool_name,
+                result_text,
+                result,
+            )
             command_dispatch_pending = is_command_dispatch_pending_result(tool_name, result_text)
             if result_text and not hide_tool_details and not command_dispatch_pending:
                 self.emit_output(

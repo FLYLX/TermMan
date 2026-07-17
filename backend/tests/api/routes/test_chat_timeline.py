@@ -639,7 +639,14 @@ def test_generate_stream_forces_terminal_action_tool_before_claiming_execution(
             tool_calls.append((name, dict(args)))
             or {
                 "success": True,
-                "result": [{"type": "text", "text": COMMAND_DISPATCH_FAILURE_MESSAGE}],
+                "result": [
+                    {"type": "text", "text": "main terminal is inactive"},
+                    {
+                        "type": "metadata",
+                        "command_dispatch_failed": True,
+                        "reason": "terminal_unavailable",
+                    },
+                ],
             }
         ),
     )
@@ -720,6 +727,110 @@ def test_generate_stream_forces_terminal_action_tool_before_claiming_execution(
     assert tool_calls[0][1]["command"] == "ls"
     assert any(COMMAND_DISPATCH_FAILURE_MESSAGE in chunk_text for chunk_text in chunks)
     assert not any("等一下给你结果" in chunk_text for chunk_text in chunks)
+
+
+def test_structured_terminal_unavailable_failure_reports_and_clears_task_queue(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.services.agent.reply_ticket import reply_ticket_manager
+    from app.services.agent.session import COMMAND_DISPATCH_FAILURE_MESSAGE
+    from app.services.agent.task_workflow import task_workflow_manager
+
+    item, handler = _create_linked_item_and_handler(db)
+    tool_name = "mcp_local_run_job"
+    fake_agent = _make_fake_agent(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": "Run one shell job",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        execute_tool_result={
+            "success": True,
+            "result": [
+                {"type": "text", "text": "main terminal is inactive"},
+                {
+                    "type": "metadata",
+                    "command_dispatch_failed": True,
+                    "reason": "terminal_unavailable",
+                    "command_sent": False,
+                },
+            ],
+        },
+    )
+
+    def fake_completion(**_kwargs):
+        return iter(
+            [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content="",
+                                tool_calls=[
+                                    SimpleNamespace(
+                                        index=0,
+                                        id="call_install",
+                                        function=SimpleNamespace(
+                                            name=tool_name,
+                                            arguments='{"command":"cat /etc/os-release"}',
+                                        ),
+                                    )
+                                ],
+                            ),
+                            finish_reason=None,
+                        )
+                    ]
+                )
+            ]
+        )
+
+    reply_ticket_manager.reset()
+    task_workflow_manager.reset()
+    agent_session_manager.remove_session(str(item.id))
+    monkeypatch.setattr(chat_route, "completion", fake_completion)
+    monkeypatch.setattr(
+        chat_route,
+        "build_chat_turn_messages",
+        lambda *args, **kwargs: [{"role": "user", "content": "安装 Java"}],
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "_plan_agent_task_titles",
+        lambda *_args, **_kwargs: ["检查系统", "安装 Java", "验证版本"],
+    )
+    monkeypatch.setattr(
+        chat_route,
+        "build_status_update_memory_candidate",
+        lambda *args, **kwargs: None,
+    )
+
+    try:
+        chunks = list(
+            chat_route.generate_stream(
+                message="安装 Java",
+                history=[],
+                handler=handler,
+                item_id=str(item.id),
+                agent=fake_agent,
+            )
+        )
+
+        workflows = task_workflow_manager.snapshot(str(item.id))
+        assert len(workflows) == 1
+        assert workflows[0]["status"] == "failed"
+        assert reply_ticket_manager.list_pending_replies(str(item.id)) == []
+        assert any(COMMAND_DISPATCH_FAILURE_MESSAGE in chunk for chunk in chunks)
+    finally:
+        agent_session_manager.remove_session(str(item.id))
+        reply_ticket_manager.reset()
+        task_workflow_manager.reset()
 
 
 def test_generate_stream_executes_dsml_tool_call_without_exposing_markup(

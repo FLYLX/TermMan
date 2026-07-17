@@ -127,6 +127,25 @@ def test_execute_command_reports_specific_live_terminal_failure(monkeypatch) -> 
     assert "命令没有发送" in result[0]["text"]
 
 
+def test_run_job_reports_structured_terminal_unavailable_failure(monkeypatch) -> None:
+    server = LocalMCPServer()
+    monkeypatch.setattr(server, "_ensure_terminal_input_handler", lambda _item_id: False)
+    monkeypatch.setattr(
+        server,
+        "_terminal_unavailable_message",
+        lambda _item_id: "main terminal is inactive",
+    )
+
+    result = server._run_job({"item_id": "item-1", "command": "cat /etc/os-release"})
+
+    assert result[0] == {"type": "text", "text": "main terminal is inactive"}
+    assert result[1]["type"] == "metadata"
+    assert result[1]["command_dispatch_failed"] is True
+    assert result[1]["terminal_unavailable"] is True
+    assert result[1]["reason"] == "terminal_unavailable"
+    assert result[1]["command_sent"] is False
+
+
 def test_read_chat_history_tool_returns_recent_trimmed_context(monkeypatch) -> None:
     import app.services.agent.history.chat as chat_history
 
@@ -369,12 +388,13 @@ def test_execute_command_blocks_before_auto_route_when_main_terminal_stopped(
         },
     )
 
-    assert result == [
-        {
-            "type": "text",
-            "text": "终端未启动或未连接。终端 Item ID 无效。命令没有发送。",
-        }
-    ]
+    assert result[0] == {
+        "type": "text",
+        "text": "终端未启动或未连接。终端 Item ID 无效。命令没有发送。",
+    }
+    assert result[1]["command_dispatch_failed"] is True
+    assert result[1]["reason"] == "terminal_unavailable"
+    assert result[1]["command_sent"] is False
 
 
 def test_execute_command_blocks_when_busy_terminal_command_pending(monkeypatch) -> None:
@@ -708,15 +728,16 @@ def test_execute_command_reports_disconnected_without_handler(monkeypatch) -> No
         },
     )
 
-    assert result == [
-        {
-            "type": "text",
-            "text": (
-                "终端已启动并已连接，但 Backend 输入处理器不可用，"
-                "自动恢复失败。命令没有发送。"
-            ),
-        }
-    ]
+    assert result[0] == {
+        "type": "text",
+        "text": (
+            "终端已启动并已连接，但 Backend 输入处理器不可用，"
+            "自动恢复失败。命令没有发送。"
+        ),
+    }
+    assert result[1]["command_dispatch_failed"] is True
+    assert result[1]["reason"] == "terminal_unavailable"
+    assert result[1]["command_sent"] is False
     assert restore_calls == ["item-1"]
 
 
@@ -1002,12 +1023,13 @@ def test_run_job_blocks_when_main_terminal_stopped(monkeypatch) -> None:
         },
     )
 
-    assert result == [
-        {
-            "type": "text",
-            "text": "终端未启动或未连接。终端 Item ID 无效。命令没有发送。",
-        }
-    ]
+    assert result[0] == {
+        "type": "text",
+        "text": "终端未启动或未连接。终端 Item ID 无效。命令没有发送。",
+    }
+    assert result[1]["command_dispatch_failed"] is True
+    assert result[1]["reason"] == "terminal_unavailable"
+    assert result[1]["command_sent"] is False
     assert not any(item.get("background_job_started") for item in result)
 
 
