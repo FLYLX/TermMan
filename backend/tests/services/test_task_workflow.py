@@ -225,30 +225,6 @@ def test_recoverable_terminal_wait_cannot_finalize_and_resume_clears_wait() -> N
     assert workflow.current_step().status == "running"
 
 
-def test_terminal_dependency_resumes_only_after_predecessor_clears() -> None:
-    manager = TaskWorkflowManager()
-    workflow = _create_java_workflow(manager)
-
-    assert manager.mark_waiting(
-        "ticket-java",
-        awaiting_kind="terminal_dependency",
-        awaiting_key="item-java",
-        note="前一个终端任务仍在执行",
-    ) is True
-    assert workflow.status == "blocked"
-    assert workflow.current_step().status == "waiting"
-
-    resumed = manager.resume_waiting_dependencies(
-        item_id="item-java",
-        awaiting_kind="terminal_dependency",
-    )
-
-    assert resumed == ["ticket-java"]
-    assert workflow.status == "active"
-    assert workflow.awaiting_kind == ""
-    assert workflow.current_step().status == "running"
-
-
 def test_independent_workflows_can_have_parallel_background_jobs() -> None:
     manager = TaskWorkflowManager()
     first = _create_java_workflow(manager)

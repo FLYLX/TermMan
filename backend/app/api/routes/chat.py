@@ -181,6 +181,20 @@ TASK_WORKFLOW_DOMAIN_RE = re.compile(
     r"docker|python|pip|node|npm|bun|数据库|sqlite|前端|后端|机器人|qq)",
     re.IGNORECASE,
 )
+TASK_WORKFLOW_STATUS_QUESTION_RE = re.compile(
+    r"(你在.{0,12}(?:启动|运行|安装|下载|执行|做|弄)什么|"
+    r"(?:启动|运行|安装|下载|执行)的?是什么|现在在干嘛|当前在做什么|"
+    r"(?:什么|哪个).{0,8}(?:任务|服务|程序).{0,4}(?:在跑|在启动|在运行))",
+    re.IGNORECASE,
+)
+TASK_WORKFLOW_VAGUE_ACK_RE = re.compile(
+    r"^(?:已经?)?(?:启动|运行|安装|下载|执行|打开|弄好|做好|完成|开)了[啊呀吧呢。！!]*$",
+    re.IGNORECASE,
+)
+TASK_WORKFLOW_VAGUE_COMMAND_RE = re.compile(
+    r"^(?:给我)?(?:启动|运行|执行|安装|下载|开始|继续|做|弄)(?:一下)?[吧啊呀。！!]*$",
+    re.IGNORECASE,
+)
 ROBOT_SEND_FOLLOW_UP_RE = re.compile(
     r"(?:转发|发送|发(?!现|生|布|挥|明|烧|呆|票|热)|通知|告诉|(?:跟|向|对).{0,24}说)",
     re.IGNORECASE,
@@ -870,7 +884,13 @@ def _mark_agent_task_plan_failed(
 def _should_create_task_workflow(message: str, tools: list[dict[str, Any]]) -> bool:
     if not tools:
         return False
-    text = str(message or "")
+    text = str(message or "").strip()
+    if (
+        TASK_WORKFLOW_STATUS_QUESTION_RE.search(text)
+        or TASK_WORKFLOW_VAGUE_ACK_RE.fullmatch(text)
+        or TASK_WORKFLOW_VAGUE_COMMAND_RE.fullmatch(text)
+    ):
+        return False
     return bool(
         TASK_WORKFLOW_REQUEST_RE.search(text)
         or TASK_WORKFLOW_CONTINUATION_RE.search(text)
@@ -911,7 +931,7 @@ def _create_agent_task_plan(
     tools: list[dict[str, Any]],
     reply_ticket_id: str = "",
 ) -> PlannedTaskRuntime | None:
-    if not _should_create_task_workflow(message, tools):
+    if not tools:
         return None
 
     locked_reply_ticket_id = str(reply_ticket_id or "").strip()
@@ -942,6 +962,14 @@ def _create_agent_task_plan(
         source_type=source_type,
         source_label=source_label,
     )
+    if TASK_WORKFLOW_STATUS_QUESTION_RE.search(task_message):
+        return None
+    if TASK_WORKFLOW_VAGUE_ACK_RE.fullmatch(task_message):
+        return None
+    if TASK_WORKFLOW_VAGUE_COMMAND_RE.fullmatch(task_message):
+        return None
+    if not _should_create_task_workflow(task_message, tools):
+        return None
     resumable_follow_up = bool(
         resumable
         and (
@@ -2067,21 +2095,35 @@ def _generate_stream_unserialized(
                             ):
                                 yield _to_sse(event)
                         else:
-                            if planned_task_runtime:
-                                reply_ticket_manager.mark_pending_reply_waiting(
-                                    reply_ticket.ticket_id,
-                                    awaiting_kind="terminal_dependency",
-                                    awaiting_key=item_id,
-                                    reason=terminal_input_error,
-                                )
-                            warning_event = _persist_and_broadcast_event(
-                                item_id,
-                                role="assistant",
-                                content=terminal_input_error,
-                                message_type="agent_warning",
-                                extra={"tool_name": tool_name},
+                            assistant_message["tool_calls"].append(
+                                {
+                                    "id": tool_call["id"],
+                                    "type": "function",
+                                    "function": {
+                                        "name": tool_name,
+                                        "arguments": normalized_tool_args_str,
+                                    },
+                                }
                             )
-                            yield _to_sse(warning_event)
+                            tool_messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call["id"],
+                                    "content": (
+                                        f"Error: {terminal_input_error} "
+                                        "Choose the next action yourself. For an independent "
+                                        "non-interactive operation, use mcp_local_run_job; "
+                                        "otherwise report the actual failure."
+                                    ),
+                                }
+                            )
+                            task_workflow_manager.record_tool_result(
+                                reply_ticket.ticket_id,
+                                tool_name=tool_name,
+                                success=False,
+                                result_summary=terminal_input_error,
+                            )
+                            continue
                         _broadcast_agent_status(item_id, "idle")
                         yield _to_sse({"done": True})
                         return

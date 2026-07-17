@@ -1123,16 +1123,7 @@ class AgentSession:
     def _clear_pending_command(self):
         self._cancel_pending_command_recheck()
         with self.lock:
-            had_pending_command = self._pending_command is not None
             self._pending_command = None
-        if not had_pending_command:
-            return
-        resumed_ticket_ids = task_workflow_manager.resume_waiting_dependencies(
-            item_id=self.item_id,
-            awaiting_kind="terminal_dependency",
-        )
-        for ticket_id in resumed_ticket_ids:
-            self.schedule_task_workflow_continuation(ticket_id)
 
     def _get_pending_command(self) -> PendingCommand | None:
         with self.lock:
@@ -3007,55 +2998,47 @@ class AgentSession:
             if reply_ticket_id:
                 tool_args["_reply_ticket_id"] = reply_ticket_id
             terminal_input_error = None
+            terminal_validation_result = None
             if not self._should_auto_route_tool_to_job(tool_name, tool_args):
                 terminal_input_error = self._validate_terminal_command_input(tool_name, tool_args)
             if terminal_input_error:
-                failure_reported = False
                 if is_terminal_unavailable_error(terminal_input_error):
                     failure_reported = self._fail_and_report_pending_reply(
                         reply_ticket_id,
                         report=terminal_input_error,
                         reason=terminal_input_error,
                     )
-                elif reply_ticket_id:
-                    try:
-                        from app.services.agent.reply_ticket import reply_ticket_manager
-
-                        reply_ticket_manager.mark_pending_reply_waiting(
-                            reply_ticket_id,
-                            awaiting_kind="terminal_dependency",
-                            awaiting_key=self.item_id,
-                            reason=terminal_input_error,
-                        )
-                    except Exception:
-                        logger.exception(
-                            "[AgentSession] Failed to mark terminal dependency: "
-                            "item=%s ticket=%s",
-                            self.item_id,
-                            reply_ticket_id,
-                        )
-                self._send_pending_integration_response(
-                    pending_command_for_delivery,
-                    terminal_input_error,
-                )
-                if not failure_reported:
-                    self.emit_output(
+                    self._send_pending_integration_response(
+                        pending_command_for_delivery,
                         terminal_input_error,
-                        "agent_warning",
-                        {"tool_name": tool_name},
                     )
-                return None
+                    if not failure_reported:
+                        self.emit_output(
+                            terminal_input_error,
+                            "agent_warning",
+                            {"tool_name": tool_name},
+                        )
+                    return None
+                terminal_validation_result = {
+                    "success": False,
+                    "error": (
+                        f"{terminal_input_error} Choose the next action yourself. "
+                        "Use mcp_local_run_job for an independent non-interactive "
+                        "operation, or report the actual failure."
+                    ),
+                }
             hide_tool_details = self._should_hide_tool_details(tool_name)
 
-            if hide_tool_details:
-                self.emit_status("tool", "读取日志中", {"tool_name": tool_name})
-            else:
-                self.emit_status("tool", f"调用工具：{tool_name}", {"tool_name": tool_name})
-                self.emit_output(
-                    f"执行工具: {tool_name}",
-                    "agent_action",
-                    {"tool_name": tool_name},
-                )
+            if terminal_validation_result is None:
+                if hide_tool_details:
+                    self.emit_status("tool", "读取日志中", {"tool_name": tool_name})
+                else:
+                    self.emit_status("tool", f"调用工具：{tool_name}", {"tool_name": tool_name})
+                    self.emit_output(
+                        f"执行工具: {tool_name}",
+                        "agent_action",
+                        {"tool_name": tool_name},
+                    )
 
             if (
                 tool_name != "mcp_local_update_task_workflow"
@@ -3099,6 +3082,8 @@ class AgentSession:
                         },
                     ],
                 }
+            elif terminal_validation_result is not None:
+                result = terminal_validation_result
             else:
                 result = loop.run_until_complete(agent.execute_tool(tool_name, tool_args))
                 logger.info(f"[AgentSession] Tool {tool_name} executed")

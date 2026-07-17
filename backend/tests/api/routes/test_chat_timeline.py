@@ -2091,6 +2091,26 @@ def test_generate_stream_blocks_shell_command_while_busy_terminal_command_pendin
     def fake_stream_completion(**kwargs):
         assert kwargs["messages"]
         call_count["value"] += 1
+        if call_count["value"] == 2:
+            assert any(
+                "Choose the next action yourself" in str(message.get("content") or "")
+                for message in kwargs["messages"]
+            )
+            return iter(
+                [
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(
+                                    content="当前终端正在执行 apt update，java -version 没有发送。",
+                                    tool_calls=None,
+                                ),
+                                finish_reason="stop",
+                            )
+                        ]
+                    )
+                ]
+            )
         return iter(
             [
                 SimpleNamespace(
@@ -2148,10 +2168,11 @@ def test_generate_stream_blocks_shell_command_while_busy_terminal_command_pendin
     finally:
         agent_session_manager.remove_session(item_id)
 
-    assert call_count["value"] == 1
-    assert any('"type": "agent_warning"' in chunk for chunk in chunks)
+    assert call_count["value"] == 2
+    assert any('"type": "agent_response"' in chunk for chunk in chunks)
     assert any("apt update" in chunk and "java -version" in chunk for chunk in chunks)
     assert not any('"type": "agent_tool_result"' in chunk for chunk in chunks)
+    assert not any("terminal_dependency" in chunk for chunk in chunks)
     assert not any("max iteration limit" in chunk for chunk in chunks)
 
 
@@ -3039,6 +3060,57 @@ def test_agent_task_plan_records_reply_origin(monkeypatch) -> None:
     assert workflow.objective == "install Java"
     assert workflow.source_label == "QQ group:770362397"
     task_workflow_manager.reset()
+
+
+def test_vague_start_messages_and_status_questions_do_not_create_tasks(
+    monkeypatch,
+) -> None:
+    from app.api.routes import chat as chat_route
+    from app.services.agent.reply_ticket import reply_ticket_manager
+    from app.services.agent.task_workflow import task_workflow_manager
+
+    handler = SimpleNamespace(id="handler-1")
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_conversation_key="",
+            reply_ticket_id="",
+        )
+    )
+    tools = [{"type": "function", "function": {"name": "mcp_local_run_job"}}]
+    monkeypatch.setattr(
+        chat_route,
+        "build_status_update_memory_candidate",
+        lambda *args, **kwargs: None,
+    )
+
+    reply_ticket_manager.reset()
+    task_workflow_manager.reset()
+    try:
+        for message in ("启动", "启动了", "你在启动什么"):
+            ticket = reply_ticket_manager.create_for_agent(
+                agent,
+                item_id="item-1",
+                handler_id="handler-1",
+                message=message,
+                source_type="web",
+            )
+            plan = chat_route._create_agent_task_plan(
+                "item-1",
+                handler=handler,
+                agent=agent,
+                message=message,
+                history=[],
+                tools=tools,
+                reply_ticket_id=ticket.ticket_id,
+            )
+            assert plan is None
+
+        assert task_workflow_manager.snapshot("item-1") == []
+        assert reply_ticket_manager.list_pending_replies("item-1") == []
+    finally:
+        reply_ticket_manager.reset()
+        task_workflow_manager.reset()
 
 
 def test_final_pending_qq_report_is_delivered_and_removed_by_backend(

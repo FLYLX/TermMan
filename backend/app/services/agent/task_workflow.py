@@ -299,36 +299,6 @@ class TaskWorkflowManager:
             workflow.updated_at = _utcnow()
             return True
 
-    def resume_waiting_dependencies(
-        self,
-        *,
-        item_id: str,
-        awaiting_kind: str,
-    ) -> list[str]:
-        resumed_ticket_ids: list[str] = []
-        with self._lock:
-            for workflow in self._workflows.values():
-                if workflow.item_id != str(item_id):
-                    continue
-                if workflow.status != "blocked":
-                    continue
-                if workflow.awaiting_kind != str(awaiting_kind):
-                    continue
-                workflow.status = "active"
-                workflow.queue_status = "working"
-                workflow.awaiting_kind = ""
-                workflow.awaiting_key = ""
-                workflow.blocker = ""
-                workflow.latest_progress = "Required predecessor completed; task resumed."
-                workflow.auto_resume_attempts = 0
-                step = workflow.current_step()
-                if step and step.status not in {"completed", "cancelled"}:
-                    step.status = "running"
-                workflow.updated_at = _utcnow()
-                if workflow.reply_ticket_id:
-                    resumed_ticket_ids.append(workflow.reply_ticket_id)
-        return resumed_ticket_ids
-
     def find_resumable(
         self,
         *,
@@ -777,10 +747,9 @@ class TaskWorkflowManager:
                 "available. Execute one concrete action in the current turn.",
                 "9. When report_policy is final_only, do not send intermediate progress messages. "
                 "Continue working and send one concise report only after verified success or final failure.",
-                "10. Independent workflows may run background jobs in parallel. Steps inside one "
-                "workflow are ordered dependencies: do not start a later step until the current "
-                "step has completed. A terminal_dependency may wait for its predecessor, then it "
-                "must resume automatically.",
+                "10. Independent workflows may run background jobs in parallel. Choose the "
+                "execution order yourself from the task plan and current evidence; do not create "
+                "a task-level waiting/blocking state merely because another task is running.",
                 "11. Never leave a task paused because a model turn did not converge. Continue "
                 "automatically within the retry limit; after that, report the actual failure to "
                 "the immutable source and remove the task queue entry.",
