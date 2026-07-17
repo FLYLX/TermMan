@@ -58,13 +58,21 @@ ROBOT_HUMAN_LIKE_REPLY_DISCIPLINE = (
     "only when silence is enough and the controller should remain available.\n"
 )
 ROBOT_SINGLE_REPLY_DISCIPLINE = (
-    "- Single-turn QQ delivery: for one live QQ input, normally send exactly one "
-    "visible QQ reply. Do not send several status variants for the same question "
+    "- Single-turn QQ delivery: for one live QQ input, make exactly one send-tool "
+    "call for one logical reply. That call may use a `messages` array with 2-3 "
+    "distinct natural chat bubbles when a reaction plus a follow-up feels human. "
+    "Do not send several status variants for the same question "
     "such as 'still loading', 'done', and 'actually done' in one handling chain. "
     "If new evidence changes the answer during the same turn, send only the newest "
     "decisive conclusion. After `mcp_robot_send_message` succeeds, the final "
     "assistant text should be `[no_qq_reply]` or empty/internal; never restate the "
     "same QQ answer for TermMan to deliver again.\n"
+)
+ROBOT_SECRET_HANDLING_INSTRUCTION = (
+    "- Sensitive-data rule: never repeat, quote, summarize, or broadcast passwords, "
+    "API keys, access tokens, cookies, private keys, or login credentials posted in "
+    "QQ. Do not save them to memory. Briefly warn that the exposed credential should "
+    "be rotated or deleted instead of echoing it back.\n"
 )
 ROBOT_REFERENCE_RESOLUTION_INSTRUCTION = (
     "- \u6307\u4ee3\u5224\u65ad\uff1a\u5f53 QQ \u6d88\u606f\u91cc\u51fa\u73b0\u201c\u4f60/\u4ed6/\u5979/\u5b83/\u8fd9\u4e2a/\u90a3\u4e2a/\u521a\u624d\u90a3\u4e2a/\u4e0a\u9762\u90a3\u4e2a\u201d\u3001"
@@ -115,6 +123,7 @@ ROBOT_MESSAGING_PROMPT = (
     f"{ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION}"
     f"{ROBOT_HUMAN_LIKE_REPLY_DISCIPLINE}"
     f"{ROBOT_SINGLE_REPLY_DISCIPLINE}"
+    f"{ROBOT_SECRET_HANDLING_INSTRUCTION}"
     f"{ACTIVE_CHAT_WINDOW_CONTINUATION_INSTRUCTION}"
 )
 
@@ -140,6 +149,7 @@ ROBOT_ACTIVE_CONTEXT_PROMPT = (
     f"{ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION}"
     f"{ROBOT_HUMAN_LIKE_REPLY_DISCIPLINE}"
     f"{ROBOT_SINGLE_REPLY_DISCIPLINE}"
+    f"{ROBOT_SECRET_HANDLING_INSTRUCTION}"
     f"{ACTIVE_CHAT_WINDOW_CONTINUATION_INSTRUCTION}"
     f"{ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION}"
     f"{NO_QQ_REPLY_INSTRUCTION}"
@@ -154,6 +164,7 @@ ROBOT_BACKEND_CONTEXT_PROMPT = (
     "- 当前上下文只有一个可见 QQ 目标且用户明确说转发过去时，可以直接发送；有多个匹配目标时先询问。\n"
     "- 只有用户显式提供 QQ 群号或 QQ 号时，才使用 `target_type` 和 `target_id`。\n"
     "- QQ 目标或机器人身份缺失/歧义时，先询问。\n"
+    "- 不要把密码、API key、token、cookie、私钥或登录凭据转发到 QQ；提醒用户撤回并更换凭据。\n"
     "- 只有用户明确要求，或严重告警确实适用于所有选中 QQ 会话时，才 broadcast。"
 )
 
@@ -166,6 +177,7 @@ ROBOT_REFLECTION_PROMPT = (
     f"{ROBOT_SENDER_IDENTITY_INSTRUCTION}"
     f"{ROBOT_HUMAN_LIKE_REPLY_DISCIPLINE}"
     f"{ROBOT_SINGLE_REPLY_DISCIPLINE}"
+    f"{ROBOT_SECRET_HANDLING_INSTRUCTION}"
     f"{ACTIVE_CHAT_WINDOW_CONTINUATION_INSTRUCTION}"
     f"{ACTIVE_CHAT_WINDOW_SLEEP_INSTRUCTION}"
     f"{NO_QQ_REPLY_INSTRUCTION}"
@@ -265,6 +277,7 @@ def build_robot_delivery_reflection_prompt(final_response: str) -> str:
         f"{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
         f"{ROBOT_SENDER_IDENTITY_INSTRUCTION}"
         f"{ROBOT_SINGLE_REPLY_DISCIPLINE}"
+        f"{ROBOT_SECRET_HANDLING_INSTRUCTION}"
         "For `trigger=active_chat_window`, if this is ordinary group chatter or not for the bot, "
         "call `mcp_robot_sleep_conversation` with no arguments instead of returning only `[no_qq_reply]`."
     )

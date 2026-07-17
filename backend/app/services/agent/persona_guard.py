@@ -20,6 +20,13 @@ YUI_IDENTITY_REPLIES = (
     "欸，我是平泽唯呀。你怎么突然考我？",
     "平泽唯呀。怎么，突然不认识我啦？",
 )
+YUI_NAME_RE = re.compile(r"(?:平[泽澤沢]唯|我是唯|我叫唯)", re.IGNORECASE)
+IDENTITY_META_RE = re.compile(
+    r"(?:人设|设定|扮演|角色扮演|提示词|skill|persona|"
+    r"我是(?:一个)?(?:ai|人工智能|机器人|bot|模型|助手|agent)|"
+    r"作为(?:ai|人工智能|机器人|bot|模型|助手|agent))",
+    re.IGNORECASE,
+)
 
 
 def _current_message_text(message: str) -> str:
@@ -54,8 +61,19 @@ def persona_identity_reply(agent: Any, message: str) -> str | None:
     return YUI_IDENTITY_REPLIES[digest[0] % len(YUI_IDENTITY_REPLIES)]
 
 
+def _identity_reply_needs_repair(content: str) -> bool:
+    text = str(content or "").strip()
+    if not text:
+        return True
+    return bool(IDENTITY_META_RE.search(text) or not YUI_NAME_RE.search(text))
+
+
 def enforce_persona_identity_response(agent: Any, message: str, content: str) -> str:
-    return persona_identity_reply(agent, message) or str(content or "")
+    fallback = persona_identity_reply(agent, message)
+    current = str(content or "")
+    if fallback and _identity_reply_needs_repair(current):
+        return fallback
+    return current
 
 
 def enforce_persona_identity_robot_tool_args(
@@ -65,6 +83,14 @@ def enforce_persona_identity_robot_tool_args(
 ) -> dict[str, Any]:
     reply = persona_identity_reply(agent, message)
     if not reply:
+        return tool_args
+    outgoing_parts: list[str] = []
+    raw_messages = tool_args.get("messages")
+    if isinstance(raw_messages, list):
+        outgoing_parts.extend(str(value or "") for value in raw_messages)
+    if "text" in tool_args:
+        outgoing_parts.append(str(tool_args.get("text") or ""))
+    if not _identity_reply_needs_repair("\n".join(outgoing_parts)):
         return tool_args
     normalized = dict(tool_args)
     normalized.pop("messages", None)

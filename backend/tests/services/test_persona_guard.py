@@ -46,6 +46,31 @@ def test_yui_identity_question_rewrites_robot_messages_payload_to_one_reply() ->
     assert "messages" not in args
 
 
+def test_yui_identity_guard_preserves_natural_persona_reply() -> None:
+    agent = _agent("hirasawa_yui_persona")
+    content = "欸，我是唯呀，平泽唯。怎么突然问这个？"
+
+    assert enforce_persona_identity_response(agent, "你是谁啊", content) == content
+
+
+def test_yui_identity_guard_preserves_natural_multi_message_payload() -> None:
+    agent = _agent("hirasawa_yui_persona")
+    args = {
+        "messages": [
+            "欸，我是唯呀",
+            "平泽唯。怎么突然不认识我啦？",
+        ]
+    }
+
+    rewritten = enforce_persona_identity_robot_tool_args(
+        agent,
+        "[Current QQ message]\n你叫什么名字？",
+        args,
+    )
+
+    assert rewritten == args
+
+
 def test_yui_identity_guard_does_not_rewrite_embedded_question_for_someone_else() -> None:
     agent = _agent("hirasawa_yui_persona")
 
