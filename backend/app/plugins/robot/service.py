@@ -6,6 +6,7 @@ import queue
 import re
 import threading
 import uuid
+from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from math import ceil
@@ -710,6 +711,10 @@ class RobotService:
             conversation_key=job.conversation_key,
             message_text=message_text,
         )
+        pending_message_texts = self._pending_chat_message_texts(
+            robot.id,
+            job.conversation_key,
+        )
         return self._agent_message_with_context(
             inbound_message,
             message_text,
@@ -727,6 +732,7 @@ class RobotService:
                 conversation_key=job.conversation_key,
                 trigger_reason=job.trigger_reason,
                 current_message_text=message_text,
+                excluded_message_texts=pending_message_texts,
             ),
         )
 
@@ -778,6 +784,7 @@ class RobotService:
         robot: Robot,
         message: RobotInboundMessage,
     ) -> RobotDispatchResponse:
+        self._enrich_message_bot_identity(robot, message)
         logger.info(
             "[RobotService] Inbound robot=%s sender=%s target=%s text=%s",
             robot.id,
@@ -1267,6 +1274,19 @@ class RobotService:
             entries = list(self._pending_chat_inputs.pop(key, []) or [])
         return entries
 
+    def _pending_chat_message_texts(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+    ) -> list[str]:
+        key = self._pending_chat_key(robot_id, conversation_key)
+        with self._lock:
+            return [
+                entry.message_text
+                for entry in self._pending_chat_inputs.get(key, [])
+                if entry.message_text.strip()
+            ]
+
     def _prepend_pending_chat_inputs(
         self,
         robot_id: uuid.UUID | str,
@@ -1362,7 +1382,7 @@ class RobotService:
         conversation_key: str = "",
     ) -> str:
         lines = [
-            "[Pending QQ messages; answer each unanswered item in order]",
+            "[Pending QQ messages; merge same-sender follow-ups and answer current unresolved intents]",
             "These messages arrived while the bot was already thinking. Treat them as current live QQ messages, not old log history.",
             f"source=QQ; conversation={conversation_key or 'current'}",
         ]
@@ -1381,7 +1401,8 @@ class RobotService:
             )
             index += 1
         lines.append(
-            "Reply in the current QQ conversation. If multiple people asked, answer them one by one in the same order."
+            "Messages from the same sender are one evolving intent: use earlier lines only as context and answer that sender once based on the latest unresolved request. "
+            "If multiple distinct senders each asked the bot something, answer each sender once in order. Default to one concise QQ bubble; use separate messages only for those distinct senders."
         )
         return "\n".join(lines)
 
@@ -1416,6 +1437,13 @@ class RobotService:
             )
 
         latest = entries[-1]
+        distinct_sender_keys = {
+            entry.sender_key for entry in entries if entry.sender_key.strip()
+        }
+        followup_reply_target = latest.reply_target.model_copy(deep=True)
+        followup_reply_target.metadata["allow_multiple_reply_messages"] = (
+            len(distinct_sender_keys) > 1
+        )
         batch_text = self._pending_chat_batch_text(
             entries,
             conversation_key=conversation_key,
@@ -1431,7 +1459,7 @@ class RobotService:
         synthetic_message = RobotInboundMessage(
             sender_key=latest.sender_key,
             text=latest.message_text,
-            reply_target=latest.reply_target.model_copy(deep=True),
+            reply_target=followup_reply_target.model_copy(deep=True),
         )
         conversation_generation = self._begin_reply_context_dispatch(
             robot,
@@ -1458,7 +1486,7 @@ class RobotService:
                 live_context_card=live_context_card,
             ),
             sender_key=latest.sender_key,
-            reply_target=latest.reply_target.model_copy(deep=True),
+            reply_target=followup_reply_target,
             conversation_key=conversation_key,
             direct_reply_trigger=False,
             reply_context_active=True,
@@ -1523,6 +1551,10 @@ class RobotService:
         if line_budget <= 0:
             return ""
         try:
+            from app.plugins.robot.conversation_memory import (
+                recent_dialogue_scan_lines,
+                select_recent_dialogue_lines,
+            )
             from app.plugins.robot.internal_trace import sanitize_robot_visible_text
 
             recent = self._agent_visible_message_text(
@@ -1530,7 +1562,7 @@ class RobotService:
                     robot_conversation_memory.read_recent(
                         robot.id,
                         conversation_key,
-                        lines=line_budget,
+                        lines=recent_dialogue_scan_lines(line_budget),
                     )
                 )
             ).strip()
@@ -1549,6 +1581,10 @@ class RobotService:
             current_message_text=current_message_text,
             excluded_message_texts=excluded_message_texts,
         )
+        recent_lines = select_recent_dialogue_lines(
+            "\n".join(recent_lines),
+            lines=line_budget,
+        )
         if not recent_lines:
             return ""
         return (
@@ -1556,6 +1592,7 @@ class RobotService:
             "answer only current/pending messages]\n"
             f"- context_budget: {strategy}; latest {line_budget} line(s) only\n"
             f"- context_hint: {hint}\n"
+            "- context_rule: use only evidence from this QQ conversation. If the current short message is still ambiguous, call `mcp_robot_read_conversation_memory` once; if it remains unclear, ask one brief clarification instead of guessing or inventing a correction.\n"
             + "\n".join(recent_lines)
         )
 
@@ -1619,28 +1656,28 @@ class RobotService:
         excluded_message_texts: list[str] | None = None,
     ) -> list[str]:
         recent_lines = [line for line in str(recent or "").splitlines() if line.strip()]
-        excluded_texts = {
-            self._normalize_live_context_message_text(value)
+        excluded_counts = Counter(
+            normalized
             for value in (excluded_message_texts or [])
-            if self._normalize_live_context_message_text(value)
-        }
-        if excluded_texts:
-            return [
-                line
-                for line in recent_lines
-                if self._normalize_live_context_message_text(
-                    self._conversation_memory_line_text(line)
-                )
-                not in excluded_texts
-            ]
+            for normalized in [self._normalize_live_context_message_text(value)]
+            if normalized
+        )
         current_text = self._normalize_live_context_message_text(current_message_text)
-        if recent_lines and current_text:
-            last_line_text = self._normalize_live_context_message_text(
-                self._conversation_memory_line_text(recent_lines[-1])
+        if current_text and excluded_counts[current_text] <= 0:
+            excluded_counts[current_text] += 1
+        if not excluded_counts:
+            return recent_lines
+
+        kept_reversed: list[str] = []
+        for line in reversed(recent_lines):
+            normalized_line = self._normalize_live_context_message_text(
+                self._conversation_memory_line_text(line)
             )
-            if last_line_text == current_text:
-                recent_lines = recent_lines[:-1]
-        return recent_lines
+            if excluded_counts[normalized_line] > 0:
+                excluded_counts[normalized_line] -= 1
+                continue
+            kept_reversed.append(line)
+        return list(reversed(kept_reversed))
 
     @staticmethod
     def _conversation_memory_line_text(line: str) -> str:
@@ -2042,9 +2079,56 @@ class RobotService:
     def _bot_self_ids_from_message(self, message: RobotInboundMessage) -> set[str]:
         metadata = message.reply_target.metadata
         raw_ids = metadata.get("bot_self_ids")
-        if not isinstance(raw_ids, list):
-            return set()
-        return {str(value).strip() for value in raw_ids if str(value or "").strip()}
+        values = list(raw_ids) if isinstance(raw_ids, list) else []
+        bot_identity = metadata.get("bot_identity")
+        if isinstance(bot_identity, dict):
+            identity_ids = bot_identity.get("self_ids")
+            if isinstance(identity_ids, list):
+                values.extend(identity_ids)
+        return {str(value).strip() for value in values if str(value or "").strip()}
+
+    def _enrich_message_bot_identity(
+        self,
+        robot: Robot,
+        message: RobotInboundMessage,
+    ) -> None:
+        metadata = message.reply_target.metadata
+        identity = metadata.get("bot_identity")
+        identity = dict(identity) if isinstance(identity, dict) else {}
+
+        self_ids = set(self._bot_self_ids_from_message(message))
+        try:
+            credentials = get_robot_runtime_config(robot).get("credentials") or {}
+        except Exception:
+            credentials = {}
+        configured_self_id = str(credentials.get("self_id") or "").strip()
+        if configured_self_id:
+            self_ids.add(configured_self_id)
+
+        names = [
+            str(value).strip()
+            for value in (identity.get("aliases") or [])
+            if str(value or "").strip()
+        ]
+        display_name = str(identity.get("display_name") or "").strip()
+        configured_name = str(robot.name or "").strip()
+        for value in (display_name, configured_name):
+            if value and value not in names:
+                names.append(value)
+
+        metadata["bot_self_ids"] = sorted(self_ids)
+        metadata["bot_identity"] = {
+            "self_ids": sorted(self_ids),
+            "display_name": display_name or configured_name,
+            "aliases": names,
+        }
+
+    @staticmethod
+    def _bot_display_name_from_message(message: RobotInboundMessage) -> str:
+        identity = message.reply_target.metadata.get("bot_identity")
+        if not isinstance(identity, dict):
+            return ""
+        return str(identity.get("display_name") or "").strip()
 
     def _message_mentions_bot_self_id(self, message: RobotInboundMessage) -> bool:
         metadata = message.reply_target.metadata
@@ -3247,17 +3331,33 @@ class RobotService:
             reason = "none"
 
         self_id_label = ", ".join(bot_self_ids)
-        return "\n".join(
+        bot_identity = message.reply_target.metadata.get("bot_identity")
+        bot_identity = bot_identity if isinstance(bot_identity, dict) else {}
+        display_name = str(bot_identity.get("display_name") or "").strip()
+        aliases = [
+            str(value).strip()
+            for value in (bot_identity.get("aliases") or [])
+            if str(value or "").strip()
+        ]
+        identity_lines = [
+            "[Robot identity; background only]",
+            f"- self_id: {self_id_label} (this QQ id is you, the bot)",
+        ]
+        if display_name:
+            identity_lines.append(f"- QQ display name: {display_name} (this name is you)")
+        if aliases:
+            identity_lines.append(f"- known QQ names: {', '.join(dict.fromkeys(aliases))}")
+        identity_lines.extend(
             [
-                "[Robot identity; background only]",
-                f"- self_id: {self_id_label} (this QQ id is you, the bot)",
                 f"- addressed_to_bot: {str(addressed_to_bot).lower()}",
                 f"- direct_reason: {reason}",
                 f"- mentioned_self: {str(mentioned_self).lower()}",
                 f"- replied_to_self: {str(replied_to_self).lower()}",
-                "- identity_rule: QQ mentions/replies to this self_id are addressing you.",
+                "- identity_rule: QQ mentions/replies to this self_id are addressing you; "
+                "an @ segment showing this QQ display name also refers to you.",
             ]
         )
+        return "\n".join(identity_lines)
 
     def _agent_trigger_reason(
         self,
@@ -3319,6 +3419,7 @@ class RobotService:
         mentions_label = self._format_mentions_for_context(
             message.reply_target.metadata.get("mentions"),
             bot_self_ids=self._bot_self_ids_from_message(message),
+            bot_display_name=self._bot_display_name_from_message(message),
         )
         if mentions_label:
             parts.append(f"mentions={mentions_label}")
@@ -3329,6 +3430,7 @@ class RobotService:
         raw_mentions: object,
         *,
         bot_self_ids: set[str] | None = None,
+        bot_display_name: str = "",
     ) -> str:
         if not isinstance(raw_mentions, list):
             return ""
@@ -3348,6 +3450,8 @@ class RobotService:
                 or ""
             ).strip()
             is_self = bool(mention_id and mention_id in bot_self_ids)
+            if is_self and not name and bot_display_name:
+                name = bot_display_name
             if name and mention_id and name != mention_id:
                 label = f"{name} ({mention_id})"
             elif name:

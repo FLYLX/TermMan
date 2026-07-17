@@ -763,6 +763,55 @@ def test_agent_message_context_marks_bot_self_mention_for_agent() -> None:
     assert "'我/我的/我是谁' refers to Alice (u1)" in text
 
 
+def test_agent_message_context_uses_bot_qq_name_for_self_mention() -> None:
+    message = _message(
+        "[CQ:at,qq=10001] hello",
+        sender={"user_id": "u1", "display_name": "Alice"},
+        conversation={"type": "group", "id": "g1"},
+        mentions=[{"id": "10001", "qq": "10001"}],
+        mentioned_bot=True,
+        bot_self_ids=["10001"],
+    )
+    message.reply_target.metadata["bot_identity"] = {
+        "self_ids": ["10001"],
+        "display_name": "柴郡一号机",
+        "aliases": ["柴郡一号机", "唯"],
+    }
+
+    text = robot_service._agent_message_with_context(
+        message,
+        message.text,
+        trigger_reason="mention_bot",
+    )
+
+    assert "mentions=柴郡一号机 (10001) (you)" in text
+    assert "- QQ display name: 柴郡一号机 (this name is you)" in text
+    assert "- known QQ names: 柴郡一号机, 唯" in text
+
+
+def test_robot_identity_falls_back_to_configured_name_and_self_id(db: Session) -> None:
+    robot = create_random_robot(db)
+    robot.name = "柴郡一号机"
+    robot.config = {
+        "credentials": {"self_id": "2900669542"},
+        "options": {},
+    }
+    message = _message(
+        "hello",
+        sender={"user_id": "2537134688", "display_name": "FLY"},
+        conversation={"type": "private", "id": "2537134688"},
+    )
+
+    robot_service._enrich_message_bot_identity(robot, message)
+
+    assert message.reply_target.metadata["bot_self_ids"] == ["2900669542"]
+    assert message.reply_target.metadata["bot_identity"] == {
+        "self_ids": ["2900669542"],
+        "display_name": "柴郡一号机",
+        "aliases": ["柴郡一号机"],
+    }
+
+
 def test_agent_message_identity_question_is_anchored_to_current_sender() -> None:
     message = _message(
         "我是谁",
@@ -821,10 +870,16 @@ def test_robot_reply_context_summary_marks_reply_to_self() -> None:
         replied_to_bot=True,
         bot_self_ids=["10001"],
     )
+    message.reply_target.metadata["bot_identity"] = {
+        "self_ids": ["10001"],
+        "display_name": "柴郡一号机",
+        "aliases": ["柴郡一号机"],
+    }
 
     summary = build_robot_reply_context_summary(message.reply_target, message.sender_key)
 
     assert "- bot_self_id: 10001 (this QQ id is you, the bot)" in summary
+    assert "- bot_display_name: 柴郡一号机 (this QQ name is you)" in summary
     assert "- addressed_to_bot: true" in summary
     assert "- direct_reason: reply_to_bot" in summary
     assert "- mentioned_self: false" in summary
@@ -1552,7 +1607,121 @@ def test_recent_live_context_uses_progressive_budget(
     assert "context_budget: expanded" in expanded_card
     assert "上一条" in expanded_card
     assert "context_budget: active_window" in active_card
-    assert calls == [4, 12, 6]
+    assert calls == [24, 48, 24]
+
+
+def test_recent_live_context_keeps_user_lines_when_bot_replies_repeat(
+    db: Session,
+    monkeypatch,
+) -> None:
+    robot = create_random_robot(db)
+    repeated_reply = "我刚才没对齐，我会改回来"
+    memory = "\n".join(
+        [
+            "[2026-07-17T09:33:30+00:00] user FLY (2537134688): 你怎么不说话了",
+            *[
+                f"[2026-07-17T09:33:{31 + index:02d}+00:00] assistant: {repeated_reply}"
+                for index in range(8)
+            ],
+            "[2026-07-17T09:33:42+00:00] user FLY (2537134688): 回冬啊",
+        ]
+    )
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "read_recent",
+        lambda *_args, **_kwargs: memory,
+    )
+
+    card = robot_service._recent_live_context_card(
+        robot=robot,
+        conversation_key="group:770362397",
+        trigger_reason="active_chat_window",
+        current_message_text="回冬啊",
+    )
+
+    assert "context_budget: expanded" in card
+    assert "你怎么不说话了" in card
+    assert card.count(repeated_reply) == 1
+    assert "回冬啊" not in card
+    assert "ask one brief clarification instead of guessing" in card
+
+
+def test_prepare_queued_chat_message_excludes_later_pending_messages(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    captured = _capture_queued_chat(monkeypatch)
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
+    monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
+    bot_self_id = str(robot.config["credentials"]["self_id"])
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="g1",
+        metadata={
+            "target": {"id": "g1"},
+            "conversation": {"type": "group", "id": "g1"},
+            "sender": {"user_id": "u1", "display_name": "Alice"},
+            "mentions": [{"qq": bot_self_id}],
+            "mentioned_bot": True,
+            "bot_self_ids": [bot_self_id],
+        },
+    )
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        RobotInboundMessage(
+            sender_key="onebot_v11:group:g1:u1",
+            text="先说第一件事",
+            reply_target=target.model_copy(deep=True),
+        ),
+    )
+    assert response.ignored is False
+    job = captured["job"]
+    robot_service._record_pending_chat_input(
+        robot=robot,
+        conversation_key=job.conversation_key,
+        item_id=item.id,
+        route_key="alpha",
+        message_text="回冬啊",
+        sender_key="onebot_v11:group:g1:u1",
+        sender_label="Alice (u1)",
+        trigger_reason="active_chat_window",
+        reply_target=target,
+    )
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "read_recent",
+        lambda *_args, **_kwargs: (
+            "[2026-07-17T09:33:30+00:00] user Alice (u1): 你怎么不说话了\n"
+            "[2026-07-17T09:33:31+00:00] user Alice (u1): 先说第一件事\n"
+            "[2026-07-17T09:33:32+00:00] user Alice (u1): 回冬啊"
+        ),
+    )
+
+    prepared = robot_service._prepare_queued_chat_message(
+        robot=robot,
+        item=item,
+        job=job,
+    )
+
+    assert "你怎么不说话了" in prepared
+    assert prepared.count("先说第一件事") == 1
+    assert "回冬啊" not in prepared
 
 
 def test_term_command_routes_to_named_item_agent(
@@ -2915,6 +3084,7 @@ def test_direct_wakeup_messages_queue_without_superseding_active_reply(
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
     monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
+    bot_self_id = str(robot.config["credentials"]["self_id"])
     first = robot_service.handle_inbound_message(
         db,
         robot,
@@ -2923,7 +3093,9 @@ def test_direct_wakeup_messages_queue_without_superseding_active_reply(
             sender_key="onebot_v11:group:g1:u1",
             target={"id": "g1"},
             sender={"user_id": "u1", "display_name": "Alice"},
+            mentions=[{"qq": bot_self_id}],
             mentioned_bot=True,
+            bot_self_ids=[bot_self_id],
         ),
     )
     assert first.ignored is False
@@ -2937,7 +3109,9 @@ def test_direct_wakeup_messages_queue_without_superseding_active_reply(
             sender_key="onebot_v11:group:g1:u2",
             target={"id": "g1"},
             sender={"user_id": "u2", "display_name": "Bob"},
+            mentions=[{"qq": bot_self_id}],
             mentioned_bot=True,
+            bot_self_ids=[bot_self_id],
         ),
     )
     third = robot_service.handle_inbound_message(
@@ -2948,7 +3122,9 @@ def test_direct_wakeup_messages_queue_without_superseding_active_reply(
             sender_key="onebot_v11:group:g1:u3",
             target={"id": "g1"},
             sender={"user_id": "u3", "display_name": "Carol"},
+            mentions=[{"qq": bot_self_id}],
             mentioned_bot=True,
+            bot_self_ids=[bot_self_id],
         ),
     )
 
@@ -3112,6 +3288,7 @@ def test_pending_qq_batch_keeps_senders_and_isolates_conversations(
     assert "sender_key=onebot_v11:group:g1:u2" in message
     assert "A 的问题" in message
     assert "B 的问题" in message
+    assert queued_jobs[0].reply_target.metadata["allow_multiple_reply_messages"] is True
     assert "Carol" not in message
     assert "另一个群的问题" not in message
 
@@ -3122,6 +3299,56 @@ def test_pending_qq_batch_keeps_senders_and_isolates_conversations(
     assert len(other_pending) == 1
     assert other_pending[0]["sender_label"] == "Carol (u3)"
     robot_service._drain_pending_chat_inputs(robot.id, "group:g2")
+
+
+def test_pending_qq_batch_merges_same_sender_into_one_reply_intent(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    queued_jobs: list[Any] = []
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="g1",
+        metadata={
+            "conversation": {"type": "group", "id": "g1"},
+            "sender": {"user_id": "u1", "display_name": "Alice"},
+        },
+    )
+
+    monkeypatch.setattr(
+        robot_service,
+        "_enqueue_chat_job",
+        lambda job: queued_jobs.append(job) or True,
+    )
+    monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
+    monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
+    monkeypatch.setattr(robot_conversation_memory, "read_recent", lambda *_args, **_kwargs: "")
+
+    for text in ("Are you there?", "Reply now"):
+        robot_service._record_pending_chat_input(
+            robot=robot,
+            conversation_key="group:g1",
+            item_id=item.id,
+            route_key="alpha",
+            message_text=text,
+            sender_key="onebot_v11:group:g1:u1",
+            sender_label="Alice (u1)",
+            trigger_reason="mention_bot",
+            reply_target=target,
+        )
+
+    assert robot_service._enqueue_pending_chat_followup(
+        robot=robot,
+        conversation_key="group:g1",
+    )
+    assert len(queued_jobs) == 1
+    job = queued_jobs[0]
+    assert job.reply_target.metadata["allow_multiple_reply_messages"] is False
+    assert "Are you there?" in job.message
+    assert "Reply now" in job.message
+    assert "one evolving intent" in job.message
 
 
 def test_plain_task_control_message_dispatches_immediately_while_processing(

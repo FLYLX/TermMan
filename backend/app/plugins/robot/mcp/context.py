@@ -113,9 +113,11 @@ def _robot_sender_label(reply_target: RobotReplyTarget, sender_key: str) -> str:
 
 def _bot_self_ids_from_reply_target(reply_target: RobotReplyTarget) -> set[str]:
     raw_ids = reply_target.metadata.get("bot_self_ids")
-    if not isinstance(raw_ids, list):
-        return set()
-    return {str(value).strip() for value in raw_ids if str(value or "").strip()}
+    values = list(raw_ids) if isinstance(raw_ids, list) else []
+    identity = reply_target.metadata.get("bot_identity")
+    if isinstance(identity, dict) and isinstance(identity.get("self_ids"), list):
+        values.extend(identity["self_ids"])
+    return {str(value).strip() for value in values if str(value or "").strip()}
 
 
 def _reply_target_mentions_bot_self(reply_target: RobotReplyTarget) -> bool:
@@ -162,14 +164,23 @@ def _robot_identity_context_lines(
         reason = "none"
 
     self_id_label = ", ".join(bot_self_ids)
-    return [
+    identity = reply_target.metadata.get("bot_identity")
+    identity = identity if isinstance(identity, dict) else {}
+    display_name = str(identity.get("display_name") or "").strip()
+    lines = [
         f"- bot_self_id: {self_id_label} (this QQ id is you, the bot)",
+    ]
+    if display_name:
+        lines.append(f"- bot_display_name: {display_name} (this QQ name is you)")
+    lines.extend([
         f"- addressed_to_bot: {str(addressed_to_bot).lower()}",
         f"- direct_reason: {reason}",
         f"- mentioned_self: {str(mentioned_self).lower()}",
         f"- replied_to_self: {str(replied_to_self).lower()}",
-        "- identity rule: QQ mentions/replies to this self_id are addressing you.",
-    ]
+        "- identity rule: QQ mentions/replies to this self_id are addressing you; "
+        "its QQ display name also refers to you in an @ segment.",
+    ])
+    return lines
 
 
 def build_robot_reply_context_summary(
@@ -228,11 +239,15 @@ def build_robot_reply_context_summary(
                 "sending or explaining. Do not call the send tool for ordinary "
                 "group chatter with no contextual link to the bot, messages "
                 "directed at someone else, or messages that do not need a "
-                "response. Do not send group `text` longer than 36 Chinese "
-                "characters; use "
-                "`messages` with 2-3 complete natural chat messages instead. "
-                "not put blank lines or paragraph breaks inside one QQ message; "
-                "use multiple `messages` array items for separate information. "
+                "response. For an ordinary current QQ input, send one concise "
+                "`text` bubble and do not split a reply into reaction, apology, "
+                "status, and follow-up messages. Keep group `text` near 96 Chinese "
+                "characters or fewer by tightening the wording. Use `messages` only "
+                "when a pending batch contains multiple distinct senders who each "
+                "need one separate answer; consecutive messages from the same sender "
+                "form one evolving intent and receive one answer. Do not invent an "
+                "alignment/correction issue or discuss internal context handling unless "
+                "the current sender explicitly asks about it. "
                 "Do not pass `reply_to`, `conversation`, `broadcast`, "
                 "`target_type`, or `target_id` in this active QQ context; it is "
                 "locked to the current conversation to prevent replying to the "

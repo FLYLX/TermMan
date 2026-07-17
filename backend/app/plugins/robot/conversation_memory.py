@@ -14,6 +14,53 @@ MemoryRole = Literal["user", "assistant", "system"]
 DEFAULT_RECENT_LINES = 8
 DEFAULT_IMPORT_MAX_BYTES = 2 * 1024 * 1024
 UNKNOWN_CONVERSATION_ID = "unknown"
+CONVERSATION_ENTRY_RE = re.compile(
+    r"^\[[^\]]+\]\s+(?P<role>user|assistant|system)(?:\s+[^:]+)?:\s*(?P<text>.*)$"
+)
+RECENT_DIALOGUE_SCAN_MIN_LINES = 24
+RECENT_DIALOGUE_SCAN_MAX_LINES = 96
+
+
+def recent_dialogue_scan_lines(lines: int) -> int:
+    requested = max(1, int(lines))
+    return min(
+        RECENT_DIALOGUE_SCAN_MAX_LINES,
+        max(RECENT_DIALOGUE_SCAN_MIN_LINES, requested * 4),
+    )
+
+
+def select_recent_dialogue_lines(content: str, *, lines: int) -> list[str]:
+    limit = max(1, int(lines))
+    candidates = [line.strip() for line in str(content or "").splitlines() if line.strip()]
+    if not candidates:
+        return []
+
+    deduplicated_reversed: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for line in reversed(candidates):
+        match = CONVERSATION_ENTRY_RE.match(line)
+        role = match.group("role") if match else ""
+        visible_text = match.group("text") if match else line
+        normalized_text = re.sub(r"\s+", " ", visible_text).strip().casefold()
+        signature = (role, normalized_text)
+        if normalized_text and signature in seen:
+            continue
+        if normalized_text:
+            seen.add(signature)
+        deduplicated_reversed.append((role, line))
+
+    assistant_limit = max(1, limit // 2)
+    assistant_count = 0
+    selected_reversed: list[str] = []
+    for role, line in deduplicated_reversed:
+        if role == "assistant":
+            if assistant_count >= assistant_limit:
+                continue
+            assistant_count += 1
+        selected_reversed.append(line)
+        if len(selected_reversed) >= limit:
+            break
+    return list(reversed(selected_reversed))
 
 
 @dataclass(frozen=True)

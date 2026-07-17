@@ -494,7 +494,7 @@ def test_robot_mcp_send_message_rejects_long_group_text(monkeypatch) -> None:
     result = server.call_tool(
         "send_message",
         {
-            "text": "我先看一下这个问题，可能是桥接服务还没接上，也可能是模型没有正确调用发送工具，我确认一下状态",
+            "text": "x" * 97,
             "target_type": "group",
             "target_id": "123456",
             "_termman_user_id": "user-1",
@@ -503,7 +503,7 @@ def test_robot_mcp_send_message_rejects_long_group_text(monkeypatch) -> None:
 
     assert result[0]["type"] == "text"
     assert "too long for a single `text` message" in result[0]["text"]
-    assert "Use `messages`" in result[0]["text"]
+    assert "Shorten it" in result[0]["text"]
     assert sent == []
 
 
@@ -737,6 +737,83 @@ def test_robot_mcp_send_message_uses_registered_context(monkeypatch) -> None:
     assert sent["text"] == "notify user"
     assert isinstance(sent["reply_target"], RobotReplyTarget)
     assert sent["reply_target"].target_id == "group-1"
+
+
+def test_robot_mcp_send_message_coalesces_normal_context_bubbles(monkeypatch) -> None:
+    server = RobotMCPServer()
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="group-1",
+        metadata={"conversation": {"type": "group", "id": "group-1"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-1",
+            sender_key="onebot_v11:group:group-1:user-1",
+            reply_target=target,
+        )
+    )
+    sent: list[str] = []
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        lambda _robot_id, _reply_target, text: sent.append(text),
+    )
+
+    try:
+        result = server.call_tool(
+            "send_message",
+            {
+                "messages": ["I am here.", "What do you need?"],
+                "_robot_context_token": token,
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert result == [
+        {"type": "text", "text": "Message sent to current robot conversation."}
+    ]
+    assert sent == ["I am here. What do you need?"]
+
+
+def test_robot_mcp_send_message_keeps_multi_sender_batch_bubbles(monkeypatch) -> None:
+    server = RobotMCPServer()
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="group-1",
+        metadata={
+            "conversation": {"type": "group", "id": "group-1"},
+            "allow_multiple_reply_messages": True,
+        },
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-1",
+            sender_key="onebot_v11:group:group-1:user-2",
+            reply_target=target,
+        )
+    )
+    sent: list[str] = []
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        lambda _robot_id, _reply_target, text: sent.append(text),
+    )
+
+    try:
+        result = server.call_tool(
+            "send_message",
+            {
+                "messages": ["Alice: first answer", "Bob: second answer"],
+                "_robot_context_token": token,
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert result == [
+        {"type": "text", "text": "Message sent to current robot conversation."}
+    ]
+    assert sent == ["Alice: first answer", "Bob: second answer"]
 
 
 def test_robot_mcp_send_message_blocks_sleeping_active_context(monkeypatch) -> None:

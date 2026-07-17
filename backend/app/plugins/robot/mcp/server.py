@@ -34,7 +34,7 @@ from app.plugins.robot.reply_intent import is_no_reply_intent
 
 logger = logging.getLogger(__name__)
 
-MAX_GROUP_SINGLE_TEXT_CHARS = 36
+MAX_GROUP_SINGLE_TEXT_CHARS = 96
 DEFAULT_MEMORY_RECENT_LINES = 8
 ACTIVE_CONTEXT_MEMORY_MAX_LINES = 12
 GENERAL_MEMORY_MAX_LINES = 500
@@ -994,6 +994,36 @@ class RobotMCPServer:
         return isinstance(args.get("messages"), list)
 
     @staticmethod
+    def _context_allows_multiple_reply_messages(context: Any) -> bool:
+        if context is None:
+            return True
+        reply_target = getattr(context, "reply_target", None)
+        metadata = getattr(reply_target, "metadata", None)
+        return bool(
+            isinstance(metadata, dict)
+            and metadata.get("allow_multiple_reply_messages")
+        )
+
+    @classmethod
+    def _coalesce_current_context_messages(
+        cls,
+        context: Any,
+        messages: list[str],
+    ) -> list[str]:
+        if len(messages) <= 1 or cls._context_allows_multiple_reply_messages(context):
+            return messages
+
+        unique_messages: list[str] = []
+        seen: set[str] = set()
+        for message in messages:
+            normalized = message.strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            unique_messages.append(normalized)
+        return [" ".join(unique_messages)] if unique_messages else []
+
+    @staticmethod
     def _single_text_too_long_for_group(
         args: dict,
         target: RobotReplyTarget,
@@ -1009,8 +1039,9 @@ class RobotMCPServer:
     def _group_single_text_too_long_error(text: str) -> str:
         return (
             "Error: QQ group reply is too long for a single `text` message. "
-            "Use `messages` with 2-3 complete natural chat messages instead. "
-            "Do not split into tiny fragments. Single group text limit: "
+            "Shorten it and retry with one concise `text` message. Use `messages` "
+            "only when multiple distinct senders each require a separate answer. "
+            "Single group text limit: "
             f"{MAX_GROUP_SINGLE_TEXT_CHARS} chars. Current text length: "
             f"{len(text)} chars."
         )
@@ -1748,11 +1779,28 @@ class RobotMCPServer:
                 )
                 scope = f"matching query {query!r}"
             else:
-                memory = robot_conversation_memory.read_recent(
-                    robot_id,
-                    conversation_key,
-                    lines=lines,
-                )
+                if context is not None:
+                    from app.plugins.robot.conversation_memory import (
+                        recent_dialogue_scan_lines,
+                        select_recent_dialogue_lines,
+                    )
+
+                    raw_memory = sanitize_robot_visible_text(
+                        robot_conversation_memory.read_recent(
+                            robot_id,
+                            conversation_key,
+                            lines=recent_dialogue_scan_lines(lines),
+                        )
+                    )
+                    memory = "\n".join(
+                        select_recent_dialogue_lines(raw_memory, lines=lines)
+                    )
+                else:
+                    memory = robot_conversation_memory.read_recent(
+                        robot_id,
+                        conversation_key,
+                        lines=lines,
+                    )
                 scope = f"recent {lines} line(s)"
         except Exception as exc:
             return [{"type": "text", "text": f"Error: {exc}"}]
@@ -1842,6 +1890,8 @@ class RobotMCPServer:
 
         context_token = str(args.get("_robot_context_token") or "").strip()
         context = get_robot_mcp_context(context_token)
+        messages = self._coalesce_current_context_messages(context, messages)
+        text = "\n".join(messages).strip()
         if context is not None:
             has_explicit_target_type = bool(
                 self._normalize_target_type(

@@ -67,6 +67,7 @@ LAST_PLATFORM_EVENT_AT_BY_ROBOT_ID: dict[str, str] = {}
 LAST_MESSAGE_EVENT_AT_BY_ROBOT_ID: dict[str, str] = {}
 ONEBOT_SOCKET_STATUS_BY_ROBOT_ID: dict[str, dict[str, Any]] = {}
 ONEBOT_ACTIVE_CONNECTIONS: dict[str, dict[str, Any]] = {}
+BOT_PROFILE_BY_IDENTITY: dict[str, dict[str, Any]] = {}
 STALE_ONEBOT_MESSAGE_MAX_AGE_SECONDS = 60.0
 STALE_ONEBOT_MESSAGE_FUTURE_GRACE_SECONDS = 900.0
 ONEBOT_MESSAGE_TIMEZONE_OFFSET_CANDIDATES_SECONDS = (8 * 3600,)
@@ -81,6 +82,64 @@ class RobotDispatchJob:
     bot: Bot
     inbound: RobotInboundMessage
     enqueued_at: datetime
+
+
+async def _resolve_bot_profile(
+    bot: Bot,
+    *,
+    bot_identity: str,
+    robot_id: str,
+) -> dict[str, Any]:
+    cached = BOT_PROFILE_BY_IDENTITY.get(bot_identity)
+    if cached is not None:
+        return dict(cached)
+
+    self_id = str(getattr(bot, "self_id", "") or "").strip()
+    names: list[str] = []
+    for info in (
+        getattr(bot, "bot_info", None),
+        getattr(bot, "_bot_info", None),
+        bot,
+    ):
+        if info is None:
+            continue
+        for key in ("nickname", "username", "name"):
+            value = str(getattr(info, key, "") or "").strip()
+            if value and value not in names:
+                names.append(value)
+
+    if resolve_platform_from_bot(bot) == "onebot_v11" and not names:
+        try:
+            login_info = await asyncio.wait_for(
+                bot.call_api("get_login_info"),
+                timeout=2.0,
+            )
+        except Exception:
+            logger.debug(
+                "[RobotBridge] Failed to load OneBot login profile for %s",
+                bot_identity,
+                exc_info=True,
+            )
+        else:
+            if isinstance(login_info, dict):
+                self_id = str(login_info.get("user_id") or self_id).strip()
+                for key in ("nickname", "user_name", "username", "name"):
+                    value = str(login_info.get(key) or "").strip()
+                    if value and value not in names:
+                        names.append(value)
+
+    configured_robot = ROBOT_BY_ID.get(robot_id)
+    configured_name = str(getattr(configured_robot, "name", "") or "").strip()
+    if configured_name and configured_name not in names:
+        names.append(configured_name)
+
+    profile = {
+        "self_ids": [self_id] if self_id else [],
+        "display_name": names[0] if names else configured_name,
+        "aliases": names,
+    }
+    BOT_PROFILE_BY_IDENTITY[bot_identity] = profile
+    return dict(profile)
 
 INIT_KWARGS = build_nonebot_init_kwargs(LOADED_ROBOTS)
 INIT_KWARGS.setdefault("driver", "~fastapi+~httpx+~websockets")
@@ -299,6 +358,7 @@ def reload_runtime_config() -> RobotBridgeReloadResponse:
     IDENTITY_BY_ROBOT_ID = new_identity_by_robot_id
     ROBOT_BY_ID = {robot.id: robot for robot in new_robots}
     CONFIG_ERRORS = new_errors
+    BOT_PROFILE_BY_IDENTITY.clear()
 
     stale_robot_ids = removed_robot_ids | changed_robot_ids
     for robot_id in stale_robot_ids:
@@ -1167,6 +1227,13 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
     inbound = build_inbound_message(platform_id, bot, event)
     if inbound is None:
         return
+    bot_profile = await _resolve_bot_profile(
+        bot,
+        bot_identity=bot_identity,
+        robot_id=robot_id,
+    )
+    if bot_profile:
+        inbound.reply_target.metadata["bot_identity"] = bot_profile
     logger.info(
         "[RobotBridge] Platform message robot=%s sender=%s target=%s text=%s",
         robot_id,

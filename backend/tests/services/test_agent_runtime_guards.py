@@ -1928,6 +1928,10 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     assert "mcp_robot_list_memories" in prompt
     assert "mcp_robot_save_memory" in prompt
     assert "mcp_robot_sleep_conversation" in prompt
+    assert "one visible QQ bubble with `text`" in prompt
+    assert "Do not invent an earlier mistake" in prompt
+    assert "ask one brief clarification" in prompt
+    assert "Never invent a hidden correction" in prompt
     assert "\u6307\u4ee3\u5224\u65ad" in prompt
     assert "当前发送者身份" in prompt
     assert "不要回答“你是你自己”" in prompt
@@ -1938,7 +1942,8 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     assert "trigger=active_chat_window" in prompt
     assert "当前 QQ 会话" in prompt
     assert "只调用 `mcp_robot_send_message` 并只传 `text` 或 `messages`" in prompt
-    assert "不要在单条 QQ 消息里写空行" in prompt
+    assert "普通 QQ 输入只发一个 `text` 气泡" in prompt
+    assert "同一发送者连续消息合并理解" in prompt
     assert "QQ 回复反思" not in prompt
 
 
