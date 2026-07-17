@@ -7,6 +7,8 @@ from typing import Any
 
 from .contracts import RobotInboundMessage, RobotReplyTarget
 
+MAX_REPLY_REFERENCE_TEXT_LENGTH = 600
+
 
 @dataclass(frozen=True)
 class BridgeRobot:
@@ -453,6 +455,134 @@ def _candidate_reply_sender_ids(reply_data: dict[str, Any]) -> set[str]:
     return {str(value).strip() for value in candidates if str(value or "").strip()}
 
 
+def _bounded_reply_text(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = re.sub(r"\s+", " ", text)
+    if len(text) <= MAX_REPLY_REFERENCE_TEXT_LENGTH:
+        return text
+    return f"{text[:MAX_REPLY_REFERENCE_TEXT_LENGTH].rstrip()}..."
+
+
+def _message_value_to_onebot_text(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (list, tuple)):
+        return "".join(_segment_to_onebot_text(segment) for segment in value)
+
+    extract_plain_text = getattr(value, "extract_plain_text", None)
+    if callable(extract_plain_text):
+        try:
+            plain_text = str(extract_plain_text() or "").strip()
+        except Exception:
+            plain_text = ""
+        if plain_text:
+            return plain_text
+
+    try:
+        segments = list(value)
+    except TypeError:
+        return str(value or "")
+    if not segments:
+        return ""
+    return "".join(_segment_to_onebot_text(segment) for segment in segments)
+
+
+def _reply_text_from_data(reply_data: dict[str, Any]) -> str:
+    for key in ("raw_message", "plain_text", "text", "content"):
+        text = _bounded_reply_text(reply_data.get(key))
+        if text:
+            return text
+    return _bounded_reply_text(_message_value_to_onebot_text(reply_data.get("message")))
+
+
+def _reply_sender_metadata(reply_data: dict[str, Any]) -> dict[str, Any]:
+    sender = reply_data.get("sender")
+    sender_data = sender if isinstance(sender, dict) else _dump_mapping(sender)
+    user_id = str(
+        sender_data.get("user_id")
+        or sender_data.get("sender_id")
+        or sender_data.get("qq")
+        or sender_data.get("id")
+        or reply_data.get("sender_id")
+        or reply_data.get("user_id")
+        or reply_data.get("qq")
+        or ""
+    ).strip()
+    nickname = str(sender_data.get("nickname") or "").strip()
+    card = str(sender_data.get("card") or "").strip()
+    display_name = str(
+        sender_data.get("display_name") or card or nickname or user_id
+    ).strip()
+    return _clean_mapping(
+        {
+            "user_id": user_id,
+            "display_name": display_name,
+            "nickname": nickname,
+            "card": card,
+        }
+    )
+
+
+def _first_reply_segment_data(event: Any) -> dict[str, Any]:
+    for segment in _event_message_segments(event):
+        if _segment_type(segment) == "reply":
+            return dict(_segment_data(segment))
+    return {}
+
+
+def _raw_reply_segment_data(event: Any) -> dict[str, str]:
+    raw_message = str(getattr(event, "raw_message", "") or "")
+    match = re.search(r"\[CQ:reply,([^\]]+)\]", raw_message)
+    return _parse_cq_params(match.group(1)) if match else {}
+
+
+def _extract_reply_metadata(event: Any) -> dict[str, Any]:
+    reply_data = _dump_mapping(getattr(event, "reply", None))
+    segment_data = _first_reply_segment_data(event)
+    raw_segment_data = _raw_reply_segment_data(event)
+
+    message_id = str(
+        reply_data.get("message_id")
+        or reply_data.get("id")
+        or reply_data.get("message_seq")
+        or reply_data.get("real_id")
+        or segment_data.get("message_id")
+        or segment_data.get("id")
+        or raw_segment_data.get("message_id")
+        or raw_segment_data.get("id")
+        or ""
+    ).strip()
+    source = str(
+        reply_data.get("source")
+        or reply_data.get("message_id")
+        or reply_data.get("id")
+        or segment_data.get("source")
+        or segment_data.get("id")
+        or raw_segment_data.get("id")
+        or ""
+    ).strip()
+
+    metadata = _clean_mapping(
+        {
+            "message_id": message_id,
+            "source": source,
+            "text": _reply_text_from_data(reply_data),
+        }
+    )
+    sender_data = _reply_sender_metadata(reply_data)
+    if sender_data:
+        metadata["sender"] = sender_data
+    if segment_data:
+        metadata["segment"] = _clean_mapping(dict(segment_data))
+    if raw_segment_data:
+        metadata["raw_segment"] = raw_segment_data
+    return metadata
+
+
 def _event_replies_to_bot(bot: Any, event: Any) -> bool:
     self_ids = _bot_self_ids(bot, event)
     if not self_ids:
@@ -539,6 +669,9 @@ def build_inbound_message(
     )
     if native_message:
         metadata["message"] = native_message
+    reply_metadata = _extract_reply_metadata(event)
+    if reply_metadata:
+        metadata["reply"] = reply_metadata
     bot_self_ids = sorted(_bot_self_ids(bot, event))
     if bot_self_ids:
         metadata["bot_self_ids"] = bot_self_ids

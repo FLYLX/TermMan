@@ -3002,12 +3002,16 @@ class RobotService:
             return ""
         try:
             from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+            from app.plugins.robot.memory_migration import (
+                ensure_legacy_robot_memories_upgraded,
+            )
             from app.services.agent.memory.vector_store import vector_store
         except Exception:
             logger.debug("[RobotService] Robot impression card dependencies unavailable")
             return ""
 
         speaker_global_key = speaker_global_key_from_context(sender_key, reply_target)
+        ensure_legacy_robot_memories_upgraded(str(item_id), store=vector_store)
         vector_store.maintain_memories(str(item_id))
         try:
             all_memories = vector_store.get_all_memories(str(item_id))

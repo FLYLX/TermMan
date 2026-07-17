@@ -1932,6 +1932,8 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     assert "Do not invent an earlier mistake" in prompt
     assert "ask one brief clarification" in prompt
     assert "Never invent a hidden correction" in prompt
+    assert "Reply-reference priority" in prompt
+    assert "authoritative quoted message" in prompt
     assert "\u6307\u4ee3\u5224\u65ad" in prompt
     assert "当前发送者身份" in prompt
     assert "不要回答“你是你自己”" in prompt

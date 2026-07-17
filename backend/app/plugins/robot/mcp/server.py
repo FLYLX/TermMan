@@ -1520,8 +1520,12 @@ class RobotMCPServer:
         )
 
         try:
+            from app.plugins.robot.memory_migration import (
+                ensure_legacy_robot_memories_upgraded,
+            )
             from app.services.agent.memory.vector_store import vector_store
 
+            ensure_legacy_robot_memories_upgraded(item_id, store=vector_store)
             vector_store.maintain_memories(item_id)
             memories = self._collect_scoped_long_term_memory_candidates(
                 store=vector_store,
@@ -1617,8 +1621,12 @@ class RobotMCPServer:
 
         limit = self._long_term_memory_limit(args)
         try:
+            from app.plugins.robot.memory_migration import (
+                ensure_legacy_robot_memories_upgraded,
+            )
             from app.services.agent.memory.vector_store import vector_store
 
+            ensure_legacy_robot_memories_upgraded(item_id, store=vector_store)
             vector_memories = vector_store.search_memories(
                 item_id=item_id,
                 query=query,

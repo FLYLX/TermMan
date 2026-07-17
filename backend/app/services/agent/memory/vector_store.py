@@ -1704,6 +1704,44 @@ class VectorStoreService:
             logger.error(f"[VectorStore] Failed to update memory {memory_id}: {e}")
             return self._update_fallback_memory(memory_id, content=content, metadata=metadata)
 
+    def update_memory_metadata(
+        self,
+        memory_id: str,
+        metadata: dict[str, Any],
+    ) -> bool:
+        self._ensure_initialized()
+        updates = dict(metadata or {})
+        if not updates:
+            return False
+
+        updated = False
+        if self._collection is not None:
+            try:
+                existing = self._collection.get(ids=[memory_id])
+                if existing["ids"]:
+                    current_meta = existing["metadatas"][0] if existing["metadatas"] else {}
+                    current_doc = existing["documents"][0] if existing["documents"] else ""
+                    next_meta = {**current_meta, **updates}
+                    self._collection.update(ids=[memory_id], metadatas=[next_meta])
+                    self._upsert_lexical_memory(
+                        memory_id=memory_id,
+                        content=current_doc,
+                        metadata=next_meta,
+                    )
+                    updated = True
+            except Exception as exc:
+                logger.error(
+                    "[VectorStore] Failed to update metadata for memory %s: %s",
+                    memory_id,
+                    exc,
+                )
+
+        fallback_updated = self._update_fallback_memory(
+            memory_id,
+            metadata=updates,
+        )
+        return updated or fallback_updated
+
     def get_item_memory_count(self, item_id: str) -> int:
         return len(self.get_all_memories(item_id))
 

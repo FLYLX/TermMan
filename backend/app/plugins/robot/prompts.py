@@ -112,6 +112,11 @@ ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION = (
     "If the same-conversation log still does not establish a clear referent or request, "
     "ask one brief clarification. Never invent a hidden correction, complaint, alignment "
     "issue, or prior instruction merely to make an ambiguous short message sound meaningful.\n"
+    "- Reply-reference priority: when `[Replied QQ message]` is present, it is the "
+    "authoritative quoted message for this turn. Resolve phrases such as 'this', "
+    "'that sentence', 'he/she', 'is it done', or 'continue' against its quoted text "
+    "and quoted sender before using broader group history. Keep the current sender "
+    "separate from the quoted sender, and answer only the current message.\n"
 )
 ROBOT_MESSAGING_PROMPT = (
     "QQ MCP Skill：\n\n"
