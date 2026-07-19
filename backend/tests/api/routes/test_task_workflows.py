@@ -93,3 +93,61 @@ def test_cancel_task_workflow(
         assert missing.status_code == 404
     finally:
         task_workflow_manager.reset()
+
+
+def test_list_hides_finished_workflows_after_retention(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    task_workflow_manager.reset()
+    try:
+        fresh_final = task_workflow_manager.create(
+            item_id="item-1",
+            handler_id="handler-1",
+            reply_ticket_id="ticket-fresh",
+            objective="刚取消的任务",
+            source_type="web",
+            source_label="web",
+            step_titles=["一步"],
+        )
+        task_workflow_manager.update("ticket-fresh", action="cancel", note="取消")
+        old_final = task_workflow_manager.create(
+            item_id="item-1",
+            handler_id="handler-1",
+            reply_ticket_id="ticket-old",
+            objective="早就完成的任务",
+            source_type="web",
+            source_label="web",
+            step_titles=["一步"],
+        )
+        task_workflow_manager.update("ticket-old", action="cancel", note="取消")
+        old_final.updated_at = datetime.now(timezone.utc) - timedelta(minutes=11)
+        active = task_workflow_manager.create(
+            item_id="item-1",
+            handler_id="handler-1",
+            reply_ticket_id="ticket-active",
+            objective="进行中的任务",
+            source_type="web",
+            source_label="web",
+            step_titles=["一步", "两步"],
+        )
+        active.updated_at = datetime.now(timezone.utc) - timedelta(hours=2)
+
+        response = client.get(
+            f"{settings.API_V1_STR}/task-workflows/item-1",
+            headers=superuser_token_headers,
+        )
+
+        assert response.status_code == 200, response.text
+        objectives = {
+            entry["objective"] for entry in response.json()["workflows"]
+        }
+        assert "刚取消的任务" not in objectives, "finished tasks drop off immediately"
+        assert "早就完成的任务" not in objectives, "old finals drop off the panel"
+        assert "进行中的任务" in objectives, "active tasks are always shown"
+        assert response.json()["count"] == 1
+        assert fresh_final.status == "cancelled"
+    finally:
+        task_workflow_manager.reset()

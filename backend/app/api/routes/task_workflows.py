@@ -13,15 +13,22 @@ MAX_WORKFLOWS_RETURNED = 20
 
 @router.get("/{item_id}")
 def list_task_workflows(item_id: str, current_user: CurrentUser) -> dict:
-    """List task workflows for one item, newest activity first.
+    """List live (non-final) task workflows for one item.
 
     This is the task queue the agent plans, executes, and reports through:
     objective, planned steps with per-step status, current progress, and the
-    immutable report destination (QQ conversation / web / terminal).
+    immutable report destination (QQ conversation / web / terminal). Finished
+    tasks (completed/failed/cancelled) are reported to their destination and
+    immediately dropped from the panel.
     """
     _ = current_user
-    workflows = task_workflow_manager.snapshot(item_id)[:MAX_WORKFLOWS_RETURNED]
-    return {"workflows": workflows, "count": len(workflows)}
+    visible = [
+        entry
+        for entry in task_workflow_manager.snapshot(item_id)
+        if str(entry.get("status") or "") not in WORKFLOW_FINAL_STATUSES
+    ]
+    visible = visible[:MAX_WORKFLOWS_RETURNED]
+    return {"workflows": visible, "count": len(visible)}
 
 
 @router.post("/{workflow_id}/cancel")
