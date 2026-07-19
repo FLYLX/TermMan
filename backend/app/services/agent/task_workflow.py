@@ -967,9 +967,9 @@ class TaskWorkflowManager:
                 "4. Do not give a final completion answer while this workflow is active or "
                 "waiting_job. Finish verification first, or mark a genuine blocker.",
                 "5. Report success/failure back only through the linked reply ticket source.",
-                "6. Create a pending-reply queue entry only for asynchronous, delegated, "
-                "multi-step, or wait-for-response work that may span turns. Ordinary chat and "
-                "immediate one-step actions use the normal reply ticket without a queue entry.",
+                "6. Multi-step, asynchronous, or wait-for-response work continues through this "
+                "workflow across turns. Ordinary chat and immediate one-step actions do not "
+                "need a workflow.",
                 "7. Cancelling an obsolete command or background job does not cancel the main "
                 "objective. Use mcp_local_cancel_job for the execution, then continue the workflow. "
                 "Use workflow action=cancel only when the user explicitly abandons the whole goal.",
@@ -986,9 +986,8 @@ class TaskWorkflowManager:
                 "12. A repeated request for this same objective reuses this workflow. Read the "
                 "current step, latest_progress, evidence, and running_jobs before acting; never "
                 "restart an operation merely because the user repeated the request.",
-                "13. This workflow may have multiple immutable return targets. Final delivery "
-                "through mcp_local_send_pending_reply fans out to every target; do not send "
-                "separate duplicate reports manually.",
+                "13. The final report goes back to the current reply ticket's source directly "
+                "as the visible answer; do not send separate duplicate reports manually.",
             ]
         )
         return "\n".join(lines)

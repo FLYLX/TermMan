@@ -204,60 +204,6 @@ def test_read_chat_history_tool_returns_recent_trimmed_context(monkeypatch) -> N
     assert "query" in tool["inputSchema"]["properties"]
 
 
-def test_list_reply_tickets_hides_delivered_by_default(monkeypatch) -> None:
-    import app.services.agent.reply_ticket as reply_ticket_module
-
-    class FakeReplyTicketManager:
-        def snapshot(self, item_id: str):
-            return [
-                {
-                    "ticket_id": "running-ticket-id",
-                    "source_type": "qq",
-                    "source_label": "QQ group:g1",
-                    "status": "running",
-                    "updated_at": "2026-07-10T10:03:00",
-                    "task_request_id": "task-1",
-                    "command": "apt-get install temurin-17-jdk",
-                    "delivery_error": "",
-                },
-                {
-                    "ticket_id": "delivered-ticket-id",
-                    "source_type": "web",
-                    "source_label": "TermMan web chat",
-                    "status": "delivered",
-                    "updated_at": "2026-07-10T10:00:00",
-                    "task_request_id": "",
-                    "command": "echo old",
-                    "delivery_error": "",
-                },
-            ]
-
-    monkeypatch.setattr(
-        reply_ticket_module,
-        "reply_ticket_manager",
-        FakeReplyTicketManager(),
-    )
-
-    server = LocalMCPServer()
-    result = server.call_tool(
-        "list_reply_tickets",
-        {
-            "item_id": "item-1",
-        },
-    )
-
-    text = result[0]["text"]
-    assert "Reply tickets for current item" in text
-    assert "running-tick" in text
-    assert "QQ group:g1" in text
-    assert "apt-get install temurin-17-jdk" in text
-    assert "delivered-ticket" not in text
-
-    tool = next(tool for tool in server.list_tools() if tool["name"] == "list_reply_tickets")
-    assert tool["skip_memory"] is True
-    assert "include_delivered" in tool["inputSchema"]["properties"]
-
-
 def test_save_memory_uses_type_ttl_and_verified_metadata(monkeypatch) -> None:
     import importlib
 
@@ -1115,12 +1061,13 @@ def test_run_job_is_always_asynchronous_even_when_wait_requested(monkeypatch) ->
     assert "wait_for_completion" not in run_job_tool["inputSchema"]["properties"]
 
 
-def test_background_run_job_registers_pending_reply_only_after_start(
+def test_background_run_job_registers_task_workflow_only_after_start(
     monkeypatch,
 ) -> None:
     from types import SimpleNamespace
 
     from app.services.agent.reply_ticket import reply_ticket_manager
+    from app.services.agent.task_workflow import task_workflow_manager
 
     item_id = "item-background-pending"
     server = LocalMCPServer()
@@ -1168,11 +1115,11 @@ def test_background_run_job_registers_pending_reply_only_after_start(
 
         assert "后台任务已启动" in result[0]["text"]
         assert len(started) == 1
-        assert ticket.pending_reply_active is True
-        entries = reply_ticket_manager.list_pending_replies(item_id)
-        assert len(entries) == 1
-        assert entries[0]["request_summary"] == "安装 Temurin Java 17"
-        assert entries[0]["destination_type"] == "web"
+        workflow = task_workflow_manager.get_by_ticket(ticket.ticket_id)
+        assert workflow is not None
+        assert workflow.item_id == item_id
+        assert workflow.objective == "后台任务：apt-get install -y temurin-17-jdk"
+        assert workflow.source_type == "web"
     finally:
         reply_ticket_manager.reset()
 

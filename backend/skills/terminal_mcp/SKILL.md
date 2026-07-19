@@ -38,7 +38,7 @@ action:
     - 终端命令和后台 Job 都必须通过实时 Socket Room 校验。工具返回“终端未启动或未连接”时，直接如实告知，不能说命令正在执行、正在等待输出或终端只是暂时没回显。
     - 只有任务确实需要终端、文件、日志或记忆状态时才调用 MCP。
     - 没有调用工具时，不要说自己检查、运行、读取或验证了。
-    - 当用户说“刚才”“前面”“之前让你做的”“继续”“上一个任务”“你忘了”“怎么没回”等依赖前文或任务状态的话，优先调用 `mcp_local_get_task_workflow` 恢复不可变主目标和当前步骤；需要补充对话证据时再调用 `mcp_local_read_chat_history`，涉及回复来源或后台任务归属时再调用 `mcp_local_list_reply_tickets` 或 `mcp_local_list_jobs`。
+    - 当用户说“刚才”“前面”“之前让你做的”“继续”“上一个任务”“你忘了”“怎么没回”等依赖前文或任务状态的话，优先调用 `mcp_local_get_task_workflow` 恢复不可变主目标和当前步骤；需要补充对话证据时再调用 `mcp_local_read_chat_history`，涉及后台任务归属时再调用 `mcp_local_list_jobs`。
     - 换源、更新索引、修依赖、重新下载和改变安装方式都是恢复步骤，不是新的主任务。用 `mcp_local_update_task_workflow` 插入恢复步骤，恢复完成后继续原目标并最终验证。
     - 不要把“下一步执行某命令”“建议改用某包”“要不要继续”当成任务推进。只要安全动作明确且不缺用户输入，就在当前轮直接调用终端或 Job 工具执行。
     - 取消旧的 apt、下载或安装 Job 只代表废弃当前执行方式；随后应立即按新源/新方法继续不可变主目标。只有用户明确放弃整个目标时才取消 workflow。
@@ -69,7 +69,6 @@ tools:
   - mcp_local_get_terminal_status
   - mcp_local_read_terminal_log
   - mcp_local_read_chat_history
-  - mcp_local_list_reply_tickets
   - mcp_local_get_task_workflow
   - mcp_local_update_task_workflow
   - mcp_local_execute_command

@@ -100,68 +100,6 @@ def test_terminal_callback_attaches_original_ticket_during_processing(
     reply_ticket_manager.reset()
 
 
-def test_old_background_job_ticket_attaches_rebound_current_ticket(
-    monkeypatch,
-) -> None:
-    reply_ticket_manager.reset()
-    agent = SimpleNamespace(
-        _context=SimpleNamespace(
-            robot_id="",
-            robot_context_token="",
-            reply_ticket_id="",
-        )
-    )
-    first = reply_ticket_manager.create_for_agent(
-        agent,
-        item_id="item-1",
-        handler_id="handler-1",
-        message="安装 Java",
-        source_type="web",
-    )
-    second = reply_ticket_manager.create_for_agent(
-        agent,
-        item_id="item-1",
-        handler_id="handler-1",
-        message="直接换成国内源",
-        source_type="web",
-    )
-    reply_ticket_manager.upsert_pending_reply(
-        first.ticket_id,
-        request_summary="安装 Java",
-        task_plan=["安装 Java", "验证版本"],
-    )
-    workflow = task_workflow_manager.get_by_ticket(first.ticket_id)
-    assert workflow is not None
-    task_workflow_manager.attach_ticket(workflow.workflow_id, second.ticket_id)
-    reply_ticket_manager.rebind_pending_reply(first.ticket_id, second.ticket_id)
-    reply_ticket_manager.detach_from_agent(agent, second.ticket_id)
-
-    session = AgentSession("item-1", "handler-1")
-    observed: list[str] = []
-    monkeypatch.setattr(session, "get_agent", lambda: agent)
-    monkeypatch.setattr(
-        session,
-        "_process_terminal_input",
-        lambda _input, current_agent: observed.append(
-            current_agent._context.reply_ticket_id
-        ),
-    )
-
-    try:
-        session._process_input(
-            InputMessage(
-                input_type=InputType.TERMINAL,
-                content="old job failed",
-                reply_ticket_id=first.ticket_id,
-            )
-        )
-
-        assert observed == [second.ticket_id]
-        assert agent._context.reply_ticket_id == ""
-    finally:
-        reply_ticket_manager.reset()
-
-
 def test_schedule_task_workflow_continuation_is_internal_and_bounded(
     monkeypatch,
 ) -> None:

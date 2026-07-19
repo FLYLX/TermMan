@@ -83,11 +83,11 @@ def _close_stale_workflow(workflow: Any, stats: dict[str, int], *, now: datetime
 
     if not ticket_id:
         return
+    ticket = reply_ticket_manager.get(ticket_id)
+    if ticket is None:
+        return
     try:
-        delivered, detail = reply_ticket_manager.send_pending_reply(
-            ticket_id,
-            _closure_notice(workflow),
-        )
+        delivered = reply_ticket_manager.deliver(ticket_id, _closure_notice(workflow))
     except Exception as exc:
         logger.warning(
             "[TaskWatchdog] Closure notice failed for workflow=%s: %s",
@@ -99,9 +99,8 @@ def _close_stale_workflow(workflow: Any, stats: dict[str, int], *, now: datetime
         stats["reported"] += 1
     else:
         logger.info(
-            "[TaskWatchdog] Closure notice not delivered for workflow=%s: %s",
+            "[TaskWatchdog] Closure notice not delivered for workflow=%s",
             workflow.workflow_id,
-            detail,
         )
 
 
@@ -109,29 +108,12 @@ def _remove_orphan_tickets(now: datetime, stats: dict[str, int]) -> None:
     from app.services.agent.reply_ticket import TICKET_TTL, reply_ticket_manager
     from app.services.agent.task_workflow import task_workflow_manager
 
-    stale_active_cutoff = now - timedelta(
-        seconds=float(settings.AGENT_WATCHDOG_STALE_SECONDS)
-    )
     inactive_cutoff = now - TICKET_TTL
     with reply_ticket_manager._lock:
         tickets = list(reply_ticket_manager._tickets.values())
     for ticket in tickets:
         updated_at = _as_utc(ticket.updated_at)
         workflow = task_workflow_manager.get_by_ticket(ticket.ticket_id)
-        if ticket.pending_reply_active:
-            if workflow is not None or updated_at >= stale_active_cutoff:
-                continue
-            logger.info(
-                "[TaskWatchdog] Removing orphan pending reply ticket=%s item=%s",
-                ticket.ticket_id,
-                ticket.item_id,
-            )
-            reply_ticket_manager.delete_pending_reply(
-                ticket.ticket_id,
-                reason="Orphan pending reply removed by watchdog.",
-            )
-            stats["orphan_tickets_removed"] += 1
-            continue
         if workflow is not None or updated_at >= inactive_cutoff:
             continue
         with reply_ticket_manager._lock:

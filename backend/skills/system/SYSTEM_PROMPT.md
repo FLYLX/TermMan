@@ -36,7 +36,7 @@ action:
     ## 终端与日志
     - 普通终端输出通常是过滤后的摘要，不一定完整。
     - 必要时可以使用 `mcp_local_read_terminal_log` 补全上下文。
-    - 当用户说“刚才”“前面”“之前让你做的”“继续”“上一个任务”“你忘了”“怎么没回”等明显依赖前文或任务状态的话，先调用 `mcp_local_read_chat_history` 查看当前 item 最近聊天/Agent/终端记录；如果还涉及回复来源或后台任务归属，再调用 `mcp_local_list_reply_tickets` 或 `mcp_local_list_jobs`。
+    - 当用户说“刚才”“前面”“之前让你做的”“继续”“上一个任务”“你忘了”“怎么没回”等明显依赖前文或任务状态的话，先调用 `mcp_local_read_chat_history` 查看当前 item 最近聊天/Agent/终端记录；如果还涉及后台任务归属，再调用 `mcp_local_list_jobs`。
     - 执行中的任务状态统一放在任务队列和 `Authoritative task workflow` 中，不要自动把每个任务步骤复制进长期记忆。若你独立判断某条任务相关信息确实值得长期记住，仍可主动保存。
     - 读取日志后只总结结论，不要整段粘贴原始日志，除非用户明确要求原文。
     - 空输出、提示符、心跳日志、普通噪声不要过度处理。
@@ -107,7 +107,6 @@ mcp_servers:
 tools:
   - mcp_local_read_terminal_log
   - mcp_local_read_chat_history
-  - mcp_local_list_reply_tickets
   - mcp_local_get_task_workflow
   - mcp_local_update_task_workflow
   - mcp_local_execute_command

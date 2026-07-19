@@ -99,17 +99,16 @@ def test_ticket_persists_and_restores_with_aliases() -> None:
         handler_id="handler-1",
         message="装一下 java",
     )
-    reply_ticket_manager.upsert_pending_reply(
-        ticket.ticket_id,
-        task_plan=["安装", "验证"],
-    )
+    reply_ticket_manager.mark_task_plan(ticket.ticket_id, "plan-1")
     second = reply_ticket_manager.create_for_agent(
         agent,
         item_id="item-1",
         handler_id="handler-1",
         message="继续",
     )
-    reply_ticket_manager.rebind_pending_reply(ticket.ticket_id, second.ticket_id)
+    with reply_ticket_manager._lock:
+        reply_ticket_manager._ticket_aliases[ticket.ticket_id] = second.ticket_id
+        reply_ticket_module._persist_aliases(reply_ticket_manager._ticket_aliases)
     assert state_store.load_tickets(), "ticket rows should be persisted"
 
     # Simulate process death: in-memory state is gone, the store survives.
@@ -121,7 +120,7 @@ def test_ticket_persists_and_restores_with_aliases() -> None:
     assert restored >= 1
     revived = reply_ticket_manager.get(second.ticket_id)
     assert revived is not None
-    assert revived.pending_reply_active is True
+    assert reply_ticket_manager._tickets[ticket.ticket_id].task_request_id == "plan-1"
     assert reply_ticket_manager.resolve_ticket_id(ticket.ticket_id) == second.ticket_id
 
 
@@ -237,18 +236,24 @@ def test_watchdog_closes_stale_workflow_and_reports(monkeypatch) -> None:
         handler_id="handler-1",
         message="装java",
     )
-    reply_ticket_manager.upsert_pending_reply(ticket.ticket_id, task_plan=["安装"])
-    workflow = task_workflow_manager.get_by_ticket(ticket.ticket_id)
-    assert workflow is not None
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id=ticket.ticket_id,
+        objective="安装 Java",
+        source_type="web",
+        source_label="web",
+        step_titles=["安装"],
+    )
     workflow.updated_at = datetime.now(timezone.utc) - timedelta(hours=2)
 
     sent: list[tuple[str, str]] = []
 
-    def fake_send(ticket_id, content):
+    def fake_deliver(ticket_id, content):
         sent.append((ticket_id, content))
-        return True, "TermMan web chat"
+        return True
 
-    monkeypatch.setattr(reply_ticket_manager, "send_pending_reply", fake_send)
+    monkeypatch.setattr(reply_ticket_manager, "deliver", fake_deliver)
 
     stats = task_watchdog.run_once()
     assert stats["closed"] == 1
@@ -266,34 +271,21 @@ def test_watchdog_keeps_fresh_workflow() -> None:
         handler_id="handler-1",
         message="装java",
     )
-    reply_ticket_manager.upsert_pending_reply(ticket.ticket_id, task_plan=["安装"])
-    workflow = task_workflow_manager.get_by_ticket(ticket.ticket_id)
-    assert workflow is not None
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id=ticket.ticket_id,
+        objective="安装 Java",
+        source_type="web",
+        source_label="web",
+        step_titles=["安装"],
+    )
 
     stats = task_watchdog.run_once()
     assert stats["closed"] == 0
     assert stats["orphan_tickets_removed"] == 0
     assert workflow.status == "active"
     assert reply_ticket_manager.get(ticket.ticket_id) is not None
-
-
-def test_watchdog_removes_orphan_pending_ticket() -> None:
-    agent = _make_agent()
-    ticket = reply_ticket_manager.create_for_agent(
-        agent,
-        item_id="item-1",
-        handler_id="handler-1",
-        message="装java",
-    )
-    reply_ticket_manager.upsert_pending_reply(ticket.ticket_id, task_plan=["安装"])
-    task_workflow_manager.reset()
-    orphan = reply_ticket_manager.get(ticket.ticket_id)
-    assert orphan is not None
-    orphan.updated_at = datetime.now() - timedelta(hours=2)
-
-    stats = task_watchdog.run_once()
-    assert stats["orphan_tickets_removed"] == 1
-    assert reply_ticket_manager.get(ticket.ticket_id) is None
 
 
 def test_watchdog_removes_stale_inactive_ticket() -> None:
@@ -306,10 +298,45 @@ def test_watchdog_removes_stale_inactive_ticket() -> None:
     )
     stored = reply_ticket_manager.get(ticket.ticket_id)
     assert stored is not None
-    assert stored.pending_reply_active is False
     stored.updated_at = datetime.now() - timedelta(hours=7)
 
     stats = task_watchdog.run_once()
     assert stats["orphan_tickets_removed"] == 1
     assert reply_ticket_manager.get(ticket.ticket_id) is None
     assert state_store.load_tickets() == []
+
+
+def test_deliver_sends_qq_ticket_via_bridge(monkeypatch) -> None:
+    from app.plugins.robot.bridge_client import robot_bridge_client
+    from app.plugins.robot.conversation_memory import robot_conversation_memory
+    from app.services.agent.reply_ticket import ReplyTicket, reply_ticket_manager
+
+    sent: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        robot_bridge_client,
+        "send_message",
+        lambda robot_id, target, text: sent.append(
+            (robot_id, target.target_id, text)
+        ),
+    )
+    monkeypatch.setattr(
+        robot_conversation_memory,
+        "append_assistant_message",
+        lambda *args, **kwargs: None,
+    )
+    ticket = ReplyTicket(
+        ticket_id="t-qq-1",
+        item_id="item-1",
+        handler_id="handler-1",
+        source_type="qq",
+        source_label="QQ group:g1",
+        robot_id="robot-1",
+        conversation_key="group:g1",
+        reply_target={"target_type": "group", "target_id": "g1", "metadata": {}},
+    )
+    with reply_ticket_manager._lock:
+        reply_ticket_manager._tickets[ticket.ticket_id] = ticket
+
+    assert reply_ticket_manager.deliver(ticket.ticket_id, "装好了") is True
+    assert sent == [("robot-1", "g1", "装好了")]
+    assert reply_ticket_manager.get(ticket.ticket_id).status == "delivered"

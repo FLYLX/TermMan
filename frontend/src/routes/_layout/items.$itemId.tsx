@@ -39,7 +39,6 @@ import {
 } from "@/components/Items/FilterRuleEditor"
 import { ItemFilesPanel } from "@/components/Items/ItemFilesPanel"
 import ItemHandlersList from "@/components/Items/ItemHandlersList"
-import { PendingReplyQueuePanel } from "@/components/Items/PendingReplyQueuePanel"
 import {
   createFallbackItem,
   getStoredItemSnapshot,
@@ -3361,7 +3360,6 @@ function ItemDetailPage({
                   </div>
                 </div>
                 <div className="mt-4 space-y-2">
-                  <PendingReplyQueuePanel itemId={item.id} />
                   <BackgroundJobsPanel
                     jobs={backgroundJobs?.jobs || []}
                     isOpen={jobsPanelOpen}

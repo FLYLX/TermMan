@@ -10,7 +10,6 @@ ROBOT_PREFIX = "mcp_robot_"
 
 LOCAL_HISTORY_TOOLS = {
     "mcp_local_read_chat_history",
-    "mcp_local_list_reply_tickets",
 }
 LOCAL_MEMORY_TOOLS = {
     "mcp_local_save_memory",
@@ -22,17 +21,6 @@ LOCAL_MEMORY_TOOLS = {
 LOCAL_WORKFLOW_TOOLS = {
     "mcp_local_get_task_workflow",
     "mcp_local_update_task_workflow",
-    "mcp_local_list_reply_tickets",
-    "mcp_local_read_pending_replies",
-    "mcp_local_write_pending_reply",
-    "mcp_local_delete_pending_reply",
-    "mcp_local_send_pending_reply",
-}
-LOCAL_PENDING_REPLY_TOOLS = {
-    "mcp_local_read_pending_replies",
-    "mcp_local_write_pending_reply",
-    "mcp_local_delete_pending_reply",
-    "mcp_local_send_pending_reply",
 }
 LOCAL_SCHEDULE_TOOLS = {
     "mcp_local_list_scheduled_tasks",
@@ -137,17 +125,6 @@ TERMINAL_STATUS_QUERY_PATTERNS = (
     r"(?:下载|安装|更新|升级|构建|编译|解压|上传|启动|运行|任务|进度|job).{0,10}(?:咋样|怎么样|如何|到哪|到多少|多少了|几成|状态|完成了吗|好了吗|结束了吗)",
 )
 
-PENDING_REPLY_PATTERNS = (
-    "\u5f85\u56de\u590d",
-    "\u56de\u590d\u961f\u5217",
-    "\u539f\u8def\u56de\u590d",
-    "\u56de\u62a5",
-    "\u6c47\u62a5",
-    "\u95ee\u95ee",
-    "\u5e2e\u6211\u95ee",
-    "\u8f6c\u95ee",
-    "pending repl",
-)
 
 ROBOT_PATTERNS = (
     r"\bqq\b",
@@ -205,10 +182,6 @@ def _wants_schedule_tools(text: str) -> bool:
     return _matches_any(text, SCHEDULE_PATTERNS)
 
 
-def _wants_pending_reply_tools(text: str) -> bool:
-    return _matches_any(text, PENDING_REPLY_PATTERNS)
-
-
 def _wants_robot_tools(text: str, *, source: TurnSource, agent: Any) -> bool:
     del agent
     if source == "qq":
@@ -261,7 +234,6 @@ def select_tools_for_turn(
         agent,
         reply_ticket_id=reply_ticket_id,
     )
-    include_local_pending_replies = _wants_pending_reply_tools(text)
 
     selected: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -279,10 +251,6 @@ def select_tools_for_turn(
                 or (include_local_history and name in LOCAL_HISTORY_TOOLS)
                 or (include_local_memory and name in LOCAL_MEMORY_TOOLS)
                 or (include_local_workflow and name in LOCAL_WORKFLOW_TOOLS)
-                or (
-                    include_local_pending_replies
-                    and name in LOCAL_PENDING_REPLY_TOOLS
-                )
                 or (include_local_schedule and name in LOCAL_SCHEDULE_TOOLS)
             )
         else:

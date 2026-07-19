@@ -64,7 +64,6 @@ from app.services.agent.session import (
     is_background_job_started_result,
     is_command_dispatch_failure_result,
     is_command_dispatch_pending_result,
-    is_pending_reply_sent_result,
     is_terminal_unavailable_error,
     is_tool_result_auto_routed_to_job,
     should_auto_route_terminal_tool_to_job,
@@ -111,7 +110,6 @@ SILENT_TOOL_NAMES = {
 }
 HIDDEN_TOOL_RESULT_NAMES = {
     "mcp_robot_send_message",
-    "mcp_local_send_pending_reply",
 }
 BACKGROUND_JOB_RUNNING_RESPONSE = (
     "\u540e\u53f0\u4efb\u52a1\u8fd8\u5728\u8fd0\u884c\uff0c"
@@ -259,24 +257,6 @@ def _build_tool_selection_query(
     if not recent_context or not ROBOT_CONTEXT_HISTORY_RE.search(recent_context):
         return current
     return f"{current}\nRecent forwarding context:\n{recent_context}"
-
-
-def _is_immediate_web_qq_forward_request(
-    message: str,
-    *,
-    source_type: str,
-    tools: list[dict[str, Any]],
-) -> bool:
-    text = str(message or "").strip()
-    return bool(
-        source_type == SOURCE_WEB
-        and ROBOT_SEND_FOLLOW_UP_RE.search(text)
-        and not DEFERRED_TASK_RE.search(text)
-        and any(
-            tool.get("function", {}).get("name") == ROBOT_SEND_TOOL_NAME
-            for tool in tools
-        )
-    )
 
 
 class ChatRequest(BaseModel):
@@ -556,13 +536,7 @@ def _deliver_reply_ticket_final_response(
     visible_content = sanitize_robot_visible_text(content).strip()
     if not visible_content:
         return []
-    if ticket.pending_reply_active:
-        delivered, _ = reply_ticket_manager.send_pending_reply(
-            ticket_id,
-            visible_content,
-        )
-    else:
-        delivered = reply_ticket_manager.deliver(ticket_id, visible_content)
+    delivered = reply_ticket_manager.deliver(ticket_id, visible_content)
     if not delivered:
         return []
     events: list[dict[str, Any]] = [
@@ -586,10 +560,6 @@ def _complete_confirmed_external_delivery(ticket_id: str) -> bool:
     ticket = reply_ticket_manager.get(ticket_id)
     if not ticket:
         return True
-    if ticket.pending_reply_active:
-        return reply_ticket_manager.complete_pending_reply_after_external_delivery(
-            ticket_id
-        )
     return reply_ticket_manager.mark_delivered(ticket_id)
 
 
@@ -1076,26 +1046,10 @@ def _create_agent_task_plan(
         )
     )
     if resumable and resumable_follow_up:
-        matching_ticket_id = reply_ticket_manager.find_matching_pending_destination(
-            resumable.workflow_id,
-            locked_reply_ticket_id,
-        )
         task_workflow_manager.attach_ticket(
             resumable.workflow_id,
             locked_reply_ticket_id,
         )
-        if matching_ticket_id:
-            reply_ticket_manager.rebind_pending_reply(
-                matching_ticket_id,
-                locked_reply_ticket_id,
-            )
-        elif reply_ticket is not None:
-            reply_ticket_manager.upsert_pending_reply(
-                reply_ticket.ticket_id,
-                request_summary=resumable.objective,
-                task_plan=[step.title for step in resumable.steps],
-                status=resumable.queue_status,
-            )
         follow_up = task_message[:500]
         if TASK_WORKFLOW_FINAL_ONLY_RE.search(task_message):
             task_workflow_manager.set_report_policy(
@@ -1166,13 +1120,6 @@ def _create_agent_task_plan(
         task_workflow_manager.set_report_policy(
             locked_reply_ticket_id,
             "final_only",
-        )
-    if reply_ticket is not None:
-        reply_ticket_manager.upsert_pending_reply(
-            reply_ticket.ticket_id,
-            request_summary=task_message,
-            task_plan=task_titles,
-            status="working",
         )
     return PlannedTaskRuntime(
         request_id=request_id,
@@ -1461,7 +1408,7 @@ def _finalize_stopped_turn(
 
     ticket_id = str(reply_ticket_id or "").strip() or _current_reply_ticket_id(agent)
     ticket = reply_ticket_manager.get(ticket_id)
-    if ticket and ticket.pending_reply_active:
+    if ticket:
         task_workflow_manager.update(
             ticket_id,
             action="mark_blocked",
@@ -1470,13 +1417,7 @@ def _finalize_stopped_turn(
         reply_ticket_manager.mark_failed(ticket_id, reason or final_report)
     delivered = False
     if ticket and ticket.source_type == SOURCE_QQ:
-        if ticket.pending_reply_active:
-            delivered, _ = reply_ticket_manager.send_pending_reply(
-                ticket_id,
-                final_report,
-            )
-        else:
-            delivered = reply_ticket_manager.deliver(ticket_id, final_report)
+        delivered = reply_ticket_manager.deliver(ticket_id, final_report)
         if delivered:
             events = [
                 _persist_and_broadcast_event(
@@ -1492,12 +1433,7 @@ def _finalize_stopped_turn(
             return events
 
     if ticket and ticket.source_type != SOURCE_QQ:
-        if ticket.pending_reply_active:
-            reply_ticket_manager.complete_pending_reply_after_external_delivery(
-                ticket_id
-            )
-        else:
-            reply_ticket_manager.mark_delivered(ticket_id)
+        reply_ticket_manager.mark_delivered(ticket_id)
     return [
         _persist_and_broadcast_event(
             item_id,
@@ -1583,11 +1519,6 @@ def _generate_stream_unserialized(
         )
 
     agent_context = getattr(agent, "_context", None)
-    immediate_web_qq_forward = _is_immediate_web_qq_forward_request(
-        message,
-        source_type=normalized_source_type,
-        tools=tools,
-    )
     if agent_context is not None:
         agent_context.robot_backend_target_resolution_enabled = bool(
             normalized_source_type == SOURCE_WEB
@@ -2292,34 +2223,16 @@ def _generate_stream_unserialized(
                         command=str(tool_args.get("command") or ""),
                     )
 
-                pending_write_skipped = bool(
-                    immediate_web_qq_forward
-                    and tool_name == "mcp_local_write_pending_reply"
-                )
                 duplicate_qq_send_suppressed = bool(
                     tool_name == ROBOT_SEND_TOOL_NAME and qq_message_sent_this_turn
                 )
                 intermediate_delivery_suppressed = bool(
-                    tool_name
-                    in {ROBOT_SEND_TOOL_NAME, "mcp_local_send_pending_reply"}
+                    tool_name == ROBOT_SEND_TOOL_NAME
                     and task_workflow_manager.should_suppress_intermediate_delivery(
                         reply_ticket.ticket_id
                     )
                 )
-                if pending_write_skipped:
-                    result = {
-                        "success": True,
-                        "result": [
-                            {
-                                "type": "text",
-                                "text": (
-                                    "Pending reply not created: this is an immediate "
-                                    "one-step QQ forward. Call mcp_robot_send_message directly."
-                                ),
-                            }
-                        ],
-                    }
-                elif duplicate_qq_send_suppressed:
+                if duplicate_qq_send_suppressed:
                     result = {
                         "success": True,
                         "result": [
@@ -2361,8 +2274,6 @@ def _generate_stream_unserialized(
                     tool_called_this_turn = True
                 result_text = _format_tool_result(result)
                 called_tool_names.add(tool_name)
-                if is_pending_reply_sent_result(result):
-                    delivery_tool_sent_by_integration = True
                 command_dispatch_failed = is_command_dispatch_failure_result(
                     tool_name,
                     result_text,
@@ -2372,7 +2283,6 @@ def _generate_stream_unserialized(
                     tool_name,
                     result_text,
                 )
-                complete_pending_after_external_delivery = False
                 stop_after_final_robot_delivery = False
                 if result_text and fallback_is_delivery_result(result_text):
                     if tool_name == ROBOT_SEND_TOOL_NAME:
@@ -2383,18 +2293,9 @@ def _generate_stream_unserialized(
                     )
                     if delivery_is_final:
                         delivery_tool_sent_by_integration = True
-                        current_ticket = reply_ticket_manager.get(
+                        reply_ticket_manager.mark_delivered(
                             reply_ticket.ticket_id
                         )
-                        complete_pending_after_external_delivery = bool(
-                            tool_name == ROBOT_SEND_TOOL_NAME
-                            and current_ticket
-                            and current_ticket.pending_reply_active
-                        )
-                        if not complete_pending_after_external_delivery:
-                            reply_ticket_manager.mark_delivered(
-                                reply_ticket.ticket_id
-                            )
                     else:
                         task_workflow_manager.update(
                             reply_ticket.ticket_id,
@@ -2412,19 +2313,6 @@ def _generate_stream_unserialized(
                                 "qq_delivery": True,
                             },
                         )
-                        if complete_pending_after_external_delivery:
-                            completed = (
-                                reply_ticket_manager.complete_pending_reply_after_external_delivery(
-                                    reply_ticket.ticket_id
-                                )
-                            )
-                            if not completed:
-                                logger.warning(
-                                    "[Chat] QQ delivery succeeded but pending task cleanup failed: "
-                                    "item=%s ticket=%s",
-                                    item_id,
-                                    reply_ticket.ticket_id,
-                                )
                         yield _to_sse(reply_event)
                         stop_after_final_robot_delivery = delivery_is_final
 

@@ -190,27 +190,6 @@ def test_short_send_follow_up_inherits_recent_qq_tool_context() -> None:
     assert chat_route._build_tool_selection_query("现在呢", history) == "现在呢"
 
 
-def test_immediate_qq_forward_does_not_need_pending_reply() -> None:
-    from app.api.routes import chat as chat_route
-
-    tools = [
-        {
-            "type": "function",
-            "function": {"name": "mcp_robot_send_message"},
-        }
-    ]
-    assert chat_route._is_immediate_web_qq_forward_request(
-        "发群里说个你好",
-        source_type="web",
-        tools=tools,
-    )
-    assert not chat_route._is_immediate_web_qq_forward_request(
-        "Java 安装完成后发群里说装好了",
-        source_type="web",
-        tools=tools,
-    )
-
-
 def test_web_chat_keeps_visible_qq_targets_without_active_qq_context() -> None:
     from app.plugins.robot.agent.integration import RobotAgentIntegration
 
@@ -266,19 +245,10 @@ def test_generate_stream_allows_short_web_forward_follow_up_to_visible_qq_target
 
     item, handler = _create_linked_item_and_handler(db)
     tool_name = "mcp_robot_send_message"
-    pending_tool_name = "mcp_local_write_pending_reply"
     completion_calls = {"value": 0}
     executed: list[dict] = []
     fake_agent = _make_fake_agent(
         tools=[
-            {
-                "type": "function",
-                "function": {
-                    "name": pending_tool_name,
-                    "description": "Write a pending reply",
-                    "parameters": {"type": "object", "properties": {}},
-                },
-            },
             {
                 "type": "function",
                 "function": {
@@ -305,42 +275,6 @@ def test_generate_stream_allows_short_web_forward_follow_up_to_visible_qq_target
     def fake_completion(**_kwargs):
         completion_calls["value"] += 1
         if completion_calls["value"] == 1:
-            return iter(
-                [
-                    SimpleNamespace(
-                        choices=[
-                            SimpleNamespace(
-                                delta=SimpleNamespace(
-                                    content="",
-                                    tool_calls=[
-                                        SimpleNamespace(
-                                            index=0,
-                                            id="call_pending",
-                                            function=SimpleNamespace(
-                                                name=pending_tool_name,
-                                                arguments=json.dumps(
-                                                    {
-                                                        "status": "working",
-                                                        "request_summary": "发群里说个你好",
-                                                        "task_plan": [
-                                                            "写入待回复队列",
-                                                            "发送消息到QQ群",
-                                                            "确认发送成功",
-                                                        ],
-                                                    },
-                                                    ensure_ascii=False,
-                                                ),
-                                            ),
-                                        )
-                                    ],
-                                ),
-                                finish_reason=None,
-                            )
-                        ]
-                    )
-                ]
-            )
-        if completion_calls["value"] == 2:
             return iter(
                 [
                     SimpleNamespace(
@@ -427,11 +361,10 @@ def test_generate_stream_allows_short_web_forward_follow_up_to_visible_qq_target
         )
         payloads = _sse_payloads(chunks)
 
-        assert completion_calls["value"] == 2
+        assert completion_calls["value"] == 1
         assert len(executed) == 1
         assert executed[0]["reply_to"] == "baka"
         assert executed[0]["text"] == "你好"
-        assert reply_ticket_manager.list_pending_replies(str(item.id)) == []
         assert any(event.get("type") == "agent_qq_reply" for event in payloads)
         assert not any(event.get("type") == "agent_warning" for event in payloads)
         assert not any(event.get("type") == "agent_response" for event in payloads)
@@ -878,7 +811,6 @@ def test_structured_terminal_unavailable_failure_reports_and_clears_task_queue(
         workflows = task_workflow_manager.snapshot(str(item.id))
         assert len(workflows) == 1
         assert workflows[0]["status"] == "failed"
-        assert reply_ticket_manager.list_pending_replies(str(item.id)) == []
         assert any(COMMAND_DISPATCH_FAILURE_MESSAGE in chunk for chunk in chunks)
     finally:
         agent_session_manager.remove_session(str(item.id))
@@ -3278,13 +3210,12 @@ def test_vague_start_messages_and_status_questions_do_not_create_tasks(
             assert plan is None
 
         assert task_workflow_manager.snapshot("item-1") == []
-        assert reply_ticket_manager.list_pending_replies("item-1") == []
     finally:
         reply_ticket_manager.reset()
         task_workflow_manager.reset()
 
 
-def test_final_pending_qq_report_is_delivered_and_removed_by_backend(
+def test_final_qq_report_is_delivered_by_backend(
     monkeypatch,
 ) -> None:
     from app.api.routes import chat as chat_route
@@ -3293,9 +3224,8 @@ def test_final_pending_qq_report_is_delivered_and_removed_by_backend(
     ticket = SimpleNamespace(
         ticket_id="ticket-java",
         source_type=SOURCE_QQ,
-        pending_reply_active=True,
     )
-    sent: list[tuple[str, str]] = []
+    delivered: list[tuple[str, str]] = []
     monkeypatch.setattr(
         chat_route.reply_ticket_manager,
         "get",
@@ -3303,18 +3233,8 @@ def test_final_pending_qq_report_is_delivered_and_removed_by_backend(
     )
     monkeypatch.setattr(
         chat_route.reply_ticket_manager,
-        "send_pending_reply",
-        lambda ticket_id, content: (
-            sent.append((ticket_id, content)) or True,
-            "QQ group:770362397",
-        ),
-    )
-    monkeypatch.setattr(
-        chat_route.reply_ticket_manager,
         "deliver",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("pending replies must use send_pending_reply")
-        ),
+        lambda ticket_id, content: delivered.append((ticket_id, content)) or True,
     )
     monkeypatch.setattr(
         chat_route,
@@ -3330,11 +3250,11 @@ def test_final_pending_qq_report_is_delivered_and_removed_by_backend(
         reply_ticket_id="ticket-java",
     )
 
-    assert sent == [("ticket-java", "Java 17 已安装完成。")]
+    assert delivered == [("ticket-java", "Java 17 已安装完成。")]
     assert events[0]["content"] == "已回复 QQ：Java 17 已安装完成。"
 
 
-def test_agent_task_plan_creates_task_queue_entry(monkeypatch) -> None:
+def test_agent_task_plan_creates_task_workflow(monkeypatch) -> None:
     from app.api.routes import chat as chat_route
     from app.services.agent.reply_ticket import reply_ticket_manager
     from app.services.agent.task_workflow import task_workflow_manager
@@ -3386,12 +3306,14 @@ def test_agent_task_plan_creates_task_queue_entry(monkeypatch) -> None:
         )
 
         assert plan is not None
-        assert ticket.pending_reply_active is True
-        entries = reply_ticket_manager.list_pending_replies("item-1")
-        assert len(entries) == 1
-        assert entries[0]["id"] == ticket.ticket_id
-        assert entries[0]["request_summary"] == "install Java"
-        assert entries[0]["task_plan"] == ["install Java", "verify Java"]
+        workflow = task_workflow_manager.get(plan.workflow_id)
+        assert workflow is not None
+        assert workflow.reply_ticket_id == ticket.ticket_id
+        assert workflow.objective == "install Java"
+        assert [step.title for step in workflow.steps] == [
+            "install Java",
+            "verify Java",
+        ]
     finally:
         reply_ticket_manager.reset()
         task_workflow_manager.reset()
@@ -3472,12 +3394,11 @@ def test_agent_task_plan_inserts_source_change_into_running_workflow(
         assert "source/mirror change" in workflow.steps[0].title
         assert "先别下，换个国内镜像" in workflow.steps[0].title
         assert (
-            reply_ticket_manager.resolve_ticket_id(first_ticket.ticket_id)
-            == second_ticket.ticket_id
+            task_workflow_manager.get_by_ticket(first_ticket.ticket_id) is workflow
         )
-        assert reply_ticket_manager.get(first_ticket.ticket_id) is second_ticket
-        entries = reply_ticket_manager.list_pending_replies("item-1")
-        assert [entry["id"] for entry in entries] == [second_ticket.ticket_id]
+        assert (
+            task_workflow_manager.get_by_ticket(second_ticket.ticket_id) is workflow
+        )
     finally:
         reply_ticket_manager.reset()
         task_workflow_manager.reset()
@@ -3660,117 +3581,6 @@ def test_repeated_task_reuses_matching_workflow_and_preserves_job_progress(
         assert java_workflow.jobs[0].status == "running"
         assert len(task_workflow_manager.snapshot("item-1")) == 2
     finally:
-        reply_ticket_manager.reset()
-        task_workflow_manager.reset()
-
-
-def test_same_task_from_web_and_qq_adds_second_return_target(monkeypatch) -> None:
-    from app.api.routes import chat as chat_route
-    from app.plugins.robot.contracts import RobotReplyTarget
-    from app.plugins.robot.mcp.context import (
-        RobotMCPContext,
-        register_robot_mcp_context,
-        unregister_robot_mcp_context,
-    )
-    from app.services.agent.reply_ticket import reply_ticket_manager
-    from app.services.agent.task_workflow import task_workflow_manager
-
-    handler = SimpleNamespace(id="handler-1")
-    web_agent = SimpleNamespace(
-        _context=SimpleNamespace(
-            robot_id="",
-            robot_context_token="",
-            robot_conversation_key="",
-            reply_ticket_id="",
-        )
-    )
-    tools = [{"type": "function", "function": {"name": "mcp_local_run_job"}}]
-    target = RobotReplyTarget(
-        target_type="group",
-        target_id="770362397",
-        metadata={
-            "conversation": {"type": "group", "id": "770362397"},
-            "sender": {"user_id": "2537134688", "display_name": "FLY"},
-            "message": {"raw_message": "install Java"},
-        },
-    )
-    token = register_robot_mcp_context(
-        RobotMCPContext(
-            robot_id="robot-1",
-            sender_key="onebot_v11:group:770362397:2537134688",
-            reply_target=target,
-            conversation_key="group:770362397",
-            conversation_generation=1,
-        )
-    )
-    qq_agent = SimpleNamespace(
-        _context=SimpleNamespace(
-            robot_id="robot-1",
-            robot_context_token=token,
-            robot_conversation_key="group:770362397",
-            reply_ticket_id="",
-        )
-    )
-
-    reply_ticket_manager.reset()
-    task_workflow_manager.reset()
-    monkeypatch.setattr(
-        chat_route,
-        "_plan_agent_task_titles",
-        lambda handler, message, history: ["install Java", "verify Java"],
-    )
-    monkeypatch.setattr(
-        chat_route,
-        "build_status_update_memory_candidate",
-        lambda *args, **kwargs: None,
-    )
-    try:
-        web_ticket = reply_ticket_manager.create_for_agent(
-            web_agent,
-            item_id="item-1",
-            handler_id="handler-1",
-            message="install Java",
-            source_type="web",
-        )
-        web_plan = chat_route._create_agent_task_plan(
-            "item-1",
-            handler=handler,
-            agent=web_agent,
-            message="install Java",
-            history=[],
-            tools=tools,
-            reply_ticket_id=web_ticket.ticket_id,
-        )
-        assert web_plan is not None
-
-        qq_ticket = reply_ticket_manager.create_for_agent(
-            qq_agent,
-            item_id="item-1",
-            handler_id="handler-1",
-            message="install Java",
-            source_type="qq",
-        )
-        qq_plan = chat_route._create_agent_task_plan(
-            "item-1",
-            handler=handler,
-            agent=qq_agent,
-            message="install Java",
-            history=[],
-            tools=tools,
-            reply_ticket_id=qq_ticket.ticket_id,
-        )
-
-        assert qq_plan is not None
-        assert qq_plan.workflow_id == web_plan.workflow_id
-        assert len(task_workflow_manager.snapshot("item-1")) == 1
-        tasks = reply_ticket_manager.list_pending_tasks("item-1")
-        assert len(tasks) == 1
-        assert {target["type"] for target in tasks[0]["destinations"]} == {
-            "qq",
-            "web",
-        }
-    finally:
-        unregister_robot_mcp_context(token)
         reply_ticket_manager.reset()
         task_workflow_manager.reset()
 
@@ -4006,7 +3816,6 @@ def test_terminal_unavailable_task_reports_failure_and_removes_queue_entry(
         assert workflow is not None
         assert events[0]["content"] == "终端未连接，无法安装 Java，任务已结束。"
         assert workflow.status == "failed"
-        assert reply_ticket_manager.list_pending_replies("item-1") == []
     finally:
         reply_ticket_manager.reset()
         task_workflow_manager.reset()
@@ -4108,10 +3917,6 @@ def test_stopped_web_task_reports_failure_then_removes_queue_entry(
         source_label="TermMan web chat",
         step_titles=["install Java", "report result"],
     )
-    reply_ticket_manager.upsert_pending_reply(
-        ticket.ticket_id,
-        status="working",
-    )
     monkeypatch.setattr(
         chat_route,
         "_generate_stopped_turn_report",
@@ -4141,7 +3946,6 @@ def test_stopped_web_task_reports_failure_then_removes_queue_entry(
         )
 
         assert events[0]["content"] == "Java 安装失败：软件源不可用。"
-        assert reply_ticket_manager.list_pending_replies("item-1") == []
         assert workflow.status == "failed"
     finally:
         reply_ticket_manager.reset()

@@ -93,7 +93,6 @@ EXECUTE_COMMAND_TOOL_NAME = "mcp_local_execute_command"
 RUN_JOB_TOOL_NAME = "mcp_local_run_job"
 AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
 BACKGROUND_JOB_STARTED_MARKER = "background_job_started"
-PENDING_REPLY_SENT_MARKER = "pending_reply_sent"
 COMMAND_DISPATCH_FAILED_MARKER = "command_dispatch_failed"
 TERMINAL_UNAVAILABLE_RESULT_MARKER = "terminal_unavailable"
 DUPLICATE_QQ_SEND_SUPPRESSED_TEXT = (
@@ -203,7 +202,6 @@ SILENT_TOOL_NAMES = {
     "mcp_robot_send_message",
     "mcp_robot_sleep_conversation",
     "mcp_robot_save_memory",
-    "mcp_local_send_pending_reply",
 }
 TERMINAL_SOURCE_FILTERED = "filtered_output"
 TERMINAL_SOURCE_RAW_FEEDBACK = "raw_feedback"
@@ -307,18 +305,6 @@ def is_background_job_started_result(result: Any) -> bool:
             bool(item.get(BACKGROUND_JOB_STARTED_MARKER))
             or bool(item.get(AUTO_ROUTED_TO_JOB_MARKER))
         )
-        for item in result_data
-    )
-
-
-def is_pending_reply_sent_result(result: Any) -> bool:
-    if not isinstance(result, dict) or not result.get("success"):
-        return False
-    result_data = result.get("result")
-    if not isinstance(result_data, list):
-        return False
-    return any(
-        isinstance(item, dict) and bool(item.get(PENDING_REPLY_SENT_MARKER))
         for item in result_data
     )
 
@@ -1124,16 +1110,14 @@ class AgentSession:
             return
         target_player, question = parsed
         try:
-            from app.services.agent.reply_ticket import reply_ticket_manager
-
-            reply_ticket_manager.upsert_pending_reply(
+            task_workflow_manager.mark_waiting(
                 pending.reply_ticket_id,
-                status="waiting",
                 awaiting_kind="minecraft_player",
                 awaiting_key=target_player,
+                note=question,
             )
             logger.info(
-                "[AgentSession] Pending reply now awaits Minecraft player item=%s "
+                "[AgentSession] Task workflow now awaits Minecraft player item=%s "
                 "ticket=%s player=%s question=%s",
                 self.item_id,
                 pending.reply_ticket_id,
@@ -1142,7 +1126,7 @@ class AgentSession:
             )
         except Exception as exc:
             logger.warning(
-                "[AgentSession] Failed to update pending reply awaiting target: %s",
+                "[AgentSession] Failed to update workflow awaiting target: %s",
                 exc,
             )
 
@@ -1297,13 +1281,7 @@ class AgentSession:
             from app.services.agent.reply_ticket import reply_ticket_manager
 
             if ticket.source_type == "qq":
-                if ticket.pending_reply_active:
-                    delivered, _ = reply_ticket_manager.send_pending_reply(
-                        ticket_id,
-                        content,
-                    )
-                else:
-                    delivered = reply_ticket_manager.deliver(ticket_id, content)
+                delivered = reply_ticket_manager.deliver(ticket_id, content)
                 if delivered:
                     self.emit_output(
                         f"已回复 QQ：{content.strip()}",
@@ -1327,7 +1305,7 @@ class AgentSession:
         reason: str,
     ) -> bool:
         ticket = self._get_reply_ticket(ticket_id)
-        if not ticket or not ticket.pending_reply_active:
+        if not ticket:
             return False
         try:
             from app.services.agent.reply_ticket import reply_ticket_manager
@@ -1338,10 +1316,7 @@ class AgentSession:
                 note=str(reason or report)[:2000],
             )
             reply_ticket_manager.mark_failed(ticket_id, reason or report)
-            delivered, detail = reply_ticket_manager.send_pending_reply(
-                ticket_id,
-                report,
-            )
+            delivered = reply_ticket_manager.deliver(ticket_id, report)
             if delivered and ticket.source_type == "qq":
                 self.emit_output(
                     f"已回复 QQ：{report.strip()}",
@@ -1350,7 +1325,7 @@ class AgentSession:
                 )
             elif not delivered:
                 self.emit_output(
-                    f"任务失败汇报尚未送达，任务已保留：{detail}",
+                    "任务失败汇报尚未送达。",
                     "agent_warning",
                 )
             return delivered
@@ -2214,10 +2189,13 @@ class AgentSession:
 
             matched_entry = None
             if not internal_task_continuation:
-                matched_entry = reply_ticket_manager.match_pending_reply(
-                    self.item_id,
-                    combined_input,
+                resumable = task_workflow_manager.find_resumable(
+                    item_id=self.item_id,
+                    source_type="",
+                    source_label="",
                 )
+                if resumable and resumable.reply_ticket_id:
+                    matched_entry = {"id": resumable.reply_ticket_id}
             if matched_entry:
                 input_msg.reply_ticket_id = str(matched_entry["id"])
                 self._attach_reply_ticket_to_agent(agent, input_msg.reply_ticket_id)
@@ -2980,8 +2958,7 @@ class AgentSession:
                 tool_name == ROBOT_SEND_TOOL_NAME and turn_guard.qq_message_sent
             )
             intermediate_delivery_suppressed = bool(
-                tool_name
-                in {ROBOT_SEND_TOOL_NAME, "mcp_local_send_pending_reply"}
+                tool_name == ROBOT_SEND_TOOL_NAME
                 and task_workflow_manager.should_suppress_intermediate_delivery(
                     reply_ticket_id
                 )
@@ -3117,7 +3094,6 @@ class AgentSession:
                 turn_guard.reset_timeout_window()
 
             result_text = self._format_tool_result(result).strip()
-            pending_reply_sent = is_pending_reply_sent_result(result)
             robot_delivery_result = bool(
                 tool_name == ROBOT_SEND_TOOL_NAME
                 and result_text
@@ -3162,9 +3138,6 @@ class AgentSession:
                         "qq_delivery": True,
                     },
                 )
-            if pending_reply_sent:
-                self.emit_status("idle", "")
-                return None
             auto_routed_to_job = is_tool_result_auto_routed_to_job(result)
             command_dispatch_failed = is_command_dispatch_failure_result(
                 tool_name,

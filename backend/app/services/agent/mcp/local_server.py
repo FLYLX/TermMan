@@ -17,7 +17,6 @@ def debug_log(msg: str):
 TERMINAL_NOT_CONNECTED_MESSAGE = "终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。"
 AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
 BACKGROUND_JOB_STARTED_MARKER = "background_job_started"
-PENDING_REPLY_SENT_MARKER = "pending_reply_sent"
 COMMAND_DISPATCH_FAILED_MARKER = "command_dispatch_failed"
 TERMINAL_UNAVAILABLE_RESULT_MARKER = "terminal_unavailable"
 
@@ -143,163 +142,6 @@ class LocalMCPServer:
                 "required": ["item_id"],
             },
             handler=self._read_chat_history,
-            skip_memory=True,
-        )
-        self.register_tool(
-            name="list_reply_tickets",
-            description=(
-                "List active recent reply tickets for this item. Use this to check the "
-                "authoritative source route for pending/running work so completion is "
-                "reported back to the same QQ/server/web source."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "item_id": {"type": "string", "description": "Current terminal item id."},
-                    "limit": {"type": "integer", "description": "Tickets to return. Default 10, max 50.", "default": 10},
-                    "include_delivered": {"type": "boolean", "description": "Include already delivered tickets. Default false.", "default": False},
-                },
-                "required": ["item_id"],
-            },
-            handler=self._list_reply_tickets,
-            skip_memory=True,
-        )
-        self.register_tool(
-            name="read_pending_replies",
-            description=(
-                "Read the authoritative task queue for the current terminal item. "
-                "Each entry contains the requester, task plan, immutable destination, status, "
-                "and any external event being awaited."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "item_id": {
-                        "type": "string",
-                        "description": "Current terminal item id; injected automatically.",
-                    }
-                },
-                "required": [],
-            },
-            handler=self._read_pending_replies,
-            skip_memory=True,
-        )
-        self.register_tool(
-            name="write_pending_reply",
-            description=(
-                "Create or update the task-queue entry linked to the current message source. "
-                "Use this only for delegated, multi-step, asynchronous, background-job, or "
-                "wait-for-reply work where the main objective or return destination could be "
-                "forgotten between turns. Do not create an entry for ordinary chat or an "
-                "immediate one-step reply. The original destination is copied from the "
-                "authoritative reply ticket and cannot be replaced. When the user explicitly "
-                "asks for the final result to also go to another QQ conversation or Minecraft "
-                "player, add it with additional_target; final delivery will fan out once."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "item_id": {
-                        "type": "string",
-                        "description": "Current terminal item id; injected automatically.",
-                    },
-                    "entry_id": {
-                        "type": "string",
-                        "description": "Existing pending reply id; defaults to the current reply ticket.",
-                    },
-                    "requester": {"type": "string"},
-                    "request_summary": {"type": "string"},
-                    "task_plan": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Ordered task steps or the current plan.",
-                    },
-                    "status": {
-                        "type": "string",
-                        "enum": ["pending", "working", "waiting", "ready", "failed"],
-                        "default": "working",
-                    },
-                    "awaiting_kind": {
-                        "type": "string",
-                        "description": "Optional awaited event type, such as minecraft_player or background_job.",
-                    },
-                    "awaiting_key": {
-                        "type": "string",
-                        "description": "Optional exact awaited target, such as yueyinghanbo or a job id.",
-                    },
-                    "additional_target": {
-                        "type": "object",
-                        "description": "Optional extra immutable final-report destination requested by the user.",
-                        "properties": {
-                            "type": {
-                                "type": "string",
-                                "enum": ["qq", "terminal"],
-                            },
-                            "target_id": {
-                                "type": "string",
-                                "description": "QQ group/user id or Minecraft player name.",
-                            },
-                            "robot_id": {
-                                "type": "string",
-                                "description": "Required for QQ targets.",
-                            },
-                            "target_kind": {
-                                "type": "string",
-                                "enum": ["group", "private"],
-                                "default": "group",
-                            },
-                            "label": {"type": "string"},
-                        },
-                        "required": ["type", "target_id"],
-                    },
-                },
-                "required": [],
-            },
-            handler=self._write_pending_reply,
-            skip_memory=True,
-        )
-        self.register_tool(
-            name="delete_pending_reply",
-            description=(
-                "Delete one task-queue entry without sending. Use only when the user cancels "
-                "the task or the task is confirmed obsolete."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "item_id": {
-                        "type": "string",
-                        "description": "Current terminal item id; injected automatically.",
-                    },
-                    "entry_id": {"type": "string"},
-                    "reason": {"type": "string"},
-                },
-                "required": ["entry_id"],
-            },
-            handler=self._delete_pending_reply,
-            skip_memory=True,
-        )
-        self.register_tool(
-            name="send_pending_reply",
-            description=(
-                "Send the final report through the immutable destination stored in one pending "
-                "reply entry. This is the only normal completion path: it sends first and deletes "
-                "the queue entry only after confirmed delivery. On delivery failure the entry is "
-                "kept with failed status. Do not restate the same report after success."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "item_id": {
-                        "type": "string",
-                        "description": "Current terminal item id; injected automatically.",
-                    },
-                    "entry_id": {"type": "string"},
-                    "content": {"type": "string", "description": "Concise final report."},
-                },
-                "required": ["entry_id", "content"],
-            },
-            handler=self._send_pending_reply,
             skip_memory=True,
         )
         self.register_tool(
@@ -1054,228 +896,6 @@ class LocalMCPServer:
             debug_log(f"[LocalMCPServer] update_task_workflow error: {exc}")
             return [{"type": "text", "text": f"Error: {exc}"}]
 
-    def _list_reply_tickets(self, args: dict) -> list:
-        item_id = str(args.get("item_id") or "").strip()
-        if not item_id:
-            return [{"type": "text", "text": "Error: item_id required"}]
-
-        limit = self._coerce_job_int(args.get("limit"), 10, 1, 50)
-        include_delivered = bool(args.get("include_delivered", False))
-
-        try:
-            from app.services.agent.reply_ticket import reply_ticket_manager
-
-            tickets = reply_ticket_manager.snapshot(item_id)
-            if not include_delivered:
-                tickets = [
-                    ticket
-                    for ticket in tickets
-                    if str(ticket.get("status") or "") != "delivered"
-                ]
-            tickets = tickets[:limit]
-            if not tickets:
-                return [
-                    {
-                        "type": "text",
-                        "text": "No active reply tickets for this item.",
-                    }
-                ]
-
-            lines = [
-                "Reply tickets for current item:",
-                "Use these routes as authoritative return targets for pending/running work.",
-            ]
-            for ticket in tickets:
-                ticket_id = str(ticket.get("ticket_id") or "")
-                command = self._clip_history_text(ticket.get("command"), 180)
-                task_request_id = str(ticket.get("task_request_id") or "").strip()
-                parts = [
-                    f"ticket_id={ticket_id[:12]}",
-                    f"source_type={ticket.get('source_type', '')}",
-                    f"source_label={ticket.get('source_label', '')}",
-                    f"status={ticket.get('status', '')}",
-                    f"updated_at={ticket.get('updated_at', '')}",
-                ]
-                if task_request_id:
-                    parts.append(f"task_request_id={task_request_id}")
-                lines.append(f"- {'; '.join(parts)}")
-                if command:
-                    lines.append(f"  command={command}")
-                delivery_error = str(ticket.get("delivery_error") or "").strip()
-                if delivery_error:
-                    lines.append(f"  delivery_error={self._clip_history_text(delivery_error, 300)}")
-
-            return [{"type": "text", "text": "\n".join(lines)}]
-        except Exception as e:
-            debug_log(f"[LocalMCPServer] list_reply_tickets error: {e}")
-            return [{"type": "text", "text": f"Error: {e}"}]
-
-    def _read_pending_replies(self, args: dict) -> list:
-        item_id = str(args.get("item_id") or "").strip()
-        if not item_id:
-            return [{"type": "text", "text": "Error: item_id required"}]
-        try:
-            from app.services.agent.reply_ticket import reply_ticket_manager
-
-            entries = reply_ticket_manager.list_pending_replies(item_id)
-            if not entries:
-                return [{"type": "text", "text": "Task queue is empty."}]
-            lines = [
-                "Authoritative task queue:",
-                "Send with mcp_local_send_pending_reply; successful send removes the entry.",
-            ]
-            for entry in entries:
-                lines.append(
-                    f"- id={entry['id']}; requester={entry['requester']}; "
-                    f"destination={entry['destination_label']}; status={entry['status']}"
-                )
-                lines.append(f"  request={entry['request_summary']}")
-                if entry.get("task_plan"):
-                    lines.append("  plan=" + " -> ".join(entry["task_plan"]))
-                if entry.get("awaiting_kind") or entry.get("awaiting_key"):
-                    lines.append(
-                        f"  awaiting={entry.get('awaiting_kind') or 'event'}:"
-                        f"{entry.get('awaiting_key') or 'unspecified'}"
-                    )
-                if entry.get("last_error"):
-                    lines.append(f"  last_error={entry['last_error']}")
-            return [{"type": "text", "text": "\n".join(lines)}]
-        except Exception as exc:
-            return [{"type": "text", "text": f"Error: {exc}"}]
-
-    def _write_pending_reply(self, args: dict) -> list:
-        item_id = str(args.get("item_id") or "").strip()
-        entry_id = str(
-            args.get("entry_id") or args.get("_reply_ticket_id") or ""
-        ).strip()
-        if not item_id or not entry_id:
-            return [
-                {
-                    "type": "text",
-                    "text": "Error: current reply ticket or entry_id is required",
-                }
-            ]
-        raw_plan = args.get("task_plan")
-        if isinstance(raw_plan, str):
-            task_plan = [raw_plan]
-        elif isinstance(raw_plan, list):
-            task_plan = [str(step) for step in raw_plan]
-        else:
-            task_plan = None
-        try:
-            from app.services.agent.reply_ticket import reply_ticket_manager
-            from app.services.agent.task_workflow import task_workflow_manager
-
-            ticket = reply_ticket_manager.get(entry_id)
-            if not ticket or ticket.item_id != item_id:
-                return [{"type": "text", "text": "Error: pending reply source not found"}]
-            status = str(args.get("status") or "working")
-            entry = reply_ticket_manager.upsert_pending_reply(
-                entry_id,
-                requester=str(args.get("requester") or ""),
-                request_summary=str(args.get("request_summary") or ""),
-                task_plan=task_plan,
-                status=status,
-                awaiting_kind=str(args.get("awaiting_kind") or ""),
-                awaiting_key=str(args.get("awaiting_key") or ""),
-            )
-            additional_target = args.get("additional_target")
-            if isinstance(additional_target, dict):
-                reply_ticket_manager.add_pending_reply_target(
-                    entry_id,
-                    destination_type=str(additional_target.get("type") or ""),
-                    target_id=str(additional_target.get("target_id") or ""),
-                    robot_id=str(additional_target.get("robot_id") or ""),
-                    target_kind=str(additional_target.get("target_kind") or "group"),
-                    label=str(additional_target.get("label") or ""),
-                )
-            if status == "ready":
-                task_workflow_manager.update(
-                    entry_id,
-                    action="mark_ready_to_report",
-                    note="Pending reply is ready for final delivery.",
-                )
-            grouped_entry = next(
-                (
-                    candidate
-                    for candidate in reply_ticket_manager.list_pending_tasks(item_id)
-                    if (candidate.get("workflow") or {}).get("workflow_id")
-                    == (entry.get("workflow") or {}).get("workflow_id")
-                ),
-                entry,
-            )
-            destinations = grouped_entry.get("destinations") or [grouped_entry]
-            return [
-                {
-                    "type": "text",
-                    "text": (
-                        f"Pending reply saved: id={entry['id']} requester={entry['requester']} "
-                        f"destinations={len(destinations)} status={entry['status']}"
-                    ),
-                }
-            ]
-        except Exception as exc:
-            return [{"type": "text", "text": f"Error: {exc}"}]
-
-    def _delete_pending_reply(self, args: dict) -> list:
-        item_id = str(args.get("item_id") or "").strip()
-        entry_id = str(args.get("entry_id") or "").strip()
-        if not item_id or not entry_id:
-            return [{"type": "text", "text": "Error: item_id and entry_id required"}]
-        try:
-            from app.services.agent.reply_ticket import reply_ticket_manager
-
-            ticket = reply_ticket_manager.get(entry_id)
-            if not ticket or ticket.item_id != item_id:
-                return [{"type": "text", "text": "Error: pending reply not found"}]
-            deleted = reply_ticket_manager.delete_pending_reply(
-                entry_id,
-                reason=str(args.get("reason") or "Agent deleted pending reply"),
-            )
-            if not deleted:
-                return [{"type": "text", "text": "Error: pending reply not found"}]
-            return [{"type": "text", "text": f"Pending reply deleted: id={entry_id}"}]
-        except Exception as exc:
-            return [{"type": "text", "text": f"Error: {exc}"}]
-
-    def _send_pending_reply(self, args: dict) -> list:
-        item_id = str(args.get("item_id") or "").strip()
-        entry_id = str(args.get("entry_id") or "").strip()
-        content = str(args.get("content") or "").strip()
-        if not item_id or not entry_id or not content:
-            return [
-                {
-                    "type": "text",
-                    "text": "Error: item_id, entry_id, and content required",
-                }
-            ]
-        try:
-            from app.services.agent.reply_ticket import reply_ticket_manager
-
-            ticket = reply_ticket_manager.get(entry_id)
-            if not ticket or ticket.item_id != item_id:
-                return [{"type": "text", "text": "Error: pending reply not found"}]
-            delivered, detail = reply_ticket_manager.send_pending_reply(
-                entry_id,
-                content,
-            )
-            if not delivered:
-                return [{"type": "text", "text": f"Error: {detail}"}]
-            return [
-                {
-                    "type": "text",
-                    "text": f"Pending reply delivered to {detail} and removed from the queue.",
-                },
-                {
-                    "type": "metadata",
-                    PENDING_REPLY_SENT_MARKER: True,
-                    "entry_id": entry_id,
-                    "destination": detail,
-                },
-            ]
-        except Exception as exc:
-            return [{"type": "text", "text": f"Error: {exc}"}]
-
     def _list_jobs(self, args: dict) -> list:
         item_id = args.get("item_id", "")
         if not item_id:
@@ -1405,14 +1025,28 @@ class LocalMCPServer:
             if reply_ticket_id:
                 try:
                     from app.services.agent.reply_ticket import reply_ticket_manager
+                    from app.services.agent.task_workflow import task_workflow_manager
 
-                    reply_ticket_manager.upsert_pending_reply(
-                        reply_ticket_id,
-                        status="working",
-                    )
+                    ticket = reply_ticket_manager.get(reply_ticket_id)
+                    if (
+                        ticket is not None
+                        and task_workflow_manager.get_by_ticket(reply_ticket_id) is None
+                    ):
+                        task_workflow_manager.create(
+                            item_id=str(item_id),
+                            handler_id=ticket.handler_id,
+                            reply_ticket_id=reply_ticket_id,
+                            objective=f"后台任务：{command[:200]}",
+                            source_type=ticket.source_type,
+                            source_label=ticket.source_label,
+                            step_titles=[
+                                f"Run background job: {command[:120]}",
+                                "Report job result",
+                            ],
+                        )
                 except Exception as exc:
                     debug_log(
-                        f"[LocalMCPServer] failed to register background job pending reply: "
+                        f"[LocalMCPServer] failed to register background job workflow: "
                         f"ticket={reply_ticket_id}, error={exc}"
                     )
 
@@ -1702,13 +1336,6 @@ class LocalMCPServer:
             from app.services.agent.reply_ticket import reply_ticket_manager
 
             message = self._format_background_job_reply_ticket_message(command, result)
-            ticket = reply_ticket_manager.get(reply_ticket_id)
-            if ticket and ticket.pending_reply_active:
-                delivered, _ = reply_ticket_manager.send_pending_reply(
-                    reply_ticket_id,
-                    message,
-                )
-                return delivered
             return reply_ticket_manager.deliver(reply_ticket_id, message)
         except Exception as exc:
             debug_log(
