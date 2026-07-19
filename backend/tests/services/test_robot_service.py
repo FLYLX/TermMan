@@ -4668,6 +4668,18 @@ def test_empty_direct_reply_retries_once_with_corrective_note(
     robot_service._process_chat_job(job)
 
     assert len(calls) == 2, "empty direct reply should trigger exactly one retry"
-    assert "禁止返回 [no_qq_reply]" in calls[1]
-    assert "这是私聊或直接对话" in calls[1]
+    assert "Internal corrective turn" in calls[1]
+    assert "别不理人" in calls[1]
     assert delivered == ["你好呀"]
+
+
+def test_internal_retry_prefix_counts_as_internal_callback() -> None:
+    from app.api.routes.chat import (
+        INTERNAL_AGENT_RETRY_PREFIX,
+        _is_internal_agent_callback,
+    )
+
+    message = INTERNAL_AGENT_RETRY_PREFIX + "\n（对方在直接问你：你好。）"
+    assert _is_internal_agent_callback(message, "qq") is True
+    assert _is_internal_agent_callback(message, "web") is False
+    assert _is_internal_agent_callback("你好", "qq") is False

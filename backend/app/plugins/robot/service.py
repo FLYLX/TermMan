@@ -691,10 +691,9 @@ class RobotService:
                         preview_text(response.content, limit=200),
                     )
                     retry_message = (
-                        "[系统提示] 这是私聊或直接对话，对方在等你回复。\n"
-                        f"对方说：{job.message_text or job.message}\n"
-                        "请用一两句口语直接回复对方，不要调用工具，不要沉默，"
-                        "禁止返回 [no_qq_reply] 或空内容。"
+                        "[Internal corrective turn]\n"
+                        f"（对方在直接问你：{job.message_text or job.message}。"
+                        "用你自己的口气回一句就行，别不理人。）"
                     )
                     try:
                         response = asyncio.run(

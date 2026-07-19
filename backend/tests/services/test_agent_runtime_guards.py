@@ -1928,7 +1928,7 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     assert "mcp_robot_list_memories" in prompt
     assert "mcp_robot_save_memory" in prompt
     assert "mcp_robot_sleep_conversation" in prompt
-    assert "默认一个 `text` 气泡" in prompt
+    assert "一条 QQ 输入最多调用一次" in prompt
     assert "不要把同一答案再说一遍" in prompt
     assert "ask one brief clarification" in prompt
     assert "Never invent a hidden correction" in prompt
@@ -1944,7 +1944,7 @@ def test_robot_context_system_prompt_uses_robot_plugin_prompt() -> None:
     assert "trigger=active_chat_window" in prompt
     assert "当前 QQ 会话" in prompt
     assert "只调用 `mcp_robot_send_message` 并只传 `text` 或 `messages`" in prompt
-    assert "默认一个 `text` 气泡" in prompt
+    assert "一条 QQ 输入最多调用一次" in prompt
     assert "同一人连续几句合并理解" in prompt
     assert "QQ 回复反思" not in prompt
 

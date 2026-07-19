@@ -129,6 +129,7 @@ TERMINAL_ACTION_EVIDENCE_TOOLS = {
 INTERNAL_QQ_BACKGROUND_JOB_PREFIX = (
     "[Background terminal job result for this QQ conversation]"
 )
+INTERNAL_AGENT_RETRY_PREFIX = "[Internal corrective turn]"
 CURRENT_QQ_MESSAGE_MARKER = "[Current QQ message]"
 CQ_CODE_RE = re.compile(r"\[CQ:[^\]]+\]", re.IGNORECASE)
 DUPLICATE_QQ_SEND_SUPPRESSED_TEXT = (
@@ -222,11 +223,11 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 def _is_internal_agent_callback(message: str, source_type: str) -> bool:
-    return (
-        str(source_type or "").strip().lower() == SOURCE_QQ
-        and str(message or "").lstrip().startswith(
-            INTERNAL_QQ_BACKGROUND_JOB_PREFIX
-        )
+    if str(source_type or "").strip().lower() != SOURCE_QQ:
+        return False
+    text = str(message or "").lstrip()
+    return text.startswith(INTERNAL_QQ_BACKGROUND_JOB_PREFIX) or text.startswith(
+        INTERNAL_AGENT_RETRY_PREFIX
     )
 
 

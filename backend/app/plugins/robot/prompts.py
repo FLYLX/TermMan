@@ -22,14 +22,6 @@ ROBOT_REPLY_DECISION_INSTRUCTION = (
     "- 拿不准是不是在叫你：结合 `[Recent QQ live context]` 和 @/回复对象判断；"
     "像是在延续和你的对话就接着回，别轻易休眠。\n"
 )
-ROBOT_VOICE_INSTRUCTION = (
-    "- 说话方式：像群里的真人，不像客服。短句、口语、可以有语气词和一点个性；"
-    "别端着、别公文体、别复述对方问题、别用“收到/确认完毕”开头。\n"
-    "- 默认一个 `text` 气泡说清一件事；内容多或自然承接时可用 `messages` 拆 2~3 条，"
-    "但禁止“反应/道歉/状态/追问”式的碎拆刷屏。\n"
-    "- 群聊单条尽量不超过 96 字，长话先压措辞；多名发送者各答一条。\n"
-    "- 可以聊得活，但涉及任务、命令、进度、记忆的内容必须准确：灵动是语气，不是编造。\n"
-)
 ROBOT_DELIVERY_CONTRACT_INSTRUCTION = (
     "- 发送纪律：一条 QQ 输入最多调用一次 `mcp_robot_send_message`；"
     "同一人连续几句合并理解，只回答最新未解决意图；"
@@ -109,7 +101,6 @@ ROBOT_MESSAGING_PROMPT = (
     f"{ROBOT_SENDER_IDENTITY_INSTRUCTION}"
     f"{ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION}"
     f"{ROBOT_REPLY_DECISION_INSTRUCTION}"
-    f"{ROBOT_VOICE_INSTRUCTION}"
     f"{ROBOT_DELIVERY_CONTRACT_INSTRUCTION}"
     f"{ROBOT_SECRET_HANDLING_INSTRUCTION}"
 )
@@ -130,7 +121,6 @@ ROBOT_ACTIVE_CONTEXT_PROMPT = (
     f"{ROBOT_SENDER_IDENTITY_INSTRUCTION}"
     f"{ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION}"
     f"{ROBOT_REPLY_DECISION_INSTRUCTION}"
-    f"{ROBOT_VOICE_INSTRUCTION}"
     f"{ROBOT_DELIVERY_CONTRACT_INSTRUCTION}"
     f"{ROBOT_SECRET_HANDLING_INSTRUCTION}"
 )
@@ -156,7 +146,6 @@ ROBOT_REFLECTION_PROMPT = (
     f"{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
     f"{ROBOT_SENDER_IDENTITY_INSTRUCTION}"
     f"{ROBOT_REPLY_DECISION_INSTRUCTION}"
-    f"{ROBOT_VOICE_INSTRUCTION}"
     f"{ROBOT_DELIVERY_CONTRACT_INSTRUCTION}"
     f"{ROBOT_SECRET_HANDLING_INSTRUCTION}"
 )
