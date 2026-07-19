@@ -1652,6 +1652,9 @@ def _generate_stream_unserialized(
     confirmed_external_delivery_to_qq = False
     delivery_retry_used_by_integration: dict[str, bool] = {}
     tool_loop_recovery_used = False
+    from app.core.config import settings as chat_settings
+
+    turn_started_at = time.monotonic()
 
     try:
         for iteration_index in range(MAX_ITERATIONS + 1):
@@ -1711,6 +1714,38 @@ def _generate_stream_unserialized(
                     {
                         "type": "aborted",
                         "content": "Chat aborted",
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
+                return
+
+            if (
+                chat_settings.AGENT_TURN_TIMEOUT_SECONDS > 0
+                and time.monotonic() - turn_started_at
+                > chat_settings.AGENT_TURN_TIMEOUT_SECONDS
+            ):
+                logger.warning(
+                    "[Chat] Turn exceeded %.0fs for item %s; stopping turn.",
+                    chat_settings.AGENT_TURN_TIMEOUT_SECONDS,
+                    item_id,
+                )
+                stopped_events = _finalize_stopped_turn(
+                    agent=agent,
+                    handler=handler,
+                    item_id=item_id,
+                    messages=messages,
+                    planned_task_runtime=planned_task_runtime,
+                    reason="Task exceeded the maximum turn duration and was stopped.",
+                    prefers_chinese=_contains_cjk(message),
+                    include_hidden_tool_results=include_hidden_tool_results,
+                    reply_ticket_id=reply_ticket.ticket_id,
+                )
+                for stopped_event in stopped_events:
+                    yield _to_sse(stopped_event)
+                yield _to_sse(
+                    {
+                        "type": "aborted",
+                        "content": "Chat turn timed out",
                         "timestamp": datetime.now().isoformat(),
                     }
                 )

@@ -16,7 +16,7 @@ from app.plugins.robot.memory_scope import (
 
 logger = logging.getLogger(__name__)
 
-ROBOT_MEMORY_SCHEMA_VERSION = 2
+ROBOT_MEMORY_SCHEMA_VERSION = 3
 ROBOT_MEMORY_MIGRATION_INTERVAL_SECONDS = 300.0
 SUPPORTED_MEMORY_TYPES = {"fact", "preference", "error", "context"}
 KNOWN_MEMORY_SCOPES = {"speaker", "conversation", "robot", "legacy"}
@@ -109,7 +109,13 @@ def build_legacy_memory_metadata_upgrade(memory: dict[str, Any]) -> dict[str, An
     robot_id = str(metadata.get("robot_id") or metadata.get("robot_uuid") or "").strip()
 
     existing_scope = str(metadata.get("memory_scope") or "").strip()
-    if existing_scope in KNOWN_MEMORY_SCOPES:
+    if (
+        memory_type == "fact"
+        and inferred_scope == "conversation"
+        and conversation_key
+    ):
+        scope = "conversation"
+    elif existing_scope in KNOWN_MEMORY_SCOPES:
         scope = existing_scope
     elif inferred_scope == "speaker" and (speaker_global_key or conversation_key):
         scope = "speaker"
@@ -145,20 +151,44 @@ def ensure_legacy_robot_memories_upgraded(
 ) -> dict[str, int]:
     normalized_item_id = str(item_id or "").strip()
     if not normalized_item_id:
-        return {"checked": 0, "upgraded": 0, "failed": 0}
+        return {"checked": 0, "upgraded": 0, "deduplicated": 0, "failed": 0}
 
     now = time.monotonic()
     with _migration_lock:
         last_checked = _migration_last_checked.get(normalized_item_id, 0.0)
         if interval_seconds > 0 and now - last_checked < interval_seconds:
-            return {"checked": 0, "upgraded": 0, "failed": 0}
+            return {"checked": 0, "upgraded": 0, "deduplicated": 0, "failed": 0}
         _migration_last_checked[normalized_item_id] = now
 
     memories = store.get_all_memories(normalized_item_id)
+    memories_by_id = {
+        str(memory.get("id") or "").strip(): memory
+        for memory in memories
+        if str(memory.get("id") or "").strip()
+    }
     upgraded = 0
+    deduplicated = 0
     failed = 0
     for memory in memories:
         memory_id = str(memory.get("id") or "").strip()
+        metadata = memory.get("metadata") or {}
+        metadata = metadata if isinstance(metadata, dict) else {}
+        imported_from = str(metadata.get("imported_from_memory_id") or "").strip()
+        original = memories_by_id.get(imported_from)
+        if original is not None and memory_id:
+            original_type = str(
+                (original.get("metadata") or {}).get("memory_type") or "fact"
+            ).strip()
+            memory_type = str(metadata.get("memory_type") or "fact").strip()
+            if (
+                original_type == memory_type
+                and str(original.get("content") or "").strip()
+                == str(memory.get("content") or "").strip()
+            ):
+                delete_memory = getattr(store, "delete_memory", None)
+                if callable(delete_memory) and delete_memory(memory_id):
+                    deduplicated += 1
+                    continue
         updates = build_legacy_memory_metadata_upgrade(memory)
         if not memory_id or not updates:
             continue
@@ -172,11 +202,17 @@ def ensure_legacy_robot_memories_upgraded(
         else:
             failed += 1
 
-    if upgraded or failed:
+    if upgraded or deduplicated or failed:
         logger.info(
-            "[RobotMemoryMigration] item=%s upgraded=%s failed=%s",
+            "[RobotMemoryMigration] item=%s upgraded=%s deduplicated=%s failed=%s",
             normalized_item_id,
             upgraded,
+            deduplicated,
             failed,
         )
-    return {"checked": len(memories), "upgraded": upgraded, "failed": failed}
+    return {
+        "checked": len(memories),
+        "upgraded": upgraded,
+        "deduplicated": deduplicated,
+        "failed": failed,
+    }

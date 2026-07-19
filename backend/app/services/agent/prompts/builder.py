@@ -15,6 +15,7 @@ from app.services.agent.integrations import (
 )
 from app.services.agent.knowledge.service import knowledge_base_service
 from app.services.agent.memory.vector_store import MEMORY_TYPES, vector_store
+from app.plugins.robot.memory_scope import memory_content_is_question_like
 from app.services.agent.prompts.policy import (
     PromptTurnType,
     resolve_memory_status,
@@ -88,14 +89,9 @@ LONG_TERM_MEMORY_LABEL = "相关长期记忆"
 FILTERED_TERMINAL_LABEL = "终端过滤输出"
 RAW_TERMINAL_LABEL = "原生日志反馈"
 MIN_LONG_TERM_MEMORY_RELEVANCE = 0.32
-LONG_TERM_MEMORY_SCORE_MARGIN = 0.18
-LONG_TERM_MEMORY_DIVERSITY_PENALTY = 0.22
-MAX_LONG_TERM_MEMORIES_PER_TYPE = 2
 DEFAULT_RECENT_CONTEXT_MESSAGES = 4
 ALWAYS_ON_SKILL_CATEGORIES: set[str] = set()
 ALWAYS_ON_MEMORY_TYPES = {"preference", "fact", "context", "error"}
-MAX_ALWAYS_ON_MEMORIES_PER_TYPE = 2
-MAX_ALWAYS_ON_MEMORIES_TOTAL = 2
 ALWAYS_ON_RECENT_DAYS = 14
 PREFERENCE_LIKE_MEMORY_TYPES = ("preference", "fact", "context")
 PREFERENCE_LIKE_MEMORY_MARKERS = (
@@ -116,7 +112,6 @@ MEMORY_TYPE_RANK_BONUS = {
     "context": 0.08,
     "fact": 0.04,
 }
-PINNED_MEMORY_TYPES = ("preference", "error")
 ALWAYS_ON_MEMORY_SOURCES = {
     "chat_user",
     "local_agent_saved",
@@ -311,6 +306,7 @@ def _collect_always_on_memories(
     *,
     allowed_types: tuple[str, ...],
     agent: "Agent | None" = None,
+    all_memories: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     collected: list[dict[str, Any]] = []
     if not allowed_types:
@@ -321,15 +317,16 @@ def _collect_always_on_memories(
         for memory_type in allowed_types
         if memory_type in ALWAYS_ON_MEMORY_TYPES
     ]
-    try:
-        all_memories = vector_store.get_all_memories(item_id)
-    except Exception as exc:
-        logger.warning(
-            "[PromptBuilder] Failed to load always-on memories for item=%s: %s",
-            item_id,
-            exc,
-        )
-        return collected
+    if all_memories is None:
+        try:
+            all_memories = vector_store.get_all_memories(item_id)
+        except Exception as exc:
+            logger.warning(
+                "[PromptBuilder] Failed to load always-on memories for item=%s: %s",
+                item_id,
+                exc,
+            )
+            return collected
     for memory_type in memory_types:
         active_memories = [
             memory
@@ -346,14 +343,14 @@ def _collect_always_on_memories(
                 active_memories,
                 key=_always_on_memory_sort_key,
                 reverse=True,
-            )[:MAX_ALWAYS_ON_MEMORIES_PER_TYPE]
+            )
         )
 
     return sorted(
         collected,
         key=_always_on_memory_sort_key,
         reverse=True,
-    )[:MAX_ALWAYS_ON_MEMORIES_TOTAL]
+    )
 
 
 def _query_memory_scope_usable(agent: "Agent | None", memory: dict[str, Any]) -> bool:
@@ -501,6 +498,26 @@ def _collect_long_term_memories(
     if not allowed_types or n_results <= 0:
         return ""
 
+    try:
+        all_memories = vector_store.get_all_memories(item_id)
+    except Exception as exc:
+        logger.warning(
+            "[PromptBuilder] Failed to load long-term memories for item=%s: %s",
+            item_id,
+            exc,
+        )
+        all_memories = []
+    scoped_memories = [
+        memory
+        for memory in all_memories
+        if memory.get("content")
+        and _memory_type(memory) in allowed_types
+        and not _is_memory_expired(memory)
+        and not _is_inactive_status_memory(memory)
+        and not memory_content_is_question_like(str(memory.get("content") or ""))
+        and _query_memory_scope_usable(agent, memory)
+    ]
+
     collected: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
 
@@ -508,6 +525,7 @@ def _collect_long_term_memories(
         item_id,
         allowed_types=allowed_types,
         agent=agent,
+        all_memories=all_memories,
     ):
         memory_id = memory.get("id")
         if memory_id in seen_ids:
@@ -520,10 +538,11 @@ def _collect_long_term_memories(
             memories = vector_store.search_memories(
                 item_id=item_id,
                 query=query,
-                n_results=max(12, n_results * 4),
+                n_results=max(1, len(scoped_memories)),
                 include_expired=False,
                 active_only=True,
-                min_similarity=0.18,
+                min_similarity=MIN_LONG_TERM_MEMORY_RELEVANCE,
+                candidate_multiplier=1,
             )
         except Exception as exc:
             logger.warning(
@@ -534,6 +553,8 @@ def _collect_long_term_memories(
             memories = []
         for memory in memories:
             if _memory_type(memory) not in allowed_types:
+                continue
+            if memory_content_is_question_like(str(memory.get("content") or "")):
                 continue
             if not _query_memory_scope_usable(agent, memory):
                 continue
@@ -546,7 +567,6 @@ def _collect_long_term_memories(
     trimmed = _select_long_term_memories(
         collected,
         allowed_types=allowed_types,
-        n_results=n_results,
     )
     if not trimmed:
         return ""
@@ -631,46 +651,11 @@ def _memory_rank_score(memory: dict[str, Any]) -> float:
     )
 
 
-def _memory_content_tokens(memory: dict[str, Any]) -> set[str]:
-    content = str(memory.get("content") or "").casefold()
-    chinese = re.findall(r"[\u4e00-\u9fff]", content)
-    tokens = set(chinese)
-    tokens.update(
-        "".join(chinese[index : index + 2])
-        for index in range(max(len(chinese) - 1, 0))
-    )
-    tokens.update(re.findall(r"[a-z0-9][a-z0-9_.:/-]*", content))
-    return {token for token in tokens if token}
-
-
-def _memory_content_similarity(
-    left: dict[str, Any],
-    right: dict[str, Any],
-) -> float:
-    left_tokens = _memory_content_tokens(left)
-    right_tokens = _memory_content_tokens(right)
-    if not left_tokens or not right_tokens:
-        return 0.0
-    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
-
-
 def _select_long_term_memories(
     memories: list[dict[str, Any]],
     *,
     allowed_types: tuple[str, ...],
-    n_results: int,
 ) -> list[dict[str, Any]]:
-    query_relevances = [
-        _memory_relevance_score(memory)
-        for memory in memories
-        if memory.get("distance") is not None
-    ]
-    dynamic_threshold = MIN_LONG_TERM_MEMORY_RELEVANCE
-    if query_relevances:
-        dynamic_threshold = max(
-            MIN_LONG_TERM_MEMORY_RELEVANCE,
-            max(query_relevances) - LONG_TERM_MEMORY_SCORE_MARGIN,
-        )
     candidates = [
         memory
         for memory in memories
@@ -678,67 +663,32 @@ def _select_long_term_memories(
         and _memory_type(memory) in allowed_types
         and not _is_memory_expired(memory)
         and not _is_inactive_status_memory(memory)
+        and not memory_content_is_question_like(str(memory.get("content") or ""))
         and (
             (
                 memory.get("distance") is None
                 and _is_sticky_long_term_memory(memory)
             )
-            or _memory_relevance_score(memory) >= dynamic_threshold
+            or _memory_relevance_score(memory) >= MIN_LONG_TERM_MEMORY_RELEVANCE
         )
     ]
     if not candidates:
         return []
 
-    candidates.sort(key=_memory_rank_score, reverse=True)
-    selected: list[dict[str, Any]] = []
-    selected_ids: set[str] = set()
-    selected_type_counts: dict[str, int] = {}
-
-    for memory_type in PINNED_MEMORY_TYPES:
-        if memory_type not in allowed_types or len(selected) >= n_results:
+    by_content: dict[str, dict[str, Any]] = {}
+    for memory in candidates:
+        content_key = re.sub(
+            r"\s+",
+            " ",
+            str(memory.get("content") or "").casefold(),
+        ).strip()
+        if not content_key:
             continue
-        typed_memory = next(
-            (memory for memory in candidates if _memory_type(memory) == memory_type),
-            None,
-        )
-        if typed_memory is None:
-            continue
-        selected.append(typed_memory)
-        selected_ids.add(str(typed_memory.get("id") or id(typed_memory)))
-        selected_type_counts[memory_type] = selected_type_counts.get(memory_type, 0) + 1
+        existing = by_content.get(content_key)
+        if existing is None or _memory_rank_score(memory) > _memory_rank_score(existing):
+            by_content[content_key] = memory
 
-    remaining = [
-        memory
-        for memory in candidates
-        if str(memory.get("id") or id(memory)) not in selected_ids
-    ]
-    while remaining and len(selected) < n_results:
-        scored: list[tuple[float, float, dict[str, Any]]] = []
-        for memory in remaining:
-            memory_type = _memory_type(memory)
-            if selected_type_counts.get(memory_type, 0) >= MAX_LONG_TERM_MEMORIES_PER_TYPE:
-                continue
-            max_similarity = max(
-                (_memory_content_similarity(memory, chosen) for chosen in selected),
-                default=0.0,
-            )
-            adjusted_score = (
-                _memory_rank_score(memory)
-                - LONG_TERM_MEMORY_DIVERSITY_PENALTY * max_similarity
-            )
-            scored.append((adjusted_score, _memory_timestamp(memory), memory))
-        if not scored:
-            break
-        scored.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
-        chosen = scored[0][2]
-        selected.append(chosen)
-        selected_ids.add(str(chosen.get("id") or id(chosen)))
-        chosen_type = _memory_type(chosen)
-        selected_type_counts[chosen_type] = selected_type_counts.get(chosen_type, 0) + 1
-        remaining = [memory for memory in remaining if memory is not chosen]
-
-    selected.sort(key=_memory_rank_score, reverse=True)
-    return selected[:n_results]
+    return sorted(by_content.values(), key=_memory_rank_score, reverse=True)
 
 
 def _format_long_term_memory(memory: dict[str, Any]) -> str:

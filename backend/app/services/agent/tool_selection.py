@@ -17,6 +17,7 @@ LOCAL_MEMORY_TOOLS = {
     "mcp_local_recall_memory",
     "mcp_local_list_memories",
     "mcp_local_delete_memory",
+    "mcp_local_compress_memories",
 }
 LOCAL_WORKFLOW_TOOLS = {
     "mcp_local_get_task_workflow",

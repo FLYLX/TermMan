@@ -10,6 +10,7 @@ from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from math import ceil
+from typing import Any
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
@@ -23,6 +24,7 @@ from app.services.agent.chat_runtime import ChatResponseResult, collect_chat_res
 from .contracts import RobotDispatchResponse, RobotInboundMessage, RobotReplyTarget
 from .debug_log import preview_text, record_robot_event
 from .memory_scope import (
+    memory_content_is_question_like,
     memory_scope_for_content,
     memory_scope_rank,
     speaker_global_key_from_context,
@@ -190,6 +192,98 @@ class QueuedRobotChatJob:
     inbound_message: RobotInboundMessage | None = None
     reply_ticket_id: str = ""
     pending_reply_id: str = ""
+    job_id: str = ""
+
+
+def _queued_job_to_payload(job: QueuedRobotChatJob) -> dict[str, Any]:
+    return {
+        "job_id": job.job_id,
+        "robot_id": str(job.robot_id),
+        "robot_owner_id": str(job.robot_owner_id),
+        "item_id": str(job.item_id),
+        "route_key": job.route_key,
+        "message": job.message,
+        "sender_key": job.sender_key,
+        "reply_target": job.reply_target.model_dump(mode="json"),
+        "conversation_key": job.conversation_key,
+        "enqueued_at": job.enqueued_at.isoformat(),
+        "direct_reply_trigger": job.direct_reply_trigger,
+        "reply_context_active": job.reply_context_active,
+        "conversation_generation": job.conversation_generation,
+        "reply_requires_awake": job.reply_requires_awake,
+        "message_text": job.message_text,
+        "trigger_reason": job.trigger_reason,
+        "inbound_message": (
+            job.inbound_message.model_dump(mode="json")
+            if job.inbound_message is not None
+            else None
+        ),
+        "reply_ticket_id": job.reply_ticket_id,
+        "pending_reply_id": job.pending_reply_id,
+    }
+
+
+def _queued_job_from_payload(payload: dict[str, Any]) -> QueuedRobotChatJob | None:
+    try:
+        enqueued_at = datetime.fromisoformat(
+            str(payload.get("enqueued_at") or "").replace("Z", "+00:00")
+        )
+    except ValueError:
+        enqueued_at = datetime.now(timezone.utc)
+    try:
+        inbound_raw = payload.get("inbound_message")
+        return QueuedRobotChatJob(
+            job_id=str(payload.get("job_id") or ""),
+            robot_id=uuid.UUID(str(payload.get("robot_id"))),
+            robot_owner_id=uuid.UUID(str(payload.get("robot_owner_id"))),
+            item_id=uuid.UUID(str(payload.get("item_id"))),
+            route_key=str(payload.get("route_key") or ""),
+            message=str(payload.get("message") or ""),
+            sender_key=str(payload.get("sender_key") or ""),
+            reply_target=RobotReplyTarget.model_validate(
+                payload.get("reply_target") or {}
+            ),
+            conversation_key=str(payload.get("conversation_key") or ""),
+            enqueued_at=enqueued_at,
+            direct_reply_trigger=bool(payload.get("direct_reply_trigger")),
+            reply_context_active=bool(payload.get("reply_context_active")),
+            conversation_generation=int(payload.get("conversation_generation") or 0),
+            reply_requires_awake=bool(payload.get("reply_requires_awake")),
+            message_text=str(payload.get("message_text") or ""),
+            trigger_reason=str(payload.get("trigger_reason") or ""),
+            inbound_message=(
+                RobotInboundMessage.model_validate(inbound_raw)
+                if isinstance(inbound_raw, dict)
+                else None
+            ),
+            reply_ticket_id=str(payload.get("reply_ticket_id") or ""),
+            pending_reply_id=str(payload.get("pending_reply_id") or ""),
+        )
+    except Exception:
+        logger.debug("[RobotService] Failed to restore queued dispatch job", exc_info=True)
+        return None
+
+
+def _persist_dispatch_job(job: QueuedRobotChatJob) -> None:
+    if not job.job_id:
+        return
+    try:
+        from app.services.agent import state_store
+
+        state_store.save_dispatch_job(_queued_job_to_payload(job))
+    except Exception as exc:
+        logger.debug("[RobotService] Persist dispatch job failed: %s", exc)
+
+
+def _delete_persisted_dispatch_job(job_id: str) -> None:
+    if not job_id:
+        return
+    try:
+        from app.services.agent import state_store
+
+        state_store.delete_dispatch_job(job_id)
+    except Exception as exc:
+        logger.debug("[RobotService] Delete persisted dispatch job failed: %s", exc)
 
 
 class RobotServiceError(Exception):
@@ -240,10 +334,13 @@ class RobotService:
 
     def _enqueue_chat_job(self, job: QueuedRobotChatJob) -> bool:
         self._ensure_dispatch_workers()
+        if not job.job_id:
+            job = replace(job, job_id=uuid.uuid4().hex)
         try:
             self._dispatch_queue.put_nowait(job)
         except queue.Full:
             return False
+        _persist_dispatch_job(job)
         return True
 
     def enqueue_background_job_result(
@@ -444,8 +541,41 @@ class RobotService:
                     job.robot_id,
                     job.item_id,
                 )
+            else:
+                _delete_persisted_dispatch_job(job.job_id)
             finally:
                 self._dispatch_queue.task_done()
+
+    def restore_dispatch_jobs(self) -> int:
+        try:
+            from app.services.agent import state_store
+        except Exception:
+            return 0
+        payloads = state_store.load_dispatch_jobs()
+        if not payloads:
+            return 0
+        restored = 0
+        for payload in payloads:
+            job = _queued_job_from_payload(payload)
+            job_id = str(payload.get("job_id") or "")
+            if job is None:
+                _delete_persisted_dispatch_job(job_id)
+                continue
+            if self._enqueue_chat_job(job):
+                restored += 1
+                continue
+            logger.warning(
+                "[RobotService] Dropping restored dispatch job robot=%s item=%s: queue full",
+                job.robot_id,
+                job.item_id,
+            )
+            _delete_persisted_dispatch_job(job_id)
+        if restored:
+            logger.info(
+                "[RobotService] Restored %s queued dispatch jobs from state store",
+                restored,
+            )
+        return restored
 
     def _process_chat_job(self, job: QueuedRobotChatJob) -> None:
         queue_wait_seconds = (self._now() - job.enqueued_at).total_seconds()
@@ -499,20 +629,41 @@ class RobotService:
                     item=item,
                     job=job,
                 )
-                response = asyncio.run(
-                    self._chat_with_item(
-                        session=session,
-                        robot=robot,
-                        item=item,
-                        message=chat_message,
-                        sender_key=job.sender_key,
-                        reply_target=job.reply_target,
-                        conversation_key=job.conversation_key,
-                        conversation_generation=job.conversation_generation,
-                        reply_requires_awake=job.reply_requires_awake,
-                        reply_ticket_id=job.reply_ticket_id,
+                try:
+                    response = asyncio.run(
+                        asyncio.wait_for(
+                            self._chat_with_item(
+                                session=session,
+                                robot=robot,
+                                item=item,
+                                message=chat_message,
+                                sender_key=job.sender_key,
+                                reply_target=job.reply_target,
+                                conversation_key=job.conversation_key,
+                                conversation_generation=job.conversation_generation,
+                                reply_requires_awake=job.reply_requires_awake,
+                                reply_ticket_id=job.reply_ticket_id,
+                            ),
+                            timeout=settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS,
+                        )
                     )
-                )
+                except TimeoutError:
+                    record_robot_event(
+                        str(job.robot_id),
+                        direction="backend_worker",
+                        event="dispatch_job_timeout",
+                        status="error",
+                        payload={
+                            "item_id": str(job.item_id),
+                            "route_key": job.route_key,
+                            "timeout_seconds": settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS,
+                        },
+                    )
+                    self._record_and_send_job_error(
+                        job,
+                        "任务处理超时，已中止。请稍后重试。",
+                    )
+                    return
                 response_text = self._visible_agent_response_text(response)
                 robot_message_sent = response.robot_message_sent
                 if response_text and not robot_message_sent:
@@ -2996,7 +3147,6 @@ class RobotService:
         sender_key: str = "",
         reply_target: RobotReplyTarget | None = None,
         query: str = "",
-        limit: int = 6,
     ) -> str:
         if not conversation_key:
             return ""
@@ -3027,6 +3177,7 @@ class RobotService:
             memory
             for memory in all_memories
             if isinstance(memory, dict)
+            and not memory_content_is_question_like(str(memory.get("content") or ""))
             and not self._memory_expired(memory)
             and not self._memory_inactive(memory)
             and self._memory_matches_robot_conversation(
@@ -3046,7 +3197,7 @@ class RobotService:
                 recalled = vector_store.search_memories(
                     item_id=str(item_id),
                     query=query_text,
-                    n_results=max(12, limit * 4),
+                    n_results=max(1, len(scoped_memories)),
                     include_expired=False,
                     active_only=True,
                     min_similarity=0.18,
@@ -3062,6 +3213,7 @@ class RobotService:
                 memory
                 for memory in recalled
                 if isinstance(memory, dict)
+                and not memory_content_is_question_like(str(memory.get("content") or ""))
                 and self._memory_matches_robot_conversation(
                     memory,
                     robot=robot,
@@ -3084,12 +3236,6 @@ class RobotService:
         )
         relevant_memories.sort(
             key=lambda memory: (
-                memory_scope_rank(
-                    memory,
-                    robot_id=str(robot.id),
-                    conversation_key=conversation_key,
-                    speaker_global_key=speaker_global_key,
-                ),
                 max(
                     0.0,
                     1.0
@@ -3098,6 +3244,12 @@ class RobotService:
                         if memory.get("distance") is not None
                         else 1.0
                     ),
+                ),
+                memory_scope_rank(
+                    memory,
+                    robot_id=str(robot.id),
+                    conversation_key=conversation_key,
+                    speaker_global_key=speaker_global_key,
                 ),
                 *self._impression_memory_sort_key(memory),
             ),
@@ -3110,7 +3262,7 @@ class RobotService:
             if str((memory.get("metadata") or {}).get("memory_type") or "")
             in {"preference", "error"}
             or (memory.get("metadata") or {}).get("verified") is True
-        ][:2]
+        ]
         ordered_memories = [*stable_memories, *relevant_memories, *scoped_memories]
         lines = [
             "[Current QQ conversation impression card; background only, do not answer old items]"
@@ -3118,8 +3270,6 @@ class RobotService:
         seen_content: set[str] = set()
         seen_ids: set[str] = set()
         for memory in ordered_memories:
-            if len(lines) > limit:
-                break
             memory_id = str(memory.get("id") or "")
             if memory_id and memory_id in seen_ids:
                 continue
@@ -3128,15 +3278,16 @@ class RobotService:
                 metadata = {}
             content = sanitize_robot_visible_text(str(memory.get("content") or "")).strip()
             content = re.sub(r"\s+", " ", content)
+            content_key = content.casefold()
             if (
                 not content
-                or content in seen_content
+                or content_key in seen_content
                 or (query_text and content.casefold() == query_text.casefold())
             ):
                 continue
             if memory_id:
                 seen_ids.add(memory_id)
-            seen_content.add(content)
+            seen_content.add(content_key)
             if len(content) > 160:
                 content = f"{content[:157]}..."
             sender = str(

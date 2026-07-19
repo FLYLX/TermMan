@@ -504,7 +504,7 @@ def test_prompt_long_term_memory_recall_ranks_and_formats(monkeypatch) -> None:
                         "memory_type": "error",
                         "status": "resolved",
                     },
-                    "distance": 0.6,
+                    "distance": 0.9,
                 }
             ],
             "context": [
@@ -835,3 +835,39 @@ def test_persona_skill_is_not_duplicated_as_regular_skill_prompt(monkeypatch) ->
 
     assert "Base system." in prompt
     assert "Persona prompt should stay in system." not in prompt
+
+
+def test_always_on_memories_are_not_capped(monkeypatch) -> None:
+    sticky_memories = [
+        {
+            "id": f"pref-{index}",
+            "content": f"用户偏好：第 {index} 条偏好",
+            "metadata": {
+                "memory_type": "preference",
+                "verified": True,
+                "updated_at": datetime.now().isoformat(),
+            },
+        }
+        for index in range(4)
+    ]
+
+    monkeypatch.setattr(
+        prompt_builder.vector_store,
+        "get_all_memories",
+        lambda *_args, **_kwargs: sticky_memories,
+    )
+    monkeypatch.setattr(
+        prompt_builder.vector_store,
+        "search_memories",
+        lambda **_kwargs: [],
+    )
+
+    memories = prompt_builder._collect_long_term_memories(
+        "item-1",
+        "我的偏好是什么",
+        allowed_types=("preference", "error", "context"),
+        n_results=5,
+    )
+
+    for index in range(4):
+        assert f"第 {index} 条偏好" in memories

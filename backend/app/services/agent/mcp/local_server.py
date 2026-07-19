@@ -628,7 +628,7 @@ class LocalMCPServer:
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "搜索关键词或问题"},
-                    "n_results": {"type": "integer", "description": "返回结果数量，默认 5", "default": 5},
+                    "n_results": {"type": "integer", "description": "返回结果数量；0 或不填表示不限条数（按相关性阈值过滤）", "default": 0},
                     "memory_type": {"type": "string", "enum": ["fact", "preference", "error", "context"], "description": "可选：限定记忆类型"}
                 },
                 "required": ["query"]
@@ -662,6 +662,22 @@ class LocalMCPServer:
             handler=self._delete_memory
         )
     
+        self.register_tool(
+            name="compress_memories",
+            description="把多条重复、冗余或过时的长期记忆压缩合并成一条精炼记忆：先写入新记忆，再删除列出的旧记忆。当 recall_memory 或 list_memories 的结果里有重复内容、同一事实的旧版本或废话时使用。",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "memory_ids": {"type": "array", "items": {"type": "string"}, "minItems": 2, "description": "要合并的记忆 ID 列表（完整 ID 或 list_memories 显示的前 8 位）"},
+                    "content": {"type": "string", "description": "压缩合并后的精炼记忆内容"},
+                    "memory_type": {"type": "string", "enum": ["fact", "preference", "error", "context"], "description": "记忆类型；不填则取来源记忆中最多的类型"},
+                    "ttl_days": {"type": "integer", "description": "事实或上下文的过期天数；偏好和错误永久保存"}
+                },
+                "required": ["memory_ids", "content"]
+            },
+            handler=self._compress_memories
+        )
+
     def register_tool(self, name: str, description: str, input_schema: dict, handler: callable, skip_memory: bool = False):
         self._tools[name] = {
             "name": name,
@@ -2502,9 +2518,111 @@ class LocalMCPServer:
         except Exception as e:
             return [{"type": "text", "text": f"Error: {e}"}]
     
+    def _compress_memories(self, args: dict) -> list:
+        raw_ids = args.get("memory_ids")
+        if not isinstance(raw_ids, list):
+            return [{"type": "text", "text": "Error: memory_ids must be a list"}]
+        requested_ids = [
+            value for value in (str(item or "").strip() for item in raw_ids) if value
+        ]
+        if len(set(requested_ids)) < 2:
+            return [{"type": "text", "text": "Error: 至少提供 2 个不同的记忆 ID"}]
+        content = str(args.get("content") or "").strip()
+        if not content:
+            return [{"type": "text", "text": "Error: content required"}]
+        item_id = str(args.get("item_id") or "").strip()
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id required"}]
+        memory_type = str(args.get("memory_type") or "").strip()
+        if memory_type and memory_type not in {"fact", "preference", "error", "context"}:
+            return [{"type": "text", "text": f"Error: invalid memory_type: {memory_type}"}]
+
+        try:
+            from app.services.agent.memory.vector_store import vector_store
+            from app.services.agent.prompts import policy as memory_policy
+
+            all_memories = vector_store.get_all_memories(item_id)
+            sources: list[dict[str, Any]] = []
+            seen_ids: set[str] = set()
+            unmatched: list[str] = []
+            for requested in requested_ids:
+                match: dict[str, Any] | None = None
+                for memory in all_memories:
+                    memory_id = str(memory.get("id") or "")
+                    if not memory_id or memory_id in seen_ids:
+                        continue
+                    if memory_id == requested or memory_id.startswith(requested):
+                        match = memory
+                        break
+                if match is None:
+                    unmatched.append(requested)
+                    continue
+                seen_ids.add(str(match.get("id") or ""))
+                sources.append(match)
+            if unmatched:
+                return [{"type": "text", "text": f"Error: 未找到记忆 ID: {', '.join(unmatched)}"}]
+            if len(sources) < 2:
+                return [{"type": "text", "text": "Error: 至少提供 2 个不同的记忆 ID"}]
+
+            if not memory_type:
+                type_counts: dict[str, int] = {}
+                for memory in sources:
+                    source_type = str((memory.get("metadata") or {}).get("memory_type") or "fact")
+                    type_counts[source_type] = type_counts.get(source_type, 0) + 1
+                memory_type = max(
+                    ("preference", "fact", "context", "error"),
+                    key=lambda candidate: type_counts.get(candidate, 0),
+                )
+
+            default_ttl_days = memory_policy.resolve_memory_ttl_days(str(memory_type))
+            raw_ttl_days = args.get("ttl_days")
+            if default_ttl_days is None:
+                ttl_days = None
+            else:
+                ttl_days = default_ttl_days if raw_ttl_days in (None, "") else int(raw_ttl_days)
+                ttl_days = max(1, min(3650, ttl_days))
+
+            metadata: dict[str, Any] = {
+                "type": "agent_saved",
+                "source": "local_agent_compress",
+                "verified": True,
+                "content_hash": memory_policy._build_content_hash(content),
+                "updated_at": datetime.now().isoformat(),
+            }
+            memory_key = memory_policy.infer_memory_key(content, str(memory_type))
+            if memory_key:
+                metadata["memory_key"] = memory_key
+            if memory_type == "error":
+                metadata["status"] = "active"
+
+            new_memory_id = vector_store.add_memory(
+                item_id=item_id,
+                content=content,
+                memory_type=memory_type,
+                metadata=metadata,
+                ttl_days=ttl_days,
+                allow_duplicate=True,
+                run_maintenance=False,
+            )
+            if not new_memory_id:
+                return [{"type": "text", "text": "压缩记忆写入失败，旧记忆未删除。"}]
+            deleted = 0
+            for memory in sources:
+                try:
+                    if vector_store.delete_memory(str(memory.get("id") or "")):
+                        deleted += 1
+                except Exception:
+                    continue
+            return [{"type": "text", "text": f"✓ 已将 {len(sources)} 条记忆压缩为 1 条 (新 ID: {str(new_memory_id)[:8]}...)，删除旧记忆 {deleted} 条"}]
+        except Exception as e:
+            return [{"type": "text", "text": f"Error: {e}"}]
+
     def _recall_memory(self, args: dict) -> list:
         query = args.get("query", "")
-        n_results = args.get("n_results", 5)
+        try:
+            n_results = int(args.get("n_results", 0) or 0)
+        except (TypeError, ValueError):
+            n_results = 0
         memory_type = args.get("memory_type")
         item_id = args.get("item_id", "")
         
@@ -2513,6 +2631,8 @@ class LocalMCPServer:
         
         try:
             from app.services.agent.memory.vector_store import vector_store
+            if n_results <= 0:
+                n_results = max(1, len(vector_store.get_all_memories(item_id)))
             results = vector_store.search_memories(
                 item_id=item_id,
                 query=query,

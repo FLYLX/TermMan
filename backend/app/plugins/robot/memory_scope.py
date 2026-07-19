@@ -9,6 +9,33 @@ SPEAKER_SCOPED_MEMORY_TYPES = {"fact", "preference"}
 CONVERSATION_SCOPED_MEMORY_TYPES = {"context", "error"}
 
 
+def memory_content_is_question_like(content: str) -> bool:
+    normalized = str(content or "").strip()
+    if not normalized:
+        return False
+    if "?" in normalized or "？" in normalized:
+        return True
+    payload = re.sub(r"^[^:：\n]{1,100}[:：]\s*", "", normalized)
+    return bool(
+        re.match(
+            r"^(?:谁|谁是|还有谁|哪些|哪个|什么|怎么|为什么|是否|是不是|记得|知道)",
+            payload,
+        )
+        or re.search(
+            r"(?:还有谁|谁是|是谁|有谁|哪些人?|哪个|什么)(?:吗|呢)?",
+            payload,
+        )
+    )
+
+
+def memory_query_requests_enumeration(query: str) -> bool:
+    normalized = re.sub(r"\s+", "", str(query or "")).casefold()
+    return any(
+        cue in normalized
+        for cue in ("还有谁", "谁是", "哪些", "都有谁", "全部", "所有", "list all")
+    )
+
+
 def speaker_global_key_from_context(
     sender_key: str = "",
     reply_target: RobotReplyTarget | None = None,
@@ -75,8 +102,8 @@ def memory_scope_for_content(content: str, memory_type: str) -> str:
             return "speaker"
         if re.search(
             r"(?:猫娘|主人|管理员|群主|昵称|外号|名字|身份|本人)"
-            r"[\s\S]{0,48}(?:是|就是|叫|指的是|对应)"
-            r"|(?:是|就是|叫|指的是|对应)[\s\S]{0,48}"
+            r"[\s\S]{0,48}(?:是|就是|为|叫|自称|被称为|指的是|对应)"
+            r"|(?:是|就是|为|叫|自称|被称为|指的是|对应)[\s\S]{0,48}"
             r"(?:猫娘|主人|管理员|群主|昵称|外号|名字|身份|本人)",
             payload,
         ):
@@ -114,12 +141,15 @@ def memory_scope_rank(
     if scope == "conversation":
         return 4 if memory_conversation and memory_conversation == conversation_key else -1
     if scope == "speaker":
-        if (
-            memory_type == "fact"
-            and memory_scope_for_content(str(memory.get("content") or ""), memory_type)
-            == "conversation"
-        ):
-            return 4 if memory_conversation == conversation_key else -1
+        if memory_type == "fact":
+            # The speaker key records who supplied the fact, not necessarily the
+            # person the fact describes. Facts said in a group are shared group
+            # knowledge; the same speaker can still recall them across groups.
+            if memory_speaker and speaker_global_key and memory_speaker == speaker_global_key:
+                return 5
+            if memory_conversation and memory_conversation == conversation_key:
+                return 4
+            return -1
         if memory_speaker:
             return 5 if speaker_global_key and memory_speaker == speaker_global_key else -1
         # Legacy speaker-scoped records may not have a stable speaker key.

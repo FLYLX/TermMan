@@ -1835,3 +1835,75 @@ def test_run_job_tool_is_registered_for_long_jobs() -> None:
     assert "non-interactive one-shot shell job" in tool["description"]
     assert tool["inputSchema"]["properties"]["timeout_seconds"]["default"] == 600
     assert tool["skip_memory"] is True
+
+
+def test_local_compress_memories_merges_and_deletes(monkeypatch) -> None:
+    from app.services.agent.memory.vector_store import vector_store
+
+    server = LocalMCPServer()
+    tools = {tool["name"]: tool for tool in server.list_tools()}
+    assert "compress_memories" in tools
+
+    existing = [
+        {
+            "id": "aaaa1111-0000-4000-8000-000000000001",
+            "content": "端口是 43906",
+            "metadata": {"memory_type": "fact"},
+        },
+        {
+            "id": "bbbb2222-0000-4000-8000-000000000002",
+            "content": "服务器端口其实是 43906",
+            "metadata": {"memory_type": "fact"},
+        },
+    ]
+    added: dict[str, object] = {}
+    deleted: list[str] = []
+
+    monkeypatch.setattr(
+        vector_store,
+        "get_all_memories",
+        lambda *_args, **_kwargs: existing,
+    )
+
+    def fake_add_memory(**kwargs):
+        added.update(kwargs)
+        return "cccc3333-0000-4000-8000-000000000003"
+
+    def fake_delete_memory(memory_id):
+        deleted.append(str(memory_id))
+        return True
+
+    monkeypatch.setattr(vector_store, "add_memory", fake_add_memory)
+    monkeypatch.setattr(vector_store, "delete_memory", fake_delete_memory)
+
+    result = server.call_tool(
+        "compress_memories",
+        {
+            "item_id": "item-1",
+            "memory_ids": ["aaaa1111", "bbbb2222"],
+            "content": "服务器端口是 43906",
+        },
+    )
+
+    text = result[0]["text"]
+    assert "压缩" in text
+    assert added["item_id"] == "item-1"
+    assert added["content"] == "服务器端口是 43906"
+    assert added["memory_type"] == "fact"
+    assert added["metadata"]["source"] == "local_agent_compress"
+    assert deleted == [memory["id"] for memory in existing]
+
+
+def test_local_compress_memories_requires_two_ids() -> None:
+    server = LocalMCPServer()
+
+    result = server.call_tool(
+        "compress_memories",
+        {
+            "item_id": "item-1",
+            "memory_ids": ["aaaa1111"],
+            "content": "合并后的记忆",
+        },
+    )
+
+    assert "至少" in result[0]["text"]

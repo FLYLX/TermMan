@@ -20,11 +20,12 @@ from app.plugins.robot.internal_trace import (
 )
 from app.plugins.robot.mcp.context import get_robot_mcp_context
 from app.plugins.robot.memory_scope import (
-    memory_conversation_key as scoped_memory_conversation_key,
-)
-from app.plugins.robot.memory_scope import (
+    memory_content_is_question_like,
     memory_scope_for_content,
     speaker_global_key_from_context,
+)
+from app.plugins.robot.memory_scope import (
+    memory_conversation_key as scoped_memory_conversation_key,
 )
 from app.plugins.robot.memory_scope import (
     memory_scope_rank as scoped_memory_scope_rank,
@@ -38,11 +39,9 @@ MAX_GROUP_SINGLE_TEXT_CHARS = 96
 DEFAULT_MEMORY_RECENT_LINES = 8
 ACTIVE_CONTEXT_MEMORY_MAX_LINES = 12
 GENERAL_MEMORY_MAX_LINES = 500
-DEFAULT_LONG_TERM_MEMORY_RESULTS = 5
-MAX_LONG_TERM_MEMORY_RESULTS = 8
 DEFAULT_LONG_TERM_MEMORY_LIST_RESULTS = 10
-MAX_LONG_TERM_MEMORY_LIST_RESULTS = 20
-LONG_TERM_MEMORY_CANDIDATE_MULTIPLIER = 6
+MIN_LONG_TERM_MEMORY_RELEVANCE = 0.32
+MIN_LONG_TERM_MEMORY_QUERY_SCORE = 0.7
 LONG_TERM_MEMORY_TYPES = {"fact", "preference", "error", "context"}
 LONG_TERM_MEMORY_TYPE_ORDER = ("preference", "fact", "context", "error")
 LONG_TERM_MEMORY_TYPE_RANK = {
@@ -248,7 +247,6 @@ class RobotMCPServer:
                     "limit": {
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": MAX_LONG_TERM_MEMORY_LIST_RESULTS,
                         "description": "Maximum memories to return. Default is 10.",
                     },
                     "memory_type": {
@@ -279,12 +277,6 @@ class RobotMCPServer:
                     "query": {
                         "type": "string",
                         "description": "Search query built from the current user message.",
-                    },
-                    "n_results": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": MAX_LONG_TERM_MEMORY_RESULTS,
-                        "description": "Maximum memories to return. Default is 5.",
                     },
                     "memory_type": {
                         "type": "string",
@@ -332,6 +324,54 @@ class RobotMCPServer:
                 "required": ["content"],
             },
             handler=self._save_memory,
+            skip_memory=True,
+        )
+        self.register_tool(
+            name="compress_memories",
+            description=(
+                "Merge several redundant, overlapping, or outdated TermMan "
+                "long-term memories into one concise replacement memory. The "
+                "new memory is saved first, then the listed old memories are "
+                "deleted. Use this when recalled or listed memories contain "
+                "duplicates, stale versions of the same fact, or noisy "
+                "chatter that should be condensed. Do not merge different "
+                "users' personal memories into one entry. Use list_memories "
+                "or recall_memory first to collect the memory ids."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "memory_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 2,
+                        "description": (
+                            "Ids of the memories to merge (full id or the "
+                            "8-character prefix shown by list_memories)."
+                        ),
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Concise merged replacement memory text.",
+                    },
+                    "memory_type": {
+                        "type": "string",
+                        "enum": sorted(LONG_TERM_MEMORY_TYPES),
+                        "description": (
+                            "Memory type. Default is the majority type of the "
+                            "merged memories, falling back to fact."
+                        ),
+                    },
+                    "ttl_days": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3650,
+                        "description": "Optional retention days for fact/context. Preference and error memories are permanent.",
+                    },
+                },
+                "required": ["memory_ids", "content"],
+            },
+            handler=self._compress_memories,
             skip_memory=True,
         )
         self.register_tool(
@@ -1123,21 +1163,13 @@ class RobotMCPServer:
                 "text": "No QQ message sent: current conversation is sleeping.",
             }
         ]
-    def _long_term_memory_limit(self, args: dict) -> int:
-        raw_value = args.get("n_results") or args.get("limit") or DEFAULT_LONG_TERM_MEMORY_RESULTS
-        try:
-            value = int(raw_value)
-        except (TypeError, ValueError):
-            value = DEFAULT_LONG_TERM_MEMORY_RESULTS
-        return max(1, min(MAX_LONG_TERM_MEMORY_RESULTS, value))
-
     def _long_term_memory_list_limit(self, args: dict) -> int:
         raw_value = args.get("limit") or DEFAULT_LONG_TERM_MEMORY_LIST_RESULTS
         try:
             value = int(raw_value)
         except (TypeError, ValueError):
             value = DEFAULT_LONG_TERM_MEMORY_LIST_RESULTS
-        return max(1, min(MAX_LONG_TERM_MEMORY_LIST_RESULTS, value))
+        return max(1, value)
 
     @staticmethod
     def _memory_distance(memory: dict[str, Any]) -> float:
@@ -1207,11 +1239,20 @@ class RobotMCPServer:
 
     @staticmethod
     def _memory_tokens(value: str) -> set[str]:
-        return {
-            token.casefold()
-            for token in re.findall(r"[\u4e00-\u9fffA-Za-z0-9_./:-]+", value or "")
-            if len(token.strip()) > 1
-        }
+        normalized = str(value or "").casefold()
+        chinese = re.findall(r"[\u4e00-\u9fff]", normalized)
+        tokens = set(chinese)
+        tokens.update(
+            "".join(chinese[index : index + 2])
+            for index in range(max(len(chinese) - 1, 0))
+        )
+        tokens.update(re.findall(r"[a-z0-9][a-z0-9_.:/-]*", normalized))
+        return {token for token in tokens if token}
+
+    @staticmethod
+    def _memory_content_key(memory: dict[str, Any]) -> str:
+        content = str(memory.get("content") or "").casefold()
+        return re.sub(r"\s+", " ", content).strip()
 
     @classmethod
     def _memory_query_score(cls, memory: dict[str, Any], query: str) -> float:
@@ -1225,8 +1266,8 @@ class RobotMCPServer:
         if normalized_query and normalized_query in content_folded:
             score += 3.0
         content_tokens = cls._memory_tokens(content)
-        if content_tokens:
-            score += len(query_tokens & content_tokens) * 1.2
+        if content_tokens and query_tokens:
+            score += (len(query_tokens & content_tokens) / len(query_tokens)) * 4.0
         metadata = cls._memory_metadata(memory)
         for key in ("memory_key", "speaker_key", "speaker_global_key", "conversation_key"):
             value = str(metadata.get(key) or "")
@@ -1263,12 +1304,12 @@ class RobotMCPServer:
         verified_bonus = 1.0 if metadata.get("verified") is True else 0.0
         vector_score = max(0.0, 1.0 - cls._memory_distance(memory))
         return (
-            scope_rank * 100.0
-            + cls._memory_query_score(memory, query) * 8.0
-            + LONG_TERM_MEMORY_TYPE_RANK.get(cls._memory_type(memory), 1) * 2.0
-            + verified_bonus
+            cls._memory_query_score(memory, query) * 12.0
+            + vector_score * 10.0
+            + scope_rank * 2.0
+            + LONG_TERM_MEMORY_TYPE_RANK.get(cls._memory_type(memory), 1) * 0.5
+            + verified_bonus * 2.0
             + cls._memory_recency_score(memory)
-            + vector_score
         )
 
     @classmethod
@@ -1342,7 +1383,7 @@ class RobotMCPServer:
         self,
         *,
         query: str,
-        limit: int,
+        limit: int | None,
         memories: list[dict[str, Any]],
         robot_id: str,
         conversation_key: str,
@@ -1352,9 +1393,10 @@ class RobotMCPServer:
         for memory in memories:
             if not self._memory_usable(memory):
                 continue
+            if memory_content_is_question_like(str(memory.get("content") or "")):
+                continue
             memory_id = str(memory.get("id") or "").strip()
-            content = str(memory.get("content") or "").strip()
-            key = memory_id or f"content:{content}"
+            key = memory_id or f"content:{self._memory_content_key(memory)}"
             existing = by_key.get(key)
             if existing is None:
                 by_key[key] = memory
@@ -1364,6 +1406,13 @@ class RobotMCPServer:
 
         ranked: list[tuple[float, str, dict[str, Any]]] = []
         for memory in by_key.values():
+            query_score = self._memory_query_score(memory, query)
+            similarity = max(0.0, 1.0 - self._memory_distance(memory))
+            if (
+                query_score < MIN_LONG_TERM_MEMORY_QUERY_SCORE
+                and similarity < MIN_LONG_TERM_MEMORY_RELEVANCE
+            ):
+                continue
             scope_rank = self._memory_scope_rank(
                 memory,
                 robot_id=robot_id,
@@ -1385,7 +1434,17 @@ class RobotMCPServer:
             )
 
         ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
-        return [memory for _, _, memory in ranked[:limit]]
+        selected: list[dict[str, Any]] = []
+        seen_content: set[str] = set()
+        for _, _, memory in ranked:
+            content_key = self._memory_content_key(memory)
+            if not content_key or content_key in seen_content:
+                continue
+            seen_content.add(content_key)
+            selected.append(memory)
+            if limit is not None and len(selected) >= limit:
+                break
+        return selected
 
     def _save_memory(self, args: dict) -> list[dict[str, str]]:
         content = sanitize_robot_visible_text(str(args.get("content") or "")).strip()
@@ -1489,6 +1548,202 @@ class RobotMCPServer:
             }
         ]
 
+    def _compress_memories(self, args: dict) -> list[dict[str, str]]:
+        raw_ids = args.get("memory_ids")
+        if not isinstance(raw_ids, list):
+            return [{"type": "text", "text": "Error: memory_ids must be a list"}]
+        requested_ids = [
+            value for value in (str(item or "").strip() for item in raw_ids) if value
+        ]
+        if len(set(requested_ids)) < 2:
+            return [
+                {"type": "text", "text": "Error: provide at least 2 distinct memory ids"}
+            ]
+
+        content = sanitize_robot_visible_text(str(args.get("content") or "")).strip()
+        if not content:
+            return [{"type": "text", "text": "Error: content required"}]
+
+        item_id = str(args.get("_termman_item_id") or args.get("item_id") or "").strip()
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id unavailable"}]
+
+        memory_type = str(args.get("memory_type") or "").strip()
+        if memory_type and memory_type not in LONG_TERM_MEMORY_TYPES:
+            return [{"type": "text", "text": f"Error: invalid memory_type: {memory_type}"}]
+
+        context_token = str(args.get("_robot_context_token") or "").strip()
+        context = get_robot_mcp_context(context_token)
+        active_target = self._context_target_from_active_context(context)
+        robot_id = ""
+        conversation_key = ""
+        sender_key = ""
+        speaker_global_key = ""
+        if context is not None:
+            robot_id = str(context.robot_id or "").strip()
+            sender_key = str(context.sender_key or "").strip()
+            conversation_key = str(
+                getattr(context, "conversation_key", "")
+                or (active_target or {}).get("conversation")
+                or ""
+            ).strip()
+            speaker_global_key = speaker_global_key_from_context(
+                sender_key,
+                getattr(context, "reply_target", None),
+            )
+
+        try:
+            from app.plugins.robot.memory_migration import (
+                ensure_legacy_robot_memories_upgraded,
+            )
+            from app.services.agent.memory.vector_store import vector_store
+            from app.services.agent.prompts import policy as memory_policy
+
+            ensure_legacy_robot_memories_upgraded(item_id, store=vector_store)
+            all_memories = vector_store.get_all_memories(item_id)
+        except Exception as exc:
+            return [{"type": "text", "text": f"Error: {exc}"}]
+
+        sources: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        unmatched: list[str] = []
+        for requested in requested_ids:
+            match: dict[str, Any] | None = None
+            for memory in all_memories:
+                memory_id = str(memory.get("id") or "")
+                if not memory_id or memory_id in seen_ids:
+                    continue
+                if memory_id == requested or memory_id.startswith(requested):
+                    match = memory
+                    break
+            if match is None:
+                unmatched.append(requested)
+                continue
+            seen_ids.add(str(match.get("id") or ""))
+            sources.append(match)
+        if unmatched:
+            return [
+                {
+                    "type": "text",
+                    "text": f"Error: memory ids not found: {', '.join(unmatched)}",
+                }
+            ]
+        if len(sources) < 2:
+            return [
+                {"type": "text", "text": "Error: provide at least 2 distinct memory ids"}
+            ]
+
+        for memory in sources:
+            rank = scoped_memory_scope_rank(
+                memory,
+                robot_id=robot_id,
+                conversation_key=conversation_key,
+                speaker_global_key=speaker_global_key,
+            )
+            if rank < 0:
+                return [
+                    {
+                        "type": "text",
+                        "text": "Error: some memories are outside the current QQ scope.",
+                    }
+                ]
+
+        if not memory_type:
+            type_counts: dict[str, int] = {}
+            for memory in sources:
+                source_type = self._memory_type(memory)
+                type_counts[source_type] = type_counts.get(source_type, 0) + 1
+            memory_type = max(
+                LONG_TERM_MEMORY_TYPE_ORDER,
+                key=lambda candidate: type_counts.get(candidate, 0),
+            )
+            if memory_type not in LONG_TERM_MEMORY_TYPES:
+                memory_type = "fact"
+
+        default_ttl_days = memory_policy.resolve_memory_ttl_days(memory_type)
+        raw_ttl_days = args.get("ttl_days")
+        if default_ttl_days is None:
+            ttl_days = None
+        elif raw_ttl_days in (None, ""):
+            ttl_days = default_ttl_days
+        else:
+            ttl_days = int(raw_ttl_days)
+        if ttl_days is not None:
+            ttl_days = max(1, min(3650, ttl_days))
+
+        def _uniform_metadata_value(key: str) -> str:
+            values = {
+                str((memory.get("metadata") or {}).get(key) or "").strip()
+                for memory in sources
+            }
+            values.discard("")
+            return values.pop() if len(values) == 1 else ""
+
+        metadata: dict[str, Any] = {
+            "type": "robot_agent_saved",
+            "source": "qq_robot_agent_compress",
+            "verified": False,
+            "content_hash": memory_policy._build_content_hash(content),
+        }
+        memory_key = memory_policy.infer_memory_key(content, memory_type)
+        if memory_key:
+            metadata["memory_key"] = memory_key
+        if memory_type == "error":
+            metadata["status"] = "active"
+        if robot_id:
+            metadata["robot_id"] = robot_id
+        inherited_conversation_key = _uniform_metadata_value(
+            "conversation_key"
+        ) or _uniform_metadata_value("robot_conversation_key")
+        if inherited_conversation_key:
+            metadata["robot_conversation_key"] = inherited_conversation_key
+            metadata["conversation_key"] = inherited_conversation_key
+        inherited_speaker_key = _uniform_metadata_value("speaker_key")
+        if inherited_speaker_key:
+            metadata["speaker_key"] = inherited_speaker_key
+        inherited_speaker_global_key = _uniform_metadata_value("speaker_global_key")
+        if inherited_speaker_global_key:
+            metadata["speaker_global_key"] = inherited_speaker_global_key
+        metadata["memory_scope"] = memory_scope_for_content(content, memory_type)
+
+        try:
+            new_memory_id = vector_store.add_memory(
+                item_id=item_id,
+                content=content,
+                memory_type=memory_type,
+                metadata=metadata,
+                ttl_days=ttl_days,
+                allow_duplicate=True,
+                run_maintenance=False,
+            )
+        except Exception as exc:
+            return [{"type": "text", "text": f"Error: {exc}"}]
+        if not new_memory_id:
+            return [
+                {
+                    "type": "text",
+                    "text": "Error: compressed memory was not saved; old memories left untouched.",
+                }
+            ]
+
+        deleted = 0
+        for memory in sources:
+            try:
+                if vector_store.delete_memory(str(memory.get("id") or "")):
+                    deleted += 1
+            except Exception:
+                continue
+
+        return [
+            {
+                "type": "text",
+                "text": (
+                    f"Compressed {len(sources)} memories into one "
+                    f"(ID: {str(new_memory_id)[:8]}...); deleted {deleted} old memories."
+                ),
+            }
+        ]
+
     def _list_memories(self, args: dict) -> list[dict[str, str]]:
         memory_type = str(args.get("memory_type") or "").strip() or None
         if memory_type is not None and memory_type not in LONG_TERM_MEMORY_TYPES:
@@ -1583,8 +1838,9 @@ class RobotMCPServer:
             ).strip()
             content = str(memory.get("content") or "").strip()
             prefix = f"{sender}: " if sender and not content.startswith(sender) else ""
+            memory_id = str(memory.get("id") or "")
             lines.append(
-                f"{index}. [{self._memory_type(memory)}] {prefix}{content}"
+                f"{index}. [{memory_id[:8]}] [{self._memory_type(memory)}] {prefix}{content}"
             )
         return [{"type": "text", "text": "\n".join(lines)}]
 
@@ -1619,7 +1875,6 @@ class RobotMCPServer:
                 getattr(context, "reply_target", None),
             )
 
-        limit = self._long_term_memory_limit(args)
         try:
             from app.plugins.robot.memory_migration import (
                 ensure_legacy_robot_memories_upgraded,
@@ -1627,14 +1882,6 @@ class RobotMCPServer:
             from app.services.agent.memory.vector_store import vector_store
 
             ensure_legacy_robot_memories_upgraded(item_id, store=vector_store)
-            vector_memories = vector_store.search_memories(
-                item_id=item_id,
-                query=query,
-                n_results=limit * LONG_TERM_MEMORY_CANDIDATE_MULTIPLIER,
-                memory_type=memory_type,
-                include_expired=False,
-                active_only=True,
-            )
             scoped_memories = self._collect_scoped_long_term_memory_candidates(
                 store=vector_store,
                 item_id=item_id,
@@ -1643,12 +1890,22 @@ class RobotMCPServer:
                 conversation_key=conversation_key,
                 speaker_global_key=speaker_global_key,
             )
+            vector_memories = vector_store.search_memories(
+                item_id=item_id,
+                query=query,
+                n_results=max(1, len(scoped_memories)),
+                memory_type=memory_type,
+                include_expired=False,
+                active_only=True,
+                min_similarity=MIN_LONG_TERM_MEMORY_RELEVANCE,
+                candidate_multiplier=1,
+            )
         except Exception as exc:
             return [{"type": "text", "text": f"Error: {exc}"}]
 
         selected = self._select_recalled_long_term_memories(
             query=query,
-            limit=limit,
+            limit=None,
             memories=[*vector_memories, *scoped_memories],
             robot_id=robot_id,
             conversation_key=conversation_key,
@@ -1676,15 +1933,33 @@ class RobotMCPServer:
                 or ""
             ).strip()
             prefix = f"{sender}: " if sender and not content.startswith(sender) else ""
-            lines.append(f"- {prefix}{content}")
+            memory_id = str(memory.get("id") or "")
+            lines.append(f"- [{memory_id[:8]}] {prefix}{content}")
         return [{"type": "text", "text": "\n".join(lines)}]
 
     def _read_conversation_memory(self, args: dict) -> list[dict[str, str]]:
         context_token = str(args.get("_robot_context_token") or "").strip()
         context = get_robot_mcp_context(context_token)
+        target_args = args
+        if context is not None:
+            has_target_type = bool(
+                str(args.get("target_type") or args.get("mcp_target_type") or "").strip()
+            )
+            has_target_id = bool(
+                str(args.get("target_id") or args.get("mcp_target_id") or "").strip()
+            )
+            if has_target_type != has_target_id:
+                target_args = dict(args)
+                for key in (
+                    "target_type",
+                    "target_id",
+                    "mcp_target_type",
+                    "mcp_target_id",
+                ):
+                    target_args.pop(key, None)
         try:
-            explicit_target = self._build_explicit_target(args)
-            conversation_target = self._build_conversation_target(args)
+            explicit_target = self._build_explicit_target(target_args)
+            conversation_target = self._build_conversation_target(target_args)
         except Exception as exc:
             return [{"type": "text", "text": f"Error: {exc}"}]
 

@@ -976,7 +976,7 @@ def test_robot_mcp_recalls_long_term_memory_scoped_to_active_context(monkeypatch
             },
         ]
 
-    def fake_get_all_memories(item_id, memory_type=None):
+    def fake_get_all_memories(*_args, **_kwargs):
         return []
 
     monkeypatch.setattr(vector_store, "search_memories", fake_search_memories)
@@ -1010,7 +1010,7 @@ def test_robot_mcp_recalls_long_term_memory_scoped_to_active_context(monkeypatch
 
     assert calls[0]["item_id"] == "item-1"
     assert calls[0]["query"] == "nickname"
-    assert calls[0]["n_results"] == 18
+    assert calls[0]["n_results"] == 1
     text = result[0]["text"]
     assert "nickname is XiaoChai" in text
     assert "call this QQ user Master" in text
@@ -1020,8 +1020,8 @@ def test_robot_mcp_recalls_long_term_memory_scoped_to_active_context(monkeypatch
     assert "other robot memory" not in text
     assert "verified" not in text
     assert "group:current-group" not in text
-    assert text.index("call this QQ user Master") < text.index("nickname is XiaoChai")
-    assert text.index("nickname is XiaoChai") < text.index("general robot preference")
+    assert text.index("nickname is XiaoChai") < text.index("call this QQ user Master")
+    assert text.index("call this QQ user Master") < text.index("general robot preference")
 
 
 def test_robot_mcp_lists_long_term_memory_scoped_to_active_context(monkeypatch) -> None:
@@ -1144,7 +1144,7 @@ def test_robot_mcp_recall_uses_scoped_memory_fallback(monkeypatch) -> None:
     server = RobotMCPServer()
     calls: list[tuple[str, str | None]] = []
 
-    def fake_search_memories(**kwargs):
+    def fake_search_memories(**_kwargs):
         return [
             {
                 "id": "other-vector",
@@ -1246,11 +1246,109 @@ def test_robot_mcp_recall_uses_scoped_memory_fallback(monkeypatch) -> None:
     assert ("item-1", "preference") in calls
     text = result[0]["text"]
     assert "current group server port is 28888" in text
-    assert "call this QQ user Master" in text
+    assert "call this QQ user Master" not in text
     assert "other group has a server port" not in text
     assert "other group server port is 19999" not in text
     assert "call another QQ user Boss" not in text
-    assert text.index("call this QQ user Master") < text.index("current group server port is 28888")
+
+
+def test_robot_mcp_relation_enumeration_recalls_old_group_facts(monkeypatch) -> None:
+    server = RobotMCPServer()
+    memories = [
+        {
+            "id": "new-question",
+            "content": "Ac国掌管ac的神 (3385417251): 谁是猫娘",
+            "metadata": {
+                "memory_type": "fact",
+                "memory_scope": "conversation",
+                "robot_id": "robot-current",
+                "robot_conversation_key": "group:770362397",
+                "robot_memory_schema_version": 3,
+            },
+            "distance": 0.01,
+        },
+        {
+            "id": "candy",
+            "content": "和煦的糖果风 (641681910): 我是猫娘",
+            "metadata": {
+                "memory_type": "fact",
+                "memory_scope": "speaker",
+                "robot_id": "robot-current",
+                "robot_conversation_key": "group:770362397",
+                "speaker_global_key": "onebot_v11:user:641681910",
+                "robot_memory_schema_version": 3,
+            },
+            "distance": 0.08,
+        },
+        {
+            "id": "hamburger",
+            "content": "月影寒波（简称汉堡）是猫娘",
+            "metadata": {
+                "memory_type": "fact",
+                "memory_scope": "speaker",
+                "robot_id": "robot-current",
+                "robot_conversation_key": "group:770362397",
+                "speaker_global_key": "onebot_v11:user:162221240",
+                "robot_memory_schema_version": 3,
+            },
+            "distance": 0.12,
+        },
+        {
+            "id": "hamburger-import",
+            "content": "月影寒波（简称汉堡）是猫娘",
+            "metadata": {
+                "memory_type": "fact",
+                "memory_scope": "conversation",
+                "robot_id": "robot-current",
+                "robot_conversation_key": "group:770362397",
+                "robot_memory_schema_version": 3,
+            },
+            "distance": 0.1,
+        },
+    ]
+
+    monkeypatch.setattr(vector_store, "search_memories", lambda **_kwargs: memories)
+    monkeypatch.setattr(
+        vector_store,
+        "get_all_memories",
+        lambda _item_id, memory_type=None: [
+            memory
+            for memory in memories
+            if memory_type is None
+            or memory["metadata"]["memory_type"] == memory_type
+        ],
+    )
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="770362397",
+        metadata={"target": {"id": "770362397"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:770362397:2537134688",
+            reply_target=target,
+            conversation_key="group:770362397",
+        )
+    )
+
+    try:
+        result = server.call_tool(
+            "recall_memory",
+            {
+                "_robot_context_token": token,
+                "_termman_item_id": "item-1",
+                "query": "还有谁是猫娘",
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    text = result[0]["text"]
+    assert "谁是猫娘" not in text
+    assert "和煦的糖果风" in text
+    assert "月影寒波" in text
+    assert text.count("月影寒波（简称汉堡）是猫娘") == 1
 
 
 def test_robot_mcp_save_memory_persists_scoped_long_term_memory(monkeypatch) -> None:
@@ -1426,6 +1524,47 @@ def test_robot_mcp_read_memory_active_context_caps_requested_lines(
     assert "message-17" not in text
     assert "message-18" in text
     assert "message-29" in text
+
+
+def test_robot_mcp_read_memory_ignores_partial_target_in_active_context(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    server = RobotMCPServer()
+    monkeypatch.setattr(robot_conversation_memory, "base_dir", tmp_path)
+    robot_conversation_memory.append_user_message(
+        "robot-current",
+        "group:current-group",
+        "older catgirl memory",
+        sender="Alice (10001)",
+    )
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="current-group",
+        metadata={"target": {"id": "current-group"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:current-group:user-1",
+            reply_target=target,
+            conversation_key="group:current-group",
+        )
+    )
+
+    try:
+        result = server.call_tool(
+            "read_conversation_memory",
+            {
+                "_robot_context_token": token,
+                "target_type": "group",
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert "target_id is required" not in result[0]["text"]
+    assert "older catgirl memory" in result[0]["text"]
 
 
 def test_robot_mcp_read_memory_sanitizes_old_internal_trace(
@@ -1828,3 +1967,192 @@ def test_robot_mcp_broadcast_requires_context_target() -> None:
 
     assert result[0]["type"] == "text"
     assert "broadcast from prior QQ context is disabled" in result[0]["text"]
+
+
+def _compress_test_context():
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="current-group",
+        metadata={"target": {"id": "current-group"}},
+    )
+    return register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:current-group:user-1",
+            reply_target=target,
+            conversation_key="group:current-group",
+        )
+    )
+
+
+def _compress_test_memory(memory_id: str, content: str, **metadata_overrides):
+    metadata = {
+        "memory_type": "fact",
+        "robot_id": "robot-current",
+        "robot_conversation_key": "group:current-group",
+        "memory_scope": "conversation",
+        "robot_memory_schema_version": 3,
+    }
+    metadata.update(metadata_overrides)
+    return {"id": memory_id, "content": content, "metadata": metadata}
+
+
+def test_robot_mcp_compress_memories_merges_and_deletes(monkeypatch) -> None:
+    server = RobotMCPServer()
+    tools = {tool["name"]: tool for tool in server.list_tools()}
+    assert "compress_memories" in tools
+    assert tools["compress_memories"]["skip_memory"] is True
+
+    existing = [
+        _compress_test_memory(
+            "aaaa1111-0000-4000-8000-000000000001",
+            "端口是 43906",
+        ),
+        _compress_test_memory(
+            "bbbb2222-0000-4000-8000-000000000002",
+            "服务器端口其实是 43906",
+        ),
+    ]
+    added: dict[str, object] = {}
+    deleted: list[str] = []
+
+    monkeypatch.setattr(
+        vector_store,
+        "get_all_memories",
+        lambda *_args, **_kwargs: existing,
+    )
+
+    def fake_add_memory(**kwargs):
+        added.update(kwargs)
+        return "cccc3333-0000-4000-8000-000000000003"
+
+    def fake_delete_memory(memory_id):
+        deleted.append(str(memory_id))
+        return True
+
+    monkeypatch.setattr(vector_store, "add_memory", fake_add_memory)
+    monkeypatch.setattr(vector_store, "delete_memory", fake_delete_memory)
+
+    token = _compress_test_context()
+    try:
+        result = server.call_tool(
+            "compress_memories",
+            {
+                "_robot_context_token": token,
+                "_termman_item_id": "item-1",
+                "memory_ids": ["aaaa1111", "bbbb2222"],
+                "content": "服务器端口是 43906",
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    text = result[0]["text"]
+    assert "Compressed 2" in text
+    assert "deleted 2" in text
+    assert added["item_id"] == "item-1"
+    assert added["content"] == "服务器端口是 43906"
+    assert added["memory_type"] == "fact"
+    assert added["allow_duplicate"] is True
+    metadata = added["metadata"]
+    assert metadata["source"] == "qq_robot_agent_compress"
+    assert metadata["robot_id"] == "robot-current"
+    assert metadata["conversation_key"] == "group:current-group"
+    assert metadata["robot_conversation_key"] == "group:current-group"
+    assert deleted == [memory["id"] for memory in existing]
+
+
+def test_robot_mcp_compress_memories_rejects_out_of_scope(monkeypatch) -> None:
+    server = RobotMCPServer()
+    existing = [
+        _compress_test_memory(
+            "aaaa1111-0000-4000-8000-000000000001",
+            "端口是 43906",
+        ),
+        _compress_test_memory(
+            "bbbb2222-0000-4000-8000-000000000002",
+            "别人的专属偏好",
+            memory_type="preference",
+            memory_scope="speaker",
+            speaker_global_key="onebot_v11:user:user-2",
+        ),
+    ]
+    called: list[str] = []
+
+    monkeypatch.setattr(
+        vector_store,
+        "get_all_memories",
+        lambda *_args, **_kwargs: existing,
+    )
+    monkeypatch.setattr(
+        vector_store,
+        "add_memory",
+        lambda **_kwargs: called.append("add") or "new-id",
+    )
+    monkeypatch.setattr(
+        vector_store,
+        "delete_memory",
+        lambda _memory_id: called.append("delete") or True,
+    )
+
+    token = _compress_test_context()
+    try:
+        result = server.call_tool(
+            "compress_memories",
+            {
+                "_robot_context_token": token,
+                "_termman_item_id": "item-1",
+                "memory_ids": ["aaaa1111", "bbbb2222"],
+                "content": "合并后的记忆",
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert "outside the current QQ scope" in result[0]["text"]
+    assert called == []
+
+
+def test_robot_mcp_compress_memories_reports_unmatched_ids(monkeypatch) -> None:
+    server = RobotMCPServer()
+    existing = [
+        _compress_test_memory(
+            "aaaa1111-0000-4000-8000-000000000001",
+            "端口是 43906",
+        ),
+    ]
+    called: list[str] = []
+
+    monkeypatch.setattr(
+        vector_store,
+        "get_all_memories",
+        lambda *_args, **_kwargs: existing,
+    )
+    monkeypatch.setattr(
+        vector_store,
+        "add_memory",
+        lambda **_kwargs: called.append("add") or "new-id",
+    )
+    monkeypatch.setattr(
+        vector_store,
+        "delete_memory",
+        lambda _memory_id: called.append("delete") or True,
+    )
+
+    token = _compress_test_context()
+    try:
+        result = server.call_tool(
+            "compress_memories",
+            {
+                "_robot_context_token": token,
+                "_termman_item_id": "item-1",
+                "memory_ids": ["aaaa1111", "zzzz9999"],
+                "content": "合并后的记忆",
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert "not found" in result[0]["text"]
+    assert "zzzz9999" in result[0]["text"]
+    assert called == []

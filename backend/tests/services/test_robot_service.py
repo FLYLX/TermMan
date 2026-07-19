@@ -1422,6 +1422,73 @@ def test_robot_impression_card_prioritizes_query_relevant_memory(
     assert card.index("服务端口是 43906") < card.index("最近修改了机器人颜色")
 
 
+def test_robot_impression_card_relation_query_keeps_old_fact_and_drops_question(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    scoped_metadata = {
+        "robot_id": str(robot.id),
+        "robot_conversation_key": "group:770362397",
+        "robot_memory_schema_version": 3,
+    }
+    question = {
+        "id": "new-question",
+        "content": "New+7 (2206406352): 猫娘是谁",
+        "metadata": {
+            **scoped_metadata,
+            "memory_type": "fact",
+            "memory_scope": "conversation",
+        },
+        "distance": 0.01,
+    }
+    old_fact = {
+        "id": "old-fact",
+        "content": "月影寒波（简称汉堡）是猫娘",
+        "metadata": {
+            **scoped_metadata,
+            "memory_type": "fact",
+            "memory_scope": "speaker",
+            "speaker_global_key": "onebot_v11:user:162221240",
+        },
+        "distance": 0.12,
+    }
+    candy = {
+        "id": "candy",
+        "content": "和煦的糖果风 (641681910): 我是猫娘",
+        "metadata": {
+            **scoped_metadata,
+            "memory_type": "fact",
+            "memory_scope": "speaker",
+            "speaker_global_key": "onebot_v11:user:641681910",
+        },
+        "distance": 0.08,
+    }
+    monkeypatch.setattr(
+        vector_store,
+        "get_all_memories",
+        lambda *_args, **_kwargs: [question, old_fact, candy],
+    )
+    monkeypatch.setattr(
+        vector_store,
+        "search_memories",
+        lambda **_kwargs: [question, candy, old_fact],
+    )
+
+    card = robot_service._conversation_impression_card(
+        item_id=item.id,
+        robot=robot,
+        conversation_key="group:770362397",
+        sender_key="onebot_v11:group:770362397:2537134688",
+        query="还有谁是猫娘",
+    )
+
+    assert "猫娘是谁" not in card
+    assert "月影寒波（简称汉堡）是猫娘" in card
+    assert "和煦的糖果风" in card
+
+
 def test_robot_message_passes_sender_prefix_to_agent(
     db: Session,
     monkeypatch,
@@ -4369,3 +4436,52 @@ def test_send_command_writes_directly_to_terminal(
     assert response.success is True
     assert response.item_id == str(item.id)
     assert written == {"item_id": item.id, "command": "ls -la"}
+
+
+def test_robot_impression_card_is_not_truncated_by_count(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    base_metadata = {
+        "robot_id": str(robot.id),
+        "robot_conversation_key": "group:g1",
+        "robot_memory_schema_version": 3,
+        "memory_scope": "conversation",
+    }
+    facts = [
+        {
+            "id": f"fact-{index}",
+            "content": f"群事实编号 {index} 的内容",
+            "metadata": {**base_metadata, "memory_type": "fact"},
+        }
+        for index in range(9)
+    ]
+    preferences = [
+        {
+            "id": f"pref-{index}",
+            "content": f"稳定偏好编号 {index} 的内容",
+            "metadata": {**base_metadata, "memory_type": "preference"},
+        }
+        for index in range(3)
+    ]
+    monkeypatch.setattr(
+        vector_store,
+        "get_all_memories",
+        lambda *_args, **_kwargs: [*facts, *preferences],
+    )
+    monkeypatch.setattr(vector_store, "search_memories", lambda **_kwargs: [])
+
+    card = robot_service._conversation_impression_card(
+        item_id=item.id,
+        robot=robot,
+        conversation_key="group:g1",
+        sender_key="onebot_v11:user:u1",
+        query="",
+    )
+
+    for index in range(9):
+        assert f"群事实编号 {index} 的内容" in card
+    for index in range(3):
+        assert f"稳定偏好编号 {index} 的内容" in card

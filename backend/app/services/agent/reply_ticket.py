@@ -4,7 +4,8 @@ import logging
 import re
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from dataclasses import fields as dataclass_fields
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -18,6 +19,91 @@ TASK_QUEUE_EVENT_TYPE = "task_queue_changed"
 TICKET_TTL = timedelta(hours=6)
 CURRENT_QQ_MESSAGE_MARKER = "[Current QQ message]"
 CQ_CODE_RE = re.compile(r"\[CQ:[^\]]+\]", re.IGNORECASE)
+
+TICKET_ALIASES_KV_KEY = "reply_ticket_aliases"
+
+
+def _parse_dt(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def ticket_to_payload(ticket: ReplyTicket) -> dict[str, Any]:
+    payload = asdict(ticket)
+    for key in ("created_at", "updated_at", "delivered_at"):
+        value = payload.get(key)
+        payload[key] = value.isoformat() if isinstance(value, datetime) else None
+    return payload
+
+
+def ticket_from_payload(payload: dict[str, Any]) -> ReplyTicket:
+    allowed = {field_info.name for field_info in dataclass_fields(ReplyTicket)}
+    kwargs = {key: value for key, value in dict(payload or {}).items() if key in allowed}
+    kwargs["created_at"] = _parse_dt(kwargs.get("created_at")) or datetime.now()
+    kwargs["updated_at"] = _parse_dt(kwargs.get("updated_at")) or datetime.now()
+    kwargs["delivered_at"] = _parse_dt(kwargs.get("delivered_at"))
+    kwargs["reply_target"] = dict(kwargs.get("reply_target") or {})
+    return ReplyTicket(**kwargs)
+
+
+def _persist_ticket(ticket: ReplyTicket | None) -> None:
+    if ticket is None:
+        return
+    try:
+        from app.services.agent import state_store
+
+        state_store.save_ticket(ticket_to_payload(ticket))
+    except Exception as exc:
+        logger.debug("[ReplyTicket] Persist ticket failed: %s", exc)
+
+
+def _delete_persisted_tickets(ticket_ids: list[str]) -> None:
+    if not ticket_ids:
+        return
+    try:
+        from app.services.agent import state_store
+
+        for ticket_id in ticket_ids:
+            state_store.delete_ticket(ticket_id)
+    except Exception as exc:
+        logger.debug("[ReplyTicket] Delete persisted tickets failed: %s", exc)
+
+
+def _persist_aliases(aliases: dict[str, str]) -> None:
+    try:
+        from app.services.agent import state_store
+
+        state_store.save_kv(TICKET_ALIASES_KV_KEY, {"aliases": dict(aliases)})
+    except Exception as exc:
+        logger.debug("[ReplyTicket] Persist ticket aliases failed: %s", exc)
+
+
+def restore_tickets_from_store() -> int:
+    try:
+        from app.services.agent import state_store
+    except Exception:
+        return 0
+    restored = 0
+    with reply_ticket_manager._lock:
+        for payload in state_store.load_tickets():
+            try:
+                ticket = ticket_from_payload(payload)
+            except Exception:
+                continue
+            reply_ticket_manager._tickets[ticket.ticket_id] = ticket
+            restored += 1
+        aliases = state_store.load_kv(TICKET_ALIASES_KV_KEY).get("aliases")
+        if isinstance(aliases, dict):
+            reply_ticket_manager._ticket_aliases.update(
+                {str(key): str(value) for key, value in aliases.items()}
+            )
+    return restored
 
 
 @dataclass
@@ -94,11 +180,15 @@ class ReplyTicketManager:
         for ticket_id in stale_ids:
             self._tickets.pop(ticket_id, None)
             self._remove_aliases_for_locked(ticket_id)
+        _delete_persisted_tickets(stale_ids)
+        _persist_aliases(self._ticket_aliases)
 
     def reset(self) -> None:
         with self._lock:
+            _delete_persisted_tickets(list(self._tickets.keys()))
             self._tickets.clear()
             self._ticket_aliases.clear()
+            _persist_aliases(self._ticket_aliases)
         try:
             from app.services.agent.task_workflow import task_workflow_manager
 
@@ -215,6 +305,7 @@ class ReplyTicketManager:
             self._prune_locked(now)
             self._tickets[ticket.ticket_id] = ticket
         self.attach_to_agent(agent, ticket.ticket_id)
+        _persist_ticket(ticket)
         return ticket
 
     def create_for_scheduled_task(
@@ -242,6 +333,7 @@ class ReplyTicketManager:
                 scheduled_execution_id or ""
             ).strip()
             ticket.updated_at = datetime.now()
+        _persist_ticket(ticket)
         return ticket
 
     def create_for_terminal(
@@ -269,6 +361,7 @@ class ReplyTicketManager:
             self._prune_locked(now)
             self._tickets[ticket.ticket_id] = ticket
         self.attach_to_agent(agent, ticket.ticket_id)
+        _persist_ticket(ticket)
         return ticket
 
     @staticmethod
@@ -433,6 +526,7 @@ class ReplyTicketManager:
 
         with self._lock:
             self._tickets[new_ticket.ticket_id] = new_ticket
+        _persist_ticket(new_ticket)
         task_workflow_manager.attach_ticket(
             workflow.workflow_id,
             new_ticket.ticket_id,
@@ -511,6 +605,7 @@ class ReplyTicketManager:
             if ticket.status == "delivered":
                 ticket.status = "running"
 
+        _persist_ticket(ticket)
         from app.services.agent.task_workflow import task_workflow_manager
 
         workflow = task_workflow_manager.get_by_ticket(ticket.ticket_id)
@@ -546,6 +641,7 @@ class ReplyTicketManager:
                     action="complete_current_step",
                     note="Queue-only task is ready for delivery.",
                 )
+        _persist_ticket(ticket)
         snapshot = self._pending_reply_snapshot(ticket)
         self._broadcast_pending_reply_change(
             ticket,
@@ -562,6 +658,8 @@ class ReplyTicketManager:
             for ticket in tickets:
                 self._tickets.pop(ticket.ticket_id, None)
                 self._remove_aliases_for_locked(ticket.ticket_id)
+        _delete_persisted_tickets([ticket.ticket_id for ticket in tickets])
+        _persist_aliases(self._ticket_aliases)
         try:
             from app.services.agent.task_workflow import task_workflow_manager
 
@@ -598,6 +696,9 @@ class ReplyTicketManager:
             new_ticket.pending_reply_active = was_active
             new_ticket.status = "running"
             new_ticket.updated_at = datetime.now()
+        _delete_persisted_tickets([old_ticket_id])
+        _persist_ticket(new_ticket)
+        _persist_aliases(self._ticket_aliases)
         if was_active:
             try:
                 from app.services.agent.task_workflow import task_workflow_manager
@@ -634,6 +735,8 @@ class ReplyTicketManager:
             ticket.delivery_error = ""
             self._tickets.pop(ticket_id, None)
             self._remove_aliases_for_locked(ticket_id)
+        _delete_persisted_tickets([ticket_id])
+        _persist_aliases(self._ticket_aliases)
         try:
             from app.services.agent.task_workflow import task_workflow_manager
 
@@ -875,6 +978,7 @@ class ReplyTicketManager:
             ticket.task_request_id = str(task_request_id or "")
             ticket.status = "running"
             ticket.updated_at = datetime.now()
+            _persist_ticket(ticket)
 
     def mark_command(self, ticket_id: str, command: str) -> None:
         with self._lock:
@@ -885,6 +989,7 @@ class ReplyTicketManager:
             ticket.command = str(command or "")
             ticket.status = "running"
             ticket.updated_at = datetime.now()
+            _persist_ticket(ticket)
 
     def mark_completed(self, ticket_id: str) -> None:
         with self._lock:
@@ -895,6 +1000,7 @@ class ReplyTicketManager:
             if ticket.status != "delivered":
                 ticket.status = "completed"
             ticket.updated_at = datetime.now()
+            _persist_ticket(ticket)
 
     def mark_failed(self, ticket_id: str, error: str = "") -> None:
         with self._lock:
@@ -906,6 +1012,7 @@ class ReplyTicketManager:
             ticket.delivery_error = str(error or "")
             ticket.updated_at = datetime.now()
             pending_reply_active = ticket.pending_reply_active
+            _persist_ticket(ticket)
         if pending_reply_active:
             try:
                 from app.services.agent.task_workflow import task_workflow_manager
@@ -934,6 +1041,7 @@ class ReplyTicketManager:
             ticket.status = "waiting"
             ticket.delivery_error = ""
             ticket.updated_at = datetime.now()
+            _persist_ticket(ticket)
 
         try:
             from app.services.agent.task_workflow import task_workflow_manager
@@ -991,6 +1099,7 @@ class ReplyTicketManager:
                 ticket.delivered_at = now
                 ticket.updated_at = now
                 ticket.delivery_error = ""
+            _persist_ticket(ticket)
         if pending_reply_active:
             task_workflow_manager.update_queue_metadata(
                 ticket_id,
@@ -1089,6 +1198,7 @@ class ReplyTicketManager:
                 return False
             ticket.status = "sending"
             ticket.updated_at = datetime.now()
+            _persist_ticket(ticket)
 
         try:
             from app.plugins.robot.bridge_client import robot_bridge_client
@@ -1116,6 +1226,7 @@ class ReplyTicketManager:
                     current.status = "failed"
                     current.delivery_error = str(exc)
                     current.updated_at = datetime.now()
+                _persist_ticket(current)
             try:
                 from app.services.agent.task_workflow import task_workflow_manager
 
@@ -1197,6 +1308,8 @@ class ReplyTicketManager:
                     current.status = "sending"
                     current.delivery_error = ""
                     current.updated_at = now
+        for ticket in tickets:
+            _persist_ticket(self.get(ticket.ticket_id))
         task_workflow_manager.update_queue_metadata(
             primary_ticket.ticket_id,
             status="sending",
@@ -1219,14 +1332,17 @@ class ReplyTicketManager:
                         current.status = "failed"
                         current.delivery_error = error
                         current.updated_at = datetime.now()
+                    _persist_ticket(current)
                 self._broadcast_pending_reply_change(ticket, action="updated")
 
         for ticket in delivered:
             with self._lock:
                 self._tickets.pop(ticket.ticket_id, None)
                 self._remove_aliases_for_locked(ticket.ticket_id)
+            _delete_persisted_tickets([ticket.ticket_id])
             task_workflow_manager.detach_ticket(ticket.ticket_id)
             self._broadcast_pending_reply_change(ticket, action="removed")
+        _persist_aliases(self._ticket_aliases)
 
         if failed:
             failure_summary = "; ".join(

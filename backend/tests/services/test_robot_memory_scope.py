@@ -100,3 +100,35 @@ def test_legacy_speaker_scoped_relation_fact_is_recovered_for_group() -> None:
         )
         == 4
     )
+
+
+def test_same_group_speaker_scoped_fact_is_visible_to_other_group_members() -> None:
+    memory = {
+        "content": "和煦的糖果风 (641681910): 我是猫娘",
+        "metadata": {
+            "memory_type": "fact",
+            "memory_scope": "speaker",
+            "robot_id": "robot-1",
+            "robot_conversation_key": "group:770362397",
+            "speaker_global_key": "onebot_v11:user:641681910",
+        },
+    }
+
+    assert (
+        memory_scope_rank(
+            memory,
+            robot_id="robot-1",
+            conversation_key="group:770362397",
+            speaker_global_key="onebot_v11:user:2537134688",
+        )
+        == 4
+    )
+    assert (
+        memory_scope_rank(
+            memory,
+            robot_id="robot-1",
+            conversation_key="group:other",
+            speaker_global_key="onebot_v11:user:2537134688",
+        )
+        == -1
+    )

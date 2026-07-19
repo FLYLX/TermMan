@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 import threading
 import uuid
 from dataclasses import asdict, dataclass, field
+from dataclasses import fields as dataclass_fields
 from datetime import datetime, timedelta, timezone
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 WORKFLOW_ACTIVE_STATUSES = {
     "active",
@@ -26,6 +30,17 @@ def _utcnow() -> datetime:
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
+
+
+def _parse_dt(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 @dataclass
@@ -89,6 +104,146 @@ class TaskWorkflow:
         return self.steps[index]
 
 
+def workflow_to_payload(workflow: TaskWorkflow) -> dict[str, Any]:
+    current = workflow.current_step()
+    return {
+        "workflow_id": workflow.workflow_id,
+        "item_id": workflow.item_id,
+        "handler_id": workflow.handler_id,
+        "reply_ticket_id": workflow.reply_ticket_id,
+        "reply_ticket_ids": list(workflow.reply_ticket_ids),
+        "objective": workflow.objective,
+        "source_type": workflow.source_type,
+        "source_label": workflow.source_label,
+        "report_policy": workflow.report_policy,
+        "requester": workflow.requester,
+        "queue_status": workflow.queue_status,
+        "awaiting_kind": workflow.awaiting_kind,
+        "awaiting_key": workflow.awaiting_key,
+        "status": workflow.status,
+        "current_step_index": workflow.current_step_index,
+        "current_step": current.title if current else "",
+        "latest_progress": workflow.latest_progress,
+        "latest_user_instruction": workflow.latest_user_instruction,
+        "blocker": workflow.blocker,
+        "last_tool_name": workflow.last_tool_name,
+        "last_command": workflow.last_command,
+        "auto_resume_attempts": workflow.auto_resume_attempts,
+        "created_at": _iso(workflow.created_at),
+        "updated_at": _iso(workflow.updated_at),
+        "delivered_at": _iso(workflow.delivered_at),
+        "steps": [asdict(step) for step in workflow.steps],
+        "jobs": [
+            {
+                **asdict(job),
+                "started_at": _iso(job.started_at),
+                "completed_at": _iso(job.completed_at),
+            }
+            for job in workflow.jobs
+        ],
+    }
+
+
+def _filtered_kwargs(cls: Any, data: Any) -> dict[str, Any]:
+    allowed = {field_info.name for field_info in dataclass_fields(cls)}
+    return {
+        key: value for key, value in dict(data or {}).items() if key in allowed
+    }
+
+
+def workflow_from_payload(payload: dict[str, Any]) -> TaskWorkflow:
+    steps = [
+        WorkflowStep(**_filtered_kwargs(WorkflowStep, step_data))
+        for step_data in payload.get("steps") or []
+    ]
+    jobs: list[WorkflowJob] = []
+    for job_data in payload.get("jobs") or []:
+        job_kwargs = _filtered_kwargs(WorkflowJob, job_data)
+        job_kwargs["started_at"] = _parse_dt(job_kwargs.get("started_at")) or _utcnow()
+        job_kwargs["completed_at"] = _parse_dt(job_kwargs.get("completed_at"))
+        jobs.append(WorkflowJob(**job_kwargs))
+    kwargs = _filtered_kwargs(TaskWorkflow, payload)
+    kwargs["steps"] = steps
+    kwargs["jobs"] = jobs
+    kwargs["created_at"] = _parse_dt(kwargs.get("created_at")) or _utcnow()
+    kwargs["updated_at"] = _parse_dt(kwargs.get("updated_at")) or _utcnow()
+    kwargs["delivered_at"] = _parse_dt(kwargs.get("delivered_at"))
+    return TaskWorkflow(**kwargs)
+
+
+def _persist_workflow(workflow: TaskWorkflow | None) -> None:
+    if workflow is None:
+        return
+    try:
+        from app.services.agent import state_store
+
+        state_store.save_workflow(workflow_to_payload(workflow))
+    except Exception as exc:
+        logger.debug("[TaskWorkflow] Persist workflow failed: %s", exc)
+
+
+def _delete_persisted_workflows(workflow_ids: list[str]) -> None:
+    if not workflow_ids:
+        return
+    try:
+        from app.services.agent import state_store
+
+        for workflow_id in workflow_ids:
+            state_store.delete_workflow(workflow_id)
+    except Exception as exc:
+        logger.debug("[TaskWorkflow] Delete persisted workflows failed: %s", exc)
+
+
+def normalize_restored_workflow(workflow: TaskWorkflow) -> None:
+    interrupted = False
+    for job in workflow.jobs:
+        if job.status == "running":
+            job.status = "failed"
+            job.success = False
+            job.result_summary = (
+                f"{job.result_summary} Interrupted by backend restart.".strip()
+            )
+            job.completed_at = _utcnow()
+            interrupted = True
+    if workflow.status == "waiting_job":
+        workflow.status = "active"
+        interrupted = True
+    elif workflow.status == "reporting":
+        workflow.status = "ready_to_report"
+    if interrupted:
+        note = "Backend restarted; execution was interrupted and can be resumed."
+        workflow.latest_progress = f"{workflow.latest_progress} {note}".strip()
+
+
+def restore_workflows_from_store() -> int:
+    try:
+        from app.services.agent import state_store
+    except Exception:
+        return 0
+    restored = 0
+    with task_workflow_manager._lock:
+        for payload in state_store.load_workflows():
+            try:
+                workflow = workflow_from_payload(payload)
+            except Exception:
+                continue
+            if workflow.status in WORKFLOW_FINAL_STATUSES:
+                _delete_persisted_workflows([workflow.workflow_id])
+                continue
+            normalize_restored_workflow(workflow)
+            task_workflow_manager._workflows[workflow.workflow_id] = workflow
+            for ticket_id in workflow.reply_ticket_ids:
+                task_workflow_manager._ticket_to_workflow[ticket_id] = (
+                    workflow.workflow_id
+                )
+            if workflow.reply_ticket_id:
+                task_workflow_manager._ticket_to_workflow[workflow.reply_ticket_id] = (
+                    workflow.workflow_id
+                )
+            restored += 1
+    return restored
+
+
 class TaskWorkflowManager:
     def __init__(self) -> None:
         self._workflows: dict[str, TaskWorkflow] = {}
@@ -116,6 +271,7 @@ class TaskWorkflowManager:
             workflow = self._workflows.pop(workflow_id, None)
             if workflow:
                 self._remove_workflow_mappings_locked(workflow.workflow_id)
+        _delete_persisted_workflows(stale_ids)
 
         by_item: dict[str, list[TaskWorkflow]] = {}
         for workflow in self._workflows.values():
@@ -134,9 +290,16 @@ class TaskWorkflowManager:
             for workflow in removable[: len(workflows) - MAX_WORKFLOWS_PER_ITEM]:
                 self._workflows.pop(workflow.workflow_id, None)
                 self._remove_workflow_mappings_locked(workflow.workflow_id)
+            _delete_persisted_workflows(
+                [
+                    workflow.workflow_id
+                    for workflow in removable[: len(workflows) - MAX_WORKFLOWS_PER_ITEM]
+                ]
+            )
 
     def reset(self) -> None:
         with self._lock:
+            _delete_persisted_workflows(list(self._workflows.keys()))
             self._workflows.clear()
             self._ticket_to_workflow.clear()
 
@@ -185,6 +348,7 @@ class TaskWorkflowManager:
                 self._ticket_to_workflow[workflow.reply_ticket_id] = (
                     workflow.workflow_id
                 )
+        _persist_workflow(workflow)
         return workflow
 
     def get(self, workflow_id: str) -> TaskWorkflow | None:
@@ -209,6 +373,7 @@ class TaskWorkflowManager:
             workflow.updated_at = _utcnow()
             if normalized_ticket_id:
                 self._ticket_to_workflow[normalized_ticket_id] = workflow.workflow_id
+            _persist_workflow(workflow)
             return True
 
     def ticket_ids(self, workflow_id: str) -> list[str]:
@@ -235,6 +400,7 @@ class TaskWorkflowManager:
                     workflow.reply_ticket_ids[-1] if workflow.reply_ticket_ids else ""
                 )
             workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
             return True
 
     def replace_ticket(self, old_ticket_id: str, new_ticket_id: str) -> bool:
@@ -259,6 +425,7 @@ class TaskWorkflowManager:
             workflow.reply_ticket_id = new_id
             workflow.auto_resume_attempts = 0
             workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
             return True
 
     def update_queue_metadata(
@@ -283,6 +450,7 @@ class TaskWorkflowManager:
             if awaiting_key:
                 workflow.awaiting_key = str(awaiting_key)[:200]
             workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
             return True
 
     def set_report_policy(self, ticket_id: str, policy: str) -> bool:
@@ -295,6 +463,7 @@ class TaskWorkflowManager:
                 return False
             workflow.report_policy = normalized
             workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
             return True
 
     def should_suppress_intermediate_delivery(self, ticket_id: str) -> bool:
@@ -315,6 +484,7 @@ class TaskWorkflowManager:
                 return False
             workflow.auto_resume_attempts += 1
             workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
             return True
 
     def reset_auto_resume(self, ticket_id: str) -> None:
@@ -324,6 +494,7 @@ class TaskWorkflowManager:
                 return
             workflow.auto_resume_attempts = 0
             workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
 
     def mark_waiting(
         self,
@@ -349,6 +520,7 @@ class TaskWorkflowManager:
             workflow.blocker = str(note or "Waiting for an external prerequisite.")[:2000]
             workflow.latest_progress = workflow.blocker
             workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
             return True
 
     def find_resumable(
@@ -394,6 +566,7 @@ class TaskWorkflowManager:
                 return False
             workflow.latest_user_instruction = normalized
             workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
             return True
 
     def record_tool_call(
@@ -426,6 +599,7 @@ class TaskWorkflowManager:
                 else f"Started {tool_name}"
             )
             workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
 
     def mark_job_started(self, ticket_id: str, *, command: str) -> str:
         with self._lock:
@@ -441,6 +615,7 @@ class TaskWorkflowManager:
             workflow.status = "waiting_job"
             workflow.latest_progress = f"Background job running: {job.command}"
             workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
             return job.workflow_job_id
 
     def record_tool_result(
@@ -474,6 +649,7 @@ class TaskWorkflowManager:
                 f"{tool_name} {'succeeded' if success else 'failed'}: {summary}"
             ).strip()[:3000]
             workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
 
     def record_job_result(
         self,
@@ -530,6 +706,7 @@ class TaskWorkflowManager:
             ).strip()[:3000]
             workflow.auto_resume_attempts = 0
             workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
 
     def update(
         self,
@@ -637,6 +814,7 @@ class TaskWorkflowManager:
                 return False, f"Unsupported workflow action: {normalized_action}"
 
             workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
             return True, workflow.status
 
     def can_finalize(self, ticket_id: str) -> tuple[bool, str]:
@@ -679,6 +857,7 @@ class TaskWorkflowManager:
             if workflow.status == "blocked" and workflow.awaiting_kind:
                 workflow.queue_status = "waiting"
                 workflow.updated_at = _utcnow()
+                _persist_workflow(workflow)
                 return
             now = _utcnow()
             workflow.delivered_at = now
@@ -698,6 +877,7 @@ class TaskWorkflowManager:
                         else "cancelled"
                     )
             workflow.updated_at = now
+            _persist_workflow(workflow)
 
     def mark_delivery_failed(self, ticket_id: str, error: str) -> None:
         with self._lock:
@@ -713,6 +893,7 @@ class TaskWorkflowManager:
                     f"Intermediate delivery failed: {delivery_error}"
                 )
             workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
 
     def snapshot(self, item_id: str | None = None) -> list[dict[str, Any]]:
         with self._lock:
@@ -729,43 +910,7 @@ class TaskWorkflowManager:
         return self._snapshot_workflow(workflow) if workflow else None
 
     def _snapshot_workflow(self, workflow: TaskWorkflow) -> dict[str, Any]:
-        current = workflow.current_step()
-        return {
-            "workflow_id": workflow.workflow_id,
-            "item_id": workflow.item_id,
-            "handler_id": workflow.handler_id,
-            "reply_ticket_id": workflow.reply_ticket_id,
-            "reply_ticket_ids": list(workflow.reply_ticket_ids),
-            "objective": workflow.objective,
-            "source_type": workflow.source_type,
-            "source_label": workflow.source_label,
-            "report_policy": workflow.report_policy,
-            "requester": workflow.requester,
-            "queue_status": workflow.queue_status,
-            "awaiting_kind": workflow.awaiting_kind,
-            "awaiting_key": workflow.awaiting_key,
-            "status": workflow.status,
-            "current_step_index": workflow.current_step_index,
-            "current_step": current.title if current else "",
-            "latest_progress": workflow.latest_progress,
-            "latest_user_instruction": workflow.latest_user_instruction,
-            "blocker": workflow.blocker,
-            "last_tool_name": workflow.last_tool_name,
-            "last_command": workflow.last_command,
-            "auto_resume_attempts": workflow.auto_resume_attempts,
-            "created_at": _iso(workflow.created_at),
-            "updated_at": _iso(workflow.updated_at),
-            "delivered_at": _iso(workflow.delivered_at),
-            "steps": [asdict(step) for step in workflow.steps],
-            "jobs": [
-                {
-                    **asdict(job),
-                    "started_at": _iso(job.started_at),
-                    "completed_at": _iso(job.completed_at),
-                }
-                for job in workflow.jobs
-            ],
-        }
+        return workflow_to_payload(workflow)
 
     def build_prompt_context(
         self,
