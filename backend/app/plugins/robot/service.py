@@ -670,6 +670,69 @@ class RobotService:
                     return
                 response_text = self._visible_agent_response_text(response)
                 robot_message_sent = response.robot_message_sent
+                if (
+                    not response_text
+                    and not robot_message_sent
+                    and job.direct_reply_trigger
+                ):
+                    record_robot_event(
+                        str(job.robot_id),
+                        direction="backend_worker",
+                        event="dispatch_empty_reply_retry",
+                        payload={
+                            "item_id": str(job.item_id),
+                            "conversation": job.conversation_key,
+                        },
+                    )
+                    logger.info(
+                        "[RobotService] Empty reply for direct trigger robot=%s; retrying once with corrective note",
+                        job.robot_id,
+                    )
+                    try:
+                        response = asyncio.run(
+                            asyncio.wait_for(
+                                self._chat_with_item(
+                                    session=session,
+                                    robot=robot,
+                                    item=item,
+                                    message=(
+                                        f"{chat_message}\n"
+                                        "[系统提示] 对方在私聊或直接叫你，"
+                                        "必须给出可见回复，禁止返回 [no_qq_reply] 或空内容。"
+                                    ),
+                                    sender_key=job.sender_key,
+                                    reply_target=job.reply_target,
+                                    conversation_key=job.conversation_key,
+                                    conversation_generation=job.conversation_generation,
+                                    reply_requires_awake=job.reply_requires_awake,
+                                    reply_ticket_id=job.reply_ticket_id,
+                                ),
+                                timeout=settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS,
+                            )
+                        )
+                    except TimeoutError:
+                        record_robot_event(
+                            str(job.robot_id),
+                            direction="backend_worker",
+                            event="dispatch_job_timeout",
+                            status="error",
+                            payload={
+                                "item_id": str(job.item_id),
+                                "route_key": job.route_key,
+                                "timeout_seconds": settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS,
+                            },
+                        )
+                        self._record_and_send_job_error(
+                            job,
+                            "任务处理超时，已中止。请稍后重试。",
+                        )
+                        self._enqueue_pending_chat_followup(
+                            robot=robot,
+                            conversation_key=job.conversation_key,
+                        )
+                        return
+                    response_text = self._visible_agent_response_text(response)
+                    robot_message_sent = response.robot_message_sent
                 if response_text and not robot_message_sent:
                     robot_message_sent = self._send_visible_agent_response(
                         job,

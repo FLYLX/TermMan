@@ -1345,7 +1345,7 @@ function getRobotTriggerLabel(trigger: string) {
     case "background_job":
       return "后台 Job"
     case "reply_ticket":
-      return "待回复"
+      return "待合并"
     case "private":
       return "私聊"
     default:
@@ -1409,7 +1409,7 @@ function RobotPendingRepliesPanel({
       >
         <span className="flex min-w-0 items-center gap-2">
           <MessageSquare className="size-4 shrink-0 text-cyan-500 dark:text-cyan-300" />
-          <span className="truncate font-medium">待回复</span>
+          <span className="truncate font-medium">待合并消息</span>
           <Badge
             variant="outline"
             className={
@@ -1435,7 +1435,7 @@ function RobotPendingRepliesPanel({
         <div className="max-h-[16rem] overflow-y-auto border-t border-border/60 px-3 py-2">
           {count === 0 ? (
             <div className="py-4 text-center text-xs text-muted-foreground">
-              暂无待回复消息
+              暂无待合并消息
             </div>
           ) : (
             <div className="space-y-2">

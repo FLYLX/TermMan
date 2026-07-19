@@ -615,11 +615,6 @@ def test_latest_only_robot_turn_still_includes_long_term_memory(monkeypatch) -> 
     )
     monkeypatch.setattr(
         prompt_builder,
-        "_build_pending_reply_context",
-        lambda *args, **kwargs: "",
-    )
-    monkeypatch.setattr(
-        prompt_builder,
         "_build_active_task_ledger_context",
         lambda *args, **kwargs: "",
     )

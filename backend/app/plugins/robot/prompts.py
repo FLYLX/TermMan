@@ -13,8 +13,9 @@ ROBOT_MESSAGING_SKILL_ID = "robot_messaging"
 ROBOT_MESSAGING_COMPAT_SKILL_IDS = {QQ_MCP_SKILL_ID, ROBOT_MESSAGING_SKILL_ID}
 
 NO_QQ_REPLY_INSTRUCTION = (
-    "- 如果 QQ 侧不需要回复，不要调用 `mcp_robot_send_message`；"
-    "内部最终回复只返回 `[no_qq_reply]`。"
+    "- 私聊消息、或群聊里直接 @你/回复你的消息，必须给出可见回复，禁止返回 "
+    "`[no_qq_reply]` 或空内容。只有群聊里明显不是对你说的闲聊、无价值的接话，"
+    "才可以沉默：此时不要调用 `mcp_robot_send_message`，内部最终回复只返回 `[no_qq_reply]`。"
 )
 
 ROBOT_LONG_TERM_MEMORY_INSTRUCTION = (

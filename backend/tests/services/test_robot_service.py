@@ -4582,3 +4582,91 @@ def test_failed_job_drains_pending_chat_inputs_into_followup(
 
     assert not robot_service._pending_chat_inputs.get(pending_key)
     assert enqueued, "failed job should drain pending inputs into a followup job"
+
+
+def test_empty_direct_reply_retries_once_with_corrective_note(
+    db: Session,
+    monkeypatch,
+) -> None:
+    from datetime import datetime, timezone
+
+    from app.plugins.robot.service import _queued_job_from_payload
+
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    job = _queued_job_from_payload(
+        {
+            "job_id": "job-retry-1",
+            "robot_id": str(robot.id),
+            "robot_owner_id": str(robot.owner_id),
+            "item_id": str(item.id),
+            "route_key": "group:g1",
+            "message": "[Current QQ message]\n你好",
+            "sender_key": "onebot_v11:group:g1:u1",
+            "reply_target": RobotReplyTarget(
+                target_type="group",
+                target_id="g1",
+                metadata={"target": {"id": "g1"}},
+            ).model_dump(mode="json"),
+            "conversation_key": "group:g1",
+            "enqueued_at": datetime.now(timezone.utc).isoformat(),
+            "direct_reply_trigger": True,
+            "message_text": "你好",
+        }
+    )
+    assert job is not None
+
+    monkeypatch.setattr(
+        robot_service,
+        "conversation_controller_allows_reply",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        robot_service,
+        "_prepare_queued_chat_message",
+        lambda **kwargs: "msg",
+    )
+    monkeypatch.setattr(
+        robot_service,
+        "_apply_reply_context_result",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        robot_service,
+        "_enqueue_pending_chat_followup",
+        lambda **kwargs: False,
+    )
+
+    calls: list[str] = []
+
+    async def fake_chat(**kwargs):
+        calls.append(str(kwargs["message"]))
+        if len(calls) == 1:
+            return ChatResponseResult(content="", robot_message_sent=False)
+        return ChatResponseResult(content="你好呀", robot_message_sent=False)
+
+    monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat)
+    delivered: list[str] = []
+    monkeypatch.setattr(
+        robot_service,
+        "_send_visible_agent_response",
+        lambda _job, text: delivered.append(text) or True,
+    )
+
+    robot_service._process_chat_job(job)
+
+    assert len(calls) == 2, "empty direct reply should trigger exactly one retry"
+    assert "必须给出可见回复" in calls[1]
+    assert delivered == ["你好呀"]
