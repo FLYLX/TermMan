@@ -340,3 +340,69 @@ def test_deliver_sends_qq_ticket_via_bridge(monkeypatch) -> None:
     assert reply_ticket_manager.deliver(ticket.ticket_id, "装好了") is True
     assert sent == [("robot-1", "g1", "装好了")]
     assert reply_ticket_manager.get(ticket.ticket_id).status == "delivered"
+
+
+def _make_waiting_job_workflow(command: str = "apt-get update"):
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="t-job-1",
+        objective="安装 Java",
+        source_type="qq",
+        source_label="QQ private:u1",
+        step_titles=["apt update", "安装 temurin"],
+    )
+    task_workflow_manager.mark_job_started("t-job-1", command=command)
+    workflow.jobs[-1].started_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    return workflow
+
+
+def test_watchdog_reconciles_lost_background_job_and_resumes(monkeypatch) -> None:
+    workflow = _make_waiting_job_workflow()
+    monkeypatch.setattr(task_watchdog, "_list_daemon_job_commands", lambda _item_id: set())
+    resumed: list[str] = []
+    monkeypatch.setattr(
+        task_watchdog,
+        "_schedule_workflow_continuation",
+        lambda _item_id, ticket_id: resumed.append(ticket_id) or True,
+    )
+
+    stats = task_watchdog.run_once()
+
+    assert stats["reconciled"] == 1
+    assert stats["resumed"] == 1
+    assert workflow.jobs[-1].status == "failed"
+    assert "结果丢失" in workflow.jobs[-1].result_summary
+    assert workflow.status == "active"
+    assert resumed == ["t-job-1"]
+
+
+def test_watchdog_keeps_job_when_daemon_still_tracks_it(monkeypatch) -> None:
+    workflow = _make_waiting_job_workflow()
+    monkeypatch.setattr(
+        task_watchdog,
+        "_list_daemon_job_commands",
+        lambda _item_id: {"apt-get update"},
+    )
+
+    stats = task_watchdog.run_once()
+
+    assert stats["reconciled"] == 0
+    assert stats["resumed"] == 0
+    assert workflow.jobs[-1].status == "running"
+    assert workflow.status == "waiting_job"
+
+
+def test_watchdog_skips_reconcile_when_daemon_unavailable(monkeypatch) -> None:
+    workflow = _make_waiting_job_workflow()
+    monkeypatch.setattr(
+        task_watchdog,
+        "_list_daemon_job_commands",
+        lambda _item_id: None,
+    )
+
+    stats = task_watchdog.run_once()
+
+    assert stats["reconciled"] == 0
+    assert workflow.jobs[-1].status == "running"
+    assert workflow.status == "waiting_job"

@@ -1212,6 +1212,22 @@ async function requestTaskWorkflows(
   return (await response.json()) as TaskWorkflowsResponse
 }
 
+async function cancelTaskWorkflow(workflowId: string): Promise<void> {
+  const token = localStorage.getItem("access_token") || ""
+  const response = await fetch(
+    `${OpenAPI.BASE}/api/v1/task-workflows/${workflowId}/cancel`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  )
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+}
+
+const WORKFLOW_FINAL_STATUS_SET = new Set(["completed", "cancelled", "failed"])
+
 function getWorkflowStatusLabel(status: string) {
   switch (status) {
     case "active":
@@ -1275,12 +1291,16 @@ function TaskWorkflowPanel({
   onOpenChange,
   isFetching,
   onRefresh,
+  onCancel,
+  cancelingId,
 }: {
   workflows: TaskWorkflow[]
   isOpen: boolean
   onOpenChange: (open: boolean) => void
   isFetching: boolean
   onRefresh: () => void
+  onCancel: (workflowId: string) => void
+  cancelingId: string | null
 }) {
   const count = workflows.length
   return (
@@ -1346,6 +1366,23 @@ function TaskWorkflowPanel({
                     >
                       {getWorkflowStatusLabel(workflow.status)}
                     </Badge>
+                    {!WORKFLOW_FINAL_STATUS_SET.has(workflow.status) ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-6 shrink-0 border-red-500/30 bg-red-500/10 px-2 text-[10px] text-red-300 hover:bg-red-500/20 hover:text-red-200"
+                        onClick={() => onCancel(workflow.workflow_id)}
+                        disabled={cancelingId === workflow.workflow_id}
+                      >
+                        {cancelingId === workflow.workflow_id ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          <Square className="size-3" />
+                        )}
+                        取消
+                      </Button>
+                    ) : null}
                   </div>
                   <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2 text-[10px] text-slate-500">
                     <span className="truncate">
@@ -1816,6 +1853,7 @@ function ItemDetailPage({
   )
   const [jobsPanelOpen, setJobsPanelOpen] = useState(false)
   const [tasksPanelOpen, setTasksPanelOpen] = useState(true)
+  const [taskCancelingId, setTaskCancelingId] = useState<string | null>(null)
   const [jobCancelId, setJobCancelId] = useState<string | null>(null)
   const [itemAction, setItemAction] = useState<
     "start" | "stop" | "restart" | null
@@ -2149,6 +2187,21 @@ function ItemDetailPage({
       )
     } finally {
       setJobCancelId(null)
+    }
+  }
+
+  const handleCancelTaskWorkflow = async (workflowId: string) => {
+    setTaskCancelingId(workflowId)
+    try {
+      await cancelTaskWorkflow(workflowId)
+      await refetchTaskWorkflows()
+      showSuccessToast("任务已取消")
+    } catch (error) {
+      showErrorToast(
+        error instanceof Error ? error.message : "任务取消失败",
+      )
+    } finally {
+      setTaskCancelingId(null)
     }
   }
 
@@ -3343,6 +3396,8 @@ function ItemDetailPage({
                     onOpenChange={setTasksPanelOpen}
                     isFetching={isFetchingTaskWorkflows}
                     onRefresh={() => void refetchTaskWorkflows()}
+                    onCancel={(workflowId) => void handleCancelTaskWorkflow(workflowId)}
+                    cancelingId={taskCancelingId}
                   />
                   <BackgroundJobsPanel
                     jobs={backgroundJobs?.jobs || []}

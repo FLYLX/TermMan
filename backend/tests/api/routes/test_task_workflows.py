@@ -59,3 +59,37 @@ def test_list_task_workflows_empty(
     )
     assert response.status_code == 200, response.text
     assert response.json() == {"workflows": [], "count": 0}
+
+
+def test_cancel_task_workflow(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    task_workflow_manager.reset()
+    try:
+        workflow = task_workflow_manager.create(
+            item_id="item-1",
+            handler_id="handler-1",
+            reply_ticket_id="ticket-1",
+            objective="安装 Java",
+            source_type="web",
+            source_label="web",
+            step_titles=["apt update", "安装 temurin"],
+        )
+
+        response = client.post(
+            f"{settings.API_V1_STR}/task-workflows/{workflow.workflow_id}/cancel",
+            headers=superuser_token_headers,
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["workflow"]["status"] == "cancelled"
+        assert task_workflow_manager.get(workflow.workflow_id).status == "cancelled"
+
+        missing = client.post(
+            f"{settings.API_V1_STR}/task-workflows/no-such-workflow/cancel",
+            headers=superuser_token_headers,
+        )
+        assert missing.status_code == 404
+    finally:
+        task_workflow_manager.reset()
