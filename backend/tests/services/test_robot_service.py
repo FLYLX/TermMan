@@ -4485,3 +4485,100 @@ def test_robot_impression_card_is_not_truncated_by_count(
         assert f"群事实编号 {index} 的内容" in card
     for index in range(3):
         assert f"稳定偏好编号 {index} 的内容" in card
+
+
+def test_failed_job_drains_pending_chat_inputs_into_followup(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.commit()
+
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="g1",
+        metadata={"target": {"id": "g1"}},
+    )
+    from datetime import datetime, timezone
+
+    from app.plugins.robot.service import _queued_job_from_payload
+
+    job = _queued_job_from_payload(
+        {
+            "job_id": "job-fail-1",
+            "robot_id": str(robot.id),
+            "robot_owner_id": str(robot.owner_id),
+            "item_id": str(item.id),
+            "route_key": "group:g1",
+            "message": "[Current QQ message]\n装java",
+            "sender_key": "onebot_v11:group:g1:u1",
+            "reply_target": target.model_dump(mode="json"),
+            "conversation_key": "group:g1",
+            "enqueued_at": datetime.now(timezone.utc).isoformat(),
+            "direct_reply_trigger": True,
+            "message_text": "装java",
+        }
+    )
+    assert job is not None
+
+    robot_service._record_pending_chat_input(
+        robot=robot,
+        conversation_key="group:g1",
+        item_id=item.id,
+        route_key="group:g1",
+        message_text="装完叫我",
+        sender_key="onebot_v11:group:g1:u1",
+        sender_label="FLY",
+        trigger_reason="mentioned",
+        reply_target=target,
+    )
+    pending_key = robot_service._pending_chat_key(robot.id, "group:g1")
+    assert robot_service._pending_chat_inputs.get(pending_key)
+
+    monkeypatch.setattr(
+        robot_service,
+        "conversation_controller_allows_reply",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        robot_service,
+        "_prepare_queued_chat_message",
+        lambda **kwargs: "msg",
+    )
+
+    async def failing_chat(**kwargs):
+        raise RuntimeError("llm exploded")
+
+    monkeypatch.setattr(robot_service, "_chat_with_item", failing_chat)
+    monkeypatch.setattr(
+        robot_service,
+        "_record_and_send_job_error",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        robot_service,
+        "_persist_inbound_long_term_memory",
+        lambda **kwargs: None,
+    )
+    enqueued: list[object] = []
+    monkeypatch.setattr(
+        robot_service,
+        "_enqueue_chat_job",
+        lambda followup_job: enqueued.append(followup_job) or True,
+    )
+
+    robot_service._process_chat_job(job)
+
+    assert not robot_service._pending_chat_inputs.get(pending_key)
+    assert enqueued, "failed job should drain pending inputs into a followup job"

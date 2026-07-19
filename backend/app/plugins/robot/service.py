@@ -663,6 +663,10 @@ class RobotService:
                         job,
                         "任务处理超时，已中止。请稍后重试。",
                     )
+                    self._enqueue_pending_chat_followup(
+                        robot=robot,
+                        conversation_key=job.conversation_key,
+                    )
                     return
                 response_text = self._visible_agent_response_text(response)
                 robot_message_sent = response.robot_message_sent
@@ -699,12 +703,20 @@ class RobotService:
                     )
             except RobotServiceError as exc:
                 self._record_and_send_job_error(job, exc.message)
+                self._enqueue_pending_chat_followup(
+                    robot=robot,
+                    conversation_key=job.conversation_key,
+                )
                 return
             except HTTPException as exc:
                 detail = (
                     exc.detail if isinstance(exc.detail, str) else "Robot dispatch failed"
                 )
                 self._record_and_send_job_error(job, detail)
+                self._enqueue_pending_chat_followup(
+                    robot=robot,
+                    conversation_key=job.conversation_key,
+                )
                 return
             except Exception as exc:
                 logger.exception(
@@ -714,6 +726,10 @@ class RobotService:
                 self._record_and_send_job_error(
                     job,
                     str(exc) or "Robot dispatch failed.",
+                )
+                self._enqueue_pending_chat_followup(
+                    robot=robot,
+                    conversation_key=job.conversation_key,
                 )
                 return
 
