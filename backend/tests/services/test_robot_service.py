@@ -4668,5 +4668,6 @@ def test_empty_direct_reply_retries_once_with_corrective_note(
     robot_service._process_chat_job(job)
 
     assert len(calls) == 2, "empty direct reply should trigger exactly one retry"
-    assert "必须给出可见回复" in calls[1]
+    assert "禁止返回 [no_qq_reply]" in calls[1]
+    assert "这是私聊或直接对话" in calls[1]
     assert delivered == ["你好呀"]

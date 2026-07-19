@@ -682,11 +682,19 @@ class RobotService:
                         payload={
                             "item_id": str(job.item_id),
                             "conversation": job.conversation_key,
+                            "raw_response": preview_text(response.content),
                         },
                     )
                     logger.info(
-                        "[RobotService] Empty reply for direct trigger robot=%s; retrying once with corrective note",
+                        "[RobotService] Empty reply for direct trigger robot=%s raw=%r; retrying once with corrective note",
                         job.robot_id,
+                        preview_text(response.content, limit=200),
+                    )
+                    retry_message = (
+                        "[系统提示] 这是私聊或直接对话，对方在等你回复。\n"
+                        f"对方说：{job.message_text or job.message}\n"
+                        "请用一两句口语直接回复对方，不要调用工具，不要沉默，"
+                        "禁止返回 [no_qq_reply] 或空内容。"
                     )
                     try:
                         response = asyncio.run(
@@ -695,11 +703,7 @@ class RobotService:
                                     session=session,
                                     robot=robot,
                                     item=item,
-                                    message=(
-                                        f"{chat_message}\n"
-                                        "[系统提示] 对方在私聊或直接叫你，"
-                                        "必须给出可见回复，禁止返回 [no_qq_reply] 或空内容。"
-                                    ),
+                                    message=retry_message,
                                     sender_key=job.sender_key,
                                     reply_target=job.reply_target,
                                     conversation_key=job.conversation_key,
@@ -733,6 +737,12 @@ class RobotService:
                         return
                     response_text = self._visible_agent_response_text(response)
                     robot_message_sent = response.robot_message_sent
+                    if not response_text and not robot_message_sent:
+                        logger.warning(
+                            "[RobotService] Corrective retry still empty for robot=%s raw=%r",
+                            job.robot_id,
+                            preview_text(response.content, limit=300),
+                        )
                 if response_text and not robot_message_sent:
                     robot_message_sent = self._send_visible_agent_response(
                         job,
@@ -762,7 +772,7 @@ class RobotService:
                     self._enqueue_pending_chat_followup(
                         robot=robot,
                         conversation_key=job.conversation_key,
-                        direct_wakeup_only=True,
+                        direct_wakeup_only=not job.direct_reply_trigger,
                     )
             except RobotServiceError as exc:
                 self._record_and_send_job_error(job, exc.message)
