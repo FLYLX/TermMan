@@ -5,10 +5,11 @@ import {
   Bot,
   Check,
   ChevronRight,
+  Circle,
   Copy,
   Filter,
+  ListTodo,
   Loader2,
-  MessageSquare,
   Moon,
   Play,
   Plug,
@@ -826,12 +827,6 @@ type RobotControllerRow = {
   controller: RobotConversationControllerStatus
 }
 
-type RobotPendingReplyRow = RobotControllerRow & {
-  message: NonNullable<
-    RobotConversationControllerStatus["pending_messages"]
-  >[number]
-}
-
 function getRobotControllerRows(
   data: ItemRobotControllerStatusResponse | undefined,
 ): RobotControllerRow[] {
@@ -852,30 +847,6 @@ function getRobotControllerRows(
         Date.parse(right.controller.updated_at || "") -
         Date.parse(left.controller.updated_at || ""),
     )
-}
-
-function getRobotPendingReplyRows(
-  data: ItemRobotControllerStatusResponse | undefined,
-): RobotPendingReplyRow[] {
-  return getRobotControllerRows(data)
-    .flatMap(({ robot, controller }) =>
-      (controller.pending_messages || []).map((message) => ({
-        robot,
-        controller,
-        message,
-      })),
-    )
-    .sort(
-      (left, right) =>
-        Date.parse(left.message.enqueued_at || "") -
-        Date.parse(right.message.enqueued_at || ""),
-    )
-}
-
-function getRobotPendingReplyCount(
-  data: ItemRobotControllerStatusResponse | undefined,
-) {
-  return getRobotPendingReplyRows(data).length
 }
 
 function getEnabledRobotCount(
@@ -1196,6 +1167,238 @@ function RobotSleepTerminalLine({
   )
 }
 
+type TaskWorkflowStep = {
+  step_id: string
+  title: string
+  status: string
+  note?: string
+  evidence?: string
+  last_error?: string
+  recovery?: boolean
+}
+
+type TaskWorkflow = {
+  workflow_id: string
+  objective: string
+  source_type: string
+  source_label: string
+  requester?: string
+  queue_status?: string
+  status: string
+  current_step_index: number
+  current_step?: string
+  latest_progress?: string
+  blocker?: string
+  steps: TaskWorkflowStep[]
+  updated_at?: string
+}
+
+type TaskWorkflowsResponse = {
+  workflows: TaskWorkflow[]
+  count: number
+}
+
+async function requestTaskWorkflows(
+  itemId: string,
+): Promise<TaskWorkflowsResponse> {
+  const token = localStorage.getItem("access_token") || ""
+  const response = await fetch(
+    `${OpenAPI.BASE}/api/v1/task-workflows/${itemId}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+  return (await response.json()) as TaskWorkflowsResponse
+}
+
+function getWorkflowStatusLabel(status: string) {
+  switch (status) {
+    case "active":
+      return "进行中"
+    case "waiting_job":
+      return "后台执行中"
+    case "blocked":
+      return "受阻"
+    case "verifying":
+      return "验证中"
+    case "ready_to_report":
+      return "待汇报"
+    case "reporting":
+      return "汇报中"
+    case "completed":
+      return "已完成"
+    case "cancelled":
+      return "已取消"
+    case "failed":
+      return "已失败"
+    default:
+      return status || "未知"
+  }
+}
+
+function getWorkflowStatusClass(status: string) {
+  if (status === "completed") {
+    return "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+  }
+  if (status === "failed" || status === "blocked") {
+    return "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-300"
+  }
+  if (status === "cancelled") {
+    return "border-zinc-500/40 bg-zinc-500/10 text-muted-foreground"
+  }
+  return "border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
+}
+
+function TaskWorkflowStepIcon({ status }: { status: string }) {
+  if (status === "completed") {
+    return <Check className="size-3 shrink-0 text-emerald-500" />
+  }
+  if (status === "running") {
+    return <Loader2 className="size-3 shrink-0 animate-spin text-cyan-500" />
+  }
+  if (status === "failed") {
+    return <AlertCircle className="size-3 shrink-0 text-red-500" />
+  }
+  if (status === "waiting") {
+    return <Circle className="size-3 shrink-0 text-amber-500" />
+  }
+  if (status === "cancelled") {
+    return <Circle className="size-3 shrink-0 text-muted-foreground line-through" />
+  }
+  return <Circle className="size-3 shrink-0 text-muted-foreground" />
+}
+
+function TaskWorkflowPanel({
+  workflows,
+  isOpen,
+  onOpenChange,
+  isFetching,
+  onRefresh,
+}: {
+  workflows: TaskWorkflow[]
+  isOpen: boolean
+  onOpenChange: (open: boolean) => void
+  isFetching: boolean
+  onRefresh: () => void
+}) {
+  const count = workflows.length
+  return (
+    <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/70 text-xs text-slate-300">
+      <div className="flex h-10 items-center justify-between gap-2 px-3">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          aria-expanded={isOpen}
+          onClick={() => onOpenChange(!isOpen)}
+        >
+          <ChevronRight
+            className={`size-4 shrink-0 text-slate-500 transition-transform ${isOpen ? "rotate-90" : ""}`}
+          />
+          <ListTodo className="size-3.5 shrink-0 text-cyan-400" />
+          <span className="truncate font-medium text-slate-200">任务队列</span>
+          <Badge
+            variant="outline"
+            className="h-5 border-zinc-700 bg-zinc-900 px-1.5 font-mono text-[10px] text-slate-300"
+          >
+            {count}
+          </Badge>
+          {count > 0 ? (
+            <span className="hidden truncate text-[11px] text-slate-500 sm:inline">
+              {workflows[0]?.objective || ""}
+            </span>
+          ) : null}
+        </button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0 text-slate-400 hover:bg-zinc-800 hover:text-slate-100"
+          onClick={onRefresh}
+          disabled={isFetching}
+          title="刷新任务队列"
+        >
+          <RefreshCw className={`size-3.5 ${isFetching ? "animate-spin" : ""}`} />
+          <span className="sr-only">刷新任务队列</span>
+        </Button>
+      </div>
+
+      {isOpen ? (
+        <div className="border-t border-zinc-800 px-3 py-2">
+          {count === 0 ? (
+            <div className="rounded-md border border-dashed border-zinc-800 bg-zinc-900/40 px-3 py-2 text-slate-500">
+              暂无任务。任务会在 agent 规划多步工作时出现在这里。
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {workflows.map((workflow) => (
+                <div
+                  key={workflow.workflow_id}
+                  className="rounded-md border border-zinc-800 bg-zinc-900/70 px-3 py-2"
+                >
+                  <div className="mb-1.5 flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate font-medium text-slate-100">
+                      {workflow.objective || "(未命名任务)"}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className={`h-5 px-1.5 text-[10px] ${getWorkflowStatusClass(workflow.status)}`}
+                    >
+                      {getWorkflowStatusLabel(workflow.status)}
+                    </Badge>
+                  </div>
+                  <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                    <span className="truncate">
+                      汇报给：{workflow.source_label || workflow.source_type}
+                    </span>
+                    {workflow.requester ? (
+                      <span className="truncate">来自：{workflow.requester}</span>
+                    ) : null}
+                    <span>
+                      步骤 {Math.min(workflow.current_step_index + 1, workflow.steps.length)}/
+                      {workflow.steps.length}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {workflow.steps.map((step) => (
+                      <div
+                        key={step.step_id}
+                        className="flex min-w-0 items-center gap-1.5 text-[11px]"
+                      >
+                        <TaskWorkflowStepIcon status={step.status} />
+                        <span
+                          className={`truncate ${step.status === "completed" ? "text-slate-500 line-through" : "text-slate-300"}`}
+                        >
+                          {step.title}
+                        </span>
+                        {step.recovery ? (
+                          <span className="shrink-0 text-amber-600 dark:text-amber-300">
+                            恢复步骤
+                          </span>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                  {workflow.latest_progress ? (
+                    <div className="mt-1.5 line-clamp-2 border-t border-zinc-800 pt-1.5 text-[10px] text-slate-500">
+                      {workflow.latest_progress}
+                    </div>
+                  ) : null}
+                  {workflow.blocker ? (
+                    <div className="mt-1 line-clamp-2 text-[10px] text-red-600 dark:text-red-300">
+                      {workflow.blocker}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function BackgroundJobsPanel({
   jobs,
   isOpen,
@@ -1324,239 +1527,6 @@ function BackgroundJobsPanel({
                   </div>
                 )
               })}
-            </div>
-          )}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-function getRobotTriggerLabel(trigger: string) {
-  switch (trigger) {
-    case "mention_bot":
-      return "@唤醒"
-    case "reply_to_bot":
-      return "回复唤醒"
-    case "active_chat_window":
-      return "窗口延续"
-    case "pending_queue":
-      return "队列"
-    case "background_job":
-      return "后台 Job"
-    case "reply_ticket":
-      return "待合并"
-    case "private":
-      return "私聊"
-    default:
-      return trigger || "消息"
-  }
-}
-
-function getReplyTicketStatusLabel(status: string | undefined) {
-  switch (status) {
-    case "running":
-      return "处理中"
-    case "completed":
-      return "待发送"
-    case "sending":
-      return "发送中"
-    case "failed":
-      return "发送失败"
-    default:
-      return "待处理"
-  }
-}
-
-function formatPendingReplyTime(value: string, localeTag: string) {
-  const timestamp = Date.parse(value || "")
-  if (!Number.isFinite(timestamp)) {
-    return ""
-  }
-  return new Intl.DateTimeFormat(localeTag, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(timestamp)
-}
-
-function RobotPendingRepliesPanel({
-  data,
-  isOpen,
-  onOpenChange,
-  isFetching,
-  localeTag,
-}: {
-  data: ItemRobotControllerStatusResponse | undefined
-  isOpen: boolean
-  onOpenChange: (open: boolean) => void
-  isFetching: boolean
-  localeTag: string
-}) {
-  const rows = getRobotPendingReplyRows(data)
-  const count = rows.length
-
-  if (!data || data.count === 0) {
-    return null
-  }
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-border/60 bg-card/80">
-      <button
-        type="button"
-        className="flex h-10 w-full items-center justify-between gap-3 px-3 text-left text-sm"
-        onClick={() => onOpenChange(!isOpen)}
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <MessageSquare className="size-4 shrink-0 text-cyan-500 dark:text-cyan-300" />
-          <span className="truncate font-medium">待合并消息</span>
-          <Badge
-            variant="outline"
-            className={
-              count > 0
-                ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
-                : "border-slate-500/30 text-muted-foreground"
-            }
-          >
-            {count}
-          </Badge>
-        </span>
-        <span className="flex shrink-0 items-center gap-2">
-          {isFetching ? (
-            <RefreshCw className="size-3 animate-spin text-muted-foreground" />
-          ) : null}
-          <ChevronRight
-            className={`size-4 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`}
-          />
-        </span>
-      </button>
-
-      {isOpen ? (
-        <div className="max-h-[16rem] overflow-y-auto border-t border-border/60 px-3 py-2">
-          {count === 0 ? (
-            <div className="py-4 text-center text-xs text-muted-foreground">
-              暂无待合并消息
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {rows.slice(0, 5).map(({ robot, controller, message }) => (
-                <div
-                  key={`${robot.robot_id}:${controller.conversation_key}:${message.reply_ticket_id || message.pending_reply_id || message.index}:${message.enqueued_at}`}
-                  className="rounded-lg border border-border/50 bg-muted/20 px-2.5 py-2"
-                >
-                  <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2 text-[11px]">
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <Bot className="size-3 shrink-0 text-cyan-500 dark:text-cyan-300" />
-                      <span className="truncate font-medium text-foreground/90">
-                        {robot.robot_name}
-                      </span>
-                      <span className="truncate font-mono text-muted-foreground">
-                        {getRobotConversationLabel(controller)}
-                      </span>
-                    </div>
-                    <span className="shrink-0 font-mono text-muted-foreground">
-                      {formatPendingReplyTime(message.enqueued_at, localeTag)}
-                    </span>
-                  </div>
-                  <div className="mb-1 flex min-w-0 items-center gap-1.5 text-[11px]">
-                    <Badge
-                      variant="secondary"
-                      className="h-5 px-1.5 text-[10px]"
-                    >
-                      {getRobotTriggerLabel(message.trigger_reason)}
-                    </Badge>
-                    {message.reply_ticket_status ? (
-                      <Badge
-                        variant="outline"
-                        className={`h-5 px-1.5 text-[10px] ${
-                          message.reply_ticket_status === "failed"
-                            ? "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-300"
-                            : "border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
-                        }`}
-                      >
-                        {getReplyTicketStatusLabel(message.reply_ticket_status)}
-                      </Badge>
-                    ) : null}
-                    {message.task_request_id ? (
-                      <span className="truncate font-mono text-[10px] text-muted-foreground">
-                        plan {message.task_request_id.slice(0, 8)}
-                      </span>
-                    ) : null}
-                    <span className="truncate text-muted-foreground">
-                      {message.sender_label || message.sender_key}
-                    </span>
-                  </div>
-                  <div className="line-clamp-2 break-words text-xs leading-5 text-foreground/90">
-                    {message.message_preview || "[空消息]"}
-                  </div>
-                  {message.workflow_objective ? (
-                    <div className="mt-2 border-t border-border/50 pt-2 text-[11px]">
-                      <div className="flex min-w-0 items-start gap-2">
-                        <span className="shrink-0 font-medium text-cyan-700 dark:text-cyan-300">
-                          主任务
-                        </span>
-                        <span className="line-clamp-2 text-foreground/90">
-                          {message.workflow_objective}
-                        </span>
-                      </div>
-                      {message.workflow_current_step ? (
-                        <div className="mt-1 flex min-w-0 items-start gap-2">
-                          <span className="shrink-0 text-muted-foreground">
-                            当前
-                          </span>
-                          <span className="line-clamp-2 font-medium text-foreground/80">
-                            {message.workflow_current_step}
-                          </span>
-                        </div>
-                      ) : null}
-                      {message.workflow_steps?.length ? (
-                        <div className="mt-2 space-y-1">
-                          {message.workflow_steps.slice(0, 5).map((step) => (
-                            <div
-                              key={step.step_id}
-                              className="flex min-w-0 items-center gap-1.5 text-[10px]"
-                            >
-                              {step.status === "completed" ? (
-                                <Check className="size-3 shrink-0 text-emerald-500" />
-                              ) : step.status === "running" ? (
-                                <Loader2 className="size-3 shrink-0 animate-spin text-cyan-500" />
-                              ) : step.status === "failed" ? (
-                                <AlertCircle className="size-3 shrink-0 text-red-500" />
-                              ) : (
-                                <Square className="size-3 shrink-0 text-muted-foreground" />
-                              )}
-                              <span className="truncate text-muted-foreground">
-                                {step.title}
-                              </span>
-                              {step.recovery ? (
-                                <span className="shrink-0 text-amber-600 dark:text-amber-300">
-                                  恢复步骤
-                                </span>
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                      {message.workflow_blocker ? (
-                        <div className="mt-1 line-clamp-2 text-red-600 dark:text-red-300">
-                          {message.workflow_blocker}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {message.command_preview &&
-                  message.command_preview !== message.message_preview ? (
-                    <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
-                      task: {message.command_preview}
-                    </div>
-                  ) : null}
-                  {message.delivery_error ? (
-                    <div className="mt-1 line-clamp-2 text-[10px] text-red-600 dark:text-red-300">
-                      {message.delivery_error}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
             </div>
           )}
         </div>
@@ -1845,15 +1815,11 @@ function ItemDetailPage({
     null,
   )
   const [jobsPanelOpen, setJobsPanelOpen] = useState(false)
-  const [pendingRepliesPanelOpen, setPendingRepliesPanelOpen] = useState(false)
+  const [tasksPanelOpen, setTasksPanelOpen] = useState(true)
   const [jobCancelId, setJobCancelId] = useState<string | null>(null)
   const [itemAction, setItemAction] = useState<
     "start" | "stop" | "restart" | null
   >(null)
-  const pendingReplyCount = useMemo(
-    () => getRobotPendingReplyCount(robotControllerStatus),
-    [robotControllerStatus],
-  )
   const activateTab = (value: string) => {
     const nextTab = value as ItemDetailTab
     if (nextTab === "terminal") {
@@ -1884,15 +1850,8 @@ function ItemDetailPage({
     setTerminalWsForm(createTerminalWsForm(currentItemTitle))
     setTerminalWsServers([])
     setJobsPanelOpen(false)
-    setPendingRepliesPanelOpen(false)
     setJobCancelId(null)
   }, [currentItemId, currentItemTitle])
-
-  useEffect(() => {
-    if (pendingReplyCount > 0) {
-      setPendingRepliesPanelOpen(true)
-    }
-  }, [pendingReplyCount])
 
   useEffect(() => {
     const isNewItem = previousItemIdRef.current !== item.id
@@ -1985,6 +1944,24 @@ function ItemDetailPage({
       }
       const data = query.state.data as BackgroundJobsResponse | undefined
       return data?.jobs?.length ? 5_000 : 15_000
+    },
+    retry: false,
+  })
+
+  const {
+    data: taskWorkflowsData,
+    isFetching: isFetchingTaskWorkflows,
+    refetch: refetchTaskWorkflows,
+  } = useQuery({
+    queryKey: ["items", "task-workflows", item.id],
+    queryFn: () => requestTaskWorkflows(item.id),
+    enabled: Boolean(item.id),
+    refetchInterval: (query) => {
+      if (tasksPanelOpen) {
+        return 2_500
+      }
+      const data = query.state.data as TaskWorkflowsResponse | undefined
+      return data?.workflows?.length ? 5_000 : 15_000
     },
     retry: false,
   })
@@ -3360,6 +3337,13 @@ function ItemDetailPage({
                   </div>
                 </div>
                 <div className="mt-4 space-y-2">
+                  <TaskWorkflowPanel
+                    workflows={taskWorkflowsData?.workflows || []}
+                    isOpen={tasksPanelOpen}
+                    onOpenChange={setTasksPanelOpen}
+                    isFetching={isFetchingTaskWorkflows}
+                    onRefresh={() => void refetchTaskWorkflows()}
+                  />
                   <BackgroundJobsPanel
                     jobs={backgroundJobs?.jobs || []}
                     isOpen={jobsPanelOpen}
@@ -3379,13 +3363,6 @@ function ItemDetailPage({
               <TabsContent value="qq-debug" className="space-y-4">
                 {hasVisitedTab("qq-debug") ? (
                   <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-                    <RobotPendingRepliesPanel
-                      data={robotControllerStatus}
-                      isOpen={pendingRepliesPanelOpen}
-                      onOpenChange={setPendingRepliesPanelOpen}
-                      isFetching={isFetchingRobotControllerStatus}
-                      localeTag={localeTag}
-                    />
                     <RobotConversationDebugTable
                       data={robotControllerStatus}
                       isFetching={isFetchingRobotControllerStatus}
