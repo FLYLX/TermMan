@@ -1061,7 +1061,13 @@ class RobotMCPServer:
                 continue
             seen.add(normalized)
             unique_messages.append(normalized)
-        return [" ".join(unique_messages)] if unique_messages else []
+        if not unique_messages:
+            return []
+        # Persona-style segmentation is allowed: up to 3 natural bubbles.
+        # Anything more reads as spam and is merged back into one bubble.
+        if len(unique_messages) <= 3:
+            return unique_messages
+        return [" ".join(unique_messages)]
 
     @staticmethod
     def _single_text_too_long_for_group(
@@ -1079,9 +1085,8 @@ class RobotMCPServer:
     def _group_single_text_too_long_error(text: str) -> str:
         return (
             "Error: QQ group reply is too long for a single `text` message. "
-            "Shorten it and retry with one concise `text` message. Use `messages` "
-            "only when multiple distinct senders each require a separate answer. "
-            "Single group text limit: "
+            "Shorten it and retry, or split the answer into 2-3 short natural "
+            "bubbles with `messages`. Single group text limit: "
             f"{MAX_GROUP_SINGLE_TEXT_CHARS} chars. Current text length: "
             f"{len(text)} chars."
         )

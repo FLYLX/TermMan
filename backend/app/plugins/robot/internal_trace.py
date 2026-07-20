@@ -166,6 +166,17 @@ _INTERNAL_CONTEXT_CARD_LINE_PREFIXES = (
 
 _PENDING_BATCH_ENTRY_RE = re.compile(r"^\d+\.\s*sender=.+sender_key=.+")
 
+# Reasoning-model leaks: strip <think>...</think> blocks and stray think tags
+# so chain-of-thought never reaches QQ-visible text.
+THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.IGNORECASE | re.DOTALL)
+THINK_TAG_RE = re.compile(r"</?think>", re.IGNORECASE)
+
+
+def _strip_think_markup(text: str) -> str:
+    cleaned = THINK_BLOCK_RE.sub(" ", str(text or ""))
+    cleaned = THINK_TAG_RE.sub("", cleaned)
+    return cleaned
+
 
 def _is_internal_context_card_line(line: str) -> bool:
     if line.startswith(_INTERNAL_CONTEXT_CARD_PREFIXES):
@@ -187,6 +198,8 @@ def _is_internal_send_trace_line(line: str) -> bool:
 
 
 def is_robot_internal_trace_text(value: str) -> bool:
+    if not _strip_think_markup(value).strip():
+        return bool(str(value or "").strip())
     lines = _normalized_lines(value)
     if not lines:
         return False
@@ -217,6 +230,7 @@ def sanitize_robot_visible_text(value: Any) -> str:
     cleaned_lines: list[str] = []
     previous_blank = False
     normalized = normalize_robot_message_text(value)
+    normalized = _strip_think_markup(normalized)
     normalized = _extract_degraded_send_payload(normalized)
     normalized = strip_dsml_tool_markup(normalized)
     for raw_line in normalized.replace("\r\n", "\n").replace("\r", "\n").split("\n"):

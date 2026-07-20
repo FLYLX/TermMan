@@ -110,7 +110,7 @@ const TERMINAL_JOB_TOOL_NAMES = new Set(["mcp_local_run_job"])
 const ROBOT_HEADER_RE = /^\[Robot message;\s*([^\]]+)\]/
 const ROBOT_CURRENT_MESSAGE_RE = /\[Current QQ message\]\r?\n([\s\S]*)$/
 const ROBOT_PENDING_LINE_RE =
-  /^(\d+)\.\s+sender=([^;]+);\s+trigger=([^:]+):\s*(.*)$/
+  /^(\d+)\.\s+sender=([^;]+?)(?:;\s+sender_key=[^;]+)?;\s+trigger=([^:]+):\s*(.*)$/
 const CQ_REPLY_RE = /\[CQ:reply,id=([^\]]+)\]/g
 const CQ_AT_RE = /\[CQ:at,qq=([^,\]]+)(?:,[^\]]*)?\]/g
 
@@ -562,17 +562,28 @@ function RobotMessageCard({
   const conversationLabel = display.conversationId
     ? `${getConversationTypeLabel(display.conversationType)} ${display.conversationId}`
     : getConversationTypeLabel(display.conversationType)
+  const isPending =
+    display.trigger === "pending_queue" || display.pendingMessages.length > 0
+  const accentBorder = isPending ? "border-l-amber-500" : "border-l-sky-500"
+  const accentText = isPending
+    ? "text-amber-600 dark:text-amber-400"
+    : "text-sky-600 dark:text-sky-400"
+  const accentPill = isPending
+    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+    : "bg-sky-500/10 text-sky-700 dark:text-sky-300"
 
   return (
-    <div className="w-full overflow-hidden rounded-lg border border-border border-l-sky-500 bg-card text-card-foreground shadow-sm">
+    <div
+      className={`w-full overflow-hidden rounded-lg border border-border ${accentBorder} bg-card text-card-foreground shadow-sm`}
+    >
       <div className="border-b border-border bg-muted/50 px-2.5 py-2">
         <details className="group">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
             <div className="flex min-w-0 items-center gap-2 text-[11px] font-semibold">
-              <span className="shrink-0 text-sky-600 dark:text-sky-400">
-                QQ → Agent
-              </span>
-              <span className="shrink-0 rounded-md bg-sky-500/10 px-1.5 py-0.5 text-sky-700 dark:text-sky-300">
+              <span className={`shrink-0 ${accentText}`}>QQ → Agent</span>
+              <span
+                className={`shrink-0 rounded-md px-1.5 py-0.5 ${accentPill}`}
+              >
                 {triggerLabel}
               </span>
               <span className="min-w-0 truncate text-muted-foreground">

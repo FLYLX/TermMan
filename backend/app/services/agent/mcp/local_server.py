@@ -176,6 +176,66 @@ def _session_turn_busy(agent_session) -> bool:
         return False
 
 
+def cancel_background_jobs_for_item(
+    item_id: str,
+    *,
+    commands: set[str] | None = None,
+) -> int:
+    """Cancel running daemon jobs for an item (user-initiated task cancel).
+
+    When ``commands`` is given, only jobs whose command matches are
+    cancelled; otherwise every running job of the item is cancelled.
+    Returns the number of jobs actually cancelled.
+    """
+    try:
+        server = local_mcp_server
+        _item, connection = server._get_item_daemon_context(str(item_id))
+        result = connection.list_jobs_http(item_uuid=str(item_id))
+    except Exception as exc:
+        debug_log(
+            f"[LocalMCPServer] cancel_background_jobs_for_item: list failed for item={item_id}: {exc}"
+        )
+        return 0
+    if not isinstance(result, dict) or not result.get("success"):
+        return 0
+
+    cancelled = 0
+    for job in result.get("jobs") or []:
+        if not isinstance(job, dict):
+            continue
+        command = str(job.get("command") or "").strip()
+        if commands is not None and command not in commands:
+            continue
+        job_id = str(job.get("job_id") or job.get("id") or "").strip()
+        if not job_id:
+            continue
+        try:
+            cancel_result = connection.cancel_job_http(
+                item_uuid=str(item_id),
+                job_id=job_id,
+            )
+        except Exception as exc:
+            debug_log(
+                f"[LocalMCPServer] cancel_background_jobs_for_item: cancel failed job={job_id}: {exc}"
+            )
+            continue
+        if cancel_result.get("success") or cancel_result.get("cancelled"):
+            cancelled += 1
+            debug_log(
+                f"[LocalMCPServer] cancel_background_jobs_for_item: cancelled job={job_id} command={command!r}"
+            )
+    if cancelled:
+        try:
+            from app.services.agent.session import agent_session_manager
+
+            session = agent_session_manager.get_session(str(item_id))
+            if session:
+                session.clear_terminal_job()
+        except Exception:
+            pass
+    return cancelled
+
+
 class LocalMCPServer:
     def __init__(self):
         self._tools: dict[str, dict] = {}

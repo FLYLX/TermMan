@@ -739,7 +739,7 @@ def test_robot_mcp_send_message_uses_registered_context(monkeypatch) -> None:
     assert sent["reply_target"].target_id == "group-1"
 
 
-def test_robot_mcp_send_message_coalesces_normal_context_bubbles(monkeypatch) -> None:
+def test_robot_mcp_send_message_allows_up_to_three_bubbles(monkeypatch) -> None:
     server = RobotMCPServer()
     target = RobotReplyTarget(
         target_type="group",
@@ -773,7 +773,7 @@ def test_robot_mcp_send_message_coalesces_normal_context_bubbles(monkeypatch) ->
     assert result == [
         {"type": "text", "text": "Message sent to current robot conversation."}
     ]
-    assert sent == ["I am here. What do you need?"]
+    assert sent == ["I am here.", "What do you need?"]
 
 
 def test_robot_mcp_send_message_keeps_multi_sender_batch_bubbles(monkeypatch) -> None:
@@ -2156,3 +2156,31 @@ def test_robot_mcp_compress_memories_reports_unmatched_ids(monkeypatch) -> None:
     assert "not found" in result[0]["text"]
     assert "zzzz9999" in result[0]["text"]
     assert called == []
+
+
+from types import SimpleNamespace
+
+
+def _fake_qq_context():
+    return SimpleNamespace(reply_target=SimpleNamespace(metadata={}))
+
+
+def test_coalesce_allows_up_to_three_bubbles(monkeypatch) -> None:
+    server = RobotMCPServer()
+    messages = ["在呢", "刚卡了一下", "你说啥来着"]
+    result = server._coalesce_current_context_messages(_fake_qq_context(), messages)
+    assert result == messages
+
+
+def test_coalesce_merges_more_than_three_bubbles() -> None:
+    server = RobotMCPServer()
+    messages = ["一", "二", "三", "四"]
+    result = server._coalesce_current_context_messages(_fake_qq_context(), messages)
+    assert result == ["一 二 三 四"]
+
+
+def test_coalesce_dedupes_bubbles() -> None:
+    server = RobotMCPServer()
+    messages = ["在呢", "在呢", "你说啥"]
+    result = server._coalesce_current_context_messages(_fake_qq_context(), messages)
+    assert result == ["在呢", "你说啥"]

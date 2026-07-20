@@ -1056,6 +1056,28 @@ def _create_agent_task_plan(
                 action="cancel",
                 note=f"User explicitly cancelled the whole objective: {follow_up}",
             )
+            running_commands = {
+                str(job.command or "").strip()
+                for job in resumable.jobs
+                if job.status == "running" and str(job.command or "").strip()
+            }
+            try:
+                from app.services.agent.mcp.local_server import (
+                    cancel_background_jobs_for_item,
+                )
+
+                # "别装了": kill the actual daemon jobs, not just the paper
+                # workflow. Empty command set means the workflow lost track of
+                # the job, so fall back to cancelling all of the item's jobs.
+                cancel_background_jobs_for_item(
+                    item_id,
+                    commands=running_commands or None,
+                )
+            except Exception:
+                logger.exception(
+                    "[Chat] Failed to cancel background jobs for item %s",
+                    item_id,
+                )
         elif TASK_WORKFLOW_CHANGE_RE.search(task_message):
             task_workflow_manager.update(
                 locked_reply_ticket_id,
@@ -1067,6 +1089,25 @@ def _create_agent_task_plan(
                 ),
             )
         elif TASK_WORKFLOW_PAUSE_RE.search(task_message):
+            running_commands = {
+                str(job.command or "").strip()
+                for job in resumable.jobs
+                if job.status == "running" and str(job.command or "").strip()
+            }
+            if running_commands:
+                try:
+                    from app.services.agent.mcp.local_server import (
+                        cancel_background_jobs_for_item,
+                    )
+
+                    # "停一下/先别": stop the current execution (daemon job) but
+                    # keep the main objective for a later resume.
+                    cancel_background_jobs_for_item(item_id, commands=running_commands)
+                except Exception:
+                    logger.exception(
+                        "[Chat] Failed to stop background jobs for item %s",
+                        item_id,
+                    )
             task_workflow_manager.update(
                 locked_reply_ticket_id,
                 action="record_progress",

@@ -1957,3 +1957,58 @@ def test_session_turn_busy_detection() -> None:
     session.input_queue.put("x")
     assert _session_turn_busy(session) is True
     assert _session_turn_busy(None) is False
+
+
+def test_cancel_background_jobs_for_item_filters_commands(monkeypatch) -> None:
+    from app.services.agent.mcp.local_server import (
+        cancel_background_jobs_for_item,
+        local_mcp_server,
+    )
+
+    cancel_calls: list[str] = []
+
+    class FakeConnection:
+        def list_jobs_http(self, **_kwargs):
+            return {
+                "success": True,
+                "jobs": [
+                    {"job_id": "j1", "command": "apt-get install java"},
+                    {"job_id": "j2", "command": "npm install"},
+                ],
+            }
+
+        def cancel_job_http(self, *, job_id, **_kwargs):
+            cancel_calls.append(job_id)
+            return {"success": True}
+
+    monkeypatch.setattr(
+        local_mcp_server,
+        "_get_item_daemon_context",
+        lambda _item_id: (None, FakeConnection()),
+    )
+
+    cancelled = cancel_background_jobs_for_item(
+        "item-1",
+        commands={"apt-get install java"},
+    )
+    assert cancelled == 1
+    assert cancel_calls == ["j1"]
+
+    cancel_calls.clear()
+    cancelled = cancel_background_jobs_for_item("item-1", commands=None)
+    assert cancelled == 2
+    assert cancel_calls == ["j1", "j2"]
+
+
+def test_cancel_background_jobs_for_item_daemon_down(monkeypatch) -> None:
+    from app.services.agent.mcp.local_server import (
+        cancel_background_jobs_for_item,
+        local_mcp_server,
+    )
+
+    monkeypatch.setattr(
+        local_mcp_server,
+        "_get_item_daemon_context",
+        lambda _item_id: (_ for _ in ()).throw(RuntimeError("daemon down")),
+    )
+    assert cancel_background_jobs_for_item("item-1") == 0

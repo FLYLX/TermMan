@@ -4809,3 +4809,20 @@ def test_reap_leaves_fresh_dispatch_jobs_alone(db: Session) -> None:
 
     assert service.reap_stuck_dispatch_jobs() == 0
     assert "fresh-1" in service._active_dispatch_jobs
+
+
+def test_think_blocks_are_stripped_from_visible_text() -> None:
+    from app.plugins.robot.internal_trace import (
+        is_robot_internal_trace_text,
+        sanitize_robot_visible_text,
+    )
+
+    assert (
+        sanitize_robot_visible_text("<think>用户问我装没装好，查一下记忆</think>装好啦，openjdk 21")
+        == "装好啦，openjdk 21"
+    )
+    assert sanitize_robot_visible_text("</think>") == ""
+    assert sanitize_robot_visible_text("结果\n</think>\n") == "结果"
+    assert is_robot_internal_trace_text("</think>") is True
+    assert is_robot_internal_trace_text("<think>想了一下</think>") is True
+    assert is_robot_internal_trace_text("在呢") is False

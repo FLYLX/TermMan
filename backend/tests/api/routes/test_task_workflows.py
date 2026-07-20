@@ -64,6 +64,7 @@ def test_list_task_workflows_empty(
 def test_cancel_task_workflow(
     client: TestClient,
     superuser_token_headers: dict[str, str],
+    monkeypatch,
 ) -> None:
     task_workflow_manager.reset()
     try:
@@ -77,6 +78,12 @@ def test_cancel_task_workflow(
             step_titles=["apt update", "安装 temurin"],
         )
 
+        cancel_calls: list[tuple] = []
+        monkeypatch.setattr(
+            "app.services.agent.mcp.local_server.cancel_background_jobs_for_item",
+            lambda *args, **kwargs: cancel_calls.append((args, kwargs)) or 1,
+        )
+
         response = client.post(
             f"{settings.API_V1_STR}/task-workflows/{workflow.workflow_id}/cancel",
             headers=superuser_token_headers,
@@ -85,6 +92,8 @@ def test_cancel_task_workflow(
         assert response.status_code == 200, response.text
         assert response.json()["workflow"]["status"] == "cancelled"
         assert task_workflow_manager.get(workflow.workflow_id).status == "cancelled"
+        assert cancel_calls, "cancel endpoint should also kill daemon jobs"
+        assert cancel_calls[0][0][0] == "item-1"
 
         missing = client.post(
             f"{settings.API_V1_STR}/task-workflows/no-such-workflow/cancel",
