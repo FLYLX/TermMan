@@ -7,6 +7,12 @@ import threading
 from datetime import datetime
 from typing import Any
 
+from app.services.agent.input_merge_buffer import (
+    SOURCE_JOB_RESULT,
+    MergeBufferEntry,
+    input_merge_buffer,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,28 +27,32 @@ COMMAND_DISPATCH_FAILED_MARKER = "command_dispatch_failed"
 TERMINAL_UNAVAILABLE_RESULT_MARKER = "terminal_unavailable"
 
 # Background job result coalescing: results arriving while a turn is running
-# are buffered and merged into ONE follow-up turn when the turn ends.
-_JOB_RESULT_BUFFER_LOCK = threading.Lock()
-_PENDING_JOB_RESULTS: dict[str, list[dict[str, Any]]] = {}
-
-
-def _buffer_key(item_id: str, conversation_key: str = "") -> str:
-    return f"{item_id}|{conversation_key}" if conversation_key else str(item_id)
+# are buffered in the system-level input merge buffer and merged into ONE
+# follow-up turn when the turn ends.
 
 
 def buffer_background_job_result(item_id: str, entry: dict[str, Any]) -> None:
-    with _JOB_RESULT_BUFFER_LOCK:
-        _PENDING_JOB_RESULTS.setdefault(
-            _buffer_key(item_id, entry.get("conversation_key", "")),
-            [],
-        ).append(entry)
+    input_merge_buffer.add(
+        MergeBufferEntry(
+            source_type=SOURCE_JOB_RESULT,
+            item_id=str(item_id),
+            scope_key=str(entry.get("conversation_key") or ""),
+            sender_label="background_job",
+            content=str(entry.get("command") or ""),
+            reply_ticket_id=str(entry.get("reply_ticket_id") or ""),
+            payload=entry,
+        )
+    )
 
 
 def _pop_buffered_job_results(
     item_id: str, conversation_key: str = ""
 ) -> list[dict[str, Any]]:
-    with _JOB_RESULT_BUFFER_LOCK:
-        return _PENDING_JOB_RESULTS.pop(_buffer_key(item_id, conversation_key), [])
+    return [
+        entry.payload
+        for entry in input_merge_buffer.pop(item_id, conversation_key)
+        if entry.payload is not None
+    ]
 
 
 def _format_background_job_results_batch(entries: list[dict[str, Any]]) -> str:
@@ -170,7 +180,7 @@ class LocalMCPServer:
     def __init__(self):
         self._tools: dict[str, dict] = {}
         self._register_builtin_tools()
-    
+
     def _register_builtin_tools(self):
         self.register_tool(
             name="get_terminal_status",
@@ -241,7 +251,7 @@ class LocalMCPServer:
             handler=self._cancel_job,
             skip_memory=True
         )
-        
+
         self.register_tool(
             name="interrupt_command",
             description="发送 Ctrl+C 中断当前终端正在运行的命令",
@@ -253,7 +263,7 @@ class LocalMCPServer:
             handler=self._interrupt_command,
             skip_memory=True
         )
-        
+
         self.register_tool(
             name="read_terminal_log",
             description="读取终端日志文件（原始输出），用于查看完整的错误信息或命令执行结果。",
@@ -448,7 +458,7 @@ class LocalMCPServer:
             handler=self._clear_terminal_input_filter_rules,
             skip_memory=True
         )
-        
+
         self.register_tool(
             name="list_installed_software",
             description="List software that has been recorded as installed for the current terminal item.",
@@ -607,7 +617,7 @@ class LocalMCPServer:
             },
             handler=self._save_memory
         )
-        
+
         self.register_tool(
             name="recall_memory",
             description="从长期记忆中检索相关信息。使用语义搜索，返回与查询最相关的记忆。",
@@ -622,7 +632,7 @@ class LocalMCPServer:
             },
             handler=self._recall_memory
         )
-        
+
         self.register_tool(
             name="list_memories",
             description="列出所有记忆，可按类型过滤。",
@@ -635,7 +645,7 @@ class LocalMCPServer:
             },
             handler=self._list_memories
         )
-        
+
         self.register_tool(
             name="delete_memory",
             description="删除指定的记忆。",
@@ -648,7 +658,7 @@ class LocalMCPServer:
             },
             handler=self._delete_memory
         )
-    
+
         self.register_tool(
             name="compress_memories",
             description="把多条重复、冗余或过时的长期记忆压缩合并成一条精炼记忆：先写入新记忆，再删除列出的旧记忆。当 recall_memory 或 list_memories 的结果里有重复内容、同一事实的旧版本或废话时使用。",
@@ -697,7 +707,7 @@ class LocalMCPServer:
         except Exception as exc:
             debug_log(f"[LocalMCPServer] get_terminal_status error: {exc}")
             return [{"type": "text", "text": f"Error: {exc}"}]
-    
+
     def _restore_existing_terminal_input(self, item_id: str) -> bool:
         try:
             import uuid
@@ -1521,12 +1531,12 @@ class LocalMCPServer:
     def _execute_command(self, args: dict) -> list:
         command = args.get("command", "")
         item_id = args.get("item_id", "")
-        
+
         debug_log(f"[LocalMCPServer] _execute_command: item={item_id}, command={command}")
-        
+
         if not command or not item_id:
             return [{"type": "text", "text": "Error: command and item_id required"}]
-        
+
         try:
             has_handler = self._ensure_terminal_input_handler(str(item_id))
             debug_log(f"[LocalMCPServer] has_handler={has_handler}")
@@ -1596,13 +1606,13 @@ class LocalMCPServer:
                 debug_log(f"[LocalMCPServer] terminal input guard error: {guard_error}")
 
             from app.services.socket_pool import InputSDK
-            
+
             if not command.endswith("\n"):
                 command = command + "\n"
-            
+
             success = InputSDK().send(item_id, command)
             debug_log(f"[LocalMCPServer] send result: success={success}")
-            
+
             return [
                 {
                     "type": "text",
@@ -1639,7 +1649,7 @@ class LocalMCPServer:
         except Exception as exc:
             debug_log(f"[LocalMCPServer] auto-route classification error: {exc}")
             return False
-    
+
     def _cancel_running_job_for_item(self, item_id: str) -> dict | None:
         try:
             from app.services.agent.session import agent_session_manager
@@ -1662,9 +1672,9 @@ class LocalMCPServer:
 
     def _interrupt_command(self, args: dict) -> list:
         item_id = args.get("item_id", "")
-        
+
         debug_log(f"[LocalMCPServer] _interrupt_command: item={item_id}")
-        
+
         if not item_id:
             return [{"type": "text", "text": "Error: item_id required"}]
 
@@ -1675,17 +1685,17 @@ class LocalMCPServer:
             if cancel_result.get("local_lock_cleared"):
                 return [{"type": "text", "text": "daemon \u91cc\u6ca1\u6709\u627e\u5230\u6b63\u5728\u8fd0\u884c\u7684\u540e\u53f0\u4efb\u52a1\uff0c\u5df2\u6e05\u7406\u672c\u5730\u7ec8\u7aef\u9501\u3002"}]
             return [{"type": "text", "text": f"\u540e\u53f0\u4efb\u52a1\u4e2d\u65ad\u5931\u8d25: {cancel_result.get('error', 'unknown error')}"}]
-        
+
         try:
             from app.services.socket_pool import InputSDK
             has_handler = self._ensure_terminal_input_handler(item_id)
             debug_log(f"[LocalMCPServer] interrupt has_handler={has_handler}")
             if not has_handler:
                 return self._terminal_unavailable_result(str(item_id))
-            
+
             success = InputSDK().send(item_id, "\x03")
             debug_log(f"[LocalMCPServer] interrupt result: success={success}")
-            
+
             return [
                 {
                     "type": "text",
@@ -1699,21 +1709,21 @@ class LocalMCPServer:
         except Exception as e:
             debug_log(f"[LocalMCPServer] interrupt error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
-    
+
     def _read_terminal_log(self, args: dict) -> list:
         item_id = args.get("item_id", "")
         lines = args.get("lines", 64)
-        
+
         if not item_id:
             return [{"type": "text", "text": "Error: item_id required"}]
-        
+
         try:
             from app.services.log_manager import LogManager
             content = LogManager().get_last_lines(item_id, lines)
-            
+
             if not content:
                 return [{"type": "text", "text": f"No log found for {item_id}"}]
-            
+
             return [{"type": "text", "text": f"=== 终端日志 (最后 {lines} 行) ===\n{content}"}]
         except Exception as e:
             return [{"type": "text", "text": f"Error: {e}"}]
@@ -2074,7 +2084,7 @@ class LocalMCPServer:
         except Exception as e:
             debug_log(f"[LocalMCPServer] clear terminal input filter rules error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
-    
+
     def _list_installed_software(self, args: dict) -> list:
         item_id = args.get("item_id", "")
         if not item_id:
@@ -2230,12 +2240,12 @@ class LocalMCPServer:
         content = args.get("content", "")
         memory_type = str(args.get("memory_type", "fact") or "fact")
         item_id = args.get("item_id", "")
-        
+
         if not content or not item_id:
             return [{"type": "text", "text": "Error: content and item_id required"}]
         if memory_type not in {"fact", "preference", "error", "context"}:
             return [{"type": "text", "text": f"Error: invalid memory_type: {memory_type}"}]
-        
+
         try:
             from app.services.agent.memory.vector_store import vector_store
             from app.services.agent.prompts import policy as memory_policy
@@ -2275,7 +2285,7 @@ class LocalMCPServer:
             return [{"type": "text", "text": f"✓ 记忆已保存 (ID: {memory_id[:8]}..., 类型: {memory_type}, 有效期: {lifetime})"}]
         except Exception as e:
             return [{"type": "text", "text": f"Error: {e}"}]
-    
+
     def _compress_memories(self, args: dict) -> list:
         raw_ids = args.get("memory_ids")
         if not isinstance(raw_ids, list):
@@ -2383,10 +2393,10 @@ class LocalMCPServer:
             n_results = 0
         memory_type = args.get("memory_type")
         item_id = args.get("item_id", "")
-        
+
         if not query or not item_id:
             return [{"type": "text", "text": "Error: query and item_id required"}]
-        
+
         try:
             from app.services.agent.memory.vector_store import vector_store
             if n_results <= 0:
@@ -2403,10 +2413,10 @@ class LocalMCPServer:
                 if str((memory.get("metadata") or {}).get("memory_type") or "fact")
                 in {"fact", "preference", "error", "context"}
             ]
-            
+
             if not results:
                 return [{"type": "text", "text": "未找到相关记忆"}]
-            
+
             lines = ["相关长期记忆："]
             for memory in results:
                 metadata = memory.get("metadata") or {}
@@ -2421,18 +2431,18 @@ class LocalMCPServer:
                     continue
                 prefix = f"{sender}: " if sender and not content.startswith(sender) else ""
                 lines.append(f"- {prefix}{content}")
-            
+
             return [{"type": "text", "text": "\n".join(lines)}]
         except Exception as e:
             return [{"type": "text", "text": f"Error: {e}"}]
-    
+
     def _list_memories(self, args: dict) -> list:
         memory_type = args.get("memory_type")
         item_id = args.get("item_id", "")
-        
+
         if not item_id:
             return [{"type": "text", "text": "Error: item_id required"}]
-        
+
         try:
             from app.services.agent.memory.vector_store import vector_store
             memories = vector_store.get_all_memories(item_id, memory_type=memory_type)
@@ -2442,27 +2452,27 @@ class LocalMCPServer:
                 if str((memory.get("metadata") or {}).get("memory_type") or "fact")
                 in {"fact", "preference", "error", "context"}
             ]
-            
+
             if not memories:
                 return [{"type": "text", "text": "暂无记忆"}]
-            
+
             lines = [f"=== 共 {len(memories)} 条记忆 ==="]
             for m in memories:
                 m_type = m.get("metadata", {}).get("memory_type", "unknown")
                 m_id = m.get("id", "")[:8]
                 lines.append(f"[{m_id}] ({m_type}) {m['content'][:50]}...")
-            
+
             return [{"type": "text", "text": "\n".join(lines)}]
         except Exception as e:
             return [{"type": "text", "text": f"Error: {e}"}]
-    
+
     def _delete_memory(self, args: dict) -> list:
         memory_id = args.get("memory_id", "")
         item_id = args.get("item_id", "")
-        
+
         if not memory_id or not item_id:
             return [{"type": "text", "text": "Error: memory_id and item_id required"}]
-        
+
         try:
             from app.services.agent.memory.vector_store import vector_store
             success = vector_store.delete_memory(memory_id)
@@ -2472,7 +2482,7 @@ class LocalMCPServer:
                 return [{"type": "text", "text": "记忆不存在或删除失败"}]
         except Exception as e:
             return [{"type": "text", "text": f"Error: {e}"}]
-    
+
     def list_tools(self) -> list:
         return [
             {
@@ -2483,7 +2493,7 @@ class LocalMCPServer:
             }
             for t in self._tools.values()
         ]
-    
+
     def call_tool(self, name: str, args: dict) -> list:
         debug_log(f"[LocalMCPServer] call_tool: name={name}, args={args}")
         if name not in self._tools:
@@ -2496,7 +2506,7 @@ class LocalMCPServer:
         except Exception as e:
             debug_log(f"[LocalMCPServer] Tool '{name}' error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
-    
+
     async def run(self):
         logger.info("[LocalMCPServer] Starting stdio server")
         loop = asyncio.get_running_loop()
@@ -2512,25 +2522,25 @@ class LocalMCPServer:
                 print(json.dumps({"error": f"Invalid JSON: {e}"}), flush=True)
             except Exception as e:
                 print(json.dumps({"error": str(e)}), flush=True)
-    
+
     async def _handle_request(self, request: dict) -> dict:
         method = request.get("method", "")
         params = request.get("params", {})
         request_id = request.get("id")
-        
+
         if method == "initialize":
             return {"jsonrpc": "2.0", "id": request_id, "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "termman-local", "version": "1.0.0"}
             }}
-        
+
         if method == "tools/list":
             return {"jsonrpc": "2.0", "id": request_id, "result": {"tools": self.list_tools()}}
-        
+
         if method == "tools/call":
             return {"jsonrpc": "2.0", "id": request_id, "result": {"content": self.call_tool(params.get("name", ""), params.get("arguments", {}))}}
-        
+
         return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": f"Method not found: {method}"}}
 
 

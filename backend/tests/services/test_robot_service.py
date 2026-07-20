@@ -4543,8 +4543,10 @@ def test_failed_job_drains_pending_chat_inputs_into_followup(
         trigger_reason="mentioned",
         reply_target=target,
     )
-    pending_key = robot_service._pending_chat_key(robot.id, "group:g1")
-    assert robot_service._pending_chat_inputs.get(pending_key)
+    from app.services.agent.input_merge_buffer import input_merge_buffer
+
+    scope_item, scope_key = robot_service._pending_chat_scope(robot.id, "group:g1")
+    assert input_merge_buffer.count(scope_item, scope_key) > 0
 
     monkeypatch.setattr(
         robot_service,
@@ -4580,7 +4582,7 @@ def test_failed_job_drains_pending_chat_inputs_into_followup(
 
     robot_service._process_chat_job(job)
 
-    assert not robot_service._pending_chat_inputs.get(pending_key)
+    assert input_merge_buffer.count(scope_item, scope_key) == 0
     assert enqueued, "failed job should drain pending inputs into a followup job"
 
 

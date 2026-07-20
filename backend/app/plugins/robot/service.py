@@ -18,6 +18,11 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.core.db import engine
 from app.models import Item, Robot, RobotItem, User
+from app.services.agent.input_merge_buffer import (
+    SOURCE_QQ_MESSAGE,
+    MergeBufferEntry,
+    input_merge_buffer,
+)
 from app.plugins.robot.conversation_memory import robot_conversation_memory
 from app.services.agent.chat_runtime import ChatResponseResult, collect_chat_response
 
@@ -298,7 +303,6 @@ class RobotService:
         self._conversation_routes: dict[tuple[str, str], ConversationState] = {}
         self._conversation_controllers: dict[tuple[str, str], RobotConversationController] = {}
         self._pending_memory_candidates: dict[tuple[str, str, str], PendingRobotMemoryCandidate] = {}
-        self._pending_chat_inputs: dict[tuple[str, str], list[PendingRobotChatInput]] = {}
         self._pending_task_replies: dict[tuple[str, str], list[PendingRobotTaskReply]] = {}
         self._lock = threading.RLock()
         self._dispatch_queue: queue.Queue[QueuedRobotChatJob] = queue.Queue(
@@ -1470,6 +1474,30 @@ class RobotService:
     ) -> tuple[str, str]:
         return (str(robot_id), conversation_key)
 
+    def _pending_chat_scope(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+    ) -> tuple[str, str]:
+        """Scope used in the system-level input merge buffer for QQ pending chat."""
+        return ("qq", f"{robot_id}:{conversation_key}")
+
+    @staticmethod
+    def _chat_input_to_merge_entry(
+        entry: PendingRobotChatInput,
+        scope_key: str,
+    ) -> MergeBufferEntry:
+        return MergeBufferEntry(
+            source_type=SOURCE_QQ_MESSAGE,
+            item_id="qq",
+            scope_key=scope_key,
+            sender_label=entry.sender_label,
+            sender_key=entry.sender_key,
+            content=entry.message_text,
+            enqueued_at=entry.enqueued_at,
+            payload=entry,
+        )
+
     def _record_pending_chat_input(
         self,
         *,
@@ -1493,17 +1521,12 @@ class RobotService:
             reply_target=reply_target.model_copy(deep=True),
             enqueued_at=self._now(),
         )
-        key = self._pending_chat_key(robot.id, conversation_key)
-        with self._lock:
-            queue_items = list(self._pending_chat_inputs.get(key) or [])
-            queue_items.append(entry)
-            evicted_count = max(0, len(queue_items) - PENDING_CHAT_QUEUE_LIMIT)
-            if evicted_count:
-                queue_items = queue_items[-PENDING_CHAT_QUEUE_LIMIT:]
-            self._pending_chat_inputs[key] = queue_items
-            pending_size = len(queue_items)
+        _scope_item, scope_key = self._pending_chat_scope(robot.id, conversation_key)
+        pending_size, evicted = input_merge_buffer.add(
+            self._chat_input_to_merge_entry(entry, scope_key)
+        )
 
-        if evicted_count:
+        if evicted:
             record_robot_event(
                 str(robot.id),
                 direction="backend_queue",
@@ -1511,7 +1534,7 @@ class RobotService:
                 status="ignored",
                 payload={
                     "conversation": conversation_key,
-                    "evicted_count": evicted_count,
+                    "evicted_count": len(evicted),
                     "pending_size": pending_size,
                 },
             )
@@ -1522,23 +1545,24 @@ class RobotService:
         robot_id: uuid.UUID | str,
         conversation_key: str,
     ) -> list[PendingRobotChatInput]:
-        key = self._pending_chat_key(robot_id, conversation_key)
-        with self._lock:
-            entries = list(self._pending_chat_inputs.pop(key, []) or [])
-        return entries
+        scope_item, scope_key = self._pending_chat_scope(robot_id, conversation_key)
+        return [
+            entry.payload
+            for entry in input_merge_buffer.pop(scope_item, scope_key)
+            if entry.payload is not None
+        ]
 
     def _pending_chat_message_texts(
         self,
         robot_id: uuid.UUID | str,
         conversation_key: str,
     ) -> list[str]:
-        key = self._pending_chat_key(robot_id, conversation_key)
-        with self._lock:
-            return [
-                entry.message_text
-                for entry in self._pending_chat_inputs.get(key, [])
-                if entry.message_text.strip()
-            ]
+        scope_item, scope_key = self._pending_chat_scope(robot_id, conversation_key)
+        return [
+            entry.payload.message_text
+            for entry in input_merge_buffer.peek(scope_item, scope_key)
+            if entry.payload is not None and entry.payload.message_text.strip()
+        ]
 
     def _prepend_pending_chat_inputs(
         self,
@@ -1548,10 +1572,12 @@ class RobotService:
     ) -> None:
         if not entries:
             return
-        key = self._pending_chat_key(robot_id, conversation_key)
-        with self._lock:
-            queue_items = list(entries) + list(self._pending_chat_inputs.get(key) or [])
-            self._pending_chat_inputs[key] = queue_items[-PENDING_CHAT_QUEUE_LIMIT:]
+        scope_item, scope_key = self._pending_chat_scope(robot_id, conversation_key)
+        input_merge_buffer.prepend(
+            scope_item,
+            scope_key,
+            [self._chat_input_to_merge_entry(entry, scope_key) for entry in entries],
+        )
 
     def _pending_chat_snapshot_locked(
         self,
@@ -1559,7 +1585,12 @@ class RobotService:
         conversation_key: str,
     ) -> tuple[list[dict[str, object]], uuid.UUID | None]:
         key = self._pending_chat_key(robot_id, conversation_key)
-        entries = list(self._pending_chat_inputs.get(key) or [])
+        scope_item, scope_key = self._pending_chat_scope(robot_id, conversation_key)
+        entries = [
+            entry.payload
+            for entry in input_merge_buffer.peek(scope_item, scope_key)
+            if entry.payload is not None
+        ]
         task_replies = list(self._pending_task_replies.get(key) or [])
         snapshots: list[dict[str, object]] = []
         first_item_id: uuid.UUID | None = None
