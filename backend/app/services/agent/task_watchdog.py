@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 CLOSE_REASON = "任务长时间没有进展，已自动关闭"
 # Grace period before declaring a background-job result callback lost.
 WAITING_JOB_CALLBACK_GRACE_SECONDS = 60.0
+# How often near-duplicate long-term memories are auto-merged per item.
+MEMORY_DEDUP_INTERVAL_SECONDS = 1800.0
+# Rule-based cluster merge threshold (no LLM involved).
+MEMORY_DEDUP_SIMILARITY_THRESHOLD = 0.85
+
+_memory_dedup_last_run: dict[str, float] = {}
 
 
 def _utcnow() -> datetime:
@@ -327,6 +333,53 @@ def _remove_orphan_tickets(now: datetime, stats: dict[str, int]) -> None:
         stats["orphan_tickets_removed"] += 1
 
 
+def _list_all_item_ids() -> list[str]:
+    from sqlmodel import Session, select
+
+    from app.core.db import engine
+    from app.models import Item
+
+    with Session(engine) as db:
+        return [str(item.id) for item in db.exec(select(Item)).all()]
+
+
+def _dedupe_memory_clusters(now: datetime, stats: dict[str, int]) -> None:
+    """Auto-merge near-duplicate long-term memories per item (rule-based, no LLM).
+
+    Runs at most once per MEMORY_DEDUP_INTERVAL_SECONDS per item. Keeps the
+    first memory of each near-duplicate cluster and deletes the rest, so
+    recalled context does not fill up with repeated facts.
+    """
+    from app.services.agent.memory.vector_store import vector_store
+
+    now_ts = now.timestamp()
+    item_ids = _list_all_item_ids()
+    known = set(item_ids)
+    for stale_key in set(_memory_dedup_last_run) - known:
+        _memory_dedup_last_run.pop(stale_key, None)
+    for item_id in item_ids:
+        last_run = _memory_dedup_last_run.get(item_id, 0.0)
+        if now_ts - last_run < MEMORY_DEDUP_INTERVAL_SECONDS:
+            continue
+        _memory_dedup_last_run[item_id] = now_ts
+        try:
+            removed = vector_store.deduplicate_memories(
+                item_id, threshold=MEMORY_DEDUP_SIMILARITY_THRESHOLD
+            )
+        except Exception as exc:
+            logger.info(
+                "[TaskWatchdog] Memory dedup failed for item=%s: %s", item_id, exc
+            )
+            continue
+        if removed:
+            stats["memories_deduplicated"] += removed
+            logger.info(
+                "[TaskWatchdog] Merged %s near-duplicate memories for item=%s",
+                removed,
+                item_id,
+            )
+
+
 def run_once(now: datetime | None = None) -> dict[str, int]:
     from app.services.agent.task_workflow import (
         WORKFLOW_ACTIVE_STATUSES,
@@ -342,7 +395,12 @@ def run_once(now: datetime | None = None) -> dict[str, int]:
         "resumed": 0,
         "stalled_resumed": 0,
         "dispatch_reaped": 0,
+        "memories_deduplicated": 0,
     }
+    try:
+        _dedupe_memory_clusters(now, stats)
+    except Exception:
+        logger.exception("[TaskWatchdog] Memory dedup pass failed")
     try:
         _reconcile_waiting_job_workflows(now, stats)
     except Exception:
@@ -380,7 +438,7 @@ def run_once(now: datetime | None = None) -> dict[str, int]:
         _remove_orphan_tickets(now, stats)
     except Exception:
         logger.exception("[TaskWatchdog] Failed to remove orphan tickets")
-    if stats["closed"] or stats["orphan_tickets_removed"]:
+    if stats["closed"] or stats["orphan_tickets_removed"] or stats["memories_deduplicated"]:
         logger.info("[TaskWatchdog] Pass finished: %s", stats)
     return stats
 

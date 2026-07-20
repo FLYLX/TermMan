@@ -28,6 +28,12 @@ def isolated_state_store(tmp_path, monkeypatch):
         "AGENT_STATE_STORE_PATH",
         str(tmp_path / "agent_state.db"),
     )
+    # Keep watchdog passes hermetic: never touch the real vector store.
+    monkeypatch.setattr(
+        task_watchdog,
+        "_dedupe_memory_clusters",
+        lambda now, stats: None,
+    )
     state_store.reset_state_store_engine()
     reply_ticket_manager.reset()
     yield

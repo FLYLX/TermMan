@@ -1610,28 +1610,48 @@ class VectorStoreService:
             )
         return removed
 
-    def deduplicate_memories(self, item_id: str) -> int:
+    def deduplicate_memories(
+        self, item_id: str, *, threshold: float = DEDUP_THRESHOLD
+    ) -> int:
         all_memories = self.get_all_memories(item_id)
         if len(all_memories) < 2:
             return 0
 
         contents = [m["content"] for m in all_memories]
         embeddings = self._try_encode(contents)
-        if embeddings is None:
-            return 0
 
         ids_to_delete = set()
-
-        for i in range(len(embeddings)):
-            if all_memories[i]["id"] in ids_to_delete:
-                continue
-            for j in range(i + 1, len(embeddings)):
-                if all_memories[j]["id"] in ids_to_delete:
+        if embeddings is not None:
+            for i in range(len(embeddings)):
+                if all_memories[i]["id"] in ids_to_delete:
                     continue
+                for j in range(i + 1, len(embeddings)):
+                    if all_memories[j]["id"] in ids_to_delete:
+                        continue
 
-                similarity = self._cosine_similarity(embeddings[i], embeddings[j])
-                if similarity >= DEDUP_THRESHOLD:
-                    ids_to_delete.add(all_memories[j]["id"])
+                    similarity = self._cosine_similarity(embeddings[i], embeddings[j])
+                    if similarity >= threshold:
+                        ids_to_delete.add(all_memories[j]["id"])
+        else:
+            # Embedding model unavailable: fall back to lexical (Jaccard)
+            # similarity so near-duplicate cleanup still works.
+            logger.info(
+                "[VectorStore] Embeddings unavailable; deduplicating item %s lexically",
+                item_id,
+            )
+            token_sets = [self._lexical_tokens(content) for content in contents]
+            for i in range(len(token_sets)):
+                if all_memories[i]["id"] in ids_to_delete or not token_sets[i]:
+                    continue
+                for j in range(i + 1, len(token_sets)):
+                    if all_memories[j]["id"] in ids_to_delete or not token_sets[j]:
+                        continue
+                    union = token_sets[i] | token_sets[j]
+                    if not union:
+                        continue
+                    similarity = len(token_sets[i] & token_sets[j]) / len(union)
+                    if similarity >= threshold:
+                        ids_to_delete.add(all_memories[j]["id"])
 
         if ids_to_delete:
             if self._collection is not None:
