@@ -111,13 +111,6 @@ SILENT_TOOL_NAMES = {
 HIDDEN_TOOL_RESULT_NAMES = {
     "mcp_robot_send_message",
 }
-BACKGROUND_JOB_RUNNING_RESPONSE = (
-    "\u540e\u53f0\u4efb\u52a1\u8fd8\u5728\u8fd0\u884c\uff0c"
-    "\u6211\u4e0d\u4f1a\u91cd\u590d\u542f\u52a8\u65b0\u7684\u4e0b\u8f7d/"
-    "\u5b89\u88c5/\u6784\u5efa\u4efb\u52a1\uff1b"
-    "\u4f60\u53ef\u4ee5\u7ee7\u7eed\u95ee\u522b\u7684\uff0c"
-    "\u4efb\u52a1\u5b8c\u6210\u540e\u6211\u4f1a\u56de\u5230\u5bf9\u5e94\u6765\u6e90\u3002"
-)
 MAX_AUTO_TASKS = 5
 TERMINAL_STATUS_TOOL_NAME = "mcp_local_get_terminal_status"
 TERMINAL_ACTION_EVIDENCE_TOOLS = {
@@ -2133,32 +2126,6 @@ def _generate_stream_unserialized(
                             tool_args,
                         )
                     if terminal_input_error:
-                        if (
-                            _has_active_robot_chat_context(agent)
-                            and terminal_session.has_running_terminal_job()
-                        ):
-                            ticket_events = _deliver_reply_ticket_final_response(
-                                agent=agent,
-                                item_id=item_id,
-                                content=BACKGROUND_JOB_RUNNING_RESPONSE,
-                                include_hidden_tool_results=include_hidden_tool_results,
-                                reply_ticket_id=reply_ticket.ticket_id,
-                            )
-                            if ticket_events:
-                                for event in ticket_events:
-                                    yield _to_sse(event)
-                            else:
-                                response_event = _persist_and_broadcast_event(
-                                    item_id,
-                                    role="assistant",
-                                    content=BACKGROUND_JOB_RUNNING_RESPONSE,
-                                    message_type="agent_response",
-                                    extra={"tool_name": tool_name},
-                                )
-                                yield _to_sse(response_event)
-                            _broadcast_agent_status(item_id, "idle")
-                            yield _to_sse({"done": True})
-                            return
                         if is_terminal_unavailable_error(terminal_input_error):
                             for event in _finalize_stopped_turn(
                                 agent=agent,

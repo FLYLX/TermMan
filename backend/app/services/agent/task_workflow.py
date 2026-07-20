@@ -757,19 +757,39 @@ class TaskWorkflowManager:
                 workflow.latest_progress = note or workflow.latest_progress
             elif normalized_action == "insert_recovery_step":
                 recovery_title = str(title or note or "Recovery step").strip()[:180]
-                if step:
-                    step.status = "waiting"
-                recovery = WorkflowStep(
-                    step_id=uuid.uuid4().hex[:12],
-                    title=recovery_title,
-                    status="running",
-                    note=note,
-                    recovery=True,
+                existing_recovery = next(
+                    (
+                        candidate
+                        for candidate in workflow.steps
+                        if candidate.title == recovery_title
+                        and candidate.status not in {"completed", "cancelled"}
+                    ),
+                    None,
                 )
-                workflow.steps.insert(workflow.current_step_index, recovery)
-                workflow.status = "active"
-                workflow.blocker = ""
-                workflow.latest_progress = f"Recovery step added: {recovery_title}"
+                if existing_recovery is not None:
+                    # Same recovery already exists: resume it instead of
+                    # bloating the plan with duplicate recovery steps.
+                    if step and step is not existing_recovery:
+                        step.status = "waiting"
+                    workflow.current_step_index = workflow.steps.index(existing_recovery)
+                    existing_recovery.status = "running"
+                    workflow.status = "active"
+                    workflow.blocker = ""
+                    workflow.latest_progress = f"Recovery step resumed: {recovery_title}"
+                else:
+                    if step:
+                        step.status = "waiting"
+                    recovery = WorkflowStep(
+                        step_id=uuid.uuid4().hex[:12],
+                        title=recovery_title,
+                        status="running",
+                        note=note,
+                        recovery=True,
+                    )
+                    workflow.steps.insert(workflow.current_step_index, recovery)
+                    workflow.status = "active"
+                    workflow.blocker = ""
+                    workflow.latest_progress = f"Recovery step added: {recovery_title}"
             elif normalized_action == "mark_ready_to_report":
                 incomplete = [
                     task
@@ -816,6 +836,34 @@ class TaskWorkflowManager:
             workflow.updated_at = _utcnow()
             _persist_workflow(workflow)
             return True, workflow.status
+
+    def complete_final_step_on_delivery(self, ticket_id: str) -> bool:
+        """Auto-complete when a delivery lands on the workflow's last step.
+
+        A user-facing conclusion delivered while the workflow is on its final
+        step IS the completion report: mark the step completed and move the
+        workflow to ready_to_report so delivery closes the task instead of
+        leaving it stuck at N/N active forever.
+        """
+        with self._lock:
+            workflow = self.get_by_ticket(ticket_id)
+            if not workflow or workflow.status not in {"active", "verifying"}:
+                return False
+            if not workflow.steps or workflow.current_step_index != len(workflow.steps) - 1:
+                return False
+            step = workflow.current_step()
+            if step is None or step.status in {"completed", "cancelled"}:
+                return False
+            step.status = "completed"
+            step.evidence = step.evidence or "Final delivery confirmed."
+            workflow.status = "ready_to_report"
+            workflow.blocker = ""
+            workflow.latest_progress = (
+                workflow.latest_progress or "Final step completed via delivery."
+            )
+            workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
+            return True
 
     def can_finalize(self, ticket_id: str) -> tuple[bool, str]:
         workflow = self.get_by_ticket(ticket_id)
@@ -919,7 +967,7 @@ class TaskWorkflowManager:
         reply_ticket_id: str = "",
     ) -> str:
         workflow = self.get_by_ticket(reply_ticket_id) if reply_ticket_id else None
-        if workflow is None:
+        if workflow is None or workflow.status in WORKFLOW_FINAL_STATUSES:
             return ""
 
         current = workflow.current_step()

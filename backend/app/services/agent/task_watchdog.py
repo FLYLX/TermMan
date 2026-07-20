@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 CLOSE_REASON = "任务长时间没有进展，已自动关闭"
 # Grace period before declaring a background-job result callback lost.
-WAITING_JOB_CALLBACK_GRACE_SECONDS = 120.0
+WAITING_JOB_CALLBACK_GRACE_SECONDS = 60.0
 
 
 def _utcnow() -> datetime:
@@ -41,6 +41,9 @@ def _as_utc(value: datetime) -> datetime:
 def _stale_timeout_seconds(status: str) -> float:
     if status == "waiting_job":
         return float(settings.AGENT_WATCHDOG_WAITING_JOB_STALE_SECONDS)
+    if status == "blocked":
+        # Legitimate external waits (awaiting a user/event) get a longer leash.
+        return float(settings.AGENT_WATCHDOG_BLOCKED_STALE_SECONDS)
     return float(settings.AGENT_WATCHDOG_STALE_SECONDS)
 
 
@@ -175,6 +178,78 @@ def _reconcile_waiting_job_workflows(now: datetime, stats: dict[str, int]) -> No
             stats["resumed"] += 1
 
 
+def _item_has_live_execution(item_id: str) -> bool:
+    """True when the item has an in-flight turn or interactive terminal work.
+
+    Used to avoid double-driving a workflow while its own turn/session is
+    already progressing it.
+    """
+    try:
+        from app.services.agent.session import SessionState, agent_session_manager
+
+        session = agent_session_manager.get_session(str(item_id))
+        if session is None:
+            return False
+        with session.lock:
+            if session.state in {
+                SessionState.RUNNING,
+                SessionState.INTERRUPTING,
+                SessionState.COLLECTING,
+            }:
+                return True
+            if session.input_queue.qsize() > 0:
+                return True
+        try:
+            if session.has_pending_command() or session.has_running_terminal_job():
+                return True
+        except Exception:
+            return True
+        return False
+    except Exception:
+        return True
+
+
+def _resume_stalled_active_workflows(now: datetime, stats: dict[str, int]) -> None:
+    """Resume active/verifying workflows that nothing is driving.
+
+    A workflow can stall at "active" with no background job, no interactive
+    terminal work, and no live turn (e.g. the last turn ended with a verbal
+    promise instead of an action). Without a driver it would sit until the
+    stale-close timeout. Detect the stall after AGENT_WATCHDOG_IDLE_RESUME_SECONDS
+    of no updates and immediately schedule a continuation turn.
+    """
+    from app.services.agent.task_workflow import task_workflow_manager
+
+    threshold = timedelta(seconds=float(settings.AGENT_WATCHDOG_IDLE_RESUME_SECONDS))
+    with task_workflow_manager._lock:
+        candidates = [
+            workflow
+            for workflow in task_workflow_manager._workflows.values()
+            if workflow.status in {"active", "verifying"}
+            and _as_utc(workflow.updated_at) < now - threshold
+            and not any(job.status == "running" for job in workflow.jobs)
+        ]
+    live_execution_cache: dict[str, bool] = {}
+    for workflow in candidates:
+        if workflow.item_id not in live_execution_cache:
+            live_execution_cache[workflow.item_id] = _item_has_live_execution(
+                workflow.item_id
+            )
+        if live_execution_cache[workflow.item_id]:
+            continue
+        ticket_id = workflow.reply_ticket_id or (
+            workflow.reply_ticket_ids[-1] if workflow.reply_ticket_ids else ""
+        )
+        logger.info(
+            "[TaskWatchdog] Stalled workflow detected (nothing running, no live turn): workflow=%s item=%s objective=%r",
+            workflow.workflow_id,
+            workflow.item_id,
+            (workflow.objective or "")[:80],
+        )
+        if _schedule_workflow_continuation(workflow.item_id, ticket_id):
+            stats["stalled_resumed"] += 1
+
+
 def _close_stale_workflow(workflow: Any, stats: dict[str, int], *, now: datetime) -> None:
     from app.services.agent import task_workflow as workflow_module
     from app.services.agent.reply_ticket import reply_ticket_manager
@@ -265,11 +340,16 @@ def run_once(now: datetime | None = None) -> dict[str, int]:
         "orphan_tickets_removed": 0,
         "reconciled": 0,
         "resumed": 0,
+        "stalled_resumed": 0,
     }
     try:
         _reconcile_waiting_job_workflows(now, stats)
     except Exception:
         logger.exception("[TaskWatchdog] Waiting-job reconciliation failed")
+    try:
+        _resume_stalled_active_workflows(now, stats)
+    except Exception:
+        logger.exception("[TaskWatchdog] Stalled-workflow resume failed")
     with task_workflow_manager._lock:
         candidates = [
             workflow
@@ -313,9 +393,11 @@ class AgentTaskWatchdog:
             )
             self._thread.start()
         logger.info(
-            "[TaskWatchdog] Started (interval=%ss, stale=%ss, waiting_job_stale=%ss)",
+            "[TaskWatchdog] Started (interval=%ss, idle_resume=%ss, stale=%ss, blocked_stale=%ss, waiting_job_stale=%ss)",
             settings.AGENT_WATCHDOG_INTERVAL_SECONDS,
+            settings.AGENT_WATCHDOG_IDLE_RESUME_SECONDS,
             settings.AGENT_WATCHDOG_STALE_SECONDS,
+            settings.AGENT_WATCHDOG_BLOCKED_STALE_SECONDS,
             settings.AGENT_WATCHDOG_WAITING_JOB_STALE_SECONDS,
         )
 

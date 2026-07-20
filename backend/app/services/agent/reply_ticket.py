@@ -442,6 +442,11 @@ class ReplyTicketManager:
 
             can_finalize, reason = task_workflow_manager.can_finalize(ticket_id)
             if not can_finalize:
+                # A delivery landing on the last step IS the completion report:
+                # close the workflow instead of keeping it stuck at N/N active.
+                if task_workflow_manager.complete_final_step_on_delivery(ticket_id):
+                    can_finalize, reason = task_workflow_manager.can_finalize(ticket_id)
+            if not can_finalize:
                 logger.info(
                     "[ReplyTicket] Kept ticket active after intermediate delivery: ticket=%s reason=%s",
                     ticket_id,

@@ -406,3 +406,216 @@ def test_watchdog_skips_reconcile_when_daemon_unavailable(monkeypatch) -> None:
     assert stats["reconciled"] == 0
     assert workflow.jobs[-1].status == "running"
     assert workflow.status == "waiting_job"
+
+
+def test_delivery_on_last_step_closes_workflow() -> None:
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="t-final-1",
+        objective="安装 Java",
+        source_type="qq",
+        source_label="QQ private:u1",
+        step_titles=["安装", "验证"],
+    )
+    task_workflow_manager.update("t-final-1", action="complete_current_step", note="装好")
+    assert workflow.status == "active"
+    assert workflow.current_step_index == 1
+
+    agent = _make_agent()
+    ticket = reply_ticket_manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="装好了吗",
+    )
+    reply_ticket_manager.attach_to_agent(agent, ticket.ticket_id)
+    task_workflow_manager.attach_ticket(workflow.workflow_id, ticket.ticket_id)
+
+    assert reply_ticket_manager.mark_delivered(ticket.ticket_id) is True
+    assert workflow.steps[-1].status == "completed"
+    assert workflow.status == "completed"
+    assert workflow.delivered_at is not None
+
+
+def test_delivery_before_last_step_keeps_workflow_active() -> None:
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="t-mid-1",
+        objective="安装 Java",
+        source_type="web",
+        source_label="web",
+        step_titles=["安装", "验证"],
+    )
+    agent = _make_agent()
+    ticket = reply_ticket_manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="进展如何",
+    )
+    task_workflow_manager.attach_ticket(workflow.workflow_id, ticket.ticket_id)
+
+    assert reply_ticket_manager.mark_delivered(ticket.ticket_id) is False
+    assert workflow.status == "active"
+    assert workflow.steps[0].status == "running"
+
+
+def test_duplicate_recovery_step_is_resumed_not_inserted() -> None:
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="t-rec-1",
+        objective="安装 Java",
+        source_type="web",
+        source_label="web",
+        step_titles=["安装", "验证"],
+    )
+    task_workflow_manager.update(
+        "t-rec-1",
+        action="insert_recovery_step",
+        title="改用 openjdk-21 安装",
+    )
+    task_workflow_manager.update(
+        "t-rec-1",
+        action="insert_recovery_step",
+        title="改用 openjdk-21 安装",
+    )
+    recovery_titles = [step.title for step in workflow.steps if step.recovery]
+    assert recovery_titles == ["改用 openjdk-21 安装"]
+    assert workflow.steps[workflow.current_step_index].title == "改用 openjdk-21 安装"
+
+
+def test_prompt_context_skips_finished_workflow() -> None:
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="t-done-1",
+        objective="安装 Java",
+        source_type="web",
+        source_label="web",
+        step_titles=["一步"],
+    )
+    assert task_workflow_manager.build_prompt_context(
+        item_id="item-1",
+        reply_ticket_id="t-done-1",
+    )
+    task_workflow_manager.update("t-done-1", action="cancel", note="不做了")
+    assert (
+        task_workflow_manager.build_prompt_context(
+            item_id="item-1",
+            reply_ticket_id="t-done-1",
+        )
+        == ""
+    )
+
+
+def test_watchdog_resumes_stalled_active_workflow(monkeypatch) -> None:
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="t-stall-1",
+        objective="安装 Java",
+        source_type="web",
+        source_label="web",
+        step_titles=["安装", "验证"],
+    )
+    workflow.updated_at = datetime.now(timezone.utc) - timedelta(minutes=15)
+
+    monkeypatch.setattr(task_watchdog, "_item_has_live_execution", lambda _item_id: False)
+    resumed: list[str] = []
+    monkeypatch.setattr(
+        task_watchdog,
+        "_schedule_workflow_continuation",
+        lambda _item_id, ticket_id: resumed.append(ticket_id) or True,
+    )
+
+    stats = task_watchdog.run_once()
+
+    assert stats["stalled_resumed"] == 1
+    assert resumed == ["t-stall-1"]
+    assert workflow.status == "active"
+
+
+def test_watchdog_skips_stalled_when_execution_live(monkeypatch) -> None:
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="t-stall-2",
+        objective="安装 Java",
+        source_type="web",
+        source_label="web",
+        step_titles=["安装", "验证"],
+    )
+    workflow.updated_at = datetime.now(timezone.utc) - timedelta(minutes=15)
+
+    monkeypatch.setattr(task_watchdog, "_item_has_live_execution", lambda _item_id: True)
+    resumed: list[str] = []
+    monkeypatch.setattr(
+        task_watchdog,
+        "_schedule_workflow_continuation",
+        lambda _item_id, ticket_id: resumed.append(ticket_id) or True,
+    )
+
+    stats = task_watchdog.run_once()
+
+    assert stats["stalled_resumed"] == 0
+    assert resumed == []
+
+
+def test_watchdog_skips_stalled_when_job_running(monkeypatch) -> None:
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="t-stall-3",
+        objective="安装 Java",
+        source_type="web",
+        source_label="web",
+        step_titles=["安装", "验证"],
+    )
+    task_workflow_manager.mark_job_started("t-stall-3", command="apt-get update")
+    workflow.updated_at = datetime.now(timezone.utc) - timedelta(minutes=15)
+
+    monkeypatch.setattr(task_watchdog, "_item_has_live_execution", lambda _item_id: False)
+    monkeypatch.setattr(
+        task_watchdog,
+        "_list_daemon_job_commands",
+        lambda _item_id: {"apt-get update"},
+    )
+    resumed: list[str] = []
+    monkeypatch.setattr(
+        task_watchdog,
+        "_schedule_workflow_continuation",
+        lambda _item_id, ticket_id: resumed.append(ticket_id) or True,
+    )
+
+    stats = task_watchdog.run_once()
+
+    assert stats["stalled_resumed"] == 0
+    assert resumed == []
+
+
+def test_watchdog_skips_stalled_when_fresh(monkeypatch) -> None:
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="t-stall-4",
+        objective="安装 Java",
+        source_type="web",
+        source_label="web",
+        step_titles=["安装", "验证"],
+    )
+
+    monkeypatch.setattr(task_watchdog, "_item_has_live_execution", lambda _item_id: False)
+    resumed: list[str] = []
+    monkeypatch.setattr(
+        task_watchdog,
+        "_schedule_workflow_continuation",
+        lambda _item_id, ticket_id: resumed.append(ticket_id) or True,
+    )
+
+    stats = task_watchdog.run_once()
+
+    assert stats["stalled_resumed"] == 0
+    assert resumed == []
