@@ -865,6 +865,51 @@ class TaskWorkflowManager:
             _persist_workflow(workflow)
             return True
 
+    def complete_last_step_workflow_on_delivery(self, item_id: str) -> bool:
+        """Close the most recent last-step workflow of an item after a delivery.
+
+        The completion report may go out on a ticket that was never attached
+        to the workflow (a follow-up question opening a fresh ticket). When a
+        delivery succeeds while such a workflow sits on its final step, the
+        delivered conclusion IS its report: finish the step and close it.
+        """
+        with self._lock:
+            candidates = [
+                workflow
+                for workflow in self._workflows.values()
+                if workflow.item_id == str(item_id)
+                and workflow.status in {"active", "verifying"}
+                and workflow.steps
+                and workflow.current_step_index == len(workflow.steps) - 1
+            ]
+            if not candidates:
+                return False
+            candidates.sort(key=lambda workflow: workflow.updated_at, reverse=True)
+            workflow = candidates[0]
+            step = workflow.current_step()
+            if step is None or step.status in {"completed", "cancelled"}:
+                return False
+            step.status = "completed"
+            step.evidence = step.evidence or "Final delivery confirmed."
+            workflow.status = "ready_to_report"
+            workflow.blocker = ""
+            workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
+            ticket_ids = [
+                workflow.reply_ticket_id,
+                *workflow.reply_ticket_ids,
+            ]
+        for ticket_id in ticket_ids:
+            if ticket_id:
+                self.on_delivery(ticket_id)
+                break
+        else:
+            with self._lock:
+                workflow.status = "completed"
+                workflow.updated_at = _utcnow()
+                _persist_workflow(workflow)
+        return True
+
     def can_finalize(self, ticket_id: str) -> tuple[bool, str]:
         workflow = self.get_by_ticket(ticket_id)
         if not workflow:

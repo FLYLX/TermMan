@@ -30,6 +30,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 
 type TimelineRole = "user" | "assistant" | "terminal"
@@ -1067,6 +1068,8 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [liveError, setLiveError] = useState<string | null>(null)
   const [agentStatus, setAgentStatus] = useState<AgentStatusState | null>(null)
+  const [turnCount, setTurnCount] = useState(0)
+  const turnActiveRef = useRef(false)
   const [historyHasMore, setHistoryHasMore] = useState(false)
   const [historyTotal, setHistoryTotal] = useState(0)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
@@ -1153,11 +1156,13 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
     }
 
     if (data.done === true) {
+      turnActiveRef.current = false
       setAgentStatus(null)
       return
     }
 
     if (data.type === "aborted" || data.type === "error") {
+      turnActiveRef.current = false
       setAgentStatus(null)
       return
     }
@@ -1166,8 +1171,16 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       const status = typeof data.status === "string" ? data.status : ""
       const content = typeof data.content === "string" ? data.content.trim() : ""
       if (!content || TERMINAL_STATUS_DONE_STATES.has(status)) {
+        turnActiveRef.current = false
         setAgentStatus(null)
         return
+      }
+      if (status === "running" && !turnActiveRef.current) {
+        // Each running cycle after a done/idle boundary is one agent-driven
+        // turn (continuation, job callback, stall resume). User inputs reset
+        // the counter via the chat_user branch instead of counting here.
+        turnActiveRef.current = true
+        setTurnCount((current) => current + 1)
       }
 
       const terminalSource = getTerminalSource(data.terminal_source)
@@ -1205,6 +1218,8 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       return
     }
     if (normalizedMessage.type === "chat_user") {
+      setTurnCount(1)
+      turnActiveRef.current = true
       setAgentStatus({
         text: "\u56de\u590d\u4e2d",
         kind: "replying",
@@ -1237,6 +1252,8 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       setLiveError(null)
       setIsLoading(false)
       setAgentStatus(null)
+      setTurnCount(0)
+      turnActiveRef.current = false
       setHistoryHasMore(false)
       setHistoryTotal(0)
       setIsLoadingHistory(false)
@@ -1730,6 +1747,8 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
                       loadedPersistedMessageCountRef.current = 0
                       setHistoryError(null)
                       setAgentStatus(null)
+                      setTurnCount(0)
+                      turnActiveRef.current = false
                       setHistoryHasMore(false)
                       setHistoryTotal(0)
                     } catch (error) {
@@ -1809,13 +1828,24 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       </div>
 
       <div className="shrink-0 border-t bg-background px-3 py-3">
-        {visibleAgentStatus && (
-          <AgentStatusCard
-            status={visibleAgentStatus}
-            canAbort={canAbortSession}
-            onAbort={() => void abortChat()}
-          />
-        )}
+        <div className="flex items-center gap-2">
+          {visibleAgentStatus && (
+            <AgentStatusCard
+              status={visibleAgentStatus}
+              canAbort={canAbortSession}
+              onAbort={() => void abortChat()}
+            />
+          )}
+          {turnCount > 0 ? (
+            <Badge
+              variant="outline"
+              className="shrink-0 border-cyan-500/40 bg-cyan-500/10 text-[10px] text-cyan-700 dark:text-cyan-300"
+              title="你这条输入之后 agent 已跑的轮次（含自动续跑/后台回调；内部纠偏不计）"
+            >
+              第 {turnCount} 轮
+            </Badge>
+          ) : null}
+        </div>
 
         <div className="flex gap-2">
           <Input

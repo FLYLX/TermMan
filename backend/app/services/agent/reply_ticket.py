@@ -460,6 +460,14 @@ class ReplyTicketManager:
             )
             return False
 
+        ticket = self.get(ticket_id)
+        if ticket is not None:
+            # A delivered conclusion also closes any last-step workflow in this
+            # item, even when this ticket was never attached to it.
+            task_workflow_manager.complete_last_step_workflow_on_delivery(
+                ticket.item_id
+            )
+
         with self._lock:
             ticket = self._tickets.get(ticket_id)
             if not ticket:

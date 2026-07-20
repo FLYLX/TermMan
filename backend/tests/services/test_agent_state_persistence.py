@@ -619,3 +619,59 @@ def test_watchdog_skips_stalled_when_fresh(monkeypatch) -> None:
 
     assert stats["stalled_resumed"] == 0
     assert resumed == []
+
+
+def test_delivery_on_unattached_ticket_closes_last_step_workflow() -> None:
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="t-orig-1",
+        objective="安装 Java",
+        source_type="qq",
+        source_label="QQ private:u1",
+        step_titles=["安装", "验证"],
+    )
+    task_workflow_manager.update("t-orig-1", action="complete_current_step", note="装好")
+    assert workflow.current_step_index == 1
+    assert workflow.status == "active"
+
+    # A follow-up question creates a fresh ticket that is NOT attached to the
+    # workflow. The agent answers "验证过了" on that ticket and it delivers.
+    agent = _make_agent()
+    ticket = reply_ticket_manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="验证过了吗",
+    )
+    assert task_workflow_manager.get_by_ticket(ticket.ticket_id) is None
+
+    assert reply_ticket_manager.mark_delivered(ticket.ticket_id) is True
+    assert workflow.steps[-1].status == "completed"
+    assert workflow.status == "completed"
+    assert workflow.delivered_at is not None
+
+
+def test_unattached_delivery_does_not_close_mid_workflow() -> None:
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="t-orig-2",
+        objective="安装 Java",
+        source_type="web",
+        source_label="web",
+        step_titles=["安装", "验证"],
+    )
+    assert workflow.current_step_index == 0
+
+    agent = _make_agent()
+    ticket = reply_ticket_manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="进展如何",
+    )
+
+    assert reply_ticket_manager.mark_delivered(ticket.ticket_id) is True
+    assert workflow.status == "active"
+    assert workflow.steps[0].status == "running"
