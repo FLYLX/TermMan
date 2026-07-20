@@ -4811,6 +4811,79 @@ def test_reap_leaves_fresh_dispatch_jobs_alone(db: Session) -> None:
     assert "fresh-1" in service._active_dispatch_jobs
 
 
+def test_reap_stuck_dispatch_jobs_starts_replacement_worker(
+    db: Session, monkeypatch
+) -> None:
+    import time as time_module
+
+    from app.core.config import settings as app_settings
+
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    service = RobotService()
+    monkeypatch.setattr(
+        app_settings,
+        "ROBOT_BACKEND_DISPATCH_HARD_TIMEOUT_SECONDS",
+        0.1,
+    )
+    service._ensure_dispatch_workers()
+    initial_workers = service._dispatch_worker_count
+    job = robot_service_module_queued_job(robot, item, "stuck-replacement")
+    with service._lock:
+        service._active_dispatch_jobs["stuck-replacement"] = (
+            time_module.monotonic() - 10,
+            job,
+        )
+    monkeypatch.setattr(
+        service,
+        "_record_and_send_job_error",
+        lambda *args, **kwargs: None,
+    )
+
+    reaped = service.reap_stuck_dispatch_jobs()
+
+    assert reaped == 1
+    assert service._dispatch_worker_count == initial_workers + 1
+
+
+def test_record_and_send_job_error_reaches_qq_before_state_clear(
+    db: Session, monkeypatch
+) -> None:
+    from dataclasses import replace as dataclass_replace
+
+    from app.plugins.robot import bridge_client
+
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    service = RobotService()
+    generation = service._begin_reply_context_dispatch(robot, "group:g1")
+    job = robot_service_module_queued_job(robot, item, "error-1")
+    job = dataclass_replace(
+        job,
+        conversation_generation=generation,
+        reply_requires_awake=True,
+    )
+    sent: list[str] = []
+    monkeypatch.setattr(
+        bridge_client.robot_bridge_client,
+        "send_message",
+        lambda _robot_id, _target, message: sent.append(message),
+    )
+    monkeypatch.setattr(
+        service,
+        "_remember_assistant_conversation_memory",
+        lambda *args, **kwargs: None,
+    )
+
+    service._record_and_send_job_error(job, "任务处理超时，已强制中止。请重新发一次。")
+
+    assert sent and "超时" in sent[0]
+    key = service._conversation_controller_key(robot.id, "group:g1")
+    controller = service._conversation_controllers[key]
+    assert controller.processing is False
+    assert controller.sleeping is True
+
+
 def test_think_blocks_are_stripped_from_visible_text() -> None:
     from app.plugins.robot.internal_trace import (
         is_robot_internal_trace_text,

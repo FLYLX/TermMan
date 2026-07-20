@@ -102,6 +102,9 @@ def restore_tickets_from_store() -> int:
             reply_ticket_manager._ticket_aliases.update(
                 {str(key): str(value) for key, value in aliases.items()}
             )
+        # Drop tickets that went stale while the process was down; otherwise
+        # they would be restored forever and fake "processing" in the UI.
+        reply_ticket_manager._prune_locked(datetime.now())
     return restored
 
 
@@ -165,14 +168,14 @@ class ReplyTicketManager:
 
     def _prune_locked(self, now: datetime) -> None:
         cutoff = now - TICKET_TTL
+        # Prune every ticket untouched for longer than the TTL, regardless of
+        # status: a ticket stuck in pending/running/failed that long will
+        # never be delivered (in-memory agent state cannot survive that), and
+        # keeping it only fakes a permanent "processing" row in the UI.
         stale_ids = [
             ticket_id
             for ticket_id, ticket in self._tickets.items()
             if ticket.updated_at < cutoff
-            and (
-                ticket.status == "delivered"
-                or bool(ticket.scheduled_task_id)
-            )
         ]
         for ticket_id in stale_ids:
             self._tickets.pop(ticket_id, None)
@@ -616,6 +619,7 @@ class ReplyTicketManager:
 
     def snapshot(self, item_id: str | None = None) -> list[dict[str, Any]]:
         with self._lock:
+            self._prune_locked(datetime.now())
             tickets = list(self._tickets.values())
         if item_id:
             tickets = [ticket for ticket in tickets if ticket.item_id == str(item_id)]

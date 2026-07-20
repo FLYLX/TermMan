@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from app.plugins.robot.api import (
@@ -85,8 +85,8 @@ def test_controller_pending_list_removes_ticket_only_after_delivered(
         "task_request_id": "plan-1",
         "request_message": "start the server",
         "command": "bash run.sh",
-        "created_at": "2026-07-13T10:00:00",
-        "updated_at": "2026-07-13T10:00:05",
+        "created_at": (datetime.now() - timedelta(seconds=10)).isoformat(),
+        "updated_at": datetime.now().isoformat(),
         "delivery_error": "",
         "robot_id": "robot-1",
         "sender_key": "sender-1",
@@ -146,7 +146,7 @@ def test_controller_pending_list_removes_ticket_only_after_delivered(
     assert delivered_snapshots == {}
 
 
-def test_reply_ticket_pruning_never_drops_undelivered_work() -> None:
+def test_reply_ticket_pruning_drops_stale_tickets_regardless_of_status() -> None:
     manager = ReplyTicketManager()
     agent = SimpleNamespace(
         _context=SimpleNamespace(
@@ -155,14 +155,14 @@ def test_reply_ticket_pruning_never_drops_undelivered_work() -> None:
             reply_ticket_id="",
         )
     )
-    pending = manager.create_for_agent(
+    stale_pending = manager.create_for_agent(
         agent,
         item_id="item-1",
         handler_id="handler-1",
-        message="pending request",
+        message="stale pending request",
         source_type="web",
     )
-    pending.updated_at -= timedelta(hours=7)
+    stale_pending.updated_at -= timedelta(hours=7)
 
     manager.create_for_agent(
         agent,
@@ -171,10 +171,17 @@ def test_reply_ticket_pruning_never_drops_undelivered_work() -> None:
         message="new request",
         source_type="web",
     )
-    assert manager.get(pending.ticket_id) is pending
+    # A ticket untouched for longer than the TTL will never be delivered and
+    # would otherwise fake a permanent "processing" row in the UI.
+    assert manager.get(stale_pending.ticket_id) is None
 
-    manager.mark_delivered(pending.ticket_id)
-    pending.updated_at -= timedelta(hours=7)
+    fresh_pending = manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="fresh pending request",
+        source_type="web",
+    )
     manager.create_for_agent(
         agent,
         item_id="item-1",
@@ -182,7 +189,7 @@ def test_reply_ticket_pruning_never_drops_undelivered_work() -> None:
         message="another request",
         source_type="web",
     )
-    assert manager.get(pending.ticket_id) is None
+    assert manager.get(fresh_pending.ticket_id) is fresh_pending
 
 
 def test_intermediate_delivery_cannot_close_active_task_workflow() -> None:

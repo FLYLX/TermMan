@@ -1,7 +1,7 @@
 import re
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import PlainTextResponse, Response
@@ -73,6 +73,22 @@ router = APIRouter(
 )
 
 
+REPLY_TICKET_PROCESSING_STALE = timedelta(minutes=30)
+
+
+def _reply_ticket_snapshot_stale(ticket: dict[str, object]) -> bool:
+    raw = ticket.get("updated_at") or ticket.get("created_at")
+    if not raw:
+        return True
+    try:
+        updated_at = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return True
+    if updated_at.tzinfo is not None:
+        updated_at = updated_at.astimezone(timezone.utc).replace(tzinfo=None)
+    return datetime.now() - updated_at > REPLY_TICKET_PROCESSING_STALE
+
+
 def _merge_active_reply_tickets_into_controller_snapshots(
     snapshots_by_robot: dict[str, list[dict[str, object]]],
     *,
@@ -84,11 +100,13 @@ def _merge_active_reply_tickets_into_controller_snapshots(
     for ticket in tickets:
         robot_id = str(ticket.get("robot_id") or "")
         conversation_key = str(ticket.get("conversation_key") or "")
+        status = str(ticket.get("status") or "")
         if (
             ticket.get("source_type") != SOURCE_QQ
-            or ticket.get("status") == "delivered"
+            or status in {"delivered", "failed"}
             or robot_id not in allowed_robot_ids
             or not conversation_key
+            or _reply_ticket_snapshot_stale(ticket)
         ):
             continue
 

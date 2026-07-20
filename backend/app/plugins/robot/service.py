@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 CONVERSATION_TTL = timedelta(hours=6)
 CONVERSATION_PROCESSING_MIN_TIMEOUT_SECONDS = 120
 CONVERSATION_PROCESSING_MAX_TIMEOUT_SECONDS = 600
+DISPATCH_WORKER_MAX_COUNT = 8
 PENDING_CHAT_QUEUE_LIMIT = 5
 PENDING_DIRECT_WAKE_TRIGGER_REASONS = frozenset({
     "mention_bot",
@@ -627,37 +628,49 @@ class RobotService:
             reaped += 1
 
         if reaped:
-            self._ensure_replacement_workers()
+            self._ensure_replacement_workers(reaped)
         return reaped
 
-    def _ensure_replacement_workers(self) -> None:
-        """Start a fresh worker when all existing workers are frozen."""
-        with self._lock:
-            active_count = len(self._active_dispatch_jobs)
-            worker_count = self._dispatch_worker_count
-        if worker_count == 0 or active_count < worker_count:
+    def _ensure_replacement_workers(self, needed: int = 1) -> None:
+        """Start fresh workers to replace frozen ones, one per reaped job.
+
+        Every reaped job means its worker thread is frozen inside that job,
+        so the queue has effectively lost a consumer. Start one replacement
+        per reaped job, capped at DISPATCH_WORKER_MAX_COUNT total workers.
+        (The old check ran after the reaper had already removed the stuck
+        jobs, so active_count could never reach worker_count and no
+        replacement ever started -- once every worker froze, the queue
+        stalled until a backend restart.)
+        """
+        if needed <= 0 or not self._dispatch_workers_started:
             return
-        if worker_count >= 4:
-            logger.error(
-                "[RobotService] All %s dispatch workers stuck but at replacement cap; queue may stall",
-                worker_count,
-            )
-            return
+        started = 0
         with self._dispatch_worker_lock:
-            if self._dispatch_worker_count >= 4:
-                return
-            index = self._dispatch_worker_count
-            worker = threading.Thread(
-                target=self._dispatch_worker_loop,
-                name=f"termman-backend-robot-dispatch-replacement-{index}",
-                daemon=True,
+            while (
+                started < needed
+                and self._dispatch_worker_count < DISPATCH_WORKER_MAX_COUNT
+            ):
+                index = self._dispatch_worker_count
+                worker = threading.Thread(
+                    target=self._dispatch_worker_loop,
+                    name=f"termman-backend-robot-dispatch-replacement-{index}",
+                    daemon=True,
+                )
+                worker.start()
+                self._dispatch_worker_count += 1
+                started += 1
+        if started:
+            logger.warning(
+                "[RobotService] Started %s replacement dispatch worker(s) (now %s) after stuck workers",
+                started,
+                self._dispatch_worker_count,
             )
-            worker.start()
-            self._dispatch_worker_count += 1
-        logger.warning(
-            "[RobotService] Started replacement dispatch worker (now %s) after stuck workers",
-            self._dispatch_worker_count,
-        )
+        else:
+            logger.error(
+                "[RobotService] %s dispatch worker(s) stuck but worker cap %s reached; queue may stall",
+                needed,
+                DISPATCH_WORKER_MAX_COUNT,
+            )
 
     def restore_dispatch_jobs(self) -> int:
         try:
@@ -1121,11 +1134,15 @@ class RobotService:
         job: QueuedRobotChatJob,
         message: str,
     ) -> None:
-        self._clear_reply_context_window_for_key(
+        # Check the send permission BEFORE clearing the reply context:
+        # clearing bumps the controller generation, which would make the
+        # generation check below always fail, so the error would never
+        # reach QQ.
+        allowed = self.conversation_controller_allows_completion_reply(
             job.robot_id,
             job.conversation_key,
-            reason="dispatch_error",
-            expected_generation=job.conversation_generation or None,
+            job.conversation_generation,
+            requires_awake=job.reply_requires_awake,
         )
         record_robot_event(
             str(job.robot_id),
@@ -1139,23 +1156,26 @@ class RobotService:
                 "queue": self.dispatch_queue_snapshot(),
             },
         )
-        if not self.conversation_controller_allows_completion_reply(
+        delivered = False
+        if allowed:
+            try:
+                from .bridge_client import robot_bridge_client
+
+                robot_bridge_client.send_message(job.robot_id, job.reply_target, message)
+            except Exception:
+                logger.exception(
+                    "[RobotService] Failed to send queued dispatch error robot=%s",
+                    job.robot_id,
+                )
+            else:
+                delivered = True
+        self._clear_reply_context_window_for_key(
             job.robot_id,
             job.conversation_key,
-            job.conversation_generation,
-            requires_awake=job.reply_requires_awake,
-        ):
-            return
-        try:
-            from .bridge_client import robot_bridge_client
-
-            robot_bridge_client.send_message(job.robot_id, job.reply_target, message)
-        except Exception:
-            logger.exception(
-                "[RobotService] Failed to send queued dispatch error robot=%s",
-                job.robot_id,
-            )
-        else:
+            reason="dispatch_error",
+            expected_generation=job.conversation_generation or None,
+        )
+        if delivered:
             self._remember_assistant_conversation_memory(job.robot_id, job.conversation_key, message)
 
     def handle_inbound_message(
