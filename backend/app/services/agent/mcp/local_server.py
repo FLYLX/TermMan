@@ -20,6 +20,151 @@ BACKGROUND_JOB_STARTED_MARKER = "background_job_started"
 COMMAND_DISPATCH_FAILED_MARKER = "command_dispatch_failed"
 TERMINAL_UNAVAILABLE_RESULT_MARKER = "terminal_unavailable"
 
+# Background job result coalescing: results arriving while a turn is running
+# are buffered and merged into ONE follow-up turn when the turn ends.
+_JOB_RESULT_BUFFER_LOCK = threading.Lock()
+_PENDING_JOB_RESULTS: dict[str, list[dict[str, Any]]] = {}
+
+
+def _buffer_key(item_id: str, conversation_key: str = "") -> str:
+    return f"{item_id}|{conversation_key}" if conversation_key else str(item_id)
+
+
+def buffer_background_job_result(item_id: str, entry: dict[str, Any]) -> None:
+    with _JOB_RESULT_BUFFER_LOCK:
+        _PENDING_JOB_RESULTS.setdefault(
+            _buffer_key(item_id, entry.get("conversation_key", "")),
+            [],
+        ).append(entry)
+
+
+def _pop_buffered_job_results(
+    item_id: str, conversation_key: str = ""
+) -> list[dict[str, Any]]:
+    with _JOB_RESULT_BUFFER_LOCK:
+        return _PENDING_JOB_RESULTS.pop(_buffer_key(item_id, conversation_key), [])
+
+
+def _format_background_job_results_batch(entries: list[dict[str, Any]]) -> str:
+    lines = [f"[Background job results batch: {len(entries)} jobs finished]"]
+    for index, entry in enumerate(entries, start=1):
+        result = entry["result"]
+        status = "succeeded" if result.get("success") else "failed"
+        exit_code = result.get("exit_code")
+        duration = result.get("duration_seconds")
+        ticket = str(entry.get("reply_ticket_id") or "")[:8]
+        lines.append(
+            f"{index}. {status}: {entry['command']} "
+            f"(exit {exit_code}, {duration}s, ticket={ticket})"
+        )
+        tail = str(result.get("output_tail") or "").strip()
+        if tail:
+            lines.append(f"   output: {tail[-300:]}")
+        elif result.get("error"):
+            lines.append(f"   error: {str(result.get('error'))[:300]}")
+    lines.append(
+        "Each listed job result is already recorded in its task workflow. "
+        "Advance the affected workflow steps, verify, and report per workflow."
+    )
+    return "\n".join(lines)
+
+
+def flush_background_job_results_for_entries(
+    item_id: str, entries: list[dict[str, Any]]
+) -> bool:
+    if not entries:
+        return False
+    server = local_mcp_server
+    flushed_any = False
+    robot_entries = [entry for entry in entries if entry.get("robot_job_context")]
+    other_entries = [entry for entry in entries if not entry.get("robot_job_context")]
+
+    if robot_entries:
+        first = robot_entries[0]
+        if len(robot_entries) == 1:
+            message = server._format_background_job_robot_message(
+                first["command"],
+                first["result"],
+            )
+        else:
+            message = _format_background_job_results_batch(robot_entries)
+        flushed_any = server._deliver_background_job_to_robot(
+            item_id=item_id,
+            command=first["command"],
+            result=first["result"],
+            robot_job_context=first["robot_job_context"],
+            pending_reply_id=first.get("pending_robot_reply_id") or "",
+            reply_ticket_id=first.get("reply_ticket_id") or "",
+            message_override=message,
+        ) or flushed_any
+
+    if other_entries:
+        message = (
+            other_entries[0]["feedback"]
+            if len(other_entries) == 1
+            else _format_background_job_results_batch(other_entries)
+        )
+        for entry in other_entries:
+            session = entry.get("agent_session")
+            if session is None:
+                continue
+            try:
+                from app.services.agent.session import InputMessage, InputType
+
+                session.process_input(
+                    InputMessage(
+                        input_type=InputType.TERMINAL,
+                        content=message,
+                        raw_content=message,
+                        query="background job completed",
+                        reply_ticket_id=entry.get("reply_ticket_id") or "",
+                    )
+                )
+                flushed_any = True
+            except Exception as exc:
+                debug_log(
+                    f"[LocalMCPServer] failed to deliver batched job feedback: item={item_id}, error={exc}"
+                )
+            break
+
+    if not flushed_any:
+        for entry in entries:
+            if server._deliver_background_job_to_reply_ticket(
+                reply_ticket_id=entry.get("reply_ticket_id") or "",
+                command=entry["command"],
+                result=entry["result"],
+            ):
+                flushed_any = True
+                if entry.get("pending_robot_reply_id") and entry.get("robot_job_context"):
+                    server._clear_background_job_robot_reply(
+                        robot_job_context=entry["robot_job_context"],
+                        pending_reply_id=entry["pending_robot_reply_id"],
+                    )
+    return flushed_any
+
+
+def flush_job_results_for_turn_end(item_id: str, conversation_key: str = "") -> bool:
+    entries = _pop_buffered_job_results(item_id, conversation_key)
+    return flush_background_job_results_for_entries(item_id, entries)
+
+
+def _session_turn_busy(agent_session) -> bool:
+    if agent_session is None:
+        return False
+    try:
+        from app.services.agent.session import SessionState
+
+        with agent_session.lock:
+            if agent_session.state in {
+                SessionState.RUNNING,
+                SessionState.INTERRUPTING,
+                SessionState.COLLECTING,
+            }:
+                return True
+            return agent_session.input_queue.qsize() > 0
+    except Exception:
+        return False
+
 
 class LocalMCPServer:
     def __init__(self):
@@ -1149,56 +1294,39 @@ class LocalMCPServer:
                     debug_log(
                         f"[LocalMCPServer] failed to update task workflow from job: ticket={reply_ticket_id}, error={exc}"
                     )
-            queued_to_robot = False
-            delivered_by_ticket = False
-            if robot_job_context:
-                queued_to_robot = self._deliver_background_job_to_robot(
-                    item_id=item_id,
-                    command=command,
-                    result=result,
-                    robot_job_context=robot_job_context,
-                    pending_reply_id=pending_robot_reply_id or "",
-                    reply_ticket_id=reply_ticket_id,
-                )
-            if queued_to_robot:
-                feedback = (
-                    f"{feedback}\n"
-                    "[Reply ticket notification handled for the source that started this job.]"
-                )
-
             if agent_session:
                 agent_session.clear_terminal_job(command)
-                if queued_to_robot:
-                    return
+
+            busy = _session_turn_busy(agent_session)
+            if robot_job_context and not busy:
                 try:
-                    from app.services.agent.session import InputMessage, InputType
+                    from app.plugins.robot.service import robot_service
 
-                    agent_session.process_input(
-                        InputMessage(
-                            input_type=InputType.TERMINAL,
-                            content=feedback,
-                            raw_content=feedback,
-                            query="background job completed",
-                            reply_ticket_id=reply_ticket_id,
-                        )
+                    busy = robot_service.conversation_is_processing(
+                        robot_job_context.get("robot_id", ""),
+                        robot_job_context.get("conversation_key", ""),
                     )
-                    return
-                except Exception as exc:
-                    debug_log(
-                        f"[LocalMCPServer] failed to deliver background job feedback: item={item_id}, error={exc}"
-                    )
-
-            if not queued_to_robot:
-                delivered_by_ticket = self._deliver_background_job_to_reply_ticket(
-                    reply_ticket_id=reply_ticket_id,
-                    command=command,
-                    result=result,
+                except Exception:
+                    busy = False
+            entry = {
+                "command": command,
+                "result": result,
+                "robot_job_context": robot_job_context,
+                "pending_robot_reply_id": pending_robot_reply_id or "",
+                "reply_ticket_id": reply_ticket_id,
+                "feedback": feedback,
+                "agent_session": agent_session,
+                "conversation_key": (robot_job_context or {}).get("conversation_key", ""),
+            }
+            if busy:
+                # A turn is running: hold this result and let the turn-end
+                # hook merge it with other finished jobs into one batch.
+                buffer_background_job_result(item_id, entry)
+                debug_log(
+                    f"[LocalMCPServer] background job result buffered while turn is running: item={item_id}, command={command}"
                 )
-            if delivered_by_ticket and pending_robot_reply_id and robot_job_context:
-                self._clear_background_job_robot_reply(
-                    robot_job_context=robot_job_context,
-                    pending_reply_id=pending_robot_reply_id,
-                )
+                return
+            flush_background_job_results_for_entries(item_id, [entry])
 
         thread = threading.Thread(
             target=worker,
@@ -1268,13 +1396,16 @@ class LocalMCPServer:
         robot_job_context: dict | None,
         pending_reply_id: str = "",
         reply_ticket_id: str = "",
+        message_override: str = "",
     ) -> bool:
         if not robot_job_context:
             return False
         try:
             from app.plugins.robot.service import robot_service
 
-            message = self._format_background_job_robot_message(command, result)
+            message = message_override or self._format_background_job_robot_message(
+                command, result
+            )
             queued = robot_service.enqueue_background_job_result(
                 robot_id=robot_job_context.get("robot_id", ""),
                 item_id=item_id,

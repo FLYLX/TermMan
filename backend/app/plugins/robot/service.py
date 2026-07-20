@@ -543,6 +543,20 @@ class RobotService:
                 )
             else:
                 _delete_persisted_dispatch_job(job.job_id)
+                try:
+                    from app.services.agent.mcp.local_server import (
+                        flush_job_results_for_turn_end,
+                    )
+
+                    flush_job_results_for_turn_end(
+                        str(job.item_id),
+                        conversation_key=job.conversation_key,
+                    )
+                except Exception:
+                    logger.debug(
+                        "[RobotService] Failed to flush buffered job results for item=%s",
+                        job.item_id,
+                    )
             finally:
                 self._dispatch_queue.task_done()
 
@@ -3058,6 +3072,16 @@ class RobotService:
             reason="agent_did_not_send_qq_message",
             expected_generation=conversation_generation,
         )
+
+    def conversation_is_processing(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+    ) -> bool:
+        key = self._conversation_controller_key(robot_id, conversation_key)
+        with self._lock:
+            controller = self._conversation_controllers.get(key)
+            return bool(controller and controller.processing)
 
     def conversation_controller_allows_reply(
         self,

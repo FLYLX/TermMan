@@ -584,7 +584,7 @@ def test_long_term_memory_prompt_keeps_sender_and_content_only() -> None:
     assert "memory-id" not in formatted
 
 
-def test_latest_only_robot_turn_still_includes_long_term_memory(monkeypatch) -> None:
+def test_latest_only_robot_turn_skips_duplicate_memory_injection(monkeypatch) -> None:
     agent = SimpleNamespace(
         _context=SimpleNamespace(
             reply_ticket_id="",
@@ -603,10 +603,11 @@ def test_latest_only_robot_turn_still_includes_long_term_memory(monkeypatch) -> 
             AssertionError("latest-only robot turns must not load SQLite chat history")
         ),
     )
+    collect_calls: list[object] = []
     monkeypatch.setattr(
         prompt_builder,
         "_collect_long_term_memories",
-        lambda *_args, **_kwargs: "- 猫娘是月影汉堡猫娘",
+        lambda *args, **kwargs: collect_calls.append(1) or "- 猫娘是月影汉堡猫娘",
     )
     monkeypatch.setattr(
         prompt_builder,
@@ -628,7 +629,12 @@ def test_latest_only_robot_turn_still_includes_long_term_memory(monkeypatch) -> 
     )
 
     combined = "\n".join(message["content"] for message in messages)
-    assert "猫娘是月影汉堡猫娘" in combined
+    # QQ turns get long-term memory via the robot impression card (built by
+    # RobotService), not by duplicating it as a system message here.
+    assert "猫娘是月影汉堡猫娘" not in combined
+    assert collect_calls == []
+    assert "Current source route" in combined
+    assert "谁是猫娘" in combined
 
 
 def test_preference_memories_are_always_included_without_query_match(monkeypatch) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -30,6 +31,16 @@ def _utcnow() -> datetime:
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
+
+
+VERIFICATION_STEP_TITLE_RE = re.compile(
+    r"(验证|检查|确认|核实|verify|check|confirm)",
+    re.IGNORECASE,
+)
+
+
+def _is_verification_step(step: WorkflowStep) -> bool:
+    return bool(VERIFICATION_STEP_TITLE_RE.search(str(step.title or "")))
 
 
 def _parse_dt(value: Any) -> datetime | None:
@@ -734,6 +745,13 @@ class TaskWorkflowManager:
                 workflow.status = "active"
                 workflow.blocker = ""
             elif normalized_action == "complete_current_step":
+                if step and _is_verification_step(step) and step.attempts <= 0:
+                    return (
+                        False,
+                        "Verification steps require fresh evidence from this run: call a "
+                        "check/verify tool now and use its real output as evidence before "
+                        "completing this step.",
+                    )
                 if step:
                     step.status = "completed"
                     step.evidence = note or step.evidence
@@ -854,6 +872,10 @@ class TaskWorkflowManager:
             step = workflow.current_step()
             if step is None or step.status in {"completed", "cancelled"}:
                 return False
+            if _is_verification_step(step) and step.attempts <= 0:
+                # A verbal "verified" claim without a fresh tool run is not
+                # evidence; keep the workflow active so the check gets run.
+                return False
             step.status = "completed"
             step.evidence = step.evidence or "Final delivery confirmed."
             workflow.status = "ready_to_report"
@@ -888,6 +910,8 @@ class TaskWorkflowManager:
             workflow = candidates[0]
             step = workflow.current_step()
             if step is None or step.status in {"completed", "cancelled"}:
+                return False
+            if _is_verification_step(step) and step.attempts <= 0:
                 return False
             step.status = "completed"
             step.evidence = step.evidence or "Final delivery confirmed."
@@ -1081,6 +1105,11 @@ class TaskWorkflowManager:
                 "restart an operation merely because the user repeated the request.",
                 "13. The final report goes back to the current reply ticket's source directly "
                 "as the visible answer; do not send separate duplicate reports manually.",
+                "14. Step completion requires fresh evidence from THIS run: a command "
+                "output, exit code, or live check result. Long-term memory and chat history "
+                "answer who/what, never that something is installed, running, or done now. "
+                "Before completing any 检查/验证 step, run the check command and use its "
+                "actual output as evidence.",
             ]
         )
         return "\n".join(lines)

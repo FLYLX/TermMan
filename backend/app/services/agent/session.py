@@ -319,7 +319,17 @@ def _classification_command_variants(command: str) -> list[str]:
         return []
 
     variants = [normalized]
-    remainder = normalized
+    # Strip leading env assignments (optionally after sudo) so anchored
+    # patterns still match: DEBIAN_FRONTEND=x apt-get install -> apt-get install
+    env_stripped = re.sub(
+        r"^((?:sudo\s+)?)(?:[a-z_][a-z0-9_]*=\S+\s+)+",
+        r"\1",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if env_stripped and env_stripped != normalized:
+        variants.append(env_stripped)
+    remainder = env_stripped or normalized
     while True:
         match = re.match(r"^(?:cd|pushd)\s+[^;&|]+\s*(?:&&|;)\s*(.+)$", remainder)
         if not match:
@@ -973,10 +983,13 @@ class AgentSession:
         tool_name: str,
         tool_args: dict[str, Any],
     ) -> bool:
-        if self.has_interactive_terminal_context():
-            return False
+        # Long non-interactive operations always go to background jobs, even
+        # when an interactive terminal is attached (a live terminal must never
+        # be blocked by apt/downloads/builds).
         if should_auto_route_terminal_tool_to_job(tool_name, tool_args):
             return True
+        if self.has_interactive_terminal_context():
+            return False
         if tool_name != EXECUTE_COMMAND_TOOL_NAME:
             return False
         command = self._extract_command_text(tool_name, tool_args)
@@ -2066,6 +2079,14 @@ class AgentSession:
             self.state = SessionState.IDLE if queue_size == 0 else SessionState.COOLDOWN
             self._current_turn_id = None
         self._emit_idle_or_waiting_status(queue_size)
+        try:
+            from app.services.agent.mcp.local_server import (
+                flush_job_results_for_turn_end,
+            )
+
+            flush_job_results_for_turn_end(self.item_id)
+        except Exception:
+            pass
 
     def process_queue(self):
         while True:

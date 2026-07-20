@@ -1854,3 +1854,106 @@ def test_local_compress_memories_requires_two_ids() -> None:
     )
 
     assert "至少" in result[0]["text"]
+
+
+def test_job_results_merge_into_one_batch_on_turn_end(monkeypatch) -> None:
+    from app.services.agent.mcp import local_server as mcp_module
+
+    sent: list[str] = []
+    monkeypatch.setattr(
+        mcp_module.local_mcp_server,
+        "_deliver_background_job_to_robot",
+        lambda **kwargs: sent.append(kwargs.get("message_override") or "") or True,
+    )
+    context = {
+        "robot_id": "r1",
+        "conversation_key": "group:g1",
+        "sender_key": "s1",
+        "reply_target": {},
+    }
+    mcp_module.buffer_background_job_result(
+        "item-1",
+        {
+            "command": "apt-get update",
+            "result": {"success": True, "exit_code": 0, "duration_seconds": 2.0},
+            "robot_job_context": context,
+            "conversation_key": "group:g1",
+            "feedback": "fb-1",
+            "reply_ticket_id": "ticket-1",
+        },
+    )
+    mcp_module.buffer_background_job_result(
+        "item-1",
+        {
+            "command": "apt-get install -y openjdk-21-jdk-headless",
+            "result": {
+                "success": True,
+                "exit_code": 0,
+                "duration_seconds": 10.0,
+                "output_tail": "Setting up openjdk",
+            },
+            "robot_job_context": context,
+            "conversation_key": "group:g1",
+            "feedback": "fb-2",
+            "reply_ticket_id": "ticket-2",
+        },
+    )
+
+    assert mcp_module.flush_job_results_for_turn_end("item-1", "group:g1") is True
+    assert len(sent) == 1, "two finished jobs should merge into one batch message"
+    assert "batch: 2 jobs finished" in sent[0]
+    assert "apt-get update" in sent[0]
+    assert "apt-get install -y openjdk-21-jdk-headless" in sent[0]
+    # buffer drained
+    assert mcp_module.flush_job_results_for_turn_end("item-1", "group:g1") is False
+
+
+def test_single_job_result_flushes_as_is(monkeypatch) -> None:
+    from app.services.agent.mcp import local_server as mcp_module
+
+    sent: list[str] = []
+    monkeypatch.setattr(
+        mcp_module.local_mcp_server,
+        "_deliver_background_job_to_robot",
+        lambda **kwargs: sent.append(kwargs.get("message_override") or "") or True,
+    )
+    context = {
+        "robot_id": "r1",
+        "conversation_key": "group:g1",
+        "sender_key": "s1",
+        "reply_target": {},
+    }
+    entry = {
+        "command": "apt-get update",
+        "result": {"success": True, "exit_code": 0, "duration_seconds": 2.0},
+        "robot_job_context": context,
+        "conversation_key": "group:g1",
+        "feedback": "job done text",
+        "reply_ticket_id": "ticket-1",
+    }
+
+    assert mcp_module.flush_background_job_results_for_entries("item-1", [entry]) is True
+    assert len(sent) == 1
+    assert "apt-get update" in sent[0]
+
+
+def test_session_turn_busy_detection() -> None:
+    import queue as queue_module
+    import threading
+    from types import SimpleNamespace
+
+    from app.services.agent.mcp.local_server import _session_turn_busy
+    from app.services.agent.session import SessionState
+
+    session = SimpleNamespace(
+        lock=threading.RLock(),
+        state=SessionState.IDLE,
+        input_queue=queue_module.Queue(),
+    )
+    assert _session_turn_busy(session) is False
+    session.state = SessionState.RUNNING
+    assert _session_turn_busy(session) is True
+    session.state = SessionState.IDLE
+    session.input_queue.put("x")
+    assert _session_turn_busy(session) is True
+    assert _session_turn_busy(None) is False

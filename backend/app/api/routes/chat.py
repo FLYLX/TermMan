@@ -2105,21 +2105,19 @@ def _generate_stream_unserialized(
                         str(handler.id),
                     )
                     terminal_input_error = None
-                    if terminal_session.has_interactive_terminal_context():
-                        auto_routes_to_job = False
-                    else:
-                        auto_routes_to_job = should_auto_route_terminal_tool_to_job(
-                            tool_name,
-                            tool_args,
+                    auto_routes_to_job = should_auto_route_terminal_tool_to_job(
+                        tool_name,
+                        tool_args,
+                    )
+                    if (
+                        not auto_routes_to_job
+                        and not terminal_session.has_interactive_terminal_context()
+                        and tool_name in COMMAND_TOOL_NAMES
+                        and terminal_session.should_route_execute_command_to_background_job(
+                            str(tool_args.get("command") or ""),
                         )
-                        if (
-                            not auto_routes_to_job
-                            and tool_name in COMMAND_TOOL_NAMES
-                            and terminal_session.should_route_execute_command_to_background_job(
-                                str(tool_args.get("command") or ""),
-                            )
-                        ):
-                            auto_routes_to_job = True
+                    ):
+                        auto_routes_to_job = True
                     if not auto_routes_to_job:
                         terminal_input_error = terminal_session.validate_terminal_tool_input(
                             tool_name,

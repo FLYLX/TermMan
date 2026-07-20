@@ -421,6 +421,11 @@ def test_delivery_on_last_step_closes_workflow() -> None:
     task_workflow_manager.update("t-final-1", action="complete_current_step", note="装好")
     assert workflow.status == "active"
     assert workflow.current_step_index == 1
+    task_workflow_manager.record_tool_call(
+        "t-final-1",
+        tool_name="mcp_local_execute_command",
+        command="java -version",
+    )
 
     agent = _make_agent()
     ticket = reply_ticket_manager.create_for_agent(
@@ -634,6 +639,11 @@ def test_delivery_on_unattached_ticket_closes_last_step_workflow() -> None:
     task_workflow_manager.update("t-orig-1", action="complete_current_step", note="装好")
     assert workflow.current_step_index == 1
     assert workflow.status == "active"
+    task_workflow_manager.record_tool_call(
+        "t-orig-1",
+        tool_name="mcp_local_execute_command",
+        command="java -version",
+    )
 
     # A follow-up question creates a fresh ticket that is NOT attached to the
     # workflow. The agent answers "验证过了" on that ticket and it delivers.
@@ -675,3 +685,94 @@ def test_unattached_delivery_does_not_close_mid_workflow() -> None:
     assert reply_ticket_manager.mark_delivered(ticket.ticket_id) is True
     assert workflow.status == "active"
     assert workflow.steps[0].status == "running"
+
+
+def test_verification_step_requires_fresh_tool_evidence() -> None:
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="t-verify-1",
+        objective="安装 Java",
+        source_type="web",
+        source_label="web",
+        step_titles=["检查系统是否已安装Java", "安装Java（如未安装）", "验证Java安装"],
+    )
+
+    # Verbal completion without running any tool must be rejected.
+    ok, detail = task_workflow_manager.update(
+        "t-verify-1",
+        action="complete_current_step",
+        note="记忆里装过",
+    )
+    assert ok is False
+    assert "evidence" in detail.lower() or "证据" in detail
+    assert workflow.steps[0].status == "running"
+
+    # After actually calling a tool this run, completion is allowed.
+    task_workflow_manager.record_tool_call(
+        "t-verify-1",
+        tool_name="mcp_local_execute_command",
+        command="java -version",
+    )
+    task_workflow_manager.record_tool_result(
+        "t-verify-1",
+        tool_name="mcp_local_execute_command",
+        success=False,
+        result_summary="java: command not found",
+    )
+    ok, _ = task_workflow_manager.update(
+        "t-verify-1",
+        action="complete_current_step",
+        note="java -version 显示未安装",
+    )
+    assert ok is True
+    assert workflow.steps[0].status == "completed"
+
+
+def test_delivery_does_not_close_evidence_less_verification_step() -> None:
+    workflow = task_workflow_manager.create(
+        item_id="item-1",
+        handler_id="handler-1",
+        reply_ticket_id="t-verify-2",
+        objective="安装 Java",
+        source_type="web",
+        source_label="web",
+        step_titles=["验证Java安装"],
+    )
+    assert workflow.current_step_index == 0
+
+    agent = _make_agent()
+    ticket = reply_ticket_manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="验证过了吗",
+    )
+
+    # The agent claims "verified" from memory without running any check:
+    # delivery succeeds but the verification step must NOT auto-complete.
+    assert reply_ticket_manager.mark_delivered(ticket.ticket_id) is True
+    assert workflow.status == "active"
+    assert workflow.steps[0].status == "running"
+
+    # Once a check actually ran this run, delivery closes the workflow.
+    task_workflow_manager.record_tool_call(
+        "t-verify-2",
+        tool_name="mcp_local_execute_command",
+        command="java -version",
+    )
+    task_workflow_manager.record_tool_result(
+        "t-verify-2",
+        tool_name="mcp_local_execute_command",
+        success=True,
+        result_summary='openjdk version "21.0.11"',
+    )
+    ticket2 = reply_ticket_manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="确认一下",
+    )
+    assert reply_ticket_manager.mark_delivered(ticket2.ticket_id) is True
+    assert workflow.steps[0].status == "completed"
+    assert workflow.status == "completed"
