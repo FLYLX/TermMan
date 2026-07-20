@@ -4685,3 +4685,127 @@ def test_internal_retry_prefix_counts_as_internal_callback() -> None:
     assert _is_internal_agent_callback(message, "qq") is True
     assert _is_internal_agent_callback(message, "web") is False
     assert _is_internal_agent_callback("你好", "qq") is False
+
+
+def test_pending_batch_template_is_sanitized_as_internal_trace() -> None:
+    from app.plugins.robot.internal_trace import (
+        is_robot_internal_trace_text,
+        sanitize_robot_visible_text,
+    )
+
+    batch = (
+        "[Pending QQ messages; merge same-sender follow-ups and answer current "
+        "unresolved intents]\n"
+        "These messages arrived while the bot was already thinking. Treat them "
+        "as current live QQ messages, not old log history.\n"
+        "source=QQ; conversation=private:2537134688\n"
+        "1. sender=FLY (2537134688); sender_key=onebot_v11:private:2537134688; "
+        "trigger=mention_bot: 怎么不回了\n"
+        "Messages from the same sender are one evolving intent: use earlier "
+        "lines only as context and answer that sender once based on the latest "
+        "unresolved request."
+    )
+
+    assert is_robot_internal_trace_text(batch) is True
+    assert sanitize_robot_visible_text(batch) == ""
+
+
+def test_sanitize_strips_batch_lines_but_keeps_real_reply() -> None:
+    from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+
+    mixed = (
+        "在呢在呢，刚才卡了一下\n"
+        "[Pending QQ messages; merge same-sender follow-ups]\n"
+        "source=QQ; conversation=private:2537134688\n"
+        "1. sender=FLY (2537134688); sender_key=onebot_v11:private:2537134688; trigger=mention_bot: 嗯\n"
+        "你刚才说啥来着"
+    )
+
+    cleaned = sanitize_robot_visible_text(mixed)
+    assert "在呢在呢，刚才卡了一下" in cleaned
+    assert "你刚才说啥来着" in cleaned
+    assert "Pending QQ messages" not in cleaned
+    assert "source=QQ" not in cleaned
+    assert "sender_key" not in cleaned
+
+
+def test_normal_reply_is_not_internal_trace() -> None:
+    from app.plugins.robot.internal_trace import (
+        is_robot_internal_trace_text,
+        sanitize_robot_visible_text,
+    )
+
+    assert is_robot_internal_trace_text("你好呀，我在") is False
+    assert sanitize_robot_visible_text("你好呀，我在") == "你好呀，我在"
+
+
+def test_reap_stuck_dispatch_jobs_force_fails_and_recovers(db: Session, monkeypatch) -> None:
+    import time as time_module
+
+    from app.core.config import settings as app_settings
+
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    service = RobotService()
+    monkeypatch.setattr(
+        app_settings,
+        "ROBOT_BACKEND_DISPATCH_HARD_TIMEOUT_SECONDS",
+        0.1,
+    )
+    job = robot_service_module_queued_job(robot, item, "stuck-1")
+    with service._lock:
+        service._active_dispatch_jobs["stuck-1"] = (
+            time_module.monotonic() - 10,
+            job,
+        )
+    errors: list[str] = []
+    monkeypatch.setattr(
+        service,
+        "_record_and_send_job_error",
+        lambda _job, message: errors.append(message),
+    )
+
+    reaped = service.reap_stuck_dispatch_jobs()
+
+    assert reaped == 1
+    assert errors and "超时" in errors[0]
+    assert "stuck-1" not in service._active_dispatch_jobs
+
+
+def robot_service_module_queued_job(robot, item, job_id):
+    from datetime import datetime, timezone
+
+    from app.plugins.robot.service import QueuedRobotChatJob
+
+    return QueuedRobotChatJob(
+        job_id=job_id,
+        robot_id=robot.id,
+        robot_owner_id=robot.owner_id,
+        item_id=item.id,
+        route_key="group:g1",
+        message="[Current QQ message]\n你好",
+        sender_key="onebot_v11:group:g1:u1",
+        reply_target=RobotReplyTarget(
+            target_type="group",
+            target_id="g1",
+            metadata={},
+        ),
+        conversation_key="group:g1",
+        enqueued_at=datetime.now(timezone.utc),
+        direct_reply_trigger=True,
+        message_text="你好",
+    )
+
+
+def test_reap_leaves_fresh_dispatch_jobs_alone(db: Session) -> None:
+    import time as time_module
+
+    item = create_random_item(db)
+    robot = create_random_robot(db)
+    service = RobotService()
+    job = robot_service_module_queued_job(robot, item, "fresh-1")
+    with service._lock:
+        service._active_dispatch_jobs["fresh-1"] = (time_module.monotonic(), job)
+
+    assert service.reap_stuck_dispatch_jobs() == 0
+    assert "fresh-1" in service._active_dispatch_jobs

@@ -148,6 +148,33 @@ def _is_no_qq_reply_marker_line(line: str) -> bool:
     return line == NO_QQ_REPLY_MARKER or line.endswith(f": {NO_QQ_REPLY_MARKER}")
 
 
+_INTERNAL_CONTEXT_CARD_PREFIXES = (
+    "[Pending QQ messages",
+    "[Internal corrective turn]",
+    "[Current QQ conversation impression card",
+    "[Recent QQ live context",
+)
+
+_INTERNAL_CONTEXT_CARD_LINE_PREFIXES = (
+    "These messages arrived while the bot was already thinking",
+    "Treat them as current live QQ messages",
+    "source=QQ;",
+    "Messages from the same sender are one evolving intent",
+    "If multiple distinct senders each asked the bot something",
+    "Default to one concise QQ bubble",
+)
+
+_PENDING_BATCH_ENTRY_RE = re.compile(r"^\d+\.\s*sender=.+sender_key=.+")
+
+
+def _is_internal_context_card_line(line: str) -> bool:
+    if line.startswith(_INTERNAL_CONTEXT_CARD_PREFIXES):
+        return True
+    if line.startswith(_INTERNAL_CONTEXT_CARD_LINE_PREFIXES):
+        return True
+    return bool(_PENDING_BATCH_ENTRY_RE.search(line))
+
+
 def _is_internal_send_trace_line(line: str) -> bool:
     return (
         _contains_robot_send_tool_execution(line)
@@ -155,6 +182,7 @@ def _is_internal_send_trace_line(line: str) -> bool:
         or _contains_robot_send_success(line)
         or _is_no_qq_reply_marker_line(line)
         or "No QQ message sent:" in line
+        or _is_internal_context_card_line(line)
     )
 
 
@@ -162,6 +190,9 @@ def is_robot_internal_trace_text(value: str) -> bool:
     lines = _normalized_lines(value)
     if not lines:
         return False
+
+    if lines[0].startswith(_INTERNAL_CONTEXT_CARD_PREFIXES):
+        return True
 
     normalized = normalize_robot_message_text(value)
     if contains_dsml_tool_markup(normalized):

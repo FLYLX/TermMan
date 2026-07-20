@@ -341,6 +341,7 @@ def run_once(now: datetime | None = None) -> dict[str, int]:
         "reconciled": 0,
         "resumed": 0,
         "stalled_resumed": 0,
+        "dispatch_reaped": 0,
     }
     try:
         _reconcile_waiting_job_workflows(now, stats)
@@ -350,6 +351,15 @@ def run_once(now: datetime | None = None) -> dict[str, int]:
         _resume_stalled_active_workflows(now, stats)
     except Exception:
         logger.exception("[TaskWatchdog] Stalled-workflow resume failed")
+    try:
+        from app.plugins.robot import is_robot_plugin_enabled
+
+        if is_robot_plugin_enabled():
+            from app.plugins.robot.service import robot_service
+
+            stats["dispatch_reaped"] = robot_service.reap_stuck_dispatch_jobs()
+    except Exception:
+        logger.exception("[TaskWatchdog] Dispatch reaper failed")
     with task_workflow_manager._lock:
         candidates = [
             workflow

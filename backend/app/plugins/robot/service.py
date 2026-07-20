@@ -5,6 +5,7 @@ import logging
 import queue
 import re
 import threading
+import time
 import uuid
 from collections import Counter
 from dataclasses import dataclass, replace
@@ -18,13 +19,13 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.core.db import engine
 from app.models import Item, Robot, RobotItem, User
+from app.plugins.robot.conversation_memory import robot_conversation_memory
+from app.services.agent.chat_runtime import ChatResponseResult, collect_chat_response
 from app.services.agent.input_merge_buffer import (
     SOURCE_QQ_MESSAGE,
     MergeBufferEntry,
     input_merge_buffer,
 )
-from app.plugins.robot.conversation_memory import robot_conversation_memory
-from app.services.agent.chat_runtime import ChatResponseResult, collect_chat_response
 
 from .contracts import RobotDispatchResponse, RobotInboundMessage, RobotReplyTarget
 from .debug_log import preview_text, record_robot_event
@@ -308,6 +309,7 @@ class RobotService:
         self._dispatch_queue: queue.Queue[QueuedRobotChatJob] = queue.Queue(
             maxsize=max(1, settings.ROBOT_BACKEND_DISPATCH_QUEUE_SIZE)
         )
+        self._active_dispatch_jobs: dict[str, tuple[float, QueuedRobotChatJob]] = {}
         self._dispatch_workers_started = False
         self._dispatch_worker_count = 0
         self._dispatch_worker_lock = threading.Lock()
@@ -537,6 +539,9 @@ class RobotService:
     def _dispatch_worker_loop(self) -> None:
         while True:
             job = self._dispatch_queue.get()
+            tracking_key = job.job_id or uuid.uuid4().hex
+            with self._lock:
+                self._active_dispatch_jobs[tracking_key] = (time.monotonic(), job)
             try:
                 self._process_chat_job(job)
             except Exception:
@@ -562,7 +567,97 @@ class RobotService:
                         job.item_id,
                     )
             finally:
+                with self._lock:
+                    self._active_dispatch_jobs.pop(tracking_key, None)
                 self._dispatch_queue.task_done()
+
+    def reap_stuck_dispatch_jobs(self) -> int:
+        """Force-fail dispatch jobs frozen past the hard timeout.
+
+        A worker thread frozen inside a job (LLM stall, store hang, bridge
+        stall) blocks the whole queue. The reaper force-fails the job (clears
+        the conversation controller, reports the timeout), removes it from
+        the persisted queue, and starts a replacement worker so the queue
+        keeps draining. The frozen thread is left to die on its own; its
+        late writes are idempotent.
+        """
+        hard_timeout = float(settings.ROBOT_BACKEND_DISPATCH_HARD_TIMEOUT_SECONDS)
+        now = time.monotonic()
+        with self._lock:
+            stuck = [
+                (tracking_key, started, job)
+                for tracking_key, (started, job) in self._active_dispatch_jobs.items()
+                if now - started > hard_timeout
+            ]
+        reaped = 0
+        for tracking_key, started, job in stuck:
+            with self._lock:
+                self._active_dispatch_jobs.pop(tracking_key, None)
+            logger.warning(
+                "[RobotService] Reaping stuck dispatch job robot=%s item=%s conversation=%s after %.0fs",
+                job.robot_id,
+                job.item_id,
+                job.conversation_key,
+                now - started,
+            )
+            record_robot_event(
+                str(job.robot_id),
+                direction="backend_worker",
+                event="dispatch_hard_timeout",
+                status="error",
+                payload={
+                    "item_id": str(job.item_id),
+                    "route_key": job.route_key,
+                    "conversation": job.conversation_key,
+                    "stuck_seconds": round(now - started, 1),
+                    "hard_timeout_seconds": hard_timeout,
+                },
+            )
+            try:
+                self._record_and_send_job_error(
+                    job,
+                    "任务处理超时，已强制中止。请重新发一次。",
+                )
+            except Exception:
+                logger.exception(
+                    "[RobotService] Failed to report hard-timeout for robot %s",
+                    job.robot_id,
+                )
+            _delete_persisted_dispatch_job(job.job_id)
+            reaped += 1
+
+        if reaped:
+            self._ensure_replacement_workers()
+        return reaped
+
+    def _ensure_replacement_workers(self) -> None:
+        """Start a fresh worker when all existing workers are frozen."""
+        with self._lock:
+            active_count = len(self._active_dispatch_jobs)
+            worker_count = self._dispatch_worker_count
+        if worker_count == 0 or active_count < worker_count:
+            return
+        if worker_count >= 4:
+            logger.error(
+                "[RobotService] All %s dispatch workers stuck but at replacement cap; queue may stall",
+                worker_count,
+            )
+            return
+        with self._dispatch_worker_lock:
+            if self._dispatch_worker_count >= 4:
+                return
+            index = self._dispatch_worker_count
+            worker = threading.Thread(
+                target=self._dispatch_worker_loop,
+                name=f"termman-backend-robot-dispatch-replacement-{index}",
+                daemon=True,
+            )
+            worker.start()
+            self._dispatch_worker_count += 1
+        logger.warning(
+            "[RobotService] Started replacement dispatch worker (now %s) after stuck workers",
+            self._dispatch_worker_count,
+        )
 
     def restore_dispatch_jobs(self) -> int:
         try:
@@ -647,6 +742,13 @@ class RobotService:
                     item=item,
                     job=job,
                 )
+                record_robot_event(
+                    str(job.robot_id),
+                    direction="backend_worker",
+                    event="dispatch_prepared",
+                    payload={"item_id": str(job.item_id), "route_key": job.route_key},
+                )
+                job_started_at = time.monotonic()
                 try:
                     response = asyncio.run(
                         asyncio.wait_for(
@@ -664,6 +766,16 @@ class RobotService:
                             ),
                             timeout=settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS,
                         )
+                    )
+                    record_robot_event(
+                        str(job.robot_id),
+                        direction="backend_worker",
+                        event="dispatch_chat_done",
+                        payload={
+                            "item_id": str(job.item_id),
+                            "route_key": job.route_key,
+                            "chat_seconds": round(time.monotonic() - job_started_at, 1),
+                        },
                     )
                 except TimeoutError:
                     record_robot_event(
@@ -713,51 +825,62 @@ class RobotService:
                         f"（对方在直接问你：{job.message_text or job.message}。"
                         "用你自己的口气回一句就行，别不理人。）"
                     )
-                    try:
-                        response = asyncio.run(
-                            asyncio.wait_for(
-                                self._chat_with_item(
-                                    session=session,
-                                    robot=robot,
-                                    item=item,
-                                    message=retry_message,
-                                    sender_key=job.sender_key,
-                                    reply_target=job.reply_target,
-                                    conversation_key=job.conversation_key,
-                                    conversation_generation=job.conversation_generation,
-                                    reply_requires_awake=job.reply_requires_awake,
-                                    reply_ticket_id=job.reply_ticket_id,
-                                ),
-                                timeout=settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS,
-                            )
-                        )
-                    except TimeoutError:
-                        record_robot_event(
-                            str(job.robot_id),
-                            direction="backend_worker",
-                            event="dispatch_job_timeout",
-                            status="error",
-                            payload={
-                                "item_id": str(job.item_id),
-                                "route_key": job.route_key,
-                                "timeout_seconds": settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS,
-                            },
-                        )
-                        self._record_and_send_job_error(
-                            job,
-                            "任务处理超时，已中止。请稍后重试。",
-                        )
-                        self._enqueue_pending_chat_followup(
-                            robot=robot,
-                            conversation_key=job.conversation_key,
-                        )
-                        return
-                    response_text = self._visible_agent_response_text(response)
-                    robot_message_sent = response.robot_message_sent
-                    if not response_text and not robot_message_sent:
-                        logger.warning(
-                            "[RobotService] Corrective retry still empty for robot=%s raw=%r",
+                    remaining_timeout = (
+                        settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS
+                        - (time.monotonic() - job_started_at)
+                    )
+                    if remaining_timeout <= 30:
+                        logger.info(
+                            "[RobotService] Skip corrective retry for robot=%s: no time budget left (%.1fs)",
                             job.robot_id,
+                            remaining_timeout,
+                        )
+                    else:
+                        try:
+                            response = asyncio.run(
+                                asyncio.wait_for(
+                                    self._chat_with_item(
+                                        session=session,
+                                        robot=robot,
+                                        item=item,
+                                        message=retry_message,
+                                        sender_key=job.sender_key,
+                                        reply_target=job.reply_target,
+                                        conversation_key=job.conversation_key,
+                                        conversation_generation=job.conversation_generation,
+                                        reply_requires_awake=job.reply_requires_awake,
+                                        reply_ticket_id=job.reply_ticket_id,
+                                    ),
+                                    timeout=remaining_timeout,
+                                )
+                            )
+                        except TimeoutError:
+                            record_robot_event(
+                                str(job.robot_id),
+                                direction="backend_worker",
+                                event="dispatch_job_timeout",
+                                status="error",
+                                payload={
+                                    "item_id": str(job.item_id),
+                                    "route_key": job.route_key,
+                                    "timeout_seconds": settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS,
+                                },
+                            )
+                            self._record_and_send_job_error(
+                                job,
+                                "任务处理超时，已中止。请稍后重试。",
+                            )
+                            self._enqueue_pending_chat_followup(
+                                robot=robot,
+                                conversation_key=job.conversation_key,
+                            )
+                            return
+                        response_text = self._visible_agent_response_text(response)
+                        robot_message_sent = response.robot_message_sent
+                        if not response_text and not robot_message_sent:
+                            logger.warning(
+                                "[RobotService] Corrective retry still empty for robot=%s raw=%r",
+                                job.robot_id,
                             preview_text(response.content, limit=300),
                         )
                 if response_text and not robot_message_sent:
