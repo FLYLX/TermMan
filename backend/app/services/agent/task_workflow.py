@@ -70,6 +70,7 @@ class WorkflowStep:
 class WorkflowJob:
     workflow_job_id: str
     command: str
+    step_id: str = ""
     status: str = "running"
     daemon_job_id: str = ""
     success: bool | None = None
@@ -113,6 +114,16 @@ class TaskWorkflow:
             return None
         index = max(0, min(self.current_step_index, len(self.steps) - 1))
         return self.steps[index]
+
+    def find_step_by_id(self, step_id: str) -> WorkflowStep | None:
+        if not step_id:
+            return None
+        return next(
+            (step for step in self.steps if step.step_id == step_id), None
+        )
+
+    def resolve_step_for_job(self, job: WorkflowJob) -> WorkflowStep | None:
+        return self.find_step_by_id(job.step_id) or self.current_step()
 
 
 def workflow_to_payload(workflow: TaskWorkflow) -> dict[str, Any]:
@@ -617,9 +628,11 @@ class TaskWorkflowManager:
             workflow = self.get_by_ticket(ticket_id)
             if not workflow:
                 return ""
+            step = workflow.current_step()
             job = WorkflowJob(
                 workflow_job_id=uuid.uuid4().hex[:12],
                 command=str(command or "").strip()[:2000],
+                step_id=step.step_id if step else "",
             )
             workflow.jobs.append(job)
             workflow.jobs = workflow.jobs[-12:]
@@ -724,9 +737,11 @@ class TaskWorkflowManager:
                 None,
             )
             if job is None:
+                fallback_step = workflow.current_step()
                 job = WorkflowJob(
                     workflow_job_id=uuid.uuid4().hex[:12],
                     command=normalized_command,
+                    step_id=fallback_step.step_id if fallback_step else "",
                 )
                 workflow.jobs.append(job)
             job.status = "succeeded" if success else "failed"
@@ -735,7 +750,7 @@ class TaskWorkflowManager:
             job.exit_code = exit_code
             job.result_summary = str(result_summary or "").strip()[-2000:]
             job.completed_at = _utcnow()
-            step = workflow.current_step()
+            step = workflow.resolve_step_for_job(job)
             if step and not success:
                 step.status = "failed"
                 step.last_error = job.result_summary
@@ -1108,7 +1123,9 @@ class TaskWorkflowManager:
         if running_jobs:
             lines.append("- running_jobs:")
             for job in running_jobs[-5:]:
-                lines.append(f"  - {job.workflow_job_id}: {job.command}")
+                bound_step = workflow.find_step_by_id(job.step_id)
+                step_label = f" (step: {bound_step.title})" if bound_step else ""
+                lines.append(f"  - {job.workflow_job_id}: {job.command}{step_label}")
         lines.extend(
             [
                 "Non-negotiable workflow rules:",
