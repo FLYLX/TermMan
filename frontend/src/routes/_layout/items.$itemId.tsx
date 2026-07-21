@@ -1687,7 +1687,7 @@ function RobotConversationDebugTable({
                           {isAwake
                             ? formatRobotSleepCountdown(remainingSeconds)
                             : isProcessing
-                              ? t("items.detail.qqProcessing")
+                              ? "—"
                               : "0s"}
                         </span>
                       </span>
