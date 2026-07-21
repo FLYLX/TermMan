@@ -3145,24 +3145,17 @@ class AgentSession:
                         reply_ticket_manager.mark_external_report_sent(reply_ticket_id)
                     except Exception:
                         pass
-                if delivery_is_final:
-                    try:
-                        from app.services.agent.reply_ticket import (
-                            reply_ticket_manager,
-                        )
+                try:
+                    from app.services.agent.reply_ticket import (
+                        reply_ticket_manager,
+                    )
 
-                        reply_ticket_manager.mark_delivered(reply_ticket_id)
-                    except Exception:
-                        logger.exception(
-                            "[AgentSession] Failed to mark QQ reply delivered: item=%s ticket=%s",
-                            self.item_id,
-                            reply_ticket_id,
-                        )
-                else:
-                    task_workflow_manager.update(
+                    reply_ticket_manager.mark_delivered(reply_ticket_id)
+                except Exception:
+                    logger.exception(
+                        "[AgentSession] Failed to mark QQ reply delivered: item=%s ticket=%s",
+                        self.item_id,
                         reply_ticket_id,
-                        action="record_progress",
-                        note="Sent an intermediate status update; the main task remains active.",
                     )
                 self.emit_output(
                     robot_reply_event_content(tool_args, result_text),

@@ -461,19 +461,21 @@ class ReplyTicketManager:
         try:
             from app.services.agent.task_workflow import task_workflow_manager
 
-            can_finalize, reason = task_workflow_manager.can_finalize(ticket_id)
-            if not can_finalize:
-                # A delivery landing on the last step IS the completion report:
-                # close the workflow instead of keeping it stuck at N/N active.
-                if task_workflow_manager.complete_final_step_on_delivery(ticket_id):
-                    can_finalize, reason = task_workflow_manager.can_finalize(ticket_id)
-            if not can_finalize:
-                logger.info(
-                    "[ReplyTicket] Kept ticket active after intermediate delivery: ticket=%s reason=%s",
-                    ticket_id,
-                    reason,
-                )
-                return False
+            # Hard constraint: if the report already reached the user via
+            # the send tool, skip the can_finalize gate and force-close.
+            pre_ticket = self.get(ticket_id)
+            if not (pre_ticket and pre_ticket.external_report_sent):
+                can_finalize, reason = task_workflow_manager.can_finalize(ticket_id)
+                if not can_finalize:
+                    if task_workflow_manager.complete_final_step_on_delivery(ticket_id):
+                        can_finalize, reason = task_workflow_manager.can_finalize(ticket_id)
+                if not can_finalize:
+                    logger.info(
+                        "[ReplyTicket] Kept ticket active after intermediate delivery: ticket=%s reason=%s",
+                        ticket_id,
+                        reason,
+                    )
+                    return False
         except Exception:
             logger.exception(
                 "[ReplyTicket] Failed to validate workflow delivery state: ticket=%s",

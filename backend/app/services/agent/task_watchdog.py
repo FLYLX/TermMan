@@ -298,6 +298,7 @@ def _resume_stalled_active_workflows(now: datetime, stats: dict[str, int]) -> No
             workflow
             for workflow in task_workflow_manager._workflows.values()
             if workflow.status in {"active", "verifying"}
+            and workflow.delivered_at is None
             and _as_utc(workflow.updated_at) < now - threshold
             and not any(job.status == "running" for job in workflow.jobs)
         ]

@@ -500,6 +500,8 @@ class TaskWorkflowManager:
             workflow = self.get_by_ticket(ticket_id)
             if not workflow or workflow.status not in {"active", "verifying"}:
                 return False
+            if workflow.delivered_at is not None:
+                return False
             if any(job.status == "running" for job in workflow.jobs):
                 return False
             if workflow.auto_resume_attempts >= max(1, int(max_attempts)):
@@ -1030,7 +1032,7 @@ class TaskWorkflowManager:
                 return
             now = _utcnow()
             workflow.delivered_at = now
-            if workflow.status in {"ready_to_report", "reporting"}:
+            if workflow.status in {"ready_to_report", "reporting", "active", "verifying", "waiting_job"}:
                 workflow.status = "completed"
                 for step in workflow.steps:
                     if step.status not in {"completed", "cancelled"}:
