@@ -1294,6 +1294,10 @@ class AgentSession:
             from app.services.agent.reply_ticket import reply_ticket_manager
 
             if ticket.source_type == "qq":
+                if ticket.external_report_sent:
+                    # Result already reached QQ via the send tool earlier;
+                    # close out silently instead of re-sending a duplicate.
+                    return reply_ticket_manager.mark_delivered(ticket_id)
                 delivered = reply_ticket_manager.deliver(ticket_id, content)
                 if delivered:
                     self.emit_output(
@@ -3132,6 +3136,15 @@ class AgentSession:
                 tool_results_sink.append(result_text)
             if robot_delivery_result:
                 turn_guard.qq_message_sent = True
+                if reply_ticket_id:
+                    try:
+                        from app.services.agent.reply_ticket import (
+                            reply_ticket_manager,
+                        )
+
+                        reply_ticket_manager.mark_external_report_sent(reply_ticket_id)
+                    except Exception:
+                        pass
                 if delivery_is_final:
                     try:
                         from app.services.agent.reply_ticket import (

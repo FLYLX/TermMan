@@ -192,6 +192,58 @@ def test_reply_ticket_pruning_drops_stale_tickets_regardless_of_status() -> None
     assert manager.get(fresh_pending.ticket_id) is fresh_pending
 
 
+def test_deliver_skips_qq_resend_after_external_report_sent(monkeypatch) -> None:
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="770362397",
+        metadata={
+            "conversation": {"type": "group", "id": "770362397"},
+            "sender": {"user_id": "2537134688", "display_name": "FLY"},
+        },
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-1",
+            sender_key="onebot_v11:group:770362397:2537134688",
+            reply_target=target,
+            conversation_key="group:770362397",
+            conversation_generation=3,
+        )
+    )
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="robot-1",
+            robot_context_token=token,
+            reply_ticket_id="",
+        )
+    )
+    manager = ReplyTicketManager()
+    try:
+        ticket = manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="speedtest",
+            source_type="qq",
+        )
+        manager.mark_external_report_sent(ticket.ticket_id)
+
+        sent: list[tuple] = []
+        monkeypatch.setattr(
+            "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+            lambda *args: sent.append(args),
+        )
+
+        # The result already reached QQ via the send tool, so this bookkeeping
+        # delivery (workflow closure after a watchdog resume) must finalize
+        # the ticket silently instead of re-sending a duplicate report.
+        assert manager.deliver(ticket.ticket_id, "收尾旁白") is True
+        assert sent == []
+        assert manager.get(ticket.ticket_id).status == "delivered"
+    finally:
+        unregister_robot_mcp_context(token)
+
+
 def test_intermediate_delivery_cannot_close_active_task_workflow() -> None:
     task_workflow_manager.reset()
     manager = ReplyTicketManager()

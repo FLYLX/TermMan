@@ -527,6 +527,11 @@ def _deliver_reply_ticket_final_response(
     ticket = reply_ticket_manager.get(ticket_id)
     if not ticket or ticket.source_type != SOURCE_QQ:
         return []
+    if ticket.external_report_sent:
+        # The result already reached QQ via the send tool in an earlier turn;
+        # finalize the ticket silently instead of sending a duplicate report.
+        reply_ticket_manager.mark_delivered(ticket_id)
+        return []
     visible_content = sanitize_robot_visible_text(content).strip()
     if not visible_content:
         return []

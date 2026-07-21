@@ -226,6 +226,13 @@ async def _collect_chat_response_unserialized(
     if content:
         content = enforce_persona_identity_response(agent, message, content)
     robot_message_sent = bool(integration_contexts) and integration_message_sent(tool_results)
+    if robot_message_sent and reply_ticket_id:
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            reply_ticket_manager.mark_external_report_sent(reply_ticket_id)
+        except Exception:
+            pass
     if robot_message_sent and content.strip():
         logger.info(
             "[ChatRuntime] Suppressed final response after robot delivery tool sent for item %s",

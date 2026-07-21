@@ -132,6 +132,7 @@ class ReplyTicket:
     scheduled_task_id: str = ""
     scheduled_execution_id: str = ""
     terminal_target: str = ""
+    external_report_sent: bool = False
 
     @property
     def is_qq(self) -> bool:
@@ -438,6 +439,23 @@ class ReplyTicketManager:
             ticket.updated_at = datetime.now()
             _persist_ticket(ticket)
 
+    def mark_external_report_sent(self, ticket_id: str) -> None:
+        """Record that a result for this ticket already reached its QQ source.
+
+        Set when ``mcp_robot_send_message`` succeeded during a turn attached
+        to this ticket while the workflow was not yet finalizable. Later
+        bookkeeping deliveries (e.g. workflow closure after a watchdog
+        resume) must not re-send a duplicate report to QQ.
+        """
+        with self._lock:
+            ticket_id = self._resolve_ticket_id_locked(ticket_id)
+            ticket = self._tickets.get(ticket_id)
+            if not ticket or ticket.external_report_sent:
+                return
+            ticket.external_report_sent = True
+            ticket.updated_at = datetime.now()
+            _persist_ticket(ticket)
+
     def mark_delivered(self, ticket_id: str) -> bool:
         ticket_id = self.resolve_ticket_id(ticket_id)
         try:
@@ -547,6 +565,17 @@ class ReplyTicketManager:
             ticket = self._tickets.get(ticket_id)
             if not ticket or ticket.status == "delivered":
                 return False
+            if (
+                ticket.external_report_sent
+                and ticket.source_type == SOURCE_QQ
+                and ticket.status != "failed"
+            ):
+                # The result already reached QQ via the send tool in an
+                # earlier turn. This call is bookkeeping (e.g. workflow
+                # closure after a watchdog resume); finalize silently instead
+                # of sending a duplicate report. Failure reports (status
+                # "failed") always go through.
+                return self.mark_delivered(ticket_id)
             ticket.status = "sending"
             ticket.updated_at = datetime.now()
             _persist_ticket(ticket)
