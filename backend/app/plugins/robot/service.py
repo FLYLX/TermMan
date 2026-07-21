@@ -49,6 +49,7 @@ CONVERSATION_TTL = timedelta(hours=6)
 CONVERSATION_PROCESSING_MIN_TIMEOUT_SECONDS = 120
 CONVERSATION_PROCESSING_MAX_TIMEOUT_SECONDS = 600
 DISPATCH_WORKER_MAX_COUNT = 8
+DISPATCH_JOB_MAX_RESTORES = 3
 PENDING_CHAT_QUEUE_LIMIT = 5
 PENDING_DIRECT_WAKE_TRIGGER_REASONS = frozenset({
     "mention_bot",
@@ -551,6 +552,20 @@ class RobotService:
                     job.robot_id,
                     job.item_id,
                 )
+                # Delete the persisted row here too: keeping it would replay
+                # the job (and any partial side effects such as QQ replies)
+                # on every backend restart.
+                _delete_persisted_dispatch_job(job.job_id)
+                try:
+                    self._record_and_send_job_error(
+                        job,
+                        "任务处理异常，已放弃重试。请重新发一次。",
+                    )
+                except Exception:
+                    logger.debug(
+                        "[RobotService] Failed to report worker failure for robot %s",
+                        job.robot_id,
+                    )
             else:
                 _delete_persisted_dispatch_job(job.job_id)
                 try:
@@ -687,7 +702,29 @@ class RobotService:
             if job is None:
                 _delete_persisted_dispatch_job(job_id)
                 continue
+            try:
+                restore_count = int(payload.get("restore_count") or 0)
+            except (TypeError, ValueError):
+                restore_count = 0
+            if restore_count >= DISPATCH_JOB_MAX_RESTORES:
+                logger.error(
+                    "[RobotService] Dropping persisted dispatch job robot=%s item=%s after %s restores",
+                    job.robot_id,
+                    job.item_id,
+                    restore_count,
+                )
+                _delete_persisted_dispatch_job(job_id)
+                continue
             if self._enqueue_chat_job(job):
+                try:
+                    state_store.save_dispatch_job(
+                        {
+                            **_queued_job_to_payload(job),
+                            "restore_count": restore_count + 1,
+                        }
+                    )
+                except Exception:
+                    pass
                 restored += 1
                 continue
             logger.warning(

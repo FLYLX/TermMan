@@ -189,6 +189,46 @@ def test_worker_deletes_persisted_job_after_success(monkeypatch) -> None:
     assert state_store.load_dispatch_jobs() == []
 
 
+def test_worker_failure_deletes_persisted_job(monkeypatch) -> None:
+    service = robot_service_module.RobotService()
+
+    def exploding_job(_job):
+        raise RuntimeError("worker exploded")
+
+    monkeypatch.setattr(service, "_process_chat_job", exploding_job)
+    monkeypatch.setattr(
+        service,
+        "_record_and_send_job_error",
+        lambda *args, **kwargs: None,
+    )
+    service._ensure_dispatch_workers()
+    assert service._enqueue_chat_job(_make_dispatch_job()) is True
+    assert state_store.load_dispatch_jobs()
+
+    # A failed job must not stay persisted: otherwise every backend restart
+    # would replay it (and its partial side effects) again.
+    deadline = time.time() + 5
+    while time.time() < deadline and state_store.load_dispatch_jobs():
+        time.sleep(0.05)
+    assert state_store.load_dispatch_jobs() == []
+
+
+def test_restore_dispatch_jobs_drops_poison_after_max_restores() -> None:
+    from dataclasses import replace as dataclass_replace
+
+    job = dataclass_replace(_make_dispatch_job(), job_id="poison-job-1")
+    state_store.save_dispatch_job(
+        {
+            **robot_service_module._queued_job_to_payload(job),
+            "restore_count": robot_service_module.DISPATCH_JOB_MAX_RESTORES,
+        }
+    )
+
+    service = robot_service_module.RobotService()
+    assert service.restore_dispatch_jobs() == 0
+    assert state_store.load_dispatch_jobs() == []
+
+
 def test_chat_job_times_out_and_reports(db: Session, monkeypatch) -> None:
     item = create_random_item(db)
     robot = create_random_robot(db)
