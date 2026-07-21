@@ -229,6 +229,7 @@ def _reconcile_waiting_job_workflows(now: datetime, stats: dict[str, int]) -> No
                 result_summary=result_summary,
                 daemon_job_id=str(result.get("job_id") or job.daemon_job_id or ""),
                 exit_code=result.get("exit_code"),
+                workflow_id=workflow.workflow_id,
             )
             stats["reconciled"] += 1
         for job in lost_jobs:
@@ -242,6 +243,7 @@ def _reconcile_waiting_job_workflows(now: datetime, stats: dict[str, int]) -> No
                 command=job.command,
                 success=False,
                 result_summary="后台任务结果丢失：daemon 侧已无此任务，结果回调未送达。",
+                workflow_id=workflow.workflow_id,
             )
             stats["reconciled"] += 1
         if (recovered or lost_jobs) and _schedule_workflow_continuation(

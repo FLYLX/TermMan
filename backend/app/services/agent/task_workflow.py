@@ -71,6 +71,7 @@ class WorkflowJob:
     workflow_job_id: str
     command: str
     step_id: str = ""
+    workflow_id: str = ""
     status: str = "running"
     daemon_job_id: str = ""
     success: bool | None = None
@@ -635,6 +636,7 @@ class TaskWorkflowManager:
                 workflow_job_id=uuid.uuid4().hex[:12],
                 command=str(command or "").strip()[:2000],
                 step_id=step.step_id if step else "",
+                workflow_id=workflow.workflow_id,
             )
             workflow.jobs.append(job)
             workflow.jobs = workflow.jobs[-12:]
@@ -650,6 +652,7 @@ class TaskWorkflowManager:
         *,
         command: str,
         daemon_job_id: str,
+        workflow_id: str = "",
     ) -> bool:
         """Record the daemon-side job id on the running job entry.
 
@@ -662,7 +665,11 @@ class TaskWorkflowManager:
         if not normalized_command or not daemon_job_id:
             return False
         with self._lock:
-            workflow = self.get_by_ticket(ticket_id)
+            workflow = (
+                self._workflows.get(str(workflow_id or ""))
+                if workflow_id
+                else None
+            ) or self.get_by_ticket(ticket_id)
             if not workflow:
                 return False
             job = next(
@@ -723,9 +730,14 @@ class TaskWorkflowManager:
         result_summary: str,
         daemon_job_id: str = "",
         exit_code: int | None = None,
+        workflow_id: str = "",
     ) -> None:
         with self._lock:
-            workflow = self.get_by_ticket(ticket_id)
+            workflow = (
+                self._workflows.get(str(workflow_id or ""))
+                if workflow_id
+                else None
+            ) or self.get_by_ticket(ticket_id)
             if not workflow:
                 return
             normalized_command = str(command or "").strip()
@@ -744,6 +756,7 @@ class TaskWorkflowManager:
                     workflow_job_id=uuid.uuid4().hex[:12],
                     command=normalized_command,
                     step_id=fallback_step.step_id if fallback_step else "",
+                    workflow_id=workflow.workflow_id,
                 )
                 workflow.jobs.append(job)
             job.status = "succeeded" if success else "failed"

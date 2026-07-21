@@ -1269,6 +1269,16 @@ class LocalMCPServer:
                         f"ticket={reply_ticket_id}, error={exc}"
                     )
 
+            job_workflow_id = ""
+            if reply_ticket_id:
+                try:
+                    from app.services.agent.task_workflow import task_workflow_manager as _twm
+                    _wf = _twm.get_by_ticket(reply_ticket_id)
+                    if _wf:
+                        job_workflow_id = _wf.workflow_id
+                except Exception:
+                    pass
+
             self._start_background_job_thread(
                 item_id=str(item_id),
                 command=command,
@@ -1277,6 +1287,7 @@ class LocalMCPServer:
                 agent_session=agent_session,
                 robot_job_context=robot_job_context,
                 reply_ticket_id=reply_ticket_id,
+                workflow_id=job_workflow_id,
                 pending_robot_reply_id=self._register_background_job_robot_reply(
                     item_id=str(item_id),
                     command=command,
@@ -1309,6 +1320,7 @@ class LocalMCPServer:
         *,
         command: str,
         daemon_job_id: str,
+        workflow_id: str = "",
         attempts: int = 10,
     ) -> None:
         try:
@@ -1319,6 +1331,7 @@ class LocalMCPServer:
                     reply_ticket_id,
                     command=command,
                     daemon_job_id=daemon_job_id,
+                    workflow_id=workflow_id,
                 ):
                     return
                 # The workflow job entry is created by the turn that started
@@ -1388,6 +1401,7 @@ class LocalMCPServer:
         robot_job_context: dict | None = None,
         reply_ticket_id: str = "",
         pending_robot_reply_id: str | None = None,
+        workflow_id: str = "",
     ) -> None:
         def worker() -> None:
             try:
@@ -1419,7 +1433,7 @@ class LocalMCPServer:
                         threading.Thread(
                             target=self._attach_daemon_job_id_with_retry,
                             args=(reply_ticket_id,),
-                            kwargs={"command": command, "daemon_job_id": daemon_job_id},
+                            kwargs={"command": command, "daemon_job_id": daemon_job_id, "workflow_id": workflow_id},
                             daemon=True,
                         ).start()
                     result = self._poll_background_job_result(
@@ -1461,6 +1475,7 @@ class LocalMCPServer:
                         result_summary=self._format_job_result(result),
                         daemon_job_id=str(result.get("job_id") or ""),
                         exit_code=result.get("exit_code"),
+                        workflow_id=workflow_id,
                     )
                 except Exception as exc:
                     debug_log(
