@@ -84,13 +84,16 @@ class JobRunner:
     DEFAULT_TAIL_LINES = 80
     MAX_TAIL_LINES = 300
     HEARTBEAT_INTERVAL_SECONDS = 30
+    FINISHED_RESULT_TTL_SECONDS = 3600
+    FINISHED_RESULT_MAX_COUNT = 200
 
     def __init__(self):
         self.encoding = config.get("TERMINAL_ENCODING", "utf-8")
         self._active_jobs: dict[str, ActiveJob] = {}
+        self._finished_results: dict[str, tuple[float, dict[str, Any]]] = {}
         self._jobs_lock = threading.RLock()
 
-    def run_job(
+    def _run_job_impl(
         self,
         *,
         user_uuid: str,
@@ -100,8 +103,9 @@ class JobRunner:
         timeout_seconds: int | float | None = None,
         tail_lines: int | None = None,
         env: dict[str, str] | None = None,
+        job_id: str | None = None,
     ) -> dict[str, Any]:
-        job_id = uuid.uuid4().hex[:12]
+        job_id = job_id or uuid.uuid4().hex[:12]
         command = (command or "").strip()
         if not command:
             return {"success": False, "error": "command is required", "job_id": job_id}
@@ -320,6 +324,89 @@ class JobRunner:
             "output_bytes": output_bytes,
             "started_at": started_at.isoformat(),
             "finished_at": finished_at.isoformat(),
+        }
+
+    def run_job(self, **kwargs: Any) -> dict[str, Any]:
+        """Run a job synchronously and buffer its result for polling.
+
+        Wraps _run_job_impl so every terminal outcome (success or failure)
+        lands in the finished-result buffer, letting backend callers recover
+        the result via get_job_result() even after a backend restart.
+        """
+        result = self._run_job_impl(**kwargs)
+        self._store_finished_result(str(result.get("job_id") or ""), result)
+        return result
+
+    def start_job(self, **kwargs: Any) -> dict[str, Any]:
+        """Start a job in a daemon-side thread and return its job_id at once."""
+        command = str(kwargs.get("command") or "").strip()
+        job_id = uuid.uuid4().hex[:12]
+        if not command:
+            return {"success": False, "error": "command is required", "job_id": job_id}
+        thread = threading.Thread(
+            target=self.run_job,
+            kwargs={**kwargs, "command": command, "job_id": job_id},
+            name=f"termman-daemon-job-{job_id}",
+            daemon=True,
+        )
+        thread.start()
+        logger.info(
+            f"[JobRunner] Job scheduled asynchronously: job_id={job_id} "
+            f"item={kwargs.get('item_uuid')} command={command!r}"
+        )
+        return {"success": True, "job_id": job_id, "command": command}
+
+    def _store_finished_result(self, job_id: str, result: dict[str, Any]) -> None:
+        if not job_id:
+            return
+        with self._jobs_lock:
+            self._prune_finished_results_locked()
+            self._finished_results[job_id] = (time.monotonic(), result)
+
+    def _prune_finished_results_locked(self) -> None:
+        cutoff = time.monotonic() - self.FINISHED_RESULT_TTL_SECONDS
+        stale = [
+            key
+            for key, (stored_at, _result) in self._finished_results.items()
+            if stored_at < cutoff
+        ]
+        for key in stale:
+            self._finished_results.pop(key, None)
+        overflow = len(self._finished_results) - self.FINISHED_RESULT_MAX_COUNT
+        if overflow > 0:
+            oldest = sorted(
+                self._finished_results.items(), key=lambda item: item[1][0]
+            )[:overflow]
+            for key, _entry in oldest:
+                self._finished_results.pop(key, None)
+
+    def get_job_result(self, job_id: str) -> dict[str, Any]:
+        """Poll the buffered result of a job started via start_job()."""
+        job_id = str(job_id or "").strip()
+        if not job_id:
+            return {
+                "success": False,
+                "status": "unknown",
+                "error": "job_id is required",
+            }
+        with self._jobs_lock:
+            self._prune_finished_results_locked()
+            entry = self._finished_results.get(job_id)
+            active = self._active_jobs.get(job_id)
+        if entry is not None:
+            return {
+                "success": True,
+                "status": "finished",
+                "job_id": job_id,
+                "result": entry[1],
+            }
+        if active is not None:
+            return {"success": True, "status": "running", "job_id": job_id}
+        return {
+            "success": False,
+            "status": "unknown",
+            "job_id": job_id,
+            "error": "job result unavailable",
         }
 
     def list_jobs(self, *, item_uuid: str | None = None) -> dict[str, Any]:

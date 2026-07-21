@@ -63,12 +63,8 @@ def _closure_notice(workflow: Any) -> str:
     return "\n".join(lines)
 
 
-def _list_daemon_job_commands(item_id: str) -> set[str] | None:
-    """Commands of jobs the daemon currently tracks for this item.
-
-    Returns None when the daemon is unreachable or unconfigured, so callers
-    never treat an outage as "job lost".
-    """
+def _get_daemon_connection_for_item(item_id: str):
+    """Daemon connection for an item; None when unavailable or unconfigured."""
     try:
         import uuid as uuid_module
 
@@ -82,9 +78,25 @@ def _list_daemon_job_commands(item_id: str) -> set[str] | None:
             item = db.get(Item, uuid_module.UUID(str(item_id)))
         if item is None or not item.socket_host or not item.socket_port or not item.api_key:
             return None
-        connection = connection_manager.get_or_create_connection(
+        return connection_manager.get_or_create_connection(
             DaemonConfig(item.socket_host, item.socket_port, item.api_key)
         )
+    except Exception as exc:
+        logger.info(
+            "[TaskWatchdog] Daemon connection unavailable for item=%s: %s",
+            item_id,
+            exc,
+        )
+        return None
+
+
+def _list_daemon_job_commands(connection, item_id: str) -> set[str] | None:
+    """Commands of jobs the daemon currently tracks for this item.
+
+    Returns None when the daemon is unreachable or unconfigured, so callers
+    never treat an outage as "job lost".
+    """
+    try:
         result = connection.list_jobs_http(item_uuid=str(item_id))
     except Exception as exc:
         logger.info(
@@ -123,13 +135,14 @@ def _schedule_workflow_continuation(item_id: str, ticket_id: str) -> bool:
 
 
 def _reconcile_waiting_job_workflows(now: datetime, stats: dict[str, int]) -> None:
-    """Rescue waiting_job workflows whose background job vanished silently.
+    """Rescue waiting_job workflows whose background job result never arrived.
 
-    A workflow sits in waiting_job until the daemon job's result callback
-    arrives. If the daemon no longer tracks the job (finished while the
-    backend was down, or the callback was lost), the workflow would wait
-    forever. Mark the lost jobs failed and immediately schedule a
-    continuation turn so the agent keeps driving the task.
+    A workflow sits in waiting_job until the daemon job's result is recorded.
+    Each running job is polled by its daemon job id first: a result buffered
+    on the daemon is recovered and recorded as-is (this covers backend
+    restarts, where the poller thread died but the daemon kept the result).
+    Only when the daemon no longer knows the job at all is it marked lost,
+    and a continuation turn is scheduled so the agent keeps driving the task.
     """
     from app.services.agent.task_workflow import task_workflow_manager
 
@@ -144,6 +157,7 @@ def _reconcile_waiting_job_workflows(now: datetime, stats: dict[str, int]) -> No
                 for job in workflow.jobs
             )
         ]
+    connections: dict[str, Any] = {}
     daemon_commands_cache: dict[str, set[str] | None] = {}
     for workflow in candidates:
         ticket_id = workflow.reply_ticket_id or (
@@ -151,22 +165,72 @@ def _reconcile_waiting_job_workflows(now: datetime, stats: dict[str, int]) -> No
         )
         if not ticket_id:
             continue
-        if workflow.item_id not in daemon_commands_cache:
-            daemon_commands_cache[workflow.item_id] = _list_daemon_job_commands(
+        if workflow.item_id not in connections:
+            connections[workflow.item_id] = _get_daemon_connection_for_item(
                 workflow.item_id
             )
-        daemon_commands = daemon_commands_cache[workflow.item_id]
-        if daemon_commands is None:
+        connection = connections[workflow.item_id]
+        if connection is None:
             continue
-        lost_jobs = [
-            job
-            for job in workflow.jobs
-            if job.status == "running"
-            and _as_utc(job.started_at) < now - grace
-            and job.command not in daemon_commands
-        ]
-        if not lost_jobs:
-            continue
+        recovered: list[tuple[Any, dict]] = []
+        lost_jobs: list[Any] = []
+        for job in workflow.jobs:
+            if job.status != "running" or _as_utc(job.started_at) >= now - grace:
+                continue
+            if job.daemon_job_id:
+                try:
+                    poll = connection.get_job_result_http(
+                        item_uuid=str(workflow.item_id),
+                        job_id=job.daemon_job_id,
+                    )
+                except Exception:
+                    continue
+                status = str(poll.get("status") or "")
+                if poll.get("success") and status == "running":
+                    continue
+                if (
+                    poll.get("success")
+                    and status == "finished"
+                    and isinstance(poll.get("result"), dict)
+                ):
+                    recovered.append((job, poll["result"]))
+                elif status == "unknown":
+                    lost_jobs.append(job)
+                # Transient poll errors: skip this pass, retry next tick.
+                continue
+            # Legacy jobs without a daemon job id: fall back to the
+            # command-list disappearance check.
+            if workflow.item_id not in daemon_commands_cache:
+                daemon_commands_cache[workflow.item_id] = _list_daemon_job_commands(
+                    connection,
+                    workflow.item_id,
+                )
+            daemon_commands = daemon_commands_cache[workflow.item_id]
+            if daemon_commands is None:
+                continue
+            if job.command not in daemon_commands:
+                lost_jobs.append(job)
+        for job, result in recovered:
+            logger.info(
+                "[TaskWatchdog] Recovered background job result from daemon: workflow=%s command=%r",
+                workflow.workflow_id,
+                job.command[:120],
+            )
+            try:
+                from app.services.agent.mcp.local_server import local_mcp_server
+
+                result_summary = local_mcp_server._format_job_result(result)
+            except Exception:
+                result_summary = f"exit_code={result.get('exit_code')}"
+            task_workflow_manager.record_job_result(
+                ticket_id,
+                command=job.command,
+                success=bool(result.get("success")),
+                result_summary=result_summary,
+                daemon_job_id=str(result.get("job_id") or job.daemon_job_id or ""),
+                exit_code=result.get("exit_code"),
+            )
+            stats["reconciled"] += 1
         for job in lost_jobs:
             logger.info(
                 "[TaskWatchdog] Background job result lost: workflow=%s command=%r; marking failed and resuming",
@@ -179,8 +243,10 @@ def _reconcile_waiting_job_workflows(now: datetime, stats: dict[str, int]) -> No
                 success=False,
                 result_summary="后台任务结果丢失：daemon 侧已无此任务，结果回调未送达。",
             )
-        stats["reconciled"] += 1
-        if _schedule_workflow_continuation(workflow.item_id, ticket_id):
+            stats["reconciled"] += 1
+        if (recovered or lost_jobs) and _schedule_workflow_continuation(
+            workflow.item_id, ticket_id
+        ):
             stats["resumed"] += 1
 
 

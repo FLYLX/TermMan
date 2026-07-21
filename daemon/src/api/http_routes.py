@@ -56,6 +56,10 @@ class InternalJobCancelRequest(BaseModel):
     job_id: Optional[str] = None
 
 
+class InternalJobResultRequest(BaseModel):
+    job_id: str
+
+
 def _resolve_job_working_directory(item_uuid: str, fallback: Optional[str]) -> Optional[str]:
     current_workdir = terminal_manager.get_terminal_current_workdir(item_uuid)
     if current_workdir:
@@ -186,7 +190,7 @@ def run_item_job(
         item_uuid,
         payload.working_directory,
     )
-    result = job_runner.run_job(
+    result = job_runner.start_job(
         user_uuid=payload.user_uuid,
         item_uuid=item_uuid,
         command=payload.command,
@@ -198,6 +202,15 @@ def run_item_job(
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "Job failed"))
     return result
+
+
+@router.post("/internal/items/{item_uuid}/jobs/result")
+def get_item_job_result(
+    item_uuid: str,
+    payload: InternalJobResultRequest,
+    _api_key: Any = Depends(verify_api_key),
+):
+    return job_runner.get_job_result(payload.job_id)
 
 
 @router.post("/internal/items/{item_uuid}/jobs/cancel")

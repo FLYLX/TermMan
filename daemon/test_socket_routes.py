@@ -162,7 +162,7 @@ def test_internal_job_run_route_delegates_to_job_runner(monkeypatch):
     captured = {}
 
     class FakeJobRunner:
-        def run_job(self, **kwargs):
+        def start_job(self, **kwargs):
             captured.update(kwargs)
             return {
                 "success": True,
@@ -221,7 +221,7 @@ def test_internal_job_run_route_prefers_terminal_current_workdir(monkeypatch):
     captured = {}
 
     class FakeJobRunner:
-        def run_job(self, **kwargs):
+        def start_job(self, **kwargs):
             captured.update(kwargs)
             return {"success": True, "job_id": "job-1", "exit_code": 0}
 

@@ -4,6 +4,7 @@ import logging
 import re
 import sys
 import threading
+import time
 from datetime import datetime
 from typing import Any
 
@@ -23,6 +24,9 @@ def debug_log(msg: str):
 TERMINAL_NOT_CONNECTED_MESSAGE = "终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。"
 AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
 BACKGROUND_JOB_STARTED_MARKER = "background_job_started"
+JOB_RESULT_POLL_INITIAL_DELAY_SECONDS = 1.0
+JOB_RESULT_POLL_INTERVAL_SECONDS = 2.0
+JOB_RESULT_POLL_MAX_ERRORS = 30
 COMMAND_DISPATCH_FAILED_MARKER = "command_dispatch_failed"
 TERMINAL_UNAVAILABLE_RESULT_MARKER = "terminal_unavailable"
 
@@ -1299,6 +1303,80 @@ class LocalMCPServer:
                 agent_session.clear_terminal_job(command)
             return [{"type": "text", "text": f"Error: {e}"}]
 
+    def _attach_daemon_job_id_with_retry(
+        self,
+        reply_ticket_id: str,
+        *,
+        command: str,
+        daemon_job_id: str,
+        attempts: int = 10,
+    ) -> None:
+        try:
+            from app.services.agent.task_workflow import task_workflow_manager
+
+            for _ in range(attempts):
+                if task_workflow_manager.attach_daemon_job_id(
+                    reply_ticket_id,
+                    command=command,
+                    daemon_job_id=daemon_job_id,
+                ):
+                    return
+                # The workflow job entry is created by the turn that started
+                # this job, which may land a moment after the async start.
+                time.sleep(0.5)
+        except Exception as exc:
+            debug_log(
+                f"[LocalMCPServer] failed to attach daemon job id: ticket={reply_ticket_id}, error={exc}"
+            )
+
+    def _poll_background_job_result(
+        self,
+        connection,
+        *,
+        item_id: str,
+        command: str,
+        daemon_job_id: str,
+        timeout_seconds,
+    ) -> dict:
+        timeout_value = float(self._coerce_job_int(timeout_seconds, 600, 1, 3600))
+        deadline = time.monotonic() + timeout_value + 180.0
+        consecutive_errors = 0
+        time.sleep(JOB_RESULT_POLL_INITIAL_DELAY_SECONDS)
+        while time.monotonic() < deadline:
+            try:
+                poll = connection.get_job_result_http(
+                    item_uuid=str(item_id),
+                    job_id=daemon_job_id,
+                )
+            except Exception as exc:
+                poll = {"success": False, "error": str(exc)}
+            status = str(poll.get("status") or "")
+            if poll.get("success") and status == "finished":
+                result = poll.get("result")
+                if isinstance(result, dict):
+                    return result
+                break
+            if poll.get("success") and status == "running":
+                consecutive_errors = 0
+                time.sleep(JOB_RESULT_POLL_INTERVAL_SECONDS)
+                continue
+            if status == "unknown":
+                break
+            consecutive_errors += 1
+            if consecutive_errors >= JOB_RESULT_POLL_MAX_ERRORS:
+                break
+            time.sleep(JOB_RESULT_POLL_INTERVAL_SECONDS)
+        return {
+            "success": False,
+            "error": "daemon job result unavailable (job lost or daemon restarted)",
+            "command": command,
+            "job_id": daemon_job_id,
+            "exit_code": None,
+            "timed_out": False,
+            "duration_seconds": "",
+            "output_tail": "",
+        }
+
     def _start_background_job_thread(
         self,
         *,
@@ -1312,24 +1390,48 @@ class LocalMCPServer:
         pending_robot_reply_id: str | None = None,
     ) -> None:
         def worker() -> None:
-            result: dict
             try:
-                result = connection.run_job_http(**request_kwargs)
-                debug_log(
-                    f"[LocalMCPServer] background run_job result: item={item_id}, success={result.get('success')}, exit_code={result.get('exit_code')}, timed_out={result.get('timed_out')}"
-                )
+                start_result = connection.run_job_http(**request_kwargs)
             except Exception as exc:
-                debug_log(f"[LocalMCPServer] background run_job error: item={item_id}, error={exc}")
+                start_result = {"success": False, "error": str(exc)}
+            if not start_result.get("success"):
                 result = {
                     "success": False,
-                    "error": str(exc),
+                    "error": str(start_result.get("error") or "daemon job failed to start"),
                     "command": command,
-                    "job_id": "",
+                    "job_id": str(start_result.get("job_id") or ""),
                     "exit_code": None,
                     "timed_out": False,
                     "duration_seconds": "",
                     "output_tail": "",
                 }
+            else:
+                daemon_job_id = str(start_result.get("job_id") or "")
+                if "exit_code" in start_result:
+                    # Old daemon without async start: the blocking call already
+                    # returned the finished result.
+                    result = start_result
+                else:
+                    debug_log(
+                        f"[LocalMCPServer] background job scheduled: item={item_id}, job_id={daemon_job_id}, command={command}"
+                    )
+                    if reply_ticket_id and daemon_job_id:
+                        threading.Thread(
+                            target=self._attach_daemon_job_id_with_retry,
+                            args=(reply_ticket_id,),
+                            kwargs={"command": command, "daemon_job_id": daemon_job_id},
+                            daemon=True,
+                        ).start()
+                    result = self._poll_background_job_result(
+                        connection,
+                        item_id=item_id,
+                        command=command,
+                        daemon_job_id=daemon_job_id,
+                        timeout_seconds=request_kwargs.get("timeout_seconds"),
+                    )
+            debug_log(
+                f"[LocalMCPServer] background run_job result: item={item_id}, success={result.get('success')}, exit_code={result.get('exit_code')}, timed_out={result.get('timed_out')}"
+            )
 
             feedback = self._format_background_job_feedback(result)
             if reply_ticket_id:

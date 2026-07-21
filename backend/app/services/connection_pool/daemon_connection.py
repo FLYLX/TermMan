@@ -1,4 +1,4 @@
-﻿import concurrent.futures
+import concurrent.futures
 import logging
 import threading
 import uuid
@@ -357,7 +357,8 @@ class DaemonConnection:
             "env": env or {},
         }
         headers = {"X-API-Key": self.config.api_key}
-        request_timeout = max(float(timeout_seconds) + 15.0, 30.0)
+        # Async start returns immediately; no need to wait out the job.
+        request_timeout = 30.0
         logger.info(
             "[DaemonConnection] Running daemon job over HTTP: url=%s item=%s timeout=%s command=%r",
             url,
@@ -428,6 +429,41 @@ class DaemonConnection:
         except httpx.HTTPError as exc:
             logger.error("[DaemonConnection] Daemon job list failed: item=%s error=%s", item_uuid, exc)
             return {"success": False, "error": str(exc)}
+
+    def get_job_result_http(
+        self,
+        *,
+        item_uuid: str,
+        job_id: str,
+    ) -> Dict[str, Any]:
+        url = f"{self.config.base_url}/api/internal/items/{item_uuid}/jobs/result"
+        payload: Dict[str, Any] = {"job_id": job_id}
+        headers = {"X-API-Key": self.config.api_key}
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                response = client.post(url, json=payload, headers=headers)
+            try:
+                result = response.json()
+            except ValueError:
+                return {
+                    "success": False,
+                    "error": f"Invalid daemon job result response: HTTP {response.status_code}",
+                    "status_code": response.status_code,
+                    "body": response.text[:1000],
+                }
+            if response.status_code >= 400:
+                detail = result.get("detail") if isinstance(result, dict) else None
+                return {
+                    "success": False,
+                    "error": detail or f"Daemon job result request failed: HTTP {response.status_code}",
+                    "status_code": response.status_code,
+                    "response": result,
+                }
+            return result
+        except httpx.TimeoutException:
+            return {"success": False, "error": "Daemon job result request timed out"}
+        except httpx.HTTPError as exc:
+            return {"success": False, "error": f"Daemon job result request failed: {exc}"}
 
     def cancel_job_http(
         self,

@@ -629,6 +629,43 @@ class TaskWorkflowManager:
             _persist_workflow(workflow)
             return job.workflow_job_id
 
+    def attach_daemon_job_id(
+        self,
+        ticket_id: str,
+        *,
+        command: str,
+        daemon_job_id: str,
+    ) -> bool:
+        """Record the daemon-side job id on the running job entry.
+
+        Stored at job start so that after a backend restart the watchdog can
+        recover the real result by polling the daemon instead of declaring
+        the job lost.
+        """
+        normalized_command = str(command or "").strip()[:2000]
+        daemon_job_id = str(daemon_job_id or "").strip()
+        if not normalized_command or not daemon_job_id:
+            return False
+        with self._lock:
+            workflow = self.get_by_ticket(ticket_id)
+            if not workflow:
+                return False
+            job = next(
+                (
+                    candidate
+                    for candidate in reversed(workflow.jobs)
+                    if candidate.status == "running"
+                    and candidate.command == normalized_command
+                ),
+                None,
+            )
+            if job is None:
+                return False
+            job.daemon_job_id = daemon_job_id
+            workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
+            return True
+
     def record_tool_result(
         self,
         ticket_id: str,

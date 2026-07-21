@@ -1166,17 +1166,26 @@ def test_run_job_defaults_to_background_and_notifies_session(monkeypatch) -> Non
     class FakeConnection:
         def run_job_http(self, **kwargs):
             started.set()
+            self.command = kwargs["command"]
+            return {"success": True, "job_id": "job-bg"}
+
+        def get_job_result_http(self, **kwargs):
             assert allow_finish.wait(2)
             return {
                 "success": True,
-                "job_id": "job-bg",
-                "command": kwargs["command"],
-                "cwd": "/workspace/item",
-                "exit_code": 0,
-                "timed_out": False,
-                "duration_seconds": 3.0,
-                "output_tail": "install complete",
+                "status": "finished",
+                "result": {
+                    "success": True,
+                    "job_id": "job-bg",
+                    "command": self.command,
+                    "cwd": "/workspace/item",
+                    "exit_code": 0,
+                    "timed_out": False,
+                    "duration_seconds": 3.0,
+                    "output_tail": "install complete",
+                },
             }
+
 
     monkeypatch.setattr(
         server,
@@ -1249,15 +1258,23 @@ def test_background_run_job_queues_robot_completion(monkeypatch) -> None:
     class FakeConnection:
         def run_job_http(self, **kwargs):
             started.set()
+            self.command = kwargs["command"]
+            return {"success": True, "job_id": "job-bg-robot"}
+
+        def get_job_result_http(self, **kwargs):
             return {
                 "success": True,
-                "job_id": "job-bg-robot",
-                "command": kwargs["command"],
-                "cwd": "/workspace/item",
-                "exit_code": 0,
-                "timed_out": False,
-                "duration_seconds": 3.0,
-                "output_tail": "temurin installed",
+                "status": "finished",
+                "result": {
+                    "success": True,
+                    "job_id": "job-bg-robot",
+                    "command": self.command,
+                    "cwd": "/workspace/item",
+                    "exit_code": 0,
+                    "timed_out": False,
+                    "duration_seconds": 3.0,
+                    "output_tail": "temurin installed",
+                },
             }
 
     def fake_enqueue_background_job_result(**kwargs):
@@ -1350,15 +1367,23 @@ def test_background_run_job_queues_robot_result_instead_of_direct_raw_reply(
     class FakeConnection:
         def run_job_http(self, **kwargs):
             started.set()
+            self.command = kwargs["command"]
+            return {"success": True, "job_id": "job-bg-ticket"}
+
+        def get_job_result_http(self, **kwargs):
             return {
                 "success": True,
-                "job_id": "job-bg-ticket",
-                "command": kwargs["command"],
-                "cwd": "/workspace/item",
-                "exit_code": 0,
-                "timed_out": False,
-                "duration_seconds": 2.5,
-                "output_tail": "temurin installed",
+                "status": "finished",
+                "result": {
+                    "success": True,
+                    "job_id": "job-bg-ticket",
+                    "command": self.command,
+                    "cwd": "/workspace/item",
+                    "exit_code": 0,
+                    "timed_out": False,
+                    "duration_seconds": 2.5,
+                    "output_tail": "temurin installed",
+                },
             }
 
     monkeypatch.setattr(
@@ -1474,16 +1499,24 @@ def test_background_run_job_passes_web_reply_ticket_to_terminal_feedback(
     class FakeConnection:
         def run_job_http(self, **kwargs):
             started.set()
+            self.command = kwargs["command"]
+            return {"success": True, "job_id": "job-web-ticket"}
+
+        def get_job_result_http(self, **kwargs):
             return {
-                "success": False,
-                "error": "daemon job failed",
-                "job_id": "job-web-ticket",
-                "command": kwargs["command"],
-                "cwd": "/workspace/item",
-                "exit_code": 127,
-                "timed_out": False,
-                "duration_seconds": 0.02,
-                "output_tail": "/bin/sh: 1: java: not found",
+                "success": True,
+                "status": "finished",
+                "result": {
+                    "success": False,
+                    "error": "daemon job failed",
+                    "job_id": "job-web-ticket",
+                    "command": self.command,
+                    "cwd": "/workspace/item",
+                    "exit_code": 127,
+                    "timed_out": False,
+                    "duration_seconds": 0.02,
+                    "output_tail": "/bin/sh: 1: java: not found",
+                },
             }
 
     monkeypatch.setattr(
@@ -1665,12 +1698,21 @@ def test_run_job_allows_distinct_background_jobs_but_blocks_duplicates(monkeypat
     release_first = threading.Event()
 
     class FakeConnection:
+        def __init__(self):
+            self.commands_by_job = {}
+
         def run_job_http(self, **kwargs):
             command = kwargs["command"]
             commands.append(command)
             session = agent_session_manager.get_session(item_id)
             assert session is not None
             assert session.has_running_terminal_job() is True
+            job_id = f"job-{len(commands)}"
+            self.commands_by_job[job_id] = command
+            return {"success": True, "job_id": job_id}
+
+        def get_job_result_http(self, **kwargs):
+            command = self.commands_by_job.get(kwargs["job_id"], "")
             if command == "curl https://example.test/file -o file":
                 first_started.set()
                 release_first.wait(2)
@@ -1678,13 +1720,17 @@ def test_run_job_allows_distinct_background_jobs_but_blocks_duplicates(monkeypat
                 second_started.set()
             return {
                 "success": True,
-                "job_id": f"job-{len(commands)}",
-                "command": command,
-                "cwd": "/workspace/item",
-                "exit_code": 0,
-                "timed_out": False,
-                "duration_seconds": 2.0,
-                "output_tail": "done",
+                "status": "finished",
+                "result": {
+                    "success": True,
+                    "job_id": kwargs["job_id"],
+                    "command": command,
+                    "cwd": "/workspace/item",
+                    "exit_code": 0,
+                    "timed_out": False,
+                    "duration_seconds": 2.0,
+                    "output_tail": "done",
+                },
             }
 
     monkeypatch.setattr(
@@ -1707,7 +1753,6 @@ def test_run_job_allows_distinct_background_jobs_but_blocks_duplicates(monkeypat
             },
         )
         assert first_started.wait(2)
-
         duplicate_result = server.call_tool(
             "run_job",
             {

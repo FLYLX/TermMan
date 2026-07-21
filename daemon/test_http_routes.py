@@ -69,6 +69,28 @@ def test_run_item_job_requires_active_main_terminal(
     assert "Main terminal is not running" in str(exc_info.value.detail)
 
 
+def test_get_item_job_result_returns_runner_payload(monkeypatch) -> None:
+    class FakeJobRunner:
+        def get_job_result(self, job_id):
+            assert job_id == "job-1"
+            return {
+                "success": True,
+                "status": "finished",
+                "result": {"exit_code": 0},
+            }
+
+    monkeypatch.setattr(http_routes, "job_runner", FakeJobRunner())
+
+    result = http_routes.get_item_job_result(
+        "item-1",
+        http_routes.InternalJobResultRequest(job_id="job-1"),
+        _api_key="test",
+    )
+
+    assert result["status"] == "finished"
+    assert result["result"]["exit_code"] == 0
+
+
 def test_run_item_job_allows_active_main_terminal(monkeypatch) -> None:
     captured = {}
 
@@ -82,7 +104,7 @@ def test_run_item_job_allows_active_main_terminal(monkeypatch) -> None:
             return "/workspace/item"
 
     class FakeJobRunner:
-        def run_job(self, **kwargs):
+        def start_job(self, **kwargs):
             captured.update(kwargs)
             return {"success": True, "job_id": "job-1"}
 

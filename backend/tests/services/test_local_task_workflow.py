@@ -64,14 +64,21 @@ def test_background_job_result_resumes_agent_with_original_ticket(
 
     class FakeConnection:
         def run_job_http(self, **_kwargs):
+            return {"success": True, "job_id": "daemon-job-1"}
+
+        def get_job_result_http(self, **_kwargs):
             return {
                 "success": True,
-                "command": "apt-get update",
-                "job_id": "daemon-job-1",
-                "exit_code": 0,
-                "timed_out": False,
-                "duration_seconds": 2.5,
-                "output_tail": "Reading package lists... Done",
+                "status": "finished",
+                "result": {
+                    "success": True,
+                    "command": "apt-get update",
+                    "job_id": "daemon-job-1",
+                    "exit_code": 0,
+                    "timed_out": False,
+                    "duration_seconds": 2.5,
+                    "output_tail": "Reading package lists... Done",
+                },
             }
 
     class FakeAgentSession:

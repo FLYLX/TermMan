@@ -337,7 +337,14 @@ def _make_waiting_job_workflow(command: str = "apt-get update"):
 
 def test_watchdog_reconciles_lost_background_job_and_resumes(monkeypatch) -> None:
     workflow = _make_waiting_job_workflow()
-    monkeypatch.setattr(task_watchdog, "_list_daemon_job_commands", lambda _item_id: set())
+    monkeypatch.setattr(
+        task_watchdog,
+        "_get_daemon_connection_for_item",
+        lambda _item_id: object(),
+    )
+    monkeypatch.setattr(
+        task_watchdog, "_list_daemon_job_commands", lambda _conn, _item_id: set()
+    )
     resumed: list[str] = []
     monkeypatch.setattr(
         task_watchdog,
@@ -359,8 +366,13 @@ def test_watchdog_keeps_job_when_daemon_still_tracks_it(monkeypatch) -> None:
     workflow = _make_waiting_job_workflow()
     monkeypatch.setattr(
         task_watchdog,
+        "_get_daemon_connection_for_item",
+        lambda _item_id: object(),
+    )
+    monkeypatch.setattr(
+        task_watchdog,
         "_list_daemon_job_commands",
-        lambda _item_id: {"apt-get update"},
+        lambda _conn, _item_id: {"apt-get update"},
     )
 
     stats = task_watchdog.run_once()
@@ -375,8 +387,13 @@ def test_watchdog_skips_reconcile_when_daemon_unavailable(monkeypatch) -> None:
     workflow = _make_waiting_job_workflow()
     monkeypatch.setattr(
         task_watchdog,
+        "_get_daemon_connection_for_item",
+        lambda _item_id: object(),
+    )
+    monkeypatch.setattr(
+        task_watchdog,
         "_list_daemon_job_commands",
-        lambda _item_id: None,
+        lambda _conn, _item_id: None,
     )
 
     stats = task_watchdog.run_once()
@@ -384,6 +401,77 @@ def test_watchdog_skips_reconcile_when_daemon_unavailable(monkeypatch) -> None:
     assert stats["reconciled"] == 0
     assert workflow.jobs[-1].status == "running"
     assert workflow.status == "waiting_job"
+
+
+def test_watchdog_recovers_buffered_job_result_from_daemon(monkeypatch) -> None:
+    workflow = _make_waiting_job_workflow()
+    task_workflow_manager.attach_daemon_job_id(
+        "t-job-1", command="apt-get update", daemon_job_id="daemon-job-9"
+    )
+    result = {
+        "success": True,
+        "job_id": "daemon-job-9",
+        "command": "apt-get update",
+        "exit_code": 0,
+        "timed_out": False,
+        "duration_seconds": 2.0,
+        "output_tail": "Reading package lists... Done",
+    }
+
+    class FakeConnection:
+        def get_job_result_http(self, **_kwargs):
+            return {"success": True, "status": "finished", "result": result}
+
+    monkeypatch.setattr(
+        task_watchdog,
+        "_get_daemon_connection_for_item",
+        lambda _item_id: FakeConnection(),
+    )
+    resumed: list[str] = []
+    monkeypatch.setattr(
+        task_watchdog,
+        "_schedule_workflow_continuation",
+        lambda _item_id, ticket_id: resumed.append(ticket_id) or True,
+    )
+
+    stats = task_watchdog.run_once()
+
+    assert stats["reconciled"] == 1
+    assert stats["resumed"] == 1
+    assert workflow.jobs[-1].status == "succeeded"
+    assert workflow.jobs[-1].daemon_job_id == "daemon-job-9"
+    assert workflow.status == "active"
+    assert resumed == ["t-job-1"]
+
+
+def test_watchdog_marks_job_lost_when_daemon_has_no_record(monkeypatch) -> None:
+    workflow = _make_waiting_job_workflow()
+    task_workflow_manager.attach_daemon_job_id(
+        "t-job-1", command="apt-get update", daemon_job_id="daemon-job-9"
+    )
+
+    class FakeConnection:
+        def get_job_result_http(self, **_kwargs):
+            return {"success": False, "status": "unknown", "job_id": "daemon-job-9"}
+
+    monkeypatch.setattr(
+        task_watchdog,
+        "_get_daemon_connection_for_item",
+        lambda _item_id: FakeConnection(),
+    )
+    resumed: list[str] = []
+    monkeypatch.setattr(
+        task_watchdog,
+        "_schedule_workflow_continuation",
+        lambda _item_id, ticket_id: resumed.append(ticket_id) or True,
+    )
+
+    stats = task_watchdog.run_once()
+
+    assert stats["reconciled"] == 1
+    assert stats["resumed"] == 1
+    assert workflow.jobs[-1].status == "failed"
+    assert "结果丢失" in workflow.jobs[-1].result_summary
 
 
 def test_delivery_on_last_step_closes_workflow() -> None:
