@@ -514,7 +514,7 @@ class TaskWorkflowManager:
             workflow.updated_at = _utcnow()
             _persist_workflow(workflow)
 
-    def claim_auto_resume(self, ticket_id: str, *, max_attempts: int = 2) -> bool:
+    def claim_auto_resume(self, ticket_id: str, *, max_attempts: int = 5) -> bool:
         with self._lock:
             workflow = self.get_by_ticket(ticket_id)
             if not workflow or workflow.status not in {"active", "verifying"}:
@@ -850,6 +850,7 @@ class TaskWorkflowManager:
                     workflow.status = "ready_to_report"
                 workflow.latest_progress = note or "Current step completed."
                 workflow.blocker = ""
+                workflow.auto_resume_attempts = 0
             elif normalized_action == "set_current_step":
                 if step_index is None or not (0 <= step_index < len(workflow.steps)):
                     return False, "step_index is out of range."

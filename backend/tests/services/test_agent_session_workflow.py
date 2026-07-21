@@ -130,6 +130,9 @@ def test_schedule_task_workflow_continuation_is_internal_and_bounded(
     try:
         assert session.schedule_task_workflow_continuation("ticket-java") is True
         assert session.schedule_task_workflow_continuation("ticket-java") is True
+        assert session.schedule_task_workflow_continuation("ticket-java") is True
+        assert session.schedule_task_workflow_continuation("ticket-java") is True
+        assert session.schedule_task_workflow_continuation("ticket-java") is True
         assert session.schedule_task_workflow_continuation("ticket-java") is False
 
         queued_input = captured[0][1][0]

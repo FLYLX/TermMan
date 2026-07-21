@@ -2497,8 +2497,14 @@ class AgentSession:
                         )
                     )
                     if not continuation_scheduled:
-                        terminal_failure_report = (
-                            "任务未完成：自动执行后仍没有得到可验证结果，任务已结束。"
+                        task_workflow_manager.update(
+                            input_msg.reply_ticket_id,
+                            action="mark_blocked",
+                            note="自动续跑次数已用完，等待用户介入或外部事件恢复。",
+                        )
+                        self.emit_output(
+                            "任务暂停：等待新指令或后台任务完成后自动恢复",
+                            "agent_warning",
                         )
                 else:
                     terminal_failure_report = (
