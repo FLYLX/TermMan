@@ -91,7 +91,7 @@ class TaskWorkflow:
     source_type: str
     source_label: str
     steps: list[WorkflowStep]
-    report_policy: str = "normal"
+    report_policy: str = "step_change"
     requester: str = ""
     queue_status: str = "working"
     awaiting_kind: str = ""
@@ -104,6 +104,7 @@ class TaskWorkflow:
     last_tool_name: str = ""
     last_command: str = ""
     auto_resume_attempts: int = 0
+    last_reported_step_index: int = -1
     jobs: list[WorkflowJob] = field(default_factory=list)
     reply_ticket_ids: list[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=_utcnow)
@@ -152,6 +153,7 @@ def workflow_to_payload(workflow: TaskWorkflow) -> dict[str, Any]:
         "last_tool_name": workflow.last_tool_name,
         "last_command": workflow.last_command,
         "auto_resume_attempts": workflow.auto_resume_attempts,
+        "last_reported_step_index": workflow.last_reported_step_index,
         "created_at": _iso(workflow.created_at),
         "updated_at": _iso(workflow.updated_at),
         "delivered_at": _iso(workflow.delivered_at),
@@ -478,7 +480,7 @@ class TaskWorkflowManager:
 
     def set_report_policy(self, ticket_id: str, policy: str) -> bool:
         normalized = str(policy or "normal").strip().lower()
-        if normalized not in {"normal", "final_only"}:
+        if normalized not in {"normal", "step_change", "final_only"}:
             return False
         with self._lock:
             workflow = self.get_by_ticket(ticket_id)
@@ -491,10 +493,26 @@ class TaskWorkflowManager:
 
     def should_suppress_intermediate_delivery(self, ticket_id: str) -> bool:
         workflow = self.get_by_ticket(ticket_id)
-        if not workflow or workflow.report_policy != "final_only":
+        if not workflow:
             return False
-        can_finalize, _ = self.can_finalize(ticket_id)
-        return not can_finalize
+        if workflow.report_policy == "final_only":
+            can_finalize, _ = self.can_finalize(ticket_id)
+            return not can_finalize
+        if workflow.report_policy == "step_change":
+            can_finalize, _ = self.can_finalize(ticket_id)
+            if can_finalize:
+                return False
+            return workflow.current_step_index == workflow.last_reported_step_index
+        return False
+
+    def record_intermediate_report(self, ticket_id: str) -> None:
+        with self._lock:
+            workflow = self.get_by_ticket(ticket_id)
+            if not workflow:
+                return
+            workflow.last_reported_step_index = workflow.current_step_index
+            workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
 
     def claim_auto_resume(self, ticket_id: str, *, max_attempts: int = 2) -> bool:
         with self._lock:
@@ -1161,8 +1179,10 @@ class TaskWorkflowManager:
                 "Use workflow action=cancel only when the user explicitly abandons the whole goal.",
                 "8. Do not stop at a diagnosis or proposed next step when a safe tool action is "
                 "available. Execute one concrete action in the current turn.",
-                "9. When report_policy is final_only, do not send intermediate progress messages. "
-                "Continue working and send one concise report only after verified success or final failure.",
+                "9. Report frequency follows report_policy: step_change (default) allows one "
+                "QQ message per step transition or direction change — do NOT send multiple "
+                "progress updates within the same step; final_only allows one report only after "
+                "verified success or final failure. Keep each report concise.",
                 "10. Independent workflows may run background jobs in parallel. Choose the "
                 "execution order yourself from the task plan and current evidence; do not create "
                 "a task-level waiting/blocking state merely because another task is running.",

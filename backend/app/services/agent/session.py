@@ -2360,7 +2360,6 @@ class AgentSession:
                     break
 
                 if self._abort_flag:
-                    terminal_failure_report = "任务已被中断，未能完成。"
                     self.emit_output("当前轮已中断", "agent_warning")
                     self.emit_status("interrupted", "当前轮已中断")
                     break
@@ -3157,6 +3156,10 @@ class AgentSession:
                         self.item_id,
                         reply_ticket_id,
                     )
+                try:
+                    task_workflow_manager.record_intermediate_report(reply_ticket_id)
+                except Exception:
+                    pass
                 self.emit_output(
                     robot_reply_event_content(tool_args, result_text),
                     ROBOT_QQ_REPLY_EVENT_TYPE,

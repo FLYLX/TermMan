@@ -1433,8 +1433,19 @@ def _finalize_stopped_turn(
     prefers_chinese: bool,
     include_hidden_tool_results: bool,
     reply_ticket_id: str = "",
+    is_abort: bool = False,
 ) -> list[dict[str, Any]]:
     from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+
+    if is_abort:
+        return [
+            _persist_and_broadcast_event(
+                item_id,
+                role="assistant",
+                content="当前轮已中断，任务仍在运行中。",
+                message_type="agent_response",
+            )
+        ]
 
     _mark_agent_task_plan_failed(planned_task_runtime, reason)
     report = _generate_stopped_turn_report(
@@ -1678,6 +1689,7 @@ def _generate_stream_unserialized(
                     prefers_chinese=_contains_cjk(message),
                     include_hidden_tool_results=include_hidden_tool_results,
                     reply_ticket_id=reply_ticket.ticket_id,
+                    is_abort=True,
                 )
                 for stopped_event in stopped_events:
                     yield _to_sse(stopped_event)
@@ -1781,6 +1793,7 @@ def _generate_stream_unserialized(
                         prefers_chinese=_contains_cjk(message),
                         include_hidden_tool_results=include_hidden_tool_results,
                         reply_ticket_id=reply_ticket.ticket_id,
+                        is_abort=True,
                     )
                     for stopped_event in stopped_events:
                         yield _to_sse(stopped_event)
