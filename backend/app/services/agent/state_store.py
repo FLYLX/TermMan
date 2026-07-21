@@ -50,15 +50,6 @@ class TicketStateRow(_StateBase):
     payload: Mapped[str] = mapped_column(Text, default="{}")
 
 
-class DispatchJobStateRow(_StateBase):
-    __tablename__ = "agent_dispatch_job_state"
-
-    job_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    robot_id: Mapped[str] = mapped_column(String(64), index=True, default="")
-    enqueued_at: Mapped[str] = mapped_column(String(64), index=True, default="")
-    payload: Mapped[str] = mapped_column(Text, default="{}")
-
-
 class KVStateRow(_StateBase):
     __tablename__ = "agent_kv_state"
 
@@ -254,76 +245,6 @@ def load_tickets() -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Dispatch job rows
-# ---------------------------------------------------------------------------
-
-def save_dispatch_job(payload: dict[str, Any]) -> None:
-    import json
-
-    session = _session()
-    if session is None:
-        return
-    try:
-        job_id = str(payload.get("job_id") or "")
-        if not job_id:
-            return
-        with session:
-            row = session.get(DispatchJobStateRow, job_id)
-            if row is None:
-                row = DispatchJobStateRow(job_id=job_id)
-            row.robot_id = str(payload.get("robot_id") or "")
-            row.enqueued_at = str(payload.get("enqueued_at") or "")
-            row.payload = json.dumps(payload, ensure_ascii=False)
-            session.add(row)
-            session.commit()
-    except Exception as exc:
-        logger.warning("[AgentStateStore] save_dispatch_job failed: %s", exc)
-    finally:
-        session.close()
-
-
-def delete_dispatch_job(job_id: str) -> None:
-    session = _session()
-    if session is None:
-        return
-    try:
-        with session:
-            session.execute(
-                delete(DispatchJobStateRow).where(
-                    DispatchJobStateRow.job_id == str(job_id)
-                )
-            )
-            session.commit()
-    except Exception as exc:
-        logger.warning("[AgentStateStore] delete_dispatch_job failed: %s", exc)
-    finally:
-        session.close()
-
-
-def load_dispatch_jobs() -> list[dict[str, Any]]:
-    session = _session()
-    if session is None:
-        return []
-    try:
-        with session:
-            rows = (
-                session.execute(
-                    select(DispatchJobStateRow).order_by(
-                        DispatchJobStateRow.enqueued_at.asc()
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            return [payload for row in rows if (payload := _row_to_payload(row))]
-    except Exception as exc:
-        logger.warning("[AgentStateStore] load_dispatch_jobs failed: %s", exc)
-        return []
-    finally:
-        session.close()
-
-
-# ---------------------------------------------------------------------------
 # KV rows (ticket alias map, etc.)
 # ---------------------------------------------------------------------------
 
@@ -389,7 +310,6 @@ def clear_all() -> None:
             for model in (
                 WorkflowStateRow,
                 TicketStateRow,
-                DispatchJobStateRow,
                 KVStateRow,
             ):
                 session.execute(delete(model))
@@ -402,16 +322,13 @@ def clear_all() -> None:
 
 __all__ = [
     "clear_all",
-    "delete_dispatch_job",
     "delete_kv",
     "delete_ticket",
     "delete_workflow",
-    "load_dispatch_jobs",
     "load_kv",
     "load_tickets",
     "load_workflows",
     "reset_state_store_engine",
-    "save_dispatch_job",
     "save_kv",
     "save_ticket",
     "save_workflow",

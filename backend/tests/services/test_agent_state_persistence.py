@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -151,82 +150,15 @@ def _make_dispatch_job() -> robot_service_module.QueuedRobotChatJob:
     )
 
 
-def test_dispatch_job_payload_roundtrip_and_restore(monkeypatch) -> None:
-    job = _make_dispatch_job()
-    payload = robot_service_module._queued_job_to_payload(job)
-    revived = robot_service_module._queued_job_from_payload(payload)
-    assert revived is not None
-    assert revived.message_text == "装java"
-    assert revived.conversation_key == "group:g1"
-    assert revived.direct_reply_trigger is True
-
+def test_dispatch_queue_is_memory_only(monkeypatch) -> None:
     service = robot_service_module.RobotService()
     monkeypatch.setattr(service, "_ensure_dispatch_workers", lambda: None)
-    assert service._enqueue_chat_job(job) is True
-    persisted = state_store.load_dispatch_jobs()
-    assert len(persisted) == 1
-    job_id = persisted[0]["job_id"]
-
+    assert service._enqueue_chat_job(_make_dispatch_job()) is True
+    assert service._dispatch_queue.qsize() == 1
+    # A "restarted" service starts empty: dispatch jobs are intentionally
+    # not persisted or restored, so a restart never replays stale jobs.
     fresh = robot_service_module.RobotService()
-    monkeypatch.setattr(fresh, "_ensure_dispatch_workers", lambda: None)
-    restored = fresh.restore_dispatch_jobs()
-    assert restored == 1
-    queued = fresh._dispatch_queue.get_nowait()
-    assert queued.job_id == job_id
-    assert queued.message_text == "装java"
-
-
-def test_worker_deletes_persisted_job_after_success(monkeypatch) -> None:
-    service = robot_service_module.RobotService()
-    monkeypatch.setattr(service, "_process_chat_job", lambda _job: None)
-    service._ensure_dispatch_workers()
-    assert service._enqueue_chat_job(_make_dispatch_job()) is True
-    assert state_store.load_dispatch_jobs()
-
-    deadline = time.time() + 5
-    while time.time() < deadline and state_store.load_dispatch_jobs():
-        time.sleep(0.05)
-    assert state_store.load_dispatch_jobs() == []
-
-
-def test_worker_failure_deletes_persisted_job(monkeypatch) -> None:
-    service = robot_service_module.RobotService()
-
-    def exploding_job(_job):
-        raise RuntimeError("worker exploded")
-
-    monkeypatch.setattr(service, "_process_chat_job", exploding_job)
-    monkeypatch.setattr(
-        service,
-        "_record_and_send_job_error",
-        lambda *args, **kwargs: None,
-    )
-    service._ensure_dispatch_workers()
-    assert service._enqueue_chat_job(_make_dispatch_job()) is True
-    assert state_store.load_dispatch_jobs()
-
-    # A failed job must not stay persisted: otherwise every backend restart
-    # would replay it (and its partial side effects) again.
-    deadline = time.time() + 5
-    while time.time() < deadline and state_store.load_dispatch_jobs():
-        time.sleep(0.05)
-    assert state_store.load_dispatch_jobs() == []
-
-
-def test_restore_dispatch_jobs_drops_poison_after_max_restores() -> None:
-    from dataclasses import replace as dataclass_replace
-
-    job = dataclass_replace(_make_dispatch_job(), job_id="poison-job-1")
-    state_store.save_dispatch_job(
-        {
-            **robot_service_module._queued_job_to_payload(job),
-            "restore_count": robot_service_module.DISPATCH_JOB_MAX_RESTORES,
-        }
-    )
-
-    service = robot_service_module.RobotService()
-    assert service.restore_dispatch_jobs() == 0
-    assert state_store.load_dispatch_jobs() == []
+    assert fresh._dispatch_queue.qsize() == 0
 
 
 def test_chat_job_times_out_and_reports(db: Session, monkeypatch) -> None:

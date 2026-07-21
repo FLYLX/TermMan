@@ -11,7 +11,6 @@ from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from math import ceil
-from typing import Any
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
@@ -49,7 +48,6 @@ CONVERSATION_TTL = timedelta(hours=6)
 CONVERSATION_PROCESSING_MIN_TIMEOUT_SECONDS = 120
 CONVERSATION_PROCESSING_MAX_TIMEOUT_SECONDS = 600
 DISPATCH_WORKER_MAX_COUNT = 8
-DISPATCH_JOB_MAX_RESTORES = 3
 PENDING_CHAT_QUEUE_LIMIT = 5
 PENDING_DIRECT_WAKE_TRIGGER_REASONS = frozenset({
     "mention_bot",
@@ -203,97 +201,6 @@ class QueuedRobotChatJob:
     job_id: str = ""
 
 
-def _queued_job_to_payload(job: QueuedRobotChatJob) -> dict[str, Any]:
-    return {
-        "job_id": job.job_id,
-        "robot_id": str(job.robot_id),
-        "robot_owner_id": str(job.robot_owner_id),
-        "item_id": str(job.item_id),
-        "route_key": job.route_key,
-        "message": job.message,
-        "sender_key": job.sender_key,
-        "reply_target": job.reply_target.model_dump(mode="json"),
-        "conversation_key": job.conversation_key,
-        "enqueued_at": job.enqueued_at.isoformat(),
-        "direct_reply_trigger": job.direct_reply_trigger,
-        "reply_context_active": job.reply_context_active,
-        "conversation_generation": job.conversation_generation,
-        "reply_requires_awake": job.reply_requires_awake,
-        "message_text": job.message_text,
-        "trigger_reason": job.trigger_reason,
-        "inbound_message": (
-            job.inbound_message.model_dump(mode="json")
-            if job.inbound_message is not None
-            else None
-        ),
-        "reply_ticket_id": job.reply_ticket_id,
-        "pending_reply_id": job.pending_reply_id,
-    }
-
-
-def _queued_job_from_payload(payload: dict[str, Any]) -> QueuedRobotChatJob | None:
-    try:
-        enqueued_at = datetime.fromisoformat(
-            str(payload.get("enqueued_at") or "").replace("Z", "+00:00")
-        )
-    except ValueError:
-        enqueued_at = datetime.now(timezone.utc)
-    try:
-        inbound_raw = payload.get("inbound_message")
-        return QueuedRobotChatJob(
-            job_id=str(payload.get("job_id") or ""),
-            robot_id=uuid.UUID(str(payload.get("robot_id"))),
-            robot_owner_id=uuid.UUID(str(payload.get("robot_owner_id"))),
-            item_id=uuid.UUID(str(payload.get("item_id"))),
-            route_key=str(payload.get("route_key") or ""),
-            message=str(payload.get("message") or ""),
-            sender_key=str(payload.get("sender_key") or ""),
-            reply_target=RobotReplyTarget.model_validate(
-                payload.get("reply_target") or {}
-            ),
-            conversation_key=str(payload.get("conversation_key") or ""),
-            enqueued_at=enqueued_at,
-            direct_reply_trigger=bool(payload.get("direct_reply_trigger")),
-            reply_context_active=bool(payload.get("reply_context_active")),
-            conversation_generation=int(payload.get("conversation_generation") or 0),
-            reply_requires_awake=bool(payload.get("reply_requires_awake")),
-            message_text=str(payload.get("message_text") or ""),
-            trigger_reason=str(payload.get("trigger_reason") or ""),
-            inbound_message=(
-                RobotInboundMessage.model_validate(inbound_raw)
-                if isinstance(inbound_raw, dict)
-                else None
-            ),
-            reply_ticket_id=str(payload.get("reply_ticket_id") or ""),
-            pending_reply_id=str(payload.get("pending_reply_id") or ""),
-        )
-    except Exception:
-        logger.debug("[RobotService] Failed to restore queued dispatch job", exc_info=True)
-        return None
-
-
-def _persist_dispatch_job(job: QueuedRobotChatJob) -> None:
-    if not job.job_id:
-        return
-    try:
-        from app.services.agent import state_store
-
-        state_store.save_dispatch_job(_queued_job_to_payload(job))
-    except Exception as exc:
-        logger.debug("[RobotService] Persist dispatch job failed: %s", exc)
-
-
-def _delete_persisted_dispatch_job(job_id: str) -> None:
-    if not job_id:
-        return
-    try:
-        from app.services.agent import state_store
-
-        state_store.delete_dispatch_job(job_id)
-    except Exception as exc:
-        logger.debug("[RobotService] Delete persisted dispatch job failed: %s", exc)
-
-
 class RobotServiceError(Exception):
     def __init__(self, message: str, status_code: int = 400):
         super().__init__(message)
@@ -348,7 +255,6 @@ class RobotService:
             self._dispatch_queue.put_nowait(job)
         except queue.Full:
             return False
-        _persist_dispatch_job(job)
         return True
 
     def enqueue_background_job_result(
@@ -552,10 +458,6 @@ class RobotService:
                     job.robot_id,
                     job.item_id,
                 )
-                # Delete the persisted row here too: keeping it would replay
-                # the job (and any partial side effects such as QQ replies)
-                # on every backend restart.
-                _delete_persisted_dispatch_job(job.job_id)
                 try:
                     self._record_and_send_job_error(
                         job,
@@ -567,7 +469,6 @@ class RobotService:
                         job.robot_id,
                     )
             else:
-                _delete_persisted_dispatch_job(job.job_id)
                 try:
                     from app.services.agent.mcp.local_server import (
                         flush_job_results_for_turn_end,
@@ -592,10 +493,9 @@ class RobotService:
 
         A worker thread frozen inside a job (LLM stall, store hang, bridge
         stall) blocks the whole queue. The reaper force-fails the job (clears
-        the conversation controller, reports the timeout), removes it from
-        the persisted queue, and starts a replacement worker so the queue
-        keeps draining. The frozen thread is left to die on its own; its
-        late writes are idempotent.
+        the conversation controller, reports the timeout) and starts a
+        replacement worker so the queue keeps draining. The frozen thread is
+        left to die on its own; its late writes are idempotent.
         """
         hard_timeout = float(settings.ROBOT_BACKEND_DISPATCH_HARD_TIMEOUT_SECONDS)
         now = time.monotonic()
@@ -639,7 +539,6 @@ class RobotService:
                     "[RobotService] Failed to report hard-timeout for robot %s",
                     job.robot_id,
                 )
-            _delete_persisted_dispatch_job(job.job_id)
             reaped += 1
 
         if reaped:
@@ -686,59 +585,6 @@ class RobotService:
                 needed,
                 DISPATCH_WORKER_MAX_COUNT,
             )
-
-    def restore_dispatch_jobs(self) -> int:
-        try:
-            from app.services.agent import state_store
-        except Exception:
-            return 0
-        payloads = state_store.load_dispatch_jobs()
-        if not payloads:
-            return 0
-        restored = 0
-        for payload in payloads:
-            job = _queued_job_from_payload(payload)
-            job_id = str(payload.get("job_id") or "")
-            if job is None:
-                _delete_persisted_dispatch_job(job_id)
-                continue
-            try:
-                restore_count = int(payload.get("restore_count") or 0)
-            except (TypeError, ValueError):
-                restore_count = 0
-            if restore_count >= DISPATCH_JOB_MAX_RESTORES:
-                logger.error(
-                    "[RobotService] Dropping persisted dispatch job robot=%s item=%s after %s restores",
-                    job.robot_id,
-                    job.item_id,
-                    restore_count,
-                )
-                _delete_persisted_dispatch_job(job_id)
-                continue
-            if self._enqueue_chat_job(job):
-                try:
-                    state_store.save_dispatch_job(
-                        {
-                            **_queued_job_to_payload(job),
-                            "restore_count": restore_count + 1,
-                        }
-                    )
-                except Exception:
-                    pass
-                restored += 1
-                continue
-            logger.warning(
-                "[RobotService] Dropping restored dispatch job robot=%s item=%s: queue full",
-                job.robot_id,
-                job.item_id,
-            )
-            _delete_persisted_dispatch_job(job_id)
-        if restored:
-            logger.info(
-                "[RobotService] Restored %s queued dispatch jobs from state store",
-                restored,
-            )
-        return restored
 
     def _process_chat_job(self, job: QueuedRobotChatJob) -> None:
         queue_wait_seconds = (self._now() - job.enqueued_at).total_seconds()

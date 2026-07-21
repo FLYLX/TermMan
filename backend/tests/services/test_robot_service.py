@@ -4512,25 +4512,22 @@ def test_failed_job_drains_pending_chat_inputs_into_followup(
     )
     from datetime import datetime, timezone
 
-    from app.plugins.robot.service import _queued_job_from_payload
+    from app.plugins.robot.service import QueuedRobotChatJob
 
-    job = _queued_job_from_payload(
-        {
-            "job_id": "job-fail-1",
-            "robot_id": str(robot.id),
-            "robot_owner_id": str(robot.owner_id),
-            "item_id": str(item.id),
-            "route_key": "group:g1",
-            "message": "[Current QQ message]\n装java",
-            "sender_key": "onebot_v11:group:g1:u1",
-            "reply_target": target.model_dump(mode="json"),
-            "conversation_key": "group:g1",
-            "enqueued_at": datetime.now(timezone.utc).isoformat(),
-            "direct_reply_trigger": True,
-            "message_text": "装java",
-        }
+    job = QueuedRobotChatJob(
+        job_id="job-fail-1",
+        robot_id=robot.id,
+        robot_owner_id=robot.owner_id,
+        item_id=item.id,
+        route_key="group:g1",
+        message="[Current QQ message]\n装java",
+        sender_key="onebot_v11:group:g1:u1",
+        reply_target=target,
+        conversation_key="group:g1",
+        enqueued_at=datetime.now(timezone.utc),
+        direct_reply_trigger=True,
+        message_text="装java",
     )
-    assert job is not None
 
     robot_service._record_pending_chat_input(
         robot=robot,
@@ -4592,7 +4589,7 @@ def test_empty_direct_reply_retries_once_with_corrective_note(
 ) -> None:
     from datetime import datetime, timezone
 
-    from app.plugins.robot.service import _queued_job_from_payload
+    from app.plugins.robot.service import QueuedRobotChatJob
 
     item = create_random_item(db)
     robot = create_random_robot(db)
@@ -4608,27 +4605,24 @@ def test_empty_direct_reply_retries_once_with_corrective_note(
     )
     db.commit()
 
-    job = _queued_job_from_payload(
-        {
-            "job_id": "job-retry-1",
-            "robot_id": str(robot.id),
-            "robot_owner_id": str(robot.owner_id),
-            "item_id": str(item.id),
-            "route_key": "group:g1",
-            "message": "[Current QQ message]\n你好",
-            "sender_key": "onebot_v11:group:g1:u1",
-            "reply_target": RobotReplyTarget(
-                target_type="group",
-                target_id="g1",
-                metadata={"target": {"id": "g1"}},
-            ).model_dump(mode="json"),
-            "conversation_key": "group:g1",
-            "enqueued_at": datetime.now(timezone.utc).isoformat(),
-            "direct_reply_trigger": True,
-            "message_text": "你好",
-        }
+    job = QueuedRobotChatJob(
+        job_id="job-retry-1",
+        robot_id=robot.id,
+        robot_owner_id=robot.owner_id,
+        item_id=item.id,
+        route_key="group:g1",
+        message="[Current QQ message]\n你好",
+        sender_key="onebot_v11:group:g1:u1",
+        reply_target=RobotReplyTarget(
+            target_type="group",
+            target_id="g1",
+            metadata={"target": {"id": "g1"}},
+        ),
+        conversation_key="group:g1",
+        enqueued_at=datetime.now(timezone.utc),
+        direct_reply_trigger=True,
+        message_text="你好",
     )
-    assert job is not None
 
     monkeypatch.setattr(
         robot_service,
