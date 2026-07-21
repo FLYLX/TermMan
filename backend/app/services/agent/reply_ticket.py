@@ -535,27 +535,31 @@ class ReplyTicketManager:
                 "Authoritative reply ticket:\n"
                 f"- ticket_id: {ticket.ticket_id}\n"
                 f"- source: QQ ({ticket.conversation_key or 'current conversation'})\n"
-                "- completion route: reply to this same QQ source only. Do not send to "
-                "any other QQ group/private chat.\n"
-                "- if you already called `mcp_robot_send_message`, do not restate the "
-                "same answer in final assistant text.\n"
-                "- if you only produce normal final text, TermMan will deliver that text "
-                "through this ticket to the original QQ source.\n"
+                "- REPLY ROUTING: this conversation originated from QQ. All replies "
+                "(progress, results, errors) must go back to this QQ source via "
+                "`mcp_robot_send_message`. Do not leave answers only in TermMan.\n"
+                "- If the user asks you to send a message elsewhere (e.g. another QQ "
+                "target or a server), perform that action, then report the outcome "
+                "back to THIS source.\n"
+                "- Do not duplicate: if you already sent the answer via "
+                "`mcp_robot_send_message`, do not restate it in final text.\n"
             )
         if ticket.source_type == SOURCE_WEB:
             return (
                 "Authoritative reply ticket:\n"
                 f"- ticket_id: {ticket.ticket_id}\n"
                 "- source: TermMan web chat\n"
-                "- completion route: answer only in this web chat response.\n"
-                "- do not call QQ tools and do not reuse old QQ targets unless the current "
-                "web user explicitly asks to send a message to a specific QQ target.\n"
+                "- REPLY ROUTING: this conversation originated from the web chat. "
+                "Reply directly in this web response.\n"
+                "- If the user asks you to send a message to QQ or elsewhere, perform "
+                "that action, then report the outcome here in web chat.\n"
             )
         return (
             "Authoritative reply ticket:\n"
             f"- ticket_id: {ticket.ticket_id}\n"
             f"- source: {ticket.source_type}\n"
-            "- completion route: answer back to the same source.\n"
+            "- REPLY ROUTING: reply back to the same source this conversation "
+            "originated from.\n"
         )
 
     def deliver(self, ticket_id: str, content: str) -> bool:

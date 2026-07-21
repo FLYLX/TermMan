@@ -1329,7 +1329,7 @@ class AgentSession:
 
             task_workflow_manager.update(
                 ticket_id,
-                action="mark_blocked",
+                action="cancel",
                 note=str(reason or report)[:2000],
             )
             reply_ticket_manager.mark_failed(ticket_id, reason or report)
@@ -2497,14 +2497,8 @@ class AgentSession:
                         )
                     )
                     if not continuation_scheduled:
-                        task_workflow_manager.update(
-                            input_msg.reply_ticket_id,
-                            action="mark_blocked",
-                            note="自动续跑次数已用完，等待用户介入或外部事件恢复。",
-                        )
-                        self.emit_output(
-                            "任务暂停：等待新指令或后台任务完成后自动恢复",
-                            "agent_warning",
+                        terminal_failure_report = (
+                            "任务未能完成：多次自动尝试后仍无法取得进展，已移除该任务。"
                         )
                 else:
                     terminal_failure_report = (

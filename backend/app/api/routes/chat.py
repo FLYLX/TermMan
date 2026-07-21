@@ -852,7 +852,7 @@ def _mark_agent_task_plan_failed(
     if plan.reply_ticket_id and plan.workflow_id:
         task_workflow_manager.update(
             plan.reply_ticket_id,
-            action="mark_blocked",
+            action="cancel",
             note=reason,
         )
 
@@ -1462,7 +1462,7 @@ def _finalize_stopped_turn(
     if ticket:
         task_workflow_manager.update(
             ticket_id,
-            action="mark_blocked",
+            action="cancel",
             note=str(reason or final_report)[:2000],
         )
         reply_ticket_manager.mark_failed(ticket_id, reason or final_report)
