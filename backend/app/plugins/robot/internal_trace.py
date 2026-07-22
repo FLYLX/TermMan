@@ -225,8 +225,25 @@ def is_robot_internal_trace_text(value: str) -> bool:
     return False
 
 
+_SYSTEM_PROMPT_LEAK_MARKERS = (
+    "Current QQ message",
+    "Current QQ sender",
+    "Replied QQ message",
+    "trigger=background_job_result",
+    "authoritative for this turn",
+)
+
+
+def _is_system_prompt_leak(text: str) -> bool:
+    hits = sum(1 for marker in _SYSTEM_PROMPT_LEAK_MARKERS if marker in text)
+    return hits >= 2
+
+
 def sanitize_robot_visible_text(value: Any) -> str:
     """Remove robot tool traces from text that may be sent or shown as chat memory."""
+    normalized_raw = str(value or "")
+    if _is_system_prompt_leak(normalized_raw):
+        return ""
     cleaned_lines: list[str] = []
     previous_blank = False
     normalized = normalize_robot_message_text(value)

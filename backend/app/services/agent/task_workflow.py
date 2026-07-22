@@ -1157,8 +1157,11 @@ class TaskWorkflowManager:
                 "7. Cancelling an obsolete command or background job does not cancel the main "
                 "objective. Use mcp_local_cancel_job for the execution, then continue the workflow. "
                 "Use workflow action=cancel only when the user explicitly abandons the whole goal.",
-                "8. Do not stop at a diagnosis or proposed next step when a safe tool action is "
-                "available. Execute one concrete action in the current turn.",
+                "8. Never ask the user for permission on recoverable decisions (change source, "
+                "try another package name, retry, download tar, etc.). Just do it. Only "
+                "when ALL safe alternatives are exhausted and a genuine user decision is "
+                "required: cancel all running jobs, cancel the workflow, and report the "
+                "situation to return_source so the user can start fresh with a new decision.",
                 "9. Report frequency follows report_policy: step_change (default) allows one "
                 "QQ message per step transition or direction change — do NOT send multiple "
                 "progress updates within the same step; final_only allows one report only after "
