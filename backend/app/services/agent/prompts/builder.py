@@ -891,7 +891,7 @@ def build_chat_turn_messages(
     if not latest_only_context and policy.include_recent_history:
         prompt_messages.extend(recent_context_messages)
 
-    if not latest_only_context and policy.include_long_term:
+    if policy.include_long_term:
         memories = _collect_long_term_memories(
             item_id,
             retrieval_query,

@@ -2130,7 +2130,12 @@ class AgentSession:
             if matched_entry:
                 input_msg.reply_ticket_id = str(matched_entry["id"])
                 self._attach_reply_ticket_to_agent(agent, input_msg.reply_ticket_id)
-            elif not input_msg.reply_ticket_id and self._get_pending_command() is None:
+            elif not input_msg.reply_ticket_id:
+                pending = self._get_pending_command()
+                if pending and pending.reply_ticket_id:
+                    input_msg.reply_ticket_id = pending.reply_ticket_id
+                    self._attach_reply_ticket_to_agent(agent, input_msg.reply_ticket_id)
+            if not input_msg.reply_ticket_id and self._get_pending_command() is None:
                 player_chat = MINECRAFT_PLAYER_CHAT_CAPTURE_RE.search(combined_input)
                 if player_chat:
                     player = str(player_chat.group("player") or "").strip()
