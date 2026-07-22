@@ -85,6 +85,9 @@ def test_background_job_result_resumes_agent_with_original_ticket(
         def clear_terminal_job(self, command):
             captured["cleared_command"] = command
 
+        def record_finished_job(self, command, **kwargs):
+            pass
+
         def process_input(self, input_message):
             captured["input"] = input_message
             completed.set()

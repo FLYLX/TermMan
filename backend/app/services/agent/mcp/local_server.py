@@ -22,7 +22,6 @@ def debug_log(msg: str):
 
 
 TERMINAL_NOT_CONNECTED_MESSAGE = "终端未连接或未打开，命令没有发送。请先启动或连接终端后再试。"
-AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
 BACKGROUND_JOB_STARTED_MARKER = "background_job_started"
 JOB_RESULT_POLL_INITIAL_DELAY_SECONDS = 1.0
 JOB_RESULT_POLL_INTERVAL_SECONDS = 2.0
@@ -261,7 +260,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="execute_command",
-            description="在主终端前台执行一条命令或向当前交互式控制台发送输入。适合 shell 短命令、交互式服务（MC/Java server/REPL）、以及控制台后续输入。任何不透明的命令（未知脚本、不确定耗时的操作）先看内容再决定用哪个工具：下载/安装/编译等长时操作用 run_job，启动交互式服务用 execute_command。apt/yum/pip/npm install、apt update、curl/wget 下载、make/cargo build 等明确耗时的命令必须用 run_job，不要用 execute_command。一次只发一条命令，不要用 &&/||/; 拼接多步。发错了可以用 interrupt_command (Ctrl+C) 中断再重来。",
+            description="在主终端前台执行命令，你拥有这个进程的管理权。使用场景：进程启动后你还需要继续与它交互——向它发送后续输入、回应提示、观察实时输出、或保持一个长期运行的进程（服务器、REPL、控制台）以便之后发指令。判断标准：这个命令执行后会不会进入一个等待你输入的状态？会不会是一个你需要持续管理的进程？是→execute_command，否→run_job。如果主终端正在运行一个交互式进程（如MC服务器），execute_command就是向那个进程发控制台指令。调试技巧：如果一个 run_job 失败了（比如解压出错），你可以在主终端重新跑同样的命令来观察完整的交互输出以定位问题。一次只发一条命令，发错了用 interrupt_command (Ctrl+C) 中断再重来。",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -278,7 +277,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="run_job",
-            description="Start a non-interactive one-shot shell job in a daemon background process with stdin closed. This tool always returns immediately after scheduling; never wait synchronously for completion. The main terminal must already be started and connected; run_job is rejected while the main terminal is stopped. Use this for downloads, package installs, builds, tests, archive extraction, and other commands that can finish without later user input; the final result and tail output will be delivered back to the agent after completion. Multiple different background jobs may run at the same time; exact duplicate commands are rejected. For apt/dpkg or other package-manager installs that share global locks, prefer waiting for an existing same-manager install to finish or inspect with list_jobs first. Also use run_job for shell inspection commands such as ls, pwd, local find, cat, head, tail, grep, du, df, and java -version while the main terminal is already occupied by an interactive server console. For file discovery, start from the current working directory with pwd and ls -la, then use find . -maxdepth 2 only if needed; do not scan /, ~, /opt, or /srv unless the user explicitly asks for a wider search. Before using it, decide whether the command needs an interactive foreground console. Do not choose run_job for Minecraft/Forge/Paper/Fabric server startup, run.sh/start.sh server launchers, REPLs, shells, watch/dev servers, or any process that should remain open for later commands such as op/say/stop; choose execute_command in the main terminal for those. Prefer one clear operation per job; avoid very long &&/pipe chains when a later step may need diagnosis.",
+            description="Fire-and-forget: run a command in a daemon background process with stdin closed. You only need the final result/output, not to interact with the process. The job runs independently; you get the tail output delivered back when it finishes. Use this for anything where you just want the outcome: downloads, package installs (-y), apt update, builds, tests, archive extraction, file queries (ls, cat, find, grep, java -version). Also use run_job for any side commands while the main terminal is occupied by an interactive process you are managing. Decision rule: will this command finish on its own without needing later input from you? Yes -> run_job. Will it enter a state waiting for your input, or remain open for future commands (server, REPL, shell)? No -> use execute_command instead. If unsure whether a script needs interaction, cat it first to check. Multiple different jobs may run in parallel; exact duplicate commands are rejected. For package managers with global locks (apt/dpkg), prefer waiting for an existing same-manager job to finish. Prefer one clear operation per job; avoid very long && chains when a later step may need diagnosis.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -1483,6 +1482,12 @@ class LocalMCPServer:
                     )
             if agent_session:
                 agent_session.clear_terminal_job(command)
+                agent_session.record_finished_job(
+                    command,
+                    job_id=str(result.get("job_id") or ""),
+                    success=bool(result.get("success")),
+                    exit_code=result.get("exit_code"),
+                )
 
             busy = _session_turn_busy(agent_session)
             if robot_job_context and not busy:
@@ -1720,47 +1725,6 @@ class LocalMCPServer:
             if not has_handler:
                 return self._terminal_unavailable_result(str(item_id))
 
-            if self._should_auto_route_execute_command_to_job(str(command), str(item_id)):
-                debug_log(
-                    f"[LocalMCPServer] auto-routing execute_command to run_job: item={item_id}, command={command}"
-                )
-                job_args = dict(args)
-                job_args["item_id"] = item_id
-                job_args["command"] = command
-                job_args["timeout_seconds"] = self._coerce_job_int(
-                    job_args.get("timeout_seconds"),
-                    600,
-                    60,
-                    3600,
-                )
-                job_args.setdefault("tail_lines", 80)
-                job_args["wait_for_completion"] = False
-                result = self._run_job(job_args)
-                job_started = any(
-                    isinstance(item, dict)
-                    and bool(item.get(BACKGROUND_JOB_STARTED_MARKER))
-                    for item in result
-                )
-                if not job_started:
-                    return result
-                result_text = "\n".join(
-                    item.get("text", "")
-                    for item in result
-                    if isinstance(item, dict) and item.get("type") == "text"
-                ).strip()
-                return [
-                    {
-                        "type": "text",
-                        "text": "\u5df2\u81ea\u52a8\u6539\u4e3a\u540e\u53f0 Job \u6267\u884c\uff0c\u7ec8\u7aef\u524d\u53f0\u8f93\u5165\u4e0d\u4f1a\u88ab\u9501\u5b9a\u3002"
-                        + (f"\n{result_text}" if result_text else ""),
-                    },
-                    {
-                        "type": "metadata",
-                        AUTO_ROUTED_TO_JOB_MARKER: True,
-                        BACKGROUND_JOB_STARTED_MARKER: True,
-                        "effective_tool_name": "mcp_local_run_job",
-                    },
-                ]
 
             try:
                 from app.services.agent.session import (
@@ -1803,9 +1767,6 @@ class LocalMCPServer:
         except Exception as e:
             debug_log(f"[LocalMCPServer] execute_command error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
-
-    def _should_auto_route_execute_command_to_job(self, command: str, item_id: str = "") -> bool:
-        return False
 
     def _cancel_running_job_for_item(self, item_id: str) -> dict | None:
         try:

@@ -65,8 +65,6 @@ from app.services.agent.session import (
     is_command_dispatch_failure_result,
     is_command_dispatch_pending_result,
     is_terminal_unavailable_error,
-    is_tool_result_auto_routed_to_job,
-    should_auto_route_terminal_tool_to_job,
 )
 from app.services.agent.stream_manager import stream_manager
 from app.services.agent.task_workflow import task_workflow_manager
@@ -2160,25 +2158,10 @@ def _generate_stream_unserialized(
                         item_id,
                         str(handler.id),
                     )
-                    terminal_input_error = None
-                    auto_routes_to_job = should_auto_route_terminal_tool_to_job(
+                    terminal_input_error = terminal_session.validate_terminal_tool_input(
                         tool_name,
                         tool_args,
                     )
-                    if (
-                        not auto_routes_to_job
-                        and not terminal_session.has_interactive_terminal_context()
-                        and tool_name in COMMAND_TOOL_NAMES
-                        and terminal_session.should_route_execute_command_to_background_job(
-                            str(tool_args.get("command") or ""),
-                        )
-                    ):
-                        auto_routes_to_job = True
-                    if not auto_routes_to_job:
-                        terminal_input_error = terminal_session.validate_terminal_tool_input(
-                            tool_name,
-                            tool_args,
-                        )
                     if terminal_input_error:
                         if is_terminal_unavailable_error(terminal_input_error):
                             for event in _finalize_stopped_turn(
@@ -2386,7 +2369,6 @@ def _generate_stream_unserialized(
                 if (
                     tool_name in COMMAND_TOOL_NAMES
                     and result.get("success")
-                    and not is_tool_result_auto_routed_to_job(result)
                 ):
                     clear_pending_terminal_continuation(
                         item_id,
@@ -2407,11 +2389,6 @@ def _generate_stream_unserialized(
                     yield _to_sse(waiting_event)
                     yield _to_sse({"done": True})
                     return
-                if is_tool_result_auto_routed_to_job(result):
-                    clear_pending_terminal_continuation(
-                        item_id,
-                        command=str(tool_args.get("command") or ""),
-                    )
                 assistant_message["tool_calls"].append(
                     {
                         "id": tool_call["id"],

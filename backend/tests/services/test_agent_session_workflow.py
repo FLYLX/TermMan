@@ -142,30 +142,3 @@ def test_schedule_task_workflow_continuation_is_internal_and_bounded(
         assert captured[0][2] is True
     finally:
         task_workflow_manager.reset()
-
-
-
-def test_env_prefixed_apt_install_routes_to_background_job() -> None:
-    from app.services.agent.session import (
-        should_auto_route_terminal_tool_to_job,
-        should_route_command_to_background_job,
-    )
-
-    assert should_route_command_to_background_job(
-        "DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-21-jdk-headless 2>&1 | tail -30"
-    ) is True
-    assert should_route_command_to_background_job(
-        "sudo DEBIAN_FRONTEND=noninteractive apt-get update"
-    ) is True
-    assert should_auto_route_terminal_tool_to_job(
-        "mcp_local_execute_command",
-        {"command": "DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-21-jdk-headless"},
-    ) is True
-
-
-def test_interactive_and_short_commands_not_routed() -> None:
-    from app.services.agent.session import should_route_command_to_background_job
-
-    assert should_route_command_to_background_job("java -jar server.jar nogui") is False
-    assert should_route_command_to_background_job("ls -la") is False
-    assert should_route_command_to_background_job("tail -f server.log") is False

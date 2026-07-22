@@ -92,7 +92,6 @@ COMMAND_DISPATCH_FAILURE_MARKERS = (
 )
 EXECUTE_COMMAND_TOOL_NAME = "mcp_local_execute_command"
 RUN_JOB_TOOL_NAME = "mcp_local_run_job"
-AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
 BACKGROUND_JOB_STARTED_MARKER = "background_job_started"
 COMMAND_DISPATCH_FAILED_MARKER = "command_dispatch_failed"
 TERMINAL_UNAVAILABLE_RESULT_MARKER = "terminal_unavailable"
@@ -279,18 +278,6 @@ def is_command_dispatch_pending_result(tool_name: str, result_text: str) -> bool
     )
 
 
-def is_tool_result_auto_routed_to_job(result: Any) -> bool:
-    if not isinstance(result, dict) or not result.get("success"):
-        return False
-    result_data = result.get("result")
-    if not isinstance(result_data, list):
-        return False
-    return any(
-        isinstance(item, dict) and bool(item.get(AUTO_ROUTED_TO_JOB_MARKER))
-        for item in result_data
-    )
-
-
 def is_background_job_started_result(result: Any) -> bool:
     if not isinstance(result, dict) or not result.get("success"):
         return False
@@ -298,11 +285,7 @@ def is_background_job_started_result(result: Any) -> bool:
     if not isinstance(result_data, list):
         return False
     return any(
-        isinstance(item, dict)
-        and (
-            bool(item.get(BACKGROUND_JOB_STARTED_MARKER))
-            or bool(item.get(AUTO_ROUTED_TO_JOB_MARKER))
-        )
+        isinstance(item, dict) and bool(item.get(BACKGROUND_JOB_STARTED_MARKER))
         for item in result_data
     )
 
@@ -356,17 +339,6 @@ def classify_terminal_input_mode(command: str) -> str | None:
     ):
         return TERMINAL_INPUT_MODE_BUSY
     return None
-
-
-def should_route_command_to_background_job(command: str) -> bool:
-    return classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_BUSY
-
-
-def should_auto_route_terminal_tool_to_job(tool_name: str, tool_args: dict[str, Any]) -> bool:
-    if tool_name != EXECUTE_COMMAND_TOOL_NAME:
-        return False
-    command = str((tool_args or {}).get("command") or "")
-    return should_route_command_to_background_job(command)
 
 
 def _coerce_timeout_seconds(value: Any, default: int = PENDING_COMMAND_TIMEOUT_SECONDS) -> int:
@@ -663,6 +635,7 @@ class AgentSession:
         self._running_terminal_job: RunningTerminalJob | None = None
         self._daemon_jobs_snapshot: list[dict[str, Any]] = []
         self._daemon_jobs_snapshot_at: datetime | None = None
+        self._recent_finished_jobs: list[dict[str, Any]] = []
 
         logger.info(f"[AgentSession] Created session for item={item_id}, handler={handler_id}")
 
@@ -907,19 +880,24 @@ class AgentSession:
                 return
             self._running_terminal_job = None
 
-    def _build_running_terminal_job_warning(
+    def record_finished_job(
         self,
-        running_job: RunningTerminalJob,
         command: str,
-    ) -> str:
-        elapsed_seconds = int((datetime.now() - running_job.started_at).total_seconds())
-        return (
-            f"\u540e\u53f0\u4efb\u52a1\u6b63\u5728\u8fd0\u884c\uff0c\u5df2\u8fd0\u884c {elapsed_seconds}s\u3002"
-            "\u8fd9\u6761\u770b\u8d77\u6765\u662f\u4f1a\u5360\u7528\u524d\u53f0\u7ec8\u7aef\u7684 shell \u547d\u4ee4\uff0c"
-            "\u5df2\u62e6\u622a\u672a\u53d1\u9001\u3002"
-            "\u5982\u679c\u662f\u72ec\u7acb\u7684\u4e0b\u8f7d/\u5b89\u88c5/\u6784\u5efa\u4efb\u52a1\uff0c"
-            "\u8bf7\u6539\u7528 mcp_local_run_job\uff1b\u4e0d\u540c\u540e\u53f0\u4efb\u52a1\u53ef\u4ee5\u5e76\u884c\u3002"
-        )
+        *,
+        job_id: str = "",
+        success: bool = False,
+        exit_code: int | None = None,
+    ) -> None:
+        with self.lock:
+            self._recent_finished_jobs.append({
+                "command": self._short_command(command, max_length=120),
+                "job_id": job_id,
+                "success": success,
+                "exit_code": exit_code,
+                "finished_at": datetime.now(),
+            })
+            if len(self._recent_finished_jobs) > 3:
+                self._recent_finished_jobs = self._recent_finished_jobs[-3:]
 
     def _find_duplicate_background_job(self, command: str) -> dict[str, Any] | None:
         normalized_command = self._normalize_text(command or "")
@@ -962,42 +940,6 @@ class AgentSession:
             "\u8bf7\u53d1\u9001\u4e0d\u540c\u7684\u547d\u4ee4\u3002"
         )
 
-    def _running_job_blocks_terminal_tool(
-        self,
-        *,
-        running_job: RunningTerminalJob | None,
-        tool_name: str,
-        command: str,
-    ) -> bool:
-        if running_job is None:
-            return False
-        return (
-            tool_name == EXECUTE_COMMAND_TOOL_NAME
-            and classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_BUSY
-        )
-
-    def should_route_execute_command_to_background_job(self, command: str) -> bool:
-        if self.has_interactive_terminal_context() or is_terminal_console_command(command):
-            return False
-        return should_route_command_to_background_job(command)
-
-    def _should_auto_route_tool_to_job(
-        self,
-        tool_name: str,
-        tool_args: dict[str, Any],
-    ) -> bool:
-        # Long non-interactive operations always go to background jobs, even
-        # when an interactive terminal is attached (a live terminal must never
-        # be blocked by apt/downloads/builds).
-        if should_auto_route_terminal_tool_to_job(tool_name, tool_args):
-            return True
-        if self.has_interactive_terminal_context():
-            return False
-        if tool_name != EXECUTE_COMMAND_TOOL_NAME:
-            return False
-        command = self._extract_command_text(tool_name, tool_args)
-        return self.should_route_execute_command_to_background_job(command)
-
     def _validate_terminal_command_input(
         self,
         tool_name: str,
@@ -1019,28 +961,6 @@ class AgentSession:
                 active_context = self._terminal_input_context
                 if active_context:
                     active_context.last_seen_at = datetime.now()
-            return None
-
-        running_job = self._get_running_terminal_job()
-        if self._running_job_blocks_terminal_tool(
-            running_job=running_job,
-            tool_name=tool_name,
-            command=command,
-        ):
-            return self._build_running_terminal_job_warning(running_job, command)
-
-        if tool_name != EXECUTE_COMMAND_TOOL_NAME:
-            return None
-
-        pending = self._get_pending_command()
-        if not pending:
-            return None
-
-        if pending.input_mode == TERMINAL_INPUT_MODE_BUSY:
-            return (
-                f"终端正在执行 `{self._short_command(pending.command)}`，前台进程通常不接收新的 shell 命令。"
-                f"已拦截 `{self._short_command(command)}`，命令未发送；请等待当前任务结束，或明确要求中断。"
-            )
 
         return None
 
@@ -2610,15 +2530,7 @@ class AgentSession:
                 pending_command
             ),
         )
-        last_command_context = terminal_command_state_manager.build_prompt_context(
-            self.item_id
-        )
-        if last_command_context:
-            insert_at = max(len(messages) - 1, 0)
-            messages.insert(
-                insert_at,
-                {"role": "system", "content": last_command_context},
-            )
+
         terminal_text = (effective_terminal_content or "").strip()
         if terminal_text:
             has_system_prompt = any(
@@ -2665,37 +2577,6 @@ class AgentSession:
                 )
         self.inject_active_jobs_prompt_context(messages)
         return messages
-
-    def _build_running_terminal_job_prompt_context(
-        self,
-        running_job: RunningTerminalJob,
-    ) -> str:
-        elapsed_seconds = int((datetime.now() - running_job.started_at).total_seconds())
-        source_line = ""
-        if running_job.source_type or running_job.source_label:
-            source_line = (
-                "Original requester route: "
-                f"{running_job.source_label or running_job.source_type}. "
-                "When this job completes, report back only through that same route. "
-                "Do not switch to QQ unless this route is QQ. "
-            )
-        return (
-            "A background terminal job is running independently; it does not block normal conversation. "
-            "For normal chat, acknowledgement, or 'why are you quiet' messages, answer directly without calling run_job. "
-            "Only inspect/list/cancel jobs when the user explicitly asks about the job status or wants to stop it. "
-            f"{source_line}"
-            "当前有一个后台终端任务正在运行。"
-            f"已运行 {elapsed_seconds}s，超时上限 {running_job.timeout_seconds}s。"
-            f"任务命令：`{self._short_command(running_job.command)}`。"
-            "你可以正常回答不需要终端的新问题。"
-            "如果用户问任务状态，只说明后台任务仍在运行，完成后系统会把最终结果作为新的终端反馈发给你。"
-            "不同的后台任务可以继续用 run_job 启动；不要重复启动完全相同的命令。"
-            "如果涉及 apt/dpkg 等有全局锁的安装任务，优先等当前同类安装完成，或先 list_jobs 确认。"
-            "但如果当前终端是已启动的交互式控制台，可以继续用 execute_command 发送安全的控制台输入，"
-            "例如 Minecraft 的 say/tell/op/give/setblock/fill/summon 等单条控制台命令。"
-            "如果确实要终止任务，先 list_jobs 再 cancel_job。"
-        )
-
     def _get_daemon_jobs_snapshot(self) -> list[dict[str, Any]]:
         now = datetime.now()
         with self.lock:
@@ -2755,50 +2636,55 @@ class AgentSession:
             self._daemon_jobs_snapshot_at = now
         return jobs
 
-    def _build_daemon_jobs_prompt_context(self, jobs: list[dict[str, Any]]) -> str:
-        if not jobs:
-            return ""
-
-        lines = [
-            "Active daemon background jobs snapshot:",
-            "These jobs are still running in daemon. This snapshot is included every turn so the agent does not lose track of background work.",
-        ]
-        for index, job in enumerate(jobs[:5], start=1):
-            command = self._short_command(str(job.get("command") or ""), max_length=160)
-            elapsed_raw = job.get("elapsed_seconds") or 0
-            try:
-                elapsed_seconds = int(float(elapsed_raw))
-            except (TypeError, ValueError):
-                elapsed_seconds = 0
-            lines.append(
-                f"- {index}. job_id={job.get('job_id', '')} "
-                f"elapsed={elapsed_seconds}s "
-                f"cancel_requested={bool(job.get('cancel_requested'))} "
-                f"command={command}"
-            )
-            output_tail = str(job.get("output_tail") or "").strip()
-            if output_tail:
-                if len(output_tail) > 1200:
-                    output_tail = output_tail[-1200:]
-                lines.append(f"  output_tail:\n{output_tail}")
-        lines.append(
-            "Rules: do not assume a listed job has completed; different background jobs may run in parallel when the user explicitly asks for separate work; do not start an exact duplicate of an already listed command; for apt/dpkg/package-manager installs that may share global locks, prefer waiting for the current same-manager install to finish or inspect with `mcp_local_list_jobs`; if the user asks status, answer from this snapshot or call `mcp_local_list_jobs`; if they ask to stop it, call `mcp_local_cancel_job` with the job_id."
-        )
-        return "\n".join(lines)
-
     def build_active_jobs_prompt_context(self) -> str:
-        parts: list[str] = []
+        lines: list[str] = ["[Execution State]"]
+        has_content = False
+
+        main_cmd_state = terminal_command_state_manager.snapshot(self.item_id)
+        main_cmd = str(main_cmd_state.get("command") or "").strip()
+        if main_cmd:
+            source = main_cmd_state.get("source") or "execute_command"
+            lines.append(f"Main terminal last command ({source}): {self._short_command(main_cmd, max_length=120)}")
+            has_content = True
+
         running_job = self._get_running_terminal_job()
         if running_job:
-            parts.append(self._build_running_terminal_job_prompt_context(running_job))
+            elapsed = int((datetime.now() - running_job.started_at).total_seconds())
+            source_hint = f" source={running_job.source_label}" if running_job.source_label else ""
+            lines.append(f"Running job: elapsed={elapsed}s{source_hint} cmd={self._short_command(running_job.command, max_length=120)}")
+            has_content = True
 
-        daemon_jobs_context = self._build_daemon_jobs_prompt_context(
-            self._get_daemon_jobs_snapshot()
+        daemon_jobs = self._get_daemon_jobs_snapshot()
+        for job in daemon_jobs[:5]:
+            command = self._short_command(str(job.get("command") or ""), max_length=120)
+            try:
+                elapsed = int(float(job.get("elapsed_seconds") or 0))
+            except (TypeError, ValueError):
+                elapsed = 0
+            lines.append(f"Background job [running]: job_id={job.get('job_id', '')} elapsed={elapsed}s cmd={command}")
+            output_tail = str(job.get("output_tail") or "").strip()
+            if output_tail:
+                if len(output_tail) > 600:
+                    output_tail = output_tail[-600:]
+                lines.append(f"  output_tail: {output_tail}")
+            has_content = True
+
+        with self.lock:
+            finished = list(self._recent_finished_jobs)
+        for job in finished:
+            status = "OK" if job.get("success") else f"FAIL(exit={job.get('exit_code')})"
+            lines.append(f"Background job [{status}]: job_id={job.get('job_id', '')} cmd={job.get('command', '')}")
+            has_content = True
+
+        if not has_content:
+            return ""
+
+        lines.append(
+            "Decision: will the command finish on its own without needing your later input? -> run_job. "
+            "Will it enter a state waiting for your input or remain open for future commands? -> execute_command. "
+            "Do not start an exact duplicate of a listed running command."
         )
-        if daemon_jobs_context:
-            parts.append(daemon_jobs_context)
-
-        return "\n\n".join(parts)
+        return "\n".join(lines)
 
     def inject_active_jobs_prompt_context(self, messages: list[dict]) -> None:
         context = self.build_active_jobs_prompt_context()
@@ -3004,10 +2890,8 @@ class AgentSession:
             tool_args["item_id"] = self.item_id
             if reply_ticket_id:
                 tool_args["_reply_ticket_id"] = reply_ticket_id
-            terminal_input_error = None
+            terminal_input_error = self._validate_terminal_command_input(tool_name, tool_args)
             terminal_validation_result = None
-            if not self._should_auto_route_tool_to_job(tool_name, tool_args):
-                terminal_input_error = self._validate_terminal_command_input(tool_name, tool_args)
             if terminal_input_error:
                 if is_terminal_unavailable_error(terminal_input_error):
                     failure_reported = self._fail_and_report_pending_reply(
@@ -3110,7 +2994,6 @@ class AgentSession:
                         "qq_delivery": True,
                     },
                 )
-            auto_routed_to_job = is_tool_result_auto_routed_to_job(result)
             command_dispatch_failed = is_command_dispatch_failure_result(
                 tool_name,
                 result_text,
@@ -3183,19 +3066,13 @@ class AgentSession:
                 }
             )
 
-            if auto_routed_to_job:
-                should_stop_after_tool, reason_after_tool = turn_guard.record_progress(
-                    f"job:{normalized_tool_args_str}"
-                )
-            else:
-                should_stop_after_tool, reason_after_tool = turn_guard.after_tool(
-                    tool_name,
-                    result_text,
-                )
+            should_stop_after_tool, reason_after_tool = turn_guard.after_tool(
+                tool_name,
+                result_text,
+            )
             if (
                 tool_name in COMMAND_TOOL_NAMES
                 and result.get("success")
-                and not auto_routed_to_job
             ):
                 clear_pending_terminal_continuation(
                     self.item_id,
@@ -3204,12 +3081,6 @@ class AgentSession:
                 self._set_pending_command(tool_name, tool_args)
                 self._emit_waiting_terminal_status(tool_name)
                 return None
-
-            if auto_routed_to_job:
-                clear_pending_terminal_continuation(
-                    self.item_id,
-                    command=str(tool_args.get("command") or ""),
-                )
 
             if should_stop_after_tool:
                 self.emit_output(

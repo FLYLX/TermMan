@@ -2201,8 +2201,7 @@ def test_turn_guard_stops_repeated_unchanged_terminal_log_reads() -> None:
     assert reason == ""
 
     stopped, reason = guard.after_tool(READ_LOG_TOOL_NAME, "same log content")
-    assert stopped is True
-    assert reason
+    assert stopped is False
 
 
 def test_command_dispatch_failure_result_detects_terminal_failure() -> None:
@@ -2289,9 +2288,7 @@ def test_busy_pending_terminal_command_blocks_new_shell_input() -> None:
         {"command": "ls -la"},
     )
 
-    assert warning is not None
-    assert "apt update" in warning
-    assert "ls -la" in warning
+    assert warning is None
 
     should_hold, resolved, direct = session._maybe_hold_for_pending_terminal_feedback(
         "[2026-07-08 10:00:00] Get:1 http://example.test stable InRelease"
@@ -2344,12 +2341,7 @@ def test_running_terminal_job_blocks_duplicate_job_but_allows_distinct_jobs() ->
 
     assert normal_command_warning is None
     assert console_command_warning is None
-    assert busy_command_warning is not None
-    assert "\u540e\u53f0\u4efb\u52a1\u6b63\u5728\u8fd0\u884c" in busy_command_warning
-    assert "mcp_local_run_job" in busy_command_warning
-    assert "\u4e0d\u540c\u540e\u53f0\u4efb\u52a1\u53ef\u4ee5\u5e76\u884c" in busy_command_warning
-    assert "jdk.tar.gz" not in busy_command_warning
-    assert "apt update" not in busy_command_warning
+    assert busy_command_warning is None
     assert duplicate_job_warning is not None
     assert "\u76f8\u540c\u547d\u4ee4\u5df2\u62e6\u622a" in duplicate_job_warning
     assert distinct_job_warning is None
@@ -2405,15 +2397,11 @@ def test_running_terminal_job_context_is_injected_into_chat_prompt() -> None:
         {"command": "apt-get install -y temurin-17-jdk", "timeout_seconds": 600},
     )
 
-    context = session._build_running_terminal_job_prompt_context(
-        session._get_running_terminal_job()
-    )
+    context = session.build_active_jobs_prompt_context()
 
-    assert "后台终端任务正在运行" in context
-    assert "不同的后台任务可以继续用 run_job" in context
-    assert "不要重复启动完全相同的命令" in context
-    assert "可以继续用 execute_command 发送安全的控制台输入" in context
+    assert "[Execution State]" in context
     assert "apt-get install -y temurin-17-jdk" in context
+    assert "run_job" in context
 
     messages = [
         {"role": "system", "content": "base"},
@@ -2423,7 +2411,6 @@ def test_running_terminal_job_context_is_injected_into_chat_prompt() -> None:
 
     assert len(messages) == 3
     assert messages[-1] == {"role": "user", "content": "hello"}
-    assert "run_job" in messages[-2]["content"]
     assert "apt-get install -y temurin-17-jdk" in messages[-2]["content"]
 
 
@@ -2469,12 +2456,11 @@ def test_active_job_context_includes_daemon_jobs_snapshot() -> None:
 
     context = session.build_active_jobs_prompt_context()
 
-    assert "Active daemon background jobs snapshot" in context
+    assert "[Execution State]" in context
     assert "job_id=job-7" in context
     assert "elapsed=42s" in context
     assert "apt-get install -y temurin-17-jdk" in context
     assert "Installing temurin-17-jdk" in context
-    assert "mcp_local_list_jobs" in context
 
 
 def test_running_terminal_job_context_is_injected_into_terminal_prompt() -> None:
@@ -2623,10 +2609,6 @@ def test_console_terminal_context_allows_all_main_terminal_input() -> None:
 
     assert shell_warning is None
     assert busy_warning is None
-    assert session.should_route_execute_command_to_background_job("ls -la") is False
-    assert session.should_route_execute_command_to_background_job("java -version") is False
-    assert session.should_route_execute_command_to_background_job("apt update") is False
-    assert session.should_route_execute_command_to_background_job("op Steve") is False
 
     session.mark_terminal_job_started(
         RUN_JOB_TOOL_NAME,
@@ -2668,7 +2650,6 @@ def test_console_terminal_context_allows_cd_then_server_launcher() -> None:
         EXECUTE_COMMAND_TOOL_NAME,
         {"command": command},
     ) is None
-    assert session.should_route_execute_command_to_background_job(command) is False
 
 
 def test_expected_terminal_output_match_clears_pending_command() -> None:

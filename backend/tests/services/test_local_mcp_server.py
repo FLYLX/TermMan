@@ -7,8 +7,6 @@ from app.plugins.robot.mcp.context import (
 )
 from app.services.agent.session import (
     is_background_job_started_result,
-    is_tool_result_auto_routed_to_job,
-    should_auto_route_terminal_tool_to_job,
 )
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.skills import skill_loader
@@ -284,7 +282,7 @@ def test_execute_command_only_reports_dispatch(monkeypatch) -> None:
     assert result == [
         {
             "type": "text",
-            "text": "命令已发送到终端，尚未确认执行结果: echo 23231",
+            "text": "命令已发送: echo 23231。终端输出会在下一轮反馈中到达，你可以继续执行其他操作或等待结果。",
         }
     ]
     assert sent == {"item_id": "item-1", "command": "echo 23231\n"}
@@ -295,156 +293,10 @@ def test_execute_command_only_reports_dispatch(monkeypatch) -> None:
     assert "timeout_seconds" in props
     assert "auto_interrupt_on_timeout" in props
     assert props["auto_interrupt_on_timeout"]["default"] is False
-    assert "默认只汇报" in tool["description"]
-    assert "不要默认用 &&" in tool["description"]
+    assert "interrupt_command" in tool["description"]
+    assert "run_job" in tool["description"]
     assert "一次只发一条命令" in tool["description"]
     assert "默认不要拼接" in tool["inputSchema"]["properties"]["command"]["description"]
-
-
-
-def test_execute_command_blocks_before_auto_route_when_main_terminal_stopped(
-    monkeypatch,
-) -> None:
-    server = LocalMCPServer()
-    monkeypatch.setattr(
-        server,
-        "_ensure_terminal_input_handler",
-        lambda _item_id: False,
-    )
-    monkeypatch.setattr(
-        server,
-        "_should_auto_route_execute_command_to_job",
-        lambda *_args: (_ for _ in ()).throw(
-            AssertionError("inactive terminal must be checked before auto-routing")
-        ),
-    )
-    monkeypatch.setattr(
-        server,
-        "_run_job",
-        lambda _args: (_ for _ in ()).throw(
-            AssertionError("inactive terminal must not start a background job")
-        ),
-    )
-
-    result = server.call_tool(
-        "execute_command",
-        {
-            "item_id": "item-terminal-stopped",
-            "command": "apt-get install -y temurin-17-jdk",
-        },
-    )
-
-    assert result[0] == {
-        "type": "text",
-        "text": "终端未启动或未连接。终端 Item ID 无效。命令没有发送。",
-    }
-    assert result[1]["command_dispatch_failed"] is True
-    assert result[1]["reason"] == "terminal_unavailable"
-    assert result[1]["command_sent"] is False
-
-
-def test_execute_command_blocks_when_busy_terminal_command_pending(monkeypatch) -> None:
-    import importlib
-
-    import app.services.socket_pool as socket_pool
-    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, agent_session_manager
-
-    input_center_module = importlib.import_module("app.services.socket_pool.input_center")
-    item_id = "item-busy"
-
-    class FakeInputSDK:
-        def send(self, item_id: str, command: str) -> bool:
-            raise AssertionError("blocked command should not be sent to terminal")
-
-    monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
-    monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: True)
-    _allow_live_terminal_room(monkeypatch)
-
-    agent_session_manager.remove_session(item_id)
-    session = agent_session_manager.get_or_create_session(item_id, "handler-1")
-    monkeypatch.setattr(session, "_schedule_pending_command_recheck", lambda *args, **kwargs: None)
-    monkeypatch.setattr(session, "_get_log_line_count", lambda: 0)
-    session.mark_terminal_command_dispatched(
-        EXECUTE_COMMAND_TOOL_NAME,
-        {"command": "apt update"},
-    )
-
-    try:
-        server = LocalMCPServer()
-        result = server.call_tool(
-            "execute_command",
-            {
-                "item_id": item_id,
-                "command": "java -version",
-            },
-        )
-    finally:
-        agent_session_manager.remove_session(item_id)
-
-    assert len(result) == 1
-    assert result[0]["type"] == "text"
-    assert "apt update" in result[0]["text"]
-    assert "java -version" in result[0]["text"]
-    assert "命令未发送" in result[0]["text"]
-
-
-def test_execute_command_auto_routes_busy_command_to_background_job(monkeypatch) -> None:
-    import importlib
-
-    import app.services.socket_pool as socket_pool
-    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, agent_session_manager
-
-    input_center_module = importlib.import_module("app.services.socket_pool.input_center")
-    item_id = "item-auto-route"
-    routed: dict[str, object] = {}
-
-    class FakeInputSDK:
-        def send(self, item_id: str, command: str) -> bool:
-            raise AssertionError("busy command should be routed to run_job, not terminal input")
-
-    def fake_run_job(args: dict):
-        routed.update(args)
-        return [
-            {"type": "text", "text": "\u540e\u53f0\u4efb\u52a1\u5df2\u542f\u52a8"},
-            {"type": "metadata", "background_job_started": True},
-        ]
-
-    monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
-    monkeypatch.setattr(input_center_module.input_center, "has_handler", lambda item_id: True)
-    _allow_live_terminal_room(monkeypatch)
-
-    agent_session_manager.remove_session(item_id)
-    session = agent_session_manager.get_or_create_session(item_id, "handler-1")
-    monkeypatch.setattr(session, "_schedule_pending_command_recheck", lambda *args, **kwargs: None)
-    monkeypatch.setattr(session, "_get_log_line_count", lambda: 0)
-    session.mark_terminal_command_dispatched(
-        EXECUTE_COMMAND_TOOL_NAME,
-        {"command": "apt update"},
-    )
-
-    server = LocalMCPServer()
-    monkeypatch.setattr(server, "_run_job", fake_run_job)
-
-    try:
-        result = server.call_tool(
-            "execute_command",
-            {
-                "item_id": item_id,
-                "command": "python -m pip install requests",
-                "timeout_seconds": 20,
-            },
-        )
-    finally:
-        agent_session_manager.remove_session(item_id)
-
-    assert routed["item_id"] == item_id
-    assert routed["command"] == "python -m pip install requests"
-    assert routed["timeout_seconds"] == 60
-    assert routed["wait_for_completion"] is False
-    assert "\u540e\u53f0 Job" in result[0]["text"]
-    assert result[1]["type"] == "metadata"
-    assert result[1]["auto_routed_execute_command_to_run_job"] is True
-
 
 def test_execute_command_sends_shell_like_input_to_active_console(
     monkeypatch,
@@ -501,7 +353,7 @@ def test_execute_command_sends_shell_like_input_to_active_console(
     assert result == [
         {
             "type": "text",
-            "text": "命令已发送到终端，尚未确认执行结果: ls -la",
+            "text": "命令已发送: ls -la。终端输出会在下一轮反馈中到达，你可以继续执行其他操作或等待结果。",
         }
     ]
 
@@ -556,69 +408,6 @@ def test_execute_command_sends_cd_then_server_launcher_when_console_context_is_s
     assert "cd temp_extract && bash run.sh" in result[0]["text"]
 
 
-def test_auto_routed_execute_command_result_skips_pending_terminal_lock() -> None:
-    assert should_auto_route_terminal_tool_to_job(
-        "mcp_local_execute_command",
-        {"command": "python -m pip install requests"},
-    ) is True
-    assert should_auto_route_terminal_tool_to_job(
-        "mcp_local_execute_command",
-        {"command": "java -version"},
-    ) is False
-    assert should_auto_route_terminal_tool_to_job(
-        "mcp_local_execute_command",
-        {"command": "./run.sh"},
-    ) is False
-    assert should_auto_route_terminal_tool_to_job(
-        "mcp_local_execute_command",
-        {
-            "command": (
-                "java @user_jvm_args.txt "
-                "@libraries/net/minecraftforge/forge/1.20.1-47.4.20/unix_args.txt nogui"
-            )
-        },
-    ) is False
-
-    assert is_tool_result_auto_routed_to_job(
-        {
-            "success": True,
-            "result": [
-                {"type": "text", "text": "background job started"},
-                {
-                    "type": "metadata",
-                    "auto_routed_execute_command_to_run_job": True,
-                },
-            ],
-        }
-    ) is True
-
-    assert is_tool_result_auto_routed_to_job(
-        {"success": True, "result": [{"type": "text", "text": "command sent"}]}
-    ) is False
-
-    assert is_background_job_started_result(
-        {
-            "success": True,
-            "result": [
-                {"type": "text", "text": "background job started"},
-                {"type": "metadata", "background_job_started": True},
-            ],
-        }
-    ) is True
-
-    assert is_background_job_started_result(
-        {
-            "success": True,
-            "result": [
-                {"type": "text", "text": "background job started"},
-                {"type": "metadata", "auto_routed_execute_command_to_run_job": True},
-            ],
-        }
-    ) is True
-
-    assert is_background_job_started_result(
-        {"success": True, "result": [{"type": "text", "text": "command sent"}]}
-    ) is False
 
 def test_system_prompt_forbids_claiming_command_success_without_confirmation() -> None:
     skill_loader.reload()
@@ -732,7 +521,7 @@ def test_execute_command_restores_existing_terminal_input_handler(monkeypatch) -
     assert result == [
         {
             "type": "text",
-            "text": "命令已发送到终端，尚未确认执行结果: echo restored",
+            "text": "命令已发送: echo restored。终端输出会在下一轮反馈中到达，你可以继续执行其他操作或等待结果。",
         }
     ]
 
@@ -1130,23 +919,11 @@ def test_tool_descriptions_guide_foreground_background_command_choice() -> None:
     execute_tool = next(tool for tool in server.list_tools() if tool["name"] == "execute_command")
     run_job_tool = next(tool for tool in server.list_tools() if tool["name"] == "run_job")
 
-    assert "主终端前台" in execute_tool["description"]
-    assert "Minecraft/Forge/Paper/Fabric" in execute_tool["description"]
-    assert "run.sh/start.sh" in execute_tool["description"]
-    assert "op/say/stop" in execute_tool["description"]
+    assert "run_job" in execute_tool["description"]
+    assert "interrupt_command" in execute_tool["description"]
     assert "stdin closed" in run_job_tool["description"]
-    assert (
-        "Before using it, decide whether the command needs an interactive foreground console"
-        in run_job_tool["description"]
-    )
-    assert (
-        "Do not choose run_job for Minecraft/Forge/Paper/Fabric server startup"
-        in run_job_tool["description"]
-    )
-    assert "choose execute_command in the main terminal" in run_job_tool["description"]
-    assert "shell inspection commands" in run_job_tool["description"]
-    assert "start from the current working directory" in run_job_tool["description"]
-    assert "do not scan /, ~, /opt, or /srv" in run_job_tool["description"]
+    assert "execute_command" in run_job_tool["description"]
+    assert "Fire-and-forget" in run_job_tool["description"]
 
 
 def test_run_job_defaults_to_background_and_notifies_session(monkeypatch) -> None:
@@ -1608,7 +1385,7 @@ def test_web_reply_ticket_blocks_robot_send_for_terminal_feedback() -> None:
 
     assert "QQ" in warning
     assert "TermMan web chat" in warning
-    assert "do not call QQ tools" in prompt
+    assert "REPLY ROUTING" in prompt
 
 
 def test_list_jobs_reports_active_daemon_jobs(monkeypatch) -> None:
@@ -1824,7 +1601,7 @@ def test_run_job_tool_is_registered_for_long_jobs() -> None:
     server = LocalMCPServer()
     tool = next(tool for tool in server.list_tools() if tool["name"] == "run_job")
 
-    assert "non-interactive one-shot shell job" in tool["description"]
+    assert "Fire-and-forget" in tool["description"]
     assert tool["inputSchema"]["properties"]["timeout_seconds"]["default"] == 600
     assert tool["skip_memory"] is True
 
