@@ -513,6 +513,7 @@ class TurnGuard:
     last_progress_token: str | None = None
     last_log_fingerprint: str | None = None
     repeated_log_reads: int = 0
+    pending_hint: str = ""
     recent_steps: deque[str] = field(
         default_factory=lambda: deque(maxlen=LOOP_DETECTION_WINDOW)
     )
@@ -542,7 +543,11 @@ class TurnGuard:
             if len(self.recent_steps) >= LOOP_THRESHOLD:
                 recent = list(self.recent_steps)[-LOOP_THRESHOLD:]
                 if all(token == step_token for token in recent):
-                    return True, f"检测到重复动作循环: {tool_name}"
+                    self.pending_hint = (
+                        f"[Hint] You have repeated the same action ({tool_name}) "
+                        f"{LOOP_THRESHOLD} times with the same result. Consider a "
+                        "different approach or report the current status."
+                    )
 
 
         return False, ""
@@ -557,7 +562,12 @@ class TurnGuard:
             self.no_progress_steps = 0
 
         if self.no_progress_steps >= MAX_NO_PROGRESS_STEPS:
-            return True, "连续多步没有新进展，当前轮已停止"
+            self.pending_hint = (
+                "[Hint] Multiple consecutive steps produced no new progress. "
+                "Consider changing your approach, reporting the blocker, or "
+                "completing the task with current results."
+            )
+            self.no_progress_steps = 0
 
         return False, ""
 
@@ -3279,6 +3289,10 @@ class AgentSession:
                     {"tool_name": tool_name},
                 )
                 return None
+
+        if turn_guard.pending_hint and tool_messages:
+            tool_messages[-1]["content"] += "\n" + turn_guard.pending_hint
+            turn_guard.pending_hint = ""
 
         messages.append(assistant_message)
         messages.extend(tool_messages)
