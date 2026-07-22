@@ -5,6 +5,7 @@ import logging
 import queue
 import re
 import threading
+import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -504,7 +505,6 @@ class TurnGuard:
     turn_id: str = field(default_factory=lambda: uuid4().hex[:8])
     started_at: datetime = field(default_factory=datetime.now)
     tool_call_count: int = 0
-    waiting_for_terminal_feedback: bool = False
     no_progress_steps: int = 0
     last_progress_token: str | None = None
     last_log_fingerprint: str | None = None
@@ -525,9 +525,6 @@ class TurnGuard:
         self.no_progress_steps = 0
 
     def before_tool(self, tool_name: str, tool_args_str: str) -> tuple[bool, str]:
-        if self.waiting_for_terminal_feedback and tool_name in COMMAND_TOOL_NAMES:
-            return True, "命令已发送，等待终端反馈，当前轮已停止"
-
         self.tool_call_count += 1
         if self.tool_call_count > MAX_TOOL_CALLS:
             return True, f"当前轮工具调用次数超过限制 ({MAX_TOOL_CALLS})，已停止"
@@ -568,10 +565,6 @@ class TurnGuard:
         return False, ""
 
     def after_tool(self, tool_name: str, result_text: str) -> tuple[bool, str]:
-        if tool_name in COMMAND_TOOL_NAMES:
-            self.waiting_for_terminal_feedback = True
-            return True, "命令已发送，等待终端反馈"
-
         normalized_result = result_text.strip()
         result_fingerprint = hashlib.sha1(normalized_result[:4000].encode("utf-8")).hexdigest()
 
