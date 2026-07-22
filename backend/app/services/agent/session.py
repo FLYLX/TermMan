@@ -1574,28 +1574,11 @@ class AgentSession:
 
         if pending.has_expectation() and elapsed_seconds >= pending.timeout_seconds:
             recent_feedback = self._get_recent_pending_log_tail(64)
-            if not self._pending_expectation_matches(pending, recent_feedback):
-                logger.warning(
-                    "[AgentSession] Pending command timed out without expected output for item=%s, command=%s, expected=%s",
-                    self.item_id,
-                    pending.command,
-                    pending.expectation_label(),
-                )
+            if self._pending_expectation_matches(pending, recent_feedback):
                 self._clear_pending_command()
-                interrupted = False
-                if pending.auto_interrupt_on_timeout:
-                    interrupted = self._send_interrupt_for_pending_timeout(pending)
-                timeout_message = self._build_expected_command_timeout_feedback(
-                    pending,
-                    interrupted,
-                )
-                self._send_pending_integration_response(pending, timeout_message)
-                self.emit_output(
-                    timeout_message,
-                    "agent_warning",
-                    {"tool_name": pending.tool_name},
-                )
                 return
+            self._clear_pending_command()
+            return
 
         if not has_new_log_lines and not should_force_tail_check:
             if elapsed_seconds >= pending.timeout_seconds:

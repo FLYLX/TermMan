@@ -1136,6 +1136,14 @@ class TaskWorkflowManager:
                 bound_step = workflow.find_step_by_id(job.step_id)
                 step_label = f" (step: {bound_step.title})" if bound_step else ""
                 lines.append(f"  - {job.workflow_job_id}: {job.command}{step_label}")
+        if current and "汇报" in current.title:
+            target = workflow.source_label or workflow.source_type or "the requester"
+            lines.append(
+                f"- → Current step is a REPORT step. Call mcp_robot_send_message "
+                f"(target='{target}') with your report text, then call "
+                f"mcp_local_update_task_workflow(action='complete_current_step'). "
+                f"Do NOT echo the report in the terminal."
+            )
         lines.extend(
             [
                 "Non-negotiable workflow rules:",
