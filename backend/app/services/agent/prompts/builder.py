@@ -495,7 +495,7 @@ def _collect_long_term_memories(
     allowed_types = tuple(
         memory_type for memory_type in allowed_types if memory_type in MEMORY_TYPES
     )
-    if not allowed_types or n_results <= 0:
+    if not allowed_types:
         return ""
 
     try:
