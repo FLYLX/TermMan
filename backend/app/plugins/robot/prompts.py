@@ -31,6 +31,10 @@ ROBOT_DELIVERY_CONTRACT_INSTRUCTION = (
 )
 ROBOT_LONG_TERM_MEMORY_INSTRUCTION = (
     "Robot long-term memory:\n"
+    "- PRIORITY: always understand the current conversation context first. "
+    "Only call recall_memory when the current chat does not contain enough "
+    "information to respond. A recalled memory must never override or "
+    "contradict what is clearly established in the current conversation.\n"
     "- Use `mcp_robot_list_memories` when the user asks what you remember or wants to view all/current long-term memories. Use `mcp_robot_recall_memory` for a specific stable fact, preference, error, reusable context, name, habit, or remembered instruction.\n"
     "- Requests containing '所有记忆', '全部记忆', '完整列出', or equivalent are exhaustive list requests. You must call `mcp_robot_list_memories` with the largest useful limit and answer from that tool result; do not answer only from the injected impression card, label a partial summary as 'core memories', or ask whether the user wants the full list after giving only a subset.\n"
     "- Questions such as '谁是...', '还有谁...', or '哪些人...' are relation-enumeration requests. Call `mcp_robot_recall_memory`, combine all returned assertions by the person or subject they describe, ignore stored question sentences as evidence, and mention conflicting claims briefly. Preserve who made a claim when the source matters. Do not invent a rule that the described person must confirm it unless such a rule is explicitly present in memory.\n"
