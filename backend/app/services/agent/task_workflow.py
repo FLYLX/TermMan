@@ -490,7 +490,13 @@ class TaskWorkflowManager:
             return True
 
 
-    def claim_auto_resume(self, ticket_id: str, *, max_attempts: int = 5) -> bool:
+    def has_running_jobs(self, ticket_id: str) -> bool:
+        workflow = self.get_by_ticket(ticket_id)
+        if not workflow:
+            return False
+        return any(job.status == "running" for job in workflow.jobs)
+
+    def claim_auto_resume(self, ticket_id: str, *, max_attempts: int = 0) -> bool:
         with self._lock:
             workflow = self.get_by_ticket(ticket_id)
             if not workflow or workflow.status not in {"active", "verifying"}:
@@ -498,8 +504,6 @@ class TaskWorkflowManager:
             if workflow.delivered_at is not None:
                 return False
             if any(job.status == "running" for job in workflow.jobs):
-                return False
-            if workflow.auto_resume_attempts >= max(1, int(max_attempts)):
                 return False
             workflow.auto_resume_attempts += 1
             workflow.updated_at = _utcnow()

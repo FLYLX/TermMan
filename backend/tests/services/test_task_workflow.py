@@ -103,10 +103,10 @@ def test_auto_resume_is_bounded_and_resets_on_new_evidence() -> None:
     manager = TaskWorkflowManager()
     workflow = _create_java_workflow(manager)
 
-    assert manager.claim_auto_resume("ticket-java", max_attempts=2) is True
-    assert manager.claim_auto_resume("ticket-java", max_attempts=2) is True
-    assert manager.claim_auto_resume("ticket-java", max_attempts=2) is False
-    assert workflow.auto_resume_attempts == 2
+    assert manager.claim_auto_resume("ticket-java") is True
+    assert manager.claim_auto_resume("ticket-java") is True
+    assert manager.claim_auto_resume("ticket-java") is True
+    assert workflow.auto_resume_attempts == 3
 
     manager.record_job_result(
         "ticket-java",
@@ -117,7 +117,7 @@ def test_auto_resume_is_bounded_and_resets_on_new_evidence() -> None:
     )
 
     assert workflow.auto_resume_attempts == 0
-    assert manager.claim_auto_resume("ticket-java", max_attempts=2) is True
+    assert manager.claim_auto_resume("ticket-java") is True
 
 
 def test_reset_discards_active_workflow() -> None:

@@ -2483,9 +2483,13 @@ class AgentSession:
                         )
                     )
                     if not continuation_scheduled:
-                        terminal_failure_report = (
-                            "任务未能完成：多次自动尝试后仍无法取得进展，已移除该任务。"
+                        has_running_jobs = task_workflow_manager.has_running_jobs(
+                            input_msg.reply_ticket_id
                         )
+                        if not has_running_jobs:
+                            terminal_failure_report = (
+                                "任务未能完成：多次自动尝试后仍无法叕得进展，已移除该任务。"
+                            )
                 else:
                     terminal_failure_report = (
                         "任务未能完成：Agent 达到本轮处理次数上限，已停止该任务。"
