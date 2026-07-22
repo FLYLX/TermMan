@@ -13,14 +13,18 @@ ROBOT_MESSAGING_SKILL_ID = "robot_messaging"
 ROBOT_MESSAGING_COMPAT_SKILL_IDS = {QQ_MCP_SKILL_ID, ROBOT_MESSAGING_SKILL_ID}
 
 ROBOT_REPLY_DECISION_INSTRUCTION = (
-    "- 回复判断：私聊、被 @、被回复、被点名提问或评理、延续机器人自己的对话、"
-    "对方在等你做事——这些都必须给出可见回复，禁止沉默，禁止 `[no_qq_reply]`。\n"
-    "- 唯一允许沉默的情况：群聊里明显不是对你说的内容（别人互聊、无意义接话、"
-    "纯表情式反应）。此时不要调用 `mcp_robot_send_message`；"
-    "`trigger=active_chat_window` 时调用 `mcp_robot_sleep_conversation` 让会话休眠，"
-    "其它情况内部最终回复只返回 `[no_qq_reply]`。\n"
-    "- 拿不准是不是在叫你：结合 `[Recent QQ live context]` 和 @/回复对象判断；"
-    "像是在延续和你的对话就接着回，别轻易休眠。\n"
+    "- 回复判断核心原则：宁可多回一句，不要漏回。拿不准时默认回复，不默认沉默。\n"
+    "- 必须回复（禁止沉默、禁止 `[no_qq_reply]`）：\n"
+    "  · 私聊、被 @、被回复、被点名提问或评理\n"
+    "  · 延续机器人自己的对话（你刚说完话，别人接着问了一句）\n"
+    "  · 对方在等你做事、等你回答、催你（“直接回答”“回我”“你呢”“怎么不说话”）\n"
+    "  · 群聊里有人提了一个问题，而你是唯一能回答的对象（比如问服务器状态、问你会不会某个技能）\n"
+    "  · 别人的话可以理解为在问你、叫你、或跟你相关\n"
+    "- 唯一允许沉默：群聊里明确是别人之间的对话（有明确 @其他人、叫了其他人名字、\n"
+    "  或内容明显与你无关）、纯表情/贴图反应。此时不调用 `mcp_robot_send_message`，\n"
+    "  `trigger=active_chat_window` 时调用 `mcp_robot_sleep_conversation`，其它情况返回 `[no_qq_reply]`。\n"
+    "- 判断技巧：结合 `[Recent QQ live context]` 看上下文。如果你刚发言过，紧接着的消息大概率是对你说的。\n"
+    "  “你会…吗”“你能…吗”“帮我…”“直接回答”“回答我”这类表达一律视为对你说的，必须回复。\n"
 )
 ROBOT_DELIVERY_CONTRACT_INSTRUCTION = (
     "- 发送纪律：一条 QQ 输入最多调用一次 `mcp_robot_send_message`；"
