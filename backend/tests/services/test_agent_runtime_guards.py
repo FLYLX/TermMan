@@ -2247,67 +2247,6 @@ def test_command_dispatch_failure_result_detects_terminal_failure() -> None:
     )
 
 
-def test_agent_session_suppresses_second_qq_send_in_same_turn() -> None:
-    from app.services.agent.session import AgentSession, TurnGuard
-
-    executed: list[dict] = []
-
-    class FakeAgent:
-        async def execute_tool(self, _tool_name: str, tool_args: dict):
-            executed.append(dict(tool_args))
-            return {
-                "success": True,
-                "result": [
-                    {
-                        "type": "text",
-                        "text": "Message sent to current robot conversation.",
-                    }
-                ],
-            }
-
-    message = SimpleNamespace(
-        content="",
-        tool_calls=[
-            SimpleNamespace(
-                id="send-1",
-                function=SimpleNamespace(
-                    name="mcp_robot_send_message",
-                    arguments='{"text":"第一条"}',
-                ),
-            ),
-            SimpleNamespace(
-                id="send-2",
-                function=SimpleNamespace(
-                    name="mcp_robot_send_message",
-                    arguments='{"text":"第二条近义回复"}',
-                ),
-            ),
-        ],
-    )
-    session = AgentSession("item-1", "handler-1")
-    guard = TurnGuard()
-    tool_results: list[str] = []
-    loop = asyncio.new_event_loop()
-    try:
-        next_messages = session._handle_tool_calls(
-            FakeAgent(),
-            loop,
-            [],
-            message,
-            guard,
-            tool_results_sink=tool_results,
-        )
-    finally:
-        loop.close()
-
-    assert next_messages is not None
-    assert len(executed) == 1
-    assert executed[0]["text"] == "第一条"
-    assert guard.qq_message_sent is True
-    assert "Message sent to current robot conversation." in tool_results
-    assert any("Duplicate QQ send skipped" in result for result in tool_results)
-
-
 def test_terminal_input_mode_classifies_busy_and_console_commands() -> None:
     from app.services.agent.session import (
         TERMINAL_INPUT_MODE_BUSY,

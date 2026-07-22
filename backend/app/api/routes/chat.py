@@ -125,9 +125,6 @@ INTERNAL_QQ_BACKGROUND_JOB_PREFIX = (
 INTERNAL_AGENT_RETRY_PREFIX = "[Internal corrective turn]"
 CURRENT_QQ_MESSAGE_MARKER = "[Current QQ message]"
 CQ_CODE_RE = re.compile(r"\[CQ:[^\]]+\]", re.IGNORECASE)
-DUPLICATE_QQ_SEND_SUPPRESSED_TEXT = (
-    "Duplicate QQ send skipped: this turn already delivered a visible QQ reply."
-)
 TASK_WORKFLOW_REQUEST_RE = re.compile(
     r"(安装|装(?:个|一下|好)?|下载|部署|构建|编译|配置|修改|修复|创建|删除|启动|停止|重启|"
     r"更新|升级|迁移|解压|上传|运行|执行|测试|开服|换源|"
@@ -2248,55 +2245,13 @@ def _generate_stream_unserialized(
                         command=str(tool_args.get("command") or ""),
                     )
 
-                duplicate_qq_send_suppressed = bool(
-                    tool_name == ROBOT_SEND_TOOL_NAME and qq_message_sent_this_turn
-                )
-                intermediate_delivery_suppressed = bool(
-                    tool_name == ROBOT_SEND_TOOL_NAME
-                    and task_workflow_manager.should_suppress_intermediate_delivery(
-                        reply_ticket.ticket_id
+                result = _run_async_from_sync(
+                    lambda tool_name=tool_name, tool_args=tool_args: agent.execute_tool(
+                        tool_name,
+                        tool_args,
                     )
                 )
-                if duplicate_qq_send_suppressed:
-                    result = {
-                        "success": True,
-                        "result": [
-                            {
-                                "type": "text",
-                                "text": DUPLICATE_QQ_SEND_SUPPRESSED_TEXT,
-                            },
-                            {
-                                "type": "metadata",
-                                "duplicate_qq_send_suppressed": True,
-                            },
-                        ],
-                    }
-                elif intermediate_delivery_suppressed:
-                    result = {
-                        "success": True,
-                        "result": [
-                            {
-                                "type": "text",
-                                "text": (
-                                    "Intermediate task report suppressed by final_only policy. "
-                                    "Continue executing the workflow and send one report after "
-                                    "verified completion or final failure."
-                                ),
-                            },
-                            {
-                                "type": "metadata",
-                                "intermediate_delivery_suppressed": True,
-                            },
-                        ],
-                    }
-                else:
-                    result = _run_async_from_sync(
-                        lambda tool_name=tool_name, tool_args=tool_args: agent.execute_tool(
-                            tool_name,
-                            tool_args,
-                        )
-                    )
-                    tool_called_this_turn = True
+                tool_called_this_turn = True
                 result_text = _format_tool_result(result)
                 called_tool_names.add(tool_name)
                 command_dispatch_failed = is_command_dispatch_failure_result(

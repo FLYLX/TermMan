@@ -104,7 +104,6 @@ class TaskWorkflow:
     last_tool_name: str = ""
     last_command: str = ""
     auto_resume_attempts: int = 0
-    last_reported_step_index: int = -1
     jobs: list[WorkflowJob] = field(default_factory=list)
     reply_ticket_ids: list[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=_utcnow)
@@ -153,7 +152,6 @@ def workflow_to_payload(workflow: TaskWorkflow) -> dict[str, Any]:
         "last_tool_name": workflow.last_tool_name,
         "last_command": workflow.last_command,
         "auto_resume_attempts": workflow.auto_resume_attempts,
-        "last_reported_step_index": workflow.last_reported_step_index,
         "created_at": _iso(workflow.created_at),
         "updated_at": _iso(workflow.updated_at),
         "delivered_at": _iso(workflow.delivered_at),
@@ -491,28 +489,6 @@ class TaskWorkflowManager:
             _persist_workflow(workflow)
             return True
 
-    def should_suppress_intermediate_delivery(self, ticket_id: str) -> bool:
-        workflow = self.get_by_ticket(ticket_id)
-        if not workflow:
-            return False
-        if workflow.report_policy == "final_only":
-            can_finalize, _ = self.can_finalize(ticket_id)
-            return not can_finalize
-        if workflow.report_policy == "step_change":
-            can_finalize, _ = self.can_finalize(ticket_id)
-            if can_finalize:
-                return False
-            return workflow.current_step_index == workflow.last_reported_step_index
-        return False
-
-    def record_intermediate_report(self, ticket_id: str) -> None:
-        with self._lock:
-            workflow = self.get_by_ticket(ticket_id)
-            if not workflow:
-                return
-            workflow.last_reported_step_index = workflow.current_step_index
-            workflow.updated_at = _utcnow()
-            _persist_workflow(workflow)
 
     def claim_auto_resume(self, ticket_id: str, *, max_attempts: int = 5) -> bool:
         with self._lock:
@@ -1171,10 +1147,10 @@ class TaskWorkflowManager:
                 "progress or complete the current step. Do not rely on memory to advance it.",
                 "4. Do not give a final completion answer while this workflow is active or "
                 "waiting_job. Finish verification first, or mark a genuine blocker.",
-                "5. Report to the return_source target(s) listed above on task completion "
-                "(success or failure) and step changes. Use the mcp_robot_send_message tool "
-                "call (not a terminal command) to deliver reports. The terminal is for work "
-                "commands (install, check, build); reporting goes through tool calls.",
+                "5. When creating a workflow, include a final report step (e.g. 汇报结果到: "
+                "QQ private:xxx) if the user expects to be notified. Skip it if the user says "
+                "no report is needed. Reporting uses tool calls (mcp_robot_send_message etc.), "
+                "not terminal commands. Report on task completion and step changes only.",
                 "6. Multi-step, asynchronous, or wait-for-response work continues through this "
                 "workflow across turns. Ordinary chat and immediate one-step actions do not "
                 "need a workflow.",

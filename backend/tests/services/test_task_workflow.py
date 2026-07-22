@@ -88,29 +88,6 @@ def test_workflow_completes_only_after_verification_and_delivery() -> None:
     assert workflow.delivered_at is not None
 
 
-def test_final_only_policy_suppresses_intermediate_delivery_until_ready() -> None:
-    manager = TaskWorkflowManager()
-    workflow = _create_java_workflow(manager)
-
-    assert manager.set_report_policy("ticket-java", "final_only") is True
-    assert workflow.report_policy == "final_only"
-    assert manager.should_suppress_intermediate_delivery("ticket-java") is True
-
-    manager.update(
-        "ticket-java",
-        action="complete_current_step",
-        note="Java installed",
-    )
-    manager.update(
-        "ticket-java",
-        action="complete_current_step",
-        note='openjdk version "17.0.12"',
-    )
-
-    assert workflow.status == "ready_to_report"
-    assert manager.should_suppress_intermediate_delivery("ticket-java") is False
-
-
 def test_unfinished_workflow_requires_execution_instead_of_next_step_narration() -> None:
     manager = TaskWorkflowManager()
     _create_java_workflow(manager)

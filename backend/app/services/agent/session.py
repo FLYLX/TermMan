@@ -95,9 +95,6 @@ AUTO_ROUTED_TO_JOB_MARKER = "auto_routed_execute_command_to_run_job"
 BACKGROUND_JOB_STARTED_MARKER = "background_job_started"
 COMMAND_DISPATCH_FAILED_MARKER = "command_dispatch_failed"
 TERMINAL_UNAVAILABLE_RESULT_MARKER = "terminal_unavailable"
-DUPLICATE_QQ_SEND_SUPPRESSED_TEXT = (
-    "Duplicate QQ send skipped: this turn already delivered a visible QQ reply."
-)
 BACKGROUND_JOB_STARTED_RESPONSE = (
     "\u540e\u53f0\u4efb\u52a1\u5df2\u542f\u52a8\uff0c"
     "\u5b8c\u6210\u540e\u6211\u4f1a\u6839\u636e\u7ed3\u679c\u7ee7\u7eed\u5904\u7406"
@@ -508,7 +505,6 @@ class TurnGuard:
     started_at: datetime = field(default_factory=datetime.now)
     tool_call_count: int = 0
     waiting_for_terminal_feedback: bool = False
-    qq_message_sent: bool = False
     no_progress_steps: int = 0
     last_progress_token: str | None = None
     last_log_fingerprint: str | None = None
@@ -587,7 +583,11 @@ class TurnGuard:
                 self.repeated_log_reads = 0
 
             if self.repeated_log_reads >= MAX_REPEATED_LOG_READS:
-                return True, "日志没有新内容，当前轮已停止，请基于已有终端输出总结结果。"
+                self.pending_hint = (
+                    "[Hint] Log content has not changed. Consider summarizing "
+                    "based on existing output or taking a different action."
+                )
+                self.repeated_log_reads = 0
 
             return self.record_progress(f"log:{result_fingerprint}")
 
@@ -2988,20 +2988,10 @@ class AgentSession:
             tool_name = tool_call.function.name
             tool_args_str = tool_call.function.arguments
 
-            duplicate_qq_send_suppressed = bool(
-                tool_name == ROBOT_SEND_TOOL_NAME and turn_guard.qq_message_sent
-            )
-            intermediate_delivery_suppressed = bool(
-                tool_name == ROBOT_SEND_TOOL_NAME
-                and task_workflow_manager.should_suppress_intermediate_delivery(
-                    reply_ticket_id
-                )
-            )
-            if not duplicate_qq_send_suppressed and not intermediate_delivery_suppressed:
-                should_stop, reason = turn_guard.before_tool(tool_name, tool_args_str)
-                if should_stop:
-                    self.emit_output(reason, "agent_warning", {"tool_name": tool_name})
-                    return None
+            should_stop, reason = turn_guard.before_tool(tool_name, tool_args_str)
+            if should_stop:
+                self.emit_output(reason, "agent_warning", {"tool_name": tool_name})
+                return None
 
             try:
                 tool_args = parse_tool_arguments(tool_name, tool_args_str)
@@ -3077,49 +3067,14 @@ class AgentSession:
                         {"tool_name": tool_name},
                     )
 
-            if (
-                tool_name != "mcp_local_update_task_workflow"
-                and not duplicate_qq_send_suppressed
-            ):
+            if tool_name != "mcp_local_update_task_workflow":
                 task_workflow_manager.record_tool_call(
                     reply_ticket_id,
                     tool_name=tool_name,
                     command=str(tool_args.get("command") or ""),
                 )
 
-            if duplicate_qq_send_suppressed:
-                result = {
-                    "success": True,
-                    "result": [
-                        {
-                            "type": "text",
-                            "text": DUPLICATE_QQ_SEND_SUPPRESSED_TEXT,
-                        },
-                        {
-                            "type": "metadata",
-                            "duplicate_qq_send_suppressed": True,
-                        },
-                    ],
-                }
-            elif intermediate_delivery_suppressed:
-                result = {
-                    "success": True,
-                    "result": [
-                        {
-                            "type": "text",
-                            "text": (
-                                "Intermediate task report suppressed by final_only policy. "
-                                "Continue executing the workflow and send one report after "
-                                "verified completion or final failure."
-                            ),
-                        },
-                        {
-                            "type": "metadata",
-                            "intermediate_delivery_suppressed": True,
-                        },
-                    ],
-                }
-            elif terminal_validation_result is not None:
+            if terminal_validation_result is not None:
                 result = terminal_validation_result
             else:
                 result = loop.run_until_complete(agent.execute_tool(tool_name, tool_args))
@@ -3144,7 +3099,6 @@ class AgentSession:
             ):
                 tool_results_sink.append(result_text)
             if robot_delivery_result:
-                turn_guard.qq_message_sent = True
                 if reply_ticket_id:
                     try:
                         from app.services.agent.reply_ticket import (
@@ -3154,6 +3108,7 @@ class AgentSession:
                         reply_ticket_manager.mark_external_report_sent(reply_ticket_id)
                     except Exception:
                         pass
+
                 try:
                     from app.services.agent.reply_ticket import (
                         reply_ticket_manager,
@@ -3166,10 +3121,7 @@ class AgentSession:
                         self.item_id,
                         reply_ticket_id,
                     )
-                try:
-                    task_workflow_manager.record_intermediate_report(reply_ticket_id)
-                except Exception:
-                    pass
+
                 self.emit_output(
                     robot_reply_event_content(tool_args, result_text),
                     ROBOT_QQ_REPLY_EVENT_TYPE,
@@ -3224,10 +3176,7 @@ class AgentSession:
                 )
                 return None
 
-            if (
-                tool_name != "mcp_local_update_task_workflow"
-                and not duplicate_qq_send_suppressed
-            ):
+            if tool_name != "mcp_local_update_task_workflow":
                 task_workflow_manager.record_tool_result(
                     reply_ticket_id,
                     tool_name=tool_name,
