@@ -531,18 +531,24 @@ class ReplyTicketManager:
                 "- any visible report must be labelled as a scheduled task result.\n"
             )
         if ticket.source_type == SOURCE_QQ:
+            conv_key = ticket.conversation_key or ""
+            target_hint = ""
+            if ":" in conv_key:
+                parts = conv_key.split(":", 1)
+                target_hint = (
+                    f"- To send: call `mcp_robot_send_message` with "
+                    f"target_type=\"{parts[0]}\" target_id=\"{parts[1]}\". "
+                    f"This works even without active QQ context.\n"
+                )
             return (
                 "Authoritative reply ticket:\n"
                 f"- ticket_id: {ticket.ticket_id}\n"
-                f"- source: QQ ({ticket.conversation_key or 'current conversation'})\n"
-                "- REPLY ROUTING: this conversation originated from QQ. All replies "
-                "(progress, results, errors) must go back to this QQ source via "
+                f"- source: QQ ({conv_key or 'current conversation'})\n"
+                f"{target_hint}"
+                "- REPLY ROUTING: all replies must go back to this QQ source via "
                 "`mcp_robot_send_message`. Do not leave answers only in TermMan.\n"
-                "- If the user asks you to send a message elsewhere (e.g. another QQ "
-                "target or a server), perform that action, then report the outcome "
-                "back to THIS source.\n"
-                "- Do not duplicate: if you already sent the answer via "
-                "`mcp_robot_send_message`, do not restate it in final text.\n"
+                "- If the user asks you to send elsewhere, do it then report back here.\n"
+                "- Do not duplicate: if already sent via tool, do not restate in final text.\n"
             )
         if ticket.source_type == SOURCE_WEB:
             return (

@@ -2259,9 +2259,9 @@ class RobotMCPServer:
                 {
                     "type": "text",
                     "text": (
-                        "Error: no active QQ robot conversation context. Provide "
-                        "target_type and target_id only when the user explicitly "
-                        "asked to send to that QQ target."
+                        "Error: no active QQ robot conversation context. "
+                        "Provide target_type and target_id to send directly "
+                        "(e.g. from reply ticket source info)."
                     ),
                 }
             ]
