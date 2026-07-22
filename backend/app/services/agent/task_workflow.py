@@ -1171,7 +1171,10 @@ class TaskWorkflowManager:
                 "progress or complete the current step. Do not rely on memory to advance it.",
                 "4. Do not give a final completion answer while this workflow is active or "
                 "waiting_job. Finish verification first, or mark a genuine blocker.",
-                "5. Report success/failure back only through the linked reply ticket source.",
+                "5. Report to the return_source target(s) listed above on task completion "
+                "(success or failure) and step changes. Use the mcp_robot_send_message tool "
+                "call (not a terminal command) to deliver reports. The terminal is for work "
+                "commands (install, check, build); reporting goes through tool calls.",
                 "6. Multi-step, asynchronous, or wait-for-response work continues through this "
                 "workflow across turns. Ordinary chat and immediate one-step actions do not "
                 "need a workflow.",
@@ -1193,8 +1196,8 @@ class TaskWorkflowManager:
                 "12. A repeated request for this same objective reuses this workflow. Read the "
                 "current step, latest_progress, evidence, and running_jobs before acting; never "
                 "restart an operation merely because the user repeated the request.",
-                "13. The final report goes back to the current reply ticket's source directly "
-                "as the visible answer; do not send separate duplicate reports manually.",
+                "13. The final report goes to return_source via the appropriate send tool. "
+                "Send it once; do not duplicate the same report in multiple channels or echo it in the terminal.",
                 "14. Step completion requires fresh evidence from THIS run: a command "
                 "output, exit code, or live check result. Long-term memory and chat history "
                 "answer who/what, never that something is installed, running, or done now. "
