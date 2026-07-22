@@ -261,7 +261,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="execute_command",
-            description="在主终端前台执行一条命令或向当前交互式控制台发送输入。适合 shell 短命令、Minecraft/Forge/Paper/Fabric 服务端启动、run.sh/start.sh、REPL、长期服务，以及 MC 控制台里的 op/say/stop 等后续输入。当前台已经是 Minecraft/Java server/REPL 等交互式控制台时，系统不会硬拦截或自动改写 execute_command；所填内容会原样发送，由你根据终端回显判断是否是有效控制台命令。若明确需要在 shell 中执行 ls/pwd/find/cat/java -version 等一次性查询，优先自行选择 run_job。优先一次只发一条命令，不要默认用 &&、||、;、管道或换行拼接多步操作；多步操作应等待上一条终端反馈后再继续。可设置 expected_output/expected_regex 和 timeout_seconds；超时未匹配默认只汇报，不中断进程。",
+            description="在主终端前台执行一条命令或向当前交互式控制台发送输入。适合 shell 短命令、交互式服务（MC/Java server/REPL）、以及控制台后续输入。跑未知 .sh 脚本前先 cat 看内容：里面是下载/安装/编译等长时操作就用 run_job；是启动交互式服务就用 execute_command。一次只发一条命令，不要用 &&/||/; 拼接多步。发错了可以用 interrupt_command (Ctrl+C) 中断再重来。",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -1805,27 +1805,7 @@ class LocalMCPServer:
             return [{"type": "text", "text": f"Error: {e}"}]
 
     def _should_auto_route_execute_command_to_job(self, command: str, item_id: str = "") -> bool:
-        try:
-            from app.services.agent.session import (
-                TERMINAL_INPUT_MODE_BUSY,
-                agent_session_manager,
-                classify_terminal_input_mode,
-            )
-
-            agent_session = (
-                agent_session_manager.get_session(str(item_id)) if item_id else None
-            )
-            if agent_session:
-                if agent_session.has_interactive_terminal_context():
-                    return False
-                if agent_session.should_route_execute_command_to_background_job(
-                    command
-                ):
-                    return True
-            return classify_terminal_input_mode(command) == TERMINAL_INPUT_MODE_BUSY
-        except Exception as exc:
-            debug_log(f"[LocalMCPServer] auto-route classification error: {exc}")
-            return False
+        return False
 
     def _cancel_running_job_for_item(self, item_id: str) -> dict | None:
         try:
