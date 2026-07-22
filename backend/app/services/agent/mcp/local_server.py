@@ -261,7 +261,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="execute_command",
-            description="在主终端前台执行一条命令或向当前交互式控制台发送输入。适合 shell 短命令、交互式服务（MC/Java server/REPL）、以及控制台后续输入。跑未知 .sh 脚本前先 cat 看内容：里面是下载/安装/编译等长时操作就用 run_job；是启动交互式服务就用 execute_command。一次只发一条命令，不要用 &&/||/; 拼接多步。发错了可以用 interrupt_command (Ctrl+C) 中断再重来。",
+            description="在主终端前台执行一条命令或向当前交互式控制台发送输入。适合 shell 短命令、交互式服务（MC/Java server/REPL）、以及控制台后续输入。任何不透明的命令（未知脚本、不确定耗时的操作）先看内容再决定用哪个工具：下载/安装/编译等长时操作用 run_job，启动交互式服务用 execute_command。一次只发一条命令，不要用 &&/||/; 拼接多步。发错了可以用 interrupt_command (Ctrl+C) 中断再重来。",
             input_schema={
                 "type": "object",
                 "properties": {
