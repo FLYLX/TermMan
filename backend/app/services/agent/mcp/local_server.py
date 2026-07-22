@@ -1794,7 +1794,7 @@ class LocalMCPServer:
                 {
                     "type": "text",
                     "text": (
-                        f"命令已发送到终端，尚未确认执行结果: {command.strip()}"
+                        f"命令已发送: {command.strip()}。终端输出会在下一轮反馈中到达，你可以继续执行其他操作或等待结果。"
                         if success
                         else self._terminal_unavailable_message(str(item_id))
                     ),
