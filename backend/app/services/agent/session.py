@@ -105,6 +105,36 @@ TERMINAL_INPUT_MODE_BUSY = "busy"
 TERMINAL_INPUT_MODE_CONSOLE = "console"
 TERMINAL_INPUT_CONTEXT_TTL_SECONDS = 6 * 60 * 60
 DAEMON_JOBS_CONTEXT_REFRESH_SECONDS = 3.0
+
+def _is_transient_llm_error(exc: BaseException) -> bool:
+    """Return True for LLM API errors that are worth retrying."""
+    name = type(exc).__name__
+    msg = str(exc or "").lower()
+    transient_names = {
+        "BadRequestError",
+        "RateLimitError",
+        "ServiceUnavailableError",
+        "APIConnectionError",
+        "APITimeoutError",
+        "InternalServerError",
+        "ZaiException",
+    }
+    if name in transient_names:
+        return True
+    transient_markers = (
+        "rate limit",
+        "timeout",
+        "connection",
+        "unavailable",
+        "overloaded",
+        "server_error",
+        "openai_error",
+        "bad request",
+        "zaiexception",
+    )
+    return any(marker in msg for marker in transient_markers)
+
+
 TERMINAL_BUSY_COMMAND_PATTERNS = (
     r"^(?:sudo\s+)?(?:apt|apt-get|aptitude)\s+(?:update|upgrade|full-upgrade|dist-upgrade|install|remove|autoremove)\b",
     r"^(?:sudo\s+)?(?:dnf|yum)\s+(?:install|update|upgrade|remove|groupinstall)\b",
@@ -2529,12 +2559,24 @@ class AgentSession:
             loop.close()
         except Exception as exc:
             logger.error(f"[AgentSession] Terminal processing error: {exc}")
-            self.emit_output(f"处理失败: {exc}", "agent_error")
-            self._fail_and_report_pending_reply(
-                input_msg.reply_ticket_id,
-                report=f"任务处理失败：{exc}",
-                reason=str(exc),
-            )
+            if _is_transient_llm_error(exc) and input_msg.reply_ticket_id:
+                logger.info(
+                    "[AgentSession] Transient LLM error, keeping workflow alive: item=%s error=%s",
+                    self.item_id,
+                    exc,
+                )
+                self.emit_output(
+                    f"模型调用临时失败，任务保留，稍后自动重试: {exc}",
+                    "agent_warning",
+                )
+                self.schedule_task_workflow_continuation(input_msg.reply_ticket_id)
+            else:
+                self.emit_output(f"处理失败: {exc}", "agent_error")
+                self._fail_and_report_pending_reply(
+                    input_msg.reply_ticket_id,
+                    report=f"任务处理失败：{exc}",
+                    reason=str(exc),
+                )
             self._record_scheduled_ticket_result(
                 input_msg.reply_ticket_id,
                 success=False,
