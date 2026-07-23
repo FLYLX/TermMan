@@ -412,8 +412,23 @@ class TaskWorkflowManager:
             created_at=now,
             updated_at=now,
         )
+        normalized_objective = _normalize_objective(workflow.objective)
         with self._lock:
             self._prune_locked(now)
+            existing = self._find_duplicate_workflow_locked(
+                str(item_id), normalized_objective
+            )
+            if existing and existing.status not in WORKFLOW_FINAL_STATUSES:
+                if workflow.reply_ticket_id:
+                    existing.reply_ticket_ids.append(workflow.reply_ticket_id)
+                    existing.reply_ticket_id = workflow.reply_ticket_id
+                    existing.auto_resume_attempts = 0
+                    existing.updated_at = now
+                    self._ticket_to_workflow[workflow.reply_ticket_id] = (
+                        existing.workflow_id
+                    )
+                    _persist_workflow(existing)
+                return existing
             self._workflows[workflow.workflow_id] = workflow
             if workflow.reply_ticket_id:
                 self._ticket_to_workflow[workflow.reply_ticket_id] = (
@@ -651,7 +666,7 @@ class TaskWorkflowManager:
                 if workflow.item_id == str(item_id)
                 and (not source_type or workflow.source_type == str(source_type))
                 and (not source_label or workflow.source_label == str(source_label))
-                and workflow.status in {"blocked", "waiting_job"}
+                and workflow.status in {"blocked", "active", "waiting_job", "verifying"}
             ]
         candidates.sort(key=lambda workflow: workflow.updated_at, reverse=True)
         return candidates
@@ -966,34 +981,37 @@ class TaskWorkflowManager:
             elif normalized_action == "insert_recovery_step":
                 recovery_title = str(title or note or "Recovery step").strip()[:180]
                 error_summary = str(note or "").strip()[:300]
-                # Cancel the failed step with error summary
-                if step:
-                    step.status = "cancelled"
-                    step.last_error = error_summary or "failed"
-                    step.evidence = ""
-                # Reset ALL subsequent steps to waiting (fix stale completed state)
-                for idx in range(workflow.current_step_index + 1, len(workflow.steps)):
-                    workflow.steps[idx].status = "waiting"
-                    workflow.steps[idx].evidence = ""
-                    workflow.steps[idx].last_error = ""
-                # Rewrite the next step's title to reflect the new method
-                next_index = workflow.current_step_index + 1
-                if next_index < len(workflow.steps):
-                    workflow.steps[next_index].title = recovery_title
-                    workflow.steps[next_index].status = "running"
-                    workflow.steps[next_index].recovery = True
-                    workflow.current_step_index = next_index
+                if step and step.recovery and step.status in {"running", "failed"}:
+                    step.title = recovery_title
+                    step.status = "running"
+                    step.last_error = error_summary or step.last_error
+                    step.attempts += 1
+                    step.note = note or step.note
                 else:
-                    # No next step exists: append one
-                    recovery = WorkflowStep(
-                        step_id=uuid.uuid4().hex[:12],
-                        title=recovery_title,
-                        status="running",
-                        note=note,
-                        recovery=True,
-                    )
-                    workflow.steps.append(recovery)
-                    workflow.current_step_index = len(workflow.steps) - 1
+                    if step:
+                        step.status = "cancelled"
+                        step.last_error = error_summary or "failed"
+                        step.evidence = ""
+                    for idx in range(workflow.current_step_index + 1, len(workflow.steps)):
+                        workflow.steps[idx].status = "waiting"
+                        workflow.steps[idx].evidence = ""
+                        workflow.steps[idx].last_error = ""
+                    next_index = workflow.current_step_index + 1
+                    if next_index < len(workflow.steps):
+                        workflow.steps[next_index].title = recovery_title
+                        workflow.steps[next_index].status = "running"
+                        workflow.steps[next_index].recovery = True
+                        workflow.current_step_index = next_index
+                    else:
+                        recovery = WorkflowStep(
+                            step_id=uuid.uuid4().hex[:12],
+                            title=recovery_title,
+                            status="running",
+                            note=note,
+                            recovery=True,
+                        )
+                        workflow.steps.append(recovery)
+                        workflow.current_step_index = len(workflow.steps) - 1
                 workflow.status = "active"
                 workflow.blocker = ""
                 workflow.latest_progress = f"Method changed: {recovery_title}"
@@ -1298,9 +1316,10 @@ class TaskWorkflowManager:
             [
                 "不可违反的工作流规则：",
                 "1. main_objective 不可改写。换源、apt update、重试、下载、检查、排错都只是子步骤。",
-                "2. 子步骤失败后调用 insert_recovery_step(title='新方法')。"
-                "它会取消失败步骤、把下一步改写为新方法、重置后续步骤为 pending。"
-                "一次失败只插入一个恢复步骤，保持步骤列表简短线性。",
+                "2. 子步骤失败（超时、报错、包不存在等）→ 调用 insert_recovery_step(title='新方法')。"
+                "失败步骤被划掉(cancelled)，下一步改写为新方法，从新方法继续线性执行。"
+                "如果当前步骤已经是恢复步骤，再次失败时原地更新标题和方法，不再堆叠新步骤。"
+                "任何情况下不允许从任务内部衍生新任务或新 workflow。",
                 "3. 观察到证据后调用 mcp_local_update_task_workflow 记录进度或完成当前步骤。不要依赖记忆推进。",
                 "4. workflow 处于 active 或 waiting_job 时不要给最终完成回答。先完成验证，或标记真实阻塞。",
                 "5. 创建 workflow 时包含最终汇报步骤（如 汇报结果到: QQ private:xxx）。"

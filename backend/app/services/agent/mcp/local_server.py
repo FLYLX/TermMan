@@ -1274,22 +1274,32 @@ class LocalMCPServer:
                     from app.services.agent.task_workflow import task_workflow_manager
 
                     ticket = reply_ticket_manager.get(reply_ticket_id)
-                    if (
-                        ticket is not None
-                        and task_workflow_manager.get_by_ticket(reply_ticket_id) is None
-                    ):
-                        task_workflow_manager.create(
+                    existing_wf = task_workflow_manager.get_by_ticket(reply_ticket_id)
+                    if ticket is not None and existing_wf is None:
+                        item_workflows = task_workflow_manager.list_resumable(
                             item_id=str(item_id),
-                            handler_id=ticket.handler_id,
-                            reply_ticket_id=reply_ticket_id,
-                            objective=f"后台任务：{command[:200]}",
-                            source_type=ticket.source_type,
-                            source_label=ticket.source_label,
-                            step_titles=[
-                                f"Run background job: {command[:120]}",
-                                "Report job result",
-                            ],
                         )
+                        active_wf = next(
+                            (wf for wf in item_workflows if wf.status in {"active", "waiting_job", "verifying"}),
+                            None,
+                        )
+                        if active_wf is not None:
+                            task_workflow_manager.attach_ticket(
+                                active_wf.workflow_id, reply_ticket_id
+                            )
+                        else:
+                            task_workflow_manager.create(
+                                item_id=str(item_id),
+                                handler_id=ticket.handler_id,
+                                reply_ticket_id=reply_ticket_id,
+                                objective=f"后台任务：{command[:200]}",
+                                source_type=ticket.source_type,
+                                source_label=ticket.source_label,
+                                step_titles=[
+                                    f"Run background job: {command[:120]}",
+                                    "Report job result",
+                                ],
+                            )
                 except Exception as exc:
                     debug_log(
                         f"[LocalMCPServer] failed to register background job workflow: "
