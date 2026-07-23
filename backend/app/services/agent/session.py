@@ -2608,7 +2608,7 @@ class AgentSession:
                     f"模型调用临时失败，任务保留，稍后自动重试: {exc}",
                     "agent_warning",
                 )
-                self.schedule_task_workflow_continuation(input_msg.reply_ticket_id)
+                self._schedule_delayed_retry(input_msg.reply_ticket_id)
             else:
                 self.emit_output(f"处理失败: {exc}", "agent_error")
                 self._fail_and_report_pending_reply(
@@ -3400,6 +3400,34 @@ class AgentSession:
                 "[AgentSession] Failed to cancel background jobs on abort: item=%s",
                 self.item_id,
             )
+
+    def _schedule_delayed_retry(self, ticket_id: str, delay_seconds: float = 10.0):
+        """Retry after a transient LLM error WITHOUT consuming auto-resume attempts."""
+        normalized = str(ticket_id or "").strip()
+        if not normalized:
+            return
+
+        def _delayed():
+            import time
+            time.sleep(delay_seconds)
+            wf = task_workflow_manager.get_by_ticket(normalized)
+            if not wf or wf.status in {"completed", "cancelled", "failed"}:
+                return
+            if wf.delivered_at is not None:
+                return
+            input_msg = InputMessage(
+                input_type=InputType.TASK_CONTINUATION,
+                content=(
+                    "[Internal retry after transient LLM error]\n"
+                    "Resume the authoritative workflow from its current step. Execute one "
+                    "concrete safe action now; do not provide a next-step narration."
+                ),
+                query="Resume the unfinished authoritative task workflow with one concrete action.",
+                reply_ticket_id=normalized,
+            )
+            self.process_input(input_msg)
+
+        threading.Thread(target=_delayed, daemon=True).start()
 
     def is_idle(self) -> bool:
         with self.lock:
