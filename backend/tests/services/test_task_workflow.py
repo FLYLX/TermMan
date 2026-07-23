@@ -255,3 +255,42 @@ def test_full_task_workflow_is_loaded_only_for_linked_turn() -> None:
         assert "安装 Temurin Java 17" in task_prompt
     finally:
         task_workflow_manager.reset()
+
+def test_job_result_does_not_wake_agent_after_workflow_finished() -> None:
+    """A finished/delivered workflow must not trigger more agent turns.
+
+    Regression test for the 27-round loop: redundant background verification
+    jobs kept completing and each completion woke the agent again even though
+    the task was already reported and done.
+    """
+    manager = TaskWorkflowManager()
+    _create_java_workflow(manager)
+
+    # Active workflow still needs job results -> wake the agent.
+    assert manager.job_result_needs_new_turn("ticket-java") is True
+
+    # Complete both steps -> ready_to_report (not final yet, report pending).
+    manager.update("ticket-java", action="complete_current_step", note="installed")
+    manager.update("ticket-java", action="complete_current_step", note="verified")
+    assert manager.job_result_needs_new_turn("ticket-java") is True
+
+    # Deliver the report -> workflow completed -> stop waking the agent.
+    manager.on_delivery("ticket-java")
+    workflow = manager.get_by_ticket("ticket-java")
+    assert workflow.status == "completed"
+    assert manager.job_result_needs_new_turn("ticket-java") is False
+
+    # Cancelled / failed workflows also stop waking the agent.
+    manager2 = TaskWorkflowManager()
+    _create_java_workflow(manager2)
+    manager2.update("ticket-java", action="cancel", note="user cancelled")
+    assert manager2.job_result_needs_new_turn("ticket-java") is False
+
+
+def test_job_result_does_not_wake_agent_after_delivery_timestamp() -> None:
+    manager = TaskWorkflowManager()
+    _create_java_workflow(manager)
+    manager.on_delivery("ticket-java")
+    workflow = manager.get_by_ticket("ticket-java")
+    assert workflow.delivered_at is not None
+    assert manager.job_result_needs_new_turn("ticket-java") is False

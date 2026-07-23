@@ -121,6 +121,24 @@ def flush_background_job_results_for_entries(
             session = entry.get("agent_session")
             if session is None:
                 continue
+            entry_ticket = entry.get("reply_ticket_id") or ""
+            if entry_ticket:
+                try:
+                    from app.services.agent.task_workflow import task_workflow_manager
+
+                    if not task_workflow_manager.job_result_needs_new_turn(
+                        entry_ticket
+                    ):
+                        debug_log(
+                            f"[LocalMCPServer] skip job-result turn: owning workflow "
+                            f"finished/delivered for ticket={entry_ticket}, item={item_id}"
+                        )
+                        flushed_any = True
+                        break
+                except Exception as exc:
+                    debug_log(
+                        f"[LocalMCPServer] job-result turn guard error: ticket={entry_ticket}, error={exc}"
+                    )
             try:
                 from app.services.agent.session import InputMessage, InputType
 
@@ -130,7 +148,7 @@ def flush_background_job_results_for_entries(
                         content=message,
                         raw_content=message,
                         query="background job completed",
-                        reply_ticket_id=entry.get("reply_ticket_id") or "",
+                        reply_ticket_id=entry_ticket,
                     )
                 )
                 flushed_any = True

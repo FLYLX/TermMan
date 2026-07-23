@@ -496,6 +496,23 @@ class TaskWorkflowManager:
             return False
         return any(job.status == "running" for job in workflow.jobs)
 
+    def job_result_needs_new_turn(self, ticket_id: str) -> bool:
+        """Return False when a finished job should NOT wake the agent.
+
+        Once a workflow has reached a final status (completed/cancelled/failed)
+        or has already been delivered to the user, further background-job
+        completions are redundant and must not trigger another agent turn --
+        otherwise redundant verification jobs keep waking the agent forever.
+        """
+        workflow = self.get_by_ticket(ticket_id)
+        if not workflow:
+            return True
+        if workflow.status in WORKFLOW_FINAL_STATUSES:
+            return False
+        if workflow.delivered_at is not None:
+            return False
+        return True
+
     def claim_auto_resume(self, ticket_id: str, *, max_attempts: int = 0) -> bool:
         with self._lock:
             workflow = self.get_by_ticket(ticket_id)

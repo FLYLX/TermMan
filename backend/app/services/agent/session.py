@@ -2952,10 +2952,8 @@ class AgentSession:
                 turn_guard.reset_timeout_window()
 
             result_text = self._format_tool_result(result).strip()
-            robot_delivery_result = bool(
-                tool_name == ROBOT_SEND_TOOL_NAME
-                and result_text
-                and integration_message_sent([result_text])
+            robot_delivery_result = self._is_successful_robot_send(
+                tool_name, result_text
             )
             delivery_is_final = True
             if robot_delivery_result:
@@ -3102,6 +3100,31 @@ class AgentSession:
         messages.append(assistant_message)
         messages.extend(tool_messages)
         return messages
+
+    def _is_successful_robot_send(self, tool_name: str, result_text: str) -> bool:
+        """Detect a successful QQ send without fragile text matching.
+
+        A robot-send tool call counts as a real delivery unless the result is
+        an explicit error or an explicit "no message sent" outcome. This makes
+        workflow completion robust so a finished report reliably closes the
+        task instead of looping forever on background-job wakeups.
+        """
+        if tool_name != ROBOT_SEND_TOOL_NAME:
+            return False
+        text = (result_text or "").strip()
+        if not text:
+            return False
+        lowered = text.lower()
+        if lowered.startswith("error"):
+            return False
+        if "no qq message sent" in lowered:
+            return False
+        if "message sent" in lowered or "???" in text or "???" in text:
+            return True
+        try:
+            return integration_message_sent([text])
+        except Exception:
+            return False
 
     def _format_tool_result(self, result: dict) -> str:
         if not isinstance(result, dict):
