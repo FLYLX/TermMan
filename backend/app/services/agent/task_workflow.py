@@ -91,7 +91,7 @@ class TaskWorkflow:
     source_type: str
     source_label: str
     steps: list[WorkflowStep]
-    report_policy: str = "step_change"
+    report_policy: str = "final_only"
     requester: str = ""
     queue_status: str = "working"
     awaiting_kind: str = ""
@@ -1180,7 +1180,7 @@ class TaskWorkflowManager:
                 "5. When creating a workflow, include a final report step (e.g. 汇报结果到: "
                 "QQ private:xxx) if the user expects to be notified. Skip it if the user says "
                 "no report is needed. Reporting uses tool calls (mcp_robot_send_message etc.), "
-                "not terminal commands. Report on task completion and step changes only.",
+                "not terminal commands. Report ONLY on completion, final failure, or direction change.",
                 "6. Multi-step, asynchronous, or wait-for-response work continues through this "
                 "workflow across turns. Ordinary chat and immediate one-step actions do not "
                 "need a workflow.",
@@ -1192,10 +1192,11 @@ class TaskWorkflowManager:
                 "when ALL safe alternatives are exhausted and a genuine user decision is "
                 "required: cancel all running jobs, cancel the workflow, and report the "
                 "situation to return_source so the user can start fresh with a new decision.",
-                "9. Report frequency follows report_policy: step_change (default) allows one "
-                "QQ message per step transition or direction change — do NOT send multiple "
-                "progress updates within the same step; final_only allows one report only after "
-                "verified success or final failure. Keep each report concise.",
+                "9. Report to the user ONLY on these three events: (a) task completed with verified "
+                "result, (b) task definitively failed with no more methods to try, "
+                "(c) major direction change (method switch via insert_recovery_step). "
+                "Do NOT report intermediate step completions, progress updates, or status "
+                "changes. One concise message per event. Silence during normal execution.",
                 "10. Independent workflows may run background jobs in parallel. Choose the "
                 "execution order yourself from the task plan and current evidence; do not create "
                 "a task-level waiting/blocking state merely because another task is running.",
