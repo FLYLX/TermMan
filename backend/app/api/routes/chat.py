@@ -1674,6 +1674,14 @@ def _generate_stream_unserialized(
                     }
                 )
             if AgentMessageQueue.is_aborted(item_id):
+                try:
+                    task_workflow_manager.update(
+                        reply_ticket.ticket_id,
+                        action="cancel",
+                        note="User interrupted the task.",
+                    )
+                except Exception:
+                    pass
                 stopped_events = _finalize_stopped_turn(
                     agent=agent,
                     handler=handler,
@@ -1778,6 +1786,14 @@ def _generate_stream_unserialized(
 
             for chunk in response:
                 if AgentMessageQueue.is_aborted(item_id):
+                    try:
+                        task_workflow_manager.update(
+                            reply_ticket.ticket_id,
+                            action="cancel",
+                            note="User interrupted the task.",
+                        )
+                    except Exception:
+                        pass
                     stopped_events = _finalize_stopped_turn(
                         agent=agent,
                         handler=handler,

@@ -135,6 +135,14 @@ def flush_background_job_results_for_entries(
                         )
                         flushed_any = True
                         continue
+                    _wf_check = task_workflow_manager.get_by_ticket(entry_ticket)
+                    if _wf_check and getattr(_wf_check, "report_sent_at", None) is not None:
+                        debug_log(
+                            f"[LocalMCPServer] skip job-result turn: report already sent "
+                            f"for ticket={entry_ticket}, item={item_id}"
+                        )
+                        flushed_any = True
+                        continue
                 except Exception as exc:
                     debug_log(
                         f"[LocalMCPServer] job-result turn guard error: ticket={entry_ticket}, error={exc}"

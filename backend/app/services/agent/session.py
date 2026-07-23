@@ -626,6 +626,7 @@ class AgentSession:
         self.output_callbacks: list[Callable] = []
         self.lock = threading.RLock()
         self._abort_flag = False
+        self._aborted_this_turn = False
         self._last_activity = datetime.now()
         self._current_turn_id: str | None = None
         self._last_status_signature: tuple[str, str, str] | None = None
@@ -1988,7 +1989,11 @@ class AgentSession:
             queue_size = self.input_queue.qsize()
             self.state = SessionState.IDLE if queue_size == 0 else SessionState.COOLDOWN
             self._current_turn_id = None
+            was_aborted = getattr(self, "_aborted_this_turn", False)
+            self._aborted_this_turn = False
         self._emit_idle_or_waiting_status(queue_size)
+        if was_aborted:
+            return
         try:
             from app.services.agent.mcp.local_server import (
                 flush_job_results_for_turn_end,
@@ -2195,7 +2200,11 @@ class AgentSession:
                     source_type="",
                     source_label="",
                 )
-                if resumable and resumable.reply_ticket_id:
+                if (
+                    resumable
+                    and resumable.reply_ticket_id
+                    and resumable.status in {"waiting_job", "blocked"}
+                ):
                     matched_entry = {"id": resumable.reply_ticket_id}
             if matched_entry:
                 input_msg.reply_ticket_id = str(matched_entry["id"])
@@ -3043,6 +3052,21 @@ class AgentSession:
                     robot_delivery_result = True
             delivery_is_final = True
             if robot_delivery_result:
+                _wf_report = task_workflow_manager.get_by_ticket(reply_ticket_id)
+                if _wf_report and _wf_report.status not in {"completed", "cancelled", "failed"}:
+                    if _wf_report.report_sent_at is not None:
+                        logger.info(
+                            "[AgentSession] Duplicate QQ report suppressed: item=%s ticket=%s",
+                            self.item_id,
+                            reply_ticket_id,
+                        )
+                        return None
+                    _wf_report.report_sent_at = datetime.now()
+                    try:
+                        from app.services.agent.task_workflow import _persist_workflow
+                        _persist_workflow(_wf_report)
+                    except Exception:
+                        pass
                 delivery_is_final, _ = task_workflow_manager.can_finalize(
                     reply_ticket_id
                 )
@@ -3242,6 +3266,7 @@ class AgentSession:
         cleared = 0
         with self.lock:
             self._abort_flag = True
+            self._aborted_this_turn = True
             self._pending_command = None
             if self.state == SessionState.RUNNING:
                 self.state = SessionState.INTERRUPTING
@@ -3250,10 +3275,49 @@ class AgentSession:
             if clear_queue:
                 cleared = self.clear_queued_inputs()
         self._cancel_pending_command_recheck()
+        if clear_queue:
+            self._cancel_active_workflows_on_abort()
         self.emit_status("interrupting", "中断当前轮中")
         if clear_queue and cleared > 0:
             self.emit_output(f"已清空 {cleared} 条排队输入", "agent_warning")
         logger.info(f"[AgentSession] Aborted session for item {self.item_id}")
+
+    def _cancel_active_workflows_on_abort(self):
+        try:
+            workflows = task_workflow_manager.list_resumable(
+                item_id=self.item_id,
+            )
+            for workflow in workflows:
+                ticket_id = workflow.reply_ticket_id or (
+                    workflow.reply_ticket_ids[-1] if workflow.reply_ticket_ids else ""
+                )
+                if ticket_id:
+                    task_workflow_manager.update(
+                        ticket_id,
+                        action="cancel",
+                        note="User interrupted the task.",
+                    )
+                    logger.info(
+                        "[AgentSession] Cancelled workflow on abort: item=%s workflow=%s",
+                        self.item_id,
+                        workflow.workflow_id,
+                    )
+        except Exception:
+            logger.exception(
+                "[AgentSession] Failed to cancel workflows on abort: item=%s",
+                self.item_id,
+            )
+        try:
+            from app.services.agent.mcp.local_server import (
+                cancel_background_jobs_for_item,
+            )
+
+            cancel_background_jobs_for_item(self.item_id)
+        except Exception:
+            logger.debug(
+                "[AgentSession] Failed to cancel background jobs on abort: item=%s",
+                self.item_id,
+            )
 
     def is_idle(self) -> bool:
         with self.lock:

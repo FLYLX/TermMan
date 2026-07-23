@@ -284,45 +284,14 @@ def _item_has_live_execution(item_id: str) -> bool:
 
 
 def _resume_stalled_active_workflows(now: datetime, stats: dict[str, int]) -> None:
-    """Resume active/verifying workflows that nothing is driving.
+    """Disabled: workflows are callback-driven, not watchdog-resumed.
 
-    A workflow can stall at "active" with no background job, no interactive
-    terminal work, and no live turn (e.g. the last turn ended with a verbal
-    promise instead of an action). Without a driver it would sit until the
-    stale-close timeout. Detect the stall after AGENT_WATCHDOG_IDLE_RESUME_SECONDS
-    of no updates and immediately schedule a continuation turn.
+    Background job results are delivered through the poller callback path.
+    The stale-close timeout (_close_stale_workflow) handles truly abandoned
+    workflows by cancelling them.  The old "resume stalled workflows" logic
+    caused duplicate turns, repeated QQ reports, and made user abort
+    ineffective because the watchdog kept resurrecting cancelled work.
     """
-    from app.services.agent.task_workflow import task_workflow_manager
-
-    threshold = timedelta(seconds=float(settings.AGENT_WATCHDOG_IDLE_RESUME_SECONDS))
-    with task_workflow_manager._lock:
-        candidates = [
-            workflow
-            for workflow in task_workflow_manager._workflows.values()
-            if workflow.status in {"active", "verifying"}
-            and workflow.delivered_at is None
-            and _as_utc(workflow.updated_at) < now - threshold
-            and not any(job.status == "running" for job in workflow.jobs)
-        ]
-    live_execution_cache: dict[str, bool] = {}
-    for workflow in candidates:
-        if workflow.item_id not in live_execution_cache:
-            live_execution_cache[workflow.item_id] = _item_has_live_execution(
-                workflow.item_id
-            )
-        if live_execution_cache[workflow.item_id]:
-            continue
-        ticket_id = workflow.reply_ticket_id or (
-            workflow.reply_ticket_ids[-1] if workflow.reply_ticket_ids else ""
-        )
-        logger.info(
-            "[TaskWatchdog] Stalled workflow detected (nothing running, no live turn): workflow=%s item=%s objective=%r",
-            workflow.workflow_id,
-            workflow.item_id,
-            (workflow.objective or "")[:80],
-        )
-        if _schedule_workflow_continuation(workflow.item_id, ticket_id):
-            stats["stalled_resumed"] += 1
 
 
 def _close_stale_workflow(workflow: Any, stats: dict[str, int], *, now: datetime) -> None:

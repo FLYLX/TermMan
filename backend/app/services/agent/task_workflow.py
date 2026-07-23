@@ -109,6 +109,7 @@ class TaskWorkflow:
     created_at: datetime = field(default_factory=_utcnow)
     updated_at: datetime = field(default_factory=_utcnow)
     delivered_at: datetime | None = None
+    report_sent_at: datetime | None = None
 
     def current_step(self) -> WorkflowStep | None:
         if not self.steps:
@@ -155,6 +156,7 @@ def workflow_to_payload(workflow: TaskWorkflow) -> dict[str, Any]:
         "created_at": _iso(workflow.created_at),
         "updated_at": _iso(workflow.updated_at),
         "delivered_at": _iso(workflow.delivered_at),
+        "report_sent_at": _iso(getattr(workflow, "report_sent_at", None)),
         "steps": [asdict(step) for step in workflow.steps],
         "jobs": [
             {
@@ -191,6 +193,7 @@ def workflow_from_payload(payload: dict[str, Any]) -> TaskWorkflow:
     kwargs["created_at"] = _parse_dt(kwargs.get("created_at")) or _utcnow()
     kwargs["updated_at"] = _parse_dt(kwargs.get("updated_at")) or _utcnow()
     kwargs["delivered_at"] = _parse_dt(kwargs.get("delivered_at"))
+    kwargs["report_sent_at"] = _parse_dt(kwargs.get("report_sent_at"))
     return TaskWorkflow(**kwargs)
 
 
@@ -511,6 +514,8 @@ class TaskWorkflowManager:
             return False
         if workflow.delivered_at is not None:
             return False
+        if getattr(workflow, "report_sent_at", None) is not None:
+            return False
         return True
 
     def claim_auto_resume(self, ticket_id: str, *, max_attempts: int = 0) -> bool:
@@ -521,6 +526,16 @@ class TaskWorkflowManager:
             if workflow.delivered_at is not None:
                 return False
             if any(job.status == "running" for job in workflow.jobs):
+                return False
+            effective_limit = max_attempts if max_attempts > 0 else 6
+            if workflow.auto_resume_attempts >= effective_limit:
+                logger.warning(
+                    "[TaskWorkflow] auto-resume limit reached: ticket=%s attempts=%s limit=%s objective=%r",
+                    ticket_id,
+                    workflow.auto_resume_attempts,
+                    effective_limit,
+                    (workflow.objective or "")[:80],
+                )
                 return False
             workflow.auto_resume_attempts += 1
             workflow.updated_at = _utcnow()
