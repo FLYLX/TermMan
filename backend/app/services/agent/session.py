@@ -3052,21 +3052,6 @@ class AgentSession:
                     robot_delivery_result = True
             delivery_is_final = True
             if robot_delivery_result:
-                _wf_report = task_workflow_manager.get_by_ticket(reply_ticket_id)
-                if _wf_report and _wf_report.status not in {"completed", "cancelled", "failed"}:
-                    if _wf_report.report_sent_at is not None:
-                        logger.info(
-                            "[AgentSession] Duplicate QQ report suppressed: item=%s ticket=%s",
-                            self.item_id,
-                            reply_ticket_id,
-                        )
-                        return None
-                    _wf_report.report_sent_at = datetime.now()
-                    try:
-                        from app.services.agent.task_workflow import _persist_workflow
-                        _persist_workflow(_wf_report)
-                    except Exception:
-                        pass
                 delivery_is_final, _ = task_workflow_manager.can_finalize(
                     reply_ticket_id
                 )

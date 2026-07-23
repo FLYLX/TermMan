@@ -1075,6 +1075,7 @@ class TaskWorkflowManager:
                 return
             now = _utcnow()
             workflow.delivered_at = now
+            workflow.report_sent_at = now
             if workflow.status in {"ready_to_report", "reporting", "active", "verifying", "waiting_job"}:
                 workflow.status = "completed"
                 for step in workflow.steps:
