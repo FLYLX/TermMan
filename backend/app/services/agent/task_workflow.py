@@ -270,6 +270,32 @@ def restore_workflows_from_store() -> int:
     return restored
 
 
+def _normalize_objective(text: str) -> str:
+    """Normalize an objective string for deduplication comparison."""
+    import re
+
+    normalized = re.sub(r"\s+", " ", (text or "").strip().lower())
+    normalized = re.sub(r"[，。！？、；：""''（）【】]", "", normalized)
+    return normalized[:200]
+
+
+def _objectives_match(a: str, b: str) -> bool:
+    """Check if two normalized objectives refer to the same task."""
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if a in b or b in a:
+        return True
+    a_words = set(a.split())
+    b_words = set(b.split())
+    if len(a_words) < 2 or len(b_words) < 2:
+        return False
+    overlap = len(a_words & b_words)
+    shorter = min(len(a_words), len(b_words))
+    return overlap / shorter >= 0.7
+
+
 class TaskWorkflowManager:
     def __init__(self) -> None:
         self._workflows: dict[str, TaskWorkflow] = {}
@@ -284,6 +310,25 @@ class TaskWorkflowManager:
         ]
         for ticket_id in stale_ticket_ids:
             self._ticket_to_workflow.pop(ticket_id, None)
+
+    def _find_duplicate_workflow_locked(
+        self, item_id: str, normalized_objective: str
+    ) -> TaskWorkflow | None:
+        if not normalized_objective:
+            return None
+        candidates = [
+            workflow
+            for workflow in self._workflows.values()
+            if workflow.item_id == item_id
+            and _objectives_match(
+                _normalize_objective(workflow.objective),
+                normalized_objective,
+            )
+        ]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda w: w.updated_at, reverse=True)
+        return candidates[0]
 
     def _prune_locked(self, now: datetime) -> None:
         cutoff = now - COMPLETED_RETENTION
@@ -1173,6 +1218,23 @@ class TaskWorkflowManager:
 
     def _snapshot_workflow(self, workflow: TaskWorkflow) -> dict[str, Any]:
         return workflow_to_payload(workflow)
+
+    def find_related_workflows(
+        self, item_id: str, objective: str
+    ) -> list[TaskWorkflow]:
+        """Find existing workflows with a similar objective for context injection."""
+        normalized = _normalize_objective(str(objective or ""))
+        if not normalized:
+            return []
+        with self._lock:
+            return [
+                workflow
+                for workflow in self._workflows.values()
+                if workflow.item_id == str(item_id)
+                and _objectives_match(
+                    _normalize_objective(workflow.objective), normalized
+                )
+            ]
 
     def build_prompt_context(
         self,

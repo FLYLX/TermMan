@@ -845,7 +845,28 @@ def _build_active_task_ledger_context(
         item_id=item_id,
         reply_ticket_id=reply_ticket_id,
     )
-    return workflow_context or ""
+    if workflow_context:
+        return workflow_context
+    related = task_workflow_manager.find_related_workflows(
+        item_id=item_id,
+        objective=getattr(context, "current_query", "") or "",
+    )
+    if not related:
+        return ""
+    lines = ["[Existing task workflows for this item]"]
+    for wf in related[:3]:
+        status_hint = wf.status
+        evidence = (wf.latest_progress or "")[:200]
+        lines.append(
+            f"- [{status_hint}] {wf.objective}"
+            f" (evidence: {evidence})"
+        )
+    lines.append(
+        "If the user's request matches an existing completed workflow, "
+        "report the existing result instead of re-executing. "
+        "If the user explicitly wants a fresh run, create a new workflow."
+    )
+    return "\n".join(lines)
 
 def _dedupe_adjacent_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
     deduped: list[dict[str, str]] = []

@@ -307,6 +307,75 @@ class TestJavaInstallWorkflowLifecycle:
         assert manager.claim_auto_resume("ticket-e2e") is False
         assert manager.job_result_needs_new_turn("ticket-e2e") is False
 
+    def test_find_related_workflows_detects_same_objective(self):
+        """find_related_workflows finds workflows with matching objectives."""
+        manager = TaskWorkflowManager()
+        first = _create_install_java_workflow(manager)
+        manager.on_delivery("ticket-e2e")
+        assert first.status == "completed"
+
+        related = manager.find_related_workflows(
+            item_id="item-e2e",
+            objective="Install OpenJDK 21 and verify",
+        )
+        assert len(related) == 1
+        assert related[0].workflow_id == first.workflow_id
+
+    def test_find_related_workflows_no_match_for_different_objective(self):
+        """find_related_workflows returns empty for unrelated objectives."""
+        manager = TaskWorkflowManager()
+        _create_install_java_workflow(manager)
+
+        related = manager.find_related_workflows(
+            item_id="item-e2e",
+            objective="Install Python 3.12",
+        )
+        assert len(related) == 0
+
+    def test_create_allows_duplicate_but_agent_sees_context(self):
+        """create() allows duplicates; agent decides via prompt context."""
+        manager = TaskWorkflowManager()
+        first = _create_install_java_workflow(manager)
+        manager.on_delivery("ticket-e2e")
+
+        second = manager.create(
+            item_id="item-e2e",
+            handler_id="handler-e2e",
+            reply_ticket_id="ticket-e2e-dup",
+            objective="Install OpenJDK 21 and verify",
+            source_type="qq",
+            source_label="QQ private:2537134688",
+            step_titles=["Check Java", "Install Java", "Report"],
+        )
+
+        # New workflow IS created (agent decides, not code)
+        assert second.workflow_id != first.workflow_id
+        # But find_related_workflows shows the old one for prompt context
+        related = manager.find_related_workflows(
+            item_id="item-e2e",
+            objective="Install OpenJDK 21 and verify",
+        )
+        assert len(related) == 2
+
+    def test_different_objective_creates_new_workflow(self):
+        """Different objective creates a separate workflow."""
+        manager = TaskWorkflowManager()
+        _create_install_java_workflow(manager)
+
+        second = manager.create(
+            item_id="item-e2e",
+            handler_id="handler-e2e",
+            reply_ticket_id="ticket-python",
+            objective="Install Python 3.12",
+            source_type="qq",
+            source_label="QQ private:2537134688",
+            step_titles=["Install Python", "Verify", "Report"],
+        )
+
+        # Different objective -> new workflow
+        assert second.workflow_id != "ticket-e2e"
+        assert second.objective == "Install Python 3.12"
+
     def test_workflow_serialization_roundtrip(self):
         """Workflow with report_sent_at survives persist/restore cycle."""
         from app.services.agent.task_workflow import (
