@@ -116,6 +116,11 @@ def test_watchdog_dedupes_memories_with_throttle(monkeypatch) -> None:
         "deduplicate_memories",
         lambda item_id, *, threshold: calls.append((item_id, threshold)) or 2,
     )
+    monkeypatch.setattr(
+        vector_store,
+        "supersede_by_memory_key",
+        lambda item_id: 0,
+    )
     task_watchdog._memory_dedup_last_run.clear()
 
     now = datetime.now(timezone.utc)

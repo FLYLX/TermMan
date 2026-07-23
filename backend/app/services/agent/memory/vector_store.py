@@ -1762,6 +1762,56 @@ class VectorStoreService:
         )
         return updated or fallback_updated
 
+
+    def supersede_by_memory_key(self, item_id: str) -> int:
+        """Keep only the newest memory per memory_key; delete older same-key entries."""
+        all_memories = self.get_all_memories(item_id)
+        if len(all_memories) < 2:
+            return 0
+
+        by_key: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for memory in all_memories:
+            metadata = memory.get("metadata") or {}
+            key = str(metadata.get("memory_key") or "").strip()
+            if key:
+                by_key[key].append(memory)
+
+        ids_to_delete: list[str] = []
+        for key, group in by_key.items():
+            if len(group) < 2:
+                continue
+            group.sort(
+                key=lambda m: str(
+                    (m.get("metadata") or {}).get("updated_at")
+                    or (m.get("metadata") or {}).get("created_at")
+                    or ""
+                ),
+                reverse=True,
+            )
+            for older in group[1:]:
+                older_id = str(older.get("id") or "")
+                if older_id:
+                    ids_to_delete.append(older_id)
+
+        if not ids_to_delete:
+            return 0
+
+        if self._collection is not None:
+            self._collection.delete(ids=ids_to_delete)
+        for deleted_id in ids_to_delete:
+            self._delete_lexical_memories(memory_id=deleted_id)
+        fallback_memories = self._load_fallback_memories()
+        kept = [m for m in fallback_memories if str(m.get("id") or "") not in set(ids_to_delete)]
+        if len(kept) != len(fallback_memories):
+            self._write_fallback_memories(kept)
+
+        logger.info(
+            "[VectorStore] Superseded %s keyed memories for item %s",
+            len(ids_to_delete),
+            item_id,
+        )
+        return len(ids_to_delete)
+
     def get_item_memory_count(self, item_id: str) -> int:
         return len(self.get_all_memories(item_id))
 

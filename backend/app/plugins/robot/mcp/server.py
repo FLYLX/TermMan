@@ -1014,9 +1014,13 @@ class RobotMCPServer:
         if isinstance(raw_messages, list):
             return [normalize_robot_message_text(value) for value in raw_messages]
         raw_text = args.get("text")
-        if raw_text is None:
-            return []
-        return [normalize_robot_message_text(raw_text)]
+        if raw_text is not None:
+            return [normalize_robot_message_text(raw_text)]
+        for fallback_key in ("content", "message", "body"):
+            fallback_value = args.get(fallback_key)
+            if fallback_value is not None:
+                return [normalize_robot_message_text(fallback_value)]
+        return []
 
     @staticmethod
     def _sanitize_outgoing_messages(raw_messages: list[str]) -> list[str]:
@@ -2160,7 +2164,14 @@ class RobotMCPServer:
                         "text": "No QQ message sent: no reply needed.",
                     }
                 ]
-            return [{"type": "text", "text": "Error: text required"}]
+            received_keys = [k for k in args if k not in ("_robot_context_token",) and args[k] is not None]
+            raw_preview = raw_text[:80] if raw_text else "(empty)"
+            return [{"type": "text", "text": (
+                f"Error: text required. Your message was empty after sanitization. "
+                f"Received fields: {received_keys}. Raw preview: {raw_preview}. "
+                f"Provide a plain user-facing summary in the 'text' field. "
+                f"Do NOT include tool execution traces, terminal output, or internal markers."
+            )}]
         if is_no_reply_intent(raw_text) and raw_text == text:
             return [
                 {

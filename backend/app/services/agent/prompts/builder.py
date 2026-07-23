@@ -571,7 +571,7 @@ def _collect_long_term_memories(
     if not trimmed:
         return ""
 
-    return "\n".join(_format_long_term_memory(memory) for memory in trimmed)
+    return _format_memories_with_conflict_hints(trimmed)
 
 
 def _parse_memory_datetime(value: Any) -> datetime | None:
@@ -702,6 +702,43 @@ def _format_long_term_memory(memory: dict[str, Any]) -> str:
     ).strip()
     prefix = f"{sender}: " if sender and not content.startswith(sender) else ""
     return f"- {prefix}{content}"
+
+
+def _format_memories_with_conflict_hints(memories: list[dict[str, Any]]) -> str:
+    """Format recalled memories; annotate older entries that share a memory_key with a newer one."""
+    key_newest: dict[str, str] = {}
+    for memory in memories:
+        metadata = memory.get("metadata") or {}
+        key = str(metadata.get("memory_key") or "").strip()
+        if not key:
+            continue
+        timestamp = str(metadata.get("updated_at") or metadata.get("created_at") or "")
+        current_newest = key_newest.get(key, "")
+        if timestamp > current_newest:
+            key_newest[key] = timestamp
+
+    conflict_keys = set()
+    key_count: dict[str, int] = {}
+    for memory in memories:
+        metadata = memory.get("metadata") or {}
+        key = str(metadata.get("memory_key") or "").strip()
+        if key:
+            key_count[key] = key_count.get(key, 0) + 1
+    for key, count in key_count.items():
+        if count > 1:
+            conflict_keys.add(key)
+
+    lines: list[str] = []
+    for memory in memories:
+        metadata = memory.get("metadata") or {}
+        key = str(metadata.get("memory_key") or "").strip()
+        line = _format_long_term_memory(memory)
+        if key in conflict_keys:
+            timestamp = str(metadata.get("updated_at") or metadata.get("created_at") or "")
+            if timestamp < key_newest.get(key, ""):
+                line = line.replace("- ", "- [????] ", 1)
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _collect_handler_knowledge(

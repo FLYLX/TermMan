@@ -435,6 +435,8 @@ def _dedupe_memory_clusters(now: datetime, stats: dict[str, int]) -> None:
             removed = vector_store.deduplicate_memories(
                 item_id, threshold=MEMORY_DEDUP_SIMILARITY_THRESHOLD
             )
+            superseded = vector_store.supersede_by_memory_key(item_id)
+            removed += superseded
         except Exception as exc:
             logger.info(
                 "[TaskWatchdog] Memory dedup failed for item=%s: %s", item_id, exc
@@ -443,7 +445,7 @@ def _dedupe_memory_clusters(now: datetime, stats: dict[str, int]) -> None:
         if removed:
             stats["memories_deduplicated"] += removed
             logger.info(
-                "[TaskWatchdog] Merged %s near-duplicate memories for item=%s",
+                "[TaskWatchdog] Merged %s near-duplicate/keyed memories for item=%s",
                 removed,
                 item_id,
             )
