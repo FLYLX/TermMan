@@ -3080,6 +3080,11 @@ class AgentSession:
                         "qq_delivery": True,
                     },
                 )
+                # Report sent and workflow completed -- stop the turn
+                # immediately to prevent duplicate reports.
+                _wf_after = task_workflow_manager.get_by_ticket(reply_ticket_id)
+                if _wf_after and _wf_after.status in {"completed", "cancelled", "failed"}:
+                    return None
             command_dispatch_failed = is_command_dispatch_failure_result(
                 tool_name,
                 result_text,
