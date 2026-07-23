@@ -32,6 +32,7 @@ ROBOT_DELIVERY_CONTRACT_INSTRUCTION = (
     "证据更新时只发最新结论，不要“还在加载/完成了/真完成了”连发。\n"
     "- `mcp_robot_send_message` 成功后，最终 assistant 文本只返回 `[no_qq_reply]` 或空，"
     "不要把同一答案再说一遍；不要编造“刚才理解错了/没对齐”，除非当前消息明确要求纠正。\n"
+    "- 任务工作流豁免：当前轮次如果是后台 job 回调、任务续跑、或其他内部触发（不是用户直接发的 QQ 消息），" "且任务工作流仍在执行中（未到汇报步骤），禁止调用 `mcp_robot_send_message`。" "静默推进 workflow，只在汇报步骤、最终失败、或重大方向变更时才发 QQ。\n"
 )
 ROBOT_LONG_TERM_MEMORY_INSTRUCTION = (
     "Robot long-term memory:\n"
@@ -236,8 +237,10 @@ def build_robot_history_prompt(agent: Agent, *, has_robot_context: bool) -> str:
     return "\n\n".join([ROBOT_MESSAGING_PROMPT, ROBOT_LONG_TERM_MEMORY_INSTRUCTION, ROBOT_BACKEND_CONTEXT_PROMPT])
 
 
-def build_robot_delivery_reflection_prompt(final_response: str) -> str:
+def build_robot_delivery_reflection_prompt(final_response: str, *, workflow_active: bool = False) -> str:
     if not is_robot_plugin_enabled():
+        return ""
+    if workflow_active:
         return ""
 
     return (

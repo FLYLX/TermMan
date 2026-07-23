@@ -151,6 +151,24 @@ def _should_send_final_response_fallback(
 class RobotAgentIntegration:
     name = "robot"
 
+    def _is_workflow_active(self, agent: Agent) -> bool:
+        """Check if the current turn has an active task workflow (not at report step)."""
+        try:
+            from app.services.agent.task_workflow import task_workflow_manager
+            context = _robot_context(agent)
+            ticket = str(getattr(context, "reply_ticket_id", "") or "") if context else ""
+            if not ticket:
+                return False
+            workflow = task_workflow_manager.get_by_ticket(ticket)
+            if not workflow or workflow.status not in {"active", "waiting_job", "verifying"}:
+                return False
+            current = workflow.current_step()
+            if current and "汇报" in (current.title or ""):
+                return False
+            return True
+        except Exception:
+            return False
+
     def build_system_prompt(self, agent: Agent) -> str:
         from app.plugins.robot.prompts import build_robot_context_prompt
 
@@ -438,6 +456,8 @@ class RobotAgentIntegration:
         final_response: str,
         retry_used: bool,
     ) -> bool:
+        if self._is_workflow_active(agent):
+            return False
         return (
             is_robot_plugin_enabled()
             and bool(final_response.strip())
@@ -447,10 +467,10 @@ class RobotAgentIntegration:
             and self._has_delivery_context(agent, messages)
         )
 
-    def delivery_correction_message(self, final_response: str) -> dict[str, str]:
+    def delivery_correction_message(self, final_response: str, *, workflow_active: bool = False) -> dict[str, str]:
         from app.plugins.robot.prompts import build_robot_delivery_reflection_prompt
 
-        reflection_prompt = build_robot_delivery_reflection_prompt(final_response)
+        reflection_prompt = build_robot_delivery_reflection_prompt(final_response, workflow_active=workflow_active)
         if reflection_prompt:
             return {"role": "system", "content": reflection_prompt}
 

@@ -651,7 +651,7 @@ class TaskWorkflowManager:
                 if workflow.item_id == str(item_id)
                 and (not source_type or workflow.source_type == str(source_type))
                 and (not source_label or workflow.source_label == str(source_label))
-                and workflow.status in {"blocked", "active", "waiting_job", "verifying"}
+                and workflow.status in {"blocked", "waiting_job"}
             ]
         candidates.sort(key=lambda workflow: workflow.updated_at, reverse=True)
         return candidates
@@ -1266,6 +1266,11 @@ class TaskWorkflowManager:
             )
         if workflow.blocker:
             lines.append(f"- blocker: {workflow.blocker}")
+        if workflow.report_sent_at is not None:
+            lines.append(
+                f"- report_sent_at: {_iso(workflow.report_sent_at)} "
+                "(report already delivered; do NOT send another QQ report)"
+            )
         lines.append("- steps:")
         for index, step in enumerate(workflow.steps, start=1):
             recovery = " recovery" if step.recovery else ""
@@ -1291,53 +1296,30 @@ class TaskWorkflowManager:
             )
         lines.extend(
             [
-                "Non-negotiable workflow rules:",
-                "1. The main_objective is immutable. A source change, apt update, retry, "
-                "download, inspection, or error recovery is only a substep.",
-                "2. After a failed substep, call insert_recovery_step(title='new method'). "
-                "This cancels the failed step, rewrites the next step to the new method, "
-                "and resets all subsequent steps to pending. Do NOT insert multiple recovery "
-                "steps -- one clean retry per failure. Keep the step list short and linear.",
-                "3. After observed evidence, call mcp_local_update_task_workflow to record "
-                "progress or complete the current step. Do not rely on memory to advance it.",
-                "4. Do not give a final completion answer while this workflow is active or "
-                "waiting_job. Finish verification first, or mark a genuine blocker.",
-                "5. When creating a workflow, include a final report step (e.g. 汇报结果到: "
-                "QQ private:xxx) if the user expects to be notified. Skip it if the user says "
-                "no report is needed. Reporting uses tool calls (mcp_robot_send_message etc.), "
-                "not terminal commands. Report ONLY on completion, final failure, or direction change.",
-                "6. Multi-step, asynchronous, or wait-for-response work continues through this "
-                "workflow across turns. Ordinary chat and immediate one-step actions do not "
-                "need a workflow.",
-                "7. Cancelling an obsolete command or background job does not cancel the main "
-                "objective. Use mcp_local_cancel_job for the execution, then continue the workflow. "
-                "Use workflow action=cancel only when the user explicitly abandons the whole goal.",
-                "8. Never ask the user for permission on recoverable decisions (change source, "
-                "try another package name, retry, download tar, etc.). Just do it. Only "
-                "when ALL safe alternatives are exhausted and a genuine user decision is "
-                "required: cancel all running jobs, cancel the workflow, and report the "
-                "situation to return_source so the user can start fresh with a new decision.",
-                "9. Report to the user ONLY on these three events: (a) task completed with verified "
-                "result, (b) task definitively failed with no more methods to try, "
-                "(c) major direction change (method switch via insert_recovery_step). "
-                "Do NOT report intermediate step completions, progress updates, or status "
-                "changes. One concise message per event. Silence during normal execution.",
-                "10. Independent workflows may run background jobs in parallel. Choose the "
-                "execution order yourself from the task plan and current evidence; do not create "
-                "a task-level waiting/blocking state merely because another task is running.",
-                "11. Never leave a task paused because a model turn did not converge. Continue "
-                "automatically within the retry limit; after that, report the actual failure to "
-                "the immutable source and remove the task queue entry.",
-                "12. A repeated request for this same objective reuses this workflow. Read the "
-                "current step, latest_progress, evidence, and running_jobs before acting; never "
-                "restart an operation merely because the user repeated the request.",
-                "13. The final report goes to return_source via the appropriate send tool. "
-                "Send it once; do not duplicate the same report in multiple channels or echo it in the terminal.",
-                "14. Step completion requires fresh evidence from THIS run: a command "
-                "output, exit code, or live check result. Long-term memory and chat history "
-                "answer who/what, never that something is installed, running, or done now. "
-                "Before completing any 检查/验证 step, run the check command and use its "
-                "actual output as evidence.",
+                "不可违反的工作流规则：",
+                "1. main_objective 不可改写。换源、apt update、重试、下载、检查、排错都只是子步骤。",
+                "2. 子步骤失败后调用 insert_recovery_step(title='新方法')。"
+                "它会取消失败步骤、把下一步改写为新方法、重置后续步骤为 pending。"
+                "一次失败只插入一个恢复步骤，保持步骤列表简短线性。",
+                "3. 观察到证据后调用 mcp_local_update_task_workflow 记录进度或完成当前步骤。不要依赖记忆推进。",
+                "4. workflow 处于 active 或 waiting_job 时不要给最终完成回答。先完成验证，或标记真实阻塞。",
+                "5. 创建 workflow 时包含最终汇报步骤（如 汇报结果到: QQ private:xxx）。"
+                "汇报用工具调用（mcp_robot_send_message 等），不是终端命令。"
+                "只在完成、最终失败、重大方向变更时汇报。",
+                "6. 多步骤、异步、等待响应的工作通过 workflow 跨轮次继续。普通聊天和即时单步操作不需要 workflow。",
+                "7. 取消废弃命令或后台 Job 不等于取消主目标。用 mcp_local_cancel_job 取消执行，然后继续 workflow。"
+                "只有用户明确放弃整个目标时才用 action=cancel。",
+                "8. 可恢复的决策（换源、换包名、重试、下载 tar 等）不要问用户。直接做。"
+                "只有所有安全方案耗尽且确实需要用户决定时，才取消所有 Job、取消 workflow、向 return_source 报告。",
+                "9. 只在三种情况向用户汇报：(a) 任务完成并验证，(b) 确定失败且无更多方法，"
+                "(c) 重大方向变更。不要汇报中间步骤完成、进度更新或状态变化。每次事件一条简洁消息。正常执行期间保持沉默。",
+                "10. 独立 workflow 可以并行运行后台 Job。自行决定执行顺序，不要因为另一个任务在运行就创建等待/阻塞状态。",
+                "11. 不要因为模型轮次未收敛就停下。在重试限制内自动继续；超过限制后向不可变来源报告实际失败并移除任务队列条目。",
+                "12. 重复请求同一目标时复用此 workflow。先读取当前步骤、latest_progress、证据和 running_jobs；不要仅因用户重复请求就重新启动操作。",
+                "13. 最终报告通过对应发送工具发往 return_source。只发一次，不要在多个渠道重复或在终端回显。",
+                "14. 步骤完成需要本次运行的新鲜证据：命令输出、退出码或实时检查结果。"
+                "长期记忆和聊天历史只回答“谁/什么”，不能证明某东西现在已安装、运行或完成。"
+                "完成任何检查/验证步骤前，先运行检查命令并用实际输出作为证据。",
             ]
         )
         return "\n".join(lines)

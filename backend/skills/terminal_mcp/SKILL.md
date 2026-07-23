@@ -33,29 +33,14 @@ action:
     - 安装成功必须有终端输出证据；确认成功后调用 `mcp_local_record_installed_software` 记录名称、来源、版本和安装命令。
     - 卸载成功必须有终端输出证据；确认成功后调用 `mcp_local_remove_installed_software` 从清单移除。
     - 清单只记录稳定结果，不记录“正在安装”“命令已发送”“可能安装了”这种未确认状态。
-    使用规则：
-    - 用户询问“终端开了吗 / 终端是否连接 / 控制台能不能用”时，必须先调用 `mcp_local_get_terminal_status`。只有工具明确返回 active=true 才能回答终端已开启；历史日志、Item 的运行状态、旧聊天和缓存 handler 都不能作为在线证据。
-    - 终端命令和后台 Job 都必须通过实时 Socket Room 校验。工具返回“终端未启动或未连接”时，直接如实告知，不能说命令正在执行、正在等待输出或终端只是暂时没回显。
+    使用规则（通用任务工作流、后台 Job、命令反馈、日志过滤等规则已在系统提示中定义，此处只列终端专属规则）：
+    - 用户询问"终端开了吗 / 终端是否连接 / 控制台能不能用"时，必须先调用 `mcp_local_get_terminal_status`。只有工具明确返回 active=true 才能回答终端已开启；历史日志、Item 的运行状态、旧聊天和缓存 handler 都不能作为在线证据。
+    - 终端命令和后台 Job 都必须通过实时 Socket Room 校验。工具返回"终端未启动或未连接"时，直接如实告知，不能说命令正在执行、正在等待输出或终端只是暂时没回显。
     - 只有任务确实需要终端、文件、日志或记忆状态时才调用 MCP。
-    - 没有调用工具时，不要说自己检查、运行、读取或验证了。
-    - 当用户说“刚才”“前面”“之前让你做的”“继续”“上一个任务”“你忘了”“怎么没回”等依赖前文或任务状态的话，优先调用 `mcp_local_get_task_workflow` 恢复不可变主目标和当前步骤；需要补充对话证据时再调用 `mcp_local_read_chat_history`，涉及后台任务归属时再调用 `mcp_local_list_jobs`。
-    - 换源、更新索引、修依赖、重新下载和改变安装方式都是恢复步骤，不是新的主任务。用 `mcp_local_update_task_workflow` 插入恢复步骤，恢复完成后继续原目标并最终验证。
-    - 不要把“下一步执行某命令”“建议改用某包”“要不要继续”当成任务推进。只要安全动作明确且不缺用户输入，就在当前轮直接调用终端或 Job 工具执行。
-    - 取消旧的 apt、下载或安装 Job 只代表废弃当前执行方式；随后应立即按新源/新方法继续不可变主目标。只有用户明确放弃整个目标时才取消 workflow。
-    - “装完跟我说”“完成后通知我”表示后台继续处理且只发最终报告；不要把它理解为暂停或取消，也不要反复发送中间状态。
-    - 执行中的任务状态统一读取任务队列、`mcp_local_get_task_workflow`、reply ticket 和 job snapshot，不要自动把每个执行步骤复制进长期记忆；但你独立判断值得长期保留的任务相关信息仍可主动保存。
-    - `mcp_local_execute_command` 只代表命令已发送，不代表命令成功。
-    - 判断命令是否成功，必须等待终端日志或工具结果。
     - 先判断命令性质，再选工具：需要持续 stdin、需要保留控制台、需要后续输入或用户要继续接管的进程，使用 `mcp_local_execute_command` 在主终端前台运行；能无交互跑完、只需要最终结果的长任务，使用 `mcp_local_run_job`。
     - Minecraft/Forge/Paper/Fabric/类 Minecraft 服务端启动、`./run.sh`、`bash run.sh`、`start.sh`、`java -jar ... nogui`、`java @.../unix_args.txt` 都属于前台交互任务。不要用 `mcp_local_run_job` 启动它们；启动后用同一个主终端继续发送 `op`、`say`、`tell`、`stop` 等控制台命令。
     - 尽量不要拼接 shell 命令；不要默认使用 `&&`、`;`、`||`、管道 `|` 把多个动作塞进一次 `mcp_local_execute_command`。多步操作优先分多次发送单一命令，每一步都根据终端反馈决定下一步。
-    - 下载、安装依赖、构建、测试、解压等非交互式长任务优先用 `mcp_local_run_job`，它只在任务结束后返回最终结果和尾部日志；不要用普通终端输入接收持续进度条。
-    - 不同的后台任务可以并行使用 `mcp_local_run_job`；不要重复启动完全相同的命令。涉及 apt/dpkg 等全局锁的安装任务时，先用 `mcp_local_list_jobs` 看是否已有同类安装，避免锁冲突。
-    - “下载的咋样了 / 到哪了 / 进度多少 / 安装好了吗 / 任务状态”属于即时查询，不创建任务队列记录。优先读取 `mcp_local_list_jobs` 的运行时间与 `output_tail`；若没有后台 Job，再读取当前 workflow/reply ticket，最后才按需读取主终端日志。只汇报现状，不重复启动命令。
-    - Local-directory-first rule: 用户让你看“有什么文件”“服务器文件在哪”“目录输出”“开服”等文件定位问题时，默认以当前工作目录为准，先执行 `pwd` 和 `ls -la`，必要时再用 `find . -maxdepth 2 ...`。不要默认从 `/`、`~`、`/opt`、`/srv` 全盘搜索；只有用户明确要求全盘查找或当前目录证据不足且你已说明要扩大范围时，才扩大检索。
     - 当前台主终端已经是 Minecraft/Java server、REPL、watch/dev server 等交互式控制台时，查看目录、读文件、查版本、看进程等一次性 shell 查询也用 `mcp_local_run_job` 在同一工作目录后台执行，例如 `ls -la`、`pwd`、`find . -maxdepth 2 -type f`、`cat server.properties`、`java -version`；不要把这些 shell 查询发进主控制台。
-    - 如果终端反复输出无关噪声，例如自动备份、心跳、普通插件 INFO、不会影响使用的重复状态行，可以调用 `mcp_local_add_terminal_input_filter_rule` 把它加入“终端输出 -> Agent”过滤器，后续不再喂给 Agent。正则必须具体，避免屏蔽错误、玩家聊天、命令结果。
-    - 不确定现在有哪些过滤规则时，先调用 `mcp_local_list_terminal_filter_rules` 查看 input/output 两类规则；只确认终端输出噪声规则时可调用 `mcp_local_list_terminal_input_filter_rules`。规则误加或过期时，用 `mcp_local_delete_terminal_input_filter_rule` 删除指定规则；需要重建规则集时，用 `mcp_local_clear_terminal_input_filter_rules` 清空后再加。
     - 对容易卡住或需要明确完成信号的命令，调用 `mcp_local_execute_command` 时尽量带 `expected_output` 或 `expected_regex` 和 `timeout_seconds`；预期输出超时未出现时会自动 Ctrl+C。
     - 不要为了普通闲聊调用终端工具。
 safety:

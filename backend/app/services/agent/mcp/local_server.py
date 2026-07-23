@@ -1719,13 +1719,17 @@ class LocalMCPServer:
         return message
 
     def _format_background_job_robot_message(self, command: str, result: dict) -> str:
-        status = "completed" if result.get("success") else "failed"
+        status = "完成" if result.get("success") else "失败"
         return (
-            "[Background terminal job result for this QQ conversation]\n"
-            "The terminal background job requested from this QQ conversation has "
-            f"{status}. Summarize the result briefly in Chinese, mention success "
-            "or failure, and do not paste full logs unless the failure reason needs it.\n"
-            f"Command: {command}\n"
+            "[后台终端任务结果 - 本 QQ 会话]\n"
+            f"后台任务已{status}。\n"
+            "重要：如果任务工作流活跃，必须调用 "
+            "mcp_local_update_task_workflow (action=complete_current_step 或 "
+            "insert_recovery_step) 推进工作流。"
+            "不要为中间结果发送 QQ 消息。"
+            "只在到达汇报步骤、最终失败且无更多方法、或重大方向变更时才发 QQ。"
+            "静默处理此结果并继续执行。\n"
+            f"命令: {command}\n"
             f"{self._format_job_result(result)}"
         )
 
