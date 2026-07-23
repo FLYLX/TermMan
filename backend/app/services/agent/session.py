@@ -2573,7 +2573,10 @@ class AgentSession:
                         self.emit_output(final_content, "agent_response")
                     break
 
-                next_messages = self._handle_tool_calls(agent, loop, messages, message, turn_guard)
+                next_messages = self._handle_tool_calls(
+                    agent, loop, messages, message, turn_guard,
+                    reply_ticket_id=input_msg.reply_ticket_id,
+                )
                 if next_messages is None:
                     break
                 messages = next_messages
@@ -3071,6 +3074,12 @@ class AgentSession:
                         self.item_id,
                         reply_ticket_id,
                     )
+                    # Fallback: force-complete workflow directly if
+                    # mark_delivered failed, to prevent report loops.
+                    try:
+                        task_workflow_manager.on_delivery(reply_ticket_id)
+                    except Exception:
+                        pass
 
                 self.emit_output(
                     robot_reply_event_content(tool_args, result_text),
@@ -3083,7 +3092,7 @@ class AgentSession:
                 # Report sent and workflow completed -- stop the turn
                 # immediately to prevent duplicate reports.
                 _wf_after = task_workflow_manager.get_by_ticket(reply_ticket_id)
-                if _wf_after and _wf_after.status in {"completed", "cancelled", "failed"}:
+                if not _wf_after or _wf_after.status in {"completed", "cancelled", "failed"}:
                     return None
             command_dispatch_failed = is_command_dispatch_failure_result(
                 tool_name,

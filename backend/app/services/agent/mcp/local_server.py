@@ -1720,7 +1720,9 @@ class LocalMCPServer:
         if result.get("success"):
             return (
                 "[Background terminal job completed]\n"
-                "后台任务已完成，请根据最终结果继续处理后续步骤。\n"
+                "后台任务已完成。你必须立即调用 mcp_local_update_task_workflow "
+                "(action=complete_current_step 或 insert_recovery_step) 推进工作流。"
+                "不要只描述结果而不操作。\n"
                 f"{self._format_job_result(result)}"
             )
         return (
