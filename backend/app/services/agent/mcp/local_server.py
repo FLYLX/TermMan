@@ -134,7 +134,7 @@ def flush_background_job_results_for_entries(
                             f"finished/delivered for ticket={entry_ticket}, item={item_id}"
                         )
                         flushed_any = True
-                        break
+                        continue
                 except Exception as exc:
                     debug_log(
                         f"[LocalMCPServer] job-result turn guard error: ticket={entry_ticket}, error={exc}"

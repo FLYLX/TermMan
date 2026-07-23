@@ -2955,6 +2955,19 @@ class AgentSession:
             robot_delivery_result = self._is_successful_robot_send(
                 tool_name, result_text
             )
+            # Once the agent attempts a report send while the workflow is
+            # ready_to_report, force-complete the workflow regardless of
+            # send success/failure. The report is a notification, not a
+            # gate -- this prevents infinite retry loops on send errors.
+            if (
+                tool_name == ROBOT_SEND_TOOL_NAME
+                and reply_ticket_id
+                and not robot_delivery_result
+            ):
+                _wf = task_workflow_manager.get_by_ticket(reply_ticket_id)
+                if _wf and _wf.status == "ready_to_report":
+                    task_workflow_manager.on_delivery(reply_ticket_id)
+                    robot_delivery_result = True
             delivery_is_final = True
             if robot_delivery_result:
                 delivery_is_final, _ = task_workflow_manager.can_finalize(

@@ -632,6 +632,16 @@ class RobotService:
                             "generation": job.conversation_generation,
                         },
                     )
+                    self._clear_reply_context_window_for_key(
+                        job.robot_id,
+                        job.conversation_key,
+                        reason="dispatch_skipped_stale_generation",
+                        expected_generation=job.conversation_generation or None,
+                    )
+                    self._enqueue_pending_chat_followup(
+                        robot=robot,
+                        conversation_key=job.conversation_key,
+                    )
                     return
                 chat_message = self._prepare_queued_chat_message(
                     robot=robot,
