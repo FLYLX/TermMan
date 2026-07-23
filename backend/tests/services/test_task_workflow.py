@@ -40,7 +40,10 @@ def test_recovery_step_returns_to_immutable_main_objective() -> None:
 
     assert inserted is True
     assert workflow.objective == "安装 Temurin Java 17，使用可用的国内源"
+    # Failed step is cancelled, next step is rewritten to the new method
+    assert workflow.steps[0].status == "cancelled"
     assert workflow.current_step().recovery is True
+    assert workflow.current_step().title == "切换到可用的国内软件源并更新索引"
 
     manager.update(
         "ticket-java",
@@ -48,13 +51,9 @@ def test_recovery_step_returns_to_immutable_main_objective() -> None:
         note="国内源已写入，apt-get update 成功",
     )
 
-    assert workflow.current_step().title == "安装 Temurin Java 17"
-    assert workflow.current_step().status == "running"
+    # After completing recovery, workflow is ready to report (no more steps)
+    assert workflow.status == "ready_to_report"
     assert workflow.objective == "安装 Temurin Java 17，使用可用的国内源"
-
-    can_finalize, correction = manager.can_finalize("ticket-java")
-    assert can_finalize is False
-    assert "安装 Temurin Java 17" in correction
 
 
 def test_workflow_completes_only_after_verification_and_delivery() -> None:

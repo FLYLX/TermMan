@@ -278,7 +278,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="execute_command",
-            description="在主终端前台执行命令，你拥有这个进程的管理权。使用场景：进程启动后你还需要继续与它交互——向它发送后续输入、回应提示、观察实时输出、或保持一个长期运行的进程（服务器、REPL、控制台）以便之后发指令。判断标准：这个命令执行后会不会进入一个等待你输入的状态？会不会是一个你需要持续管理的进程？是→execute_command，否→run_job。如果主终端正在运行一个交互式进程（如MC服务器），execute_command就是向那个进程发控制台指令。调试技巧：如果一个 run_job 失败了（比如解压出错），你可以在主终端重新跑同样的命令来观察完整的交互输出以定位问题。一次只发一条命令，发错了用 interrupt_command (Ctrl+C) 中断再重来。",
+            description="在主终端前台执行命令，你拥有这个进程的管理权。使用场景：进程启动后你还需要继续与它交互——向它发送后续输入、回应提示、观察实时输出、或保持一个长期运行的进程（服务器、REPL、控制台）以便之后发指令。判断标准：这个命令执行后会不会进入一个等待你输入的状态？会不会是一个你需要持续管理的进程？是→execute_command，否→run_job。????????wget/curl??????apt-get install -y?pip install??apt update??????????????ls/cat/find/grep???????java -version??????????????????? run_job?如果主终端正在运行一个交互式进程（如MC服务器），execute_command就是向那个进程发控制台指令。调试技巧：如果一个 run_job 失败了（比如解压出错），你可以在主终端重新跑同样的命令来观察完整的交互输出以定位问题。一次只发一条命令，发错了用 interrupt_command (Ctrl+C) 中断再重来。",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -405,8 +405,10 @@ class LocalMCPServer:
             description=(
                 "Update the authoritative task state after observing real evidence. "
                 "The main objective cannot be replaced. Complete the current step only "
-                "after evidence, insert a recovery step when changing source/method, and "
-                "mark blocked only when user or external input is genuinely required. "
+                "after evidence. When a step fails, use insert_recovery_step(title='new method') "
+                "which cancels the failed step, rewrites the next step to the new method, and "
+                "resets all subsequent steps to pending -- keeping the plan short and linear. "
+                "Mark blocked only when user or external input is genuinely required. "
                 "Action=cancel cancels the whole objective and is allowed only when the user "
                 "explicitly abandons it; use cancel_job to stop an obsolete execution while "
                 "keeping the main objective active. Updating workflow state is not execution, "

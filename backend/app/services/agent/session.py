@@ -1999,35 +1999,105 @@ class AgentSession:
             pass
 
     def process_queue(self):
+        """Drain all pending inputs, merge into one batch, process as a single turn."""
         while True:
+            batch: list[InputMessage] = []
+            # Drain: first item with 1s timeout, then 0.3s to collect stragglers
             try:
-                input_msg = self.input_queue.get(timeout=1)
+                first = self.input_queue.get(timeout=1)
+                batch.append(first)
             except queue.Empty:
                 with self.lock:
                     self.state = SessionState.IDLE
                 self._emit_idle_or_waiting_status(0)
                 return
+            while True:
+                try:
+                    batch.append(self.input_queue.get(timeout=0.3))
+                except queue.Empty:
+                    break
 
-            if (
-                input_msg.input_type != InputType.SCHEDULED_TASK
-                and not input_msg.reply_ticket_id
-                and (datetime.now() - input_msg.timestamp).total_seconds() > 60
-            ):
-                logger.debug(f"[AgentSession] Skipping stale input for item {self.item_id}")
+            # Filter stale inputs
+            batch = [msg for msg in batch if not self._is_stale_input(msg)]
+            if not batch:
                 continue
 
-            self._begin_turn(input_msg)
+            merged = batch[0] if len(batch) == 1 else self._merge_input_batch(batch)
 
+            self._begin_turn(merged)
             process_error = ""
             try:
-                self._process_input(input_msg)
+                self._process_input(merged)
             except Exception as exc:
                 process_error = str(exc)
                 logger.error(f"[AgentSession] Error processing queue: {exc}")
                 self.emit_output(f"处理失败: {exc}", "agent_error")
             finally:
                 self._finish_turn()
-                self._notify_input_complete(input_msg, not process_error, process_error)
+                for msg in batch:
+                    self._notify_input_complete(msg, not process_error, process_error)
+
+    def _is_stale_input(self, input_msg: InputMessage) -> bool:
+        if input_msg.input_type == InputType.SCHEDULED_TASK:
+            return False
+        if input_msg.reply_ticket_id:
+            return False
+        return (datetime.now() - input_msg.timestamp).total_seconds() > 60
+
+    def _merge_input_batch(self, batch: list[InputMessage]) -> InputMessage:
+        """Merge multiple queued inputs into a single InputMessage."""
+        source_labels = {
+            InputType.TERMINAL: "终端输出",
+            InputType.CHAT: "聊天消息",
+            InputType.SCHEDULED_TASK: "定时任务",
+            InputType.TASK_CONTINUATION: "任务续跑",
+        }
+        sections: list[str] = []
+        for msg in batch:
+            label = source_labels.get(msg.input_type, msg.input_type.value)
+            body = (msg.content or msg.raw_content or "").strip()
+            if not body:
+                continue
+            query_hint = f" ({msg.query})" if msg.query and msg.query != body else ""
+            sections.append(f"[{label}{query_hint}]" + "\n" + body)
+
+        combined_content = "\n---\n".join(sections) if sections else ""
+
+        # Pick primary reply_ticket: prefer one with an active workflow
+        primary_ticket = ""
+        try:
+            from app.services.agent.task_workflow import task_workflow_manager
+            for msg in batch:
+                ticket = str(msg.reply_ticket_id or "").strip()
+                if not ticket:
+                    continue
+                workflow = task_workflow_manager.get_by_ticket(ticket)
+                if workflow and workflow.status in {"active", "verifying", "waiting_job", "ready_to_report"}:
+                    primary_ticket = ticket
+                    break
+        except Exception:
+            pass
+        if not primary_ticket:
+            for msg in reversed(batch):
+                if msg.reply_ticket_id:
+                    primary_ticket = msg.reply_ticket_id
+                    break
+
+        # Use the last callback (most recent sender expects a reply)
+        last_callback = None
+        for msg in reversed(batch):
+            if msg.callback:
+                last_callback = msg.callback
+                break
+
+        return InputMessage(
+            input_type=InputType.TERMINAL,
+            content=combined_content,
+            raw_content=combined_content,
+            query=f"batch:{len(batch)} inputs merged",
+            reply_ticket_id=primary_ticket,
+            callback=last_callback,
+        )
 
     def process_input(self, input_msg: InputMessage):
         with self.lock:

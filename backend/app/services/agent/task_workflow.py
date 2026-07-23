@@ -858,28 +858,26 @@ class TaskWorkflowManager:
                 workflow.latest_progress = note or workflow.latest_progress
             elif normalized_action == "insert_recovery_step":
                 recovery_title = str(title or note or "Recovery step").strip()[:180]
-                existing_recovery = next(
-                    (
-                        candidate
-                        for candidate in workflow.steps
-                        if candidate.title == recovery_title
-                        and candidate.status not in {"completed", "cancelled"}
-                    ),
-                    None,
-                )
-                if existing_recovery is not None:
-                    # Same recovery already exists: resume it instead of
-                    # bloating the plan with duplicate recovery steps.
-                    if step and step is not existing_recovery:
-                        step.status = "waiting"
-                    workflow.current_step_index = workflow.steps.index(existing_recovery)
-                    existing_recovery.status = "running"
-                    workflow.status = "active"
-                    workflow.blocker = ""
-                    workflow.latest_progress = f"Recovery step resumed: {recovery_title}"
+                error_summary = str(note or "").strip()[:300]
+                # Cancel the failed step with error summary
+                if step:
+                    step.status = "cancelled"
+                    step.last_error = error_summary or "failed"
+                    step.evidence = ""
+                # Reset ALL subsequent steps to waiting (fix stale completed state)
+                for idx in range(workflow.current_step_index + 1, len(workflow.steps)):
+                    workflow.steps[idx].status = "waiting"
+                    workflow.steps[idx].evidence = ""
+                    workflow.steps[idx].last_error = ""
+                # Rewrite the next step's title to reflect the new method
+                next_index = workflow.current_step_index + 1
+                if next_index < len(workflow.steps):
+                    workflow.steps[next_index].title = recovery_title
+                    workflow.steps[next_index].status = "running"
+                    workflow.steps[next_index].recovery = True
+                    workflow.current_step_index = next_index
                 else:
-                    if step:
-                        step.status = "waiting"
+                    # No next step exists: append one
                     recovery = WorkflowStep(
                         step_id=uuid.uuid4().hex[:12],
                         title=recovery_title,
@@ -887,10 +885,11 @@ class TaskWorkflowManager:
                         note=note,
                         recovery=True,
                     )
-                    workflow.steps.insert(workflow.current_step_index, recovery)
-                    workflow.status = "active"
-                    workflow.blocker = ""
-                    workflow.latest_progress = f"Recovery step added: {recovery_title}"
+                    workflow.steps.append(recovery)
+                    workflow.current_step_index = len(workflow.steps) - 1
+                workflow.status = "active"
+                workflow.blocker = ""
+                workflow.latest_progress = f"Method changed: {recovery_title}"
             elif normalized_action == "mark_ready_to_report":
                 incomplete = [
                     task
@@ -1170,8 +1169,10 @@ class TaskWorkflowManager:
                 "Non-negotiable workflow rules:",
                 "1. The main_objective is immutable. A source change, apt update, retry, "
                 "download, inspection, or error recovery is only a substep.",
-                "2. After a failed substep, adapt the method and continue the same objective. "
-                "Use mcp_local_update_task_workflow(action=insert_recovery_step) when needed.",
+                "2. After a failed substep, call insert_recovery_step(title='new method'). "
+                "This cancels the failed step, rewrites the next step to the new method, "
+                "and resets all subsequent steps to pending. Do NOT insert multiple recovery "
+                "steps -- one clean retry per failure. Keep the step list short and linear.",
                 "3. After observed evidence, call mcp_local_update_task_workflow to record "
                 "progress or complete the current step. Do not rely on memory to advance it.",
                 "4. Do not give a final completion answer while this workflow is active or "
