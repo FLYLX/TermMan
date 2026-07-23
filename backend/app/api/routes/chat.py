@@ -2596,36 +2596,79 @@ async def chat_stream(
     session: SessionDep,
     current_user: CurrentUser,
 ):
-    prepared = _require_chat_handler(session, item_id, current_user)
-    lease = await agent_turn_coordinator.acquire_async(
-        agent_turn_key(str(prepared[0].id))
-    )
-    try:
-        handler, _, agent = await prepare_chat_agent(
-            session,
-            item_id,
-            current_user,
-            prepared=prepared,
-        )
-    except Exception:
-        lease.release()
-        raise
+    import queue as _queue
 
-    def serialized_stream() -> Generator[str, None, None]:
+    prepared = _require_chat_handler(session, item_id, current_user)
+    handler, _, agent = await prepare_chat_agent(
+        session,
+        item_id,
+        current_user,
+        prepared=prepared,
+    )
+
+    from app.services.agent.session import agent_session_manager
+
+    agent_session = agent_session_manager.get_or_create_session(
+        item_id, str(handler.id)
+    )
+
+    sse_queue: _queue.Queue[dict | None] = _queue.Queue(maxsize=200)
+
+    def _on_output(event: dict) -> None:
         try:
-            yield from generate_stream(
-                message=request.message,
-                history=request.history,
-                handler=handler,
-                item_id=item_id,
-                agent=agent,
-                turn_serialized=True,
-            )
+            sse_queue.put_nowait(event)
+        except _queue.Full:
+            pass
+
+    def _on_complete(success: bool, error: str = "") -> None:
+        if not success and error:
+            try:
+                sse_queue.put_nowait(
+                    {"type": "agent_error", "content": error}
+                )
+            except _queue.Full:
+                pass
+        sse_queue.put(None)
+
+    user_event = _persist_and_broadcast_event(
+        item_id,
+        role="user",
+        content=request.message,
+        message_type="chat_user",
+    )
+
+    agent_session.add_output_callback(_on_output)
+    agent_session_manager.process_chat_message(
+        item_id,
+        str(handler.id),
+        request.message,
+        callback=_on_complete,
+        query=request.message,
+    )
+
+    def queued_stream() -> Generator[str, None, None]:
+        try:
+            yield _to_sse(user_event)
+            while True:
+                try:
+                    event = sse_queue.get(timeout=180)
+                except _queue.Empty:
+                    yield _to_sse(
+                        {
+                            "type": "agent_warning",
+                            "content": "Response timed out. The agent may be busy with another task.",
+                        }
+                    )
+                    break
+                if event is None:
+                    break
+                yield _to_sse(event)
+            yield _to_sse({"done": True})
         finally:
-            lease.release()
+            agent_session.remove_output_callback(_on_output)
 
     return StreamingResponse(
-        serialized_stream(),
+        queued_stream(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

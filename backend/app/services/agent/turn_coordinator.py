@@ -70,11 +70,21 @@ class AgentTurnCoordinator:
                 self._condition.wait()
         return AgentTurnLease(self, normalized_key, token)
 
-    async def acquire_async(self, key: str) -> AgentTurnLease:
+    async def acquire_async(self, key: str, timeout_seconds: float = 150.0) -> AgentTurnLease:
         normalized_key = str(key)
         token = self._enqueue(normalized_key)
+        import time as _time
+
+        deadline = _time.monotonic() + timeout_seconds
         try:
             while not self._try_claim(normalized_key, token):
+                if _time.monotonic() > deadline:
+                    self._cancel_waiter(normalized_key, token)
+                    raise TimeoutError(
+                        f"Turn coordinator: timed out waiting for lock "
+                        f"after {timeout_seconds}s (key={normalized_key}). "
+                        f"A previous turn may be stuck on an LLM call."
+                    )
                 await asyncio.sleep(0.025)
         except BaseException:
             self._cancel_waiter(normalized_key, token)
