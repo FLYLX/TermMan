@@ -94,22 +94,47 @@ def flush_background_job_results_for_entries(
 
     if robot_entries:
         first = robot_entries[0]
-        if len(robot_entries) == 1:
-            message = server._format_background_job_robot_message(
-                first["command"],
-                first["result"],
-            )
+        robot_ticket = first.get("reply_ticket_id") or ""
+        skip_robot = False
+        if robot_ticket:
+            try:
+                from app.services.agent.task_workflow import task_workflow_manager
+
+                if not task_workflow_manager.job_result_needs_new_turn(robot_ticket):
+                    debug_log(
+                        f"[LocalMCPServer] skip robot job-result: workflow "
+                        f"finished/delivered for ticket={robot_ticket}, item={item_id}"
+                    )
+                    skip_robot = True
+                else:
+                    _wf = task_workflow_manager.get_by_ticket(robot_ticket)
+                    if _wf and getattr(_wf, "report_sent_at", None) is not None:
+                        debug_log(
+                            f"[LocalMCPServer] skip robot job-result: report already "
+                            f"sent for ticket={robot_ticket}, item={item_id}"
+                        )
+                        skip_robot = True
+            except Exception:
+                pass
+        if not skip_robot:
+            if len(robot_entries) == 1:
+                message = server._format_background_job_robot_message(
+                    first["command"],
+                    first["result"],
+                )
+            else:
+                message = _format_background_job_results_batch(robot_entries)
+            flushed_any = server._deliver_background_job_to_robot(
+                item_id=item_id,
+                command=first["command"],
+                result=first["result"],
+                robot_job_context=first["robot_job_context"],
+                pending_reply_id=first.get("pending_robot_reply_id") or "",
+                reply_ticket_id=robot_ticket,
+                message_override=message,
+            ) or flushed_any
         else:
-            message = _format_background_job_results_batch(robot_entries)
-        flushed_any = server._deliver_background_job_to_robot(
-            item_id=item_id,
-            command=first["command"],
-            result=first["result"],
-            robot_job_context=first["robot_job_context"],
-            pending_reply_id=first.get("pending_robot_reply_id") or "",
-            reply_ticket_id=first.get("reply_ticket_id") or "",
-            message_override=message,
-        ) or flushed_any
+            flushed_any = True
 
     if other_entries:
         message = (

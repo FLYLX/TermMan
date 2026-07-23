@@ -1002,6 +1002,7 @@ class AgentSession:
                             "source": "workflow",
                             "job_id": wf_job.workflow_job_id,
                         }
+
         except Exception:
             pass
 
