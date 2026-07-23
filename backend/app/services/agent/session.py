@@ -920,6 +920,22 @@ class AgentSession:
             if self._normalize_text(job_command) == normalized_command:
                 return dict(job)
 
+        try:
+            for workflow in task_workflow_manager.list_resumable(item_id=self.item_id):
+                for wf_job in workflow.jobs:
+                    if (
+                        wf_job.status == "running"
+                        and self._normalize_text(wf_job.command) == normalized_command
+                    ):
+                        return {
+                            "command": wf_job.command,
+                            "elapsed_seconds": 0,
+                            "source": "workflow",
+                            "job_id": wf_job.workflow_job_id,
+                        }
+        except Exception:
+            pass
+
         return None
 
     def _build_duplicate_background_job_warning(

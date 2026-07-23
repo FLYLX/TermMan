@@ -751,6 +751,53 @@ class TaskWorkflowManager:
             workflow.updated_at = _utcnow()
             _persist_workflow(workflow)
 
+    def register_job_start(
+        self,
+        ticket_id: str,
+        *,
+        command: str,
+        workflow_id: str = "",
+    ) -> str:
+        """Register a background job as running immediately when it starts.
+
+        This closes the gap between run_job being called and the job result
+        arriving: the workflow status flips to waiting_job and the prompt
+        context shows the running job, so the agent does not start a
+        duplicate command in the next turn.
+        """
+        with self._lock:
+            workflow = (
+                self._workflows.get(str(workflow_id or ""))
+                if workflow_id
+                else None
+            ) or self.get_by_ticket(ticket_id)
+            if not workflow:
+                return ""
+            normalized_command = str(command or "").strip()
+            already_running = any(
+                job.status == "running" and job.command == normalized_command
+                for job in workflow.jobs
+            )
+            if already_running:
+                return ""
+            step = workflow.current_step()
+            job = WorkflowJob(
+                workflow_job_id=uuid.uuid4().hex[:12],
+                command=normalized_command,
+                step_id=step.step_id if step else "",
+                workflow_id=workflow.workflow_id,
+                status="running",
+            )
+            workflow.jobs.append(job)
+            if step:
+                step.status = "running"
+            workflow.status = "waiting_job"
+            workflow.blocker = ""
+            workflow.latest_progress = f"Background job started: {normalized_command}"
+            workflow.updated_at = _utcnow()
+            _persist_workflow(workflow)
+            return job.workflow_job_id
+
     def record_job_result(
         self,
         ticket_id: str,

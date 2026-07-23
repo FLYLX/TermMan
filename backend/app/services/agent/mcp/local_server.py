@@ -1303,6 +1303,11 @@ class LocalMCPServer:
                     _wf = _twm.get_by_ticket(reply_ticket_id)
                     if _wf:
                         job_workflow_id = _wf.workflow_id
+                        _twm.register_job_start(
+                            reply_ticket_id,
+                            command=command,
+                            workflow_id=job_workflow_id,
+                        )
                 except Exception:
                     pass
 
