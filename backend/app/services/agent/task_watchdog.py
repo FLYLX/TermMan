@@ -246,10 +246,16 @@ def _reconcile_waiting_job_workflows(now: datetime, stats: dict[str, int]) -> No
                 workflow_id=workflow.workflow_id,
             )
             stats["reconciled"] += 1
-        if (recovered or lost_jobs) and _schedule_workflow_continuation(
-            workflow.item_id, ticket_id
-        ):
-            stats["resumed"] += 1
+        if recovered or lost_jobs:
+            with task_workflow_manager._lock:
+                if workflow.status == "waiting_job" and not any(
+                    j.status == "running" for j in workflow.jobs
+                ):
+                    workflow.status = "active"
+                    workflow.updated_at = _utcnow()
+                    from app.services.agent.task_workflow import _persist_workflow
+                    _persist_workflow(workflow)
+            stats["reconciled"] += 1
 
 
 def _item_has_live_execution(item_id: str) -> bool:
@@ -441,10 +447,9 @@ def run_once(now: datetime | None = None) -> dict[str, int]:
         _dedupe_memory_clusters(now, stats)
     except Exception:
         logger.exception("[TaskWatchdog] Memory dedup pass failed")
-    try:
-        _reconcile_waiting_job_workflows(now, stats)
-    except Exception:
-        logger.exception("[TaskWatchdog] Waiting-job reconciliation failed")
+    # Disabled: job results are delivered by the poller thread callback.
+    # Watchdog reconciliation caused ghost "result lost" failures and
+    # auto-resumed workflows against the callback-driven design.
     try:
         _resume_stalled_active_workflows(now, stats)
     except Exception:

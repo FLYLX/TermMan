@@ -2268,6 +2268,15 @@ class AgentSession:
             self._process_chat_input(input_msg, agent)
 
     def _process_terminal_input(self, input_msg: InputMessage, agent: Agent):
+        if input_msg.reply_ticket_id:
+            _wf = task_workflow_manager.get_by_ticket(input_msg.reply_ticket_id)
+            if _wf and _wf.status in {"completed", "cancelled", "failed"}:
+                logger.info(
+                    "[AgentSession] Skipping callback for finished workflow: "
+                    "item=%s ticket=%s status=%s",
+                    self.item_id, input_msg.reply_ticket_id, _wf.status,
+                )
+                return
         internal_task_continuation = (
             input_msg.input_type == InputType.TASK_CONTINUATION
         )
