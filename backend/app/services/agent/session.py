@@ -2561,27 +2561,17 @@ class AgentSession:
                     break
                 messages = next_messages
             else:
-                can_finalize, _ = task_workflow_manager.can_finalize(
+                has_running_jobs = task_workflow_manager.has_running_jobs(
                     input_msg.reply_ticket_id
                 )
-                if not can_finalize:
-                    continuation_scheduled = (
-                        self.schedule_task_workflow_continuation(
-                            input_msg.reply_ticket_id
-                        )
+                if not has_running_jobs:
+                    can_finalize, _ = task_workflow_manager.can_finalize(
+                        input_msg.reply_ticket_id
                     )
-                    if not continuation_scheduled:
-                        has_running_jobs = task_workflow_manager.has_running_jobs(
-                            input_msg.reply_ticket_id
+                    if not can_finalize:
+                        terminal_failure_report = (
+                            "任务未能完成：本轮未启动后台任务且无法继续推进，已停止。重新发送指令可继续。"
                         )
-                        if not has_running_jobs:
-                            terminal_failure_report = (
-                                "任务未能完成：多次自动尝试后仍无法叕得进展，已移除该任务。"
-                            )
-                else:
-                    terminal_failure_report = (
-                        "任务未能完成：Agent 达到本轮处理次数上限，已停止该任务。"
-                    )
 
             if terminal_failure_report:
                 self._fail_and_report_pending_reply(
@@ -3402,32 +3392,16 @@ class AgentSession:
             )
 
     def _schedule_delayed_retry(self, ticket_id: str, delay_seconds: float = 10.0):
-        """Retry after a transient LLM error WITHOUT consuming auto-resume attempts."""
-        normalized = str(ticket_id or "").strip()
-        if not normalized:
-            return
+        """Disabled: callback-driven design. LLM errors are reported, not auto-retried.
 
-        def _delayed():
-            import time
-            time.sleep(delay_seconds)
-            wf = task_workflow_manager.get_by_ticket(normalized)
-            if not wf or wf.status in {"completed", "cancelled", "failed"}:
-                return
-            if wf.delivered_at is not None:
-                return
-            input_msg = InputMessage(
-                input_type=InputType.TASK_CONTINUATION,
-                content=(
-                    "[Internal retry after transient LLM error]\n"
-                    "Resume the authoritative workflow from its current step. Execute one "
-                    "concrete safe action now; do not provide a next-step narration."
-                ),
-                query="Resume the unfinished authoritative task workflow with one concrete action.",
-                reply_ticket_id=normalized,
-            )
-            self.process_input(input_msg)
-
-        threading.Thread(target=_delayed, daemon=True).start()
+        Background job results are the only mechanism that starts new turns.
+        Auto-retry threads caused ghost tasks after user cancellation.
+        """
+        logger.info(
+            "[AgentSession] Transient LLM error for ticket=%s; NOT auto-retrying "
+            "(callback-driven design). The next job callback will resume the workflow.",
+            ticket_id,
+        )
 
     def is_idle(self) -> bool:
         with self.lock:
