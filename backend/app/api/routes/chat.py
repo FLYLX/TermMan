@@ -2612,22 +2612,16 @@ async def chat_stream(
         item_id, str(handler.id)
     )
 
-    sse_queue: _queue.Queue[dict | None] = _queue.Queue(maxsize=200)
+    sse_queue: _queue.Queue[dict | None] = _queue.Queue()
 
     def _on_output(event: dict) -> None:
-        try:
-            sse_queue.put_nowait(event)
-        except _queue.Full:
-            pass
+        sse_queue.put_nowait(event)
 
     def _on_complete(success: bool, error: str = "") -> None:
         if not success and error:
-            try:
-                sse_queue.put_nowait(
-                    {"type": "agent_error", "content": error}
-                )
-            except _queue.Full:
-                pass
+            sse_queue.put_nowait(
+                {"type": "agent_error", "content": error}
+            )
         sse_queue.put(None)
 
     user_event = _persist_and_broadcast_event(
@@ -2637,13 +2631,20 @@ async def chat_stream(
         message_type="chat_user",
     )
 
-    agent_session.add_output_callback(_on_output)
-    agent_session_manager.process_chat_message(
-        item_id,
-        str(handler.id),
-        request.message,
-        callback=_on_complete,
+    from app.services.agent.session import InputMessage, InputType
+
+    input_msg = InputMessage(
+        input_type=InputType.CHAT,
+        content=request.message,
         query=request.message,
+        completion_callback=_on_complete,
+    )
+    agent_session.add_output_callback(_on_output)
+    import asyncio as _aio
+
+    await _aio.get_event_loop().run_in_executor(
+        None,
+        lambda: agent_session.process_input(input_msg),
     )
 
     def queued_stream() -> Generator[str, None, None]:

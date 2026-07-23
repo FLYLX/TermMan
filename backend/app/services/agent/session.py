@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import hashlib
 import json
 import logging
@@ -133,6 +134,44 @@ def _is_transient_llm_error(exc: BaseException) -> bool:
         "zaiexception",
     )
     return any(marker in msg for marker in transient_markers)
+
+
+
+class _ManagedEventLoop:
+    """Context manager for a thread-local event loop with safe cleanup.
+
+    Prevents 'Cannot run the event loop while another loop is running' by
+    verifying no loop is active, and always cleans up on exit so stale
+    loop references never leak into the next turn.
+    """
+
+    def __init__(self):
+        self.loop: asyncio.AbstractEventLoop | None = None
+
+    def __enter__(self) -> asyncio.AbstractEventLoop:
+        try:
+            asyncio.get_running_loop()
+            raise RuntimeError(
+                "AgentSession turn called from an async context. "
+                "Use run_in_executor or process_input (queue-driven) instead."
+            )
+        except RuntimeError as exc:
+            if "no running event loop" not in str(exc).lower() and "no current event loop" not in str(exc).lower():
+                raise
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+        return self.loop
+
+    def __exit__(self, *exc_info):
+        if self.loop is not None:
+            try:
+                if not self.loop.is_closed():
+                    self.loop.close()
+            except Exception:
+                pass
+            asyncio.set_event_loop(None)
+            self.loop = None
+        return False
 
 
 TERMINAL_BUSY_COMMAND_PATTERNS = (
@@ -2335,10 +2374,9 @@ class AgentSession:
             return
 
         transient_integration_tools_added = False
-        loop = None
+        _loop_mgr = _ManagedEventLoop()
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            loop = _loop_mgr.__enter__()
             if pending_integration_contexts:
                 setup_integration_chat_contexts(agent, pending_integration_contexts)
             loop.run_until_complete(agent.start_mcp_servers())
@@ -2556,8 +2594,9 @@ class AgentSession:
                 clear_integration_chat_contexts(agent, pending_integration_contexts)
             if transient_integration_tools_added:
                 clear_terminal_alert_integration_tools(agent)
-            loop.close()
+            _loop_mgr.__exit__(None, None, None)
         except Exception as exc:
+            _loop_mgr.__exit__(*sys.exc_info())
             logger.error(f"[AgentSession] Terminal processing error: {exc}")
             if _is_transient_llm_error(exc) and input_msg.reply_ticket_id:
                 logger.info(
@@ -2587,8 +2626,7 @@ class AgentSession:
                 clear_terminal_alert_integration_tools(agent)
             if pending_integration_contexts:
                 clear_integration_chat_contexts(agent, pending_integration_contexts)
-            if loop is not None and not loop.is_closed():
-                loop.close()
+            _loop_mgr.__exit__(None, None, None)
 
     def _process_chat_input(self, input_msg: InputMessage, agent: Agent):
         if input_msg.callback:
@@ -2598,8 +2636,8 @@ class AgentSession:
             clear_robot_context = getattr(agent, "clear_robot_context", None)
             if callable(clear_robot_context):
                 clear_robot_context()
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            _chat_loop_mgr = _ManagedEventLoop()
+            loop = _chat_loop_mgr.__enter__()
             loop.run_until_complete(agent.start_mcp_servers())
 
             messages = self._build_chat_messages(agent, input_msg)
@@ -2648,8 +2686,9 @@ class AgentSession:
                     break
                 messages = next_messages
 
-            loop.close()
+            _chat_loop_mgr.__exit__(None, None, None)
         except Exception as exc:
+            _chat_loop_mgr.__exit__(*sys.exc_info())
             logger.error(f"[AgentSession] Chat processing error: {exc}")
             self.emit_output(f"处理失败: {exc}", "agent_error")
 
