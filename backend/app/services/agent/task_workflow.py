@@ -904,7 +904,7 @@ class TaskWorkflowManager:
             job.completed_at = _utcnow()
             step = workflow.resolve_step_for_job(job)
             if step and not success:
-                step.status = "failed"
+                step.status = "cancelled"
                 step.last_error = job.result_summary
             elif step:
                 step.status = "running"
