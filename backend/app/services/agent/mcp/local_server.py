@@ -437,10 +437,12 @@ class LocalMCPServer:
             name="update_task_workflow",
             description=(
                 "Create or update the authoritative task workflow. "
-                "Any task that will take more than 3 steps (install, uninstall, configure, "
-                "download, verify, report, etc.) MUST have a workflow so the user can track "
-                "progress in the task queue. Call this tool at the START of such tasks to "
-                "create the workflow with planned steps. "
+                "When you receive a task that will take more than 3 steps, YOU must call "
+                "this tool with action=create FIRST to create a workflow with planned steps. "
+                "Use title='step1|step2|step3' to define steps (pipe-separated). "
+                "Use note for the main objective. "
+                "The user sees workflow progress in the task queue, so always create one "
+                "for multi-step tasks. "
                 "The main objective cannot be replaced. Complete the current step only "
                 "after evidence. When a step fails, use insert_recovery_step(title='new method') "
                 "which cancels the failed step, rewrites the next step to the new method, and "
@@ -1143,6 +1145,16 @@ class LocalMCPServer:
             step_index = None
             if raw_step_index is not None:
                 step_index = int(raw_step_index)
+            task_workflow_manager._last_item_id = item_id
+            task_workflow_manager._last_handler_id = str(args.get("_handler_id") or "")
+            if not task_workflow_manager._last_handler_id:
+                try:
+                    from app.services.agent.session import agent_session_manager
+                    _sess = agent_session_manager.get_session(item_id)
+                    if _sess:
+                        task_workflow_manager._last_handler_id = _sess.handler_id
+                except Exception:
+                    pass
             success, detail = task_workflow_manager.update(
                 reply_ticket_id,
                 action=str(args.get("action") or ""),

@@ -942,10 +942,51 @@ class TaskWorkflowManager:
     ) -> tuple[bool, str]:
         normalized_action = str(action or "").strip().lower()
         note = str(note or "").strip()[:2000]
+
+        if normalized_action == "create":
+            step_titles = [
+                s.strip()[:180]
+                for s in str(title or "").split("|")
+                if s.strip()
+            ]
+            if not step_titles:
+                step_titles = ["Execute the requested operation", "Verify the result"]
+            agent = None
+            try:
+                from app.services.agent.session import agent_session_manager
+                sess = agent_session_manager.get_session(
+                    str(getattr(self, "_last_item_id", "") or "")
+                )
+                if sess:
+                    agent = sess.get_agent()
+            except Exception:
+                pass
+            source_type = "web"
+            source_label = "TermMan web chat"
+            if agent:
+                ctx = getattr(agent, "_context", None)
+                if ctx and getattr(ctx, "robot_id", ""):
+                    source_type = "qq"
+                    source_label = f"QQ {getattr(ctx, 'robot_conversation_key', '') or 'chat'}"
+            wf = self.create(
+                item_id=str(getattr(self, "_last_item_id", "") or ""),
+                handler_id=str(getattr(self, "_last_handler_id", "") or ""),
+                reply_ticket_id=ticket_id,
+                objective=note or "Task",
+                source_type=source_type,
+                source_label=source_label,
+                step_titles=step_titles,
+            )
+            context = self.build_prompt_context(
+                item_id=wf.item_id,
+                reply_ticket_id=ticket_id,
+            )
+            return True, f"created\n{context}"
+
         with self._lock:
             workflow = self.get_by_ticket(ticket_id)
             if not workflow:
-                return False, "No active task workflow is linked to this reply ticket."
+                return False, "No active task workflow is linked to this reply ticket. Call with action=create first to create one."
             step = workflow.current_step()
 
             if normalized_action == "record_progress":

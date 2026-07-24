@@ -869,13 +869,7 @@ def _should_create_task_workflow(message: str, tools: list[dict[str, Any]]) -> b
         or TASK_WORKFLOW_VAGUE_COMMAND_RE.fullmatch(text)
     ):
         return False
-    return bool(
-        TASK_WORKFLOW_REQUEST_RE.search(text)
-        or TASK_WORKFLOW_CONTINUATION_RE.search(text)
-        or TASK_WORKFLOW_CHANGE_RE.search(text)
-        or TASK_WORKFLOW_PAUSE_RE.search(text)
-        or TASK_WORKFLOW_EXECUTION_COMMIT_RE.search(text)
-    )
+    return True
 
 
 def _is_same_task_follow_up(message: str, objective: str) -> bool:
@@ -1012,7 +1006,9 @@ def _create_agent_task_plan(
     if TASK_WORKFLOW_VAGUE_COMMAND_RE.fullmatch(task_message):
         return None
     if not _should_create_task_workflow(task_message, tools):
+        logger.info("[Chat] _should_create_task_workflow=False for %r", task_message[:60])
         return None
+    logger.info("[Chat] _should_create_task_workflow=True for %r", task_message[:60])
     resumable = next(
         (
             candidate
@@ -1135,10 +1131,8 @@ def _create_agent_task_plan(
             request_id=resumable.workflow_id,
             workflow_id=resumable.workflow_id,
         )
-    if not TASK_WORKFLOW_REQUEST_RE.search(task_message):
-        return None
-
     task_titles = _plan_agent_task_titles(handler, task_message, history)
+    logger.info("[Chat] _create_agent_task_plan: message=%r titles=%s", task_message[:60], task_titles)
     if not task_titles:
         return None
 
@@ -1543,16 +1537,6 @@ def _generate_stream_unserialized(
     )
 
     planned_task_runtime = None
-    if not internal_agent_callback:
-        planned_task_runtime = _create_agent_task_plan(
-            item_id,
-            handler=handler,
-            agent=agent,
-            message=message,
-            history=history,
-            tools=tools,
-            reply_ticket_id=reply_ticket.ticket_id,
-        )
     if planned_task_runtime:
         planned_task_runtime.reply_ticket_id = reply_ticket.ticket_id
         reply_ticket_manager.mark_task_plan(
