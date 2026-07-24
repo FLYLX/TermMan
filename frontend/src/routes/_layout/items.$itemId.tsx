@@ -23,6 +23,7 @@ import {
   Trash2,
   Users,
   WifiOff,
+  X,
 } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -1280,7 +1281,7 @@ function TaskWorkflowStepIcon({ status }: { status: string }) {
     return <Circle className="size-3 shrink-0 text-amber-500" />
   }
   if (status === "cancelled") {
-    return <Circle className="size-3 shrink-0 text-muted-foreground line-through" />
+    return <X className="size-3 shrink-0 text-red-400/70" />
   }
   return <Circle className="size-3 shrink-0 text-muted-foreground" />
 }
@@ -1404,7 +1405,7 @@ function TaskWorkflowPanel({
                       >
                         <TaskWorkflowStepIcon status={step.status} />
                         <span
-                          className={`truncate ${step.status === "completed" ? "text-slate-500 line-through" : "text-slate-300"}`}
+                          className={`truncate ${step.status === "completed" || step.status === "cancelled" ? "text-slate-500 line-through" : "text-slate-300"}`}
                         >
                           {step.title}
                         </span>

@@ -321,12 +321,12 @@ def _close_stale_workflow(workflow: Any, stats: dict[str, int], *, now: datetime
             action="cancel",
             note=f"Stale {workflow.status} workflow closed by watchdog.",
         )
-    else:
-        with task_workflow_manager._lock:
+    with task_workflow_manager._lock:
+        if workflow.status not in {"cancelled", "completed", "failed"}:
             workflow.status = "cancelled"
             workflow.blocker = "Closed by watchdog: stale non-final workflow."
             workflow.updated_at = now
-        workflow_module._persist_workflow(workflow)
+    workflow_module._persist_workflow(workflow)
     stats["closed"] += 1
 
     if not ticket_id:

@@ -61,9 +61,7 @@ def test_qq_reply_ticket_snapshot_keeps_request_and_route_until_delivery() -> No
         snapshot = manager.snapshot("item-1")
         assert len(snapshot) == 1
         assert snapshot[0]["status"] == "completed"
-        assert snapshot[0]["request_message"] == (
-            "[CQ:at,qq=2900669542] install temurin 17"
-        )
+        assert snapshot[0]["request_message"] == "install temurin 17"
         assert snapshot[0]["sender_label"] == "FLY (2537134688)"
         assert snapshot[0]["conversation_key"] == "group:770362397"
 
@@ -278,6 +276,11 @@ def test_intermediate_delivery_cannot_close_active_task_workflow() -> None:
         ticket.ticket_id,
         action="complete_current_step",
         note="Java installed",
+    )
+    task_workflow_manager.record_tool_call(
+        ticket.ticket_id,
+        tool_name="mcp_local_run_job",
+        command="java -version",
     )
     task_workflow_manager.update(
         ticket.ticket_id,

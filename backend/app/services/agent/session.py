@@ -158,6 +158,15 @@ class _ManagedEventLoop:
         except RuntimeError as exc:
             if "no running event loop" not in str(exc).lower() and "no current event loop" not in str(exc).lower():
                 raise
+        # Close any stale event loop left over from a previous crashed turn
+        # so asyncio.new_event_loop() + run_until_complete() never hits
+        # "Cannot run the event loop while another loop is running".
+        try:
+            stale = asyncio.get_event_loop_policy().get_event_loop()
+            if stale is not None and not stale.is_running() and not stale.is_closed():
+                stale.close()
+        except Exception:
+            pass
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
         return self.loop
@@ -2232,6 +2241,9 @@ class AgentSession:
     def _process_input_serialized(self, input_msg: InputMessage):
         if input_msg.callback:
             self.add_output_callback(input_msg.callback)
+        from app.services.agent.stream_manager import stream_manager as _sm
+        for _cb in _sm._get_callbacks(self.item_id):
+            self.add_output_callback(_cb)
         agent = self.get_agent()
         if not agent:
             self.emit_output("Agent 不可用", "agent_error")
@@ -2431,6 +2443,7 @@ class AgentSession:
             terminal_delivery_retry_used = False
             integration_tool_results: list[str] = []
             terminal_failure_report = ""
+            _response_emitted_in_loop = False
 
             for iteration_index in range(MAX_ITERATIONS):
                 timed_out, timeout_reason = turn_guard.check_timeout()
@@ -2448,11 +2461,24 @@ class AgentSession:
                     self.emit_status("interrupted", "当前轮已中断")
                     break
 
+                finalization_only = False
                 if iteration_index == MAX_ITERATIONS - 1:
                     can_finalize, _ = task_workflow_manager.can_finalize(
                         input_msg.reply_ticket_id
                     )
-                    if not can_finalize:
+                    if can_finalize:
+                        finalization_only = True
+                        messages.append(
+                            {
+                                "role": "system",
+                                "content": (
+                                    "The tool-call budget is finished. Do not call any more "
+                                    "tools. Use the latest confirmed tool results to give the "
+                                    "user one concise final answer now."
+                                ),
+                            }
+                        )
+                    else:
                         messages.append(
                             {
                                 "role": "system",
@@ -2466,16 +2492,20 @@ class AgentSession:
                             }
                         )
 
-                response = self._call_llm(agent, messages, tools=tools)
+                iteration_tools = [] if finalization_only else tools
+                response = self._call_llm(agent, messages, tools=iteration_tools)
                 message = self._normalize_dsml_tool_message(
                     response.choices[0].message,
                     tools,
                 )
 
                 if not (hasattr(message, "tool_calls") and message.tool_calls):
-                    if message.content:
+                    raw_content = message.content or ""
+                    if not raw_content and hasattr(message, "reasoning_content"):
+                        raw_content = ""
+                    if raw_content:
                         final_content = guard_ungrounded_tool_claim(
-                            message.content,
+                            raw_content,
                             tool_called=turn_guard.tool_call_count > 0,
                         )
                         can_finalize, workflow_correction = (
@@ -2535,6 +2565,7 @@ class AgentSession:
                         ):
                             break
                         self.emit_output(final_content, "agent_response")
+                        _response_emitted_in_loop = True
                         if reply_ticket and reply_ticket.source_type == "web":
                             try:
                                 from app.services.agent.reply_ticket import (
@@ -2554,6 +2585,27 @@ class AgentSession:
                             input_msg.reply_ticket_id,
                             success=True,
                         )
+                    else:
+                        if turn_guard.tool_call_count > 0 and iteration_index < MAX_ITERATIONS - 1:
+                            messages.append(
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "Your previous response had no visible text content. "
+                                        "Summarize the tool results for the user in one or two "
+                                        "sentences now. Do not call any tools."
+                                    ),
+                                }
+                            )
+                            continue
+                        workflow = task_workflow_manager.get_by_ticket(
+                            input_msg.reply_ticket_id
+                        )
+                        if workflow and workflow.latest_progress:
+                            self.emit_output(
+                                workflow.latest_progress,
+                                "agent_response",
+                            )
                     break
 
                 next_messages = self._handle_tool_calls(
@@ -2589,6 +2641,19 @@ class AgentSession:
                     report=terminal_failure_report,
                     reason=terminal_failure_report,
                 )
+            elif input_msg.reply_ticket_id and not _response_emitted_in_loop:
+                _wf_done = task_workflow_manager.get_by_ticket(
+                    input_msg.reply_ticket_id
+                )
+                if (
+                    _wf_done
+                    and _wf_done.status in {"ready_to_report", "completed", "cancelled"}
+                    and _wf_done.latest_progress
+                ):
+                    self.emit_output(
+                        _wf_done.latest_progress,
+                        "agent_response",
+                    )
 
             if pending_integration_contexts:
                 clear_integration_chat_contexts(agent, pending_integration_contexts)

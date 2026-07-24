@@ -698,7 +698,8 @@ class TaskWorkflowManager:
             step = workflow.current_step()
             if step:
                 step.status = "running"
-                step.attempts += 1
+                if _is_verification_step(step):
+                    step.attempts += 1
                 step.last_error = ""
             workflow.status = (
                 "waiting_job"
@@ -720,6 +721,13 @@ class TaskWorkflowManager:
         with self._lock:
             workflow = self.get_by_ticket(ticket_id)
             if not workflow:
+                return ""
+            normalized_command = str(command or "").strip()[:2000]
+            already_running = any(
+                job.status == "running" and job.command == normalized_command
+                for job in workflow.jobs
+            )
+            if already_running:
                 return ""
             step = workflow.current_step()
             job = WorkflowJob(
@@ -946,7 +954,8 @@ class TaskWorkflowManager:
                     step.note = note
                     if step.status == "failed":
                         step.status = "running"
-                workflow.status = "active"
+                if workflow.status not in {"ready_to_report", "reporting", "completed", "cancelled", "failed"}:
+                    workflow.status = "active"
                 workflow.blocker = ""
             elif normalized_action == "complete_current_step":
                 if step and _is_verification_step(step) and step.attempts <= 0:
@@ -989,29 +998,30 @@ class TaskWorkflowManager:
                     step.note = note or step.note
                 else:
                     if step:
-                        step.status = "cancelled"
+                        if _is_verification_step(step):
+                            step.status = "waiting"
+                        else:
+                            step.status = "cancelled"
                         step.last_error = error_summary or "failed"
                         step.evidence = ""
+                    for other in workflow.steps:
+                        if other.status == "running" and other is not step:
+                            other.status = "cancelled"
                     for idx in range(workflow.current_step_index + 1, len(workflow.steps)):
-                        workflow.steps[idx].status = "waiting"
+                        if workflow.steps[idx].status != "cancelled":
+                            workflow.steps[idx].status = "waiting"
                         workflow.steps[idx].evidence = ""
                         workflow.steps[idx].last_error = ""
                     next_index = workflow.current_step_index + 1
-                    if next_index < len(workflow.steps):
-                        workflow.steps[next_index].title = recovery_title
-                        workflow.steps[next_index].status = "running"
-                        workflow.steps[next_index].recovery = True
-                        workflow.current_step_index = next_index
-                    else:
-                        recovery = WorkflowStep(
-                            step_id=uuid.uuid4().hex[:12],
-                            title=recovery_title,
-                            status="running",
-                            note=note,
-                            recovery=True,
-                        )
-                        workflow.steps.append(recovery)
-                        workflow.current_step_index = len(workflow.steps) - 1
+                    recovery = WorkflowStep(
+                        step_id=uuid.uuid4().hex[:12],
+                        title=recovery_title,
+                        status="running",
+                        note=note,
+                        recovery=True,
+                    )
+                    workflow.steps.insert(next_index, recovery)
+                    workflow.current_step_index = next_index
                 workflow.status = "active"
                 workflow.blocker = ""
                 workflow.latest_progress = f"Method changed: {recovery_title}"
@@ -1320,12 +1330,15 @@ class TaskWorkflowManager:
                 "失败步骤被划掉(cancelled)，下一步改写为新方法，从新方法继续线性执行。"
                 "如果当前步骤已经是恢复步骤，再次失败时原地更新标题和方法，不再堆叠新步骤。"
                 "任何情况下不允许从任务内部衍生新任务或新 workflow。",
+                "2b. 一个恢复方法至少尝试一次完整执行后才能判定失败。"
+                "不要在同一步里反复切换方法（例如 APT 源→tarball→GitHub→APT 源）。"
+                "选定一个方法后先执行到底，确实失败再换。"
                 "3. 观察到证据后调用 mcp_local_update_task_workflow 记录进度或完成当前步骤。不要依赖记忆推进。",
                 "4. workflow 处于 active 或 waiting_job 时不要给最终完成回答。先完成验证，或标记真实阻塞。",
                 "5. 创建 workflow 时包含最终汇报步骤（如 汇报结果到: QQ private:xxx）。"
                 "汇报用工具调用（mcp_robot_send_message 等），不是终端命令。"
                 "只在完成、最终失败、重大方向变更时汇报。",
-                "6. 多步骤、异步、等待响应的工作通过 workflow 跨轮次继续。普通聊天和即时单步操作不需要 workflow。",
+                "6. 预计超过 3 步（含安装、卸载、配置、验证等）的任务必须创建 workflow，让用户在任务队列里看到进度。异步、等待响应的工作也通过 workflow 跨轮次继续。普通聊天和 3 步以内的即时操作不需要 workflow。",
                 "7. 取消废弃命令或后台 Job 不等于取消主目标。用 mcp_local_cancel_job 取消执行，然后继续 workflow。"
                 "只有用户明确放弃整个目标时才用 action=cancel。",
                 "8. 可恢复的决策（换源、换包名、重试、下载 tar 等）不要问用户。直接做。"

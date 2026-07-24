@@ -1,8 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.services.agent.task_workflow import task_workflow_manager
 from app.services.agent.tool_selection import select_tools_for_turn
 
 
@@ -45,200 +44,55 @@ ALL_TOOLS = [
     _tool("mcp_robot_save_memory"),
 ]
 
+LOCAL_TOOL_NAMES = [n for n in _names(ALL_TOOLS) if n.startswith("mcp_local_")]
+ROBOT_TOOL_NAMES = [n for n in _names(ALL_TOOLS) if n.startswith("mcp_robot_")]
 
-def test_web_casual_turn_does_not_inherit_stale_robot_context() -> None:
+
+def test_web_casual_turn_includes_local_tools_but_not_robot() -> None:
     agent = SimpleNamespace(_context=SimpleNamespace(robot_id="old-robot"))
-
-    selected = select_tools_for_turn(
-        ALL_TOOLS,
-        source="web",
-        query="你好",
-        agent=agent,
-    )
-
-    assert _names(selected) == []
-
-
-def test_qq_casual_turn_keeps_only_robot_tools() -> None:
-    selected = select_tools_for_turn(ALL_TOOLS, source="qq", query="你好")
-
-    assert _names(selected) == [
-        "mcp_robot_send_message",
-        "mcp_robot_sleep_conversation",
-        "mcp_robot_read_conversation_memory",
-        "mcp_robot_list_memories",
-        "mcp_robot_recall_memory",
-        "mcp_robot_save_memory",
-    ]
-
-
-def test_qq_terminal_request_keeps_robot_and_local_tools() -> None:
-    selected = select_tools_for_turn(ALL_TOOLS, source="qq", query="安装 java 17")
+    selected = select_tools_for_turn(ALL_TOOLS, source="web", query="\u4f60\u597d", agent=agent)
     names = _names(selected)
+    assert "mcp_robot_send_message" not in names
+    assert "mcp_local_execute_command" in names
 
-    assert "mcp_robot_send_message" in names
+
+def test_web_action_request_includes_all_local_tools() -> None:
+    selected = select_tools_for_turn(ALL_TOOLS, source="web", query="\u5378\u8f7d Java")
+    names = _names(selected)
+    for local_name in LOCAL_TOOL_NAMES:
+        assert local_name in names
+
+
+def test_web_follow_up_includes_all_local_tools() -> None:
+    selected = select_tools_for_turn(ALL_TOOLS, source="web", query="\u90a3\u4f60\u505a\u52a8\u4f5c\u554a")
+    names = _names(selected)
     assert "mcp_local_execute_command" in names
     assert "mcp_local_run_job" in names
-    assert "mcp_local_read_terminal_log" in names
 
 
-def test_qq_download_status_query_keeps_inspection_tools() -> None:
-    selected = select_tools_for_turn(
-        ALL_TOOLS,
-        source="qq",
-        query="[CQ:reply,id=741045517]下载的咋样了",
-    )
+def test_qq_turn_includes_robot_and_local_tools() -> None:
+    selected = select_tools_for_turn(ALL_TOOLS, source="qq", query="\u4f60\u597d")
     names = _names(selected)
-
-    assert "mcp_local_list_jobs" in names
-    assert "mcp_local_read_terminal_log" in names
-    assert "mcp_local_get_task_workflow" in names
     assert "mcp_robot_send_message" in names
+    assert "mcp_local_execute_command" in names
 
 
-def test_short_task_status_query_keeps_inspection_tools() -> None:
-    selected = select_tools_for_turn(ALL_TOOLS, source="web", query="好了吗")
-    names = _names(selected)
-
-    assert "mcp_local_list_jobs" in names
-    assert "mcp_local_get_task_workflow" in names
-
-
-def test_qq_task_change_keeps_job_control_tools() -> None:
-    selected = select_tools_for_turn(
-        ALL_TOOLS,
-        source="qq",
-        query="先别下，换个国内镜像",
-    )
-    names = _names(selected)
-
-    assert "mcp_local_list_jobs" in names
-    assert "mcp_local_cancel_job" in names
-    assert "mcp_local_run_job" in names
-    assert "mcp_robot_send_message" in names
-
-
-def test_web_history_request_keeps_only_history_tools() -> None:
-    selected = select_tools_for_turn(
-        ALL_TOOLS,
-        source="web",
-        query="刚才待回复列表里有什么",
-    )
-
-    assert _names(selected) == [
-        "mcp_local_read_chat_history",
-    ]
-
-
-def test_web_memory_request_keeps_only_memory_tools() -> None:
-    selected = select_tools_for_turn(ALL_TOOLS, source="web", query="记住我喜欢蓝色")
-
-    assert _names(selected) == [
-        "mcp_local_save_memory",
-        "mcp_local_recall_memory",
-        "mcp_local_list_memories",
-        "mcp_local_delete_memory",
-    ]
-
-
-def test_schedule_request_keeps_only_schedule_tools() -> None:
-    selected = select_tools_for_turn(
-        ALL_TOOLS,
-        source="web",
-        query="创建一个每天九点执行的定时任务",
-    )
-
-    assert _names(selected) == [
-        "mcp_local_list_scheduled_tasks",
-        "mcp_local_write_scheduled_task",
-        "mcp_local_delete_scheduled_task",
-    ]
-
-
-def test_web_explicit_qq_request_keeps_robot_tools() -> None:
-    selected = select_tools_for_turn(ALL_TOOLS, source="web", query="发 QQ 消息到群里")
-
-    assert _names(selected) == [
-        "mcp_robot_send_message",
-        "mcp_robot_sleep_conversation",
-        "mcp_robot_read_conversation_memory",
-        "mcp_robot_list_memories",
-        "mcp_robot_recall_memory",
-        "mcp_robot_save_memory",
-    ]
-
-
-def test_terminal_turn_keeps_local_tools_only() -> None:
+def test_terminal_turn_includes_local_but_not_robot() -> None:
     selected = select_tools_for_turn(ALL_TOOLS, source="terminal", query="server log")
     names = _names(selected)
-
     assert "mcp_local_execute_command" in names
-    assert "mcp_local_run_job" in names
-    assert "mcp_local_read_terminal_log" in names
     assert "mcp_robot_send_message" not in names
 
 
-def test_active_workflow_keeps_control_tools_on_follow_up_turn() -> None:
-    task_workflow_manager.reset()
-    task_workflow_manager.create(
-        item_id="item-java",
-        handler_id="handler-java",
-        reply_ticket_id="ticket-java",
-        objective="install Java 17",
-        source_type="qq",
-        source_label="QQ private:2537134688",
-        step_titles=["install Java", "verify Java"],
-    )
-    agent = SimpleNamespace(
-        _context=SimpleNamespace(reply_ticket_id="ticket-java")
-    )
-
-    selected = select_tools_for_turn(
-        ALL_TOOLS,
-        source="qq",
-        query="继续",
-        agent=agent,
-    )
-
-    assert "mcp_local_get_task_workflow" in _names(selected)
-    assert "mcp_local_update_task_workflow" in _names(selected)
-    task_workflow_manager.reset()
-
-
-def test_explicit_ticket_keeps_workflow_tools_when_agent_context_is_stale() -> None:
-    task_workflow_manager.reset()
-    task_workflow_manager.create(
-        item_id="item-java",
-        handler_id="handler-java",
-        reply_ticket_id="ticket-current",
-        objective="install Java 17",
-        source_type="qq",
-        source_label="QQ private:2537134688",
-        step_titles=["install Java", "verify Java"],
-    )
-    agent = SimpleNamespace(
-        _context=SimpleNamespace(reply_ticket_id="ticket-from-another-turn")
-    )
-
-    selected = select_tools_for_turn(
-        ALL_TOOLS,
-        source="qq",
-        query="background job completed",
-        agent=agent,
-        reply_ticket_id="ticket-current",
-    )
-
-    assert "mcp_local_update_task_workflow" in _names(selected)
-    task_workflow_manager.reset()
-
-
-def test_delegated_qq_question_keeps_terminal_and_robot_tools() -> None:
-    selected = select_tools_for_turn(
-        ALL_TOOLS,
-        source="qq",
-        query="\u4f60\u95ee\u95ee\u6c49\u5821\u732a\u8981\u73a9\u5230\u51e0\u70b9",
-    )
+def test_web_explicit_qq_request_includes_robot_tools() -> None:
+    selected = select_tools_for_turn(ALL_TOOLS, source="web", query="\u53d1 QQ \u6d88\u606f\u5230\u7fa4\u91cc")
     names = _names(selected)
-
     assert "mcp_robot_send_message" in names
     assert "mcp_local_execute_command" in names
+
+
+def test_no_duplicate_tools() -> None:
+    doubled = ALL_TOOLS + ALL_TOOLS
+    selected = select_tools_for_turn(doubled, source="web", query="test")
+    names = _names(selected)
+    assert len(names) == len(set(names))

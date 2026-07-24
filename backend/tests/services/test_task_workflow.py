@@ -40,10 +40,13 @@ def test_recovery_step_returns_to_immutable_main_objective() -> None:
 
     assert inserted is True
     assert workflow.objective == "安装 Temurin Java 17，使用可用的国内源"
-    # Failed step is cancelled, next step is rewritten to the new method
+    # Failed step is cancelled, recovery step is INSERTED (not overwriting)
     assert workflow.steps[0].status == "cancelled"
     assert workflow.current_step().recovery is True
     assert workflow.current_step().title == "切换到可用的国内软件源并更新索引"
+    # The original verification step is preserved after the recovery step
+    assert len(workflow.steps) == 3
+    assert workflow.steps[2].title == "验证 java -version"
 
     manager.update(
         "ticket-java",
@@ -51,9 +54,23 @@ def test_recovery_step_returns_to_immutable_main_objective() -> None:
         note="国内源已写入，apt-get update 成功",
     )
 
-    # After completing recovery, workflow is ready to report (no more steps)
-    assert workflow.status == "ready_to_report"
+    # After completing recovery, advances to the preserved verification step
+    assert workflow.status == "active"
+    assert workflow.current_step().title == "验证 java -version"
     assert workflow.objective == "安装 Temurin Java 17，使用可用的国内源"
+
+    # Complete verification to reach ready_to_report
+    manager.record_tool_call(
+        "ticket-java",
+        tool_name="mcp_local_run_job",
+        command="java -version",
+    )
+    manager.update(
+        "ticket-java",
+        action="complete_current_step",
+        note='openjdk version "17.0.12"',
+    )
+    assert workflow.status == "ready_to_report"
 
 
 def test_workflow_completes_only_after_verification_and_delivery() -> None:
@@ -68,6 +85,11 @@ def test_workflow_completes_only_after_verification_and_delivery() -> None:
     assert workflow.status == "active"
     assert workflow.current_step().title == "验证 java -version"
 
+    manager.record_tool_call(
+        "ticket-java",
+        tool_name="mcp_local_run_job",
+        command="java -version",
+    )
     manager.update(
         "ticket-java",
         action="complete_current_step",

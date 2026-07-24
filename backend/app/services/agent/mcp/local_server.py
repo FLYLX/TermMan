@@ -436,7 +436,11 @@ class LocalMCPServer:
         self.register_tool(
             name="update_task_workflow",
             description=(
-                "Update the authoritative task state after observing real evidence. "
+                "Create or update the authoritative task workflow. "
+                "Any task that will take more than 3 steps (install, uninstall, configure, "
+                "download, verify, report, etc.) MUST have a workflow so the user can track "
+                "progress in the task queue. Call this tool at the START of such tasks to "
+                "create the workflow with planned steps. "
                 "The main objective cannot be replaced. Complete the current step only "
                 "after evidence. When a step fails, use insert_recovery_step(title='new method') "
                 "which cancels the failed step, rewrites the next step to the new method, and "
@@ -1311,19 +1315,6 @@ class LocalMCPServer:
                         if active_wf is not None:
                             task_workflow_manager.attach_ticket(
                                 active_wf.workflow_id, reply_ticket_id
-                            )
-                        else:
-                            task_workflow_manager.create(
-                                item_id=str(item_id),
-                                handler_id=ticket.handler_id,
-                                reply_ticket_id=reply_ticket_id,
-                                objective=f"后台任务：{command[:200]}",
-                                source_type=ticket.source_type,
-                                source_label=ticket.source_label,
-                                step_titles=[
-                                    f"Run background job: {command[:120]}",
-                                    "Report job result",
-                                ],
                             )
                 except Exception as exc:
                     debug_log(

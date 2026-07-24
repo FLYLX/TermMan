@@ -118,8 +118,9 @@ TERMINAL_ACTION_EVIDENCE_TOOLS = {
     "mcp_local_cancel_job",
 }
 INTERNAL_QQ_BACKGROUND_JOB_PREFIX = (
-    "[Background terminal job result for this QQ conversation]"
+    "[后台终端任务结果 - 本 QQ 会话]"
 )
+INTERNAL_QQ_BACKGROUND_JOB_BATCH_PREFIX = "[Background job results batch:"
 INTERNAL_AGENT_RETRY_PREFIX = "[Internal corrective turn]"
 CURRENT_QQ_MESSAGE_MARKER = "[Current QQ message]"
 CQ_CODE_RE = re.compile(r"\[CQ:[^\]]+\]", re.IGNORECASE)
@@ -214,8 +215,10 @@ def _is_internal_agent_callback(message: str, source_type: str) -> bool:
     if str(source_type or "").strip().lower() != SOURCE_QQ:
         return False
     text = str(message or "").lstrip()
-    return text.startswith(INTERNAL_QQ_BACKGROUND_JOB_PREFIX) or text.startswith(
-        INTERNAL_AGENT_RETRY_PREFIX
+    return (
+        text.startswith(INTERNAL_QQ_BACKGROUND_JOB_PREFIX)
+        or text.startswith(INTERNAL_QQ_BACKGROUND_JOB_BATCH_PREFIX)
+        or text.startswith(INTERNAL_AGENT_RETRY_PREFIX)
     )
 
 
@@ -2425,6 +2428,24 @@ def _generate_stream_unserialized(
 
             messages.append(assistant_message)
             messages.extend(tool_messages)
+
+            recovery_inserted = any(
+                tc.get("function", {}).get("name") == "mcp_local_update_task_workflow"
+                and "insert_recovery_step" in str(tc.get("function", {}).get("arguments", ""))
+                for tc in assistant_message.get("tool_calls", [])
+            )
+            if recovery_inserted:
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "A recovery step was just created. You MUST immediately call "
+                            "an execution tool (mcp_local_run_job or mcp_local_execute_command) "
+                            "to start the recovery action. Do NOT reply with text, a plan, "
+                            "or a status update. Call the tool NOW."
+                        ),
+                    }
+                )
 
         logger.warning(
             "[Chat] Tool iteration budget exhausted item=%s ticket=%s iterations=%s",
