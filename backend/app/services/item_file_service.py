@@ -98,7 +98,7 @@ class ItemFileService:
         }
         return self._post_internal(item, f"/api/internal/items/{item.id}/files/delete", json=payload)
 
-    def issue_download_ticket(self, *, item: Item, actor_user_id: str, path: str) -> dict[str, Any]:
+    def issue_download_ticket(self, *, item: Item, actor_user_id: str, path: str, request_host: str = "") -> dict[str, Any]:
         normalized_path = self._normalize_path(path, allow_root=False)
         ticket_info = auth_service.generate_file_ticket(
             item_uuid=str(item.id),
@@ -115,8 +115,8 @@ class ItemFileService:
             "expires_in": ticket_info["expires_in"],
             "item_uuid": str(item.id),
             "path": normalized_path,
-            "daemon_url": self._daemon_public_base_url(item),
-            "url": f"{self._daemon_public_base_url(item)}/api/files/download",
+            "daemon_url": self._daemon_public_base_url(item, request_host),
+            "url": f"{self._daemon_public_base_url(item, request_host)}/api/files/download",
         }
 
     def issue_upload_ticket(
@@ -126,6 +126,7 @@ class ItemFileService:
         actor_user_id: str,
         path: str,
         allow_overwrite: bool = False,
+        request_host: str = "",
     ) -> dict[str, Any]:
         normalized_path = self._normalize_path(path, allow_root=False)
         ticket_info = auth_service.generate_file_ticket(
@@ -145,8 +146,8 @@ class ItemFileService:
             "item_uuid": str(item.id),
             "path": normalized_path,
             "allow_overwrite": allow_overwrite,
-            "daemon_url": self._daemon_public_base_url(item),
-            "url": f"{self._daemon_public_base_url(item)}/api/files/upload",
+            "daemon_url": self._daemon_public_base_url(item, request_host),
+            "url": f"{self._daemon_public_base_url(item, request_host)}/api/files/upload",
         }
 
     def _post_internal(self, item: Item, route_path: str, json: dict[str, Any]) -> dict[str, Any]:
@@ -194,11 +195,11 @@ class ItemFileService:
         return f"http://{item.socket_host}:{item.socket_port}"
 
     @staticmethod
-    def _daemon_public_base_url(item: Item) -> str:
+    def _daemon_public_base_url(item: Item, request_host: str = "") -> str:
         public_url = (settings.DAEMON_PUBLIC_URL or "").strip().rstrip("/")
         if public_url:
             return public_url
-        host = (settings.DAEMON_PUBLIC_HOST or "").strip() or "localhost"
+        host = (settings.DAEMON_PUBLIC_HOST or "").strip() or request_host or "localhost"
         port = settings.DAEMON_PUBLIC_PORT or settings.DAEMON_HOST_PORT or item.socket_port or 9000
         return f"http://{host}:{port}"
 

@@ -764,6 +764,7 @@ def write_item_file_content(
 
 @router.post("/{id}/files/download-ticket")
 def issue_item_download_ticket(
+    request: Request,
     session: SessionDep,
     current_user: CurrentUser,
     id: uuid.UUID,
@@ -779,6 +780,7 @@ def issue_item_download_ticket(
             item=item,
             actor_user_id=str(current_user.id),
             path=body.path,
+            request_host=request.url.hostname or "",
         )
     except ItemFileServiceError as error:
         raise HTTPException(status_code=error.status_code, detail=error.message)
@@ -786,6 +788,7 @@ def issue_item_download_ticket(
 
 @router.post("/{id}/files/upload-ticket")
 def issue_item_upload_ticket(
+    request: Request,
     session: SessionDep,
     current_user: CurrentUser,
     id: uuid.UUID,
@@ -802,6 +805,7 @@ def issue_item_upload_ticket(
             actor_user_id=str(current_user.id),
             path=body.path,
             allow_overwrite=body.allow_overwrite,
+            request_host=request.url.hostname or "",
         )
     except ItemFileServiceError as error:
         raise HTTPException(status_code=error.status_code, detail=error.message)
