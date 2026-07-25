@@ -844,6 +844,9 @@ def _build_active_task_ledger_context(
     workflow_context = task_workflow_manager.build_prompt_context(
         item_id=item_id,
         reply_ticket_id=reply_ticket_id,
+        # Per-turn system prompt: state only. The full rule set is sent once
+        # at workflow creation and can be re-fetched via get_task_workflow.
+        include_rules=False,
     )
     if workflow_context:
         return workflow_context

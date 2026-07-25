@@ -72,7 +72,10 @@ from app.services.agent.tool_arguments import (
     ToolArgumentParseError,
     parse_tool_arguments,
 )
-from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
+from app.services.agent.tool_grounding import (
+    append_tool_call_footer,
+    guard_fabricated_tool_trace,
+)
 from app.services.agent.tool_selection import select_tools_for_turn
 from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
 from app.services.llm_completion import build_litellm_completion_kwargs
@@ -1610,6 +1613,7 @@ def _generate_stream_unserialized(
     final_response = ""
     tool_called_this_turn = False
     called_tool_names: set[str] = set()
+    called_tool_sequence: list[str] = []
     terminal_grounding_retry_used = False
     delivery_tool_sent_by_integration = False
     qq_message_sent_this_turn = False
@@ -1863,10 +1867,7 @@ def _generate_stream_unserialized(
                 ordered_tool_calls = dsml_tool_calls
 
             if not ordered_tool_calls:
-                final_response = guard_ungrounded_tool_claim(
-                    iteration_content,
-                    tool_called=tool_called_this_turn,
-                )
+                final_response = guard_fabricated_tool_trace(iteration_content)
                 missing_terminal_evidence = bool(
                     (
                         terminal_status_required
@@ -1946,6 +1947,10 @@ def _generate_stream_unserialized(
                         final_response = ""
                         continue
 
+                    final_response = append_tool_call_footer(
+                        final_response,
+                        called_tool_sequence,
+                    )
                     if delivery_tool_sent_by_integration or qq_message_sent_this_turn:
                         logger.info(
                             "[Chat] Suppressed final response after source delivery tool sent for item %s",
@@ -2240,6 +2245,7 @@ def _generate_stream_unserialized(
                 tool_called_this_turn = True
                 result_text = _format_tool_result(result)
                 called_tool_names.add(tool_name)
+                called_tool_sequence.append(tool_name)
                 command_dispatch_failed = is_command_dispatch_failure_result(
                     tool_name,
                     result_text,

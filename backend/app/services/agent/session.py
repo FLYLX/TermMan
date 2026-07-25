@@ -55,7 +55,10 @@ from app.services.agent.tool_arguments import (
     ToolArgumentParseError,
     parse_tool_arguments,
 )
-from app.services.agent.tool_grounding import guard_ungrounded_tool_claim
+from app.services.agent.tool_grounding import (
+    append_tool_call_footer,
+    guard_fabricated_tool_trace,
+)
 from app.services.agent.tool_selection import select_tools_for_turn
 from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
 from app.services.llm_completion import build_litellm_completion_kwargs
@@ -555,6 +558,7 @@ class TurnGuard:
     turn_id: str = field(default_factory=lambda: uuid4().hex[:8])
     started_at: datetime = field(default_factory=datetime.now)
     tool_call_count: int = 0
+    tool_names: list[str] = field(default_factory=list)
     no_progress_steps: int = 0
     last_progress_token: str | None = None
     last_log_fingerprint: str | None = None
@@ -576,6 +580,7 @@ class TurnGuard:
 
     def before_tool(self, tool_name: str, tool_args_str: str) -> tuple[bool, str]:
         self.tool_call_count += 1
+        self.tool_names.append(str(tool_name or "").strip())
         if self.tool_call_count > MAX_TOOL_CALLS:
             return True, f"当前轮工具调用次数超过限制 ({MAX_TOOL_CALLS})，已停止"
 
@@ -2504,10 +2509,7 @@ class AgentSession:
                     if not raw_content and hasattr(message, "reasoning_content"):
                         raw_content = ""
                     if raw_content:
-                        final_content = guard_ungrounded_tool_claim(
-                            raw_content,
-                            tool_called=turn_guard.tool_call_count > 0,
-                        )
+                        final_content = guard_fabricated_tool_trace(raw_content)
                         can_finalize, workflow_correction = (
                             task_workflow_manager.can_finalize(
                                 input_msg.reply_ticket_id
@@ -2555,16 +2557,20 @@ class AgentSession:
                         reply_ticket = self._get_reply_ticket(
                             input_msg.reply_ticket_id
                         )
+                        deliver_content = append_tool_call_footer(
+                            final_content,
+                            turn_guard.tool_names,
+                        )
                         if (
                             reply_ticket
                             and reply_ticket.source_type == "qq"
                             and self._deliver_terminal_reply_ticket(
                                 input_msg.reply_ticket_id,
-                                final_content,
+                                deliver_content,
                             )
                         ):
                             break
-                        self.emit_output(final_content, "agent_response")
+                        self.emit_output(deliver_content, "agent_response")
                         _response_emitted_in_loop = True
                         if reply_ticket and reply_ticket.source_type == "web":
                             try:
@@ -2736,11 +2742,14 @@ class AgentSession:
 
                 if not (hasattr(message, "tool_calls") and message.tool_calls):
                     if message.content:
-                        final_content = guard_ungrounded_tool_claim(
-                            message.content,
-                            tool_called=turn_guard.tool_call_count > 0,
+                        final_content = guard_fabricated_tool_trace(message.content)
+                        self.emit_output(
+                            append_tool_call_footer(
+                                final_content,
+                                turn_guard.tool_names,
+                            ),
+                            "agent_response",
                         )
-                        self.emit_output(final_content, "agent_response")
                     break
 
                 next_messages = self._handle_tool_calls(

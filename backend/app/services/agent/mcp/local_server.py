@@ -1126,16 +1126,55 @@ class LocalMCPServer:
             debug_log(f"[LocalMCPServer] get_task_workflow error: {exc}")
             return [{"type": "text", "text": f"Error: {exc}"}]
 
+    def _provision_turn_reply_ticket(self, item_id: str, args: dict) -> str:
+        """Create and attach a reply ticket for a turn that has none.
+
+        Some turns (e.g. queued/merged follow-ups) start without a linked
+        reply ticket, which used to make action=create fail outright. The
+        ticket source (web/QQ) is inferred from the agent's live context by
+        reply_ticket_manager, and the new ticket is attached to the agent so
+        subsequent tool calls in this turn are linked automatically.
+        """
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+            from app.services.agent.session import agent_session_manager
+
+            session = agent_session_manager.get_session(str(item_id))
+            if session is None:
+                return ""
+            agent = session.get_agent()
+            if agent is None:
+                return ""
+            handler_id = str(args.get("_handler_id") or "") or str(
+                getattr(session, "handler_id", "") or ""
+            )
+            ticket = reply_ticket_manager.create_for_agent(
+                agent,
+                item_id=str(item_id),
+                handler_id=handler_id,
+                message=str(args.get("note") or args.get("title") or ""),
+            )
+            debug_log(
+                f"[LocalMCPServer] provisioned reply ticket {ticket.ticket_id} "
+                f"for item={item_id}"
+            )
+            return str(ticket.ticket_id or "")
+        except Exception as exc:
+            debug_log(f"[LocalMCPServer] provision reply ticket error: {exc}")
+            return ""
+
     def _update_task_workflow(self, args: dict) -> list:
         item_id = str(args.get("item_id") or "").strip()
         reply_ticket_id = str(args.get("_reply_ticket_id") or "").strip()
         if not item_id:
             return [{"type": "text", "text": "Error: item_id required"}]
         if not reply_ticket_id:
+            reply_ticket_id = self._provision_turn_reply_ticket(item_id, args)
+        if not reply_ticket_id:
             return [
                 {
                     "type": "text",
-                    "text": "Error: no reply ticket is linked to this task turn",
+                    "text": "Error: no reply ticket is linked to this task turn and none could be created",
                 }
             ]
         try:
@@ -1164,9 +1203,12 @@ class LocalMCPServer:
             )
             if not success:
                 return [{"type": "text", "text": f"Error: {detail}"}]
+            # The full rule set is delivered once at create time; incremental
+            # updates only need the state delta to keep token usage down.
             context = task_workflow_manager.build_prompt_context(
                 item_id=item_id,
                 reply_ticket_id=reply_ticket_id,
+                include_rules=False,
             )
             return [
                 {

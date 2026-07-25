@@ -20,3 +20,7 @@ node_modules/
 !/workdir/.gitkeep
 /daemon/workdir/*
 !/daemon/workdir/.gitkeep
+
+# local temp files (may contain tokens)
+/_token.txt
+/_apply_patch.txt

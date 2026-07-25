@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 CLOSE_REASON = "任务长时间没有进展，已自动关闭"
 # Grace period before declaring a background-job result callback lost.
 WAITING_JOB_CALLBACK_GRACE_SECONDS = 60.0
+# Maximum times a single workflow can be reconciled before being marked blocked.
+MAX_RECONCILE_ATTEMPTS = 3
 # How often near-duplicate long-term memories are auto-merged per item.
 MEMORY_DEDUP_INTERVAL_SECONDS = 1800.0
 # Rule-based cluster merge threshold (no LLM involved).
@@ -251,11 +253,30 @@ def _reconcile_waiting_job_workflows(now: datetime, stats: dict[str, int]) -> No
                 if workflow.status == "waiting_job" and not any(
                     j.status == "running" for j in workflow.jobs
                 ):
-                    workflow.status = "active"
+                    workflow.reconcile_attempts += 1
+                    if workflow.reconcile_attempts > MAX_RECONCILE_ATTEMPTS:
+                        workflow.status = "blocked"
+                        workflow.blocker = (
+                            f"Background job results lost {workflow.reconcile_attempts} times; "
+                            "automatic recovery exhausted. Please retry manually or cancel."
+                        )
+                        workflow.latest_progress = workflow.blocker
+                        logger.warning(
+                            "[TaskWatchdog] Reconcile limit reached for workflow=%s (attempts=%s); marking blocked",
+                            workflow.workflow_id,
+                            workflow.reconcile_attempts,
+                        )
+                    else:
+                        workflow.status = "active"
+                        workflow.latest_progress = (
+                            f"Background job result recovered (attempt {workflow.reconcile_attempts}). Resuming."
+                        )
                     workflow.updated_at = _utcnow()
                     from app.services.agent.task_workflow import _persist_workflow
                     _persist_workflow(workflow)
             stats["reconciled"] += 1
+            if workflow.status == "active" and not _item_has_live_execution(workflow.item_id):
+                _schedule_workflow_continuation(workflow.item_id, ticket_id)
 
 
 def _item_has_live_execution(item_id: str) -> bool:
@@ -454,6 +475,10 @@ def run_once(now: datetime | None = None) -> dict[str, int]:
         _resume_stalled_active_workflows(now, stats)
     except Exception:
         logger.exception("[TaskWatchdog] Stalled-workflow resume failed")
+    try:
+        _reconcile_waiting_job_workflows(now, stats)
+    except Exception:
+        logger.exception("[TaskWatchdog] Waiting-job reconciliation failed")
     try:
         from app.plugins.robot import is_robot_plugin_enabled
 

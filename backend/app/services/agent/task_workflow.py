@@ -104,6 +104,7 @@ class TaskWorkflow:
     last_tool_name: str = ""
     last_command: str = ""
     auto_resume_attempts: int = 0
+    reconcile_attempts: int = 0
     jobs: list[WorkflowJob] = field(default_factory=list)
     reply_ticket_ids: list[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=_utcnow)
@@ -153,6 +154,7 @@ def workflow_to_payload(workflow: TaskWorkflow) -> dict[str, Any]:
         "last_tool_name": workflow.last_tool_name,
         "last_command": workflow.last_command,
         "auto_resume_attempts": workflow.auto_resume_attempts,
+        "reconcile_attempts": workflow.reconcile_attempts,
         "created_at": _iso(workflow.created_at),
         "updated_at": _iso(workflow.updated_at),
         "delivered_at": _iso(workflow.delivered_at),
@@ -1102,6 +1104,8 @@ class TaskWorkflowManager:
                     step.status = "running"
                 workflow.latest_progress = note or "Workflow resumed."
             elif normalized_action == "cancel":
+                if workflow.status in {"completed", "ready_to_report", "reporting"}:
+                    return False, f"Cannot cancel a workflow in '{workflow.status}' status. It is already finished or reporting."
                 workflow.status = "cancelled"
                 workflow.blocker = note
                 if step:
@@ -1310,6 +1314,7 @@ class TaskWorkflowManager:
         *,
         item_id: str,
         reply_ticket_id: str = "",
+        include_rules: bool = True,
     ) -> str:
         workflow = self.get_by_ticket(reply_ticket_id) if reply_ticket_id else None
         if workflow is None or workflow.status in WORKFLOW_FINAL_STATUSES:
@@ -1363,6 +1368,8 @@ class TaskWorkflowManager:
                 f"mcp_local_update_task_workflow(action='complete_current_step'). "
                 f"Do NOT echo the report in the terminal."
             )
+        if not include_rules:
+            return "\n".join(lines)
         lines.extend(
             [
                 "不可违反的工作流规则：",

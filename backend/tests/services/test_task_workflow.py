@@ -315,3 +315,97 @@ def test_job_result_does_not_wake_agent_after_delivery_timestamp() -> None:
     workflow = manager.get_by_ticket("ticket-java")
     assert workflow.delivered_at is not None
     assert manager.job_result_needs_new_turn("ticket-java") is False
+
+def test_cancel_guard_blocks_finished_workflows() -> None:
+    """Cannot cancel a workflow that is already completed or reporting."""
+    manager = TaskWorkflowManager()
+    workflow = _create_java_workflow(manager)
+
+    manager.update("ticket-java", action="complete_current_step", note="installed")
+    manager.record_tool_call("ticket-java", tool_name="mcp_local_run_job", command="java -version")
+    manager.update("ticket-java", action="complete_current_step", note="verified")
+    assert workflow.status == "ready_to_report"
+
+    ok, msg = manager.update("ticket-java", action="cancel", note="try cancel")
+    assert ok is False
+    assert "ready_to_report" in msg
+    assert workflow.status == "ready_to_report"
+
+    manager.on_delivery("ticket-java")
+    assert workflow.status == "completed"
+
+    ok2, msg2 = manager.update("ticket-java", action="cancel", note="try cancel again")
+    assert ok2 is False
+    assert workflow.status == "completed"
+
+
+def test_cancel_still_works_on_active_workflows() -> None:
+    """Cancel should still work on active/waiting workflows."""
+    manager = TaskWorkflowManager()
+    workflow = _create_java_workflow(manager)
+    assert workflow.status == "active"
+
+    ok, _ = manager.update("ticket-java", action="cancel", note="user cancelled")
+    assert ok is True
+    assert workflow.status == "cancelled"
+
+
+def test_reconcile_attempts_field_persists() -> None:
+    """reconcile_attempts field exists and round-trips through serialization."""
+    from app.services.agent.task_workflow import (
+        workflow_from_payload,
+        workflow_to_payload,
+    )
+
+    manager = TaskWorkflowManager()
+    workflow = _create_java_workflow(manager)
+    workflow.reconcile_attempts = 2
+
+    payload = workflow_to_payload(workflow)
+    assert payload["reconcile_attempts"] == 2
+
+    restored = workflow_from_payload(payload)
+    assert restored.reconcile_attempts == 2
+
+
+def test_prompt_context_compact_omits_rules() -> None:
+    """include_rules=False returns state only; rules are create-time full text."""
+    manager = TaskWorkflowManager()
+    _create_java_workflow(manager)
+
+    full = manager.build_prompt_context(
+        item_id="item-java",
+        reply_ticket_id="ticket-java",
+    )
+    compact = manager.build_prompt_context(
+        item_id="item-java",
+        reply_ticket_id="ticket-java",
+        include_rules=False,
+    )
+
+    assert "不可违反的工作流规则" in full
+    assert "不可违反的工作流规则" not in compact
+    # State is preserved in the compact form
+    assert "Authoritative task workflow" in compact
+    assert "安装 Temurin Java 17" in compact
+    assert "current_step" in compact
+    # The compact form is meaningfully smaller
+    assert len(compact) < len(full) * 0.6
+
+
+def test_prompt_context_compact_default_unchanged() -> None:
+    """Default include_rules=True keeps the full rules block."""
+    manager = TaskWorkflowManager()
+    _create_java_workflow(manager)
+
+    default = manager.build_prompt_context(
+        item_id="item-java",
+        reply_ticket_id="ticket-java",
+    )
+    explicit = manager.build_prompt_context(
+        item_id="item-java",
+        reply_ticket_id="ticket-java",
+        include_rules=True,
+    )
+
+    assert default == explicit
