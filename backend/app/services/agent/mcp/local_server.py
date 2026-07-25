@@ -443,6 +443,10 @@ class LocalMCPServer:
                 "Use note for the main objective. "
                 "The user sees workflow progress in the task queue, so always create one "
                 "for multi-step tasks. "
+                "If create is refused because non-final workflow(s) already exist, review "
+                "the listed workflows: continue the matching one with the update actions "
+                "instead of creating a duplicate; only retry with force_new=true when the "
+                "task is genuinely different. "
                 "The main objective cannot be replaced. Complete the current step only "
                 "after evidence. When a step fails, use insert_recovery_step(title='new method') "
                 "which cancels the failed step, rewrites the next step to the new method, and "
@@ -463,6 +467,7 @@ class LocalMCPServer:
                     "action": {
                         "type": "string",
                         "enum": [
+                            "create",
                             "record_progress",
                             "complete_current_step",
                             "set_current_step",
@@ -472,6 +477,15 @@ class LocalMCPServer:
                             "resume",
                             "cancel",
                         ],
+                    },
+                    "force_new": {
+                        "type": "boolean",
+                        "description": (
+                            "Only for action=create: set true to create a new workflow "
+                            "even though non-final workflow(s) already exist for this item, "
+                            "after reviewing them and confirming the task is genuinely different. "
+                            "Never use it to duplicate an existing task."
+                        ),
                     },
                     "note": {
                         "type": "string",
@@ -1200,6 +1214,7 @@ class LocalMCPServer:
                 note=str(args.get("note") or ""),
                 step_index=step_index,
                 title=str(args.get("title") or ""),
+                force_new=bool(args.get("force_new")),
             )
             if not success:
                 return [{"type": "text", "text": f"Error: {detail}"}]

@@ -409,3 +409,81 @@ def test_prompt_context_compact_default_unchanged() -> None:
     )
 
     assert default == explicit
+
+
+def test_create_refused_when_open_workflow_exists() -> None:
+    """Second create for the same item is refused and handed to the agent."""
+    manager = TaskWorkflowManager()
+    _create_java_workflow(manager)
+    manager._last_item_id = "item-java"
+    manager._last_handler_id = "handler-java"
+
+    ok, detail = manager.update(
+        "ticket-java-2",
+        action="create",
+        note="安装 OpenJDK 21 并验证版本",
+        title="安装 OpenJDK 21|验证 java -version",
+    )
+
+    assert ok is False
+    assert "force_new=true" in detail
+    assert "安装 Temurin Java 17" in detail  # 现有 workflow 被列出供 agent 裁决
+    # 没有真的创建第二个
+    assert len(manager.snapshot("item-java")) == 1
+
+
+def test_create_force_new_bypasses_gate() -> None:
+    """force_new=true lets a genuinely different task create its own workflow."""
+    manager = TaskWorkflowManager()
+    _create_java_workflow(manager)
+    manager._last_item_id = "item-java"
+    manager._last_handler_id = "handler-java"
+
+    ok, detail = manager.update(
+        "ticket-java-2",
+        action="create",
+        note="安装 OpenJDK 21 并验证版本",
+        title="安装 OpenJDK 21|验证 java -version",
+        force_new=True,
+    )
+
+    assert ok is True
+    assert len(manager.snapshot("item-java")) == 2
+
+
+def test_create_gate_still_allows_fuzzy_dedup_merge() -> None:
+    """Same-objective create still merges via dedup instead of being refused."""
+    manager = TaskWorkflowManager()
+    workflow = _create_java_workflow(manager)
+    manager._last_item_id = "item-java"
+    manager._last_handler_id = "handler-java"
+
+    ok, _ = manager.update(
+        "ticket-java-followup",
+        action="create",
+        note="安装 Temurin Java 17，使用可用的国内源",
+        title="安装 Temurin Java 17|验证 java -version",
+    )
+
+    assert ok is True
+    assert len(manager.snapshot("item-java")) == 1
+    # follow-up ticket 挂到了原 workflow 上
+    assert "ticket-java-followup" in workflow.reply_ticket_ids
+
+
+def test_create_gate_ignores_final_workflows() -> None:
+    """Cancelled/completed workflows do not block a new create."""
+    manager = TaskWorkflowManager()
+    workflow = _create_java_workflow(manager)
+    workflow.status = "cancelled"
+    manager._last_item_id = "item-java"
+    manager._last_handler_id = "handler-java"
+
+    ok, _ = manager.update(
+        "ticket-java-2",
+        action="create",
+        note="安装 OpenJDK 21 并验证版本",
+        title="安装 OpenJDK 21|验证 java -version",
+    )
+
+    assert ok is True

@@ -941,11 +941,44 @@ class TaskWorkflowManager:
         note: str = "",
         step_index: int | None = None,
         title: str = "",
+        force_new: bool = False,
     ) -> tuple[bool, str]:
         normalized_action = str(action or "").strip().lower()
         note = str(note or "").strip()[:2000]
 
         if normalized_action == "create":
+            item_id = str(getattr(self, "_last_item_id", "") or "")
+            with self._lock:
+                open_workflows = [
+                    workflow
+                    for workflow in self._workflows.values()
+                    if workflow.item_id == item_id
+                    and workflow.status not in WORKFLOW_FINAL_STATUSES
+                ]
+                dedup_hit = self._find_duplicate_workflow_locked(
+                    item_id, _normalize_objective(note)
+                )
+            if open_workflows and not dedup_hit and not force_new:
+                lines = [
+                    "Refused: this item already has non-final task workflow(s). "
+                    "Do not create a duplicate.",
+                    "Existing:",
+                ]
+                for workflow in open_workflows[:5]:
+                    current = workflow.current_step()
+                    lines.append(
+                        f"- {workflow.workflow_id} | {workflow.status} | "
+                        f"objective: {str(workflow.objective)[:120]} | "
+                        f"current: {current.title if current else '(none)'}"
+                    )
+                lines.append(
+                    "If your task is the SAME as one of them: continue that "
+                    "workflow with record_progress / insert_recovery_step / "
+                    "complete_current_step instead of creating a new one. "
+                    "Only when it is genuinely a DIFFERENT task, call create "
+                    "again with force_new=true."
+                )
+                return False, "\n".join(lines)
             step_titles = [
                 s.strip()[:180]
                 for s in str(title or "").split("|")
