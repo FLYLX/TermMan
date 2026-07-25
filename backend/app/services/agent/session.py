@@ -1319,17 +1319,32 @@ class AgentSession:
 
             if ticket.source_type == "qq":
                 if ticket.external_report_sent:
-                    # Result already reached QQ via the send tool earlier;
-                    # close out silently instead of re-sending a duplicate.
                     return reply_ticket_manager.mark_delivered(ticket_id)
-                delivered = reply_ticket_manager.deliver(ticket_id, content)
-                if delivered:
-                    self.emit_output(
-                        f"已回复 QQ：{content.strip()}",
-                        ROBOT_QQ_REPLY_EVENT_TYPE,
-                        {"tool_name": "reply_ticket", "qq_delivery": True},
+                from app.plugins.robot.bridge_client import robot_bridge_client
+                from app.plugins.robot.contracts import RobotReplyTarget
+                from app.plugins.robot.conversation_memory import robot_conversation_memory
+                from app.services.agent.reply_ticket import ReplyTicketManager
+
+                text = ReplyTicketManager._sanitize_delivery_text(content)
+                if not text:
+                    return False
+                target = RobotReplyTarget.model_validate(ticket.reply_target)
+                robot_bridge_client.send_message(ticket.robot_id, target, text)
+                if ticket.conversation_key:
+                    robot_conversation_memory.append_assistant_message(
+                        ticket.robot_id,
+                        ticket.conversation_key,
+                        text,
                     )
-                return delivered
+                self.emit_output(
+                    f"已回复 QQ：{text}",
+                    ROBOT_QQ_REPLY_EVENT_TYPE,
+                    {"tool_name": "reply_ticket", "qq_delivery": True},
+                )
+                can_fin, _ = task_workflow_manager.can_finalize(ticket_id)
+                if can_fin:
+                    reply_ticket_manager.mark_delivered(ticket_id)
+                return True
         except Exception:
             logger.exception(
                 "[AgentSession] Failed to deliver terminal reply ticket: item=%s ticket=%s",
@@ -2503,7 +2518,6 @@ class AgentSession:
                     response.choices[0].message,
                     tools,
                 )
-
                 if not (hasattr(message, "tool_calls") and message.tool_calls):
                     raw_content = message.content or ""
                     if not raw_content and hasattr(message, "reasoning_content"):
@@ -2656,10 +2670,19 @@ class AgentSession:
                     and _wf_done.status in {"ready_to_report", "completed", "cancelled"}
                     and _wf_done.latest_progress
                 ):
-                    self.emit_output(
-                        _wf_done.latest_progress,
-                        "agent_response",
+                    _post_ticket = self._get_reply_ticket(
+                        input_msg.reply_ticket_id
                     )
+                    if _post_ticket and _post_ticket.source_type == "qq":
+                        self._deliver_terminal_reply_ticket(
+                            input_msg.reply_ticket_id,
+                            _wf_done.latest_progress,
+                        )
+                    else:
+                        self.emit_output(
+                            _wf_done.latest_progress,
+                            "agent_response",
+                        )
 
             if pending_integration_contexts:
                 clear_integration_chat_contexts(agent, pending_integration_contexts)

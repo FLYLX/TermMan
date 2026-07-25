@@ -912,18 +912,26 @@ class TaskWorkflowManager:
             job.exit_code = exit_code
             job.result_summary = str(result_summary or "").strip()[-2000:]
             job.completed_at = _utcnow()
+            _wf_final = workflow.status in {
+                "ready_to_report",
+                "completed",
+                "cancelled",
+                "reporting",
+            }
             step = workflow.resolve_step_for_job(job)
-            if step and not success:
-                step.status = "cancelled"
-                step.last_error = job.result_summary
-            elif step:
-                step.status = "running"
-                step.evidence = job.result_summary
-            workflow.status = (
-                "waiting_job"
-                if any(candidate.status == "running" for candidate in workflow.jobs)
-                else "active"
-            )
+            if not _wf_final:
+                if step and not success:
+                    step.status = "cancelled"
+                    step.last_error = job.result_summary
+                elif step:
+                    step.status = "running"
+                    step.evidence = job.result_summary
+            if not _wf_final:
+                workflow.status = (
+                    "waiting_job"
+                    if any(candidate.status == "running" for candidate in workflow.jobs)
+                    else "active"
+                )
             workflow.blocker = ""
             workflow.latest_progress = (
                 f"Background job {'succeeded' if success else 'failed'}: "
@@ -1436,6 +1444,10 @@ class TaskWorkflowManager:
                 "14. 步骤完成需要本次运行的新鲜证据：命令输出、退出码或实时检查结果。"
                 "长期记忆和聊天历史只回答“谁/什么”，不能证明某东西现在已安装、运行或完成。"
                 "完成任何检查/验证步骤前，先运行检查命令并用实际输出作为证据。",
+                "15. 如果检查步骤发现目标已满足（如软件已安装、服务已运行、文件已存在），"
+                "直接取消所有剩余 pending 步骤并立即汇报结果，不要逐步走完每个步骤。"
+                "用 complete_current_step 完成当前检查步骤，然后对每个剩余 pending 步骤调用 "
+                "cancel_step（或一次性 action=cancel 剩余步骤），最后汇报。省掉不必要的轮次。",
             ]
         )
         return "\n".join(lines)

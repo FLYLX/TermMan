@@ -3,6 +3,7 @@ from typing import Any
 
 import httpx
 
+from app.core.config import settings
 from app.models import Item
 
 from .auth_service import auth_service
@@ -114,8 +115,8 @@ class ItemFileService:
             "expires_in": ticket_info["expires_in"],
             "item_uuid": str(item.id),
             "path": normalized_path,
-            "daemon_url": self._daemon_base_url(item),
-            "url": f"{self._daemon_base_url(item)}/api/files/download",
+            "daemon_url": self._daemon_public_base_url(item),
+            "url": f"{self._daemon_public_base_url(item)}/api/files/download",
         }
 
     def issue_upload_ticket(
@@ -144,8 +145,8 @@ class ItemFileService:
             "item_uuid": str(item.id),
             "path": normalized_path,
             "allow_overwrite": allow_overwrite,
-            "daemon_url": self._daemon_base_url(item),
-            "url": f"{self._daemon_base_url(item)}/api/files/upload",
+            "daemon_url": self._daemon_public_base_url(item),
+            "url": f"{self._daemon_public_base_url(item)}/api/files/upload",
         }
 
     def _post_internal(self, item: Item, route_path: str, json: dict[str, Any]) -> dict[str, Any]:
@@ -191,6 +192,15 @@ class ItemFileService:
     @staticmethod
     def _daemon_base_url(item: Item) -> str:
         return f"http://{item.socket_host}:{item.socket_port}"
+
+    @staticmethod
+    def _daemon_public_base_url(item: Item) -> str:
+        public_url = (settings.DAEMON_PUBLIC_URL or "").strip().rstrip("/")
+        if public_url:
+            return public_url
+        host = (settings.DAEMON_PUBLIC_HOST or "").strip() or "localhost"
+        port = settings.DAEMON_PUBLIC_PORT or settings.DAEMON_HOST_PORT or item.socket_port or 9000
+        return f"http://{host}:{port}"
 
     @staticmethod
     def _ensure_daemon_configured(item: Item):
