@@ -2,6 +2,8 @@ import {
   AlertCircle,
   ArrowUp,
   ChevronRight,
+  ClipboardPaste,
+  Copy,
   Download,
   FileText,
   Folder,
@@ -10,6 +12,7 @@ import {
   Pencil,
   RefreshCw,
   Save,
+  Scissors,
   Trash2,
   Upload,
 } from "lucide-react"
@@ -327,6 +330,11 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
   const [isCreatingFolder, setIsCreatingFolder] = useState(false)
   const [actionPath, setActionPath] = useState<string | null>(null)
   const [downloadingPath, setDownloadingPath] = useState<string | null>(null)
+  const [clipboard, setClipboard] = useState<{
+    path: string
+    name: string
+    operation: "copy" | "move"
+  } | null>(null)
 
   useEffect(() => {
     directoriesRef.current = directories
@@ -955,7 +963,80 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
     ],
   )
 
-  const handleSelectUpload = useCallback(() => {
+  const handleCopyEntry = useCallback(
+    (entry: { path: string; name: string }) => {
+      setClipboard({ path: entry.path, name: entry.name, operation: "copy" })
+      showSuccessToast(t("files.copiedToClipboard", { name: entry.name }))
+    },
+    [showSuccessToast, t],
+  )
+
+  const handleCutEntry = useCallback(
+    (entry: { path: string; name: string }) => {
+      setClipboard({ path: entry.path, name: entry.name, operation: "move" })
+      showSuccessToast(t("files.cutToClipboard", { name: entry.name }))
+    },
+    [showSuccessToast, t],
+  )
+
+  const handlePaste = useCallback(async () => {
+    if (!clipboard) return
+    const targetDir = selectedDirectoryPath || ""
+    const targetPath = targetDir
+      ? `${targetDir}/${clipboard.name}`
+      : clipboard.name
+
+    if (clipboard.operation === "move" && targetPath === clipboard.path) {
+      setClipboard(null)
+      return
+    }
+
+    setActionPath(clipboard.path)
+    try {
+      const endpoint =
+        clipboard.operation === "copy"
+          ? `/api/v1/items/${itemId}/files/copy`
+          : `/api/v1/items/${itemId}/files/rename`
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OpenAPI.TOKEN}`,
+        },
+        body: JSON.stringify({
+          path: clipboard.path,
+          target_path: targetPath,
+        }),
+      })
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}))
+        throw new Error(error.detail || response.statusText)
+      }
+      showSuccessToast(
+        clipboard.operation === "copy"
+          ? t("files.pastedCopy", { name: clipboard.name })
+          : t("files.pastedMove", { name: clipboard.name }),
+      )
+      setClipboard(null)
+      await refreshExplorer()
+    } catch (error) {
+      showErrorToast(
+        error instanceof Error ? error.message : t("files.pasteFailed"),
+      )
+    } finally {
+      setActionPath(null)
+    }
+  }, [
+    clipboard,
+    selectedDirectoryPath,
+    itemId,
+    refreshExplorer,
+    showErrorToast,
+    showSuccessToast,
+    t,
+  ])
+
+    const handleSelectUpload = useCallback(() => {
     fileInputRef.current?.click()
   }, [])
 
@@ -1131,6 +1212,24 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
                   size="icon"
                   variant="ghost"
                   className="size-7 shrink-0"
+                  onClick={() => handleCopyEntry(entry)}
+                >
+                  <Copy className="size-4" />
+                  <span className="sr-only">{t("files.copyLabel", { name: entry.name })}</span>
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-7 shrink-0"
+                  onClick={() => handleCutEntry(entry)}
+                >
+                  <Scissors className="size-4" />
+                  <span className="sr-only">{t("files.cutLabel", { name: entry.name })}</span>
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-7 shrink-0"
                   disabled={actionPath === entry.path}
                   onClick={() => void handleRenameEntry(entry)}
                 >
@@ -1221,6 +1320,17 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
               ? t("files.creatingFolder")
               : t("files.newFolder")}
           </Button>
+          {clipboard && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handlePaste()}
+              disabled={actionPath !== null}
+            >
+              <ClipboardPaste className="size-4" />
+              {t("files.paste")}
+            </Button>
+          )}
           <Button size="sm" onClick={handleSelectUpload} disabled={isUploading}>
             <Upload className="size-4" />
             {isUploading ? t("files.uploading") : t("files.upload")}

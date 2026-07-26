@@ -45,36 +45,37 @@ def test_guard_keeps_plain_claim_text() -> None:
     assert guard_fabricated_tool_trace(content) == content
 
 
-def test_footer_with_tool_calls_chinese() -> None:
+def test_footer_strips_existing_chinese_footer() -> None:
     text = append_tool_call_footer(
-        "已经装好了。",
+        "已经装好了。\n\n———\n本回合实际工具调用:3 次 [mcp_local_run_job ×2, mcp_local_update_task_workflow]",
         ["mcp_local_run_job", "mcp_local_run_job", "mcp_local_update_task_workflow"],
     )
 
-    assert text.startswith("已经装好了。")
-    assert "本回合实际工具调用:3 次" in text
-    assert "mcp_local_run_job ×2" in text
-    assert "mcp_local_update_task_workflow" in text
+    assert text == "已经装好了。"
+    assert "本回合实际工具调用" not in text
 
 
-def test_footer_with_tool_calls_english() -> None:
-    text = append_tool_call_footer("All done.", ["run_job"])
+def test_footer_strips_existing_english_footer() -> None:
+    text = append_tool_call_footer(
+        "All done.\n\n———\nTool calls this turn: 1 [run_job]",
+        ["run_job"],
+    )
 
-    assert "Tool calls this turn: 1 [run_job]" in text
+    assert text == "All done."
+    assert "Tool calls this turn" not in text
 
 
-def test_footer_with_zero_tool_calls() -> None:
-    assert "本回合实际工具调用:0 次" in append_tool_call_footer("你好！", [])
-    assert "Tool calls this turn: 0" in append_tool_call_footer("Hello!", [])
+def test_footer_strips_zero_call_footer() -> None:
+    assert append_tool_call_footer("你好！\n———\n本回合实际工具调用:0 次", []) == "你好！"
+    assert append_tool_call_footer("Hello!\n———\nTool calls this turn: 0", []) == "Hello!"
 
 
-def test_footer_preserves_original_content() -> None:
+def test_footer_preserves_content_without_footer() -> None:
     content = "步骤一完成，步骤二进行中。"
 
     result = append_tool_call_footer(content, ["run_job"])
 
-    assert content in result
-    assert result.index(content) == 0
+    assert result == content
 
 
 def test_footer_skips_empty_content() -> None:

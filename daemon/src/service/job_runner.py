@@ -536,6 +536,12 @@ class JobRunner:
                 "PYTHONUNBUFFERED": child_env.get("PYTHONUNBUFFERED", "1"),
             }
         )
+        extra_paths = ["/usr/games", "/usr/local/games"]
+        current_path = child_env.get("PATH", "")
+        for extra in extra_paths:
+            if extra not in current_path.split(":"):
+                current_path = f"{current_path}:{extra}" if current_path else extra
+        child_env["PATH"] = current_path
         if env:
             child_env.update({str(key): str(value) for key, value in env.items()})
         return child_env

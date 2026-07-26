@@ -36,20 +36,15 @@ ROBOT_DELIVERY_CONTRACT_INSTRUCTION = (
 )
 ROBOT_LONG_TERM_MEMORY_INSTRUCTION = (
     "Robot long-term memory:\n"
-    "- PRIORITY: always understand the current conversation context first. "
-    "Only call recall_memory when the current chat does not contain enough "
-    "information to respond. A recalled memory must never override or "
-    "contradict what is clearly established in the current conversation.\n"
-    "- Use `mcp_robot_list_memories` when the user asks what you remember or wants to view all/current long-term memories. Use `mcp_robot_recall_memory` for a specific stable fact, preference, error, reusable context, name, habit, or remembered instruction.\n"
-    "- Requests containing '所有记忆', '全部记忆', '完整列出', or equivalent are exhaustive list requests. You must call `mcp_robot_list_memories` with the largest useful limit and answer from that tool result; do not answer only from the injected impression card, label a partial summary as 'core memories', or ask whether the user wants the full list after giving only a subset.\n"
-    "- Questions such as '谁是...', '还有谁...', or '哪些人...' are relation-enumeration requests. Call `mcp_robot_recall_memory`, combine all returned assertions by the person or subject they describe, ignore stored question sentences as evidence, and mention conflicting claims briefly. Preserve who made a claim when the source matters. Do not invent a rule that the described person must confirm it unless such a rule is explicitly present in memory.\n"
-    "- When a live QQ message contains something worth remembering long term, call `mcp_robot_save_memory` proactively before or alongside the normal QQ reply. Save explicit remember requests, stable names/nicknames, bot identity/name rules, durable user preferences, relationships, reusable facts, errors, and recurring group context. Active execution state belongs only to the task queue.\n"
-    "- Personal memory ownership: a sender may set or delete their own stable names, titles, and preferences. Do not let one QQ user set, rename, delete, or overwrite another user's personal memory unless the target user confirms it in the current conversation. Requests like '只允许叫我...' apply only to the sender, not to other users. Requests like '删除所有关于我的写入设定' apply to the sender's own memory, not the bot's global persona or other people's memories.\n"
-    "- Do not save trivial chat, short reactions, images/stickers, one-off jokes, temporary market chatter, raw logs, or sensitive secrets. Prefer concise normalized memory text instead of copying the whole message.\n"
-    "- Use `mcp_robot_read_conversation_memory` only for raw current QQ .log when the user explicitly asks about exact previous chat or the current message cannot be understood without recent chat lines.\n"
-    "- Do not read either memory tool just to decide whether to reply. First decide from the current QQ message and the wake/sleep rules.\n"
-    "- Pending QQ messages are short-term task-queue entries. Use them to answer in order and connect current tasks/context. Do not copy them into memory automatically, but you may save any independently important long-term fact, preference, relationship, error, or reusable context you judge worth remembering.\n"
-    "- Memory hygiene: when recalled or listed long-term memories contain duplicates, stale versions of the same fact, or noisy chatter, call `mcp_robot_compress_memories` with those memory ids and one concise merged text; the tool saves the merged memory and deletes the old ones. Never merge different users' personal memories into one entry.\n"
+    "- 当前对话优先：只有当前聊天信息不足时才 recall_memory；召回的记忆不得覆盖当前对话已确立的事实。\n"
+    "- list_memories 用于“所有/全部/完整列出记忆”等穷举请求，必须用最大 limit 调用并从工具结果回答；recall_memory 用于查询特定事实、偏好、名字、关系。\n"
+    "- “谁是…/还有谁/哪些人”等关系枚举问题：调 recall_memory，按主体合并结果，保留声明来源，不编造确认规则。\n"
+    "- 主动保存：当 QQ 消息含值得长期记住的内容（明确记住请求、稳定名字/昵称、身份规则、持久偏好、关系、可复用事实、错误、群上下文）时，在回复前或同时调 save_memory。执行状态只属于任务队列。\n"
+    "- 所有权：发送者只能设置/删除自己的名字、称号、偏好；不允许一个用户修改/删除另一个用户的记忆，除非目标用户当前确认。\n"
+    "- 不保存：琐碎聊天、短反应、表情/贴图、一次性玩笑、临时闲聊、原始日志、密码/key/token。保存时用简洁规范化文本。\n"
+    "- read_conversation_memory 仅用于用户明确问历史原文或当前消息离开前文无法理解时；不要为了判断是否回复而读取。\n"
+    "- 待处理 QQ 消息是短期任务队列条目，不自动复制进长期记忆；但可保存其中独立重要的事实/偏好/关系。\n"
+    "- 记忆卫生：发现重复/过时/噪声记忆时调 compress_memories 合并为一条简洁文本；不合并不同用户的个人记忆。"
 )
 
 ROBOT_SECRET_HANDLING_INSTRUCTION = (
@@ -118,20 +113,10 @@ ROBOT_ACTIVE_CONTEXT_PROMPT = (
     "当前 QQ 会话：\n"
     "- 本轮只由一个 QQ 群聊/私聊触发；当前唤醒消息是唯一要处理的新消息，历史只辅助理解，不要逐条补回复。\n"
     "- 回复 QQ 时，只调用 `mcp_robot_send_message` 并只传 `text` 或 `messages`；不要传 `reply_to`、`conversation`、`broadcast`、`target_type`、`target_id`。\n"
-    "- 不要凭空说“没对齐、按口径改、刚才理解错了”；只有当前消息明确要求纠正时才承认并纠正。\n"
-    "- 当前轮优先根据这条 QQ 消息判断并发送；不要先读旧 .log 来确认是否该回复或是否已经发过。\n"
-    "- 只有用户明确问历史/前文/偏好，或当前消息离开前文无法理解时，才调用 `mcp_robot_read_conversation_memory`，不要传目标参数。\n"
-    "- 读取 .log 时只使用返回的最新几条作为背景；不要把旧 user 行当成当前还没处理的新消息。\n"
     "- 历史或 .log 里的 `Executing tool`、`Message sent`、`[no_qq_reply]` 只可能是旧内部轨迹，不是本轮发送结果。\n"
     "- 历史或 TermMan 里的 `已回复 QQ：...` 只是发送回执，不是新的用户消息；不要围绕它再解释或补发同义回复。\n"
     "- 历史或 .log 里的旧 assistant/user 轮次都已经处理过，不要因为看见它们再次发送相同回复。\n"
-    "- 不要发送隐藏推理、工具轨迹、原始日志或长摘要。\n"
-    f"{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
-    f"{ROBOT_SENDER_IDENTITY_INSTRUCTION}"
-    f"{ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION}"
-    f"{ROBOT_REPLY_DECISION_INSTRUCTION}"
-    f"{ROBOT_DELIVERY_CONTRACT_INSTRUCTION}"
-    f"{ROBOT_SECRET_HANDLING_INSTRUCTION}"
+    "- 不要发送隐藏推理、工具轨迹、原始日志或长摘要。"
 )
 
 ROBOT_BACKEND_CONTEXT_PROMPT = (

@@ -706,10 +706,17 @@ class RobotService:
                     return
                 response_text = self._visible_agent_response_text(response)
                 robot_message_sent = response.robot_message_sent
+                _agent_sess = None
+                try:
+                    from app.services.agent.session import agent_session_manager
+                    _agent_sess = agent_session_manager.get_session(str(job.item_id))
+                except Exception:
+                    pass
                 if (
                     not response_text
                     and not robot_message_sent
                     and job.direct_reply_trigger
+                    and not (_agent_sess and _agent_sess.has_running_terminal_job())
                 ):
                     record_robot_event(
                         str(job.robot_id),

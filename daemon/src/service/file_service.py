@@ -398,6 +398,68 @@ class FileService:
             "type": entry_type,
         }
 
+    def copy_path(
+        self,
+        *,
+        user_uuid: str,
+        item_uuid: str,
+        path: str,
+        target_path: str,
+        working_directory: Optional[str] = None,
+    ) -> dict[str, Any]:
+        root, source = self._resolve_existing_target(
+            user_uuid=user_uuid,
+            item_uuid=item_uuid,
+            path=path,
+            working_directory=working_directory,
+            expected_type="any",
+        )
+
+        if source == root:
+            raise FileServiceError("Cannot copy root directory")
+
+        normalized_target = item_path_service.normalize_daemon_path(target_path)
+        if not normalized_target:
+            raise FileServiceError("Target path is required")
+
+        target = (root / normalized_target).resolve(strict=False)
+        try:
+            item_path_service._ensure_within_root(root, target)
+        except ItemPathError as exc:
+            raise FileServiceError(str(exc), status_code=403) from exc
+
+        if target.exists():
+            raise FileServiceError("Target path already exists", status_code=409)
+
+        if not target.parent.exists() or not target.parent.is_dir():
+            raise FileServiceError("Target parent directory does not exist", status_code=404)
+
+        if source.is_dir():
+            try:
+                target.relative_to(source)
+            except ValueError:
+                pass
+            else:
+                raise FileServiceError("Cannot copy a directory into its own subdirectory")
+
+        try:
+            if source.is_dir():
+                shutil.copytree(source, target, symlinks=True)
+            else:
+                shutil.copy2(source, target)
+        except OSError as exc:
+            raise FileServiceError("Failed to copy path", status_code=500) from exc
+
+        source_relative = item_path_service.to_relative_path(root, source)
+        target_relative = item_path_service.to_relative_path(root, target)
+        return {
+            "success": True,
+            "item_uuid": item_uuid,
+            "path": source_relative,
+            "target_path": target_relative,
+            "type": "directory" if target.is_dir() else "file",
+        }
+
     def get_download_metadata(
         self,
         *,

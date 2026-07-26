@@ -98,6 +98,15 @@ class ItemFileService:
         }
         return self._post_internal(item, f"/api/internal/items/{item.id}/files/delete", json=payload)
 
+    def copy_path(self, *, item: Item, path: str, target_path: str) -> dict[str, Any]:
+        payload = {
+            "user_uuid": str(item.owner_id),
+            "path": self._normalize_path(path, allow_root=False),
+            "target_path": self._normalize_path(target_path, allow_root=False),
+            "working_directory": item.working_directory,
+        }
+        return self._post_internal(item, f"/api/internal/items/{item.id}/files/copy", json=payload)
+
     def issue_download_ticket(self, *, item: Item, actor_user_id: str, path: str, request_host: str = "") -> dict[str, Any]:
         normalized_path = self._normalize_path(path, allow_root=False)
         ticket_info = auth_service.generate_file_ticket(

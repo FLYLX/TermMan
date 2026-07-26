@@ -187,6 +187,11 @@ async def verify_temp_token_with_backend(temp_token: str, item_uuid: str) -> dic
 
 @sio.event
 async def connect(sid, environ, auth=None):
+    # Capture the main ASGI event loop for broadcast workers
+    from core import get_socket_service
+    _ss = get_socket_service()
+    if _ss:
+        _ss.store_main_loop()
     ip_address = environ.get('REMOTE_ADDR', 'unknown')
     
     if auth and "api_key" in auth:

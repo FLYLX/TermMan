@@ -1,0 +1,26 @@
+﻿*** Begin Patch
+*** Update File: backend/app/services/agent/tool_grounding.py
+@@ def guard_fabricated_tool_trace(content: str) -> str:
+     return _FABRICATED_TRACE_FALLBACK_EN
+ 
+ 
++_THINK_BLOCK_RE = re.compile(r"[\s\S]*?
+</think>
+
+", re.IGNORECASE)
++_THINK_TAG_RE = re.compile(r"
+</think>
+
+", re.IGNORECASE)
++
++
++def strip_think_tags(content: str) -> str:
++    """Remove leaked  blocks and stray tags from model output."""
++    text = content or ""
++    text = _THINK_BLOCK_RE.sub("", text)
++    text = _THINK_TAG_RE.sub("", text)
++    return text.strip()
++
++
+ def _compress_tool_names(names: list[str]) -> list[str]:
+*** End Patch

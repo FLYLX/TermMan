@@ -75,6 +75,7 @@ from app.services.agent.tool_arguments import (
 from app.services.agent.tool_grounding import (
     append_tool_call_footer,
     guard_fabricated_tool_trace,
+    strip_think_tags,
 )
 from app.services.agent.tool_selection import select_tools_for_turn
 from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
@@ -1000,140 +1001,36 @@ def _create_agent_task_plan(
         source_label=source_label,
     )
     resumable_candidates = task_workflow_manager.list_resumable(item_id=item_id)
-    if TASK_WORKFLOW_STATUS_QUESTION_RE.search(task_message):
-        return None
-    if TASK_WORKFLOW_PROGRESS_QUERY_RE.search(task_message):
-        return None
-    if TASK_WORKFLOW_VAGUE_ACK_RE.fullmatch(task_message):
-        return None
-    if TASK_WORKFLOW_VAGUE_COMMAND_RE.fullmatch(task_message):
-        return None
-    if not _should_create_task_workflow(task_message, tools):
-        logger.info("[Chat] _should_create_task_workflow=False for %r", task_message[:60])
-        return None
-    logger.info("[Chat] _should_create_task_workflow=True for %r", task_message[:60])
-    resumable = next(
-        (
-            candidate
-            for candidate in resumable_candidates
-            if _is_same_task_follow_up(task_message, candidate.objective)
-        ),
-        None,
+    # If there is an active workflow, attach the ticket and let the agent
+    # decide what to do (continue, cancel, pause, change) via tool calls.
+    # No regex classification -- the agent has full context and judges itself.
+    resumable = (
+        source_resumable_candidates[0]
+        if source_resumable_candidates
+        else resumable_candidates[0]
+        if resumable_candidates
+        else None
     )
-    if resumable is None and (
-        TASK_WORKFLOW_CONTINUATION_RE.search(task_message)
-        or TASK_WORKFLOW_CHANGE_RE.search(task_message)
-        or TASK_WORKFLOW_PAUSE_RE.search(task_message)
-        or TASK_WORKFLOW_EXECUTION_COMMIT_RE.search(task_message)
-    ):
-        resumable = (
-            source_resumable_candidates[0]
-            if source_resumable_candidates
-            else None
-        )
-    resumable_follow_up = bool(
-        resumable
-        and (
-            TASK_WORKFLOW_CONTINUATION_RE.search(task_message)
-            or TASK_WORKFLOW_CHANGE_RE.search(task_message)
-            or TASK_WORKFLOW_PAUSE_RE.search(task_message)
-            or TASK_WORKFLOW_EXECUTION_COMMIT_RE.search(task_message)
-            or _is_same_task_follow_up(task_message, resumable.objective)
-        )
-    )
-    if resumable and resumable_follow_up:
+    if resumable:
         task_workflow_manager.attach_ticket(
             resumable.workflow_id,
             locked_reply_ticket_id,
         )
-        follow_up = task_message[:500]
-        if TASK_WORKFLOW_FINAL_ONLY_RE.search(task_message):
-            task_workflow_manager.set_report_policy(
-                locked_reply_ticket_id,
-                "final_only",
-            )
-        if TASK_WORKFLOW_MAIN_CANCEL_RE.search(task_message):
+        if resumable.status == "blocked":
             task_workflow_manager.update(
                 locked_reply_ticket_id,
-                action="cancel",
-                note=f"User explicitly cancelled the whole objective: {follow_up}",
+                action="resume",
+                note="User sent a follow-up message.",
             )
-            running_commands = {
-                str(job.command or "").strip()
-                for job in resumable.jobs
-                if job.status == "running" and str(job.command or "").strip()
-            }
-            try:
-                from app.services.agent.mcp.local_server import (
-                    cancel_background_jobs_for_item,
-                )
-
-                # "别装了": kill the actual daemon jobs, not just the paper
-                # workflow. Empty command set means the workflow lost track of
-                # the job, so fall back to cancelling all of the item's jobs.
-                cancel_background_jobs_for_item(
-                    item_id,
-                    commands=running_commands or None,
-                )
-            except Exception:
-                logger.exception(
-                    "[Chat] Failed to cancel background jobs for item %s",
-                    item_id,
-                )
-        elif TASK_WORKFLOW_CHANGE_RE.search(task_message):
-            task_workflow_manager.update(
-                locked_reply_ticket_id,
-                action="insert_recovery_step",
-                title=f"Cancel obsolete execution and apply requested source/mirror change: {follow_up}",
-                note=(
-                    "The user changed the execution method. Cancel any obsolete running job, "
-                    "apply the replacement, then continue the unchanged main objective."
-                ),
-            )
-        elif TASK_WORKFLOW_PAUSE_RE.search(task_message):
-            running_commands = {
-                str(job.command or "").strip()
-                for job in resumable.jobs
-                if job.status == "running" and str(job.command or "").strip()
-            }
-            if running_commands:
-                try:
-                    from app.services.agent.mcp.local_server import (
-                        cancel_background_jobs_for_item,
-                    )
-
-                    # "停一下/先别": stop the current execution (daemon job) but
-                    # keep the main objective for a later resume.
-                    cancel_background_jobs_for_item(item_id, commands=running_commands)
-                except Exception:
-                    logger.exception(
-                        "[Chat] Failed to stop background jobs for item %s",
-                        item_id,
-                    )
-            task_workflow_manager.update(
-                locked_reply_ticket_id,
-                action="record_progress",
-                note=(
-                    f"User requested cancellation of the current execution: {follow_up}. "
-                    "Cancel the obsolete command/job, but preserve the main objective unless "
-                    "the user explicitly cancels the whole goal."
-                ),
-            )
-        else:
-            task_workflow_manager.record_user_instruction(
-                locked_reply_ticket_id,
-                follow_up,
-            )
-            if resumable.status == "blocked":
-                task_workflow_manager.update(
-                    locked_reply_ticket_id,
-                    action="resume",
-                    note=f"User follow-up: {follow_up}",
-                )
         return PlannedTaskRuntime(
             request_id=resumable.workflow_id,
             workflow_id=resumable.workflow_id,
         )
+    # No active workflow -- check if this message warrants a new one.
+    if not _should_create_task_workflow(task_message, tools):
+        logger.info("[Chat] _should_create_task_workflow=False for %r", task_message[:60])
+        return None
+    logger.info("[Chat] _should_create_task_workflow=True for %r", task_message[:60])
     task_titles = _plan_agent_task_titles(handler, task_message, history)
     logger.info("[Chat] _create_agent_task_plan: message=%r titles=%s", task_message[:60], task_titles)
     if not task_titles:
@@ -1620,6 +1517,7 @@ def _generate_stream_unserialized(
     confirmed_external_delivery_to_qq = False
     delivery_retry_used_by_integration: dict[str, bool] = {}
     tool_loop_recovery_used = False
+    thinking_only_retry_used = False
     from app.core.config import settings as chat_settings
 
     turn_started_at = time.monotonic()
@@ -1773,6 +1671,7 @@ def _generate_stream_unserialized(
                 return
 
             iteration_content = ""
+            iteration_reasoning = ""
             tool_calls_map: dict[int, dict[str, Any]] = {}
 
             for chunk in response:
@@ -1816,6 +1715,12 @@ def _generate_stream_unserialized(
                 delta_content = getattr(delta, "content", None)
                 if delta_content:
                     iteration_content += delta_content
+
+                delta_reasoning = getattr(delta, "reasoning_content", None) or getattr(
+                    delta, "reasoning", None
+                )
+                if delta_reasoning:
+                    iteration_reasoning += delta_reasoning
 
                 delta_tool_calls = getattr(delta, "tool_calls", None)
                 if not delta_tool_calls:
@@ -1867,7 +1772,7 @@ def _generate_stream_unserialized(
                 ordered_tool_calls = dsml_tool_calls
 
             if not ordered_tool_calls:
-                final_response = guard_fabricated_tool_trace(iteration_content)
+                final_response = strip_think_tags(guard_fabricated_tool_trace(iteration_content))
                 missing_terminal_evidence = bool(
                     (
                         terminal_status_required
@@ -1884,6 +1789,7 @@ def _generate_stream_unserialized(
                     missing_terminal_evidence
                     and not terminal_grounding_retry_used
                     and not finalization_only
+                    and not internal_agent_callback
                 ):
                     if final_response:
                         messages.append(
@@ -1998,19 +1904,32 @@ def _generate_stream_unserialized(
                             matched_skills=matched_skills,
                         )
 
+                if not final_response and not finalization_only and not thinking_only_retry_used:
+                    messages.append(
+                        {"role": "assistant", "content": iteration_content}
+                    )
+                    messages.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "Your previous response contained only internal thinking "
+                                "without any action or reply. You must either call a tool "
+                                "or provide a text response to the user now."
+                            ),
+                        }
+                    )
+                    thinking_only_retry_used = True
+                    continue
+
                 _broadcast_agent_status(item_id, "idle")
 
                 yield _to_sse({"done": True})
                 return
 
-            has_visible_tool = any(
-                not _should_hide_tool_details(tool_call["function"]["name"])
-                for tool_call in ordered_tool_calls
-            )
             if planned_task_runtime:
                 planned_task_runtime.tool_started = True
-            thinking_text = iteration_content.strip()
-            if thinking_text and has_visible_tool:
+            thinking_text = iteration_reasoning.strip() or iteration_content.strip()
+            if thinking_text:
                 thinking_event = _persist_and_broadcast_event(
                     item_id,
                     role="assistant",
@@ -2568,6 +2487,7 @@ async def chat(
 
         content = ""
         error_message = ""
+        tool_dispatched = False
 
         for chunk in generate_stream(
             message=request.message,
@@ -2583,6 +2503,8 @@ async def chat(
             payload = json.loads(chunk[6:].strip())
             if payload.get("type") == "agent_response":
                 content = payload.get("content", content)
+            elif payload.get("type") == "agent_action":
+                tool_dispatched = True
             elif payload.get("type") == "agent_error":
                 error_message = payload.get("content", error_message)
             elif payload.get("type") == "error":
@@ -2592,6 +2514,9 @@ async def chat(
 
     if error_message:
         raise HTTPException(status_code=500, detail=error_message)
+
+    if not content and not error_message:
+        content = "已提交后台任务，结果会自动推送～"
 
     return {
         "content": content,

@@ -40,6 +40,11 @@ def parse_tool_arguments(tool_name: str, raw_arguments: str | None) -> dict[str,
         if robot_args is not None:
             return robot_args
 
+    if tool_name == ROBOT_SEND_TOOL_NAME and raw:
+        cleaned = _strip_code_fence(raw).strip()
+        if cleaned:
+            return {"text": cleaned}
+
     raise ToolArgumentParseError("tool arguments are not valid JSON")
 
 

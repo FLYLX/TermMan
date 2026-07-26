@@ -347,6 +347,24 @@ async def delete_item_path(
         _raise_file_service_error(error)
 
 
+@router.post("/internal/items/{item_uuid}/files/copy")
+async def copy_item_path(
+    item_uuid: str,
+    payload: InternalRenameRequest,
+    _api_key: Any = Depends(verify_api_key),
+):
+    try:
+        return file_service.copy_path(
+            user_uuid=payload.user_uuid,
+            item_uuid=item_uuid,
+            path=payload.path,
+            target_path=payload.target_path,
+            working_directory=payload.working_directory,
+        )
+    except FileServiceError as error:
+        _raise_file_service_error(error)
+
+
 @router.post("/files/upload")
 async def upload_file(
     request: Request,

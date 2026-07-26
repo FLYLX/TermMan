@@ -313,6 +313,12 @@ class TerminalProcess:
             except BlockingIOError:
                 import time
                 time.sleep(0.01)
+                # Flush incomplete line buffer after idle (interactive prompts)
+                if self._line_buffer.strip():
+                    prompt_text = self._line_buffer
+                    self._line_buffer = ""
+                    self._write_log(prompt_text)
+                    self._broadcast({"stdout": prompt_text})
             except OSError:
                 break
             except Exception as e:

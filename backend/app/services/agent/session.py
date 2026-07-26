@@ -58,6 +58,7 @@ from app.services.agent.tool_arguments import (
 from app.services.agent.tool_grounding import (
     append_tool_call_footer,
     guard_fabricated_tool_trace,
+    strip_think_tags,
 )
 from app.services.agent.tool_selection import select_tools_for_turn
 from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
@@ -1046,14 +1047,6 @@ class AgentSession:
         tool_name: str,
         tool_args: dict[str, Any],
     ) -> str | None:
-        command = self._extract_command_text(tool_name, tool_args)
-
-        if tool_name == RUN_JOB_TOOL_NAME:
-            duplicate_job = self._find_duplicate_background_job(command)
-            if duplicate_job:
-                return self._build_duplicate_background_job_warning(duplicate_job)
-            return None
-
         if (
             tool_name == EXECUTE_COMMAND_TOOL_NAME
             and self.has_interactive_terminal_context()
@@ -1636,11 +1629,15 @@ class AgentSession:
             has_new_log_lines,
             pending.echo_count,
         )
+        # Read actual log tail so the agent sees real terminal output
+        recheck_content = self._consume_pending_log_delta()
+        if not recheck_content:
+            recheck_content = self._get_recent_pending_log_tail(30)
         self.process_input(
             InputMessage(
                 input_type=InputType.TERMINAL,
-                content="",
-                raw_content="",
+                content=recheck_content,
+                raw_content=recheck_content,
             )
         )
         if self.has_pending_command():
@@ -2523,7 +2520,7 @@ class AgentSession:
                     if not raw_content and hasattr(message, "reasoning_content"):
                         raw_content = ""
                     if raw_content:
-                        final_content = guard_fabricated_tool_trace(raw_content)
+                        final_content = strip_think_tags(guard_fabricated_tool_trace(raw_content))
                         can_finalize, workflow_correction = (
                             task_workflow_manager.can_finalize(
                                 input_msg.reply_ticket_id
@@ -2765,7 +2762,7 @@ class AgentSession:
 
                 if not (hasattr(message, "tool_calls") and message.tool_calls):
                     if message.content:
-                        final_content = guard_fabricated_tool_trace(message.content)
+                        final_content = strip_think_tags(guard_fabricated_tool_trace(message.content))
                         self.emit_output(
                             append_tool_call_footer(
                                 final_content,
@@ -2963,7 +2960,9 @@ class AgentSession:
         lines.append(
             "Decision: will the command finish on its own without needing your later input? -> run_job. "
             "Will it enter a state waiting for your input or remain open for future commands? -> execute_command. "
-            "Do not start an exact duplicate of a listed running command."
+            "Do not start an exact duplicate of a listed running command. "
+            "If a background job is already running, do NOT call list_jobs again in the same turn; "
+            "the job callback will automatically start the next turn when it finishes."
         )
         return "\n".join(lines)
 
@@ -3071,7 +3070,23 @@ class AgentSession:
             model_parameters=getattr(agent._context, "model_parameters", {}),
         )
 
-        return completion(**kwargs)
+        last_exc: BaseException | None = None
+        for attempt in range(3):
+            try:
+                return completion(**kwargs)
+            except Exception as exc:
+                if not _is_transient_llm_error(exc):
+                    raise
+                last_exc = exc
+                if attempt < 2:
+                    import time as _time
+                    _time.sleep(2 * (attempt + 1))
+                    logger.warning(
+                        "[AgentSession] Transient LLM error (attempt %d/3): %s; retrying...",
+                        attempt + 1,
+                        exc,
+                    )
+        raise last_exc
 
     @staticmethod
     def _normalize_dsml_tool_message(message: Any, tools: list[dict]) -> Any:

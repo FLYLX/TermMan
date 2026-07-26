@@ -103,6 +103,10 @@ class RenamePathRequest(FilePathRequest):
     target_path: str
 
 
+class CopyPathRequest(FilePathRequest):
+    target_path: str
+
+
 class FileWriteRequest(FilePathRequest):
     content: str
     encoding: str = "utf-8"
@@ -843,6 +847,28 @@ def rename_item_path(
 
     try:
         return item_file_service.rename_path(
+            item=item,
+            path=body.path,
+            target_path=body.target_path,
+        )
+    except ItemFileServiceError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message)
+
+
+@router.post("/{id}/files/copy")
+def copy_item_path(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+    body: CopyPathRequest,
+) -> dict[str, Any]:
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    try:
+        return item_file_service.copy_path(
             item=item,
             path=body.path,
             target_path=body.target_path,

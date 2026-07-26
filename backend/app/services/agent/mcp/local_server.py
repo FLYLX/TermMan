@@ -121,6 +121,7 @@ def flush_background_job_results_for_entries(
                 message = server._format_background_job_robot_message(
                     first["command"],
                     first["result"],
+                    reply_ticket_id=robot_ticket,
                 )
             else:
                 message = _format_background_job_results_batch(robot_entries)
@@ -328,7 +329,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="run_job",
-            description="Fire-and-forget: run a command in a daemon background process with stdin closed. You only need the final result/output, not to interact with the process. The job runs independently; you get the tail output delivered back when it finishes. Use this for anything where you just want the outcome: downloads, package installs (-y), apt update, builds, tests, archive extraction, file queries (ls, cat, find, grep, java -version). Also use run_job for any side commands while the main terminal is occupied by an interactive process you are managing. Decision rule: will this command finish on its own without needing later input from you? Yes -> run_job. Will it enter a state waiting for your input, or remain open for future commands (server, REPL, shell)? No -> use execute_command instead. If unsure whether a script needs interaction, cat it first to check. Multiple different jobs may run in parallel; exact duplicate commands are rejected. For package managers with global locks (apt/dpkg), prefer waiting for an existing same-manager job to finish. Prefer one clear operation per job; avoid very long && chains when a later step may need diagnosis.",
+            description="Fire-and-forget: run a command in a daemon background process with stdin closed. You only need the final result/output, not to interact with the process. The job runs independently; you get the tail output delivered back when it finishes. Use this for anything where you just want the outcome: downloads, package installs (-y), apt update, builds, tests, archive extraction, file queries (ls, cat, find, grep, java -version). Also use run_job for any side commands while the main terminal is occupied by an interactive process you are managing. Decision rule: will this command finish on its own without needing later input from you? Yes -> run_job. Will it enter a state waiting for your input, or remain open for future commands (server, REPL, shell)? No -> use execute_command instead. If unsure whether a script needs interaction, cat it first to check. Multiple different jobs may run in parallel; avoid starting exact duplicate commands. For package managers with global locks (apt/dpkg), prefer waiting for an existing same-manager job to finish. Prefer one clear operation per job; avoid very long && chains when a later step may need diagnosis.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -437,13 +438,16 @@ class LocalMCPServer:
             name="update_task_workflow",
             description=(
                 "Create or update the authoritative task workflow. "
-                "When you receive a task that will take more than 3 steps, YOU must call "
+                "When you receive a task that will take 3 or more steps, YOU must call "
                 "this tool with action=create FIRST to create a workflow with planned steps. "
+                "Install/uninstall/configure/upgrade tasks that end with a verification "
+                "step ALWAYS qualify (e.g. check -> install -> verify = 3 steps), so create "
+                "a workflow for them. "
                 "Use title='step1|step2|step3' to define steps (pipe-separated). "
                 "Use note for the main objective. "
                 "The user sees workflow progress in the task queue, so always create one "
                 "for multi-step tasks. "
-                "If create is refused because non-final workflow(s) already exist, review "
+                "If non-final workflow(s) already exist for this item, review "
                 "the listed workflows: continue the matching one with the update actions "
                 "instead of creating a duplicate; only retry with force_new=true when the "
                 "task is genuinely different. "
@@ -1119,7 +1123,15 @@ class LocalMCPServer:
                     if candidate.get("status")
                     not in {"completed", "cancelled"}
                 ]
-                workflow = active[0] if len(active) == 1 else None
+                if active:
+                    workflow = active[0]
+                    # Auto-attach ticket so subsequent tool calls find it
+                    if reply_ticket_id:
+                        try:
+                            wf_id = workflow.get("workflow_id") or workflow.get("id", "")
+                            task_workflow_manager.attach_ticket(wf_id, reply_ticket_id)
+                        except Exception:
+                            pass
             if workflow is None:
                 return [
                     {
@@ -1208,6 +1220,17 @@ class LocalMCPServer:
                         task_workflow_manager._last_handler_id = _sess.handler_id
                 except Exception:
                     pass
+            _action = str(args.get("action") or "").strip().lower()
+            if _action in {"cancel", "resume"} and task_workflow_manager.get_by_ticket(reply_ticket_id) is None:
+                _active = [
+                    candidate
+                    for candidate in task_workflow_manager.snapshot(item_id)
+                    if candidate.get("status") not in {"completed", "cancelled"}
+                ]
+                if len(_active) == 1:
+                    _wf_id = str(_active[0].get("workflow_id") or "")
+                    if _wf_id:
+                        task_workflow_manager.attach_ticket(_wf_id, reply_ticket_id)
             success, detail = task_workflow_manager.update(
                 reply_ticket_id,
                 action=str(args.get("action") or ""),
@@ -1574,7 +1597,7 @@ class LocalMCPServer:
                 f"[LocalMCPServer] background run_job result: item={item_id}, success={result.get('success')}, exit_code={result.get('exit_code')}, timed_out={result.get('timed_out')}"
             )
 
-            feedback = self._format_background_job_feedback(result)
+            feedback = self._format_background_job_feedback(result, reply_ticket_id=reply_ticket_id, workflow_id=workflow_id)
             if reply_ticket_id:
                 try:
                     from app.services.agent.scheduled_tasks import (
@@ -1813,30 +1836,45 @@ class LocalMCPServer:
             return f"{message}\n输出：\n{output_tail}"
         return message
 
-    def _format_background_job_robot_message(self, command: str, result: dict) -> str:
+    def _format_background_job_robot_message(self, command: str, result: dict, *, reply_ticket_id: str = "") -> str:
         status = "完成" if result.get("success") else "失败"
+        has_workflow = bool(workflow_id)
+        if has_workflow:
+            instruction = (
+                "重要：任务工作流活跃，必须调用 "
+                "mcp_local_update_task_workflow (action=complete_current_step 或 "
+                "insert_recovery_step) 推进工作流。"
+                "不要为中间结果发送 QQ 消息。"
+                "只在到达汇报步骤、最终失败且无更多方法、或重大方向变更时才发 QQ。"
+                "静默处理此结果并继续执行。"
+            )
+        else:
+            instruction = "根据结果直接回复用户。"
         return (
-            "[后台终端任务结果 - 本 QQ 会话]\n"
+            "[后台终端任务结果 - 来自 QQ 会话]\n"
             f"后台任务已{status}。\n"
-            "重要：如果任务工作流活跃，必须调用 "
-            "mcp_local_update_task_workflow (action=complete_current_step 或 "
-            "insert_recovery_step) 推进工作流。"
-            "不要为中间结果发送 QQ 消息。"
-            "只在到达汇报步骤、最终失败且无更多方法、或重大方向变更时才发 QQ。"
-            "静默处理此结果并继续执行。\n"
+            f"{instruction}\n"
             f"命令: {command}\n"
             f"{self._format_job_result(result)}"
         )
 
-    def _format_background_job_feedback(self, result: dict) -> str:
+    def _format_background_job_feedback(self, result: dict, *, reply_ticket_id: str = "", workflow_id: str = "") -> str:
+        has_workflow = bool(workflow_id)
         if result.get("success"):
-            return (
-                "[Background terminal job completed]\n"
-                "后台任务已完成。你必须立即调用 mcp_local_update_task_workflow "
-                "(action=complete_current_step 或 insert_recovery_step) 推进工作流。"
-                "不要只描述结果而不操作。\n"
-                f"{self._format_job_result(result)}"
-            )
+            if has_workflow:
+                header = (
+                    "[Background terminal job completed]\n"
+                    "后台任务已完成。你必须立即调用 mcp_local_update_task_workflow "
+                    "(action=complete_current_step 或 insert_recovery_step) 推进工作流。"
+                    "不要只描述结果而不操作。"
+                )
+            else:
+                header = (
+                    "[Background terminal job completed]\n"
+                    "后台任务已完成。根据结果直接回复用户。"
+                    "如果此命令的结果已在之前的回复中处理过，静默结束即可，不要重复回复。"
+                )
+            return f"{header}\n{self._format_job_result(result)}"
         return (
             "[Background terminal job failed]\n"
             "后台任务请求失败，请根据错误信息决定是否重试或换方案。\n"

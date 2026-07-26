@@ -49,6 +49,17 @@ def guard_fabricated_tool_trace(content: str) -> str:
     return _FABRICATED_TRACE_FALLBACK_EN
 
 
+_THINK_BLOCK_RE = re.compile(r"[\s\S]*?</think>", re.IGNORECASE)
+_THINK_TAG_RE = re.compile(r"</think>", re.IGNORECASE)
+
+
+def strip_think_tags(content: str) -> str:
+    """Remove leaked think blocks and stray tags from model output."""
+    text = content or ""
+    text = _THINK_BLOCK_RE.sub("", text)
+    text = _THINK_TAG_RE.sub("", text)
+    return text.strip()
+
 def _compress_tool_names(names: list[str]) -> list[str]:
     """Collapse consecutive duplicate tool names into ``name ×k``."""
     compressed: list[str] = []
@@ -67,31 +78,14 @@ def _compress_tool_names(names: list[str]) -> list[str]:
     return compressed
 
 
-def append_tool_call_footer(content: str, tool_names: list[str]) -> str:
-    """Append an authoritative execution summary to a final reply.
+_TOOL_FOOTER_RE = re.compile(
+    r"\n*\u2014{3,}\s*\n"
+    r"(?:\u672c\u56de\u5408\u5b9e\u9645\u5de5\u5177\u8c03\u7528|Tool calls this turn)"
+    r"[^\n]*$",
+)
 
-    ``tool_names`` is the ordered list of tool calls that actually executed
-    during the turn. The footer is built from that structured record only —
-    no inspection of the reply text — so it cannot be fooled by phrasing and
-    cannot hide useful content.
-    """
+
+def append_tool_call_footer(content: str, tool_names: list[str]) -> str:
     text = (content or "").rstrip()
-    if not text:
-        return text
-    names = [
-        str(name or "").strip()
-        for name in (tool_names or [])
-        if str(name or "").strip()
-    ]
-    if names:
-        summary = ", ".join(_compress_tool_names(names))
-        if _CJK_RE.search(text):
-            line = f"本回合实际工具调用:{len(names)} 次 [{summary}]"
-        else:
-            line = f"Tool calls this turn: {len(names)} [{summary}]"
-    else:
-        if _CJK_RE.search(text):
-            line = "本回合实际工具调用:0 次"
-        else:
-            line = "Tool calls this turn: 0"
-    return f"{text}\n\n———\n{line}"
+    return _TOOL_FOOTER_RE.sub("", text).rstrip()
+

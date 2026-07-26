@@ -211,6 +211,8 @@ def format_installed_software(items: list[dict[str, Any]], *, limit: int = MAX_P
 
 def build_installed_software_prompt(item_id: str) -> str:
     items = list_installed_software(item_id)
+    if not items:
+        return ""
     return (
         "Current installed software list for this terminal item:\n"
         f"{format_installed_software(items)}\n"

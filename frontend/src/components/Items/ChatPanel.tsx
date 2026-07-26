@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import { Activity, ChevronDown, ChevronUp, Download, ExternalLink, Loader2, Lock, Send, Square, Terminal, Trash2 } from "lucide-react"
+import { Activity, Brain, ChevronDown, ChevronUp, Download, ExternalLink, Loader2, Lock, Send, Square, Terminal, Trash2 } from "lucide-react"
 import {
   useEffect,
   useEffectEvent,
@@ -67,7 +67,6 @@ interface ChatPanelProps {
 
 const STATUS_ONLY_TYPES = new Set([
   "agent_status",
-  "agent_thinking",
   "agent_action",
   "agent_tool_result",
   "session_summary",
@@ -948,7 +947,11 @@ function buildRequestHistory(
   return messages.slice(-CHAT_REQUEST_HISTORY_LIMIT).reduce<
     Array<{ role: "user" | "assistant"; content: string }>
   >((history, message) => {
-    if (message.localEcho || STATUS_ONLY_TYPES.has(message.type ?? "")) {
+    if (
+      message.localEcho ||
+      message.type === "agent_thinking" ||
+      STATUS_ONLY_TYPES.has(message.type ?? "")
+    ) {
       return history
     }
 
@@ -1030,11 +1033,54 @@ function getMessageClasses(message: ChatMessage): string {
   return "border bg-muted"
 }
 
+const ThinkingBlock = memo(function ThinkingBlock({
+  message,
+}: {
+  message: ChatMessage
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="flex justify-start">
+      <div className="w-full max-w-[90%]">
+        <button
+          type="button"
+          onClick={() => setExpanded((prev) => !prev)}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+        >
+          <Brain className="h-3 w-3" />
+          <span>????</span>
+          {expanded ? (
+            <ChevronUp className="h-3 w-3" />
+          ) : (
+            <ChevronDown className="h-3 w-3" />
+          )}
+        </button>
+        <div
+          className={`grid transition-all duration-200 ease-out ${
+            expanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+          }`}
+        >
+          <div className="overflow-hidden">
+            <div className="mt-1 whitespace-pre-wrap break-words rounded-lg border border-dashed border-muted-foreground/25 bg-muted/40 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+              {message.content}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+})
+
 const ChatMessageRow = memo(function ChatMessageRow({
   message,
 }: {
   message: ChatMessage
 }) {
+  if (message.type === "agent_thinking") {
+    return <ThinkingBlock message={message} />
+  }
+
   const label = getMessageLabel(message)
   const robotDisplay = getRobotMessageDisplay(message)
   const visibleContent = robotDisplay ? "" : getVisibleChatContent(message)
@@ -1226,6 +1272,12 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
         ...transientStatus,
         autoClearMs: ACTIVE_AGENT_STATUS_TIMEOUT_MS,
       })
+      if (normalizedMessage.type === "agent_thinking") {
+        if (shouldRenderMessage(normalizedMessage)) {
+          appendLiveMessage(normalizedMessage)
+        }
+        return
+      }
       return
     }
     if (normalizedMessage.type === "chat_user") {

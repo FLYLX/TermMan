@@ -44,7 +44,6 @@ def test_agent_profile_prompt_always_includes_tool_policy() -> None:
     assert "安静人格" in prompt
     assert "短句回复" in prompt
     assert "Call MCP tools only when" in prompt
-    assert "If you did not call a tool in this turn" in prompt
     assert "First-person identity" in prompt
     assert "not a persona, role, style" in prompt
 

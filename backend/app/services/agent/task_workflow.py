@@ -941,6 +941,15 @@ class TaskWorkflowManager:
             workflow.updated_at = _utcnow()
             _persist_workflow(workflow)
 
+    def _cancel_workflow(self, workflow: "TaskWorkflow", *, reason: str = "") -> None:
+        workflow.status = "cancelled"
+        workflow.blocker = reason
+        for step in workflow.steps:
+            if step.status not in {"completed", "cancelled"}:
+                step.status = "cancelled"
+        workflow.updated_at = _utcnow()
+        _persist_workflow(workflow)
+
     def update(
         self,
         ticket_id: str,
@@ -967,26 +976,13 @@ class TaskWorkflowManager:
                     item_id, _normalize_objective(note)
                 )
             if open_workflows and not dedup_hit and not force_new:
-                lines = [
-                    "Refused: this item already has non-final task workflow(s). "
-                    "Do not create a duplicate.",
-                    "Existing:",
-                ]
-                for workflow in open_workflows[:5]:
-                    current = workflow.current_step()
-                    lines.append(
-                        f"- {workflow.workflow_id} | {workflow.status} | "
-                        f"objective: {str(workflow.objective)[:120]} | "
-                        f"current: {current.title if current else '(none)'}"
-                    )
-                lines.append(
-                    "If your task is the SAME as one of them: continue that "
-                    "workflow with record_progress / insert_recovery_step / "
-                    "complete_current_step instead of creating a new one. "
-                    "Only when it is genuinely a DIFFERENT task, call create "
-                    "again with force_new=true."
+                for stale_wf in open_workflows:
+                    self._cancel_workflow(stale_wf, reason="superseded by new workflow")
+                logger.info(
+                    "[TaskWorkflow] Auto-cancelled %d stale workflow(s) for item %s before creating new one",
+                    len(open_workflows),
+                    item_id,
                 )
-                return False, "\n".join(lines)
             step_titles = [
                 s.strip()[:180]
                 for s in str(title or "").split("|")
@@ -1006,7 +1002,15 @@ class TaskWorkflowManager:
                 pass
             source_type = "web"
             source_label = "TermMan web chat"
-            if agent:
+            try:
+                from app.services.agent.reply_ticket import reply_ticket_manager
+                _ticket = reply_ticket_manager.get(ticket_id)
+                if _ticket and _ticket.source_type:
+                    source_type = _ticket.source_type
+                    source_label = _ticket.source_label or source_label
+            except Exception:
+                pass
+            if source_type == "web" and agent:
                 ctx = getattr(agent, "_context", None)
                 if ctx and getattr(ctx, "robot_id", ""):
                     source_type = "qq"
@@ -1031,6 +1035,17 @@ class TaskWorkflowManager:
             if not workflow:
                 return False, "No active task workflow is linked to this reply ticket. Call with action=create first to create one."
             step = workflow.current_step()
+
+            # Guard: once workflow is ready_to_report or beyond, block state-regressing actions
+            _terminal_states = {"ready_to_report", "reporting", "completed", "cancelled", "failed"}
+            if workflow.status in _terminal_states and normalized_action in {
+                "complete_current_step", "insert_recovery_step", "set_current_step"
+            }:
+                return (
+                    True,
+                    f"Workflow is already '{workflow.status}'. No further step changes needed. "
+                    "Proceed to deliver the final report to the user.",
+                )
 
             if normalized_action == "record_progress":
                 workflow.latest_progress = note or workflow.latest_progress
@@ -1116,10 +1131,13 @@ class TaskWorkflowManager:
                     if task.status not in {"completed", "cancelled"}
                 ]
                 if incomplete:
+                    titles = ", ".join(task.title for task in incomplete[:3])
                     return (
                         False,
-                        "Cannot report completion while workflow steps remain incomplete: "
-                        + ", ".join(task.title for task in incomplete[:3]),
+                        f"Cannot report completion while workflow steps remain incomplete: {titles}. "
+                        "You must execute the remaining steps first (run the verification command "
+                        "via run_job), then call complete_current_step with the result, "
+                        "then mark_ready_to_report.",
                     )
                 workflow.status = "ready_to_report"
                 workflow.latest_progress = (
@@ -1448,6 +1466,9 @@ class TaskWorkflowManager:
                 "直接取消所有剩余 pending 步骤并立即汇报结果，不要逐步走完每个步骤。"
                 "用 complete_current_step 完成当前检查步骤，然后对每个剩余 pending 步骤调用 "
                 "cancel_step（或一次性 action=cancel 剩余步骤），最后汇报。省掉不必要的轮次。",
+                "16. 只有确实关于本任务目标的消息才更新 workflow。闲聊、问候、无关提问、即时状态查询"
+                "（如“今天星期几”“在吗”“1+1”）直接回答即可，不要调用 update_task_workflow，"
+                "不要把这类消息的工具结果记为步骤证据，也不要因此给 workflow 挂新的回复目标。",
             ]
         )
         return "\n".join(lines)

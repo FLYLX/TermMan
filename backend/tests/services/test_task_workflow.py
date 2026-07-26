@@ -411,8 +411,8 @@ def test_prompt_context_compact_default_unchanged() -> None:
     assert default == explicit
 
 
-def test_create_refused_when_open_workflow_exists() -> None:
-    """Second create for the same item is refused and handed to the agent."""
+def test_create_allowed_when_open_workflow_exists() -> None:
+    """Agent decides whether to create; no hard block."""
     manager = TaskWorkflowManager()
     _create_java_workflow(manager)
     manager._last_item_id = "item-java"
@@ -425,11 +425,7 @@ def test_create_refused_when_open_workflow_exists() -> None:
         title="安装 OpenJDK 21|验证 java -version",
     )
 
-    assert ok is False
-    assert "force_new=true" in detail
-    assert "安装 Temurin Java 17" in detail  # 现有 workflow 被列出供 agent 裁决
-    # 没有真的创建第二个
-    assert len(manager.snapshot("item-java")) == 1
+    assert ok is True
 
 
 def test_create_force_new_bypasses_gate() -> None:

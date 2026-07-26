@@ -137,22 +137,67 @@ class SocketService:
         self._broadcast_queues[item_uuid].put((event, data))
 
     def _broadcast_worker(self, item_uuid: str):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Use the main event loop so sio.emit() actually delivers via the
+        # ASGI transport. A private loop would silently no-op.
+        main_loop = self._get_main_loop()
         
         try:
             while self._running:
                 try:
                     event, data = self._broadcast_queues[item_uuid].get(timeout=0.1)
-                    loop.run_until_complete(
-                        self.broadcast_to_terminal(item_uuid, event, data)
-                    )
+                    if main_loop and main_loop.is_running():
+                        import concurrent.futures
+                        future = asyncio.run_coroutine_threadsafe(
+                            self.broadcast_to_terminal(item_uuid, event, data),
+                            main_loop,
+                        )
+                        future.result(timeout=5)
+                    else:
+                        # Fallback: create a temporary loop (legacy behavior)
+                        loop = asyncio.new_event_loop()
+                        try:
+                            loop.run_until_complete(
+                                self.broadcast_to_terminal(item_uuid, event, data)
+                            )
+                        finally:
+                            loop.close()
                 except queue.Empty:
                     continue
                 except Exception as e:
                     logger.error(f"Broadcast worker error for {item_uuid}: {e}")
-        finally:
-            loop.close()
+        except Exception as e:
+            logger.error(f"Broadcast worker fatal error for {item_uuid}: {e}")
+
+    def _get_main_loop(self):
+        """Get the main asyncio event loop (the one running the ASGI app)."""
+        try:
+            import uvicorn
+            # uvicorn stores the loop in the server; try to get the running loop
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                return loop
+        except RuntimeError:
+            pass
+        # Try to find a running loop in the main thread
+        try:
+            import threading
+            if threading.current_thread() is not threading.main_thread():
+                # We are in a worker thread; get the main thread's loop
+                import sys
+                main_thread = threading.main_thread()
+                # Python 3.10+: asyncio._get_running_loop() is thread-local
+                # Use a stored reference instead
+                return getattr(self, "_main_loop_ref", None)
+        except Exception:
+            pass
+        return getattr(self, "_main_loop_ref", None)
+
+    def store_main_loop(self):
+        """Call from the main async context to store the loop reference."""
+        try:
+            self._main_loop_ref = asyncio.get_running_loop()
+        except RuntimeError:
+            self._main_loop_ref = None
 
     async def close_terminal_connections(self, item_uuid: str):
         room_id = self.get_room_name(item_uuid)
