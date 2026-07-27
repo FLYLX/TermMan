@@ -964,7 +964,20 @@ class TaskWorkflowManager:
         note = str(note or "").strip()[:2000]
 
         if normalized_action == "create":
-            item_id = str(getattr(self, "_last_item_id", "") or "")
+            item_id = ""
+            try:
+                from app.services.agent.reply_ticket import reply_ticket_manager as _rtm
+                _t = _rtm.get(ticket_id)
+                if _t:
+                    item_id = str(_t.item_id or "")
+            except Exception:
+                pass
+            if not item_id:
+                item_id = str(getattr(self, "_last_item_id", "") or "")
+            logger.info(
+                "[TaskWorkflow] CREATE: ticket_id=%s resolved item_id=%r",
+                ticket_id, item_id,
+            )
             with self._lock:
                 open_workflows = [
                     workflow
@@ -975,6 +988,10 @@ class TaskWorkflowManager:
                 dedup_hit = self._find_duplicate_workflow_locked(
                     item_id, _normalize_objective(note)
                 )
+            logger.info(
+                "[TaskWorkflow] CREATE: open_workflows=%d dedup_hit=%s force_new=%s",
+                len(open_workflows), dedup_hit, force_new,
+            )
             if open_workflows and not dedup_hit and not force_new:
                 for stale_wf in open_workflows:
                     self._cancel_workflow(stale_wf, reason="superseded by new workflow")
@@ -994,7 +1011,7 @@ class TaskWorkflowManager:
             try:
                 from app.services.agent.session import agent_session_manager
                 sess = agent_session_manager.get_session(
-                    str(getattr(self, "_last_item_id", "") or "")
+                    item_id
                 )
                 if sess:
                     agent = sess.get_agent()
@@ -1016,7 +1033,7 @@ class TaskWorkflowManager:
                     source_type = "qq"
                     source_label = f"QQ {getattr(ctx, 'robot_conversation_key', '') or 'chat'}"
             wf = self.create(
-                item_id=str(getattr(self, "_last_item_id", "") or ""),
+                item_id=item_id,
                 handler_id=str(getattr(self, "_last_handler_id", "") or ""),
                 reply_ticket_id=ticket_id,
                 objective=note or "Task",

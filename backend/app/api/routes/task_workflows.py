@@ -40,17 +40,9 @@ def cancel_task_workflow(workflow_id: str, current_user: CurrentUser) -> dict:
         raise HTTPException(status_code=404, detail="task workflow not found")
 
     if workflow.status not in WORKFLOW_FINAL_STATUSES:
-        ticket_id = workflow.reply_ticket_id or (
-            workflow.reply_ticket_ids[-1] if workflow.reply_ticket_ids else ""
+        task_workflow_manager._cancel_workflow(
+            workflow, reason="User cancelled the task from the task queue panel."
         )
-        if ticket_id:
-            task_workflow_manager.update(
-                ticket_id,
-                action="cancel",
-                note="User cancelled the task from the task queue panel.",
-            )
-        else:
-            workflow.status = "cancelled"
         running_commands = {
             str(job.command or "").strip()
             for job in workflow.jobs

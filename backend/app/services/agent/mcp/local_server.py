@@ -118,10 +118,19 @@ def flush_background_job_results_for_entries(
                 pass
         if not skip_robot:
             if len(robot_entries) == 1:
+                _robot_wf_id = ""
+                if robot_ticket:
+                    try:
+                        _rwf = task_workflow_manager.get_by_ticket(robot_ticket)
+                        if _rwf:
+                            _robot_wf_id = _rwf.workflow_id
+                    except Exception:
+                        pass
                 message = server._format_background_job_robot_message(
                     first["command"],
                     first["result"],
                     reply_ticket_id=robot_ticket,
+                    workflow_id=_robot_wf_id,
                 )
             else:
                 message = _format_background_job_results_batch(robot_entries)
@@ -1746,8 +1755,17 @@ class LocalMCPServer:
         try:
             from app.plugins.robot.service import robot_service
 
+            _rb_wf_id = ""
+            if reply_ticket_id:
+                try:
+                    from app.services.agent.task_workflow import task_workflow_manager as _twm
+                    _rbwf = _twm.get_by_ticket(reply_ticket_id)
+                    if _rbwf:
+                        _rb_wf_id = _rbwf.workflow_id
+                except Exception:
+                    pass
             message = message_override or self._format_background_job_robot_message(
-                command, result
+                command, result, workflow_id=_rb_wf_id,
             )
             queued = robot_service.enqueue_background_job_result(
                 robot_id=robot_job_context.get("robot_id", ""),
@@ -1836,7 +1854,7 @@ class LocalMCPServer:
             return f"{message}\n输出：\n{output_tail}"
         return message
 
-    def _format_background_job_robot_message(self, command: str, result: dict, *, reply_ticket_id: str = "") -> str:
+    def _format_background_job_robot_message(self, command: str, result: dict, *, reply_ticket_id: str = "", workflow_id: str = "") -> str:
         status = "完成" if result.get("success") else "失败"
         has_workflow = bool(workflow_id)
         if has_workflow:
