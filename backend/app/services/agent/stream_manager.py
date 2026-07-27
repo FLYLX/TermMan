@@ -1,3 +1,4 @@
+import re
 import logging
 import threading
 from dataclasses import dataclass, field
@@ -10,6 +11,22 @@ from app.services.agent.session import (
     InputType,
     agent_session_manager,
 )
+
+
+_PROMPT_PREFIX_RE = re.compile(r"^(?:>\s?|\$\s?|#\s?){1,3}")
+
+
+def _strip_prompt_prefix(text: str) -> str:
+    """Strip leading shell/REPL prompt characters from each line.
+    Lines that become empty after stripping are removed."""
+    lines = text.split("\n")
+    cleaned = []
+    for line in lines:
+        stripped = _PROMPT_PREFIX_RE.sub("", line).rstrip()
+        if stripped:
+            cleaned.append(stripped)
+    return "\n".join(cleaned)
+
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +58,7 @@ class PendingTerminalBatch:
     created_at: datetime = field(default_factory=datetime.now)
     last_update: datetime = field(default_factory=datetime.now)
     timer: threading.Timer | None = None
+ne = None
 
 
 class TerminalStreamManager:
@@ -184,6 +202,8 @@ class TerminalStreamManager:
     def _append_terminal_part(self, batch: PendingTerminalBatch, content: str):
         normalized = content.strip("\n")
         if normalized:
+            normalized = _strip_prompt_prefix(normalized)
+        if normalized:
             batch.parts.append(normalized)
             batch.last_update = datetime.now()
 
@@ -293,9 +313,10 @@ class TerminalStreamManager:
         *,
         raw_output: str = "",
     ):
-        logger.debug(
+        logger.info(
             f"[StreamManager] process_stream: item={item_id}, handler={handler_id}, "
-            f"output_len={len(filtered_output) if filtered_output else 0}"
+            f"filtered_len={len(filtered_output) if filtered_output else 0}, "
+            f"raw_len={len(raw_output) if raw_output else 0}"
         )
 
         if not handler_id:
@@ -308,8 +329,9 @@ class TerminalStreamManager:
         has_filtered_output = bool(filtered_output and filtered_output.strip())
         has_raw_output = bool(raw_output and raw_output.strip())
         if not has_filtered_output and not (has_raw_output and session.has_pending_command()):
-            logger.debug("[StreamManager] No usable output for agent processing, skipping")
+            logger.info("[StreamManager] No usable output for agent processing, skipping: item=%s", item_id)
             return
+
 
         waiting_for_command_feedback = session.has_pending_command()
         progress_candidate = "\n".join(

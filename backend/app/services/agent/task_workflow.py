@@ -1486,6 +1486,9 @@ class TaskWorkflowManager:
                 "16. 只有确实关于本任务目标的消息才更新 workflow。闲聊、问候、无关提问、即时状态查询"
                 "（如“今天星期几”“在吗”“1+1”）直接回答即可，不要调用 update_task_workflow，"
                 "不要把这类消息的工具结果记为步骤证据，也不要因此给 workflow 挂新的回复目标。",
+                "17. 用户新指令优先于当前 workflow。如果用户发来的消息与当前 workflow 目标明显不同"
+                "（例如 workflow 在装 Java 但用户说“启动服务器”），立即取消当前 workflow（action=cancel），"
+                "然后按新指令行事。不要继续执行旧 workflow 的剩余步骤。",
             ]
         )
         return "\n".join(lines)

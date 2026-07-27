@@ -20,7 +20,7 @@ class AgentInputBridge:
 
     def handle_stream(self, item_uuid: str, data: dict[str, object]) -> None:
         if data.get("source") == "job":
-            logger.debug("[AgentInputBridge] Skipping daemon job stream for item %s", item_uuid)
+            logger.info("[AgentInputBridge] Skipping daemon job stream for item %s", item_uuid)
             return
         logger.info(
             "[AgentInputBridge] handle_stream: item=%s stdout_len=%s stderr_len=%s",
@@ -41,7 +41,7 @@ class AgentInputBridge:
 
             handler_id = item_handler_context.get_handler(item_uuid) or self._load_handler_id(item_uuid)
             if not handler_id:
-                logger.debug("[AgentInputBridge] No handler found for item %s", item_uuid)
+                logger.info("[AgentInputBridge] No handler found for item %s", item_uuid)
                 return
 
             stream_manager.process_stream(
@@ -50,11 +50,12 @@ class AgentInputBridge:
                 handler_id,
                 raw_output=raw_output,
             )
-            logger.debug(
-                "[AgentInputBridge] Processed stream for item=%s, handler=%s, output_len=%s",
+            logger.info(
+                "[AgentInputBridge] Processed stream for item=%s, handler=%s, filtered_len=%s, raw_len=%s",
                 item_uuid,
                 handler_id,
                 len(filtered_output),
+                len(raw_output),
             )
         except Exception as exc:
             logger.error("[AgentInputBridge] Failed to bridge stream for item %s: %s", item_uuid, exc, exc_info=True)

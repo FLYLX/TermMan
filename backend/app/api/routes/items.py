@@ -1237,3 +1237,25 @@ def test_output_filter(
         "matched_filters": result.matched_filters,
         "matches": result.matches[:20],
     }
+
+
+@router.get("/{id}/token-usage")
+def get_token_usage(
+    current_user: CurrentUser,
+    id: uuid.UUID,
+) -> dict[str, Any]:
+    from app.services.agent.token_usage import token_usage_tracker
+
+    stats = token_usage_tracker.get_item_stats(str(id))
+    if stats is None:
+        return {
+            "item_id": str(id),
+            "total_prompt_tokens": 0,
+            "total_completion_tokens": 0,
+            "total_tokens": 0,
+            "total_turns": 0,
+            "first_seen": "",
+            "last_seen": "",
+            "models": [],
+        }
+    return stats

@@ -62,6 +62,7 @@ import { Input } from "@/components/ui/input"
 import { PasswordInput } from "@/components/ui/password-input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { TokenUsagePanel } from "@/components/Items/TokenUsagePanel"
 import { Textarea } from "@/components/ui/textarea"
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import useCustomToast from "@/hooks/useCustomToast"
@@ -2781,6 +2782,7 @@ function ItemDetailPage({
                   {t("items.detail.memory")}
                 </TabsTrigger>
                 <TabsTrigger value="scheduled-tasks">定时任务</TabsTrigger>
+                <TabsTrigger value="token-usage">Token 统计</TabsTrigger>
               </TabsList>
             </div>
 
@@ -3974,6 +3976,11 @@ function ItemDetailPage({
                 </section>
               ) : null}
             </TabsContent>
+              <TabsContent value="token-usage" className="space-y-4">
+                <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                  <TokenUsagePanel itemId={String(item.id)} />
+                </section>
+              </TabsContent>
           </Tabs>
         </div>
       </div>

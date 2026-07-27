@@ -812,7 +812,10 @@ def _build_current_source_route_context(
             "each need one separate answer; consecutive messages from the same sender are one intent. "
             "After `mcp_robot_send_message` succeeds, do not restate the same answer in the final assistant text.\n"
             "- do not send to any other QQ conversation unless the user explicitly "
-            "gave a target and the tool allows it."
+            "gave a target and the tool allows it.\n"
+            "- reply only to the source: do NOT broadcast the answer to the terminal "
+            "or game server console (e.g., say/tell commands) unless the user explicitly "
+            "asks you to also announce it there."
         )
 
     if source == "terminal":

@@ -54,3 +54,4 @@ def is_progress_noise_line(line: str) -> bool:
 def is_progress_noise_content(content: str) -> bool:
     lines = split_terminal_lines(content)
     return bool(lines) and all(is_progress_noise_line(line) for line in lines)
+

@@ -1852,17 +1852,41 @@ class LocalMCPServer:
             return f"{message}\n输出：\n{output_tail}"
         return message
 
+    def _workflow_step_hint(self, reply_ticket_id: str, workflow_id: str) -> str:
+        try:
+            from app.services.agent.task_workflow import task_workflow_manager
+            wf = (
+                task_workflow_manager._workflows.get(workflow_id)
+                if workflow_id
+                else None
+            ) or task_workflow_manager.get_by_ticket(reply_ticket_id)
+            if not wf:
+                return ""
+            step = wf.current_step()
+            if not step:
+                return ""
+            idx = wf.current_step_index + 1
+            total = len(wf.steps)
+            return f"当前步骤: {idx}/{total} [{step.title}]。"
+        except Exception:
+            return ""
+
     def _format_background_job_robot_message(self, command: str, result: dict, *, reply_ticket_id: str = "", workflow_id: str = "") -> str:
         status = "完成" if result.get("success") else "失败"
         has_workflow = bool(workflow_id)
+        step_hint = ""
         if has_workflow:
+            step_hint = self._workflow_step_hint(reply_ticket_id, workflow_id)
             instruction = (
-                "重要：任务工作流活跃，必须调用 "
+                "重要：任务工作流活跃。"
+                + step_hint
+                + "你的第一个动作必须是调用 "
                 "mcp_local_update_task_workflow (action=complete_current_step 或 "
-                "insert_recovery_step) 推进工作流。"
+                "insert_recovery_step)，用上面的输出作为 evidence。"
+                "不要先调 read_terminal_log 或 list_jobs。"
                 "不要为中间结果发送 QQ 消息。"
                 "只在到达汇报步骤、最终失败且无更多方法、或重大方向变更时才发 QQ。"
-                "静默处理此结果并继续执行。"
+                "如果不需要回复用户，最终只输出 NRN 即可。"
             )
         else:
             instruction = "根据结果直接回复用户。"
@@ -1878,11 +1902,15 @@ class LocalMCPServer:
         has_workflow = bool(workflow_id)
         if result.get("success"):
             if has_workflow:
+                step_hint = self._workflow_step_hint(reply_ticket_id, workflow_id)
                 header = (
                     "[Background terminal job completed]\n"
-                    "后台任务已完成。你必须立即调用 mcp_local_update_task_workflow "
-                    "(action=complete_current_step 或 insert_recovery_step) 推进工作流。"
-                    "不要只描述结果而不操作。"
+                    "后台任务已完成。"
+                    + step_hint
+                    + "你的第一个动作必须是调用 mcp_local_update_task_workflow "
+                    "(action=complete_current_step 或 insert_recovery_step)，"
+                    "用下面的输出作为 evidence。"
+                    "不要先调 read_terminal_log 或 list_jobs。"
                 )
             else:
                 header = (
@@ -1891,9 +1919,12 @@ class LocalMCPServer:
                     "如果此命令的结果已在之前的回复中处理过，静默结束即可，不要重复回复。"
                 )
             return f"{header}\n{self._format_job_result(result)}"
+        step_hint = self._workflow_step_hint(reply_ticket_id, workflow_id) if has_workflow else ""
         return (
             "[Background terminal job failed]\n"
-            "后台任务请求失败，请根据错误信息决定是否重试或换方案。\n"
+            + step_hint
+            + "后台任务失败。调用 mcp_local_update_task_workflow "
+            "(action=insert_recovery_step) 换方法继续，或确认无更多方法时汇报失败。\n"
             f"Error: {result.get('error', 'daemon job failed')}\n"
             f"command: {result.get('command', '')}"
         )

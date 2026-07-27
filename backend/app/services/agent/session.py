@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import sys
 import hashlib
 import json
@@ -61,6 +61,7 @@ from app.services.agent.tool_grounding import (
     strip_think_tags,
 )
 from app.services.agent.tool_selection import select_tools_for_turn
+from app.services.agent.token_usage import token_usage_tracker
 from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
 from app.services.llm_completion import build_litellm_completion_kwargs
 from app.services.terminal_command_state import terminal_command_state_manager
@@ -302,6 +303,7 @@ TERMINAL_NO_REPLY_MARKERS = (
     "[no_terminal_reply]",
     "[no_reply]",
     "[no_qq_reply]",
+    "nrn",
     "不回复",
     "不用回复",
     "不用回",
@@ -1296,6 +1298,8 @@ class AgentSession:
         ticket = self._get_reply_ticket(ticket_id)
         if not ticket or not content.strip():
             return False
+        if is_terminal_no_reply_intent(content):
+            return True
         try:
             from app.services.agent.reply_ticket import reply_ticket_manager
 
@@ -1429,6 +1433,10 @@ class AgentSession:
         contexts = self._copy_pending_integration_contexts(pending)
         if not contexts or not content.strip():
             return False
+        if is_terminal_no_reply_intent(content):
+            if pending:
+                self._mark_pending_integration_response_sent(pending)
+            return True
         if pending and pending.integration_response_sent:
             return False
         if pending and message_sent:
@@ -3008,7 +3016,20 @@ class AgentSession:
         last_exc: BaseException | None = None
         for attempt in range(3):
             try:
-                return completion(**kwargs)
+                response = completion(**kwargs)
+                try:
+                    usage = getattr(response, "usage", None)
+                    if usage:
+                        token_usage_tracker.record(
+                            self.item_id,
+                            str(agent._context.model or "unknown"),
+                            int(getattr(usage, "prompt_tokens", 0) or 0),
+                            int(getattr(usage, "completion_tokens", 0) or 0),
+                            int(getattr(usage, "total_tokens", 0) or 0),
+                        )
+                except Exception:
+                    pass
+                return response
             except Exception as exc:
                 if not _is_transient_llm_error(exc):
                     raise

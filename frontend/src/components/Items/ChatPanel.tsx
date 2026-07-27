@@ -1049,7 +1049,7 @@ const ThinkingBlock = memo(function ThinkingBlock({
           className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
         >
           <Brain className="h-3 w-3" />
-          <span>????</span>
+          <span>思考过程</span>
           {expanded ? (
             <ChevronUp className="h-3 w-3" />
           ) : (
