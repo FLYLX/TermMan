@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import queue
 import threading
 from typing import Any, Dict, Optional
@@ -113,11 +113,11 @@ class SocketService:
                 logger.debug(f"[SocketService] Skip broadcast to room '{room}': no subscribers")
                 return
 
-            logger.debug(f"[SocketService] Broadcasting to room '{room}': event={event}")
-            logger.debug(f"[SocketService] Room info: permanent={room_info.get('permanent_count', 0)}, temporary={room_info.get('temporary_count', 0)}")
-            logger.debug(f"[SocketService] Permanent subscribers: {room_info.get('permanent', [])}")
+            logger.info(f"[SocketService] Broadcasting to room '{room}': event={event}")
+            logger.info(f"[SocketService] Room info: permanent={room_info.get('permanent_count', 0)}, temporary={room_info.get('temporary_count', 0)}")
+            logger.info(f"[SocketService] Permanent subscribers: {room_info.get('permanent', [])}")
             await self.sio.emit(event, data, room=room)
-            logger.debug(f"[SocketService] Broadcast to room '{room}' completed")
+            logger.info(f"[SocketService] Broadcast to room '{room}' completed")
         except Exception as e:
             logger.error(f"Failed to broadcast to room {room}: {e}")
 
