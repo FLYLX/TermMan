@@ -322,7 +322,7 @@ async def on_terminal_start(sid, data):
         return
     
     existing_terminal = terminal_manager.get_terminal(item_uuid)
-    if existing_terminal:
+    if existing_terminal and existing_terminal.status in ("running", "waiting_backend", "starting"):
         token = socket_service.get_item_token(item_uuid)
         if not token:
             token = str(uuid_lib.uuid4())
@@ -337,6 +337,9 @@ async def on_terminal_start(sid, data):
             "request_id": request_id
         }, to=sid)
         return
+    if existing_terminal and existing_terminal.status in ("stopped", "error"):
+        logger.info(f"[WebSocket] Removing dead terminal for item={item_uuid} (status={existing_terminal.status})")
+        terminal_manager.remove_terminal(item_uuid)
     
     room_manager.create_room(item_uuid)
     

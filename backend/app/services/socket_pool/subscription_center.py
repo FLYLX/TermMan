@@ -68,11 +68,18 @@ class ItemSubscriptionCenter:
     def publish_stream(self, item_uuid: str, data: dict[str, Any]) -> int:
         sanitized_data = sanitize_terminal_stream_data(data)
         delivered = self._stream_pipeline.publish_stream(item_uuid, sanitized_data)
+        logger.info(
+            "[SubscriptionCenter] publish_stream: item=%s stdout_len=%d delivered=%d",
+            item_uuid, len(str(sanitized_data.get("stdout") or "")), delivered,
+        )
         self._trigger_agent_handler(item_uuid, sanitized_data)
         return delivered
 
     def _trigger_agent_handler(self, item_uuid: str, data: dict[str, Any]):
-        self._agent_bridge.handle_stream(item_uuid, data)
+        try:
+            self._agent_bridge.handle_stream(item_uuid, data)
+        except Exception:
+            logger.exception("[SubscriptionCenter] AgentInputBridge failed for item=%s", item_uuid)
 
     def publish_connected(self, item_uuid: str, data: dict[str, Any]) -> int:
         return self.publish(

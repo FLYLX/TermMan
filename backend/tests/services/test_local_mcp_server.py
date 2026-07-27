@@ -288,8 +288,6 @@ def test_execute_command_only_reports_dispatch(monkeypatch) -> None:
     assert sent == {"item_id": "item-1", "command": "echo 23231\n"}
     tool = next(tool for tool in server.list_tools() if tool["name"] == "execute_command")
     props = tool["inputSchema"]["properties"]
-    assert "expected_output" in props
-    assert "expected_regex" in props
     assert "timeout_seconds" in props
     assert "auto_interrupt_on_timeout" in props
     assert props["auto_interrupt_on_timeout"]["default"] is False

@@ -1,4 +1,4 @@
-from app.services.terminal_command_state import TerminalCommandStateManager
+﻿from app.services.terminal_command_state import TerminalCommandStateManager
 
 
 def test_terminal_command_state_records_latest_command_and_prompt_context() -> None:
@@ -8,7 +8,6 @@ def test_terminal_command_state_records_latest_command_and_prompt_context() -> N
         "item-1",
         "cd /srv/minecraft && ./run.sh",
         source="agent",
-        expected_regex=r"Done \(.*\)!",
         timeout_seconds=180,
     )
 

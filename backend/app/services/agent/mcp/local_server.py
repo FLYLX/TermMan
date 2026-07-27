@@ -326,8 +326,6 @@ class LocalMCPServer:
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "要执行的一条 shell 命令；默认不要拼接 &&、||、;、管道或换行。"},
-                    "expected_output": {"type": "string", "description": "可选。预期在终端输出中出现的文本；超时未出现时默认只汇报并保留进程。"},
-                    "expected_regex": {"type": "string", "description": "可选。预期输出正则；比 expected_output 更灵活。"},
                     "timeout_seconds": {"type": "integer", "description": "可选。等待预期输出的秒数，默认 20，范围 1-600。", "default": 20},
                     "auto_interrupt_on_timeout": {"type": "boolean", "description": "可选，默认 false。只有用户明确要求超时停止进程时才设为 true。", "default": False}
                 },

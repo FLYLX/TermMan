@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import sys
 import hashlib
 import json
@@ -654,22 +654,10 @@ class PendingCommand:
     echo_count: int = 0
     timeout_warned: bool = False
     input_mode: str | None = None
-    expected_output: str = ""
-    expected_regex: str = ""
     timeout_seconds: int = PENDING_COMMAND_TIMEOUT_SECONDS
     auto_interrupt_on_timeout: bool = False
     integration_response_sent: bool = False
     reply_ticket_id: str = ""
-
-    def has_expectation(self) -> bool:
-        return bool(self.expected_output or self.expected_regex)
-
-    def expectation_label(self) -> str:
-        if self.expected_output:
-            return self.expected_output
-        if self.expected_regex:
-            return f"regex:{self.expected_regex}"
-        return ""
 
 
 @dataclass
@@ -721,6 +709,13 @@ class AgentSession:
         self._daemon_jobs_snapshot: list[dict[str, Any]] = []
         self._daemon_jobs_snapshot_at: datetime | None = None
         self._recent_finished_jobs: list[dict[str, Any]] = []
+
+        self._wake_event = threading.Event()
+        self._consumer_shutdown = False
+        self._consumer_thread = threading.Thread(
+            target=self._consumer_loop, daemon=True, name=f"agent-consumer-{item_id[:8]}"
+        )
+        self._consumer_thread.start()
 
         logger.info(f"[AgentSession] Created session for item={item_id}, handler={handler_id}")
 
@@ -1086,8 +1081,6 @@ class AgentSession:
                 and current_pending.input_mode == TERMINAL_INPUT_MODE_CONSOLE
             ):
                 input_mode = TERMINAL_INPUT_MODE_CONSOLE
-        expected_output = _normalize_optional_text(tool_args.get("expected_output"))
-        expected_regex = _normalize_optional_text(tool_args.get("expected_regex"))
         timeout_seconds = _coerce_timeout_seconds(
             tool_args.get("timeout_seconds"),
             PENDING_COMMAND_TIMEOUT_SECONDS,
@@ -1103,8 +1096,6 @@ class AgentSession:
             integration_contexts=self._capture_tool_integration_contexts(tool_args),
             log_line_cursor=self._get_log_line_count(),
             input_mode=input_mode,
-            expected_output=expected_output,
-            expected_regex=expected_regex,
             timeout_seconds=timeout_seconds,
             auto_interrupt_on_timeout=auto_interrupt_on_timeout,
             reply_ticket_id=str(tool_args.get("_reply_ticket_id") or "").strip(),
@@ -1114,8 +1105,6 @@ class AgentSession:
             self.item_id,
             command,
             source="agent",
-            expected_output=expected_output,
-            expected_regex=expected_regex,
             timeout_seconds=timeout_seconds,
         )
         with self.lock:
@@ -1508,28 +1497,6 @@ class AgentSession:
             f"{pending.timeout_seconds} 秒内没有读取到新的原生日志反馈。"
         )
 
-    def _pending_expectation_matches(
-        self,
-        pending: PendingCommand,
-        content: str,
-    ) -> bool:
-        if not content:
-            return False
-        if pending.expected_output and pending.expected_output in content:
-            return True
-        if not pending.expected_regex:
-            return False
-        try:
-            return re.search(pending.expected_regex, content, re.MULTILINE) is not None
-        except re.error as exc:
-            logger.warning(
-                "[AgentSession] Invalid pending command expected_regex for item=%s, command=%s, regex=%s, error=%s",
-                self.item_id,
-                pending.command,
-                pending.expected_regex,
-                exc,
-            )
-            return False
 
     def _send_interrupt_for_pending_timeout(self, pending: PendingCommand) -> bool:
         try:
@@ -1566,8 +1533,7 @@ class AgentSession:
         else:
             interrupt_text = "未中断当前进程，请结合上一条命令和最新终端输出排查。"
         return (
-            f"命令 `{pending.command}` 在 {pending.timeout_seconds} 秒内没有匹配预期输出 "
-            f"`{pending.expectation_label()}`。{interrupt_text}"
+            f"命令 `{pending.command}` 在 {pending.timeout_seconds} 秒内未完成。"
         )
 
     def _run_pending_command_recheck(self, expected_command: str):
@@ -1593,14 +1559,6 @@ class AgentSession:
             pending.echo_count > 0
             and elapsed_seconds >= PENDING_COMMAND_STALLED_CONFIRM_SECONDS
         )
-
-        if pending.has_expectation() and elapsed_seconds >= pending.timeout_seconds:
-            recent_feedback = self._get_recent_pending_log_tail(64)
-            if self._pending_expectation_matches(pending, recent_feedback):
-                self._clear_pending_command()
-                return
-            self._clear_pending_command()
-            return
 
         if not has_new_log_lines and not should_force_tail_check:
             if elapsed_seconds >= pending.timeout_seconds:
@@ -1849,24 +1807,6 @@ class AgentSession:
 
         lines = [line for line in content.splitlines() if line.strip()]
         informative_lines = [line for line in lines if not self._is_prompt_only_line(line)]
-        if pending.has_expectation():
-            if self._pending_expectation_matches(pending, content):
-                logger.info(
-                    "[AgentSession] Pending command matched expected output for item=%s, command=%s, expected=%s",
-                    self.item_id,
-                    pending.command,
-                    pending.expectation_label(),
-                )
-                self._clear_pending_command()
-                return False, None, False
-            logger.info(
-                "[AgentSession] Holding pending command until expected output appears for item=%s, command=%s, expected=%s",
-                self.item_id,
-                pending.command,
-                pending.expectation_label(),
-            )
-            self._emit_waiting_terminal_status(pending.tool_name)
-            return True, None, False
         if not informative_lines:
             logger.info(
                 "[AgentSession] Prompt returned without command output for item=%s, command=%s",
@@ -2115,28 +2055,33 @@ class AgentSession:
         except Exception:
             pass
 
-    def process_queue(self):
-        """Drain all pending inputs, merge into one batch, process as a single turn."""
-        while True:
+    def _consumer_loop(self):
+        """Single consumer: wait for wake signal, drain queue, process one turn, repeat."""
+        while not self._consumer_shutdown:
+            self._wake_event.wait(timeout=1.0)
+            self._wake_event.clear()
+
+            if self._consumer_shutdown:
+                break
+
             batch: list[InputMessage] = []
-            # Drain: first item with 1s timeout, then 0.3s to collect stragglers
             try:
-                first = self.input_queue.get(timeout=1)
+                first = self.input_queue.get(timeout=0.1)
                 batch.append(first)
             except queue.Empty:
-                with self.lock:
-                    self.state = SessionState.IDLE
-                self._emit_idle_or_waiting_status(0)
-                return
+                continue
             while True:
                 try:
                     batch.append(self.input_queue.get(timeout=0.3))
                 except queue.Empty:
                     break
 
-            # Filter stale inputs
             batch = [msg for msg in batch if not self._is_stale_input(msg)]
             if not batch:
+                with self.lock:
+                    if self.input_queue.empty():
+                        self.state = SessionState.IDLE
+                        self._emit_idle_or_waiting_status(0)
                 continue
 
             merged = batch[0] if len(batch) == 1 else self._merge_input_batch(batch)
@@ -2153,6 +2098,13 @@ class AgentSession:
                 self._finish_turn()
                 for msg in batch:
                     self._notify_input_complete(msg, not process_error, process_error)
+
+        with self.lock:
+            self.state = SessionState.IDLE
+
+    def process_queue(self):
+        """Legacy compat: wake the consumer."""
+        self._wake_event.set()
 
     def _is_stale_input(self, input_msg: InputMessage) -> bool:
         if input_msg.input_type == InputType.SCHEDULED_TASK:
@@ -2217,25 +2169,8 @@ class AgentSession:
         )
 
     def process_input(self, input_msg: InputMessage):
-        with self.lock:
-            if self.state in {SessionState.RUNNING, SessionState.INTERRUPTING}:
-                self.queue_input(input_msg)
-                return
-
-        self._begin_turn(input_msg)
-
-        process_error = ""
-        try:
-            self._process_input(input_msg)
-        except Exception as exc:
-            process_error = str(exc)
-            raise
-        finally:
-            self._finish_turn()
-            self._notify_input_complete(input_msg, not process_error, process_error)
-
-            if not self.input_queue.empty():
-                threading.Thread(target=self.process_queue, daemon=True).start()
+        self.queue_input(input_msg)
+        self._wake_event.set()
 
     @staticmethod
     def _notify_input_complete(
@@ -3535,6 +3470,8 @@ class AgentSession:
 
     def shutdown(self):
         self._abort_flag = True
+        self._consumer_shutdown = True
+        self._wake_event.set()
         self._cancel_pending_command_recheck()
 
 

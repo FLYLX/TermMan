@@ -12,6 +12,7 @@ export interface TerminalOutput {
   exit_code?: number
   timed_out?: boolean
   cancelled?: boolean
+  exit?: boolean
 }
 
 export interface TerminalCompletion {
@@ -531,6 +532,15 @@ export function useTerminalConnection({
           !mountedRef.current ||
           currentConnectionId !== connectionIdRef.current
         ) {
+          return
+        }
+        if (data.exit) {
+          const code = data.exit_code
+          const label =
+            code === 0 || code == null
+              ? "[Process exited]"
+              : `[Process exited with code ${code}]`
+          enqueueOutput({ stdout: label + "\r\n", exit: true, exit_code: code ?? undefined })
           return
         }
         enqueueOutput(data)

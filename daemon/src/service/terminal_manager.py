@@ -1,4 +1,4 @@
-import os
+﻿import os
 import pty
 import struct
 import fcntl
@@ -232,6 +232,21 @@ class TerminalProcess:
         except Exception as e:
             logger.error(f"[TerminalProcess] Broadcast failed: {e}")
 
+    def _collect_exit_code(self) -> int | None:
+        if self.pid is None:
+            return None
+        try:
+            _, status = os.waitpid(self.pid, os.WNOHANG)
+            if os.WIFEXITED(status):
+                return os.WEXITSTATUS(status)
+            if os.WIFSIGNALED(status):
+                return -os.WTERMSIG(status)
+        except ChildProcessError:
+            pass
+        except Exception:
+            pass
+        return None
+
     def _decode_output_chunk(self, data: bytes) -> str:
         if not data:
             return ""
@@ -306,9 +321,8 @@ class TerminalProcess:
                 for line in lines[:-1]:
                     if line.strip():
                         timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-                        timestamped_line = f"{timestamp} {line}\n"
-                        self._write_log(timestamped_line)
-                        self._broadcast({"stdout": timestamped_line})
+                        self._write_log(f"{timestamp} {line}\n")
+                        self._broadcast({"stdout": f"{line}\n"})
                 
             except BlockingIOError:
                 import time
@@ -327,6 +341,9 @@ class TerminalProcess:
         
         self._running = False
         self.status = "stopped"
+        exit_code = self._collect_exit_code()
+        logger.info(f"[Terminal] PTY exited for {self.item_uuid}, exit_code={exit_code}")
+        self._broadcast({"exit": True, "exit_code": exit_code})
 
     def write(self, data: str) -> bool:
         try:
@@ -372,6 +389,7 @@ class TerminalProcess:
                 self.master_fd = None
             
             self.status = "stopped"
+            self._broadcast({"exit": True, "exit_code": None})
             logger.info(f"Terminal stopped: {self.item_uuid}")
             return True
         except Exception as e:
@@ -451,6 +469,10 @@ class TerminalManager:
                 del self.terminals[item_uuid]
         
         return True
+
+    def remove_terminal(self, item_uuid: str) -> None:
+        with self.lock:
+            self.terminals.pop(item_uuid, None)
 
     def write_to_terminal(self, item_uuid: str, data: str) -> bool:
         terminal = self.get_terminal(item_uuid)

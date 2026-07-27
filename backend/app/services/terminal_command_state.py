@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import threading
 from dataclasses import asdict, dataclass
@@ -15,8 +15,6 @@ class TerminalCommandState:
     command: str
     source: str
     sent_at: str
-    expected_output: str = ""
-    expected_regex: str = ""
     timeout_seconds: int = 0
 
 
@@ -31,8 +29,6 @@ class TerminalCommandStateManager:
         command: str,
         *,
         source: str,
-        expected_output: str = "",
-        expected_regex: str = "",
         timeout_seconds: int = 0,
     ) -> dict:
         item_key = str(item_id or "").strip()
@@ -45,8 +41,6 @@ class TerminalCommandStateManager:
             command=command_text[:4000],
             source=str(source or "unknown").strip()[:32] or "unknown",
             sent_at=_utcnow().isoformat(),
-            expected_output=str(expected_output or "").strip()[:1000],
-            expected_regex=str(expected_regex or "").strip()[:2000],
             timeout_seconds=max(int(timeout_seconds or 0), 0),
         )
         with self._lock:
@@ -63,8 +57,6 @@ class TerminalCommandStateManager:
                 "command": "",
                 "source": "",
                 "sent_at": "",
-                "expected_output": "",
-                "expected_regex": "",
                 "timeout_seconds": 0,
             }
         return asdict(state)
@@ -75,21 +67,11 @@ class TerminalCommandStateManager:
         if not command:
             return ""
 
-        expected = str(state.get("expected_output") or "").strip()
-        expected_regex = str(state.get("expected_regex") or "").strip()
-        expectation_line = ""
-        if expected:
-            expectation_line = f"Expected output text: {expected}. "
-        elif expected_regex:
-            expectation_line = f"Expected output regex: {expected_regex}. "
-
         return (
             "Last terminal command sent for this item:\n"
             f"{command}\n"
             f"Command source: {state.get('source') or 'unknown'}. "
-            f"{expectation_line}"
             "Use this command together with the newest terminal output when diagnosing. "
-            "A missing expected match is not proof that the process failed. "
             "Do not interrupt the process unless the user explicitly requested cancellation."
         )
 

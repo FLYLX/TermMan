@@ -72,7 +72,7 @@ class ItemSocket:
             stdin = data.get("stdin", "")
 
             if stdout:
-                logger.debug(f"[ItemSocket] Received stdout for item={self.item_uuid}: {len(stdout)} chars")
+                logger.info(f"[ItemSocket] Received stdout for item={self.item_uuid}: {len(stdout)} chars")
             if stderr:
                 logger.debug(f"[ItemSocket] Received stderr for item={self.item_uuid}: {len(stderr)} chars")
             if stdin:

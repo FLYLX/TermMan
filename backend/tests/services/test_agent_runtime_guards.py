@@ -2532,7 +2532,6 @@ def test_last_terminal_command_is_injected_into_terminal_prompt() -> None:
         "item-last-command",
         "cd /srv/minecraft && ./run.sh",
         source="agent",
-        expected_regex=r"Done \(.*\)!",
         timeout_seconds=180,
     )
     try:
@@ -2650,32 +2649,6 @@ def test_console_terminal_context_allows_cd_then_server_launcher() -> None:
         EXECUTE_COMMAND_TOOL_NAME,
         {"command": command},
     ) is None
-
-
-def test_expected_terminal_output_match_clears_pending_command() -> None:
-    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
-
-    session = AgentSession("item-1", "handler-1")
-    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
-    session._get_log_line_count = lambda: 0
-
-    session._set_pending_command(
-        EXECUTE_COMMAND_TOOL_NAME,
-        {
-            "command": "java -version",
-            "expected_output": "openjdk",
-            "timeout_seconds": 2,
-        },
-    )
-
-    should_hold, resolved, direct = session._maybe_hold_for_pending_terminal_feedback(
-        '[2026-07-09 10:00:00] openjdk version "21"'
-    )
-
-    assert (should_hold, resolved, direct) == (False, None, False)
-    assert session._get_pending_command() is None
-
-
 def test_shell_error_output_clears_pending_command_after_echo() -> None:
     from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
 
@@ -2703,89 +2676,6 @@ def test_shell_error_output_clears_pending_command_after_echo() -> None:
 
     assert (should_hold, resolved, direct) == (False, None, False)
     assert session._get_pending_command() is None
-
-
-def test_expected_terminal_output_timeout_does_not_interrupt_by_default(monkeypatch) -> None:
-    from datetime import datetime, timedelta
-
-    import app.services.socket_pool as socket_pool
-    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
-
-    sent: list[tuple[str, str]] = []
-
-    class FakeInputSDK:
-        def send(self, item_id: str, command: str) -> bool:
-            sent.append((item_id, command))
-            return True
-
-    session = AgentSession("item-1", "handler-1")
-    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
-    session._get_log_line_count = lambda: 0
-    session._get_recent_pending_log_tail = lambda lines=8: "still waiting"
-    events: list[dict] = []
-    session.add_output_callback(events.append)
-    monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
-
-    session._set_pending_command(
-        EXECUTE_COMMAND_TOOL_NAME,
-        {
-            "command": "java -version",
-            "expected_output": "openjdk",
-            "timeout_seconds": 1,
-        },
-    )
-    pending = session._get_pending_command()
-    assert pending is not None
-    pending.dispatched_at = datetime.now() - timedelta(seconds=2)
-
-    session._run_pending_command_recheck(pending.normalized_command)
-
-    assert sent == []
-    assert session._get_pending_command() is None
-    assert any(
-        event.get("type") == "agent_warning"
-        and "openjdk" in event.get("content", "")
-        and "未中断当前进程" in event.get("content", "")
-        for event in events
-    )
-
-
-def test_expected_terminal_output_timeout_can_interrupt_when_explicit(monkeypatch) -> None:
-    from datetime import datetime, timedelta
-
-    import app.services.socket_pool as socket_pool
-    from app.services.agent.session import EXECUTE_COMMAND_TOOL_NAME, AgentSession
-
-    sent: list[tuple[str, str]] = []
-
-    class FakeInputSDK:
-        def send(self, item_id: str, command: str) -> bool:
-            sent.append((item_id, command))
-            return True
-
-    session = AgentSession("item-1", "handler-1")
-    session._schedule_pending_command_recheck = lambda *args, **kwargs: None
-    session._get_log_line_count = lambda: 0
-    session._get_recent_pending_log_tail = lambda lines=8: "still waiting"
-    monkeypatch.setattr(socket_pool, "InputSDK", FakeInputSDK)
-
-    session._set_pending_command(
-        EXECUTE_COMMAND_TOOL_NAME,
-        {
-            "command": "java -version",
-            "expected_output": "openjdk",
-            "timeout_seconds": 1,
-            "auto_interrupt_on_timeout": True,
-        },
-    )
-    pending = session._get_pending_command()
-    assert pending is not None
-    pending.dispatched_at = datetime.now() - timedelta(seconds=2)
-
-    session._run_pending_command_recheck(pending.normalized_command)
-
-    assert sent == [("item-1", "\x03")]
-
 def test_progress_noise_detection_ignores_download_meters() -> None:
     from app.services.agent.terminal_noise import is_progress_noise_content
 
