@@ -535,7 +535,7 @@ def _build_completion_kwargs(
     tools: list[dict],
     stream: bool,
 ) -> dict[str, Any]:
-    return build_litellm_completion_kwargs(
+    kwargs = build_litellm_completion_kwargs(
         model=handler.model,
         messages=messages,
         stream=stream,
@@ -546,6 +546,9 @@ def _build_completion_kwargs(
         model_parameters=getattr(handler, "model_parameters", {}),
         default_parameters={"temperature": 0.1},
     )
+    if stream:
+        kwargs["stream_options"] = {"include_usage": True}
+    return kwargs
 
 
 def _contains_cjk(text: str) -> bool:
@@ -1516,6 +1519,7 @@ def _generate_stream_unserialized(
             iteration_content = ""
             iteration_reasoning = ""
             tool_calls_map: dict[int, dict[str, Any]] = {}
+            _chunk_usage = None
 
             for chunk in response:
                 if AgentMessageQueue.is_aborted(item_id):
@@ -1550,6 +1554,11 @@ def _generate_stream_unserialized(
                     )
                     return
 
+                _cu = getattr(chunk, "usage", None)
+                if _cu:
+                    _chunk_usage = _cu
+                if not chunk.choices:
+                    continue
                 choice = chunk.choices[0]
                 delta = getattr(choice, "delta", None)
                 if not delta:
@@ -1595,6 +1604,20 @@ def _generate_stream_unserialized(
                     function_arguments = getattr(function, "arguments", None)
                     if function_arguments:
                         accumulator["function"]["arguments"] += function_arguments
+
+            try:
+                from app.services.agent.token_usage import token_usage_tracker as _tt
+                _su = _chunk_usage or getattr(response, "usage", None)
+                if _su:
+                    _tt.record(
+                        str(item_id),
+                        str(handler.model or "unknown"),
+                        int(getattr(_su, "prompt_tokens", 0) or 0),
+                        int(getattr(_su, "completion_tokens", 0) or 0),
+                        int(getattr(_su, "total_tokens", 0) or 0),
+                    )
+            except Exception:
+                pass
 
             iteration_content, dsml_tool_calls = extract_dsml_tool_calls(
                 iteration_content,

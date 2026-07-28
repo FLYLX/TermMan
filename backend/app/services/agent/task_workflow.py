@@ -1077,9 +1077,8 @@ class TaskWorkflowManager:
                 if step and _is_verification_step(step) and step.attempts <= 0:
                     return (
                         False,
-                        "Verification steps require fresh evidence from this run: call a "
-                        "check/verify tool now and use its real output as evidence before "
-                        "completing this step.",
+                        "Verification step needs evidence: run the check command via run_job first, "
+                        "then call complete_current_step(note=<command output>).",
                     )
                 if step:
                     step.status = "completed"
@@ -1151,10 +1150,9 @@ class TaskWorkflowManager:
                     titles = ", ".join(task.title for task in incomplete[:3])
                     return (
                         False,
-                        f"Cannot report completion while workflow steps remain incomplete: {titles}. "
-                        "You must execute the remaining steps first (run the verification command "
-                        "via run_job), then call complete_current_step with the result, "
-                        "then mark_ready_to_report.",
+                        f"Steps still incomplete: {titles}. "
+                        "Run the verification command, then call complete_current_step with evidence. "
+                        "Completing the LAST step auto-transitions to ready_to_report.",
                     )
                 workflow.status = "ready_to_report"
                 workflow.latest_progress = (
@@ -1448,47 +1446,15 @@ class TaskWorkflowManager:
             return "\n".join(lines)
         lines.extend(
             [
-                "不可违反的工作流规则：",
-                "1. main_objective 不可改写。换源、apt update、重试、下载、检查、排错都只是子步骤。",
-                "2. 子步骤失败（超时、报错、包不存在等）→ 调用 insert_recovery_step(title='新方法')。"
-                "失败步骤被划掉(cancelled)，下一步改写为新方法，从新方法继续线性执行。"
-                "如果当前步骤已经是恢复步骤，再次失败时原地更新标题和方法，不再堆叠新步骤。"
-                "任何情况下不允许从任务内部衍生新任务或新 workflow。",
-                "2b. 一个恢复方法至少尝试一次完整执行后才能判定失败。"
-                "不要在同一步里反复切换方法（例如 APT 源→tarball→GitHub→APT 源）。"
-                "选定一个方法后先执行到底，确实失败再换。"
-                "3. 观察到证据后调用 mcp_local_update_task_workflow 记录进度或完成当前步骤。不要依赖记忆推进。",
-                "4. workflow 处于 active 或 waiting_job 时不要给最终完成回答。先完成验证，或标记真实阻塞。",
-                "5. 创建 workflow 时包含最终汇报步骤（如 汇报结果到: QQ private:xxx）。"
-                "汇报用工具调用（mcp_robot_send_message 等），不是终端命令。"
-                "只在完成、最终失败、重大方向变更时汇报。",
-                "6. 预计超过 3 步（含安装、卸载、配置、验证等）的任务必须创建 workflow，让用户在任务队列里看到进度。异步、等待响应的工作也通过 workflow 跨轮次继续。普通聊天和 3 步以内的即时操作不需要 workflow。",
-                "7. 取消废弃命令或后台 Job 不等于取消主目标。用 mcp_local_cancel_job 取消执行，然后继续 workflow。"
-                "只有用户明确放弃整个目标时才用 action=cancel。",
-                "8. 可恢复的决策（换源、换包名、重试、下载 tar 等）不要问用户。直接做。"
-                "只有所有安全方案耗尽且确实需要用户决定时，才取消所有 Job、取消 workflow、向 return_source 报告。",
-                "9. 只在三种情况向用户汇报：(a) 任务完成并验证，(b) 确定失败且无更多方法，"
-                "(c) 重大方向变更。不要汇报中间步骤完成、进度更新或状态变化。每次事件一条简洁消息。正常执行期间保持沉默。",
-                "10. 独立 workflow 可以并行运行后台 Job。自行决定执行顺序，不要因为另一个任务在运行就创建等待/阻塞状态。"
-                "启动新 Job 前先看 [Execution State] 和 running_jobs："
-                "如果当前步骤已经有目的相同的 Job 在跑或刚返回结果，不要再开新的，直接用已有结果。"
-                "你自己判断是否重复，不需要命令字符串完全一样——目的相同就算重复。",
-                "11. 不要因为模型轮次未收敛就停下。在重试限制内自动继续；超过限制后向不可变来源报告实际失败并移除任务队列条目。",
-                "12. 重复请求同一目标时复用此 workflow。先读取当前步骤、latest_progress、证据和 running_jobs；不要仅因用户重复请求就重新启动操作。",
-                "13. 最终报告通过对应发送工具发往 return_source。只发一次，不要在多个渠道重复或在终端回显。",
-                "14. 步骤完成需要本次运行的新鲜证据：命令输出、退出码或实时检查结果。"
-                "长期记忆和聊天历史只回答“谁/什么”，不能证明某东西现在已安装、运行或完成。"
-                "完成任何检查/验证步骤前，先运行检查命令并用实际输出作为证据。",
-                "15. 如果检查步骤发现目标已满足（如软件已安装、服务已运行、文件已存在），"
-                "直接取消所有剩余 pending 步骤并立即汇报结果，不要逐步走完每个步骤。"
-                "用 complete_current_step 完成当前检查步骤，然后对每个剩余 pending 步骤调用 "
-                "cancel_step（或一次性 action=cancel 剩余步骤），最后汇报。省掉不必要的轮次。",
-                "16. 只有确实关于本任务目标的消息才更新 workflow。闲聊、问候、无关提问、即时状态查询"
-                "（如“今天星期几”“在吗”“1+1”）直接回答即可，不要调用 update_task_workflow，"
-                "不要把这类消息的工具结果记为步骤证据，也不要因此给 workflow 挂新的回复目标。",
-                "17. 用户新指令优先于当前 workflow。如果用户发来的消息与当前 workflow 目标明显不同"
-                "（例如 workflow 在装 Java 但用户说“启动服务器”），立即取消当前 workflow（action=cancel），"
-                "然后按新指令行事。不要继续执行旧 workflow 的剩余步骤。",
+                "工作流规则：",
+                "1. main_objective 不可改写。子步骤失败→cancelled→insert_recovery_step→继续。不衍生新 workflow。",
+                "2. 观察到证据后立即调 update_task_workflow 记录。不依赖记忆推进。",
+                "3. 汇报只在完成/最终失败/重大变更时发。中间步骤保持静默。汇报发送失败（如 bridge 404）不等于任务失败，直接在 web chat 输出结果，标 completed。",
+                "4. 预计>3步的任务必须建 workflow。普通聊天和即时操作不需要。",
+                "5. 检查步骤发现目标已满足→取消剩余步骤→直接汇报。不逐步走。",
+                "6. 可恢复决策（换源/重试/换包）直接做，不问用户。同一思路反复失败且想不出新办法时，直接 cancel 该步并把实际错误汇报回去，不要原地打转。",
+                "7. 用户新指令与当前 workflow 目标不同→立即 cancel 旧的→按新指令行事。",
+                "8. 闲聊/问候/即时查询直接回答，不调 update_task_workflow。",
             ]
         )
         return "\n".join(lines)

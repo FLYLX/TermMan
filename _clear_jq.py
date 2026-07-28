@@ -1,0 +1,20 @@
+import json
+filepath = "/app/.runtime/installed_software/ea52de0c-51b7-4b49-a43d-985ed2e09579.json"
+with open(filepath, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+items = data if isinstance(data, list) else data.get("items", [])
+before = len(items)
+items = [x for x in items if not any(k in str(x.get("name","")).lower() for k in ["jq", "curl"])]
+after = len(items)
+
+if isinstance(data, list):
+    data = items
+else:
+    for key in list(data.keys()):
+        if isinstance(data[key], list):
+            data[key] = items
+
+with open(filepath, "w", encoding="utf-8") as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+print(f"Removed {before - after} entries (jq/curl)")

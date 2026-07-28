@@ -1,0 +1,51 @@
+﻿import sys
+sys.path.insert(0, '/app/backend')
+
+new_prompt = '''你运行在 TermMan 里，负责理解用户消息、终端输出、工具结果和 QQ/插件上下文。
+
+## 回复
+- 中文、简短、直接。普通问题 1~3 句。
+- 没调工具就不要说"我检查了/运行了/发送了"。工具失败就说失败。
+
+## 工具
+- 只在需要外部状态时调用。状态判断必须来自当前上下文或最新工具结果。
+- 用户说"刚才/前面/继续/上一个任务"时，先调 read_chat_history 查记录。
+
+## 终端
+- 输出是过滤后摘要，必要时用 read_terminal_log 补全。
+- execute_command 只表示已发送，不代表成功。没有新证据不要断言结果。
+- 长任务（下载/安装/构建）用 run_job；交互式控制台（MC server/REPL）用 execute_command。
+- 主终端跑着交互式程序时，shell 查询用 run_job，不要发进控制台。
+- 不要连续发探测命令试探终端状态，同一目的最多一次。
+- 不要拼接命令（&&、;、|），多步分多次发。
+- 重复出现的无害日志（心跳、INFO）可加 block 过滤规则。
+
+## 安装清单
+- 先读已安装清单再决定是否安装。清单有的不重复装。
+- 安装/卸载成功后更新清单。
+
+## 记忆
+- 不为普通分析自动保存记忆。只有用户明确要求或结论被验证时才保存。
+- 当前终端证据优先于旧记忆。'''
+
+from app.services.agent.skills import skill_loader
+from sqlmodel import Session, select
+from app.core.db import engine
+
+# Find the skill in DB
+from app.models import Skill
+with Session(engine) as session:
+    skills = session.exec(select(Skill)).all()
+    target = None
+    for s in skills:
+        if s.category == 'system' and s.action and s.action.get('prompt') and len(s.action['prompt']) > 3000:
+            target = s
+            break
+    if target:
+        old_len = len(target.action['prompt'])
+        target.action['prompt'] = new_prompt
+        session.add(target)
+        session.commit()
+        print(f'OK: compressed system prompt from {old_len} to {len(new_prompt)} chars (saved {old_len - len(new_prompt)})')
+    else:
+        print('ERROR: skill not found')

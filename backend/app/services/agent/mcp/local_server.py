@@ -308,26 +308,20 @@ class LocalMCPServer:
     def _register_builtin_tools(self):
         self.register_tool(
             name="get_terminal_status",
-            description=(
-                "Read the authoritative live terminal state. The terminal is open only when "
-                "the Daemon terminal process is active and Backend is currently joined to the "
-                "Item Socket Room as a permanent subscriber. Use this whenever the user asks "
-                "whether the terminal is open, connected, online, or usable. Never infer that "
-                "state from chat history, logs, Item status, or cached handlers."
-            ),
+            description="Read live terminal state (open/connected/usable).",
             input_schema={"type": "object", "properties": {}, "required": []},
             handler=self._get_terminal_status,
             skip_memory=True,
         )
         self.register_tool(
             name="execute_command",
-            description="在主终端前台执行命令，你拥有这个进程的管理权。使用场景：进程启动后你还需要继续与它交互——向它发送后续输入、回应提示、观察实时输出、或保持一个长期运行的进程（服务器、REPL、控制台）以便之后发指令。判断标准：这个命令执行后会不会进入一个等待你输入的状态？会不会是一个你需要持续管理的进程？是→execute_command，否→run_job。????????wget/curl??????apt-get install -y?pip install??apt update??????????????ls/cat/find/grep???????java -version??????????????????? run_job?如果主终端正在运行一个交互式进程（如MC服务器），execute_command就是向那个进程发控制台指令。调试技巧：如果一个 run_job 失败了（比如解压出错），你可以在主终端重新跑同样的命令来观察完整的交互输出以定位问题。一次只发一条命令，发错了用 interrupt_command (Ctrl+C) 中断再重来。",
+            description="在主终端前台执行命令。用于需要持续交互的进程（服务器、REPL、控制台）。一次只发一条命令。",
             input_schema={
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "要执行的一条 shell 命令；默认不要拼接 &&、||、;、管道或换行。"},
-                    "timeout_seconds": {"type": "integer", "description": "可选。等待预期输出的秒数，默认 20，范围 1-600。", "default": 20},
-                    "auto_interrupt_on_timeout": {"type": "boolean", "description": "可选，默认 false。只有用户明确要求超时停止进程时才设为 true。", "default": False}
+                    "command": {"type": "string", "description": "Shell command."},
+                    "timeout_seconds": {"type": "integer", "default": 20},
+                    "auto_interrupt_on_timeout": {"type": "boolean", "default": False}
                 },
                 "required": ["command"]
             },
@@ -336,13 +330,13 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="run_job",
-            description="Fire-and-forget: run a command in a daemon background process with stdin closed. You only need the final result/output, not to interact with the process. The job runs independently; you get the tail output delivered back when it finishes. Use this for anything where you just want the outcome: downloads, package installs (-y), apt update, builds, tests, archive extraction, file queries (ls, cat, find, grep, java -version). Also use run_job for any side commands while the main terminal is occupied by an interactive process you are managing. Decision rule: will this command finish on its own without needing later input from you? Yes -> run_job. Will it enter a state waiting for your input, or remain open for future commands (server, REPL, shell)? No -> use execute_command instead. If unsure whether a script needs interaction, cat it first to check. Multiple different jobs may run in parallel; avoid starting exact duplicate commands. For package managers with global locks (apt/dpkg), prefer waiting for an existing same-manager job to finish. Prefer one clear operation per job; avoid very long && chains when a later step may need diagnosis.",
+            description="后台一次性命令，只需最终结果。用于下载、安装、构建、查询等不需要交互的操作。可并行多个不同任务。",
             input_schema={
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "Non-interactive shell command to run as a one-shot job."},
-                    "timeout_seconds": {"type": "integer", "description": "Maximum seconds before the job is terminated. Default 600, max 3600.", "default": 600},
-                    "tail_lines": {"type": "integer", "description": "Number of final output lines returned to the agent. Default 80, max 300.", "default": 80}
+                    "command": {"type": "string", "description": "Shell command."},
+                    "timeout_seconds": {"type": "integer", "default": 600},
+                    "tail_lines": {"type": "integer", "default": 80}
                 },
                 "required": ["command"]
             },
@@ -351,7 +345,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="list_jobs",
-            description="List currently running daemon background jobs for this terminal item, including elapsed time and recent output tails. For questions such as download/install/build progress, status, or 'how is it going', call this first and answer from the existing job snapshot. A status query is not a new task: do not start another job or create a workflow just to inspect progress. Also use this before deciding which job to cancel.",
+            description="列出运行中的后台任务及输出尾部。查进度/状态时先调这个。",
             input_schema={
                 "type": "object",
                 "properties": {},
@@ -362,7 +356,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="cancel_job",
-            description="Cancel a running daemon background job by job_id after listing jobs.",
+            description="按 job_id 取消后台任务。",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -388,7 +382,7 @@ class LocalMCPServer:
 
         self.register_tool(
             name="read_terminal_log",
-            description="读取终端日志文件（原始输出），用于查看完整的错误信息或命令执行结果。",
+            description="读取终端原始日志，查看完整错误或命令结果。",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -401,20 +395,15 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="read_chat_history",
-            description=(
-                "Read recent TermMan chat/agent/terminal history for the current item. "
-                "Use this when the user refers to previous work or context, such as "
-                "'刚才', '前面', '之前', '继续', '上一个任务', '你忘了', or asks what was done. "
-                "This is short-term evidence, not long-term memory."
-            ),
+            description="Read recent chat/agent/terminal history for context recovery.",
             input_schema={
                 "type": "object",
                 "properties": {
-                    "item_id": {"type": "string", "description": "Current terminal item id."},
-                    "limit": {"type": "integer", "description": "Recent messages to return. Default 30, max 100.", "default": 30},
-                    "offset": {"type": "integer", "description": "Skip this many newest messages before reading older history. Default 0.", "default": 0},
-                    "query": {"type": "string", "description": "Optional case-insensitive substring filter."},
-                    "include_summary": {"type": "boolean", "description": "Include the latest session summary when available. Default true.", "default": True},
+                    "item_id": {"type": "string", "description": "Item id."},
+                    "limit": {"type": "integer", "description": "Messages to return (default 30).", "default": 30},
+                    "offset": {"type": "integer", "description": "Skip newest N messages.", "default": 0},
+                    "query": {"type": "string", "description": "Substring filter."},
+                    "include_summary": {"type": "boolean", "description": "Include session summary.", "default": True},
                 },
                 "required": ["item_id"],
             },
@@ -423,11 +412,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="get_task_workflow",
-            description=(
-                "Read the authoritative task workflow linked to the current reply ticket. "
-                "Use it whenever a multi-step task has changed method, hit an error, resumed "
-                "after a background job, or you need to recover the main objective."
-            ),
+            description="Read task workflow linked to current ticket.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -444,72 +429,26 @@ class LocalMCPServer:
         self.register_tool(
             name="update_task_workflow",
             description=(
-                "Create or update the authoritative task workflow. "
-                "When you receive a task that will take 3 or more steps, YOU must call "
-                "this tool with action=create FIRST to create a workflow with planned steps. "
-                "Install/uninstall/configure/upgrade tasks that end with a verification "
-                "step ALWAYS qualify (e.g. check -> install -> verify = 3 steps), so create "
-                "a workflow for them. "
-                "Use title='step1|step2|step3' to define steps (pipe-separated). "
-                "Use note for the main objective. "
-                "The user sees workflow progress in the task queue, so always create one "
-                "for multi-step tasks. "
-                "If non-final workflow(s) already exist for this item, review "
-                "the listed workflows: continue the matching one with the update actions "
-                "instead of creating a duplicate; only retry with force_new=true when the "
-                "task is genuinely different. "
-                "The main objective cannot be replaced. Complete the current step only "
-                "after evidence. When a step fails, use insert_recovery_step(title='new method') "
-                "which cancels the failed step, rewrites the next step to the new method, and "
-                "resets all subsequent steps to pending -- keeping the plan short and linear. "
-                "Mark blocked only when user or external input is genuinely required. "
-                "Action=cancel cancels the whole objective and is allowed only when the user "
-                "explicitly abandons it; use cancel_job to stop an obsolete execution while "
-                "keeping the main objective active. Updating workflow state is not execution, "
-                "so call the concrete terminal/job tool immediately afterward."
+                "Create/update task workflow. YOU MUST create a workflow FIRST "
+                "before executing any task with 3+ steps (e.g. check->install->verify). "
+                "Install/uninstall/configure/compile tasks ALWAYS qualify. "
+                "action=create, title='step1|step2|step3'. "
+                "Continue existing workflow, don't duplicate. "
+                "complete_current_step needs evidence. "
+                "insert_recovery_step(title=...) on failure. "
+                "cancel only when user abandons. "
+                "Completing the LAST step auto-transitions to ready_to_report—just report. "
+                "After updating, call execution tool."
             ),
             input_schema={
                 "type": "object",
                 "properties": {
-                    "item_id": {
-                        "type": "string",
-                        "description": "Current terminal item id.",
-                    },
-                    "action": {
-                        "type": "string",
-                        "enum": [
-                            "create",
-                            "record_progress",
-                            "complete_current_step",
-                            "set_current_step",
-                            "insert_recovery_step",
-                            "mark_ready_to_report",
-                            "mark_blocked",
-                            "resume",
-                            "cancel",
-                        ],
-                    },
-                    "force_new": {
-                        "type": "boolean",
-                        "description": (
-                            "Only for action=create: set true to create a new workflow "
-                            "even though non-final workflow(s) already exist for this item, "
-                            "after reviewing them and confirming the task is genuinely different. "
-                            "Never use it to duplicate an existing task."
-                        ),
-                    },
-                    "note": {
-                        "type": "string",
-                        "description": "Observed evidence, progress, or blocker reason.",
-                    },
-                    "step_index": {
-                        "type": "integer",
-                        "description": "Zero-based step index for set_current_step.",
-                    },
-                    "title": {
-                        "type": "string",
-                        "description": "Recovery step title for insert_recovery_step.",
-                    },
+                    "item_id": {"type": "string"},
+                    "action": {"type": "string", "enum": ["create", "record_progress", "complete_current_step", "set_current_step", "insert_recovery_step", "mark_ready_to_report", "mark_blocked", "resume", "cancel"]},
+                    "force_new": {"type": "boolean"},
+                    "note": {"type": "string", "description": "Evidence or reason."},
+                    "step_index": {"type": "integer"},
+                    "title": {"type": "string", "description": "Step title for create/recovery."},
                 },
                 "required": ["item_id", "action"],
             },
@@ -518,24 +457,15 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="add_terminal_input_filter_rule",
-            description="Add a terminal output -> Agent input filter rule for the current item. Use when repeated terminal output is harmless noise and should stop being sent to the Agent, for example automatic backup status lines, heartbeat lines, repeated progress chatter, or plugin logs that do not need action. Default action_type is block, which drops matching terminal chunks before they reach the Agent.",
+            description="添加终端输出过滤规则，屏蔽重复无害日志。",
             input_schema={
                 "type": "object",
                 "properties": {
-                    "item_id": {"type": "string", "description": "Current terminal item id."},
-                    "name": {"type": "string", "description": "Short rule name, for example noise_ftb_backups."},
-                    "regex_patterns": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Case-insensitive regex patterns to match noisy terminal output.",
-                    },
-                    "action_type": {
-                        "type": "string",
-                        "enum": ["block", "ignore", "log"],
-                        "description": "block drops the whole matching chunk; ignore removes matching text; log marks it as needs-action. Default block.",
-                        "default": "block",
-                    },
-                    "reason": {"type": "string", "description": "Optional human-readable reason for this rule."},
+                    "item_id": {"type": "string"},
+                    "name": {"type": "string", "description": "Rule name."},
+                    "regex_patterns": {"type": "array", "items": {"type": "string"}, "description": "Regex patterns to filter."},
+                    "action_type": {"type": "string", "enum": ["block", "ignore", "log"], "default": "block"},
+                    "reason": {"type": "string"},
                 },
                 "required": ["item_id", "name", "regex_patterns"]
             },
@@ -544,7 +474,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="list_terminal_input_filter_rules",
-            description="List terminal output -> Agent input filter rules for the current item. Use before adding a new noise rule when unsure whether one already exists.",
+            description="List terminal input filter rules.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -557,7 +487,7 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="list_terminal_filter_rules",
-            description="List all terminal filter rules for the current item, including terminal output -> Agent input filters and Agent -> terminal command output filters. Use this before adding or changing filters when the user asks what filtering rules exist.",
+            description="List all terminal filter rules.",
             input_schema={
                 "type": "object",
                 "properties": {
@@ -570,17 +500,13 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="delete_terminal_input_filter_rule",
-            description="Delete one terminal output -> Agent input filter rule for the current item by rule name.",
+            description="Delete a terminal input filter rule by name.",
             input_schema={
                 "type": "object",
                 "properties": {
-                    "item_id": {"type": "string", "description": "Current terminal item id."},
-                    "name": {"type": "string", "description": "Rule name returned by list_terminal_input_filter_rules."},
-                    "disable_when_empty": {
-                        "type": "boolean",
-                        "description": "Disable input_filter_enabled when no rules remain. Default true.",
-                        "default": True,
-                    },
+                    "item_id": {"type": "string"},
+                    "name": {"type": "string", "description": "Rule name."},
+                    "disable_when_empty": {"type": "boolean", "default": True},
                 },
                 "required": ["item_id", "name"]
             },
@@ -589,16 +515,12 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="clear_terminal_input_filter_rules",
-            description="Delete all terminal output -> Agent input filter rules for the current item.",
+            description="Delete all terminal input filter rules.",
             input_schema={
                 "type": "object",
                 "properties": {
-                    "item_id": {"type": "string", "description": "Current terminal item id."},
-                    "disable": {
-                        "type": "boolean",
-                        "description": "Disable input_filter_enabled after clearing. Default true.",
-                        "default": True,
-                    },
+                    "item_id": {"type": "string"},
+                    "disable": {"type": "boolean", "default": True},
                 },
                 "required": ["item_id"]
             },
@@ -680,27 +602,12 @@ class LocalMCPServer:
             input_schema={
                 "type": "object",
                 "properties": {
-                    "item_id": {
-                        "type": "string",
-                        "description": "Current terminal item id; injected automatically.",
-                    },
-                    "task_id": {
-                        "type": "string",
-                        "description": "Existing task id when updating; omit when creating.",
-                    },
-                    "name": {"type": "string", "description": "Short task name."},
-                    "instruction": {
-                        "type": "string",
-                        "description": "Instruction sent to the Agent when the task runs.",
-                    },
-                    "schedule_type": {
-                        "type": "string",
-                        "enum": ["once", "interval", "daily"],
-                    },
-                    "run_at": {
-                        "type": "string",
-                        "description": "ISO datetime for a once task.",
-                    },
+                    "item_id": {"type": "string", "description": "Item id (auto-injected)."},
+                    "task_id": {"type": "string", "description": "Task id if updating."},
+                    "name": {"type": "string", "description": "Task name."},
+                    "instruction": {"type": "string", "description": "Agent instruction."},
+                    "schedule_type": {"type": "string", "enum": ["once", "interval", "daily"]},
+                    "run_at": {"type": "string", "description": "ISO datetime for once."},
                     "interval_seconds": {
                         "type": "integer",
                         "description": "Interval in seconds for an interval task; minimum 10.",
@@ -727,23 +634,13 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="delete_scheduled_task",
-            description=(
-                "Delete one scheduled task by id. During scheduled execution, use this only "
-                "after deciding the task is obsolete, invalid, unsafe, or permanently unable "
-                "to succeed. Do not delete it for a transient failure."
-            ),
+            description="Delete a scheduled task by id.",
             input_schema={
                 "type": "object",
                 "properties": {
-                    "item_id": {
-                        "type": "string",
-                        "description": "Current terminal item id; injected automatically.",
-                    },
-                    "task_id": {"type": "string", "description": "Scheduled task id."},
-                    "reason": {
-                        "type": "string",
-                        "description": "Why the Agent decided to delete the task.",
-                    },
+                    "item_id": {"type": "string", "description": "Item id (auto-injected)."},
+                    "task_id": {"type": "string", "description": "Task id."},
+                    "reason": {"type": "string", "description": "Deletion reason."},
                 },
                 "required": ["task_id"],
             },
@@ -756,9 +653,9 @@ class LocalMCPServer:
             input_schema={
                 "type": "object",
                 "properties": {
-                    "content": {"type": "string", "description": "要保存的记忆内容"},
-                    "memory_type": {"type": "string", "enum": ["fact", "preference", "error", "context"], "description": "记忆类型: fact(事实), preference(偏好), error(错误), context(上下文)"},
-                    "ttl_days": {"type": "integer", "description": "事实或上下文的过期天数；偏好和错误永久保存"}
+                    "content": {"type": "string", "description": "Memory content."},
+                    "memory_type": {"type": "string", "enum": ["fact", "preference", "error", "context"]},
+                    "ttl_days": {"type": "integer", "description": "Expiry days (optional)."}
                 },
                 "required": ["content"]
             },
@@ -786,7 +683,7 @@ class LocalMCPServer:
             input_schema={
                 "type": "object",
                 "properties": {
-                    "memory_type": {"type": "string", "enum": ["fact", "preference", "error", "context"], "description": "可选：限定记忆类型"}
+                    "memory_type": {"type": "string", "enum": ["fact", "preference", "error", "context"]}
                 },
                 "required": []
             },
@@ -799,7 +696,7 @@ class LocalMCPServer:
             input_schema={
                 "type": "object",
                 "properties": {
-                    "memory_id": {"type": "string", "description": "要删除的记忆 ID"}
+                    "memory_id": {"type": "string", "description": "Memory ID."}
                 },
                 "required": ["memory_id"]
             },
@@ -812,10 +709,10 @@ class LocalMCPServer:
             input_schema={
                 "type": "object",
                 "properties": {
-                    "memory_ids": {"type": "array", "items": {"type": "string"}, "minItems": 2, "description": "要合并的记忆 ID 列表（完整 ID 或 list_memories 显示的前 8 位）"},
-                    "content": {"type": "string", "description": "压缩合并后的精炼记忆内容"},
-                    "memory_type": {"type": "string", "enum": ["fact", "preference", "error", "context"], "description": "记忆类型；不填则取来源记忆中最多的类型"},
-                    "ttl_days": {"type": "integer", "description": "事实或上下文的过期天数；偏好和错误永久保存"}
+                    "memory_ids": {"type": "array", "items": {"type": "string"}, "minItems": 2, "description": "IDs to merge."},
+                    "content": {"type": "string", "description": "Merged content."},
+                    "memory_type": {"type": "string", "enum": ["fact", "preference", "error", "context"]},
+                    "ttl_days": {"type": "integer"}
                 },
                 "required": ["memory_ids", "content"]
             },
@@ -1436,6 +1333,22 @@ class LocalMCPServer:
                 except Exception:
                     pass
 
+            # Check for duplicate running command
+            _dup_hint = ""
+            try:
+                _existing = connection.call("list_jobs", {"item_uuid": str(item_id)})
+                for _j in (_existing or {}).get("jobs", []):
+                    if str(_j.get("command", "")).strip() == command:
+                        _dup_hint = (
+                            f" WARNING: identical command already running as "
+                            f"job_id={_j.get('job_id','')} "
+                            f"elapsed={int(float(_j.get('elapsed_seconds',0)))}s. "
+                            f"Consider waiting for it instead of starting a duplicate."
+                        )
+                        break
+            except Exception:
+                pass
+
             self._start_background_job_thread(
                 item_id=str(item_id),
                 command=command,
@@ -1455,8 +1368,8 @@ class LocalMCPServer:
                 {
                     "type": "text",
                     "text": (
-                        "后台任务已启动，会在独立任务里执行，完成后把最终结果自动送回 Agent。"
-                        "不同后台任务可以并行启动；不要重复启动完全相同的命令。"
+                        "后台任务已启动，完成后自动送回结果。"
+                        + _dup_hint
                     ),
                 },
                 {

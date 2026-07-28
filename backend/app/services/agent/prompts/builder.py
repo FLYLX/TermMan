@@ -40,6 +40,7 @@ ASSISTANT_CONTEXT_TYPES = {
 }
 NON_MODEL_CONTEXT_TYPES = {
     "agent_qq_reply",
+    "agent_action",
 }
 
 TERMINAL_CRITICAL_ALERT_SKILL_ID = "terminal_mcp"
@@ -379,9 +380,13 @@ def _event_to_model_message(event: dict[str, Any]) -> dict[str, str] | None:
         return {"role": "user", "content": content}
 
     if message_type == "terminal_output" or role == "terminal":
+        if len(content) > 200:
+            content = content[:200] + "..."
         return {"role": "user", "content": f"{FILTERED_TERMINAL_LABEL}:\n{content}"}
 
     if message_type in ASSISTANT_CONTEXT_TYPES or role == "assistant":
+        if message_type == "agent_tool_result" and len(content) > 200:
+            content = content[:200] + "..."
         return {"role": "assistant", "content": content}
 
     return None
@@ -922,9 +927,10 @@ def build_chat_turn_messages(
     active_task_ledger_context = _build_active_task_ledger_context(item_id, agent)
     if active_task_ledger_context:
         extra_prompt_parts.append(active_task_ledger_context)
-    installed_software_context = _build_installed_software_context(item_id)
-    if installed_software_context:
-        extra_prompt_parts.append(installed_software_context)
+    if active_task_ledger_context:
+        installed_software_context = _build_installed_software_context(item_id)
+        if installed_software_context:
+            extra_prompt_parts.append(installed_software_context)
     if not latest_only_context:
         integration_prompt = build_integration_history_prompt(
             agent,
@@ -1027,9 +1033,10 @@ def build_terminal_turn_messages(
     active_task_ledger_context = _build_active_task_ledger_context(item_id, agent)
     if active_task_ledger_context:
         extra_prompt_parts.append(active_task_ledger_context)
-    installed_software_context = _build_installed_software_context(item_id)
-    if installed_software_context:
-        extra_prompt_parts.append(installed_software_context)
+    if active_task_ledger_context:
+        installed_software_context = _build_installed_software_context(item_id)
+        if installed_software_context:
+            extra_prompt_parts.append(installed_software_context)
     prompt_messages: list[dict[str, str]] = [
         {
             "role": "system",

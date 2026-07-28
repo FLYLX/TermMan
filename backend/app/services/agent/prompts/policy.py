@@ -33,7 +33,7 @@ def resolve_prompt_memory_policy(turn_type: PromptTurnType) -> PromptMemoryPolic
             include_session_summary=True,
             include_recent_history=True,
             include_long_term=True,
-            max_recent_messages=10,
+            max_recent_messages=6,
             max_long_term_memories=0,
             allowed_long_term_types=("fact", "preference", "error", "context"),
         )
@@ -43,7 +43,7 @@ def resolve_prompt_memory_policy(turn_type: PromptTurnType) -> PromptMemoryPolic
             include_session_summary=True,
             include_recent_history=True,
             include_long_term=False,
-            max_recent_messages=4,
+            max_recent_messages=6,
             max_long_term_memories=0,
             allowed_long_term_types=(),
         )
@@ -52,7 +52,7 @@ def resolve_prompt_memory_policy(turn_type: PromptTurnType) -> PromptMemoryPolic
         include_session_summary=True,
         include_recent_history=True,
         include_long_term=True,
-        max_recent_messages=8,
+        max_recent_messages=6,
         max_long_term_memories=0,
         allowed_long_term_types=("preference", "error", "context"),
     )
