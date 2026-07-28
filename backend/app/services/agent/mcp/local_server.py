@@ -144,6 +144,18 @@ def flush_background_job_results_for_entries(
                 message_override=message,
             ) or flushed_any
         else:
+            # The owning workflow already finished/was delivered, so these
+            # results will never be delivered to the robot conversation.
+            # Clear the registered pending robot replies as well, otherwise
+            # they linger forever as orphaned queue entries.
+            for entry in robot_entries:
+                try:
+                    server._clear_background_job_robot_reply(
+                        robot_job_context=entry.get("robot_job_context"),
+                        pending_reply_id=entry.get("pending_robot_reply_id") or "",
+                    )
+                except Exception:
+                    pass
             flushed_any = True
 
     if other_entries:
@@ -437,7 +449,7 @@ class LocalMCPServer:
                 "complete_current_step needs evidence. "
                 "insert_recovery_step(title=...) on failure. "
                 "cancel only when user abandons. "
-                "Completing the LAST step auto-transitions to ready_to_report—just report. "
+                "Completing the LAST step auto-transitions to ready_to_report—then report result to the ticket target (QQ: call mcp_robot_send_message; web: output directly). "
                 "After updating, call execution tool."
             ),
             input_schema={
@@ -1526,7 +1538,12 @@ class LocalMCPServer:
 
                     record_scheduled_ticket_result(
                         reply_ticket_id,
-                        success=bool(result.get("success")),
+                        success=(
+                            bool(result.get("success"))
+                            and result.get("exit_code") == 0
+                            and not result.get("timed_out")
+                            and not result.get("cancelled")
+                        ),
                         error="" if result.get("success") else self._format_job_result(result),
                     )
                 except Exception as exc:
@@ -1541,7 +1558,12 @@ class LocalMCPServer:
                     task_workflow_manager.record_job_result(
                         reply_ticket_id,
                         command=command,
-                        success=bool(result.get("success")),
+                        success=(
+                            bool(result.get("success"))
+                            and result.get("exit_code") == 0
+                            and not result.get("timed_out")
+                            and not result.get("cancelled")
+                        ),
                         result_summary=self._format_job_result(result),
                         daemon_job_id=str(result.get("job_id") or ""),
                         exit_code=result.get("exit_code"),
@@ -1581,14 +1603,10 @@ class LocalMCPServer:
                 "agent_session": agent_session,
                 "conversation_key": (robot_job_context or {}).get("conversation_key", ""),
             }
-            if busy:
-                # A turn is running: hold this result and let the turn-end
-                # hook merge it with other finished jobs into one batch.
-                buffer_background_job_result(item_id, entry)
-                debug_log(
-                    f"[LocalMCPServer] background job result buffered while turn is running: item={item_id}, command={command}"
-                )
-                return
+            # Always deliver immediately – the session input queue is
+            # serialised by the turn coordinator, so enqueueing while a
+            # turn is running is safe and avoids stalled workflows when
+            # the turn ends without the agent acting on the result.
             flush_background_job_results_for_entries(item_id, [entry])
 
         thread = threading.Thread(

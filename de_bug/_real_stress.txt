@@ -1,0 +1,47 @@
+﻿=== REAL STRESS: Java install + chatter + version switch ===
+
+--- Phase 1: Install java 21 (real, takes time) ---
+  [12:25:20] [FLY] "install openjdk-21-jre-headless via" -> queued_pending
+--- Phase 2: Chatter flood during install ---
+  [12:25:23] [KFP] "yo anyone online?" -> queued_pending
+  [12:25:25] [New+7] "bot tell me a fun fact" -> queued
+  [12:25:27] [KFP] "this server is laggy today" -> queued_pending
+  [12:25:29] [Ming_Yu] "whos building something?" -> queued_pending
+--- Phase 3: FLY changes mind ---
+  [12:25:32] [FLY] "actually wait, make it java 17 not " -> queued_pending
+--- Phase 4: More chatter ---
+  [12:25:34] [New+7] "quick whats 15*7" -> queued_pending
+  [12:25:36] [KFP] "hello?? bot?? you there?" -> queued_pending
+  [12:25:38] [Ming_Yu] "can u play music on the server" -> queued_pending
+
+All sent. Waiting 90s for full processing...
+
+=== RESULTS ===
+Workflows: 0
+
+Tokens: 99646, Turns: 8
+Jobs: 0
+
+Session (latest):
+  [assistant|agent_thinking] Java 21 is already installed according to the installed software list. Let me verify it's 
+  [user|qq_user] [Pending QQ messages; merge same-sender follow-ups and answer current unresolved intents]
+
+  [assistant|agent_thinking] Let me analyze the pending QQ messages. There are multiple distinct senders, each with the
+  [assistant|agent_thinking] The send timed out. Let me try again.
+  [assistant|agent_thinking] The robot bridge seems to be having issues - first a timeout, then a 404 saying "Robot is 
+  [assistant|agent_response] 主人，QQ 桥接服务现在没加载上，消息发不出去呢(´；ω；`)
+
+有三位在叫我：
+- 1137471557 问要不要玩MC、还喊了好几声
+- 1512220570 要笑话、还问了9
+  [user|qq_user] [Pending QQ messages; merge same-sender follow-ups and answer current unresolved intents]
+
+  [assistant|agent_thinking] Let me analyze the pending QQ messages. There are 5 messages from 4 distinct senders:
+
+1. 
+  [assistant|agent_action] Executing tool: mcp_local_list_installed_software
+  [assistant|agent_tool_result] Installed software list:
+- openjdk-21 [apt], version=21.0.11, notes=OpenJDK 21.0.11，java -
+
+=== QQ sends: ===
+Recent QQ sends: 0

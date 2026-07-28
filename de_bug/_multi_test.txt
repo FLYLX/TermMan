@@ -1,0 +1,34 @@
+﻿=== TEST 1: Simple private chat ===
+  Dispatch: queued
+  QQ sends: 1
+  Latest: [13:03:14] QQ [send_private_msg] -> 2537134688: 主人～5+5=10呀 (≧▽≦)
+
+=== TEST 2: Group task (install htop) ===
+  Dispatch: queued
+  Sending chatter during task...
+  Waiting 30s for task...
+  Workflows: 1
+    [active] steps=3
+  QQ sends total: 4
+    [13:03:54] QQ [send_group_msg] -> 770362397: 没什么大事啦～刚醒过来而已喵
+    [13:03:55] QQ [send_group_msg] -> 770362397: 3×3=9呀～这么简单还要问我(´･ω･`)
+    [13:03:55] QQ [send_group_msg] -> 770362397: 主人好呀～(≧▽≦)
+
+=== TEST 3: Rapid fire questions ===
+  Waiting 25s...
+
+=== FINAL STATS ===
+Tokens: 125727, Turns: 11
+QQ replies delivered: 4
+
+Latest session:
+  [assistant|agent_tool_result] Task workflow updated: active
+Authoritative task workflow (state machine):
+- wor
+  [assistant|agent_action] Executing tool: mcp_local_update_task_workflow
+  [assistant|agent_tool_result] Task workflow updated: active
+Authoritative task workflow (state machine):
+- wor
+  [user|qq_user] quick: 7*8?
+  [assistant|agent_thinking] The user is asking a simple math question: 7*8 = 56. This is a quick reply, no t
+  [assistant|agent_thinking] The message wasn't sent because the conversation is sleeping. Let me try again w

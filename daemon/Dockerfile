@@ -66,7 +66,11 @@ EXPOSE 9000
 # server port
 EXPOSE 43906
 
+# Install tini for proper PID 1 zombie reaping
+RUN apt-get update && apt-get install -y --no-install-recommends tini && rm -rf /var/lib/apt/lists/*
+
 # 设置启动命令
+ENTRYPOINT ["tini", "--"]
 CMD ["python", "src/main.py"]
 
 # 日志目录说明：

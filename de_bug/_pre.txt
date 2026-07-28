@@ -1,0 +1,5 @@
+﻿Bridge: bots=1, clients=1
+Bridge send test: 200
+Mock log: [12:29:30] QQ [send_private_msg] -> 2537134688: bridge test
+
+Environment ready. Starting real stress test...

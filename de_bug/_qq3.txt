@@ -1,0 +1,16 @@
+﻿Mock NapCat log (last 5):
+  File "E:\conda\Lib\site-packages\websockets\client.py", line 144, in process_response
+  raise InvalidStatus(response)
+  websockets.exceptions.InvalidStatus: server rejected WebSocket connection: HTTP 403
+  [11:39:12] CONNECTED
+  [11:39:42] QQ [send_private_msg] -> 2537134688: ���˺�ѽ��1+1=2����(�R���Q)
+
+Session:
+  [assistant] 主人，QQ 发送失败了——机器人桥接没连上（404: Robot is not loaded in bridge），消息没发出去(´；ω；`)
+
+答案是 2 呀～1+1=2 喵
+  [user] hello, 1+1=?
+  [assistant] The user is saying hello and asking 1+1=? in a private QQ chat. This is a simple greeting and math question. I should reply in character as 柴郡 (小柴), b
+  [assistant] 已回复 QQ：主人好呀～1+1=2喵！(≧▽≦)
+
+Tokens: 50584, Turns: 5

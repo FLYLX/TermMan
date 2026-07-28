@@ -1344,11 +1344,13 @@ def _generate_stream_unserialized(
     AgentMessageQueue.clear_abort(item_id)
 
     if not internal_agent_callback:
+        user_message_type = "qq_user" if normalized_source_type == SOURCE_QQ else "chat_user"
         user_event = _persist_and_broadcast_event(
             item_id,
             role="user",
             content=message,
-            message_type="chat_user",
+            message_type=user_message_type,
+            extra={"sender_key": reply_ticket.sender_key, "sender_label": reply_ticket.sender_label, "source": normalized_source_type} if normalized_source_type == SOURCE_QQ else None,
         )
         yield _to_sse(user_event)
 
@@ -2201,7 +2203,18 @@ def _generate_stream_unserialized(
                     }
                 )
 
-            messages.append(assistant_message)
+            if not assistant_message["tool_calls"]:
+                # Providers like ZAI reject assistant messages carrying an
+                # empty tool_calls array. Drop the key; skip the message
+                # entirely when it carries no content and produced no tool
+                # results (e.g. every call was blocked by the tool-loop guard).
+                assistant_message.pop("tool_calls", None)
+            if (
+                assistant_message.get("tool_calls")
+                or str(assistant_message.get("content") or "").strip()
+                or tool_messages
+            ):
+                messages.append(assistant_message)
             messages.extend(tool_messages)
 
             recovery_inserted = any(

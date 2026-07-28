@@ -1,0 +1,14 @@
+﻿Dispatch: queued
+Waiting 20s for agent...
+
+=== Mock NapCat received: ===
+python : Traceback (most recent call last):
+At line:48 char:6
++ "@ | python - 2>&1 | Out-File -Encoding utf8 E:\dev\TermMan\dev\TermM ...
++      ~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<stdin>", line 29, in <module>
+  File "<frozen codecs>", line 322, in decode
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xd6 in position 1583: invalid continuation byte

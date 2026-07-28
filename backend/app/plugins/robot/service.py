@@ -814,6 +814,19 @@ class RobotService:
                     self._extend_processing_for_active_jobs(
                         robot, job.conversation_key,
                     )
+                try:
+                    from app.services.agent.stream_manager import stream_manager
+                    stream_manager.broadcast_chat_event(
+                        str(job.item_id),
+                        {
+                            "type": "qq_message_processed",
+                            "item_id": str(job.item_id),
+                            "conversation_key": job.conversation_key,
+                            "robot_message_sent": robot_message_sent,
+                        },
+                    )
+                except Exception:
+                    pass
                 if robot_message_sent:
                     if job.pending_reply_id:
                         self.clear_background_job_reply(

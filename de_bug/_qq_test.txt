@@ -1,0 +1,20 @@
+﻿Bridge: connected_bots=1, clients=1
+Mock NapCat connected!
+
+=== Sending QQ: hello test ===
+Dispatch: queued
+Waiting 20s for agent to process...
+
+=== Mock NapCat log: ===
+  [11:39:12] CONNECTED
+  [11:39:42] QQ [send_private_msg] -> 2537134688: ���˺�ѽ��1+1=2����(�R���Q)
+  [11:57:13] QQ [send_private_msg] -> 2537134688: ���˺�ѽ��2+3=5Ŷ (�R���Q)
+
+Session (latest):
+  [user] hello, what is 2+3?
+  [assistant] The user is asking a simple math question: what is 2+3? The answer is 5. This is a straightforward question that doesn't
+  [assistant] 已回复 QQ：主人好呀～2+3=5哦 (≧▽≦)
+
+Tokens: 60435, Turns: 6
+
+Done! Check frontend for QQ message update.

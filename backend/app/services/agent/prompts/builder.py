@@ -165,6 +165,12 @@ def _build_skill_prompt(
         if skill.category in {"system", "persona"}:
             continue
         if skill.action and skill.action.prompt:
+            skill_prompt = skill.action.prompt.strip()
+            # Skip skill prompts already provided elsewhere in the base
+            # prompt (e.g. the qq_mcp skill duplicates the robot integration
+            # system prompt, which is always present on QQ turns).
+            if skill_prompt and any(skill_prompt in part for part in prompt_parts):
+                continue
             prompt_parts.append(skill.action.prompt)
 
     if extra_prompt_parts:

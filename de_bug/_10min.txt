@@ -1,0 +1,29 @@
+﻿=== 10-MINUTE SUSTAINED CHAT TEST ===
+Start: 12:36:13
+Sending messages every 3-5s from 4 users...
+
+  [12:36:49] 10 msgs | queued=0 pending=10 err=0 | 36s elapsed
+  [12:37:29] 20 msgs | queued=0 pending=20 err=0 | 76s elapsed
+  [12:38:10] 30 msgs | queued=0 pending=30 err=0 | 117s elapsed
+  [12:38:52] 40 msgs | queued=0 pending=40 err=0 | 159s elapsed
+  [12:39:33] 50 msgs | queued=0 pending=50 err=0 | 200s elapsed
+  [12:40:12] 60 msgs | queued=0 pending=60 err=0 | 239s elapsed
+  [12:40:50] 70 msgs | queued=0 pending=70 err=0 | 277s elapsed
+  [12:41:34] 80 msgs | queued=1 pending=79 err=0 | 321s elapsed
+  [12:42:19] 90 msgs | queued=1 pending=89 err=0 | 366s elapsed
+  [12:42:58] 100 msgs | queued=1 pending=99 err=0 | 405s elapsed
+  [12:43:40] 110 msgs | queued=1 pending=109 err=0 | 447s elapsed
+  [12:44:20] 120 msgs | queued=1 pending=119 err=0 | 487s elapsed
+  [12:45:01] 130 msgs | queued=1 pending=129 err=0 | 528s elapsed
+  [12:45:43] 140 msgs | queued=1 pending=139 err=0 | 570s elapsed
+
+=== DONE at 12:46:13 ===
+Total messages: 146
+Queued (processed): 1
+Pending (buffered): 145
+Errors: 0
+
+Tokens: 704209, Turns: 55
+Active workflows: 0
+QQ replies delivered: 15
+Mock still alive: False

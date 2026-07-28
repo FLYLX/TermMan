@@ -32,7 +32,10 @@ _CHINESE_NO_REPLY_PATTERNS = (
         r"(?:\u56de\u590d|\u56deqq|\u53d1qq|\u53d1\u9001|\u53d1\u6d88\u606f|\u5f80qq\u53d1)"
     ),
     re.compile(
-        r"(?:\u4fdd\u6301\u9759\u9ed8|\u9759\u9ed8\u5904\u7406|\u4e0d\u53d1\u8a00)"
+        r"(?:\u4fdd\u6301\u9759\u9ed8|\u9759\u9ed8\u5904\u7406|\u9759\u9ed8\u4f1a\u8bdd|\u5df2\u6b63\u786e\u9759\u9ed8|\u4e0d\u53d1\u8a00|\u65e0\u9700\u8c03\u7528\u7ec8\u7aef)"
+    ),
+    re.compile(
+        r"(?:不是对机器人|不是对bot|不涉及终端操作|群成员之间的|已正确静默处理)"
     ),
 )
 
@@ -71,7 +74,7 @@ def is_no_reply_intent(value: str) -> bool:
     if compacted in _NO_REPLY_EXACTS:
         return True
 
-    if len(compacted) <= 120 and any(
+    if len(compacted) <= 200 and any(
         pattern.search(compacted) for pattern in _CHINESE_NO_REPLY_PATTERNS
     ):
         return True

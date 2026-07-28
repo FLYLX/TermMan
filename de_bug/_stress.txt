@@ -1,0 +1,61 @@
+﻿=== STRESS TEST: Multi-user + task ===
+
+T+0s: FLY sends install task
+  [FLY] "install wget and tree, verify " -> queued
+T+2s: KFP chatter
+  [KFP] "lol what is going on" -> queued_pending
+T+3s: New+7 question
+  [New+7] "hey bot, what is 9*9?" -> queued_pending
+T+5s: FLY follow-up
+  [FLY] "also check if curl is installe" -> queued_pending
+T+7s: KFP again
+  [KFP] "anyone there? hello?" -> queued_pending
+
+All messages sent. Waiting 40s for processing...
+
+=== RESULTS ===
+Workflows: 1
+  [active] 1 steps
+    [running] 安装 wget 和 tree
+
+Tokens: 57348, Turns: 5
+
+Session (15 msgs):
+  [user|qq_user] [后台终端任务结果 - 来自 QQ 会话]
+后台任务已完成。
+根据结果直接回复用户。
+命令: date '+%Y年%-m月%-d号 %H:%M'
+Job succeeded
+job_id: e0e14
+  [assistant|agent_thinking] The background job completed successfully. The date command returned "2026年7月28号 04:07". I need to r
+  [assistant|agent_qq_reply] 已回复 QQ：主人现在是2026年7月28号 04:07哦～
+  [user|qq_user] install wget and tree, verify both work
+  [assistant|agent_thinking] The user wants me to install wget and tree, then verify both work. This is a 3+ step task (install w
+  [assistant|agent_action] Executing tool: mcp_local_list_installed_software
+  [assistant|agent_tool_result] Installed software list:
+- openjdk-21 [apt], version=21.0.11, notes=OpenJDK 21.0.11，java -version 确认
+  [assistant|agent_action] Executing tool: mcp_local_update_task_workflow
+  [assistant|agent_tool_result] Task workflow updated: created
+Authoritative task workflow (state machine):
+- workflow_id: 405a4e5a-
+  [user|qq_user] [Pending QQ messages; merge same-sender follow-ups and answer current unresolved intents]
+These mess
+  [assistant|agent_thinking] Let me analyze the pending QQ messages:
+
+1. sender=1137471557: "lol what is going on" → then later "
+  [user|qq_user] [后台终端任务结果 - 来自 QQ 会话]
+后台任务已完成。
+重要：任务工作流活跃。当前步骤: 1/1 [安装 wget 和 tree]。你的第一个动作必须是调用 mcp_local_update_t
+  [assistant|agent_thinking] Let me analyze the situation:
+
+1. The task workflow is active, current step: 1/1 [安装 wget 和 tree]
+2.
+  [assistant|agent_action] Executing tool: mcp_local_update_task_workflow
+  [assistant|agent_tool_result] Task workflow updated: active
+Authoritative task workflow (state machine):
+- workflow_id: 405a4e5a-6
+
+=== QQ replies sent: ===
+  [11:39:42] QQ [send_private_msg] -> 2537134688: ���˺�ѽ��1+1=2����(�R���Q)
+  [11:57:13] QQ [send_private_msg] -> 2537134688: ���˺�ѽ��2+3=5Ŷ (�R���Q)
+  [12:07:41] QQ [send_private_msg] -> 2537134688: ����������2026��7��28�� 04:07Ŷ��

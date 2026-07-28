@@ -206,7 +206,7 @@ function normalizeMessage(message: {
     }
   }
 
-  if (type === "chat_user" || type === "scheduled_task") {
+  if (type === "chat_user" || type === "qq_user" || type === "scheduled_task") {
     return {
       role: "user",
       content: message.content,
@@ -447,7 +447,24 @@ function parseRobotPendingMessages(current: string): RobotPendingMessage[] {
 }
 
 function getRobotMessageDisplay(message: ChatMessage): RobotMessageDisplay | null {
-  if (message.role !== "user" || !message.content.includes("[Robot message;")) {
+  if (message.role !== "user") {
+    return null
+  }
+  if (message.type === "qq_user") {
+    const extra = (message as unknown as Record<string, unknown>).extra as Record<string, unknown> | undefined
+    return {
+      body: message.content,
+      conversationType: "private",
+      conversationId: String(extra?.sender_key ?? ""),
+      trigger: "mention_bot",
+      senderName: String(extra?.sender_label ?? "QQ"),
+      senderId: String(extra?.sender_key ?? ""),
+      mentions: [],
+      replyIds: [],
+      pendingMessages: [],
+    }
+  }
+  if (!message.content.includes("[Robot message;")) {
     return null
   }
 
@@ -1168,7 +1185,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
         if (
           current.localEcho &&
           current.role === nextMessage.role &&
-          nextMessage.type === "chat_user" &&
+          (nextMessage.type === "chat_user" || nextMessage.type === "qq_user") &&
           current.content === nextMessage.content
         ) {
           const next = [...prev]
@@ -1258,6 +1275,22 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       })
       return
     }
+
+    if (data.type === "qq_message_processed") {
+      getChatSession(itemId, { limit: CHAT_HISTORY_PAGE_SIZE, offset: 0 })
+        .then((session) => {
+          const normalizedMessages = normalizeRenderableMessages(
+            session.messages,
+          )
+          setMessages(normalizedMessages)
+          loadedPersistedMessageCountRef.current =
+            session.messages?.length ?? 0
+          setHistoryTotal(session.total ?? normalizedMessages.length)
+        })
+        .catch(() => {})
+      return
+    }
+
     const normalizedMessage = normalizeMessage(event as Record<string, unknown>)
     if (!normalizedMessage) {
       return
@@ -1280,7 +1313,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       }
       return
     }
-    if (normalizedMessage.type === "chat_user") {
+    if (normalizedMessage.type === "chat_user" || normalizedMessage.type === "qq_user") {
       setTurnCount(1)
       turnActiveRef.current = true
       setAgentStatus({

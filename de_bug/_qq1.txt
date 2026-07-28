@@ -1,0 +1,12 @@
+﻿=== TEST 1: Simple QQ chat (1+1) ===
+Dispatch: queued
+Waiting 20s...
+Bridge send 200 OK: True
+
+Session:
+  [assistant] 已回复 QQ：Model request failed: litellm.BadRequestError: OpenAIException - Invalid header "x-dashscope-datainspection" prov
+  [user] 1+1???
+  [assistant] The user is asking "1+1=?" - a simple math question. This is a private chat, addressed to me (reply_to_bot). I should re
+  [assistant] The send timed out. Let me try again.
+
+Tokens: 19675, Turns: 2

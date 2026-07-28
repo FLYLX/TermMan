@@ -275,6 +275,7 @@ class JobRunner:
                     process.stdout.close()
                 except Exception:
                     pass
+            self._reap_zombies()
 
         finished_at = datetime.now()
         duration_seconds = round(time.monotonic() - start_monotonic, 3)
@@ -663,6 +664,17 @@ class JobRunner:
                 socket_service.sync_broadcast(item_uuid, "stream", data)
         except Exception as exc:
             logger.error(f"[JobRunner] Broadcast failed: item={item_uuid} error={exc}")
+
+    @staticmethod
+    def _reap_zombies() -> None:
+        """Reap any zombie child processes to prevent accumulation."""
+        try:
+            while True:
+                pid, _ = os.waitpid(-1, os.WNOHANG)
+                if pid == 0:
+                    break
+        except ChildProcessError:
+            pass
 
     def _terminate_process(self, pid: int | None):
         if pid is None:

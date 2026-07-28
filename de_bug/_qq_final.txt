@@ -1,0 +1,17 @@
+﻿Mock NapCat clients: 1
+
+Sending QQ: hey what time is it?
+Dispatch: queued
+Waiting 20s... (check frontend now)
+
+Session:
+  [user|qq_user] hey what time is it?
+  [assistant|agent_thinking] The user is asking what time it is. I have a memory that says "现在是 2026年7月26号 下午5点39分（北京时间）哦～" but t
+  [user|qq_user] [后台终端任务结果 - 来自 QQ 会话]
+后台任务已完成。
+根据结果直接回复用户。
+命令: date '+%Y年%-m月%-d号 %H:%M'
+Job succeeded
+job_id: e0e14
+
+Done! Frontend should show QQ card.

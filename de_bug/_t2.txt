@@ -1,0 +1,11 @@
+﻿Terminal state: 200 -> {"item_id":"ea52de0c-51b7-4b49-a43d-985ed2e09579","command":"","source":"","sent_at":"","timeout_seconds":0}
+
+=== Sending QQ: install java21 ===
+Dispatch: {'success': True, 'ignored': False, 'reason': 'queued', 'error': None, 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'route_key': '测试项目-5', 'reply_chunks': []}
+
+Waiting 15s for first turn...
+
+Workflows: 0
+
+Tokens: 20721, Turns: 2
+Jobs: 0

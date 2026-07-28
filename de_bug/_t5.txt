@@ -1,0 +1,26 @@
+﻿Waiting 20s for task to complete...
+Workflows: 0
+
+Tokens: 112933, Turns: 10
+
+Latest session (8):
+  [assistant] Executing tool: mcp_local_list_installed_software
+  [assistant] Installed software list:
+- openjdk-21 [apt], version=21.0.11, notes=OpenJDK 21.0.11，java -version 确认可用
+- minecraft-server-1.20.1 [manual], version=1.20.1, notes=Mojang官方server.jar，
+  [assistant] The installed software list already shows openjdk-21 is installed (version 21.0.11), and the terminal log confirms `java -version` outputs `openjdk version "21.0.11"`. Java 21 is a
+  [assistant] Executing tool: mcp_local_update_task_workflow
+  [assistant] Task workflow updated: active
+Authoritative task workflow (state machine):
+- workflow_id: a12b898d-ad45-4f90-8fc3-dfbb989347d1
+- main_objective: Task
+- status: active
+- return_sour
+  [assistant] Executing tool: mcp_local_update_task_workflow
+  [assistant] Task workflow updated: active
+Authoritative task workflow (state machine):
+- workflow_id: a12b898d-ad45-4f90-8fc3-dfbb989347d1
+- main_objective: Task
+- status: active
+- return_sour
+  [assistant] Model request failed: litellm.BadRequestError: ZaiException - openai_error

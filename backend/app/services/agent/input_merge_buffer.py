@@ -32,7 +32,7 @@ SOURCE_SCHEDULED_TASK = "scheduled_task"
 # Per-source retention caps inside one scope. Overflow evicts the oldest
 # entries (returned to the caller so the source can log/act on the eviction).
 DEFAULT_SOURCE_LIMITS: dict[str, int] = {
-    SOURCE_QQ_MESSAGE: 5,
+    SOURCE_QQ_MESSAGE: 10,
     SOURCE_JOB_RESULT: 8,
     SOURCE_TERMINAL_OUTPUT: 20,
     SOURCE_SCHEDULED_TASK: 8,

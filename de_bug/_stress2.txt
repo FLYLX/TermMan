@@ -1,0 +1,45 @@
+﻿=== STRESS: Install java + non-stop chatter + direction change ===
+
+--- Phase 1: Start task ---
+  [12:18:40] [FLY] "install java 21 using apt, verify w" -> queued
+--- Phase 2: Chatter flood ---
+  [12:18:42] [KFP] "anyone wanna play minecraft?" -> queued_pending
+  [12:18:44] [New+7] "bot bot bot, tell me a joke" -> queued_pending
+  [12:18:45] [KFP] "hello?? is this thing on?" -> queued_pending
+  [12:18:47] [Ming_Yu] "whats happening here lol" -> queued_pending
+  [12:18:48] [New+7] "9+10 quick answer pls" -> queued_pending
+--- Phase 3: Direction change ---
+  [12:18:51] [FLY] "wait, actually install java 17 inst" -> queued_pending
+--- Phase 4: More chatter ---
+  [12:18:53] [KFP] "bruh this bot is so slow" -> queued_pending
+  [12:18:55] [New+7] "what is the meaning of life?" -> queued_pending
+  [12:18:56] [Ming_Yu] "can someone help me with my homewor" -> queued_pending
+  [12:18:58] [KFP] "im bored someone talk to me" -> queued_pending
+
+All sent. Waiting 60s for full processing...
+
+=== RESULTS ===
+Workflows: 0
+
+Tokens: 59831, Turns: 5
+Jobs: 0 total, 0 running
+
+Session (latest 8):
+  [assistant|agent_thinking] The user wants me to install Java 21 using apt and verify with java -version. This is a 3+ step task
+  [assistant|agent_action] Executing tool: mcp_local_list_installed_software
+  [assistant|agent_tool_result] Installed software list:
+- openjdk-21 [apt], version=21.0.11, notes=OpenJDK 21.0.11，java -version 确认
+  [assistant|agent_thinking] Java 21 is already installed according to the installed software list. Let me verify it's actually w
+  [user|qq_user] [Pending QQ messages; merge same-sender follow-ups and answer current unresolved intents]
+These mess
+  [assistant|agent_thinking] Let me analyze the pending QQ messages. There are multiple distinct senders, each with their own req
+  [assistant|agent_thinking] The send timed out. Let me try again.
+  [assistant|agent_thinking] The robot bridge seems to be having issues - first a timeout, then a 404 saying "Robot is not loaded
+
+=== QQ replies: ===
+Total QQ sends: 10
+  [12:16:31] QQ [send_group_msg] -> 770362397: ���ˡ�wget �� tree ��װ������wget 1.25.0��tree 2.2.1�������������°�ֱ�ӿ��õ�Ŷ (
+  [12:17:14] QQ [send_group_msg] -> 770362397: ���ˡ�wget��tree��װ������wget 1.25.0��tree 2.2.1������֤������ (�R���Q)
+  [12:18:00] QQ [send_group_msg] -> 770362397: ���ˡ�wget �� tree ��װ���� (�R���Q)
+  [12:18:00] QQ [send_group_msg] -> 770362397: wget 1.25.0 �� tree 2.2.1 ��֤ͨ������ʱ������
+  [12:19:36] QQ [send_group_msg] -> 770362397: �������ڣ�����MC�ҿ��԰�æ��������״̬Ŷ(�R���Q)

@@ -1,0 +1,8 @@
+﻿Dispatch: queued
+Waiting 15s for agent to process and reply...
+
+Bridge logs (last 10):
+07-28 03:16:33 [WARNING] nonebot | OneBot V11 | There's already a bot 10001, ignored
+INFO:     172.19.0.1:42558 - "GET /internal/health HTTP/1.1" 200 OK
+INFO:     172.19.0.2:50132 - "POST /internal/send HTTP/1.1" 200 OK
+

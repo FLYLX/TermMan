@@ -227,7 +227,12 @@ def _reconcile_waiting_job_workflows(now: datetime, stats: dict[str, int]) -> No
             task_workflow_manager.record_job_result(
                 ticket_id,
                 command=job.command,
-                success=bool(result.get("success")),
+                success=(
+                    bool(result.get("success"))
+                    and result.get("exit_code") == 0
+                    and not result.get("timed_out")
+                    and not result.get("cancelled")
+                ),
                 result_summary=result_summary,
                 daemon_job_id=str(result.get("job_id") or job.daemon_job_id or ""),
                 exit_code=result.get("exit_code"),
