@@ -810,6 +810,10 @@ class RobotService:
                     sleep_when_no_reply=job.reply_context_active
                     and not job.direct_reply_trigger,
                 )
+                if self._item_has_running_jobs(str(job.item_id)):
+                    self._extend_processing_for_active_jobs(
+                        robot, job.conversation_key,
+                    )
                 if robot_message_sent:
                     if job.pending_reply_id:
                         self.clear_background_job_reply(
@@ -3145,6 +3149,44 @@ class RobotService:
             conversation_key,
             reason="agent_did_not_send_qq_message",
             expected_generation=conversation_generation,
+        )
+
+    def _item_has_running_jobs(self, item_id: str) -> bool:
+        """Check if the daemon has running background jobs for this item."""
+        try:
+            from app.services.agent.mcp.local_server import local_mcp_server
+
+            _item, connection = local_mcp_server._get_item_daemon_context(item_id)
+            result = connection.list_jobs_http(item_uuid=item_id)
+            if not isinstance(result, dict) or not result.get("success"):
+                return False
+            for job in result.get("jobs") or []:
+                if isinstance(job, dict) and str(job.get("status") or "") == "running":
+                    return True
+            return False
+        except Exception:
+            return False
+
+    def _extend_processing_for_active_jobs(
+        self,
+        robot: Robot,
+        conversation_key: str,
+    ) -> None:
+        """Keep conversation in processing state while background jobs run."""
+        key = self._conversation_controller_key(robot.id, conversation_key)
+        now = self._now()
+        timeout = timedelta(seconds=CONVERSATION_PROCESSING_MAX_TIMEOUT_SECONDS)
+        with self._lock:
+            controller = self._conversation_controllers.get(key)
+            if controller is None:
+                return
+            controller.processing = True
+            controller.processing_expires_at = now + timeout
+            controller.updated_at = now
+        logger.info(
+            "[RobotService] Extended processing for active jobs: conversation=%s timeout=%ss",
+            conversation_key,
+            CONVERSATION_PROCESSING_MAX_TIMEOUT_SECONDS,
         )
 
     def conversation_is_processing(

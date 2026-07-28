@@ -22,7 +22,8 @@ ROBOT_REPLY_DECISION_INSTRUCTION = (
     "  · 别人的话可以理解为在问你、叫你、或跟你相关\n"
     "- 唯一允许沉默：群聊里明确是别人之间的对话（有明确 @其他人、叫了其他人名字、\n"
     "  或内容明显与你无关）、纯表情/贴图反应。此时不调用 `mcp_robot_send_message`，\n"
-    "  `trigger=active_chat_window` 时调用 `mcp_robot_sleep_conversation`，其它情况返回 `[no_qq_reply]`。\n"
+    "  	rigger=active_chat_window ?????mcp_robot_sleep_conversation????????n"
+    "  ??????????[no_qq_reply]??????????????????????????n"
     "- 判断技巧：结合 `[Recent QQ live context]` 看上下文。如果你刚发言过，紧接着的消息大概率是对你说的。\n"
     "  “你会…吗”“你能…吗”“帮我…”“直接回答”“回答我”这类表达一律视为对你说的，必须回复。\n"
 )
