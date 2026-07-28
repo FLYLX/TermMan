@@ -301,35 +301,6 @@ async def collect_chat_response(
     except AttributeError:
         prepared = None
 
-    if robot_id:
-        prepared_agent = await prepare_chat_agent(
-            session,
-            item_id,
-            current_user,
-            prepared=prepared,
-            isolated=True,
-        )
-        try:
-            return await _collect_chat_response_unserialized(
-                session=session,
-                item_id=item_id,
-                current_user=current_user,
-                message=message,
-                history=history,
-                robot_id=robot_id,
-                robot_sender_key=robot_sender_key,
-                robot_reply_target=robot_reply_target,
-                robot_conversation_key=robot_conversation_key,
-                robot_conversation_generation=robot_conversation_generation,
-                robot_reply_requires_awake=robot_reply_requires_awake,
-                reply_ticket_id=reply_ticket_id,
-                return_result=return_result,
-                prepared=prepared,
-                prepared_agent=prepared_agent,
-            )
-        finally:
-            Agent.release_instance(prepared_agent[2])
-
     if prepared:
         handler_id = str(prepared[0].id)
     else:
