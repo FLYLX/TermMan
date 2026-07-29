@@ -1,0 +1,23 @@
+[T1] QQ casual: 10+10等于几
+  replies=1 ok=True prompt_tokens=12588 turns=1
+    [16:54:07] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '20呀主人～小柴算术没问题的喵 (≧▽≦)'}}]
+
+[T2] QQ task: 跑一下 uptime
+  replies=1 ok=True prompt_tokens=23883 turns=2
+    [16:54:41] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '主人～服务器跑着呢，开机18小时啦，负载很低很稳(´･ω･`)'}}]
+
+[T3] QQ multi-step: install cmatrix + verify
+  wf_settled=True cmatrix_installed=False replies=1 prompt_tokens=23855 turns=2
+    [16:54:54] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '主人～cmatrix还没装呢，要我帮你装一个吗？(´･ω･`)'}}]
+
+[T4] web chat
+  status=200 ok=True prompt_tokens=5568
+    reply: 主人好呀～我是柴郡，皇家重巡柴郡喵！(≧▽≦) 平时帮主人管管服务器、跑跑终端、处理各种杂事，虽然爱撒娇但做事很靠谱的哦～有什么需要尽管吩咐小柴就好啦 (´･ω･`)
+
+============================================================
+[REGRESSION SUMMARY]
+  T1_casual: PASS
+  T2_task: PASS
+  T3_install: FAIL
+  T4_web: PASS
+============================================================

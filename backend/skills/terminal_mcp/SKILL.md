@@ -27,12 +27,6 @@ action:
     - 中断当前终端命令。
     - 保存、检索、列出、删除长期记忆。
 
-    安装清单规则：
-    - 安装软件前先看当前 prompt 里的已安装软件清单；清单已有时先验证版本和路径，不要重复安装。
-    - 清单没有记录时，也要尽量先做一次本地存在性检查，再决定是否安装。
-    - 安装成功必须有终端输出证据；确认成功后调用 `mcp_local_record_installed_software` 记录名称、来源、版本和安装命令。
-    - 卸载成功必须有终端输出证据；确认成功后调用 `mcp_local_remove_installed_software` 从清单移除。
-    - 清单只记录稳定结果，不记录“正在安装”“命令已发送”“可能安装了”这种未确认状态。
     使用规则（通用任务工作流、后台 Job、命令反馈、日志过滤等规则已在系统提示中定义，此处只列终端专属规则）：
     - 用户询问"终端开了吗 / 终端是否连接 / 控制台能不能用"时，必须先调用 `mcp_local_get_terminal_status`。只有工具明确返回 active=true 才能回答终端已开启；历史日志、Item 的运行状态、旧聊天和缓存 handler 都不能作为在线证据。
     - 终端命令和后台 Job 都必须通过实时 Socket Room 校验。工具返回"终端未启动或未连接"时，直接如实告知，不能说命令正在执行、正在等待输出或终端只是暂时没回显。
@@ -63,9 +57,6 @@ tools:
   - mcp_local_list_terminal_input_filter_rules
   - mcp_local_delete_terminal_input_filter_rule
   - mcp_local_clear_terminal_input_filter_rules
-  - mcp_local_list_installed_software
-  - mcp_local_record_installed_software
-  - mcp_local_remove_installed_software
   - mcp_local_interrupt_command
   - mcp_local_save_memory
   - mcp_local_recall_memory

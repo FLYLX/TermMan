@@ -1422,18 +1422,26 @@ class TaskWorkflowManager:
         lines.append("- steps:")
         for index, step in enumerate(workflow.steps, start=1):
             recovery = " recovery" if step.recovery else ""
-            evidence = f" evidence={step.evidence[-300:]}" if step.evidence else ""
-            error = f" error={step.last_error[-300:]}" if step.last_error else ""
-            lines.append(
-                f"  {index}. [{step.status}{recovery}] {step.title}{evidence}{error}"
-            )
+            if include_rules:
+                evidence = f" evidence={step.evidence[-300:]}" if step.evidence else ""
+                error = f" error={step.last_error[-300:]}" if step.last_error else ""
+                lines.append(
+                    f"  {index}. [{step.status}{recovery}] {step.title}{evidence}{error}"
+                )
+            else:
+                # Per-turn push stays compact; full step evidence/errors can be
+                # pulled on demand via mcp_local_get_task_workflow.
+                lines.append(f"  {index}. [{step.status}{recovery}] {step.title}")
         running_jobs = [job for job in workflow.jobs if job.status == "running"]
         if running_jobs:
-            lines.append("- running_jobs:")
-            for job in running_jobs[-5:]:
-                bound_step = workflow.find_step_by_id(job.step_id)
-                step_label = f" (step: {bound_step.title})" if bound_step else ""
-                lines.append(f"  - {job.workflow_job_id}: {job.command}{step_label}")
+            if include_rules:
+                lines.append("- running_jobs:")
+                for job in running_jobs[-5:]:
+                    bound_step = workflow.find_step_by_id(job.step_id)
+                    step_label = f" (step: {bound_step.title})" if bound_step else ""
+                    lines.append(f"  - {job.workflow_job_id}: {job.command}{step_label}")
+            else:
+                lines.append(f"- running_jobs: {len(running_jobs)} (details via mcp_local_get_task_workflow)")
         if current and "汇报" in current.title:
             target = workflow.source_label or workflow.source_type or "the requester"
             lines.append(
@@ -1450,7 +1458,7 @@ class TaskWorkflowManager:
                 "1. main_objective 不可改写。子步骤失败→cancelled→insert_recovery_step→继续。不衍生新 workflow。",
                 "2. 观察到证据后立即调 update_task_workflow 记录。不依赖记忆推进。",
                 "3. 汇报只在完成/最终失败/重大变更时发。中间步骤保持静默。汇报发送失败（如 bridge 404）不等于任务失败，直接在 web chat 输出结果，标 completed。",
-                "4. 预计>3步的任务必须建 workflow。普通聊天和即时操作不需要。",
+                "4. 长任务/跨轮任务可建 workflow 做结构化跟踪；普通多步任务用 update_plan 即可。普通聊天和即时操作两者都不需要。",
                 "5. 检查步骤发现目标已满足→取消剩余步骤→直接汇报。不逐步走。",
                 "6. 可恢复决策（换源/重试/换包）直接做，不问用户。同一思路反复失败且想不出新办法时，直接 cancel 该步并把实际错误汇报回去，不要原地打转。",
                 "7. 用户新指令与当前 workflow 目标不同→立即 cancel 旧的→按新指令行事。",

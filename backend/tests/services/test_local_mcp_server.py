@@ -427,8 +427,6 @@ def test_system_prompt_forbids_claiming_command_success_without_confirmation() -
     assert "`&&`" in prompt
     assert "mcp_local_interrupt_command" in prompt
     assert "mcp_local_run_job" in prompt
-    assert "mcp_local_record_installed_software" in prompt
-    assert "mcp_local_remove_installed_software" in prompt
 
 
 def test_execute_command_reports_disconnected_without_handler(monkeypatch) -> None:
@@ -522,38 +520,6 @@ def test_execute_command_restores_existing_terminal_input_handler(monkeypatch) -
             "text": "命令已发送: echo restored。终端输出会在下一轮反馈中到达，你可以继续执行其他操作或等待结果。",
         }
     ]
-
-
-def test_installed_software_tools_record_list_remove(monkeypatch, tmp_path) -> None:
-    import app.services.agent.installed_software as installed_software
-
-    monkeypatch.setattr(installed_software, "_INSTALLED_SOFTWARE_DIR", tmp_path)
-
-    server = LocalMCPServer()
-    record_result = server.call_tool(
-        "record_installed_software",
-        {
-            "item_id": "item-1",
-            "name": "openjdk-21-jdk-headless",
-            "manager": "apt",
-            "version": "21",
-            "command": "apt-get install -y openjdk-21-jdk-headless",
-        },
-    )
-    assert "Recorded installed software" in record_result[0]["text"]
-
-    list_result = server.call_tool("list_installed_software", {"item_id": "item-1"})
-    assert "openjdk-21-jdk-headless" in list_result[0]["text"]
-    assert "version=21" in list_result[0]["text"]
-
-    remove_result = server.call_tool(
-        "remove_installed_software",
-        {"item_id": "item-1", "name": "openjdk-21-jdk-headless", "manager": "apt"},
-    )
-    assert "Removed 1 installed software record" in remove_result[0]["text"]
-
-    empty_result = server.call_tool("list_installed_software", {"item_id": "item-1"})
-    assert "none recorded" in empty_result[0]["text"]
 
 
 def test_terminal_input_filter_rule_tool_adds_noise_block_rule(db) -> None:
@@ -689,42 +655,6 @@ def test_terminal_input_filter_rule_tools_delete_and_clear_rules(db) -> None:
     assert updated.input_filter_rules == {}
     assert updated.input_filter_enabled is False
 
-
-def test_chat_prompt_includes_installed_software_list(monkeypatch, tmp_path) -> None:
-    from types import SimpleNamespace
-
-    import app.services.agent.installed_software as installed_software
-    from app.services.agent.prompts import builder as prompt_builder
-
-    monkeypatch.setattr(installed_software, "_INSTALLED_SOFTWARE_DIR", tmp_path)
-    installed_software.record_installed_software(
-        "item-1",
-        name="openjdk-21-jdk-headless",
-        manager="apt",
-        version="21",
-    )
-
-    agent = SimpleNamespace(
-        _context=SimpleNamespace(
-            agent_profile={},
-            enabled_knowledge_files=[],
-            skill_revision=skill_loader.revision,
-        ),
-        get_skills=lambda: [],
-        match_skills=lambda query: [],
-        get_mcp_servers=lambda: ["local"],
-    )
-
-    messages = prompt_builder.build_chat_turn_messages(
-        agent,
-        item_id="item-1",
-        message="安装 java",
-        latest_only_context=True,
-    )
-
-    assert "Current installed software list" in messages[0]["content"]
-    assert "openjdk-21-jdk-headless" in messages[0]["content"]
-    assert "version=21" in messages[0]["content"]
 
 def test_run_job_blocks_when_main_terminal_stopped(monkeypatch) -> None:
     server = LocalMCPServer()
@@ -1832,3 +1762,120 @@ def test_cancel_background_jobs_for_item_daemon_down(monkeypatch) -> None:
         lambda _item_id: (_ for _ in ()).throw(RuntimeError("daemon down")),
     )
     assert cancel_background_jobs_for_item("item-1") == 0
+
+
+def _patch_reply_ticket_manager(monkeypatch):
+    from types import SimpleNamespace
+
+    import app.services.agent.reply_ticket as reply_ticket_module
+
+    manager = reply_ticket_module.ReplyTicketManager()
+    monkeypatch.setattr(reply_ticket_module, "reply_ticket_manager", manager)
+
+    def make_ticket(item_id: str = "item-1", message: str = "request"):
+        agent = SimpleNamespace(
+            _context=SimpleNamespace(
+                robot_id="",
+                robot_context_token="",
+                reply_ticket_id="",
+            )
+        )
+        return manager.create_for_agent(
+            agent,
+            item_id=item_id,
+            handler_id="handler-1",
+            message=message,
+            source_type="web",
+        )
+
+    return manager, make_ticket
+
+
+def test_update_plan_writes_to_owning_reply_ticket(monkeypatch) -> None:
+    manager, make_ticket = _patch_reply_ticket_manager(monkeypatch)
+    ticket_a = make_ticket(message="task A")
+    ticket_b = make_ticket(message="task B")
+    server = LocalMCPServer()
+
+    result = server.call_tool(
+        "update_plan",
+        {
+            "item_id": "item-1",
+            "_reply_ticket_id": ticket_a.ticket_id,
+            "plan": [
+                {"step": "download", "status": "completed"},
+                {"step": "install", "status": "in_progress"},
+                {"step": "", "status": "pending"},
+                {"step": "verify", "status": "bogus-status"},
+            ],
+        },
+    )
+
+    assert "Plan updated:" in result[0]["text"]
+    # Normalization keeps empty steps out and coerces unknown statuses.
+    assert ticket_a.plan == [
+        {"step": "download", "status": "completed"},
+        {"step": "install", "status": "in_progress"},
+        {"step": "verify", "status": "pending"},
+    ]
+    # The other ticket of the same item is untouched.
+    assert ticket_b.plan == []
+
+
+def test_update_plan_all_completed_clears_ticket_plan(monkeypatch) -> None:
+    _manager, make_ticket = _patch_reply_ticket_manager(monkeypatch)
+    ticket = make_ticket()
+    ticket.plan = [{"step": "install", "status": "in_progress"}]
+    server = LocalMCPServer()
+
+    result = server.call_tool(
+        "update_plan",
+        {
+            "item_id": "item-1",
+            "_reply_ticket_id": ticket.ticket_id,
+            "plan": [{"step": "install", "status": "completed"}],
+        },
+    )
+
+    assert ticket.plan == []
+    assert "All steps complete" in result[0]["text"]
+
+
+def test_update_plan_without_resolvable_ticket_is_rejected(monkeypatch) -> None:
+    manager, make_ticket = _patch_reply_ticket_manager(monkeypatch)
+    ticket = make_ticket()
+    server = LocalMCPServer()
+
+    for args in (
+        {"item_id": "item-1", "plan": [{"step": "s", "status": "pending"}]},
+        {
+            "item_id": "item-1",
+            "_reply_ticket_id": "missing-ticket",
+            "plan": [{"step": "s", "status": "pending"}],
+        },
+    ):
+        result = server.call_tool("update_plan", args)
+        assert "无法关联 ticket" in result[0]["text"]
+
+    # Nothing was written anywhere.
+    assert ticket.plan == []
+    assert manager.latest_plan_for_item("item-1")[1] == []
+
+
+def test_plan_reminder_reads_plan_of_owning_ticket(monkeypatch) -> None:
+    _manager, make_ticket = _patch_reply_ticket_manager(monkeypatch)
+    ticket_a = make_ticket(message="task A")
+    ticket_b = make_ticket(message="task B")
+    ticket_a.plan = [{"step": "plan A step", "status": "in_progress"}]
+    ticket_b.plan = [{"step": "plan B step", "status": "pending"}]
+    server = LocalMCPServer()
+
+    reminder_b = server._plan_reminder("item-1", ticket_b.ticket_id)
+    assert "plan B step" in reminder_b
+    assert "plan A step" not in reminder_b
+
+    reminder_a = server._plan_reminder("item-1", ticket_a.ticket_id)
+    assert "plan A step" in reminder_a
+
+    assert server._plan_reminder("item-1", "") == ""
+    assert server._plan_reminder("item-1", "missing-ticket") == ""

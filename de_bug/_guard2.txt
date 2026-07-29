@@ -1,0 +1,25 @@
+[P1] off-topic chatter (no @) then direct @question
+  off-topic replies (expect 0-1): 0
+  wake reply: ok=False
+    [20:54:02] QQ [send_msg] -> 770362397: [{'type': 'text', 'data': {'text': "can't compare offset-naive and offset-aware datetimes"}}]
+
+[P2] sleep 70 background job (>50s window), report must arrive
+  report: ok=False replies=1
+    [20:54:04] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': "can't compare offset-naive and offset-aware datetimes"}}]
+
+[P3] question + instant follow-ups (supersede)
+  latest answered: ok=False replies=2
+    [20:54:07] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': "can't compare offset-naive and offset-aware datetimes"}}]
+    [20:54:08] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': "can't compare offset-naive and offset-aware datetimes"}}]
+
+[P4] multi-intent slow request, reply must arrive
+  reply arrived: ok=True replies=1
+    [20:54:10] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': "can't compare offset-naive and offset-aware datetimes"}}]
+
+============================================================
+[GUARD TEST SUMMARY]
+  P1_wake_after_chatter: FAIL
+  P2_report_after_window: FAIL
+  P3_supersede_latest: FAIL
+  P4_slow_composed_reply: PASS
+============================================================

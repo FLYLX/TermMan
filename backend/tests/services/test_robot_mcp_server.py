@@ -858,7 +858,12 @@ def test_robot_mcp_send_message_blocks_sleeping_active_context(monkeypatch) -> N
     assert result == [
         {
             "type": "text",
-            "text": "Message not sent: current QQ conversation is sleeping or superseded.",
+            "text": (
+                "Send skipped: this turn was superseded by a newer QQ message, so the "
+                "conversation belongs to a newer turn now. Do NOT retry mcp_robot_send_message "
+                "and do NOT mention this failure to the user; the newer turn will deliver the "
+                "reply. End this turn silently."
+            ),
         }
     ]
     assert sent == []
@@ -2184,3 +2189,189 @@ def test_coalesce_dedupes_bubbles() -> None:
     messages = ["在呢", "在呢", "你说啥"]
     result = server._coalesce_current_context_messages(_fake_qq_context(), messages)
     assert result == ["在呢", "你说啥"]
+
+
+def test_robot_mcp_send_message_fans_out_to_explicit_targets(monkeypatch) -> None:
+    server = RobotMCPServer()
+    sent: list[tuple[str, str, str, str]] = []
+
+    def fake_send_message(robot_id, reply_target, text):
+        sent.append((robot_id, reply_target.target_type, reply_target.target_id, text))
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+    monkeypatch.setattr(
+        server,
+        "_get_accessible_robot_id",
+        lambda args, fallback_robot_id="": "robot-2",
+    )
+
+    result = server.call_tool(
+        "send_message",
+        {
+            "text": "服务器已开",
+            "targets": [
+                {"target_type": "private", "target_id": "2537134688"},
+                {"target_type": "group", "target_id": "770362397"},
+            ],
+            "_termman_user_id": "user-1",
+        },
+    )
+
+    assert result[0]["type"] == "text"
+    assert "sent: private:2537134688" in result[0]["text"]
+    assert "sent: group:770362397" in result[0]["text"]
+    assert sent == [
+        ("robot-2", "private", "2537134688", "服务器已开"),
+        ("robot-2", "group", "770362397", "服务器已开"),
+    ]
+
+
+def test_robot_mcp_send_message_targets_partial_failure(monkeypatch) -> None:
+    server = RobotMCPServer()
+    sent: list[str] = []
+
+    def fake_send_message(_robot_id, reply_target, _text):
+        if reply_target.target_type == "private":
+            raise RuntimeError("bridge offline")
+        sent.append(reply_target.target_id)
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+    monkeypatch.setattr(
+        server,
+        "_get_accessible_robot_id",
+        lambda args, fallback_robot_id="": "robot-2",
+    )
+
+    result = server.call_tool(
+        "send_message",
+        {
+            "text": "hello",
+            "targets": [
+                {"target_type": "private", "target_id": "2537134688"},
+                {"target_type": "group", "target_id": "770362397"},
+            ],
+            "_termman_user_id": "user-1",
+        },
+    )
+
+    assert "error: private:2537134688: bridge offline" in result[0]["text"]
+    assert "sent: group:770362397" in result[0]["text"]
+    assert sent == ["770362397"]
+
+
+def test_robot_mcp_send_message_targets_notes_skipped_duplicate(monkeypatch) -> None:
+    server = RobotMCPServer()
+    sent: list[str] = []
+
+    def fake_send_message(_robot_id, reply_target, _text):
+        sent.append(reply_target.target_id)
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        fake_send_message,
+    )
+    monkeypatch.setattr(
+        server,
+        "_get_accessible_robot_id",
+        lambda args, fallback_robot_id="": "robot-2",
+    )
+    args = {
+        "text": "hello",
+        "targets": [{"target_type": "group", "target_id": "770362397"}],
+        "_termman_user_id": "user-1",
+    }
+
+    first = server.call_tool("send_message", args)
+    assert "sent: group:770362397" in first[0]["text"]
+
+    second = server.call_tool("send_message", args)
+    assert "skipped_duplicate: group:770362397" in second[0]["text"]
+    assert sent == ["770362397"]
+
+
+def test_robot_mcp_send_message_targets_rejects_conflicting_args(monkeypatch) -> None:
+    server = RobotMCPServer()
+    sent: list[str] = []
+
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        lambda robot_id, reply_target, text: sent.append(text),
+    )
+    monkeypatch.setattr(
+        server,
+        "_get_accessible_robot_id",
+        lambda args, fallback_robot_id="": "robot-2",
+    )
+    base_args = {
+        "text": "hello",
+        "targets": [{"target_type": "group", "target_id": "770362397"}],
+        "_termman_user_id": "user-1",
+    }
+
+    for conflicting in (
+        {"target_type": "group", "target_id": "123456"},
+        {"reply_to": "baka"},
+        {"conversation": "group:123456"},
+        {"broadcast": True},
+    ):
+        result = server.call_tool("send_message", {**base_args, **conflicting})
+        assert "targets cannot be combined with" in result[0]["text"]
+
+    assert sent == []
+
+
+def test_robot_mcp_send_message_targets_rejects_invalid_entries() -> None:
+    server = RobotMCPServer()
+
+    result = server.call_tool(
+        "send_message",
+        {
+            "text": "hello",
+            "targets": [{"target_type": "group"}],
+            "_termman_user_id": "user-1",
+        },
+    )
+
+    assert "targets[0]" in result[0]["text"]
+    assert "target_id" in result[0]["text"]
+
+
+def test_robot_mcp_send_message_targets_blocked_in_active_context(monkeypatch) -> None:
+    server = RobotMCPServer()
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="current-group",
+        metadata={"target": {"id": "current-group"}},
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-current",
+            sender_key="onebot_v11:group:current-group:user-1",
+            reply_target=target,
+        )
+    )
+    sent: list[str] = []
+    monkeypatch.setattr(
+        "app.plugins.robot.bridge_client.robot_bridge_client.send_message",
+        lambda robot_id, reply_target, text: sent.append(text),
+    )
+    try:
+        result = server.call_tool(
+            "send_message",
+            {
+                "text": "hello",
+                "targets": [{"target_type": "group", "target_id": "770362397"}],
+                "_robot_context_token": token,
+            },
+        )
+    finally:
+        unregister_robot_mcp_context(token)
+
+    assert "active QQ-triggered context is locked to group:current-group" in result[0]["text"]
+    assert sent == []

@@ -4,11 +4,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from app.plugins.robot.memory_scope import memory_content_is_question_like
+from app.plugins.robot.prompts import ROBOT_MESSAGING_COMPAT_SKILL_IDS
 from app.services.agent.history.chat import (
     SESSION_SUMMARY_TYPE,
     get_chat_messages,
 )
-from app.services.agent.installed_software import build_installed_software_prompt
 from app.services.agent.integrations import (
     annotate_integration_history_events,
     build_integration_history_prompt,
@@ -142,6 +142,7 @@ def _build_skill_prompt(
     *,
     force_skill_ids: set[str] | None = None,
     extra_prompt_parts: list[str] | None = None,
+    append_user_query: bool = True,
 ) -> str:
     prompt_parts = [get_system_prompt(agent)]
 
@@ -161,23 +162,27 @@ def _build_skill_prompt(
             if forced_skill is not None:
                 skills.append(forced_skill)
                 existing_skill_ids.add(forced_skill.skill_id)
+    robot_context = getattr(agent, "_context", None)
+    robot_prompt_active = bool(
+        str(getattr(robot_context, "robot_id", "") or "").strip()
+    )
     for skill in skills:
         if skill.category in {"system", "persona"}:
             continue
-        if skill.action and skill.action.prompt:
-            skill_prompt = skill.action.prompt.strip()
-            # Skip skill prompts already provided elsewhere in the base
-            # prompt (e.g. the qq_mcp skill duplicates the robot integration
-            # system prompt, which is always present on QQ turns).
-            if skill_prompt and any(skill_prompt in part for part in prompt_parts):
-                continue
-            prompt_parts.append(skill.action.prompt)
+        if not (skill.action and skill.action.prompt):
+            continue
+        # The robot integration system prompt already carries the QQ
+        # messaging rules on QQ turns; injecting the skill again would
+        # duplicate them.
+        if robot_prompt_active and skill.skill_id in ROBOT_MESSAGING_COMPAT_SKILL_IDS:
+            continue
+        prompt_parts.append(skill.action.prompt)
 
     if extra_prompt_parts:
         prompt_parts.extend(extra_prompt_parts)
 
     base_prompt = "\n\n".join(part.strip() for part in prompt_parts if part and part.strip())
-    if query:
+    if query and append_user_query:
         return f"{base_prompt}\n\nUser query: {query}"
     return base_prompt
 
@@ -787,18 +792,6 @@ def _collect_handler_knowledge(
     return "\n".join(lines)
 
 
-def _build_installed_software_context(item_id: str) -> str:
-    try:
-        return build_installed_software_prompt(item_id)
-    except Exception as exc:
-        logger.warning(
-            "[PromptBuilder] Failed to load installed software list for item=%s: %s",
-            item_id,
-            exc,
-        )
-        return ""
-
-
 def _build_current_source_route_context(
     agent: "Agent",
     *,
@@ -811,19 +804,16 @@ def _build_current_source_route_context(
     ).strip()
     if robot_id:
         route = robot_conversation_key or "current QQ conversation"
+        # Reply discipline (one send per input, no restating, sender identity,
+        # etc.) lives in the robot messaging prompt; keep only source-routing
+        # facts here so each rule exists in exactly one place.
         return (
             f"{CURRENT_SOURCE_ROUTE_LABEL}:\n"
             f"- current source: QQ robot conversation ({route})\n"
             "- reply contract: if visible reply is needed, use mcp_robot_send_message "
             "to the locked current QQ context; do not leave the answer only in the "
-            "TermMan web chat.\n"
-            "- one-turn reply contract: one QQ input should produce one logical QQ reply via one "
-            "send-tool call and one visible `text` bubble. Do not split one answer into a reaction "
-            "and follow-up. Use `messages` only for a pending batch where multiple distinct senders "
-            "each need one separate answer; consecutive messages from the same sender are one intent. "
-            "After `mcp_robot_send_message` succeeds, do not restate the same answer in the final assistant text.\n"
-            "- do not send to any other QQ conversation unless the user explicitly "
-            "gave a target and the tool allows it.\n"
+            "TermMan web chat; do not send to any other QQ conversation unless the "
+            "user explicitly gave a target and the tool allows it.\n"
             "- reply only to the source: do NOT broadcast the answer to the terminal "
             "or game server console (e.g., say/tell commands) unless the user explicitly "
             "asks you to also announce it there."
@@ -933,10 +923,6 @@ def build_chat_turn_messages(
     active_task_ledger_context = _build_active_task_ledger_context(item_id, agent)
     if active_task_ledger_context:
         extra_prompt_parts.append(active_task_ledger_context)
-    if active_task_ledger_context:
-        installed_software_context = _build_installed_software_context(item_id)
-        if installed_software_context:
-            extra_prompt_parts.append(installed_software_context)
     if not latest_only_context:
         integration_prompt = build_integration_history_prompt(
             agent,
@@ -953,6 +939,10 @@ def build_chat_turn_messages(
                 agent,
                 effective_query,
                 extra_prompt_parts=extra_prompt_parts,
+                # The chat message itself is appended as the final user
+                # message below; repeating it here would double long
+                # composed QQ messages inside the prompt.
+                append_user_query=False,
             ),
         }
     ]
@@ -991,6 +981,21 @@ def build_chat_turn_messages(
 
     if pending_context.strip():
         prompt_messages.append({"role": "system", "content": pending_context.strip()})
+
+    # Same first-turn action frame the QQ path gets, generalized for chat:
+    # multi-step work opens with update_plan, not with a reply.
+    prompt_messages.append(
+        {
+            "role": "system",
+            "content": (
+                "[本轮行动框架]\n"
+                "- 如果用户消息是需要多步操作的任务（安装/搭建/启动/停止/修改/连续操作）："
+                "第一个动作必须是 mcp_local_update_plan 列出步骤，然后立刻开始执行第一步。"
+                "禁止先回复、禁止先调查、禁止反问确认。\n"
+                "- 如果它只是闲聊或单步问答：直接回答，不要 plan。"
+            ),
+        }
+    )
 
     prompt_messages.append({"role": "user", "content": message.strip()})
     return _dedupe_adjacent_messages(prompt_messages)
@@ -1039,10 +1044,6 @@ def build_terminal_turn_messages(
     active_task_ledger_context = _build_active_task_ledger_context(item_id, agent)
     if active_task_ledger_context:
         extra_prompt_parts.append(active_task_ledger_context)
-    if active_task_ledger_context:
-        installed_software_context = _build_installed_software_context(item_id)
-        if installed_software_context:
-            extra_prompt_parts.append(installed_software_context)
     prompt_messages: list[dict[str, str]] = [
         {
             "role": "system",

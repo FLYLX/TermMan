@@ -286,7 +286,69 @@ class RobotAgentIntegration:
                 key = f"{target_data.get('target_type')}:{target_data.get('target_id')}"
                 targets_by_key[key] = target_data
 
+        # Seed the robot's other active conversations (e.g. QQ groups seen by
+        # this item) so web turns know they are deliverable targets even when
+        # the chat history carries no robot message stamps for them. Text
+        # parsing results keep priority for the same target key.
+        for seeded_target in self._conversation_controller_targets(context):
+            seeded_key = (
+                f"{seeded_target.get('target_type')}:{seeded_target.get('target_id')}"
+            )
+            targets_by_key.setdefault(seeded_key, seeded_target)
+
         context.robot_known_targets = list(targets_by_key.values())
+
+    def _conversation_controller_targets(self, context: Any) -> list[dict[str, str]]:
+        robot_id = str(getattr(context, "robot_id", "") or "").strip()
+        item_id = str(getattr(context, "item_id", "") or "").strip()
+        if not robot_id and not item_id:
+            return []
+
+        try:
+            from app.plugins.robot.service import robot_service
+
+            snapshots = robot_service.conversation_controller_snapshots(
+                robot_ids={robot_id} if robot_id else None,
+                item_ids={item_id} if item_id else None,
+            )
+        except Exception:
+            logger.warning(
+                "[RobotIntegration] Failed to seed robot context targets from "
+                "conversation controllers",
+                exc_info=True,
+            )
+            return []
+
+        targets: list[dict[str, str]] = []
+        for snapshot in snapshots:
+            target_type = str(snapshot.get("conversation_type") or "").strip().lower()
+            target_id = str(snapshot.get("conversation_id") or "").strip()
+            if target_type not in {"group", "private"} or not target_id:
+                continue
+            conversation = (
+                str(snapshot.get("conversation_key") or "").strip()
+                or f"{target_type}:{target_id}"
+            )
+            sender = ""
+            pending_messages = snapshot.get("pending_messages")
+            if isinstance(pending_messages, list) and pending_messages:
+                last_pending = pending_messages[-1]
+                if isinstance(last_pending, dict):
+                    sender = str(
+                        last_pending.get("sender_label")
+                        or last_pending.get("sender_key")
+                        or ""
+                    ).strip()
+            targets.append(
+                {
+                    "conversation": conversation,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "sender": sender,
+                    "robot_id": str(snapshot.get("robot_id") or robot_id).strip(),
+                }
+            )
+        return targets
 
     def record_context_targets(self, agent: Agent, item_id: str) -> None:
         context = _robot_context(agent)

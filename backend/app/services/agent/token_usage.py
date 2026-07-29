@@ -21,11 +21,29 @@ class TokenUsageRecord(SQLModel, table=True):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    reply_ticket_id: str = Field(default="", index=True)
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
 
 
 def init_token_usage_table() -> None:
     TokenUsageRecord.__table__.create(engine, checkfirst=True)
+    # Lightweight migration: the table predates the reply_ticket_id column.
+    try:
+        with engine.connect() as conn:
+            columns = {
+                row[1]
+                for row in conn.exec_driver_sql(
+                    "PRAGMA table_info(token_usage_record)"
+                ).fetchall()
+            }
+            if "reply_ticket_id" not in columns:
+                conn.exec_driver_sql(
+                    "ALTER TABLE token_usage_record "
+                    "ADD COLUMN reply_ticket_id VARCHAR NOT NULL DEFAULT ''"
+                )
+                conn.commit()
+    except Exception as exc:
+        logger.warning("[TokenUsage] reply_ticket_id migration skipped: %s", exc)
 
 
 class TokenUsageTracker:
@@ -36,6 +54,7 @@ class TokenUsageTracker:
         prompt_tokens: int,
         completion_tokens: int,
         total_tokens: int,
+        reply_ticket_id: str = "",
     ) -> None:
         try:
             with Session(engine) as session:
@@ -45,6 +64,7 @@ class TokenUsageTracker:
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
                     total_tokens=total_tokens,
+                    reply_ticket_id=str(reply_ticket_id or ""),
                 )
                 session.add(record)
                 session.commit()
@@ -114,6 +134,46 @@ class TokenUsageTracker:
                 "last_seen": "",
                 "models": [],
             }
+
+
+    def get_task_stats(self, item_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Aggregate token usage per reply ticket for one item.
+
+        Only records with a non-empty reply_ticket_id are grouped; the caller
+        enriches the rows with in-memory ticket metadata."""
+        try:
+            with Session(engine) as session:
+                rows = session.exec(
+                    select(
+                        TokenUsageRecord.reply_ticket_id,
+                        func.sum(TokenUsageRecord.prompt_tokens).label("prompt_tokens"),
+                        func.sum(TokenUsageRecord.completion_tokens).label("completion_tokens"),
+                        func.sum(TokenUsageRecord.total_tokens).label("total_tokens"),
+                        func.count().label("turns"),
+                        func.min(TokenUsageRecord.created_at).label("first_seen"),
+                        func.max(TokenUsageRecord.created_at).label("last_seen"),
+                    )
+                    .where(TokenUsageRecord.item_id == item_id)
+                    .where(TokenUsageRecord.reply_ticket_id != "")
+                    .group_by(TokenUsageRecord.reply_ticket_id)
+                    .order_by(func.max(TokenUsageRecord.created_at).desc())
+                    .limit(limit)
+                ).all()
+                return [
+                    {
+                        "reply_ticket_id": row[0],
+                        "prompt_tokens": row[1] or 0,
+                        "completion_tokens": row[2] or 0,
+                        "total_tokens": row[3] or 0,
+                        "turns": row[4] or 0,
+                        "first_seen": row[5] or "",
+                        "last_seen": row[6] or "",
+                    }
+                    for row in rows
+                ]
+        except Exception as exc:
+            logger.warning("[TokenUsage] Failed to query by task: %s", exc)
+            return []
 
 
 token_usage_tracker = TokenUsageTracker()

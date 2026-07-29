@@ -16,6 +16,7 @@ SOURCE_WEB = "web"
 SOURCE_TERMINAL = "terminal"
 
 TICKET_TTL = timedelta(hours=6)
+QQ_TICKET_SUPERSEDE_REASON = "superseded by newer QQ message"
 CURRENT_QQ_MESSAGE_MARKER = "[Current QQ message]"
 CQ_CODE_RE = re.compile(r"\[CQ:[^\]]+\]", re.IGNORECASE)
 
@@ -24,13 +25,46 @@ TICKET_ALIASES_KV_KEY = "reply_ticket_aliases"
 
 def _parse_dt(value: Any) -> datetime | None:
     if isinstance(value, datetime):
-        return value
-    if not value:
+        parsed = value
+    elif not value:
         return None
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if parsed.tzinfo is not None:
+        # Ticket datetimes are naive local time (datetime.now()) everywhere in
+        # this module; an aware value (e.g. persisted by an older writer) must
+        # be normalized or every naive comparison against it raises TypeError.
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed
+
+
+EXPLICIT_QQ_TARGET_RE = re.compile(
+    r"(私聊|私|群聊|群组|群|group|private)\s*(?:聊|组)?\s*[:：]?\s*(\d{5,12})",
+    re.IGNORECASE,
+)
+
+
+def extract_explicit_qq_targets(message: str) -> list[dict[str, str]]:
+    """Extract explicitly named QQ targets from a user message, e.g.
+    "发到私聊 2537134688 和群 770362397". Only long numeric ids count, so
+    arithmetic like "1+1" can never be misread as a target."""
+    targets: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for match in EXPLICIT_QQ_TARGET_RE.finditer(str(message or "")):
+        keyword = match.group(1).lower()
+        target_type = "private" if keyword in {"私聊", "私", "private"} else "group"
+        target_id = match.group(2)
+        key = f"{target_type}:{target_id}"
+        if key in seen:
+            continue
+        seen.add(key)
+        targets.append(
+            {"target_type": target_type, "target_id": target_id, "conversation": key}
+        )
+    return targets
 
 
 def ticket_to_payload(ticket: ReplyTicket) -> dict[str, Any]:
@@ -133,6 +167,14 @@ class ReplyTicket:
     scheduled_execution_id: str = ""
     terminal_target: str = ""
     external_report_sent: bool = False
+    # Explicit QQ targets extracted from the user's message (e.g. "发到私聊A
+    # 和群B"). The ticket carries them so the agent can send to each one by
+    # name instead of rediscovering targets itself.
+    extra_targets: list[dict[str, str]] = field(default_factory=list)
+    # Codex-style plan scratchpad ({step, status} entries) owned by this
+    # ticket. Identity, lifecycle and cleanup all reuse the ticket's existing
+    # mechanisms; old persisted payloads without this field default to [].
+    plan: list[dict] = field(default_factory=list)
 
     @property
     def is_qq(self) -> bool:
@@ -236,6 +278,53 @@ class ReplyTicketManager:
             return f"{display_name} ({sender_id})"
         return display_name or sender_key
 
+    def _supersede_stale_qq_tickets_locked(self, new_ticket: ReplyTicket, now: datetime) -> None:
+        """Close older undelivered QQ tickets for the same conversation.
+
+        Every QQ turn creates a fresh ticket. Turns that finish without a QQ
+        delivery (empty reply, corrective retry, superseded intent) would
+        otherwise leave their ticket pending until the TTL prune, surfacing as
+        stuck duplicate entries in the conversation controller snapshot.
+        Tickets still backing a background task (task_request_id / workflow)
+        or currently mid-delivery are left untouched; tickets whose report
+        already reached QQ are finalized as delivered instead of failed.
+        """
+        if new_ticket.source_type != SOURCE_QQ or not new_ticket.conversation_key:
+            return
+        try:
+            from app.services.agent.task_workflow import task_workflow_manager
+        except Exception:
+            return
+        for ticket in list(self._tickets.values()):
+            if (
+                ticket.ticket_id == new_ticket.ticket_id
+                or ticket.source_type != SOURCE_QQ
+                or ticket.robot_id != new_ticket.robot_id
+                or ticket.conversation_key != new_ticket.conversation_key
+                or ticket.status in {"delivered", "failed", "sending"}
+                or ticket.task_request_id
+            ):
+                continue
+            try:
+                if task_workflow_manager.get_by_ticket(ticket.ticket_id) is not None:
+                    continue
+            except Exception:
+                continue
+            if ticket.external_report_sent:
+                ticket.status = "delivered"
+                ticket.delivered_at = now
+            else:
+                ticket.status = "failed"
+                ticket.delivery_error = QQ_TICKET_SUPERSEDE_REASON
+            ticket.updated_at = now
+            _persist_ticket(ticket)
+            logger.info(
+                "[ReplyTicket] Superseded stale QQ ticket=%s conversation=%s new_status=%s",
+                ticket.ticket_id,
+                ticket.conversation_key,
+                ticket.status,
+            )
+
     def create_for_agent(
         self,
         agent: Any,
@@ -257,6 +346,7 @@ class ReplyTicketManager:
             source_label="TermMan web chat",
             request_message=str(message or "").strip()[:500],
         )
+        ticket.extra_targets = extract_explicit_qq_targets(message)
 
         if forced_source_type == SOURCE_WEB:
             robot_id = ""
@@ -304,6 +394,7 @@ class ReplyTicketManager:
 
         with self._lock:
             self._prune_locked(now)
+            self._supersede_stale_qq_tickets_locked(ticket, now)
             self._tickets[ticket.ticket_id] = ticket
         self.attach_to_agent(agent, ticket.ticket_id)
         _persist_ticket(ticket)
@@ -394,6 +485,42 @@ class ReplyTicketManager:
             return None
         with self._lock:
             return self._tickets.get(self._resolve_ticket_id_locked(ticket_id))
+
+    def update_ticket_plan(
+        self, ticket_id: str, plan_list: list[dict]
+    ) -> ReplyTicket | None:
+        """Write the agent plan scratchpad onto a ticket and persist it."""
+        if not ticket_id:
+            return None
+        with self._lock:
+            ticket_id = self._resolve_ticket_id_locked(ticket_id)
+            ticket = self._tickets.get(ticket_id)
+            if not ticket:
+                return None
+            ticket.plan = [dict(entry) for entry in plan_list or []]
+            ticket.updated_at = datetime.now()
+            _persist_ticket(ticket)
+            return ticket
+
+    def latest_plan_for_item(
+        self, item_id: str
+    ) -> tuple[ReplyTicket | None, list[dict]]:
+        """Plan of the item's most recently updated non-terminal ticket.
+
+        Returns ``(None, [])`` when the item has no active ticket (terminal
+        tickets are delivered/failed; their plans are considered closed).
+        """
+        with self._lock:
+            candidates = [
+                ticket
+                for ticket in self._tickets.values()
+                if ticket.item_id == str(item_id)
+                and ticket.status not in {"delivered", "failed"}
+            ]
+        if not candidates:
+            return None, []
+        ticket = max(candidates, key=lambda entry: entry.updated_at)
+        return ticket, list(ticket.plan)
 
     def mark_task_plan(self, ticket_id: str, task_request_id: str) -> None:
         with self._lock:
@@ -551,10 +678,22 @@ class ReplyTicketManager:
                 "- Do not duplicate: if already sent via tool, do not restate in final text.\n"
             )
         if ticket.source_type == SOURCE_WEB:
+            targets_hint = ""
+            if ticket.extra_targets:
+                listed = ", ".join(
+                    f"{t.get('target_type')}:{t.get('target_id')}"
+                    for t in ticket.extra_targets
+                )
+                targets_hint = (
+                    f"- QQ TARGETS for this turn: {listed}. 用户明确要求的 QQ 目标，"
+                    "逐个调用 mcp_robot_send_message（显式 target_type/target_id）发送，"
+                    "每个目标都要发到；全部发完后再在这里汇报。\n"
+                )
             return (
                 "Authoritative reply ticket:\n"
                 f"- ticket_id: {ticket.ticket_id}\n"
                 "- source: TermMan web chat\n"
+                f"{targets_hint}"
                 "- REPLY ROUTING: this conversation originated from the web chat. "
                 "Reply directly in this web response.\n"
                 "- If the user asks you to send a message to QQ or elsewhere, perform "

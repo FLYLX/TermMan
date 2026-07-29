@@ -2670,6 +2670,17 @@ class AgentSession:
             clear_robot_context = getattr(agent, "clear_robot_context", None)
             if callable(clear_robot_context):
                 clear_robot_context()
+            is_plain_chat = input_msg.input_type == InputType.CHAT
+            if is_plain_chat:
+                try:
+                    from app.plugins.robot.mcp.server import RobotMCPServer
+
+                    RobotMCPServer.reset_delivered_targets(f"item:{self.item_id}")
+                except Exception:
+                    logger.exception(
+                        "[AgentSession] Failed to reset QQ delivery tracker: item=%s",
+                        self.item_id,
+                    )
             _chat_loop_mgr = _ManagedEventLoop()
             loop = _chat_loop_mgr.__enter__()
             loop.run_until_complete(agent.start_mcp_servers())
@@ -2686,6 +2697,8 @@ class AgentSession:
             self._current_turn_id = turn_guard.turn_id
             self.emit_status("running", "回复中")
 
+            turn_final_content = ""
+            turn_completed = False
             for _ in range(MAX_ITERATIONS):
                 timed_out, timeout_reason = turn_guard.check_timeout()
                 if timed_out:
@@ -2706,6 +2719,7 @@ class AgentSession:
                 if not (hasattr(message, "tool_calls") and message.tool_calls):
                     if message.content:
                         final_content = strip_think_tags(guard_fabricated_tool_trace(message.content))
+                        turn_final_content = final_content
                         self.emit_output(
                             append_tool_call_footer(
                                 final_content,
@@ -2713,6 +2727,7 @@ class AgentSession:
                             ),
                             "agent_response",
                         )
+                    turn_completed = True
                     break
 
                 next_messages = self._handle_tool_calls(
@@ -2722,6 +2737,24 @@ class AgentSession:
                 if next_messages is None:
                     break
                 messages = next_messages
+
+            if is_plain_chat and turn_completed:
+                try:
+                    from app.plugins.robot.explicit_target_backfill import (
+                        run_explicit_target_backfill,
+                    )
+
+                    run_explicit_target_backfill(
+                        item_id=str(self.item_id),
+                        user_message=str(input_msg.content or ""),
+                        final_text=turn_final_content,
+                        delivery_key=f"item:{self.item_id}",
+                    )
+                except Exception:
+                    logger.exception(
+                        "[AgentSession] Explicit QQ target backfill failed: item=%s",
+                        self.item_id,
+                    )
 
             _chat_loop_mgr.__exit__(None, None, None)
         except Exception as exc:
@@ -3026,6 +3059,9 @@ class AgentSession:
                             int(getattr(usage, "prompt_tokens", 0) or 0),
                             int(getattr(usage, "completion_tokens", 0) or 0),
                             int(getattr(usage, "total_tokens", 0) or 0),
+                            reply_ticket_id=str(
+                                getattr(agent._context, "reply_ticket_id", "") or ""
+                            ),
                         )
                 except Exception:
                     pass

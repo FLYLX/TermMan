@@ -51,11 +51,16 @@ LONG_TERM_MEMORY_TYPE_RANK = {
     "error": 2,
 }
 ROBOT_SEND_DEDUPE_SECONDS = 10
+ROBOT_DELIVERY_TRACK_TTL_SECONDS = 600
+ROBOT_DELIVERY_TRACK_MAX_ENTRIES = 512
 
 
 class RobotMCPServer:
     _recent_send_lock = threading.Lock()
     _recent_send_signatures: dict[str, datetime] = {}
+    _delivered_targets_lock = threading.Lock()
+    # delivery key -> (last update time, {(target_type, target_id): last sent text})
+    _delivered_targets: dict[str, tuple[datetime, dict[tuple[str, str], str]]] = {}
 
     def __init__(self) -> None:
         self._tools: dict[str, dict] = {}
@@ -73,13 +78,17 @@ class RobotMCPServer:
                 "Send a concise message through the TermMan QQ connector. "
                 "In an incoming QQ-triggered agent turn, calling this tool with only "
                 "text sends to the current QQ conversation that triggered the turn. "
-                "Do not use reply_to, conversation, broadcast, target_type, or "
-                "target_id in that incoming QQ-triggered context; cross-conversation "
-                "sends are blocked there to prevent replying to the wrong group. "
+                "Do not use reply_to, conversation, broadcast, target_type, "
+                "target_id, or targets in that incoming QQ-triggered context; "
+                "cross-conversation sends are blocked there to prevent replying "
+                "to the wrong group. "
                 "Outside an active QQ-triggered context, never infer the QQ "
                 "destination from prior chat history. Use target_type and target_id "
                 "only when the user explicitly provided a QQ group number or QQ "
-                "number. In backend web chat, reply_to may select one QQ conversation "
+                "number. To deliver one message to several explicit QQ targets, "
+                "pass them in a single call via the targets array instead of "
+                "making multiple send_message calls. "
+                "In backend web chat, reply_to may select one QQ conversation "
                 "that is visibly present in the current chat context, such as a sender "
                 "name or group reference. If the visible target is missing or ambiguous, "
                 "ask the user instead. If multiple robots are available, provide robot_id."
@@ -158,6 +167,31 @@ class RobotMCPServer:
                         "description": (
                             "Deprecated. Broadcast from prior chat history is blocked "
                             "to prevent replying to the wrong QQ conversation."
+                        ),
+                    },
+                    "targets": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "target_type": {
+                                    "type": "string",
+                                    "enum": ["group", "private"],
+                                },
+                                "target_id": {"type": "string"},
+                            },
+                            "required": ["target_type", "target_id"],
+                        },
+                        "minItems": 1,
+                        "maxItems": 10,
+                        "description": (
+                            "Optional explicit multi-target fan-out for backend "
+                            "chat. The same text/messages is sent once to every "
+                            "listed QQ target in this single call; do not split "
+                            "multi-target sends into multiple calls. Do not combine "
+                            "with target_type/target_id/reply_to/conversation/"
+                            "broadcast. The result reports one status line per "
+                            "target (sent / skipped_duplicate / error)."
                         ),
                     },
                 },
@@ -433,6 +467,38 @@ class RobotMCPServer:
             metadata={"manual_target": True, "mcp_explicit_target": True},
         )
 
+    def _build_explicit_targets(self, args: dict) -> list[RobotReplyTarget]:
+        raw_targets = args.get("targets")
+        if not isinstance(raw_targets, list) or not raw_targets:
+            return []
+        targets: list[RobotReplyTarget] = []
+        seen: set[str] = set()
+        for index, raw_target in enumerate(raw_targets):
+            if not isinstance(raw_target, dict):
+                raise ValueError(
+                    f"targets[{index}] must be an object with "
+                    "target_type and target_id"
+                )
+            target_type = self._normalize_target_type(raw_target.get("target_type"))
+            target_id = str(raw_target.get("target_id") or "").strip()
+            if target_type not in {"group", "private"} or not target_id:
+                raise ValueError(
+                    f"targets[{index}] requires target_type "
+                    "('group' or 'private') and a non-empty target_id"
+                )
+            key = f"{target_type}:{target_id}"
+            if key in seen:
+                continue
+            seen.add(key)
+            targets.append(
+                RobotReplyTarget(
+                    target_type=target_type,
+                    target_id=target_id,
+                    metadata={"manual_target": True, "mcp_explicit_targets": True},
+                )
+            )
+        return targets
+
     def _build_conversation_target(self, args: dict) -> RobotReplyTarget | None:
         target_type, target_id = self._parse_conversation_target(args.get("conversation"))
         if target_type not in {"group", "private"} or not target_id:
@@ -593,7 +659,7 @@ class RobotMCPServer:
                 }
             )
         for robot_id, target in delivered:
-            self._remember_sent_message(robot_id, target, text)
+            self._remember_sent_message(robot_id, target, text, args=args)
         return sent, skipped_duplicates
 
     def _target_match_score(self, target: dict[str, str], reference: str) -> int:
@@ -746,6 +812,7 @@ class RobotMCPServer:
         explicit_target: RobotReplyTarget | None,
         broadcast: bool,
         context_reference: str,
+        explicit_targets: bool = False,
     ) -> str:
         if context is None:
             return ""
@@ -757,12 +824,12 @@ class RobotMCPServer:
         error = (
             "Error: active QQ-triggered context is locked to "
             f"{active_label}. Omit reply_to/conversation/broadcast/target_type/"
-            "target_id to send to the current QQ conversation. Cross-conversation "
-            "sends must be initiated from backend chat, not from an incoming QQ "
-            "message turn."
+            "target_id/targets to send to the current QQ conversation. "
+            "Cross-conversation sends must be initiated from backend chat, not "
+            "from an incoming QQ message turn."
         )
 
-        if broadcast:
+        if broadcast or explicit_targets:
             return error
         if explicit_target is not None:
             if active_target is not None and self._same_target(
@@ -797,7 +864,12 @@ class RobotMCPServer:
             requires_awake=True,
         ):
             return ""
-        return "Message not sent: current QQ conversation is sleeping or superseded."
+        return (
+            "Send skipped: this turn was superseded by a newer QQ message, so the "
+            "conversation belongs to a newer turn now. Do NOT retry mcp_robot_send_message "
+            "and do NOT mention this failure to the user; the newer turn will deliver the "
+            "reply. End this turn silently."
+        )
 
     def _get_accessible_robot_id(
         self,
@@ -909,6 +981,7 @@ class RobotMCPServer:
         robot_id: str,
         target: RobotReplyTarget,
         text: str,
+        args: dict | None = None,
     ) -> None:
         try:
             from app.plugins.robot.conversation_memory import (
@@ -923,15 +996,123 @@ class RobotMCPServer:
             )
         except Exception:
             logger.exception("[RobotMCPServer] Failed to write sent QQ memory")
+        if args:
+            self._track_delivered_target(args, target, text)
 
     def _remember_sent_messages(
         self,
         robot_id: str,
         target: RobotReplyTarget,
         messages: list[str],
+        args: dict | None = None,
     ) -> None:
         for message in messages:
-            self._remember_sent_message(robot_id, target, message)
+            self._remember_sent_message(robot_id, target, message, args=args)
+
+    @staticmethod
+    def delivery_track_key_from_args(args: dict | None) -> str:
+        if not isinstance(args, dict):
+            return ""
+        ticket_id = str(args.get("_reply_ticket_id") or "").strip()
+        if ticket_id:
+            return f"ticket:{ticket_id}"
+        item_id = str(args.get("item_id") or "").strip()
+        if item_id:
+            return f"item:{item_id}"
+        return ""
+
+    @classmethod
+    def _prune_delivered_targets_locked(cls, now: datetime) -> None:
+        cutoff = now - timedelta(seconds=ROBOT_DELIVERY_TRACK_TTL_SECONDS)
+        stale_keys = [
+            key
+            for key, (updated_at, _) in cls._delivered_targets.items()
+            if updated_at < cutoff
+        ]
+        for key in stale_keys:
+            cls._delivered_targets.pop(key, None)
+        while len(cls._delivered_targets) > ROBOT_DELIVERY_TRACK_MAX_ENTRIES:
+            oldest_key = min(
+                cls._delivered_targets,
+                key=lambda key: cls._delivered_targets[key][0],
+            )
+            cls._delivered_targets.pop(oldest_key, None)
+
+    @classmethod
+    def mark_target_delivered(
+        cls,
+        key: str,
+        target_type: str,
+        target_id: str,
+        text: str = "",
+    ) -> None:
+        key = str(key or "").strip()
+        target_type = str(target_type or "").strip().lower()
+        target_id = str(target_id or "").strip()
+        if not key or not target_type or not target_id:
+            return
+        now = datetime.now()
+        with cls._delivered_targets_lock:
+            cls._prune_delivered_targets_locked(now)
+            entry = cls._delivered_targets.setdefault(key, (now, {}))
+            entry[1][(target_type, target_id)] = str(text or "")
+            cls._delivered_targets[key] = (now, entry[1])
+
+    @classmethod
+    def _track_delivered_target(
+        cls,
+        args: dict,
+        target: RobotReplyTarget,
+        text: str,
+    ) -> None:
+        key = cls.delivery_track_key_from_args(args)
+        if not key:
+            return
+        cls.mark_target_delivered(
+            key,
+            str(target.target_type or ""),
+            str(target.target_id or ""),
+            text,
+        )
+
+    @classmethod
+    def get_delivered_targets(cls, key: str) -> set[tuple[str, str]]:
+        key = str(key or "").strip()
+        if not key:
+            return set()
+        now = datetime.now()
+        with cls._delivered_targets_lock:
+            cls._prune_delivered_targets_locked(now)
+            entry = cls._delivered_targets.get(key)
+            if entry is None:
+                return set()
+            return set(entry[1].keys())
+
+    @classmethod
+    def get_delivered_texts(cls, key: str) -> dict[tuple[str, str], str]:
+        key = str(key or "").strip()
+        if not key:
+            return {}
+        now = datetime.now()
+        with cls._delivered_targets_lock:
+            cls._prune_delivered_targets_locked(now)
+            entry = cls._delivered_targets.get(key)
+            if entry is None:
+                return {}
+            return dict(entry[1])
+
+    @classmethod
+    def reset_delivered_targets(cls, key: str) -> None:
+        key = str(key or "").strip()
+        if not key:
+            return
+        with cls._delivered_targets_lock:
+            cls._delivered_targets.pop(key, None)
+
+    @classmethod
+    def _clear_delivered_targets_for_test(cls) -> None:
+        with cls._delivered_targets_lock:
+            cls._delivered_targets.clear()
 
     @staticmethod
     def _send_signature(
@@ -1007,6 +1188,73 @@ class RobotMCPServer:
             self._remember_recent_send(robot_id, target, message)
             sent_messages.append(message)
         return sent_messages, skipped_duplicates
+
+    def _send_explicit_targets(
+        self,
+        *,
+        robot_bridge_client: Any,
+        robot_id: str,
+        targets: list[RobotReplyTarget],
+        messages: list[str],
+        text: str,
+        args: dict,
+    ) -> list[dict[str, str]]:
+        report_lines: list[str] = []
+        delivered: list[tuple[RobotReplyTarget, list[str]]] = []
+        for target in targets:
+            label = f"{target.target_type}:{target.target_id}"
+            self._record_tool_send_event(
+                robot_id=robot_id,
+                target=target,
+                text=text,
+                mode="explicit_targets",
+                args=args,
+            )
+            try:
+                sent_messages, skipped_duplicates = self._send_messages(
+                    robot_bridge_client,
+                    robot_id,
+                    target,
+                    messages,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[RobotMCPServer] Failed to send robot message to %s: %s",
+                    label,
+                    exc,
+                )
+                self._record_tool_send_event(
+                    robot_id=robot_id,
+                    target=target,
+                    text=text,
+                    mode="explicit_targets",
+                    args=args,
+                    status="error",
+                    error=str(exc),
+                )
+                report_lines.append(f"error: {label}: {exc}")
+                continue
+            if sent_messages:
+                delivered.append((target, sent_messages))
+                duplicate_note = (
+                    f" ({skipped_duplicates} duplicate message(s) skipped)"
+                    if skipped_duplicates
+                    else ""
+                )
+                report_lines.append(f"sent: {label}{duplicate_note}")
+            else:
+                report_lines.append(f"skipped_duplicate: {label}")
+        for target, sent_messages in delivered:
+            self._remember_sent_messages(robot_id, target, sent_messages, args=args)
+        return [
+            {
+                "type": "text",
+                "text": (
+                    f"Multi-target QQ send to {len(targets)} target(s):\n"
+                    + "\n".join(report_lines)
+                ),
+            }
+        ]
 
     @staticmethod
     def _raw_message_texts(args: dict) -> list[str]:
@@ -2214,6 +2462,36 @@ class RobotMCPServer:
             explicit_target = self._build_explicit_target(args)
         except Exception as exc:
             return [{"type": "text", "text": f"Error: {exc}"}]
+        try:
+            explicit_targets = self._build_explicit_targets(args)
+        except Exception as exc:
+            return [{"type": "text", "text": f"Error: {exc}"}]
+        if explicit_targets:
+            conflicting_keys = [
+                key
+                for key in (
+                    "reply_to",
+                    "recipient",
+                    "conversation",
+                    "target_type",
+                    "target_id",
+                    "mcp_target_type",
+                    "mcp_target_id",
+                    "broadcast",
+                )
+                if args.get(key)
+            ]
+            if conflicting_keys:
+                return [
+                    {
+                        "type": "text",
+                        "text": (
+                            "Error: targets cannot be combined with "
+                            f"{', '.join(conflicting_keys)}. Use targets alone "
+                            "for a deterministic multi-target send."
+                        ),
+                    }
+                ]
         broadcast = bool(args.get("broadcast"))
         if broadcast and explicit_target is not None:
             return [
@@ -2244,6 +2522,7 @@ class RobotMCPServer:
             explicit_target=explicit_target,
             broadcast=broadcast,
             context_reference=context_reference,
+            explicit_targets=bool(explicit_targets),
         )
         if active_context_override_error:
             return [{"type": "text", "text": active_context_override_error}]
@@ -2265,7 +2544,13 @@ class RobotMCPServer:
             except Exception as exc:
                 return [{"type": "text", "text": f"Error: {exc}"}]
 
-        if context is None and explicit_target is None and context_target is None and not broadcast:
+        if (
+            context is None
+            and explicit_target is None
+            and context_target is None
+            and not broadcast
+            and not explicit_targets
+        ):
             return [
                 {
                     "type": "text",
@@ -2282,6 +2567,32 @@ class RobotMCPServer:
         attempted_mode = ""
         try:
             from app.plugins.robot.bridge_client import robot_bridge_client
+
+            if explicit_targets:
+                robot_id = self._get_accessible_robot_id(
+                    args,
+                    fallback_robot_id="",
+                )
+                attempted_robot_id = robot_id
+                attempted_mode = "explicit_targets"
+                if any(
+                    self._single_text_too_long_for_group(args, target, messages)
+                    for target in explicit_targets
+                ):
+                    return [
+                        {
+                            "type": "text",
+                            "text": self._group_single_text_too_long_error(messages[0]),
+                        }
+                    ]
+                return self._send_explicit_targets(
+                    robot_bridge_client=robot_bridge_client,
+                    robot_id=robot_id,
+                    targets=explicit_targets,
+                    messages=messages,
+                    text=text,
+                    args=args,
+                )
 
             if broadcast:
                 sent, skipped_duplicates = self._broadcast_context_targets(
@@ -2332,7 +2643,7 @@ class RobotMCPServer:
                     explicit_target,
                     messages,
                 )
-                self._remember_sent_messages(robot_id, explicit_target, sent_messages)
+                self._remember_sent_messages(robot_id, explicit_target, sent_messages, args=args)
                 duplicate_note = (
                     " Duplicate QQ reply suppressed."
                     if skipped_duplicates and not sent_messages
@@ -2379,7 +2690,7 @@ class RobotMCPServer:
                     context_target,
                     messages,
                 )
-                self._remember_sent_messages(robot_id, context_target, sent_messages)
+                self._remember_sent_messages(robot_id, context_target, sent_messages, args=args)
                 duplicate_note = (
                     " Duplicate QQ reply suppressed."
                     if skipped_duplicates and not sent_messages
@@ -2421,7 +2732,7 @@ class RobotMCPServer:
                 attempted_target.model_copy(deep=True),
                 messages,
             )
-            self._remember_sent_messages(attempted_robot_id, attempted_target, sent_messages)
+            self._remember_sent_messages(attempted_robot_id, attempted_target, sent_messages, args=args)
             duplicate_note = (
                 " Duplicate QQ reply suppressed."
                 if skipped_duplicates and not sent_messages

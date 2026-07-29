@@ -995,6 +995,31 @@ def disconnect_item_subscriber(
     return result
 
 
+@router.get("/{id}/plan")
+def get_item_plan(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+) -> dict[str, Any]:
+    """Current agent plan scratchpad for this item (Codex-style update_plan).
+
+    The plan lives on the item's most recently updated non-terminal reply
+    ticket; the response shape is unchanged for the frontend."""
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    from app.services.agent.reply_ticket import reply_ticket_manager
+
+    _ticket, plan = reply_ticket_manager.latest_plan_for_item(str(id))
+    return {
+        "item_id": str(id),
+        "plan": plan,
+        "updated": bool(plan),
+    }
+
+
 @router.get("/{id}/jobs")
 def list_item_jobs(
     session: SessionDep,
@@ -1259,3 +1284,52 @@ def get_token_usage(
             "models": [],
         }
     return stats
+
+
+@router.get("/{id}/token-usage/by-task")
+def get_token_usage_by_task(
+    session: SessionDep,
+    current_user: CurrentUser,
+    id: uuid.UUID,
+) -> dict[str, Any]:
+    """Token usage grouped by reply ticket (one task per agent turn)."""
+    item = session.get(Item, id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _check_item_permission(item, current_user)
+
+    from app.services.agent.reply_ticket import reply_ticket_manager
+    from app.services.agent.token_usage import token_usage_tracker
+
+    tasks: list[dict[str, Any]] = []
+    for row in token_usage_tracker.get_task_stats(str(id), limit=50):
+        ticket = reply_ticket_manager.get(row["reply_ticket_id"])
+        plan: list[dict[str, Any]] = []
+        if ticket is not None:
+            plan = [
+                {
+                    "step": str(entry.get("step") or ""),
+                    "status": str(entry.get("status") or ""),
+                }
+                for entry in (ticket.plan or [])
+                if isinstance(entry, dict)
+            ]
+        tasks.append(
+            {
+                "reply_ticket_id": row["reply_ticket_id"],
+                "source_type": str(ticket.source_type) if ticket else "",
+                "source_label": str(ticket.source_label) if ticket else "",
+                "request_message": str(ticket.request_message or "")[:80]
+                if ticket
+                else "",
+                "plan": plan,
+                "ticket_status": str(ticket.status) if ticket else "",
+                "prompt_tokens": row["prompt_tokens"],
+                "completion_tokens": row["completion_tokens"],
+                "total_tokens": row["total_tokens"],
+                "turns": row["turns"],
+                "first_seen": row["first_seen"],
+                "last_seen": row["last_seen"],
+            }
+        )
+    return {"item_id": str(id), "tasks": tasks}

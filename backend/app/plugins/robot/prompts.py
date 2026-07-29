@@ -13,6 +13,10 @@ ROBOT_MESSAGING_SKILL_ID = "robot_messaging"
 ROBOT_MESSAGING_COMPAT_SKILL_IDS = {QQ_MCP_SKILL_ID, ROBOT_MESSAGING_SKILL_ID}
 
 ROBOT_REPLY_DECISION_INSTRUCTION = (
+    "- 执行顺序：本轮消息包含可执行指令（安装/运行/修改/查终端/文件操作/启动停止服务）时，"
+    "先调用工具执行，执行完毕再发 QQ 汇报。没执行完之前不产生任何回复。\n"
+    "- 对做事类消息，“回复”的定义是完成后的结果汇报；反问、要确认、预告"
+    "（“要我帮你吗”“我这就去”“先帮你看看”）都不算回复，等同于没回。\n"
     "- 回复判断核心原则：宁可多回一句，不要漏回。拿不准时默认回复，不默认沉默。\n"
     "- 必须回复（禁止沉默、禁止 `[no_qq_reply]`）：\n"
     "  · 私聊、被 @、被回复、被点名提问或评理\n"
@@ -21,9 +25,9 @@ ROBOT_REPLY_DECISION_INSTRUCTION = (
     "  · 群聊里有人提了一个问题，而你是唯一能回答的对象（比如问服务器状态、问你会不会某个技能）\n"
     "  · 别人的话可以理解为在问你、叫你、或跟你相关\n"
     "- 唯一允许沉默：群聊里明确是别人之间的对话（有明确 @其他人、叫了其他人名字、\n"
-    "  或内容明显与你无关）、纯表情/贴图反应。此时不调用 `mcp_robot_send_message`，\n"
-    "  	rigger=active_chat_window ?????mcp_robot_sleep_conversation????????n"
-    "  ??????????[no_qq_reply]??????????????????????????n"
+    "  或内容明显与你无关）、纯表情/贴图反应。此时不调用 `mcp_robot_send_message`；\n"
+    "  trigger=active_chat_window 时改调用 `mcp_robot_sleep_conversation` 让会话休眠，\n"
+    "  其余内部触发直接返回 `[no_qq_reply]`，不调用任何发送工具。\n"
     "- 判断技巧：结合 `[Recent QQ live context]` 看上下文。如果你刚发言过，紧接着的消息大概率是对你说的。\n"
     "  “你会…吗”“你能…吗”“帮我…”“直接回答”“回答我”这类表达一律视为对你说的，必须回复。\n"
 )
@@ -33,7 +37,7 @@ ROBOT_DELIVERY_CONTRACT_INSTRUCTION = (
     "证据更新时只发最新结论，不要“还在加载/完成了/真完成了”连发。\n"
     "- `mcp_robot_send_message` 成功后，最终 assistant 文本只返回 `[no_qq_reply]` 或空，"
     "不要把同一答案再说一遍；不要编造“刚才理解错了/没对齐”，除非当前消息明确要求纠正。\n"
-    "- 任务工作流豁免：当前轮次如果是后台 job 回调、任务续跑、或其他内部触发（不是用户直接发的 QQ 消息），" "且任务工作流仍在执行中（未到汇报步骤），禁止调用 `mcp_robot_send_message`。" "静默推进 workflow，只在汇报步骤、最终失败、或重大方向变更时才发 QQ。\n"
+    "- 任务豁免：当前轮次如果是后台 job 回调、任务续跑、或其他内部触发（不是用户直接发的 QQ 消息），" "且任务计划仍在执行中（未到最后汇报），禁止调用 `mcp_robot_send_message`。" "静默推进，只在全部完成、最终失败、或重大方向变更时才发 QQ。\n"
 )
 ROBOT_LONG_TERM_MEMORY_INSTRUCTION = (
     "Robot long-term memory:\n"
@@ -128,6 +132,7 @@ ROBOT_BACKEND_CONTEXT_PROMPT = (
     "- 只有明确选择当前 TermMan 消息上下文里可见的 QQ 会话时，才使用 `reply_to`；可用发送者名称、群引用或 conversation key。\n"
     "- 当前上下文只有一个可见 QQ 目标且用户明确说转发过去时，可以直接发送；有多个匹配目标时先询问。\n"
     "- 只有用户显式提供 QQ 群号或 QQ 号时，才使用 `target_type` 和 `target_id`。\n"
+    "- 把同一内容分别发送到多个明确 QQ 目标时，在一次 `mcp_robot_send_message` 调用里使用 `targets` 数组（每项含 `target_type` 和 `target_id`），不要拆成多次调用；工具会逐目标返回 sent/skipped_duplicate/error 状态，如实向用户汇报每个目标的结果。\n"
     "- QQ 目标或机器人身份缺失/歧义时，先询问。\n"
     "- 不要把密码、API key、token、cookie、私钥或登录凭据转发到 QQ；提醒用户撤回并更换凭据。\n"
     "- 只有用户明确要求，或严重告警确实适用于所有选中 QQ 会话时，才 broadcast。"

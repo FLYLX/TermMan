@@ -134,6 +134,7 @@ def flush_background_job_results_for_entries(
                 )
             else:
                 message = _format_background_job_results_batch(robot_entries)
+            message += server._plan_reminder(item_id, robot_ticket)
             flushed_any = server._deliver_background_job_to_robot(
                 item_id=item_id,
                 command=first["command"],
@@ -163,6 +164,10 @@ def flush_background_job_results_for_entries(
             other_entries[0]["feedback"]
             if len(other_entries) == 1
             else _format_background_job_results_batch(other_entries)
+        )
+        message += server._plan_reminder(
+            item_id,
+            str(other_entries[0].get("reply_ticket_id") or ""),
         )
         for entry in other_entries:
             session = entry.get("agent_session")
@@ -313,11 +318,45 @@ def cancel_background_jobs_for_item(
 
 
 class LocalMCPServer:
+    # The Codex-style plan scratchpad lives on the reply ticket (ticket.plan);
+    # its identity, ownership and cleanup all reuse the ticket lifecycle, so
+    # there is no separate plan store here anymore.
+
     def __init__(self):
         self._tools: dict[str, dict] = {}
         self._register_builtin_tools()
 
     def _register_builtin_tools(self):
+        self.register_tool(
+            name="update_plan",
+            description=(
+                "Track multi-step work. Skip for simple 1-2 step tasks. "
+                "plan: list of {step, status} with status pending/in_progress/completed; "
+                "exactly one in_progress. Update it after finishing each step. "
+                "任务全部完成（含向用户汇报）后，再调用一次将全部步骤标为 completed，plan 自动清除。"
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Current terminal item id."},
+                    "explanation": {"type": "string", "description": "Optional note about what changed."},
+                    "plan": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "step": {"type": "string"},
+                                "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]},
+                            },
+                            "required": ["step", "status"],
+                        },
+                    },
+                },
+                "required": ["item_id", "plan"],
+            },
+            handler=self._update_plan,
+            skip_memory=True,
+        )
         self.register_tool(
             name="get_terminal_status",
             description="Read live terminal state (open/connected/usable).",
@@ -342,12 +381,12 @@ class LocalMCPServer:
         )
         self.register_tool(
             name="run_job",
-            description="后台一次性命令，只需最终结果。用于下载、安装、构建、查询等不需要交互的操作。可并行多个不同任务。",
+            description="后台一次性命令，只需最终结果。用于下载、安装、构建、查询等不需要交互的操作。可并行多个不同任务。用户明确要求的安装/运行直接用本工具执行，无需先向用户确认。大型安装（如 JDK 等几百 MB 的包）必须显式设大 timeout_seconds（如 1800）。",
             input_schema={
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "Shell command."},
-                    "timeout_seconds": {"type": "integer", "default": 600},
+                    "timeout_seconds": {"type": "integer", "default": 1200},
                     "tail_lines": {"type": "integer", "default": 80}
                 },
                 "required": ["command"]
@@ -441,9 +480,10 @@ class LocalMCPServer:
         self.register_tool(
             name="update_task_workflow",
             description=(
-                "Create/update task workflow. YOU MUST create a workflow FIRST "
-                "before executing any task with 3+ steps (e.g. check->install->verify). "
-                "Install/uninstall/configure/compile tasks ALWAYS qualify. "
+                "Optional structured tracking for long or fragile tasks "
+                "(cross-turn installs, migrations, tasks that must report to a "
+                "specific QQ/web ticket). For ordinary multi-step work prefer "
+                "update_plan instead. "
                 "action=create, title='step1|step2|step3'. "
                 "Continue existing workflow, don't duplicate. "
                 "complete_current_step needs evidence. "
@@ -540,51 +580,6 @@ class LocalMCPServer:
             skip_memory=True
         )
 
-        self.register_tool(
-            name="list_installed_software",
-            description="List software that has been recorded as installed for the current terminal item.",
-            input_schema={
-                "type": "object",
-                "properties": {},
-                "required": []
-            },
-            handler=self._list_installed_software,
-            skip_memory=True
-        )
-
-        self.register_tool(
-            name="record_installed_software",
-            description="Record software as installed after terminal output confirms installation succeeded.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string", "description": "Software or package name"},
-                    "manager": {"type": "string", "description": "Package manager or source, such as apt, pip, npm, bun, manual"},
-                    "version": {"type": "string", "description": "Installed version if known"},
-                    "command": {"type": "string", "description": "Command that installed it"},
-                    "notes": {"type": "string", "description": "Short verification notes"}
-                },
-                "required": ["name"]
-            },
-            handler=self._record_installed_software,
-            skip_memory=True
-        )
-
-        self.register_tool(
-            name="remove_installed_software",
-            description="Remove software from the recorded installed list after uninstall is confirmed.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string", "description": "Software or package name"},
-                    "manager": {"type": "string", "description": "Package manager or source"},
-                    "reason": {"type": "string", "description": "Why it was removed from the list"}
-                },
-                "required": ["name"]
-            },
-            handler=self._remove_installed_software,
-            skip_memory=True
-        )
         self.register_tool(
             name="list_scheduled_tasks",
             description=(
@@ -1068,6 +1063,96 @@ class LocalMCPServer:
             debug_log(f"[LocalMCPServer] get_task_workflow error: {exc}")
             return [{"type": "text", "text": f"Error: {exc}"}]
 
+    def _update_plan(self, args: dict) -> list:
+        item_id = str(args.get("item_id") or "").strip()
+        reply_ticket_id = str(args.get("_reply_ticket_id") or "").strip()
+        plan = args.get("plan")
+        if not item_id:
+            return [{"type": "text", "text": "Error: item_id required"}]
+        if not isinstance(plan, list) or not plan:
+            return [{"type": "text", "text": "Error: plan must be a non-empty list"}]
+        normalized: list[dict] = []
+        for entry in plan:
+            if not isinstance(entry, dict):
+                continue
+            step = str(entry.get("step") or "").strip()
+            status = str(entry.get("status") or "pending").strip()
+            if not step:
+                continue
+            if status not in {"pending", "in_progress", "completed"}:
+                status = "pending"
+            normalized.append({"step": step, "status": status})
+        if not normalized:
+            return [{"type": "text", "text": "Error: plan has no valid steps"}]
+
+        from app.services.agent.reply_ticket import reply_ticket_manager
+
+        # The plan is a field of the owning reply ticket. A turn without a
+        # resolvable ticket gets an error instead of writing the plan anywhere
+        # it would be misattributed.
+        ticket = reply_ticket_manager.get(reply_ticket_id) if reply_ticket_id else None
+        if ticket is None:
+            return [
+                {
+                    "type": "text",
+                    "text": (
+                        "Error: 无法关联 ticket（reply ticket 不存在或已失效），"
+                        "plan 未保存。请先继续当前任务，必要时重新发起。"
+                    ),
+                }
+            ]
+        all_completed = all(item["status"] == "completed" for item in normalized)
+        # Done: clear the ticket's plan instead of keeping a finished plan.
+        reply_ticket_manager.update_ticket_plan(
+            ticket.ticket_id, [] if all_completed else normalized
+        )
+        try:
+            from app.services.agent.stream_manager import stream_manager
+
+            stream_manager.broadcast_chat_event(
+                item_id,
+                {
+                    "type": "plan_updated",
+                    "item_id": item_id,
+                    "plan": normalized,
+                    "explanation": str(args.get("explanation") or ""),
+                },
+            )
+        except Exception:
+            pass
+        explanation = str(args.get("explanation") or "").strip()
+        lines = ["Plan updated:"]
+        lines.extend(
+            f"  {index}. [{item['status']}] {item['step']}"
+            for index, item in enumerate(normalized, start=1)
+        )
+        if explanation:
+            lines.append(f"Note: {explanation}")
+        if all(item["status"] == "completed" for item in normalized):
+            lines.append(
+                "All steps complete. Report the final result to the user now "
+                "(QQ: mcp_robot_send_message; web: direct reply)."
+            )
+        else:
+            current = next(
+                (item for item in normalized if item["status"] == "in_progress"),
+                None,
+            )
+            if current is not None:
+                remaining = [item for item in normalized if item["status"] != "completed"]
+                if len(remaining) == 1:
+                    lines.append(
+                        f"Next action: finish step '{current['step']}' and report to the user. "
+                        "汇报发出后，再调用一次 update_plan 把这一步标为 completed，plan 自动清除。"
+                    )
+                else:
+                    lines.append(
+                        f"Next action: execute step '{current['step']}' immediately. "
+                        "Do NOT reply to the user yet — report only when all steps are "
+                        "done, or one is genuinely blocked."
+                    )
+        return [{"type": "text", "text": "\n".join(lines)}]
+
     def _provision_turn_reply_ticket(self, item_id: str, args: dict) -> str:
         """Create and attach a reply ticket for a turn that has none.
 
@@ -1226,7 +1311,7 @@ class LocalMCPServer:
             )
             return self._terminal_unavailable_result(str(item_id))
 
-        timeout_seconds = self._coerce_job_int(args.get("timeout_seconds"), 600, 1, 3600)
+        timeout_seconds = self._coerce_job_int(args.get("timeout_seconds"), 1200, 1, 3600)
         tail_lines = self._coerce_job_int(args.get("tail_lines"), 80, 1, 300)
         requested_wait_for_completion = bool(args.get("wait_for_completion"))
         robot_job_context = self._robot_job_context_from_args(args)
@@ -1802,6 +1887,29 @@ class LocalMCPServer:
         except Exception:
             return ""
 
+    def _plan_reminder(self, item_id: str, reply_ticket_id: str = "") -> str:
+        """Lightweight plan<->job link: remind the agent to sync its plan
+        when a background job result arrives. The plan is read from the
+        ticket that owns this job result (not from the item's latest
+        ticket), so multi-ticket items never see a foreign plan."""
+        if not reply_ticket_id:
+            return ""
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            ticket = reply_ticket_manager.get(reply_ticket_id)
+        except Exception:
+            return ""
+        plan = list(ticket.plan) if ticket is not None else []
+        if not plan:
+            return ""
+        lines = ["", "当前计划（请根据本结果用 update_plan 同步进度）："]
+        lines.extend(
+            f"  {index}. [{entry['status']}] {entry['step']}"
+            for index, entry in enumerate(plan, start=1)
+        )
+        return "\n".join(lines)
+
     def _format_background_job_robot_message(self, command: str, result: dict, *, reply_ticket_id: str = "", workflow_id: str = "") -> str:
         status = "完成" if result.get("success") else "失败"
         has_workflow = bool(workflow_id)
@@ -2351,80 +2459,6 @@ class LocalMCPServer:
             ]
         except Exception as e:
             debug_log(f"[LocalMCPServer] clear terminal input filter rules error: {e}")
-            return [{"type": "text", "text": f"Error: {e}"}]
-
-    def _list_installed_software(self, args: dict) -> list:
-        item_id = args.get("item_id", "")
-        if not item_id:
-            return [{"type": "text", "text": "Error: item_id required"}]
-
-        try:
-            from app.services.agent.installed_software import (
-                format_installed_software,
-                list_installed_software,
-            )
-
-            items = list_installed_software(item_id)
-            return [
-                {
-                    "type": "text",
-                    "text": "Installed software list:\n" + format_installed_software(items),
-                }
-            ]
-        except Exception as e:
-            return [{"type": "text", "text": f"Error: {e}"}]
-
-    def _record_installed_software(self, args: dict) -> list:
-        item_id = args.get("item_id", "")
-        name = args.get("name", "")
-        if not item_id or not name:
-            return [{"type": "text", "text": "Error: item_id and name required"}]
-
-        try:
-            from app.services.agent.installed_software import record_installed_software
-
-            item = record_installed_software(
-                item_id,
-                name=name,
-                manager=args.get("manager", "unknown"),
-                version=args.get("version", ""),
-                command=args.get("command", ""),
-                notes=args.get("notes", ""),
-            )
-            manager = item.get("manager", "unknown")
-            version = item.get("version", "unknown")
-            return [
-                {
-                    "type": "text",
-                    "text": f"Recorded installed software: {item['name']} [{manager}], version={version}",
-                }
-            ]
-        except Exception as e:
-            return [{"type": "text", "text": f"Error: {e}"}]
-
-    def _remove_installed_software(self, args: dict) -> list:
-        item_id = args.get("item_id", "")
-        name = args.get("name", "")
-        if not item_id or not name:
-            return [{"type": "text", "text": "Error: item_id and name required"}]
-
-        try:
-            from app.services.agent.installed_software import remove_installed_software
-
-            result = remove_installed_software(
-                item_id,
-                name=name,
-                manager=args.get("manager", ""),
-                reason=args.get("reason", ""),
-            )
-            count = result.get("count", 0)
-            return [
-                {
-                    "type": "text",
-                    "text": f"Removed {count} installed software record(s) for: {name}",
-                }
-            ]
-        except Exception as e:
             return [{"type": "text", "text": f"Error: {e}"}]
 
     def _list_scheduled_tasks(self, args: dict) -> list:

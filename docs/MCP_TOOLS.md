@@ -89,109 +89,92 @@
 
 ---
 
-## 四、软件记录（mcp_local_*）
+## 四、定时任务（mcp_local_*）
 
-### 15. list_installed_software
-- **用途**：列出已记录的已安装软件
-- **参数**：无
-
-### 16. record_installed_software
-- **用途**：记录一个已安装的软件（名称、版本、安装方式）
-- **参数**：`name`（必填）、`version`、`method`
-- **场景**：装完软件后记录，方便后续查询
-
-### 17. remove_installed_software
-- **用途**：移除已安装软件的记录
-- **参数**：`name`（必填）
-
----
-
-## 五、定时任务（mcp_local_*）
-
-### 18. list_scheduled_tasks
+### 15. list_scheduled_tasks
 - **用途**：列出所有定时任务
 - **参数**：无
 
-### 19. write_scheduled_task
+### 16. write_scheduled_task
 - **用途**：创建或更新一个定时任务（cron 表达式）
 - **参数**：`name`（必填）、`cron`（必填）、`command`（必填）、`timezone`（默认 Asia/Shanghai）
 - **场景**：用户要求定时执行某个命令
 
-### 20. delete_scheduled_task
+### 17. delete_scheduled_task
 - **用途**：删除一个定时任务
 - **参数**：`task_id`（必填）、`reason`
 
 ---
 
-## 六、长期记忆（mcp_local_*）
+## 五、长期记忆（mcp_local_*）
 
-### 21. save_memory
+### 18. save_memory
 - **用途**：保存稳定、可复用、已验证的重要信息到长期记忆
 - **参数**：`content`（必填）、`memory_type`（fact/preference/error/context）、`ttl_days`
 - **注意**：执行中的任务状态放任务队列，不放记忆
 
-### 22. recall_memory
+### 19. recall_memory
 - **用途**：语义搜索长期记忆
 - **参数**：`query`（必填）、`n_results`、`memory_type`
 
-### 23. list_memories
+### 20. list_memories
 - **用途**：列出所有记忆，可按类型过滤
 - **参数**：`memory_type`（可选）
 
-### 24. delete_memory
+### 21. delete_memory
 - **用途**：删除指定记忆
 - **参数**：`memory_id`（必填）
 
-### 25. compress_memories
+### 22. compress_memories
 - **用途**：将多条重复/冗余/过时的记忆压缩合并成一条精炼记忆
 - **参数**：`memory_ids`（必填，≥2）、`content`（必填）、`memory_type`、`ttl_days`
 - **场景**：recall 或 list 结果里有重复内容、同一事实的旧版本
 
 ---
 
-## 七、聊天历史（mcp_local_*）
+## 六、聊天历史（mcp_local_*）
 
-### 26. read_chat_history
+### 23. read_chat_history
 - **用途**：读取 Web 端聊天历史
 - **参数**：`limit`（条数）
 - **场景**：需要回顾之前的对话内容
 
 ---
 
-## 八、QQ 机器人（mcp_robot_*）
+## 七、QQ 机器人（mcp_robot_*）
 
 > 以下工具仅在 QQ 会话上下文中可用（由 robot 插件动态注入）。
 
-### 27. mcp_robot_send_message
+### 24. mcp_robot_send_message
 - **用途**：向 QQ 会话发送消息（回复用户）
 - **参数**：`text` 或 `messages`（必填）、`target`（可选，指定发送目标）
 - **场景**：任务完成后汇报结果、回答用户问题
 - **注意**：只在完成/失败/方向变更时发，不要发中间进度
 
-### 28. mcp_robot_sleep_conversation
+### 25. mcp_robot_sleep_conversation
 - **用途**：让当前 QQ 会话进入休眠（不再主动回复）
 - **参数**：无
 - **场景**：用户说"别回了""安静"时调用
 
-### 29. mcp_robot_save_memory
+### 26. mcp_robot_save_memory
 - **用途**：保存 QQ 相关的长期记忆
 - **参数**：同 save_memory
 - **场景**：记住用户的 QQ 偏好、群规等
 
-### 30. mcp_robot_list_memories
+### 27. mcp_robot_list_memories
 - **用途**：列出 QQ 相关的长期记忆
 - **参数**：同 list_memories
 
-### 31. mcp_robot_recall_memory
+### 28. mcp_robot_recall_memory
 - **用途**：语义搜索 QQ 相关的长期记忆
 - **参数**：同 recall_memory
 
-### 32. mcp_robot_read_conversation_memory
+### 29. mcp_robot_read_conversation_memory
 - **用途**：读取 QQ 对话的原始近期消息记录
 - **参数**：`target`（可选）
 - **场景**：需要查看最近的 QQ 聊天原文（不是长期记忆，是原始消息）
 
-### 33. mcp_robot_compress_memories
+### 30. mcp_robot_compress_memories
 - **用途**：压缩合并 QQ 相关的长期记忆
 - **参数**：同 compress_memories
 

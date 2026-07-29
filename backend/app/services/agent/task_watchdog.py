@@ -31,6 +31,12 @@ MAX_RECONCILE_ATTEMPTS = 3
 MEMORY_DEDUP_INTERVAL_SECONDS = 1800.0
 # Rule-based cluster merge threshold (no LLM involved).
 MEMORY_DEDUP_SIMILARITY_THRESHOLD = 0.85
+# Orphan reply tickets (no workflow, no task plan) stuck in a non-final status
+# longer than this are closed instead of lingering until the 6h ticket TTL.
+# Comfortably above ROBOT_BACKEND_JOB_TIMEOUT_SECONDS (240s), so a live turn
+# always finishes first; if such a turn still delivers later, deliver() simply
+# re-opens and finalizes the ticket.
+ORPHAN_TICKET_STALE = timedelta(minutes=10)
 
 _memory_dedup_last_run: dict[str, float] = {}
 
@@ -378,17 +384,55 @@ def _close_stale_workflow(workflow: Any, stats: dict[str, int], *, now: datetime
         )
 
 
+def _close_stale_orphan_ticket(ticket: Any, stats: dict[str, int]) -> None:
+    from app.services.agent.reply_ticket import _persist_ticket, reply_ticket_manager
+
+    with reply_ticket_manager._lock:
+        current = reply_ticket_manager._tickets.get(ticket.ticket_id)
+        if current is None or current.status in {"delivered", "failed"}:
+            return
+        # ReplyTicket datetimes are naive local time (datetime.now()); writing
+        # the watchdog's aware UTC now would poison the ticket and crash every
+        # naive comparison after a restart-restore.
+        closed_at = datetime.now()
+        if current.external_report_sent:
+            # The report already reached the source; finalize bookkeeping.
+            current.status = "delivered"
+            current.delivered_at = closed_at
+        else:
+            current.status = "failed"
+            current.delivery_error = "stale pending reply ticket closed by watchdog"
+        current.updated_at = closed_at
+        _persist_ticket(current)
+    logger.info(
+        "[TaskWatchdog] Closed stale orphan reply ticket=%s source=%s new_status=%s",
+        ticket.ticket_id,
+        ticket.source_type,
+        current.status,
+    )
+    stats["stale_tickets_closed"] += 1
+
+
 def _remove_orphan_tickets(now: datetime, stats: dict[str, int]) -> None:
     from app.services.agent.reply_ticket import TICKET_TTL, reply_ticket_manager
     from app.services.agent.task_workflow import task_workflow_manager
 
     inactive_cutoff = now - TICKET_TTL
+    stale_cutoff = now - ORPHAN_TICKET_STALE
     with reply_ticket_manager._lock:
         tickets = list(reply_ticket_manager._tickets.values())
     for ticket in tickets:
         updated_at = _as_utc(ticket.updated_at)
         workflow = task_workflow_manager.get_by_ticket(ticket.ticket_id)
-        if workflow is not None or updated_at >= inactive_cutoff:
+        if workflow is not None:
+            continue
+        if updated_at >= inactive_cutoff:
+            if (
+                ticket.status not in {"delivered", "failed"}
+                and not ticket.task_request_id
+                and updated_at < stale_cutoff
+            ):
+                _close_stale_orphan_ticket(ticket, stats)
             continue
         with reply_ticket_manager._lock:
             reply_ticket_manager._tickets.pop(ticket.ticket_id, None)
@@ -463,6 +507,7 @@ def run_once(now: datetime | None = None) -> dict[str, int]:
         "closed": 0,
         "reported": 0,
         "orphan_tickets_removed": 0,
+        "stale_tickets_closed": 0,
         "reconciled": 0,
         "resumed": 0,
         "stalled_resumed": 0,
@@ -513,7 +558,7 @@ def run_once(now: datetime | None = None) -> dict[str, int]:
         _remove_orphan_tickets(now, stats)
     except Exception:
         logger.exception("[TaskWatchdog] Failed to remove orphan tickets")
-    if stats["closed"] or stats["orphan_tickets_removed"] or stats["memories_deduplicated"]:
+    if stats["closed"] or stats["orphan_tickets_removed"] or stats["stale_tickets_closed"] or stats["memories_deduplicated"]:
         logger.info("[TaskWatchdog] Pass finished: %s", stats)
     return stats
 

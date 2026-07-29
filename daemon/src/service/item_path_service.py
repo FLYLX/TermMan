@@ -45,6 +45,11 @@ class ItemPathService:
                     # instead of being used as-is, so existing items keep working
                     # without reopening access outside the item sandbox.
                     logical_path = self.normalize_logical_path(raw_workdir)
+                    # A path that actually points into ANOTHER item root (e.g.
+                    # the terminal's cwd started by a different user) must not
+                    # be appended verbatim — that nests workdirs. Rebase the
+                    # sub-path after <user>/<item> onto this item root instead.
+                    logical_path = self._rebase_foreign_workdir(logical_path, item_uuid)
                     target = item_root if not logical_path else (item_root / logical_path).resolve(strict=False)
             else:
                 target = (item_root / raw_workdir).resolve(strict=False)
@@ -103,6 +108,22 @@ class ItemPathService:
 
         normalized = normalized.lstrip("/")
         return normalized
+
+    def _rebase_foreign_workdir(self, logical_path: str, item_uuid: str) -> str:
+        """Strip a foreign item-root prefix (<workdir_base>/<user>/<item>/...)
+        from a normalized logical path, returning only the sub-path after the
+        item segment. Returns the input unchanged when it does not point into
+        another root of the same item."""
+        base_parts = [p for p in self.workdir_base.parts if p not in {"/", "\\"}]
+        parts = logical_path.split("/")
+        if len(parts) < len(base_parts) + 2:
+            return logical_path
+        if parts[: len(base_parts)] != base_parts:
+            return logical_path
+        remainder = parts[len(base_parts):]
+        if remainder[1] != item_uuid:
+            return logical_path
+        return "/".join(remainder[2:])
 
     @staticmethod
     def normalize_daemon_path(path: Optional[str]) -> str:

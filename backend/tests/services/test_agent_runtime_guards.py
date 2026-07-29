@@ -1988,8 +1988,6 @@ def test_builtin_skills_are_terminal_qq_mcp_and_personas() -> None:
     assert kurumi.category == "persona"
     assert yui.category == "persona"
     assert "终端 MCP Skill" in (terminal_mcp.action.prompt or "")
-    assert "mcp_local_record_installed_software" in (terminal_mcp.action.prompt or "")
-    assert "mcp_local_remove_installed_software" in (terminal_mcp.action.prompt or "")
     assert "不要拼接 shell 命令" in (terminal_mcp.action.prompt or "")
     assert "先判断命令性质，再选工具" in (terminal_mcp.action.prompt or "")
     assert "Minecraft/Forge/Paper/Fabric/类 Minecraft 服务端启动" in (

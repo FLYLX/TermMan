@@ -1,0 +1,52 @@
+[T1] QQ 私聊闲聊 x4
+  'T1-1 你叫什么名字' -> ok
+    [21:29:19] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '我是柴郡呀～叫我小柴就好喵 (=^･ω･^=)'}}]
+  'T1-2 你刚说你叫啥来着' -> ok
+    [21:29:24] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '柴郡呀～叫小柴就好喵 (=^･ω･^=)'}}]
+  'T1-3 3*7等于几' -> ok
+    [21:29:29] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '3×7=21呀～主人 (≧▽≦)'}}]
+  'T1-4 那 4*8 呢' -> ok
+    [21:29:34] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '4×8=32呀～主人 (≧▽≦)'}}]
+
+[T2] QQ 群闲聊 x2
+  'T2-1 群里谁在' -> ok
+    [21:29:47] QQ [send_msg] -> 770362397: [{'type': 'text', 'data': {'text': '主人～我没法查群成员列表啦，只能看到最近说话的人：你和刚才想吃火锅的那
+  'T2-2 2+2=?' -> ok
+    [21:29:53] QQ [send_msg] -> 770362397: [{'type': 'text', 'data': {'text': '2+2=4呀主人 (´･ω･`)'}}]
+
+[T3] web 闲聊 x2
+  'T3-1 你好' -> 200 主人你好呀～小柴在呢 (≧▽≦)
+  'T3-2 5*5=?' -> 200 25呀主人～ (´･ω･`)
+
+[T4] web 任务+广播结果到群
+  web reply: 200 已提交后台任务，结果会自动推送～
+  群广播送达: False
+
+[T5] QQ群任务+同群汇报
+  群内任务汇报: True replies=3
+    [21:31:47] QQ [send_msg] -> 770362397: [{'type': 'text', 'data': {'text': '主人～磁盘空间查好啦 (≧▽≦)'}}]
+    [21:31:48] QQ [send_msg] -> 770362397: [{'type': 'text', 'data': {'text': '服务器盘：总共1007G 用了70G 还剩886G 才8% 很充裕喵'}}]
+    [21:31:48] QQ [send_msg] -> 770362397: [{'type': 'text', 'data': {'text': 'E盘(日志)：466G用了385G 剩82G 占83% 稍微有点满'}}]
+
+[T6] web 广播到私聊+群
+  web reply: 200 已提交后台任务，结果会自动推送～
+  私聊收到: True 群收到: False
+    [21:31:54] QQ [send_private_msg] -> 2537134688: 多点广播测试
+
+[T7] 卡死检查
+  ping=True pending={'private:2537134688': 0, 'group:770362397': 0} plan=0 jobs=0
+
+============================================================
+[FULL-CHANNEL SUMMARY]
+  T1_qq_casual_x4: PASS
+  T2_group_casual_x2: PASS
+  T3_web_casual_x2: PASS
+  T4_web_task_broadcast_group: FAIL
+  T5_group_task_report: PASS
+  T6_broadcast_private: PASS
+  T6_broadcast_group: FAIL
+  T7_ping: PASS
+  T7_pending_zero: PASS
+  T7_plan_clean: PASS
+  T7_jobs_empty: PASS
+============================================================

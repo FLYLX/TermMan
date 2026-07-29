@@ -1,0 +1,27 @@
+[Z1] multi-step task to completion
+  plan[after-task]: <empty>
+  replies=1 plan_empty=True
+    [18:17:03] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '跑完啦～输出是 hi，成功创建了喵 (≧▽≦)'}}]
+
+[Z2] supersede mid-task
+  plan[mid-install]: <empty>
+  plan[after-supersede]: <empty>
+  zombie_in_progress=False math_answered=False
+    [18:17:20] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': 'nyancat 没装哦，系统里完全找不到它 (´･ω･`) 要我帮你装一个吗喵'}}]
+
+[Z3] consecutive different tasks
+  plan[after-Z3a]: <empty>
+  plan[after-Z3b]: <empty>
+  Z3a plan entries=0, Z3b plan entries=0
+    [18:17:49] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '读到啦～文件里是 hi (≧▽≦)'}}]
+    [18:18:03] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '主人～磁盘情况出来啦 (≧▽≦)'}}]
+    [18:18:03] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '根分区 1007G 只用了70G 还剩886G 很宽裕'}}]
+    [18:18:03] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': 'E盘 466G 用了385G 剩82G 用了83% 有点满哦'}}]
+
+============================================================
+[ZOMBIE PLAN SUMMARY]
+  Z1_cleared_after_done: PASS
+  Z2_no_zombie_after_supersede: PASS
+  Z2_new_request_answered: FAIL
+  Z3_info: PASS
+============================================================

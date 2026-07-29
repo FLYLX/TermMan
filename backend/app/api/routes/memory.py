@@ -49,20 +49,6 @@ class MemoryStatusUpdate(BaseModel):
     status: Literal["active", "resolved"]
 
 
-class InstalledSoftwareUpsert(BaseModel):
-    name: str = Field(..., min_length=1, max_length=160)
-    manager: str = Field(default="unknown", max_length=64)
-    version: str | None = Field(default=None, max_length=120)
-    command: str | None = Field(default=None, max_length=500)
-    notes: str | None = Field(default=None, max_length=500)
-
-
-class InstalledSoftwareDelete(BaseModel):
-    name: str = Field(..., min_length=1, max_length=160)
-    manager: str | None = Field(default=None, max_length=64)
-    reason: str | None = Field(default=None, max_length=500)
-
-
 class ScheduledTaskUpsert(BaseModel):
     task_id: str | None = Field(default=None, max_length=80)
     name: str = Field(..., min_length=1, max_length=160)
@@ -376,64 +362,6 @@ def clear_all_session_data(
 
     logger.info(f"[Memory] Cleared all session data for item {item_id}: {results}")
     return {"message": "All session data cleared", "details": results}
-
-
-@router.get("/{item_id}/installed-software")
-def get_installed_software(
-    item_id: uuid.UUID,
-    session: SessionDep,
-    current_user: CurrentUser,
-) -> Any:
-    _get_accessible_item(item_id, session, current_user)
-
-    from app.services.agent.installed_software import list_installed_software
-
-    items = list_installed_software(str(item_id))
-    return {"items": items, "count": len(items)}
-
-
-@router.post("/{item_id}/installed-software")
-def upsert_installed_software(
-    item_id: uuid.UUID,
-    request: InstalledSoftwareUpsert,
-    session: SessionDep,
-    current_user: CurrentUser,
-) -> Any:
-    _get_accessible_item(item_id, session, current_user)
-
-    from app.services.agent.installed_software import record_installed_software
-
-    item = record_installed_software(
-        str(item_id),
-        name=request.name,
-        manager=request.manager or "unknown",
-        version=request.version or "",
-        command=request.command or "",
-        notes=request.notes or "",
-    )
-    return {"item": item, "message": "Installed software saved"}
-
-
-@router.delete("/{item_id}/installed-software")
-def delete_installed_software(
-    item_id: uuid.UUID,
-    request: InstalledSoftwareDelete,
-    session: SessionDep,
-    current_user: CurrentUser,
-) -> Any:
-    _get_accessible_item(item_id, session, current_user)
-
-    from app.services.agent.installed_software import remove_installed_software
-
-    result = remove_installed_software(
-        str(item_id),
-        name=request.name,
-        manager=request.manager or "",
-        reason=request.reason or "manual edit",
-    )
-    if result.get("count", 0) <= 0:
-        raise HTTPException(status_code=404, detail="Installed software record not found")
-    return {"message": "Installed software removed", **result}
 
 
 @router.get("/{item_id}/scheduled-tasks")

@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { Activity, Brain, ChevronDown, ChevronUp, Download, ExternalLink, Loader2, Lock, Send, Square, Terminal, Trash2 } from "lucide-react"
 import {
@@ -1135,6 +1136,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
 })
 
 export function ChatPanel({ itemId }: ChatPanelProps) {
+  const queryClient = useQueryClient()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -1227,6 +1229,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       content?: unknown
       terminal_source?: unknown
       tool_name?: unknown
+      plan?: unknown
     }
 
     if (data.done === true) {
@@ -1288,6 +1291,30 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
           setHistoryTotal(session.total ?? normalizedMessages.length)
         })
         .catch(() => {})
+      return
+    }
+
+    if (data.type === "plan_updated") {
+      // Plan updates feed the PlanPanel query cache; they are not chat
+      // messages, so this branch must return before normalizeMessage runs.
+      const rawPlan = Array.isArray(data.plan) ? data.plan : []
+      const plan = rawPlan
+        .filter(
+          (step): step is { step: string; status: string } =>
+            typeof step === "object" &&
+            step !== null &&
+            typeof (step as { step?: unknown }).step === "string" &&
+            typeof (step as { status?: unknown }).status === "string",
+        )
+        .map((step) => ({
+          step: step.step,
+          status: step.status as "pending" | "in_progress" | "completed",
+        }))
+      queryClient.setQueryData(["items", "plan", itemId], {
+        item_id: itemId,
+        plan,
+        updated: true,
+      })
       return
     }
 

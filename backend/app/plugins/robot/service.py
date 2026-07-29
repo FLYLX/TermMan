@@ -63,6 +63,16 @@ RECENT_LIVE_CONTEXT_ACTIVE_LINES = 6
 RECENT_LIVE_CONTEXT_BASE_LINES = 4
 RECENT_LIVE_CONTEXT_EXPANDED_LINES = 12
 RECENT_LIVE_CONTEXT_LINES = RECENT_LIVE_CONTEXT_EXPANDED_LINES
+# Action frame placed immediately before [Current QQ message] — the highest
+# attention position. It makes first-turn planning the default opening move
+# for multi-step work so task chains do not stall at turn one.
+_TURN_ACTION_FRAME = (
+    "[本轮行动框架]\n"
+    "- 如果 [Current QQ message] 是需要多步操作的任务（安装/搭建/启动/停止/修改/连续操作）："
+    "第一个动作必须是 mcp_local_update_plan 列出步骤，然后立刻开始执行第一步。"
+    "禁止先回复、禁止先调查、禁止反问确认。\n"
+    "- 如果它只是闲聊或单步问答：直接回答，不要 plan。"
+)
 DEFAULT_MAX_MESSAGE_LENGTH = 1200
 REPLY_MESSAGE_TYPE_PRIVATE = "private"
 REPLY_MESSAGE_TYPE_GROUP = "group"
@@ -163,6 +173,9 @@ class PendingRobotChatInput:
     trigger_reason: str
     reply_target: RobotReplyTarget
     enqueued_at: datetime
+    # True once the entry has been written to long-term memory by a first
+    # drain; requeued copies must not be persisted again.
+    memory_persisted: bool = False
 
 
 @dataclass(frozen=True)
@@ -199,6 +212,10 @@ class QueuedRobotChatJob:
     reply_ticket_id: str = ""
     pending_reply_id: str = ""
     job_id: str = ""
+    # Pending inputs drained into this job's batch message. Kept so a dispatch
+    # skipped by the generation guard can return them to the merge buffer
+    # instead of dropping them silently.
+    pending_entries: tuple[PendingRobotChatInput, ...] = ()
 
 
 class RobotServiceError(Exception):
@@ -620,6 +637,37 @@ class RobotService:
                     job.conversation_generation,
                     requires_awake=dispatch_requires_awake,
                 ):
+                    requeue_entries = list(job.pending_entries)
+                    if (
+                        not requeue_entries
+                        and job.inbound_message is not None
+                        and job.message_text.strip()
+                    ):
+                        # Direct dispatch skipped by the generation guard: keep
+                        # the message as a pending input so it is answered by
+                        # the followup batch instead of being dropped.
+                        requeue_entries = [
+                            PendingRobotChatInput(
+                                item_id=job.item_id,
+                                route_key=job.route_key,
+                                message_text=job.message_text,
+                                sender_key=job.sender_key,
+                                sender_label=self._sender_label_from_reply_target(
+                                    job.reply_target,
+                                    job.sender_key,
+                                ),
+                                trigger_reason=job.trigger_reason
+                                or "active_chat_window",
+                                reply_target=job.reply_target.model_copy(deep=True),
+                                enqueued_at=job.enqueued_at,
+                            )
+                        ]
+                    if requeue_entries:
+                        self._prepend_pending_chat_inputs(
+                            job.robot_id,
+                            job.conversation_key,
+                            requeue_entries,
+                        )
                     record_robot_event(
                         str(job.robot_id),
                         direction="backend_worker",
@@ -630,6 +678,7 @@ class RobotService:
                             "route_key": job.route_key,
                             "conversation": job.conversation_key,
                             "generation": job.conversation_generation,
+                            "requeued_pending": len(requeue_entries),
                         },
                     )
                     self._clear_reply_context_window_for_key(
@@ -827,13 +876,17 @@ class RobotService:
                     )
                 except Exception:
                     pass
+                if job.pending_reply_id:
+                    # One delivery attempt per job result: whether the send
+                    # landed, was superseded by a newer turn, or failed, the
+                    # turn has run its course. Keeping the entry would leak it
+                    # as an orphaned queue item (stale by definition then).
+                    self.clear_background_job_reply(
+                        robot_id=job.robot_id,
+                        conversation_key=job.conversation_key,
+                        pending_reply_id=job.pending_reply_id,
+                    )
                 if robot_message_sent:
-                    if job.pending_reply_id:
-                        self.clear_background_job_reply(
-                            robot_id=job.robot_id,
-                            conversation_key=job.conversation_key,
-                            pending_reply_id=job.pending_reply_id,
-                        )
                     self._enqueue_pending_chat_followup(
                         robot=robot,
                         conversation_key=job.conversation_key,
@@ -1768,6 +1821,8 @@ class RobotService:
             return False
 
         for entry in entries:
+            if entry.memory_persisted:
+                continue
             self._persist_inbound_long_term_memory(
                 item_id=entry.item_id,
                 robot=robot,
@@ -1780,6 +1835,7 @@ class RobotService:
                 message_text=entry.message_text,
             )
 
+        entries = [replace(entry, memory_persisted=True) for entry in entries]
         latest = entries[-1]
         distinct_sender_keys = {
             entry.sender_key for entry in entries if entry.sender_key.strip()
@@ -1837,6 +1893,7 @@ class RobotService:
             conversation_generation=conversation_generation,
             reply_requires_awake=self._reply_context_window_seconds(robot) > 0,
             enqueued_at=self._now(),
+            pending_entries=tuple(entries),
         )
         if not self._enqueue_chat_job(queued_job):
             self._prepend_pending_chat_inputs(robot.id, conversation_key, entries)
@@ -3607,6 +3664,7 @@ class RobotService:
         reply_reference_card = self._agent_reply_reference_context_card(inbound_message)
         if reply_reference_card:
             parts.append(reply_reference_card)
+        parts.append(_TURN_ACTION_FRAME)
         parts.append(f"[Current QQ message]\n{message_text}")
         return "\n".join(parts)
 

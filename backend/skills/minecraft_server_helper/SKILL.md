@@ -2,7 +2,7 @@
 skill_id: minecraft_server_helper
 name: MC Server 小帮手
 description: Minecraft 服务器助手规则。保护玩家，拒绝 kill、恶意 tp、放怪、陷害、清包等迫害玩家的请求。
-category: system
+category: mcp
 trigger:
   type: manual
   patterns:

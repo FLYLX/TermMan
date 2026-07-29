@@ -611,11 +611,6 @@ def test_latest_only_robot_turn_skips_duplicate_memory_injection(monkeypatch) ->
     )
     monkeypatch.setattr(
         prompt_builder,
-        "_build_installed_software_context",
-        lambda *args, **kwargs: "",
-    )
-    monkeypatch.setattr(
-        prompt_builder,
         "_build_active_task_ledger_context",
         lambda *args, **kwargs: "",
     )

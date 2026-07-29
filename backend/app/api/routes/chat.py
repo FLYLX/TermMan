@@ -928,29 +928,6 @@ def _append_conversation_memory(
     )
 
 
-def _build_chat_messages(
-    *,
-    item_id: str,
-    message: str,
-    history: list[ChatMessage],
-    handler: ItemHandler,
-    agent: "Agent",
-) -> tuple[list[dict[str, Any]], list, list[dict]]:
-    memories = get_relevant_memories(item_id, message, agent)
-    system_prompt, matched_skills, tools = build_system_prompt_with_skills(
-        handler,
-        message,
-        agent,
-        memories,
-    )
-
-    messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
-    messages.extend({"role": msg.role, "content": msg.content} for msg in history)
-    messages.append({"role": "user", "content": message})
-    _inject_active_jobs_prompt_context(item_id, messages)
-    return messages, matched_skills, tools
-
-
 def _inject_active_jobs_prompt_context(
     item_id: str,
     messages: list[dict[str, Any]],
@@ -1617,6 +1594,9 @@ def _generate_stream_unserialized(
                         int(getattr(_su, "prompt_tokens", 0) or 0),
                         int(getattr(_su, "completion_tokens", 0) or 0),
                         int(getattr(_su, "total_tokens", 0) or 0),
+                        reply_ticket_id=str(
+                            getattr(reply_ticket, "ticket_id", "") or ""
+                        ),
                     )
             except Exception:
                 pass
@@ -1720,6 +1700,24 @@ def _generate_stream_unserialized(
                         )
                         final_response = ""
                         continue
+
+                    if normalized_source_type == SOURCE_WEB and not internal_agent_callback:
+                        try:
+                            from app.plugins.robot.explicit_target_backfill import (
+                                run_explicit_target_backfill,
+                            )
+
+                            run_explicit_target_backfill(
+                                item_id=str(item_id),
+                                user_message=message,
+                                final_text=final_response,
+                                delivery_key=f"ticket:{reply_ticket.ticket_id}",
+                            )
+                        except Exception:
+                            logger.exception(
+                                "[Chat] Explicit QQ target backfill failed for item %s",
+                                item_id,
+                            )
 
                     final_response = append_tool_call_footer(
                         final_response,

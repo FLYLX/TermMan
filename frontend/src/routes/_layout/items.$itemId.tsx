@@ -23,7 +23,6 @@ import {
   Trash2,
   Users,
   WifiOff,
-  X,
 } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -1169,142 +1168,99 @@ function RobotSleepTerminalLine({
   )
 }
 
-type TaskWorkflowStep = {
-  step_id: string
-  title: string
-  status: string
-  note?: string
-  evidence?: string
-  last_error?: string
-  recovery?: boolean
+type PlanStep = {
+  step: string
+  status: "pending" | "in_progress" | "completed"
 }
 
-type TaskWorkflow = {
-  workflow_id: string
-  objective: string
-  source_type: string
-  source_label: string
-  requester?: string
-  queue_status?: string
-  status: string
-  current_step_index: number
-  current_step?: string
-  latest_progress?: string
-  blocker?: string
-  steps: TaskWorkflowStep[]
-  updated_at?: string
+type ItemPlanResponse = {
+  item_id: string
+  plan: PlanStep[]
+  updated: boolean
 }
 
-type TaskWorkflowsResponse = {
-  workflows: TaskWorkflow[]
-  count: number
-}
-
-async function requestTaskWorkflows(
-  itemId: string,
-): Promise<TaskWorkflowsResponse> {
+async function requestItemPlan(itemId: string): Promise<ItemPlanResponse> {
   const token = localStorage.getItem("access_token") || ""
   const response = await fetch(
-    `${OpenAPI.BASE}/api/v1/task-workflows/${itemId}`,
+    `${OpenAPI.BASE}/api/v1/items/${itemId}/plan`,
     { headers: { Authorization: `Bearer ${token}` } },
   )
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`)
   }
-  return (await response.json()) as TaskWorkflowsResponse
+  return (await response.json()) as ItemPlanResponse
 }
 
-async function cancelTaskWorkflow(workflowId: string): Promise<void> {
+type TaskTokenUsage = {
+  reply_ticket_id: string
+  source_type: string
+  source_label: string
+  request_message: string
+  plan: PlanStep[]
+  ticket_status: string
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  turns: number
+  first_seen: string
+  last_seen: string
+}
+
+type ItemTokenByTaskResponse = {
+  item_id: string
+  tasks: TaskTokenUsage[]
+}
+
+async function requestItemTokenByTask(
+  itemId: string,
+): Promise<ItemTokenByTaskResponse> {
   const token = localStorage.getItem("access_token") || ""
   const response = await fetch(
-    `${OpenAPI.BASE}/api/v1/task-workflows/${workflowId}/cancel`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    },
+    `${OpenAPI.BASE}/api/v1/items/${itemId}/token-usage/by-task`,
+    { headers: { Authorization: `Bearer ${token}` } },
   )
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`)
   }
+  return (await response.json()) as ItemTokenByTaskResponse
 }
 
-const WORKFLOW_FINAL_STATUS_SET = new Set(["completed", "cancelled", "failed"])
-
-function getWorkflowStatusLabel(status: string) {
-  switch (status) {
-    case "active":
-      return "进行中"
-    case "waiting_job":
-      return "后台执行中"
-    case "blocked":
-      return "受阻"
-    case "verifying":
-      return "验证中"
-    case "ready_to_report":
-      return "待汇报"
-    case "reporting":
-      return "汇报中"
-    case "completed":
-      return "已完成"
-    case "cancelled":
-      return "已取消"
-    case "failed":
-      return "已失败"
-    default:
-      return status || "未知"
-  }
+function formatCompactTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return String(n)
 }
 
-function getWorkflowStatusClass(status: string) {
-  if (status === "completed") {
-    return "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
-  }
-  if (status === "failed" || status === "blocked") {
-    return "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-300"
-  }
-  if (status === "cancelled") {
-    return "border-zinc-500/40 bg-zinc-500/10 text-muted-foreground"
-  }
-  return "border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
-}
-
-function TaskWorkflowStepIcon({ status }: { status: string }) {
+function PlanStepIcon({ status }: { status: PlanStep["status"] }) {
   if (status === "completed") {
     return <Check className="size-3 shrink-0 text-emerald-500" />
   }
-  if (status === "running") {
+  if (status === "in_progress") {
     return <Loader2 className="size-3 shrink-0 animate-spin text-cyan-500" />
-  }
-  if (status === "failed") {
-    return <AlertCircle className="size-3 shrink-0 text-red-500" />
-  }
-  if (status === "waiting") {
-    return <Circle className="size-3 shrink-0 text-amber-500" />
-  }
-  if (status === "cancelled") {
-    return <X className="size-3 shrink-0 text-red-400/70" />
   }
   return <Circle className="size-3 shrink-0 text-muted-foreground" />
 }
 
-function TaskWorkflowPanel({
-  workflows,
+function PlanPanel({
+  plan,
   isOpen,
   onOpenChange,
   isFetching,
   onRefresh,
-  onCancel,
-  cancelingId,
+  currentTaskTokens,
 }: {
-  workflows: TaskWorkflow[]
+  plan: PlanStep[]
   isOpen: boolean
   onOpenChange: (open: boolean) => void
   isFetching: boolean
   onRefresh: () => void
-  onCancel: (workflowId: string) => void
-  cancelingId: string | null
+  currentTaskTokens?: number
 }) {
-  const count = workflows.length
+  const total = plan.length
+  const completedCount = plan.filter(
+    (step) => step.status === "completed",
+  ).length
+  const currentStep = plan.find((step) => step.status === "in_progress")
   return (
     <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/70 text-xs text-slate-300">
       <div className="flex h-10 items-center justify-between gap-2 px-3">
@@ -1318,16 +1274,25 @@ function TaskWorkflowPanel({
             className={`size-4 shrink-0 text-slate-500 transition-transform ${isOpen ? "rotate-90" : ""}`}
           />
           <ListTodo className="size-3.5 shrink-0 text-cyan-400" />
-          <span className="truncate font-medium text-slate-200">任务队列</span>
+          <span className="truncate font-medium text-slate-200">执行计划</span>
           <Badge
             variant="outline"
             className="h-5 border-zinc-700 bg-zinc-900 px-1.5 font-mono text-[10px] text-slate-300"
           >
-            {count}
+            {completedCount}/{total}
           </Badge>
-          {count > 0 ? (
+          {currentTaskTokens ? (
+            <Badge
+              variant="outline"
+              className="h-5 border-zinc-700 bg-zinc-900 px-1.5 font-mono text-[10px] text-amber-300"
+              title="当前任务 token 用量（prompt + completion）"
+            >
+              {formatCompactTokens(currentTaskTokens)} tok
+            </Badge>
+          ) : null}
+          {currentStep ? (
             <span className="hidden truncate text-[11px] text-slate-500 sm:inline">
-              {workflows[0]?.objective || ""}
+              {currentStep.step}
             </span>
           ) : null}
         </button>
@@ -1338,96 +1303,32 @@ function TaskWorkflowPanel({
           className="size-7 shrink-0 text-slate-400 hover:bg-zinc-800 hover:text-slate-100"
           onClick={onRefresh}
           disabled={isFetching}
-          title="刷新任务队列"
+          title="刷新计划"
         >
           <RefreshCw className={`size-3.5 ${isFetching ? "animate-spin" : ""}`} />
-          <span className="sr-only">刷新任务队列</span>
+          <span className="sr-only">刷新计划</span>
         </Button>
       </div>
 
       {isOpen ? (
         <div className="border-t border-zinc-800 px-3 py-2">
-          {count === 0 ? (
+          {total === 0 ? (
             <div className="rounded-md border border-dashed border-zinc-800 bg-zinc-900/40 px-3 py-2 text-slate-500">
-              暂无任务。任务会在 agent 规划多步工作时出现在这里。
+              暂无计划。agent 规划多步工作时会出现在这里。
             </div>
           ) : (
-            <div className="space-y-2">
-              {workflows.map((workflow) => (
+            <div className="space-y-1">
+              {plan.map((step, index) => (
                 <div
-                  key={workflow.workflow_id}
-                  className="rounded-md border border-zinc-800 bg-zinc-900/70 px-3 py-2"
+                  key={`${index}-${step.step}`}
+                  className="flex min-w-0 items-center gap-1.5 text-[11px]"
                 >
-                  <div className="mb-1.5 flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate font-medium text-slate-100">
-                      {workflow.objective || "(未命名任务)"}
-                    </span>
-                    <Badge
-                      variant="outline"
-                      className={`h-5 px-1.5 text-[10px] ${getWorkflowStatusClass(workflow.status)}`}
-                    >
-                      {getWorkflowStatusLabel(workflow.status)}
-                    </Badge>
-                    {!WORKFLOW_FINAL_STATUS_SET.has(workflow.status) ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-6 shrink-0 border-red-500/30 bg-red-500/10 px-2 text-[10px] text-red-300 hover:bg-red-500/20 hover:text-red-200"
-                        onClick={() => onCancel(workflow.workflow_id)}
-                        disabled={cancelingId === workflow.workflow_id}
-                      >
-                        {cancelingId === workflow.workflow_id ? (
-                          <Loader2 className="size-3 animate-spin" />
-                        ) : (
-                          <Square className="size-3" />
-                        )}
-                        取消
-                      </Button>
-                    ) : null}
-                  </div>
-                  <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2 text-[10px] text-slate-500">
-                    <span className="truncate">
-                      汇报给：{workflow.source_label || workflow.source_type}
-                    </span>
-                    {workflow.requester ? (
-                      <span className="truncate">来自：{workflow.requester}</span>
-                    ) : null}
-                    <span>
-                      步骤 {Math.min(workflow.current_step_index + 1, workflow.steps.length)}/
-                      {workflow.steps.length}
-                    </span>
-                  </div>
-                  <div className="space-y-1">
-                    {workflow.steps.map((step) => (
-                      <div
-                        key={step.step_id}
-                        className="flex min-w-0 items-center gap-1.5 text-[11px]"
-                      >
-                        <TaskWorkflowStepIcon status={step.status} />
-                        <span
-                          className={`truncate ${step.status === "completed" || step.status === "cancelled" ? "text-slate-500 line-through" : "text-slate-300"}`}
-                        >
-                          {step.title}
-                        </span>
-                        {step.recovery ? (
-                          <span className="shrink-0 text-amber-600 dark:text-amber-300">
-                            恢复步骤
-                          </span>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                  {workflow.latest_progress ? (
-                    <div className="mt-1.5 line-clamp-2 border-t border-zinc-800 pt-1.5 text-[10px] text-slate-500">
-                      {workflow.latest_progress}
-                    </div>
-                  ) : null}
-                  {workflow.blocker ? (
-                    <div className="mt-1 line-clamp-2 text-[10px] text-red-600 dark:text-red-300">
-                      {workflow.blocker}
-                    </div>
-                  ) : null}
+                  <PlanStepIcon status={step.status} />
+                  <span
+                    className={`truncate ${step.status === "completed" ? "text-slate-500 line-through" : "text-slate-300"}`}
+                  >
+                    {step.step}
+                  </span>
                 </div>
               ))}
             </div>
@@ -1854,8 +1755,7 @@ function ItemDetailPage({
     null,
   )
   const [jobsPanelOpen, setJobsPanelOpen] = useState(false)
-  const [tasksPanelOpen, setTasksPanelOpen] = useState(true)
-  const [taskCancelingId, setTaskCancelingId] = useState<string | null>(null)
+  const [planPanelOpen, setPlanPanelOpen] = useState(true)
   const [jobCancelId, setJobCancelId] = useState<string | null>(null)
   const [itemAction, setItemAction] = useState<
     "start" | "stop" | "restart" | null
@@ -1989,22 +1889,28 @@ function ItemDetailPage({
   })
 
   const {
-    data: taskWorkflowsData,
-    isFetching: isFetchingTaskWorkflows,
-    refetch: refetchTaskWorkflows,
+    data: itemPlanData,
+    isFetching: isFetchingItemPlan,
+    refetch: refetchItemPlan,
   } = useQuery({
-    queryKey: ["items", "task-workflows", item.id],
-    queryFn: () => requestTaskWorkflows(item.id),
+    queryKey: ["items", "plan", item.id],
+    queryFn: () => requestItemPlan(item.id),
     enabled: Boolean(item.id),
-    refetchInterval: (query) => {
-      if (tasksPanelOpen) {
-        return 2_500
-      }
-      const data = query.state.data as TaskWorkflowsResponse | undefined
-      return data?.workflows?.length ? 5_000 : 15_000
-    },
+    refetchInterval: 30_000,
     retry: false,
   })
+
+  const { data: tokenByTaskData } = useQuery({
+    queryKey: ["items", "token-by-task", item.id],
+    queryFn: () => requestItemTokenByTask(item.id),
+    enabled: Boolean(item.id),
+    refetchInterval: 30_000,
+    retry: false,
+  })
+  const tokenByTaskList = useMemo(
+    () => tokenByTaskData?.tasks || [],
+    [tokenByTaskData],
+  )
 
   const { data: terminalCommandState } = useQuery({
     queryKey: ["items", "terminal-command-state", item.id],
@@ -2189,21 +2095,6 @@ function ItemDetailPage({
       )
     } finally {
       setJobCancelId(null)
-    }
-  }
-
-  const handleCancelTaskWorkflow = async (workflowId: string) => {
-    setTaskCancelingId(workflowId)
-    try {
-      await cancelTaskWorkflow(workflowId)
-      await refetchTaskWorkflows()
-      showSuccessToast("任务已取消")
-    } catch (error) {
-      showErrorToast(
-        error instanceof Error ? error.message : "任务取消失败",
-      )
-    } finally {
-      setTaskCancelingId(null)
     }
   }
 
@@ -3393,14 +3284,13 @@ function ItemDetailPage({
                   </div>
                 </div>
                 <div className="mt-4 space-y-2">
-                  <TaskWorkflowPanel
-                    workflows={taskWorkflowsData?.workflows || []}
-                    isOpen={tasksPanelOpen}
-                    onOpenChange={setTasksPanelOpen}
-                    isFetching={isFetchingTaskWorkflows}
-                    onRefresh={() => void refetchTaskWorkflows()}
-                    onCancel={(workflowId) => void handleCancelTaskWorkflow(workflowId)}
-                    cancelingId={taskCancelingId}
+                  <PlanPanel
+                    plan={itemPlanData?.plan || []}
+                    isOpen={planPanelOpen}
+                    onOpenChange={setPlanPanelOpen}
+                    isFetching={isFetchingItemPlan}
+                    onRefresh={() => void refetchItemPlan()}
+                    currentTaskTokens={tokenByTaskList[0]?.total_tokens}
                   />
                   <BackgroundJobsPanel
                     jobs={backgroundJobs?.jobs || []}

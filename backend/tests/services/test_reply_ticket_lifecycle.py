@@ -292,3 +292,281 @@ def test_intermediate_delivery_cannot_close_active_task_workflow() -> None:
     assert manager.get(ticket.ticket_id).status == "delivered"
     assert task_workflow_manager.get_by_ticket(ticket.ticket_id).status == "completed"
     task_workflow_manager.reset()
+
+
+
+def _qq_ticket_manager(conversation_key: str = "group:770362397"):
+    target = RobotReplyTarget(
+        target_type="group",
+        target_id="770362397",
+        metadata={
+            "conversation": {"type": "group", "id": "770362397"},
+            "sender": {"user_id": "2537134688", "display_name": "FLY"},
+            "message": {"raw_message": "[CQ:at,qq=2900669542] 5*5=?"},
+        },
+    )
+    token = register_robot_mcp_context(
+        RobotMCPContext(
+            robot_id="robot-1",
+            sender_key="onebot_v11:group:770362397:2537134688",
+            reply_target=target,
+            conversation_key=conversation_key,
+            conversation_generation=3,
+        )
+    )
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="robot-1",
+            robot_context_token=token,
+            reply_ticket_id="",
+        )
+    )
+    return token, agent, ReplyTicketManager()
+
+
+def test_new_qq_ticket_supersedes_stale_undelivered_ticket() -> None:
+    token, agent, manager = _qq_ticket_manager()
+    try:
+        first = manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="5*5=?",
+            source_type="qq",
+        )
+        second = manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="5*5=?",
+            source_type="qq",
+        )
+        # A retry/newer turn for the same conversation must close the older
+        # undelivered ticket instead of leaving a stuck duplicate.
+        assert manager.get(first.ticket_id).status == "failed"
+        assert (
+            manager.get(first.ticket_id).delivery_error
+            == "superseded by newer QQ message"
+        )
+        assert manager.get(second.ticket_id).status == "pending"
+    finally:
+        unregister_robot_mcp_context(token)
+
+
+def test_qq_ticket_with_task_plan_not_superseded() -> None:
+    token, agent, manager = _qq_ticket_manager()
+    try:
+        first = manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="run a long task and tell me",
+            source_type="qq",
+        )
+        manager.mark_task_plan(first.ticket_id, "plan-1")
+        manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="are you there",
+            source_type="qq",
+        )
+        # Tickets backing a background task must survive later chatter.
+        assert manager.get(first.ticket_id).status == "running"
+    finally:
+        unregister_robot_mcp_context(token)
+
+
+def test_qq_ticket_with_sent_report_finalized_on_supersede() -> None:
+    token, agent, manager = _qq_ticket_manager()
+    try:
+        first = manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="5*5=?",
+            source_type="qq",
+        )
+        manager.mark_external_report_sent(first.ticket_id)
+        manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="6*6=?",
+            source_type="qq",
+        )
+        # The answer already reached QQ; close as delivered, not failed.
+        assert manager.get(first.ticket_id).status == "delivered"
+    finally:
+        unregister_robot_mcp_context(token)
+
+
+def test_watchdog_closes_stale_orphan_qq_ticket(monkeypatch) -> None:
+    from datetime import timezone
+
+    from app.services.agent import task_watchdog
+
+    task_workflow_manager.reset()
+    token, agent, manager = _qq_ticket_manager()
+    monkeypatch.setattr(
+        "app.services.agent.reply_ticket.reply_ticket_manager",
+        manager,
+    )
+    try:
+        stale = manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="5*5=?",
+            source_type="qq",
+        )
+        fresh = manager.create_for_agent(
+            agent,
+            item_id="item-1",
+            handler_id="handler-1",
+            message="6*6=?",
+            source_type="qq",
+        )
+        # The supersede path already closed the first ticket; reopen it to
+        # simulate a ticket whose turn never delivered anything.
+        stale.status = "running"
+        stale.delivery_error = ""
+        stale.updated_at -= timedelta(minutes=11)
+
+        stats = {"orphan_tickets_removed": 0, "stale_tickets_closed": 0}
+        task_watchdog._remove_orphan_tickets(datetime.now(timezone.utc), stats)
+
+        assert stats["stale_tickets_closed"] == 1
+        closed = manager.get(stale.ticket_id)
+        assert closed.status == "failed"
+        # Ticket datetimes must stay naive local time, or every naive
+        # comparison against them after a restart-restore raises TypeError.
+        assert closed.updated_at.tzinfo is None
+        assert manager.get(fresh.ticket_id).status == "pending"
+    finally:
+        unregister_robot_mcp_context(token)
+
+
+
+def test_prune_tolerates_aware_restored_timestamps() -> None:
+    from datetime import timezone
+
+    from app.services.agent.reply_ticket import ticket_from_payload, ticket_to_payload
+
+    manager = ReplyTicketManager()
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_context_token="",
+            reply_ticket_id="",
+        )
+    )
+    ticket = manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="old request",
+        source_type="web",
+    )
+    # Simulate a ticket whose timestamps were persisted as aware datetimes
+    # (e.g. written by a buggy code path before a restart).
+    ticket.updated_at = datetime.now(timezone.utc)
+    restored = ticket_from_payload(ticket_to_payload(ticket))
+    assert restored.updated_at.tzinfo is None
+    manager._tickets[restored.ticket_id] = restored
+
+    # create_for_agent runs _prune_locked with a naive now; it must not raise
+    # "can't compare offset-naive and offset-aware datetimes".
+    manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="new request",
+        source_type="web",
+    )
+
+
+def test_ticket_plan_serialization_roundtrip_and_legacy_payload() -> None:
+    from app.services.agent.reply_ticket import ticket_from_payload, ticket_to_payload
+
+    manager = ReplyTicketManager()
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_context_token="",
+            reply_ticket_id="",
+        )
+    )
+    ticket = manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="request with plan",
+        source_type="web",
+    )
+    ticket.plan = [
+        {"step": "download", "status": "completed"},
+        {"step": "install", "status": "in_progress"},
+    ]
+
+    restored = ticket_from_payload(ticket_to_payload(ticket))
+    assert restored.plan == ticket.plan
+
+    # Legacy payloads persisted before the plan field existed must load
+    # with an empty plan instead of failing.
+    legacy_payload = ticket_to_payload(ticket)
+    legacy_payload.pop("plan", None)
+    legacy = ticket_from_payload(legacy_payload)
+    assert legacy.plan == []
+
+
+def test_update_ticket_plan_and_latest_plan_for_item() -> None:
+    manager = ReplyTicketManager()
+    agent = SimpleNamespace(
+        _context=SimpleNamespace(
+            robot_id="",
+            robot_context_token="",
+            reply_ticket_id="",
+        )
+    )
+    ticket = manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="first request",
+        source_type="web",
+    )
+    plan = [{"step": "step one", "status": "in_progress"}]
+
+    updated = manager.update_ticket_plan(ticket.ticket_id, plan)
+    assert updated is ticket
+    assert ticket.plan == plan
+    assert manager.update_ticket_plan("missing-ticket", plan) is None
+
+    found_ticket, found_plan = manager.latest_plan_for_item("item-1")
+    assert found_ticket is ticket
+    assert found_plan == plan
+    # Mutating the returned plan must not leak into the ticket.
+    found_plan.append({"step": "bogus", "status": "pending"})
+    assert ticket.plan == plan
+
+    # A newer non-terminal ticket owns the item's latest plan.
+    newer = manager.create_for_agent(
+        agent,
+        item_id="item-1",
+        handler_id="handler-1",
+        message="second request",
+        source_type="web",
+    )
+    found_ticket, found_plan = manager.latest_plan_for_item("item-1")
+    assert found_ticket is newer
+    assert found_plan == []
+
+    # Terminal (delivered/failed) tickets no longer expose a plan.
+    newer.status = "failed"
+    found_ticket, found_plan = manager.latest_plan_for_item("item-1")
+    assert found_ticket is ticket
+    assert found_plan == plan
+    ticket.status = "delivered"
+    assert manager.latest_plan_for_item("item-1") == (None, [])
+    assert manager.latest_plan_for_item("item-unknown") == (None, [])

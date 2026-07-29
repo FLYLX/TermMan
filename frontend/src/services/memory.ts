@@ -23,34 +23,6 @@ export interface Memory {
   distance?: number
 }
 
-export interface InstalledSoftwareItem {
-  name: string
-  manager: string
-  version?: string
-  command?: string
-  notes?: string
-  installed_at?: string
-  updated_at?: string
-}
-
-export interface InstalledSoftwareUpsertRequest {
-  name: string
-  manager?: string
-  version?: string
-  command?: string
-  notes?: string
-}
-
-export interface InstalledSoftwareDeleteRequest {
-  name: string
-  manager?: string
-  reason?: string
-}
-
-export interface InstalledSoftwareListResponse {
-  items: InstalledSoftwareItem[]
-  count: number
-}
 export interface MemoryStats {
   total: number
   by_type: Record<MemoryType, number>
@@ -152,45 +124,6 @@ export const MEMORY_STATUS_COLORS: Record<ManagedMemoryStatus, string> = {
 }
 
 export class MemoryService {
-  public static getInstalledSoftware(
-    itemId: string,
-  ): CancelablePromise<InstalledSoftwareListResponse> {
-    return __request(OpenAPI, {
-      method: "GET",
-      url: "/api/v1/memory/{item_id}/installed-software",
-      path: { item_id: itemId },
-    })
-  }
-
-  public static saveInstalledSoftware(
-    itemId: string,
-    request: InstalledSoftwareUpsertRequest,
-  ): CancelablePromise<{ item: InstalledSoftwareItem; message: string }> {
-    return __request(OpenAPI, {
-      method: "POST",
-      url: "/api/v1/memory/{item_id}/installed-software",
-      path: { item_id: itemId },
-      body: request,
-      mediaType: "application/json",
-    })
-  }
-
-  public static deleteInstalledSoftware(
-    itemId: string,
-    request: InstalledSoftwareDeleteRequest,
-  ): CancelablePromise<{
-    message: string
-    count: number
-    removed: InstalledSoftwareItem[]
-  }> {
-    return __request(OpenAPI, {
-      method: "DELETE",
-      url: "/api/v1/memory/{item_id}/installed-software",
-      path: { item_id: itemId },
-      body: request,
-      mediaType: "application/json",
-    })
-  }
   public static getAllMemories(
     itemId: string,
     memoryType?: MemoryType,
