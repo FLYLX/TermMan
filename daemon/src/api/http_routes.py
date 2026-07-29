@@ -60,11 +60,21 @@ class InternalJobResultRequest(BaseModel):
     job_id: str
 
 
-def _resolve_job_working_directory(item_uuid: str, fallback: Optional[str]) -> Optional[str]:
-    current_workdir = terminal_manager.get_terminal_current_workdir(item_uuid)
-    if current_workdir:
-        return current_workdir
-    return fallback
+def _resolve_job_context(
+    item_uuid: str,
+    payload_user_uuid: str,
+    fallback: Optional[str],
+) -> tuple[str, Optional[str]]:
+    """Unify background-job cwd with the interactive terminal: when a main
+    terminal is running for the item, jobs execute in the terminal's
+    workdir under the terminal owner's user, so jobs and the terminal share
+    one directory tree regardless of who the item owner is."""
+    terminal = terminal_manager.get_terminal(item_uuid)
+    if terminal is not None:
+        current_workdir = terminal_manager.get_terminal_current_workdir(item_uuid)
+        if current_workdir:
+            return str(terminal.user_uuid), current_workdir
+    return payload_user_uuid, fallback
 
 
 def _require_active_main_terminal(item_uuid: str) -> None:
@@ -186,12 +196,13 @@ def run_item_job(
         f"command={payload.command!r} cwd={payload.working_directory!r}"
     )
     _require_active_main_terminal(item_uuid)
-    working_directory = _resolve_job_working_directory(
+    job_user_uuid, working_directory = _resolve_job_context(
         item_uuid,
+        payload.user_uuid,
         payload.working_directory,
     )
     result = job_runner.start_job(
-        user_uuid=payload.user_uuid,
+        user_uuid=job_user_uuid,
         item_uuid=item_uuid,
         command=payload.command,
         working_directory=working_directory,

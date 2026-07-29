@@ -441,3 +441,7 @@
 [14:24:01] CONNECTED
 [14:27:36] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '主人~ Java 装好啦！(≧▽≦)'}}]
 [14:27:36] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': 'OpenJDK 21.0.11，验证通过喵'}}]
+[15:00:53] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '两个 find 命令都确认没有 .jar 文件。还在等 Java 安装（aa4019c1d619）和 ls 目录列表的结果，先不急着回复主人。'}}]
+[15:08:15] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '任务处理超时，已中止。请稍后重试。'}}]
+[15:08:26] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '任务未能完成：本轮处理超时，已停止该任务。'}}]
+[15:23:06] QQ [send_msg] -> 2537134688: [{'type': 'text', 'data': {'text': '14呀主人~ (≧▽≦)'}}]

@@ -1345,6 +1345,7 @@ class AgentSession:
         *,
         report: str,
         reason: str,
+        notify: bool = True,
     ) -> bool:
         ticket = self._get_reply_ticket(ticket_id)
         if not ticket:
@@ -1358,6 +1359,10 @@ class AgentSession:
                 note=str(reason or report)[:2000],
             )
             reply_ticket_manager.mark_failed(ticket_id, reason or report)
+            if not notify:
+                # Timeout/turn-guard cancels fail the ticket quietly: the task
+                # state survives for later turns, no scary message to the user.
+                return False
             delivered = reply_ticket_manager.deliver(ticket_id, report)
             if delivered and ticket.source_type == "qq":
                 self.emit_output(
@@ -2403,12 +2408,14 @@ class AgentSession:
             terminal_delivery_retry_used = False
             integration_tool_results: list[str] = []
             terminal_failure_report = ""
+            terminal_failure_silent = False
             _response_emitted_in_loop = False
 
             for iteration_index in range(MAX_ITERATIONS):
                 timed_out, timeout_reason = turn_guard.check_timeout()
                 if timed_out:
                     terminal_failure_report = "任务未能完成：本轮处理超时，已停止该任务。"
+                    terminal_failure_silent = True
                     self._send_pending_integration_response(
                         pending_before_analysis,
                         timeout_reason,
@@ -2600,6 +2607,7 @@ class AgentSession:
                     input_msg.reply_ticket_id,
                     report=terminal_failure_report,
                     reason=terminal_failure_report,
+                    notify=not terminal_failure_silent,
                 )
             elif input_msg.reply_ticket_id and not _response_emitted_in_loop:
                 _wf_done = task_workflow_manager.get_by_ticket(

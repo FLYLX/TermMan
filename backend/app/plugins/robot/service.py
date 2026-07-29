@@ -547,9 +547,9 @@ class RobotService:
                 },
             )
             try:
-                self._record_and_send_job_error(
+                self._record_job_timeout_silent(
                     job,
-                    "任务处理超时，已强制中止。请重新发一次。",
+                    f"hard timeout after {round(now - started, 1)}s",
                 )
             except Exception:
                 logger.exception(
@@ -744,9 +744,9 @@ class RobotService:
                             "timeout_seconds": settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS,
                         },
                     )
-                    self._record_and_send_job_error(
+                    self._record_job_timeout_silent(
                         job,
-                        "任务处理超时，已中止。请稍后重试。",
+                        f"turn exceeded {settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS}s",
                     )
                     self._enqueue_pending_chat_followup(
                         robot=robot,
@@ -828,9 +828,9 @@ class RobotService:
                                     "timeout_seconds": settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS,
                                 },
                             )
-                            self._record_and_send_job_error(
+                            self._record_job_timeout_silent(
                                 job,
-                                "任务处理超时，已中止。请稍后重试。",
+                                f"corrective retry exceeded {settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS}s",
                             )
                             self._enqueue_pending_chat_followup(
                                 robot=robot,
@@ -1098,6 +1098,43 @@ class RobotService:
                 excluded_message_texts=pending_message_texts,
             ),
         )
+
+    def _record_job_timeout_silent(
+        self,
+        job: QueuedRobotChatJob,
+        detail: str,
+    ) -> None:
+        """Timeout cleanup that stays invisible to the user: the turn dies
+        quietly (task state in plan/ticket survives and later turns can pick
+        it up), so there is no scary 'task timed out' message to send."""
+        logger.warning(
+            "[RobotService] Silent timeout cancel robot=%s item=%s conversation=%s: %s",
+            job.robot_id,
+            job.item_id,
+            job.conversation_key,
+            detail,
+        )
+        record_robot_event(
+            str(job.robot_id),
+            direction="backend_worker",
+            event="dispatch_timeout_silent",
+            status="ignored",
+            message=detail,
+            payload={
+                "item_id": str(job.item_id),
+                "route_key": job.route_key,
+                "queue": self.dispatch_queue_snapshot(),
+            },
+        )
+        if job.pending_reply_id:
+            try:
+                self.clear_background_job_reply(
+                    robot_id=job.robot_id,
+                    conversation_key=job.conversation_key,
+                    pending_reply_id=job.pending_reply_id,
+                )
+            except Exception:
+                pass
 
     def _record_and_send_job_error(
         self,
