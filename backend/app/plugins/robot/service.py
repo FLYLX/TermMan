@@ -54,6 +54,12 @@ PENDING_DIRECT_WAKE_TRIGGER_REASONS = frozenset({
     "reply_to_bot",
     "private_chat",
 })
+USER_INSTRUCTION_TRIGGER_REASONS = frozenset({
+    "mention_bot",
+    "reply_to_bot",
+    "private_chat",
+    "active_chat_window",
+})
 TASK_CONTROL_MESSAGE_RE = re.compile(
     r"(先别|别下|不要下|暂停|取消|停一下|停止下载|换源|换个源|"
     r"换(?:个)?(?:国内|国外)?镜像|改用.{0,20}镜像|\b(?:pause|cancel|stop)\b)",
@@ -1840,6 +1846,47 @@ class RobotService:
         )
         return "\n".join(lines)
 
+    def _filter_superseded_user_instructions(
+        self,
+        robot: Robot,
+        conversation_key: str,
+        entries: list[PendingRobotChatInput],
+    ) -> list[PendingRobotChatInput]:
+        """Latest-instruction-wins: when several user messages queue up, only
+        the newest one per sender is a live instruction. Older ones are
+        superseded — they stay visible via live context, but no turn is
+        spent on them (rapid conflicting instructions no longer cause
+        backlog thrash). Job callbacks and ticket entries always survive."""
+        newest_index_by_sender: dict[str, int] = {}
+        for index, entry in enumerate(entries):
+            if entry.trigger_reason in USER_INSTRUCTION_TRIGGER_REASONS:
+                newest_index_by_sender[entry.sender_key] = index
+        if not newest_index_by_sender:
+            return entries
+        kept: list[PendingRobotChatInput] = []
+        dropped = 0
+        for index, entry in enumerate(entries):
+            if (
+                entry.trigger_reason in USER_INSTRUCTION_TRIGGER_REASONS
+                and newest_index_by_sender.get(entry.sender_key) != index
+            ):
+                dropped += 1
+                continue
+            kept.append(entry)
+        if dropped:
+            record_robot_event(
+                str(robot.id),
+                direction="backend_queue",
+                event="pending_chat_superseded_drop",
+                status="ignored",
+                payload={
+                    "conversation": conversation_key,
+                    "dropped": dropped,
+                    "kept": len(kept),
+                },
+            )
+        return kept
+
     def _enqueue_pending_chat_followup(
         self,
         *,
@@ -1854,6 +1901,11 @@ class RobotService:
             if visible_text
             and (not direct_wakeup_only or self._pending_chat_entry_is_direct_wakeup(entry))
         ]
+        entries = self._filter_superseded_user_instructions(
+            robot,
+            conversation_key,
+            entries,
+        )
         if not entries:
             return False
 

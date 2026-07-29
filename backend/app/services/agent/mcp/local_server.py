@@ -333,7 +333,8 @@ class LocalMCPServer:
                 "Track multi-step work. Skip for simple 1-2 step tasks. "
                 "plan: list of {step, status} with status pending/in_progress/completed; "
                 "exactly one in_progress. Update it after finishing each step. "
-                "任务全部完成（含向用户汇报）后，再调用一次将全部步骤标为 completed，plan 自动清除。"
+                "任务结束（全部完成或中途放弃）时调用 update_plan(plan=[]) 直接清除计划，"
+                "不需要把每步都标 completed。"
             ),
             input_schema={
                 "type": "object",
@@ -1069,21 +1070,6 @@ class LocalMCPServer:
         plan = args.get("plan")
         if not item_id:
             return [{"type": "text", "text": "Error: item_id required"}]
-        if not isinstance(plan, list) or not plan:
-            return [{"type": "text", "text": "Error: plan must be a non-empty list"}]
-        normalized: list[dict] = []
-        for entry in plan:
-            if not isinstance(entry, dict):
-                continue
-            step = str(entry.get("step") or "").strip()
-            status = str(entry.get("status") or "pending").strip()
-            if not step:
-                continue
-            if status not in {"pending", "in_progress", "completed"}:
-                status = "pending"
-            normalized.append({"step": step, "status": status})
-        if not normalized:
-            return [{"type": "text", "text": "Error: plan has no valid steps"}]
 
         from app.services.agent.reply_ticket import reply_ticket_manager
 
@@ -1101,6 +1087,43 @@ class LocalMCPServer:
                     ),
                 }
             ]
+
+        # plan=[] means "clear it now" — the agent decides when the task is
+        # over (finished or abandoned); no need to mark every step completed.
+        if isinstance(plan, list) and not plan:
+            reply_ticket_manager.update_ticket_plan(ticket.ticket_id, [])
+            try:
+                from app.services.agent.stream_manager import stream_manager
+
+                stream_manager.broadcast_chat_event(
+                    item_id,
+                    {
+                        "type": "plan_updated",
+                        "item_id": item_id,
+                        "plan": [],
+                        "explanation": "cleared",
+                    },
+                )
+            except Exception:
+                pass
+            return [{"type": "text", "text": "Plan cleared."}]
+
+        if not isinstance(plan, list):
+            return [{"type": "text", "text": "Error: plan must be a list"}]
+        normalized: list[dict] = []
+        for entry in plan:
+            if not isinstance(entry, dict):
+                continue
+            step = str(entry.get("step") or "").strip()
+            status = str(entry.get("status") or "pending").strip()
+            if not step:
+                continue
+            if status not in {"pending", "in_progress", "completed"}:
+                status = "pending"
+            normalized.append({"step": step, "status": status})
+        if not normalized:
+            return [{"type": "text", "text": "Error: plan has no valid steps"}]
+
         all_completed = all(item["status"] == "completed" for item in normalized)
         # Done: clear the ticket's plan instead of keeping a finished plan.
         reply_ticket_manager.update_ticket_plan(
@@ -1143,7 +1166,7 @@ class LocalMCPServer:
                 if len(remaining) == 1:
                     lines.append(
                         f"Next action: finish step '{current['step']}' and report to the user. "
-                        "汇报发出后，再调用一次 update_plan 把这一步标为 completed，plan 自动清除。"
+                        "汇报发出后，调用 update_plan(plan=[]) 直接清除计划，不用逐步标 completed。"
                     )
                 else:
                     lines.append(

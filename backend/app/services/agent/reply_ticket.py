@@ -16,6 +16,9 @@ SOURCE_WEB = "web"
 SOURCE_TERMINAL = "terminal"
 
 TICKET_TTL = timedelta(hours=6)
+# How long a ticket's plan stays visible to the /plan API after the ticket
+# was last touched (plan updates and turn activity refresh it).
+PLAN_LOOKUP_FRESH_SECONDS = 30 * 60
 QQ_TICKET_SUPERSEDE_REASON = "superseded by newer QQ message"
 CURRENT_QQ_MESSAGE_MARKER = "[Current QQ message]"
 CQ_CODE_RE = re.compile(r"\[CQ:[^\]]+\]", re.IGNORECASE)
@@ -505,17 +508,24 @@ class ReplyTicketManager:
     def latest_plan_for_item(
         self, item_id: str
     ) -> tuple[ReplyTicket | None, list[dict]]:
-        """Plan of the item's most recently updated non-terminal ticket.
+        """Plan of the item's most recently updated ticket that still has one.
 
-        Returns ``(None, [])`` when the item has no active ticket (terminal
-        tickets are delivered/failed; their plans are considered closed).
+        A ticket being delivered only means "a reply was sent", not that the
+        task chain ended — long chains keep working across follow-up turns,
+        and their plan lives on the ticket that created it. So instead of
+        requiring a live ticket, we return the freshest ticket with a
+        non-empty plan inside the activity window. Plans whose ticket has not
+        been touched for PLAN_LOOKUP_FRESH_SECONDS are considered abandoned.
         """
         with self._lock:
+            now = datetime.now()
             candidates = [
                 ticket
                 for ticket in self._tickets.values()
                 if ticket.item_id == str(item_id)
-                and ticket.status not in {"delivered", "failed"}
+                and ticket.plan
+                and (now - ticket.updated_at).total_seconds()
+                <= PLAN_LOOKUP_FRESH_SECONDS
             ]
         if not candidates:
             return None, []
