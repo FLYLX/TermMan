@@ -580,6 +580,22 @@ def _collect_long_term_memories(
             seen_ids.add(memory_id)
             collected.append(memory)
 
+    if n_results and len(collected) > n_results:
+        type_rank = {"preference": 0, "error": 1, "context": 2, "fact": 3}
+        collected = sorted(
+            collected,
+            key=lambda m: (
+                type_rank.get(_memory_type(m), 4),
+                -_memory_relevance_score(m),
+            ),
+        )[:n_results]
+        # Enforce a per-memory content budget so the impression card can
+        # never dominate the prompt again.
+        for memory in collected:
+            content = str(memory.get("content") or "")
+            if len(content) > 240:
+                memory["content"] = content[:237] + "..."
+
     trimmed = _select_long_term_memories(
         collected,
         allowed_types=allowed_types,
@@ -810,10 +826,7 @@ def _build_current_source_route_context(
         return (
             f"{CURRENT_SOURCE_ROUTE_LABEL}:\n"
             f"- current source: QQ robot conversation ({route})\n"
-            "- reply contract: if visible reply is needed, use mcp_robot_send_message "
-            "to the locked current QQ context; do not leave the answer only in the "
-            "TermMan web chat; do not send to any other QQ conversation unless the "
-            "user explicitly gave a target and the tool allows it.\n"
+            "- reply contract: reply to the current QQ conversation by outputting the reply text directly; the system auto-delivers it back to this conversation. Only call mcp_robot_send_message when sending to a different conversation or multiple targets. Do not leave the answer only in the TermMan web chat.\n"
             "- reply only to the source: do NOT broadcast the answer to the terminal "
             "or game server console (e.g., say/tell commands) unless the user explicitly "
             "asks you to also announce it there."

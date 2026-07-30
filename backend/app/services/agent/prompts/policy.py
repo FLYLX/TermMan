@@ -34,7 +34,7 @@ def resolve_prompt_memory_policy(turn_type: PromptTurnType) -> PromptMemoryPolic
             include_recent_history=True,
             include_long_term=True,
             max_recent_messages=6,
-            max_long_term_memories=0,
+            max_long_term_memories=12,
             allowed_long_term_types=("fact", "preference", "error", "context"),
         )
 
@@ -53,7 +53,7 @@ def resolve_prompt_memory_policy(turn_type: PromptTurnType) -> PromptMemoryPolic
         include_recent_history=True,
         include_long_term=True,
         max_recent_messages=6,
-        max_long_term_memories=0,
+        max_long_term_memories=12,
         allowed_long_term_types=("preference", "error", "context"),
     )
 

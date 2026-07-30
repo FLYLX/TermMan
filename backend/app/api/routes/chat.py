@@ -344,6 +344,19 @@ def _to_sse(payload: dict[str, Any]) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _qq_display_text(text: str) -> str:
+    """Raw QQ text for chat history / web UI display. The composed agent
+    message ends with a `[Current QQ message]` marker; everything before it
+    (sender cards, impression cards, live context) is model-only context.
+    """
+    marker = "[Current QQ message]"
+    if marker in text:
+        tail = text.rsplit(marker, 1)[1].strip()
+        if tail:
+            return tail
+    return text.strip() or text
+
+
 def _persist_and_broadcast_event(
     item_id: str,
     *,
@@ -1322,10 +1335,16 @@ def _generate_stream_unserialized(
 
     if not internal_agent_callback:
         user_message_type = "qq_user" if normalized_source_type == SOURCE_QQ else "chat_user"
+        # The model gets the fully composed message (sender cards, live
+        # context, memories...), but the chat history and the web UI should
+        # only show the raw text the QQ user actually sent.
+        display_content = message
+        if normalized_source_type == SOURCE_QQ:
+            display_content = _qq_display_text(reply_ticket.request_message or message)
         user_event = _persist_and_broadcast_event(
             item_id,
             role="user",
-            content=message,
+            content=display_content,
             message_type=user_message_type,
             extra={"sender_key": reply_ticket.sender_key, "sender_label": reply_ticket.sender_label, "source": normalized_source_type} if normalized_source_type == SOURCE_QQ else None,
         )

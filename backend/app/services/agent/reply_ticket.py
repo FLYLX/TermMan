@@ -682,8 +682,10 @@ class ReplyTicketManager:
                 f"- ticket_id: {ticket.ticket_id}\n"
                 f"- source: QQ ({conv_key or 'current conversation'})\n"
                 f"{target_hint}"
-                "- REPLY ROUTING: all replies must go back to this QQ source via "
-                "`mcp_robot_send_message`. Do not leave answers only in TermMan.\n"
+                "- REPLY ROUTING: output your reply text directly and the system "
+                "auto-delivers it back to this QQ conversation. Only call "
+                "`mcp_robot_send_message` when sending to a different conversation "
+                "or multiple targets. Do not leave answers only in TermMan.\n"
                 "- If the user asks you to send elsewhere, do it then report back here.\n"
                 "- Do not duplicate: if already sent via tool, do not restate in final text.\n"
             )

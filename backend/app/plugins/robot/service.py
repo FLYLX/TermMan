@@ -986,6 +986,25 @@ class RobotService:
     ) -> bool:
         if not response_text.strip():
             return False
+        # The agent decided this conversation should sleep (via
+        # mcp_robot_sleep_conversation or the no-reply path). Whatever final
+        # text it produced is internal reasoning, not a reply — never
+        # forward it to QQ.
+        if self.conversation_is_sleeping(job.robot_id, job.conversation_key):
+            record_robot_event(
+                str(job.robot_id),
+                direction="backend_to_bridge",
+                event="dispatch_visible_response_dropped_sleeping_conversation",
+                status="ignored",
+                message=preview_text(response_text),
+                payload={
+                    "item_id": str(job.item_id),
+                    "route_key": job.route_key,
+                    "conversation": job.conversation_key,
+                    "generation": job.conversation_generation,
+                },
+            )
+            return False
         if not self.conversation_controller_allows_completion_reply(
             job.robot_id,
             job.conversation_key,
@@ -3347,6 +3366,16 @@ class RobotService:
             conversation_key,
             CONVERSATION_PROCESSING_MAX_TIMEOUT_SECONDS,
         )
+
+    def conversation_is_sleeping(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+    ) -> bool:
+        key = self._conversation_controller_key(robot_id, conversation_key)
+        with self._lock:
+            controller = self._conversation_controllers.get(key)
+            return bool(controller and controller.sleeping)
 
     def conversation_is_processing(
         self,

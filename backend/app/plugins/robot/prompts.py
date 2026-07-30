@@ -13,10 +13,6 @@ ROBOT_MESSAGING_SKILL_ID = "robot_messaging"
 ROBOT_MESSAGING_COMPAT_SKILL_IDS = {QQ_MCP_SKILL_ID, ROBOT_MESSAGING_SKILL_ID}
 
 ROBOT_REPLY_DECISION_INSTRUCTION = (
-    "- 执行顺序：本轮消息包含可执行指令（安装/运行/修改/查终端/文件操作/启动停止服务）时，"
-    "先调用工具执行，执行完毕再发 QQ 汇报。没执行完之前不产生任何回复。\n"
-    "- 对做事类消息，“回复”的定义是完成后的结果汇报；反问、要确认、预告"
-    "（“要我帮你吗”“我这就去”“先帮你看看”）都不算回复，等同于没回。\n"
     "- 回复判断核心原则：宁可多回一句，不要漏回。拿不准时默认回复，不默认沉默。\n"
     "- 必须回复（禁止沉默、禁止 `[no_qq_reply]`）：\n"
     "  · 私聊、被 @、被回复、被点名提问或评理\n"
@@ -80,22 +76,12 @@ ROBOT_SENDER_IDENTITY_INSTRUCTION = (
     "记忆注入、工具调用”等内部实现；认错人时直接说“我刚才没认出你”并自然纠正。\n"
 )
 ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION = (
-    "- Progressive QQ context: treat `[Recent QQ live context]` as the live chat "
-    "thread immediately before `[Current QQ message]`. Use it to resolve short "
-    "or elliptical follow-ups such as 'continue', 'what about it', 'is it done', "
-    "'change it', 'that one', and task-status questions. Answer only the current "
-    "or pending current messages; never re-answer old recent-context lines. If "
-    "recent context is still insufficient and the current message is directed at "
-    "the bot, read a few current-conversation `.log` lines with "
-    "`mcp_robot_read_conversation_memory`, then summarize instead of pasting raw logs. "
-    "If the same-conversation log still does not establish a clear referent or request, "
-    "ask one brief clarification. Never invent a hidden correction, complaint, alignment "
-    "issue, or prior instruction merely to make an ambiguous short message sound meaningful.\n"
-    "- Reply-reference priority: when `[Replied QQ message]` is present, it is the "
-    "authoritative quoted message for this turn. Resolve phrases such as 'this', "
-    "'that sentence', 'he/she', 'is it done', or 'continue' against its quoted text "
-    "and quoted sender before using broader group history. Keep the current sender "
-    "separate from the quoted sender, and answer only the current message.\n"
+    "- Progressive QQ context: `[Recent QQ live context]` 是 [Current QQ message] 之前的实况对话流，"
+    "用来理解短回复/省略句（“继续”“怎么样了”“改一下”“那个”）。只回答当前消息，不要重复回答历史行。"
+    "上下文不足且消息明确指向你时，调 `mcp_robot_read_conversation_memory` 看几条当前会话 .log 再总结；"
+    "仍不明确就问一句澄清。不要编造不存在的纠正、抱怨或旧指令。\n"
+    "- Reply-reference priority: `[Replied QQ message]` 是本轮权威引用，"
+    "“这个/那句/他她/好了吗/继续”先按它和被引用发送者解析，再看群历史。\n"
 )
 ROBOT_MESSAGING_PROMPT = (
     "QQ MCP Skill：\n\n"

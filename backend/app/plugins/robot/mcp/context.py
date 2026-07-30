@@ -196,6 +196,35 @@ def build_robot_reply_context_summary(
     )
     sender_label = _robot_sender_label(reply_target, sender_key)
 
+    if conversation_type == "private":
+        return "\n".join(
+            [
+                "Current robot reply target:",
+                f"- conversation: {conversation}",
+                f"- sender: {sender_label}",
+                f"- sender_key: {sender_key}",
+                (
+                    "- current sender rule: in the current QQ message, first-person "
+                    f"phrases such as '我/我的/我是谁' refer to {sender_label}, not "
+                    "the bot or another person from recent context."
+                ),
+                (
+                    "- send rule: to reply, output your reply text directly and the system "
+                    "auto-delivers it back to this conversation; only call "
+                    "`mcp_robot_send_message` when sending to a different conversation or "
+                    "multiple targets. Private chat is addressed to you; reply directly. "
+                    "If this turn should not be replied to, call "
+                    "`mcp_robot_sleep_conversation` instead."
+                ),
+                (
+                    "- memory rule: do not read the .log before a normal current reply. "
+                    "If the user explicitly asks about previous QQ context or the current "
+                    "message cannot be understood without earlier chat, call "
+                    "`mcp_robot_read_conversation_memory` (locked to this conversation)."
+                ),
+            ]
+        )
+
     return "\n".join(
         [
             "Current robot reply target:",
@@ -225,9 +254,7 @@ def build_robot_reply_context_summary(
             ),
             *_robot_identity_context_lines(reply_target, conversation_type),
             (
-                "- send rule: call `mcp_robot_send_message` with only `text` or "
-                "`messages` to "
-                "reply to this current QQ conversation when the current message "
+                "- send rule: to reply to this current QQ conversation, output your reply text directly and the system auto-delivers it back to this conversation; only call `mcp_robot_send_message` when sending to a different conversation or multiple targets. Reply when the current message "
                 "is plausibly addressed to the bot after considering recent QQ "
                 "context. Treat `reply_to_bot`, bot mentions, and "
                 "`trigger=active_chat_window` as candidate continuations; reply "
