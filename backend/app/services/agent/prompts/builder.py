@@ -828,8 +828,9 @@ def _build_current_source_route_context(
             f"- current source: QQ robot conversation ({route})\n"
             "- reply contract: reply to the current QQ conversation by outputting the reply text directly; the system auto-delivers it back to this conversation. Only call mcp_robot_send_message when sending to a different conversation or multiple targets. Do not leave the answer only in the TermMan web chat.\n"
             "- reply only to the source: do NOT broadcast the answer to the terminal "
-            "or game server console (e.g., say/tell commands) unless the user explicitly "
-            "asks you to also announce it there."
+            "or game server console (e.g., say/tell commands). The user must explicitly "
+            "ask to '在服务器说/广播/公告' to trigger a console say; reporting a task result "
+            "(e.g. 服务器开好了) is NOT a reason to say in console—report only to the QQ/web source."
         )
 
     if source == "terminal":

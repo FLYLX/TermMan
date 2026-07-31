@@ -41,6 +41,30 @@ async def health_check() -> bool:
     return True
 
 
+@router.get("/mem-snapshot/")
+async def mem_snapshot():
+    import gc, resource, types, collections
+    gc.collect()
+    objs = gc.get_objects()
+    type_counts = {}
+    for obj in objs:
+        t = type(obj).__name__
+        type_counts[t] = type_counts.get(t, 0) + 1
+    top = sorted(type_counts.items(), key=lambda x: -x[1])[:20]
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    funcs = [o for o in objs if isinstance(o, types.FunctionType)]
+    func_mods = collections.Counter()
+    for f in funcs:
+        func_mods[getattr(f, "__module__", "?") or "?"] += 1
+    return {
+        "rss_mb": round(rss),
+        "gc_objects": len(objs),
+        "top_types": [{"type": k, "count": v} for k, v in top],
+        "function_count": len(funcs),
+        "func_modules": [{"module": k, "count": v} for k, v in func_mods.most_common(20)],
+    }
+
+
 @router.get(
     "/backend-runtime/",
     response_model=BackendRuntimeStatsResponse,

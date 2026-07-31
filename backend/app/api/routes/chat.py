@@ -94,7 +94,7 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 3
 RETRY_DELAY = 1
 REQUEST_TIMEOUT = 120
-MAX_ITERATIONS = 10
+MAX_ITERATIONS = 6
 LOOP_DETECTION_WINDOW = 6
 LOOP_THRESHOLD = 3
 TOOL_LOOP_STOP_REASON = (
@@ -1362,6 +1362,8 @@ def _generate_stream_unserialized(
     delivery_retry_used_by_integration: dict[str, bool] = {}
     tool_loop_recovery_used = False
     thinking_only_retry_used = False
+    workflow_correction_used = False
+    delivery_retry_used = False
     from app.core.config import settings as chat_settings
 
     turn_started_at = time.monotonic()
@@ -1693,7 +1695,8 @@ def _generate_stream_unserialized(
                         final_response=final_response,
                         retry_used_by_integration=delivery_retry_used_by_integration,
                     )
-                if delivery_retry_decision is not None:
+                if delivery_retry_decision is not None and not delivery_retry_used:
+                    delivery_retry_used = True
                     record_integration_delivery_correction(
                         agent,
                         integration_name=delivery_retry_decision.integration_name,
@@ -1707,7 +1710,8 @@ def _generate_stream_unserialized(
                     can_finalize, workflow_correction = (
                         task_workflow_manager.can_finalize(reply_ticket.ticket_id)
                     )
-                    if not can_finalize:
+                    if not can_finalize and not workflow_correction_used:
+                        workflow_correction_used = True
                         messages.append(
                             {"role": "assistant", "content": final_response}
                         )
@@ -1808,6 +1812,12 @@ def _generate_stream_unserialized(
 
                 _broadcast_agent_status(item_id, "idle")
 
+                import gc as _gc_turn
+                try:
+                    del messages
+                except NameError:
+                    pass
+                _gc_turn.collect()
                 yield _to_sse({"done": True})
                 return
 

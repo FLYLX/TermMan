@@ -1,5 +1,31 @@
 import logging
+import os
+import threading
+import time
 from contextlib import asynccontextmanager
+
+MEMORY_LIMIT_MB = 1024
+MEMORY_CHECK_INTERVAL = 300
+
+
+def _memory_watchdog():
+    import resource
+    while True:
+        time.sleep(MEMORY_CHECK_INTERVAL)
+        try:
+            rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+            if rss > MEMORY_LIMIT_MB:
+                logging.getLogger(__name__).warning(
+                    "[App] Memory watchdog: RSS=%.0fMB > limit=%dMB, restarting", rss, MEMORY_LIMIT_MB
+                )
+                os._exit(0)
+        except Exception:
+            pass
+
+
+def _start_memory_watchdog():
+    t = threading.Thread(target=_memory_watchdog, name="memory-watchdog", daemon=True)
+    t.start()
 
 import sentry_sdk
 from fastapi import FastAPI
@@ -39,6 +65,8 @@ async def lifespan(app: FastAPI):
     from app.services.agent.scheduled_tasks import scheduled_task_manager
 
     scheduled_task_manager.start()
+
+    _start_memory_watchdog()
 
     yield
 

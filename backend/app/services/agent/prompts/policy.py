@@ -30,18 +30,18 @@ class PromptMemoryPolicy:
 def resolve_prompt_memory_policy(turn_type: PromptTurnType) -> PromptMemoryPolicy:
     if turn_type == PromptTurnType.CHAT:
         return PromptMemoryPolicy(
-            include_session_summary=True,
-            include_recent_history=True,
+            include_session_summary=False,
+            include_recent_history=False,
             include_long_term=True,
             max_recent_messages=6,
-            max_long_term_memories=12,
+            max_long_term_memories=3,
             allowed_long_term_types=("fact", "preference", "error", "context"),
         )
 
     if turn_type == PromptTurnType.TERMINAL_RAW_FEEDBACK:
         return PromptMemoryPolicy(
-            include_session_summary=True,
-            include_recent_history=True,
+            include_session_summary=False,
+            include_recent_history=False,
             include_long_term=False,
             max_recent_messages=6,
             max_long_term_memories=0,
@@ -49,8 +49,8 @@ def resolve_prompt_memory_policy(turn_type: PromptTurnType) -> PromptMemoryPolic
         )
 
     return PromptMemoryPolicy(
-        include_session_summary=True,
-        include_recent_history=True,
+        include_session_summary=False,
+        include_recent_history=False,
         include_long_term=True,
         max_recent_messages=6,
         max_long_term_memories=12,
