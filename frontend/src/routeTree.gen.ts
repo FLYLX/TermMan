@@ -19,6 +19,7 @@ import { Route as LayoutSkillsRouteImport } from './routes/_layout/skills'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutRobotsRouteImport } from './routes/_layout/robots'
 import { Route as LayoutPluginsRouteImport } from './routes/_layout/plugins'
+import { Route as LayoutPluginDevRouteImport } from './routes/_layout/plugin-dev'
 import { Route as LayoutMcpServersRouteImport } from './routes/_layout/mcp-servers'
 import { Route as LayoutKnowledgeRouteImport } from './routes/_layout/knowledge'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
@@ -78,6 +79,11 @@ const LayoutRobotsRoute = LayoutRobotsRouteImport.update({
 const LayoutPluginsRoute = LayoutPluginsRouteImport.update({
   id: '/plugins',
   path: '/plugins',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutPluginDevRoute = LayoutPluginDevRouteImport.update({
+  id: '/plugin-dev',
+  path: '/plugin-dev',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutMcpServersRoute = LayoutMcpServersRouteImport.update({
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/items': typeof LayoutItemsRouteWithChildren
   '/knowledge': typeof LayoutKnowledgeRoute
   '/mcp-servers': typeof LayoutMcpServersRoute
+  '/plugin-dev': typeof LayoutPluginDevRoute
   '/plugins': typeof LayoutPluginsRoute
   '/robots': typeof LayoutRobotsRouteWithChildren
   '/settings': typeof LayoutSettingsRoute
@@ -167,6 +174,7 @@ export interface FileRoutesByTo {
   '/admin': typeof LayoutAdminRoute
   '/knowledge': typeof LayoutKnowledgeRoute
   '/mcp-servers': typeof LayoutMcpServersRoute
+  '/plugin-dev': typeof LayoutPluginDevRoute
   '/plugins': typeof LayoutPluginsRoute
   '/settings': typeof LayoutSettingsRoute
   '/skills': typeof LayoutSkillsRoute
@@ -190,6 +198,7 @@ export interface FileRoutesById {
   '/_layout/items': typeof LayoutItemsRouteWithChildren
   '/_layout/knowledge': typeof LayoutKnowledgeRoute
   '/_layout/mcp-servers': typeof LayoutMcpServersRoute
+  '/_layout/plugin-dev': typeof LayoutPluginDevRoute
   '/_layout/plugins': typeof LayoutPluginsRoute
   '/_layout/robots': typeof LayoutRobotsRouteWithChildren
   '/_layout/settings': typeof LayoutSettingsRoute
@@ -215,6 +224,7 @@ export interface FileRouteTypes {
     | '/items'
     | '/knowledge'
     | '/mcp-servers'
+    | '/plugin-dev'
     | '/plugins'
     | '/robots'
     | '/settings'
@@ -234,6 +244,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/knowledge'
     | '/mcp-servers'
+    | '/plugin-dev'
     | '/plugins'
     | '/settings'
     | '/skills'
@@ -256,6 +267,7 @@ export interface FileRouteTypes {
     | '/_layout/items'
     | '/_layout/knowledge'
     | '/_layout/mcp-servers'
+    | '/_layout/plugin-dev'
     | '/_layout/plugins'
     | '/_layout/robots'
     | '/_layout/settings'
@@ -347,6 +359,13 @@ declare module '@tanstack/react-router' {
       path: '/plugins'
       fullPath: '/plugins'
       preLoaderRoute: typeof LayoutPluginsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/plugin-dev': {
+      id: '/_layout/plugin-dev'
+      path: '/plugin-dev'
+      fullPath: '/plugin-dev'
+      preLoaderRoute: typeof LayoutPluginDevRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/mcp-servers': {
@@ -476,6 +495,7 @@ interface LayoutRouteChildren {
   LayoutItemsRoute: typeof LayoutItemsRouteWithChildren
   LayoutKnowledgeRoute: typeof LayoutKnowledgeRoute
   LayoutMcpServersRoute: typeof LayoutMcpServersRoute
+  LayoutPluginDevRoute: typeof LayoutPluginDevRoute
   LayoutPluginsRoute: typeof LayoutPluginsRoute
   LayoutRobotsRoute: typeof LayoutRobotsRouteWithChildren
   LayoutSettingsRoute: typeof LayoutSettingsRoute
@@ -489,6 +509,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutItemsRoute: LayoutItemsRouteWithChildren,
   LayoutKnowledgeRoute: LayoutKnowledgeRoute,
   LayoutMcpServersRoute: LayoutMcpServersRoute,
+  LayoutPluginDevRoute: LayoutPluginDevRoute,
   LayoutPluginsRoute: LayoutPluginsRoute,
   LayoutRobotsRoute: LayoutRobotsRouteWithChildren,
   LayoutSettingsRoute: LayoutSettingsRoute,

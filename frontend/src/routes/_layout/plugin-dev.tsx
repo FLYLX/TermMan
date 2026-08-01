@@ -1,15 +1,13 @@
 import { Code2, Copy, Check, Terminal, MessageSquare, Server, Zap } from "lucide-react"
 import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { useI18n } from "@/components/locale-provider"
 import { createFileRoute } from "@tanstack/react-router"
 
 export const Route = createFileRoute("/_layout/plugin-dev")({
   component: PluginDevGuide,
 })
 
-function CodeBlock({ code, lang = "python" }: { code: string; lang?: string }) {
+function CodeBlock({ code }: { code: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <div className="relative">
@@ -27,7 +25,6 @@ function CodeBlock({ code, lang = "python" }: { code: string; lang?: string }) {
 }
 
 function PluginDevGuide() {
-  const { t } = useI18n()
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <div className="space-y-2">
@@ -263,7 +260,7 @@ async def handle_discord_message(message: str, channel_id: str, user_id: str):
 │   └── server.py          # DiscordMCPServer (send/sleep 工具)
 ├── contracts.py           # DiscordReplyTarget
 ├── prompts.py             # Discord 专属 prompt 文本
-└── api.py                 # Discord 管理 API"} />
+└── api.py                 # Discord 管理 API`} />
         </CardContent>
       </Card>
 
