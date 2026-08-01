@@ -3,8 +3,6 @@ import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from app.plugins.robot.memory_scope import memory_content_is_question_like
-from app.plugins.robot.prompts import ROBOT_MESSAGING_COMPAT_SKILL_IDS
 from app.services.agent.history.chat import (
     SESSION_SUMMARY_TYPE,
     get_chat_messages,
@@ -13,6 +11,11 @@ from app.services.agent.integrations import (
     annotate_integration_history_events,
     build_integration_history_prompt,
     integration_history_event_matches_scopes,
+)
+from app.services.agent.integrations.hooks import (
+    build_integration_source_route,
+    integration_filter_skills,
+    integration_memory_scope_rank,
 )
 from app.services.agent.knowledge.service import knowledge_base_service
 from app.services.agent.memory.vector_store import MEMORY_TYPES, vector_store
@@ -162,19 +165,11 @@ def _build_skill_prompt(
             if forced_skill is not None:
                 skills.append(forced_skill)
                 existing_skill_ids.add(forced_skill.skill_id)
-    robot_context = getattr(agent, "_context", None)
-    robot_prompt_active = bool(
-        str(getattr(robot_context, "robot_id", "") or "").strip()
-    )
+    skills = integration_filter_skills(skills, agent)
     for skill in skills:
         if skill.category in {"system", "persona"}:
             continue
         if not (skill.action and skill.action.prompt):
-            continue
-        # The robot integration system prompt already carries the QQ
-        # messaging rules on QQ turns; injecting the skill again would
-        # duplicate them.
-        if robot_prompt_active and skill.skill_id in ROBOT_MESSAGING_COMPAT_SKILL_IDS:
             continue
         prompt_parts.append(skill.action.prompt)
 
@@ -218,52 +213,26 @@ def _looks_like_preference_memory(memory: dict[str, Any]) -> bool:
     return any(marker.lower() in content for marker in PREFERENCE_LIKE_MEMORY_MARKERS)
 
 
-def _robot_memory_scope_rank(agent: "Agent | None", memory: dict[str, Any]) -> int:
-    metadata = memory.get("metadata") or {}
-    if not isinstance(metadata, dict):
-        metadata = {}
-
-    has_robot_scope = bool(
-        str(metadata.get("robot_id") or "").strip()
-        or str(metadata.get("robot_conversation_key") or "").strip()
-        or str(metadata.get("conversation_key") or "").strip()
-        or str(metadata.get("speaker_global_key") or "").strip()
-        or str(metadata.get("speaker_key") or "").strip()
-        or str(metadata.get("memory_scope") or "").strip()
+def _is_question_like(content: str) -> bool:
+    normalized = str(content or "").strip()
+    if not normalized:
+        return False
+    if "?" in normalized or "\uff1f" in normalized:
+        return True
+    import re as _re
+    payload = _re.sub(r"^[^:\uff1a\n]{1,100}[:\uff1a]\s*", "", normalized)
+    return bool(
+        _re.match(
+            r"^(?:\u8c01|\u8c01\u662f|\u8fd8\u6709\u8c01|\u54ea\u4e9b|\u54ea\u4e2a|\u4ec0\u4e48|\u600e\u4e48|\u4e3a\u4ec0\u4e48|\u662f\u5426|\u662f\u4e0d\u662f|\u8bb0\u5f97|\u77e5\u9053)",
+            payload,
+        )
     )
-    context = getattr(agent, "_context", None) if agent is not None else None
-    robot_id = str(getattr(context, "robot_id", "") or "").strip()
-    conversation_key = str(getattr(context, "robot_conversation_key", "") or "").strip()
-    sender_key = str(getattr(context, "robot_sender_key", "") or "").strip()
 
-    if not robot_id and not conversation_key:
-        return -1 if has_robot_scope else 1
 
-    try:
-        from app.plugins.robot.memory_scope import (
-            memory_scope_rank,
-            speaker_global_key_from_context,
-        )
-
-        return memory_scope_rank(
-            memory,
-            robot_id=robot_id,
-            conversation_key=conversation_key,
-            speaker_global_key=speaker_global_key_from_context(sender_key),
-        )
-    except Exception as exc:
-        logger.debug("[PromptBuilder] Failed to rank robot memory scope: %s", exc)
-        memory_conversation = str(
-            metadata.get("robot_conversation_key")
-            or metadata.get("conversation_key")
-            or ""
-        ).strip()
-        if memory_conversation:
-            return 4 if memory_conversation == conversation_key else -1
-        memory_robot_id = str(metadata.get("robot_id") or "").strip()
-        if memory_robot_id:
-            return 2 if memory_robot_id == robot_id else -1
-        return 1
+def _memory_scope_rank(agent: "Agent | None", memory: dict[str, Any]) -> int:
+    if agent is None:
+        return 0
+    return integration_memory_scope_rank(agent, memory)
 
 
 def _is_recent_memory(memory: dict[str, Any], days: int = ALWAYS_ON_RECENT_DAYS) -> bool:
@@ -348,7 +317,7 @@ def _collect_always_on_memories(
             and _is_sticky_long_term_memory(memory)
             and not _is_memory_expired(memory)
             and not _is_inactive_status_memory(memory)
-            and _robot_memory_scope_rank(agent, memory) >= 0
+            and _memory_scope_rank(agent, memory) >= 0
         ]
         collected.extend(
             sorted(
@@ -366,7 +335,7 @@ def _collect_always_on_memories(
 
 
 def _query_memory_scope_usable(agent: "Agent | None", memory: dict[str, Any]) -> bool:
-    return _robot_memory_scope_rank(agent, memory) >= 0
+    return _memory_scope_rank(agent, memory) >= 0
 
 
 def _normalize_content(value: str) -> str:
@@ -530,7 +499,7 @@ def _collect_long_term_memories(
         and _memory_type(memory) in allowed_types
         and not _is_memory_expired(memory)
         and not _is_inactive_status_memory(memory)
-        and not memory_content_is_question_like(str(memory.get("content") or ""))
+        and not _is_question_like(str(memory.get("content") or ""))
         and _query_memory_scope_usable(agent, memory)
     ]
 
@@ -570,7 +539,7 @@ def _collect_long_term_memories(
         for memory in memories:
             if _memory_type(memory) not in allowed_types:
                 continue
-            if memory_content_is_question_like(str(memory.get("content") or "")):
+            if _is_question_like(str(memory.get("content") or "")):
                 continue
             if not _query_memory_scope_usable(agent, memory):
                 continue
@@ -695,7 +664,7 @@ def _select_long_term_memories(
         and _memory_type(memory) in allowed_types
         and not _is_memory_expired(memory)
         and not _is_inactive_status_memory(memory)
-        and not memory_content_is_question_like(str(memory.get("content") or ""))
+        and not _is_question_like(str(memory.get("content") or ""))
         and (
             (
                 memory.get("distance") is None
@@ -813,43 +782,23 @@ def _build_current_source_route_context(
     *,
     source: str,
 ) -> str:
-    context = getattr(agent, "_context", None)
-    robot_id = str(getattr(context, "robot_id", "") or "").strip()
-    robot_conversation_key = str(
-        getattr(context, "robot_conversation_key", "") or ""
-    ).strip()
-    if robot_id:
-        route = robot_conversation_key or "current QQ conversation"
-        # Reply discipline (one send per input, no restating, sender identity,
-        # etc.) lives in the robot messaging prompt; keep only source-routing
-        # facts here so each rule exists in exactly one place.
-        return (
-            f"{CURRENT_SOURCE_ROUTE_LABEL}:\n"
-            f"- current source: QQ robot conversation ({route})\n"
-            "- reply contract: reply to the current QQ conversation by outputting the reply text directly; the system auto-delivers it back to this conversation. Only call mcp_robot_send_message when sending to a different conversation or multiple targets. Do not leave the answer only in the TermMan web chat.\n"
-            "- reply only to the source: do NOT broadcast the answer to the terminal "
-            "or game server console (e.g., say/tell commands). The user must explicitly "
-            "ask to '在服务器说/广播/公告' to trigger a console say; reporting a task result "
-            "(e.g. 服务器开好了) is NOT a reason to say in console—report only to the QQ/web source."
-        )
+    integration_route = build_integration_source_route(agent, source=source)
+    if integration_route:
+        return integration_route
 
     if source == "terminal":
         return (
             f"{CURRENT_SOURCE_ROUTE_LABEL}:\n"
-            "- current source: terminal/server output, not QQ and not normal web chat.\n"
+            "- current source: terminal/server output.\n"
             "- reply contract: if a server player/user is talking to the agent, reply "
             "back through the same terminal/server using mcp_local_execute_command "
             "with an appropriate say/tell/console command.\n"
-            "- do not use QQ tools unless a separate pending-source context explicitly "
-            "says this terminal feedback belongs to a QQ-started request."
         )
 
     return (
         f"{CURRENT_SOURCE_ROUTE_LABEL}:\n"
         "- current source: TermMan web chat.\n"
         "- reply contract: answer in the normal assistant response for this web chat.\n"
-        "- do not use QQ tools unless the user explicitly asks to send a message to "
-        "a specific QQ target."
     )
 
 

@@ -701,6 +701,139 @@ class RobotAgentIntegration:
 
         return {ROBOT_MCP_SERVER_NAME: factory}
 
+    def build_source_route(self, agent: Agent, *, source: str) -> str:
+        context = _robot_context(agent)
+        if context is None:
+            return ""
+        robot_id = str(getattr(context, "robot_id", "") or "").strip()
+        if not robot_id:
+            return ""
+        robot_conversation_key = str(
+            getattr(context, "robot_conversation_key", "") or ""
+        ).strip()
+        route = robot_conversation_key or "current QQ conversation"
+        return (
+            "Current source route:\n"
+            f"- current source: QQ robot conversation ({route})\n"
+            "- reply contract: reply to the current QQ conversation by outputting the reply text directly; the system auto-delivers it back to this conversation. Only call mcp_robot_send_message when sending to a different conversation or multiple targets. Do not leave the answer only in the TermMan web chat.\n"
+            "- reply only to the source: do NOT broadcast the answer to the terminal "
+            "or game server console (e.g., say/tell commands). The user must explicitly "
+            "ask to '在服务器说/广播/公告' to trigger a console say; reporting a task result "
+            "(e.g. 服务器开好了) is NOT a reason to say in console—report only to the QQ/web source."
+        )
+
+    def build_ticket_prompt(self, ticket: Any) -> str:
+        source_type = str(getattr(ticket, "source_type", "") or "").strip().lower()
+        if source_type != "qq":
+            return ""
+        conv_key = str(getattr(ticket, "conversation_key", "") or "")
+        target_hint = ""
+        if ":" in conv_key:
+            parts = conv_key.split(":", 1)
+            target_hint = (
+                f"- To send: call `mcp_robot_send_message` with "
+                f"target_type=\"{parts[0]}\" target_id=\"{parts[1]}\". "
+                f"This works even without active QQ context.\n"
+            )
+        ticket_id = str(getattr(ticket, "ticket_id", "") or "")
+        return (
+            "Authoritative reply ticket:\n"
+            f"- ticket_id: {ticket_id}\n"
+            f"- source: QQ ({conv_key or 'current conversation'})\n"
+            f"{target_hint}"
+            "- REPLY ROUTING: output your reply text directly and the system "
+            "auto-delivers it back to this QQ conversation. Only call "
+            "`mcp_robot_send_message` when sending to a different conversation "
+            "or multiple targets. Do not leave answers only in TermMan.\n"
+            "- If the user asks you to send elsewhere, do it then report back here.\n"
+            "- Do not duplicate: if already sent via tool, do not restate in final text.\n"
+        )
+
+    def memory_scope_rank(self, agent: Agent, memory: dict[str, Any]) -> int:
+        context = _robot_context(agent)
+        metadata = memory.get("metadata") if isinstance(memory, dict) else {}
+        if not isinstance(metadata, dict):
+            return 0
+        has_robot_scope = bool(
+            str(metadata.get("robot_id") or "").strip()
+            or str(metadata.get("robot_conversation_key") or "").strip()
+        )
+        if context is None:
+            return -1 if has_robot_scope else 0
+        robot_id = str(getattr(context, "robot_id", "") or "").strip()
+        conversation_key = str(getattr(context, "robot_conversation_key", "") or "").strip()
+        sender_key = str(getattr(context, "robot_sender_key", "") or "").strip()
+        if not robot_id and not conversation_key:
+            return -1 if has_robot_scope else 0
+        try:
+            from app.plugins.robot.memory_scope import (
+                memory_content_is_question_like,
+                memory_scope_rank as plugin_memory_scope_rank,
+            )
+
+            return plugin_memory_scope_rank(
+                metadata=metadata,
+                robot_id=robot_id,
+                conversation_key=conversation_key,
+                sender_key=sender_key,
+            )
+        except Exception:
+            return 0
+
+    def filter_skills(
+        self,
+        skills: list[Any],
+        agent: Agent,
+    ) -> list[Any]:
+        context = _robot_context(agent)
+        if context is None:
+            return skills
+        robot_prompt_active = bool(
+            str(getattr(context, "robot_id", "") or "").strip()
+        )
+        if not robot_prompt_active:
+            return skills
+        return [
+            skill for skill in skills
+            if getattr(skill, "skill_id", "") not in ROBOT_MESSAGING_COMPAT_SKILL_IDS
+        ]
+
+    def deliver_ticket(self, ticket: Any, text: str) -> bool:
+        source_type = str(getattr(ticket, "source_type", "") or "").strip().lower()
+        if source_type != "qq":
+            return False
+        from app.plugins.robot.bridge_client import robot_bridge_client
+        from app.plugins.robot.contracts import RobotReplyTarget
+
+        reply_target_dict = getattr(ticket, "reply_target", None)
+        if not isinstance(reply_target_dict, dict):
+            return False
+        target = RobotReplyTarget.model_validate(reply_target_dict)
+        robot_id = str(getattr(ticket, "robot_id", "") or "")
+        if not robot_id:
+            return False
+        robot_bridge_client.send_message(robot_id, target, text)
+        return True
+
+    def conversation_memory_append(self, ticket: Any, text: str) -> None:
+        source_type = str(getattr(ticket, "source_type", "") or "").strip().lower()
+        if source_type != "qq":
+            return
+        conversation_key = str(getattr(ticket, "conversation_key", "") or "")
+        robot_id = str(getattr(ticket, "robot_id", "") or "")
+        if not conversation_key or not robot_id:
+            return
+        try:
+            from app.plugins.robot.conversation_memory import robot_conversation_memory
+
+            robot_conversation_memory.append_assistant_message(
+                robot_id,
+                conversation_key,
+                text,
+            )
+        except Exception:
+            pass
+
     async def _ensure_messaging_tools(self, agent: Agent) -> bool:
         if not is_robot_plugin_enabled():
             return False

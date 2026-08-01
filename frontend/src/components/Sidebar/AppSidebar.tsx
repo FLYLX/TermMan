@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import {
   BookOpen,
   Bot,
+  Code2,
   Home,
   Layers,
   Package,
@@ -40,6 +41,7 @@ const baseItems: SidebarItem[] = [
   { icon: BookOpen, title: "nav.knowledge", path: "/knowledge" },
   { icon: Package, title: "nav.skills", path: "/skills" },
   { icon: Server, title: "nav.mcpServers", path: "/mcp-servers", feature: "mcp" },
+  { icon: Code2, title: "nav.pluginDev", path: "/plugin-dev" },
 ]
 
 export function AppSidebar() {

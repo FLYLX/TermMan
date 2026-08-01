@@ -667,28 +667,11 @@ class ReplyTicketManager:
                 "or permanently unable to succeed.\n"
                 "- any visible report must be labelled as a scheduled task result.\n"
             )
-        if ticket.source_type == SOURCE_QQ:
-            conv_key = ticket.conversation_key or ""
-            target_hint = ""
-            if ":" in conv_key:
-                parts = conv_key.split(":", 1)
-                target_hint = (
-                    f"- To send: call `mcp_robot_send_message` with "
-                    f"target_type=\"{parts[0]}\" target_id=\"{parts[1]}\". "
-                    f"This works even without active QQ context.\n"
-                )
-            return (
-                "Authoritative reply ticket:\n"
-                f"- ticket_id: {ticket.ticket_id}\n"
-                f"- source: QQ ({conv_key or 'current conversation'})\n"
-                f"{target_hint}"
-                "- REPLY ROUTING: output your reply text directly and the system "
-                "auto-delivers it back to this QQ conversation. Only call "
-                "`mcp_robot_send_message` when sending to a different conversation "
-                "or multiple targets. Do not leave answers only in TermMan.\n"
-                "- If the user asks you to send elsewhere, do it then report back here.\n"
-                "- Do not duplicate: if already sent via tool, do not restate in final text.\n"
-            )
+        from app.services.agent.integrations.hooks import build_integration_ticket_prompt
+
+        integration_prompt = build_integration_ticket_prompt(ticket)
+        if integration_prompt:
+            return integration_prompt
         if ticket.source_type == SOURCE_WEB:
             targets_hint = ""
             if ticket.extra_targets:
@@ -697,9 +680,10 @@ class ReplyTicketManager:
                     for t in ticket.extra_targets
                 )
                 targets_hint = (
-                    f"- QQ TARGETS for this turn: {listed}. 用户明确要求的 QQ 目标，"
-                    "逐个调用 mcp_robot_send_message（显式 target_type/target_id）发送，"
-                    "每个目标都要发到；全部发完后再在这里汇报。\n"
+                    f"- QQ TARGETS for this turn: {listed}. "
+                    "\u7528\u6237\u660e\u786e\u8981\u6c42\u7684 QQ \u76ee\u6807\uff0c"
+                    "\u9010\u4e2a\u8c03\u7528 mcp_robot_send_message\uff08\u663e\u5f0f target_type/target_id\uff09\u53d1\u9001\uff0c"
+                    "\u6bcf\u4e2a\u76ee\u6807\u90fd\u8981\u53d1\u5230\uff1b\u5168\u90e8\u53d1\u5b8c\u540e\u518d\u5728\u8fd9\u91cc\u6c47\u62a5\u3002\n"
                 )
             return (
                 "Authoritative reply ticket:\n"
@@ -771,29 +755,15 @@ class ReplyTicketManager:
         return True
 
     def _deliver_ticket_content(self, ticket: ReplyTicket, text: str) -> None:
-        if ticket.source_type == SOURCE_QQ:
-            from app.plugins.robot.bridge_client import robot_bridge_client
-            from app.plugins.robot.contracts import RobotReplyTarget
-            from app.plugins.robot.conversation_memory import robot_conversation_memory
+        from app.services.agent.integrations.hooks import (
+            deliver_integration_ticket,
+            integration_conversation_memory_append,
+        )
 
-            target = RobotReplyTarget.model_validate(ticket.reply_target)
-            robot_bridge_client.send_message(ticket.robot_id, target, text)
-            if ticket.conversation_key:
-                robot_conversation_memory.append_assistant_message(
-                    ticket.robot_id,
-                    ticket.conversation_key,
-                    text,
-                )
+        if deliver_integration_ticket(ticket, text):
+            integration_conversation_memory_append(ticket, text)
             return
-        if ticket.source_type == SOURCE_TERMINAL:
-            from app.services.socket_pool import InputSDK
 
-            target_player = ticket.terminal_target or ticket.sender_key
-            if not target_player:
-                raise ValueError("terminal player target is missing")
-            if not InputSDK().send(ticket.item_id, f"tell {target_player} {text}\n"):
-                raise RuntimeError("terminal command was not accepted")
-            return
         if ticket.source_type == SOURCE_WEB:
             from app.services.agent.history.chat import append_chat_message
             from app.services.agent.stream_manager import stream_manager
@@ -807,6 +777,7 @@ class ReplyTicketManager:
             )
             stream_manager.broadcast_chat_event(ticket.item_id, event)
             return
+
         raise ValueError(f"unsupported destination type: {ticket.source_type}")
 
     def snapshot(self, item_id: str | None = None) -> list[dict[str, Any]]:

@@ -273,3 +273,78 @@ async def ensure_terminal_alert_integration_tools(
 def clear_terminal_alert_integration_tools(agent: Agent) -> None:
     for integration in get_agent_integrations():
         integration.clear_terminal_alert_tools(agent)
+
+
+def build_integration_source_route(agent: Agent, *, source: str) -> str:
+    for integration in get_agent_integrations():
+        prompt = integration.build_source_route(agent, source=source).strip()
+        if prompt:
+            return prompt
+    return ""
+
+
+def build_integration_ticket_prompt(ticket: Any) -> str:
+    for integration in get_agent_integrations():
+        prompt = integration.build_ticket_prompt(ticket).strip()
+        if prompt:
+            return prompt
+    return ""
+
+
+def integration_memory_scope_rank(agent: Agent, memory: dict[str, Any]) -> int:
+    best = 0
+    for integration in get_agent_integrations():
+        rank = integration.memory_scope_rank(agent, memory)
+        if rank > best:
+            best = rank
+    return best
+
+
+def integration_filter_skills(
+    skills: list[SkillDefinition],
+    agent: Agent,
+) -> list[SkillDefinition]:
+    filtered = skills
+    for integration in get_agent_integrations():
+        filtered = integration.filter_skills(filtered, agent)
+    return filtered
+
+
+def deliver_integration_ticket(ticket: Any, text: str) -> bool:
+    for integration in get_agent_integrations():
+        if integration.deliver_ticket(ticket, text):
+            return True
+    return False
+
+
+def integration_conversation_memory_append(ticket: Any, text: str) -> None:
+    for integration in get_agent_integrations():
+        integration.conversation_memory_append(ticket, text)
+
+
+def parse_integration_inbound_message(raw: dict[str, Any]) -> Any:
+    for integration in get_agent_integrations():
+        parsed = integration.parse_inbound_message(raw)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def notify_integration_terminal_output(
+    item_id: str,
+    content: str,
+    *,
+    source: str,
+) -> None:
+    for integration in get_agent_integrations():
+        integration.on_terminal_output(item_id, content, source=source)
+
+
+def notify_integration_item_event(
+    item_id: str,
+    event: str,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    payload = payload or {}
+    for integration in get_agent_integrations():
+        integration.on_item_event(item_id, event, payload)

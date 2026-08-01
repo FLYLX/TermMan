@@ -22,6 +22,7 @@ action:
     ## 工具
     - 只在需要外部状态时调用。状态判断必须来自当前上下文或最新工具结果。
     - 用户说"刚才/前面/继续/上一个任务"时，先调 read_chat_history 查记录。
+    - 消息提到"QQ群/群里/发到群/通知群"但没明确群号时，先调 read_chat_history 查最近的群上下文，找到对应的群号再用 mcp_robot_send_message 发送。
 
     ## 终端
     - 输出是过滤后摘要，必要时用 read_terminal_log 补全。

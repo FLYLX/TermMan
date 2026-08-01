@@ -121,6 +121,28 @@ class AgentIntegration(Protocol):
 
     def builtin_mcp_server_factories(self) -> dict[str, MCPServerFactory]: ...
 
+    def build_source_route(self, agent: Agent, *, source: str) -> str: ...
+
+    def build_ticket_prompt(self, ticket: Any) -> str: ...
+
+    def memory_scope_rank(self, agent: Agent, memory: dict[str, Any]) -> int: ...
+
+    def filter_skills(
+        self,
+        skills: list[SkillDefinition],
+        agent: Agent,
+    ) -> list[SkillDefinition]: ...
+
+    def deliver_ticket(self, ticket: Any, text: str) -> bool: ...
+
+    def parse_inbound_message(self, raw: dict[str, Any]) -> Any: ...
+
+    def conversation_memory_append(self, ticket: Any, text: str) -> None: ...
+
+    def on_terminal_output(self, item_id: str, content: str, *, source: str) -> None: ...
+
+    def on_item_event(self, item_id: str, event: str, payload: dict[str, Any]) -> None: ...
+
 
 class NoopAgentIntegration:
     name = "noop"
@@ -254,6 +276,37 @@ class NoopAgentIntegration:
 
     def builtin_mcp_server_factories(self) -> dict[str, MCPServerFactory]:
         return {}
+
+    def build_source_route(self, agent: Agent, *, source: str) -> str:
+        return ""
+
+    def build_ticket_prompt(self, ticket: Any) -> str:
+        return ""
+
+    def memory_scope_rank(self, agent: Agent, memory: dict[str, Any]) -> int:
+        return 0
+
+    def filter_skills(
+        self,
+        skills: list[SkillDefinition],
+        agent: Agent,
+    ) -> list[SkillDefinition]:
+        return skills
+
+    def deliver_ticket(self, ticket: Any, text: str) -> bool:
+        return False
+
+    def parse_inbound_message(self, raw: dict[str, Any]) -> Any:
+        return None
+
+    def conversation_memory_append(self, ticket: Any, text: str) -> None:
+        return None
+
+    def on_terminal_output(self, item_id: str, content: str, *, source: str) -> None:
+        return None
+
+    def on_item_event(self, item_id: str, event: str, payload: dict[str, Any]) -> None:
+        return None
 
 
 @dataclass(frozen=True)
