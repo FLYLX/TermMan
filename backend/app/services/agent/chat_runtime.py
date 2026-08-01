@@ -169,6 +169,9 @@ async def _collect_chat_response_unserialized(
         }
         setup_integration_chat_contexts(agent, integration_contexts)
         await ensure_integration_chat_context_tools(agent, integration_contexts)
+        logger.info("[ChatRuntime] robot context registered: robot_id=%s source=qq", robot_id)
+    else:
+        logger.warning("[ChatRuntime] robot context NOT registered: robot_id=%s sender=%s target=%s -> source=web", robot_id, robot_sender_key, type(robot_reply_target).__name__)
 
     content = ""
     error_message = ""
