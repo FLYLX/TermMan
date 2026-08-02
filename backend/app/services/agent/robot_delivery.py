@@ -7,28 +7,26 @@ ROBOT_QQ_REPLY_EVENT_TYPE = "agent_qq_reply"
 
 
 def _raw_robot_message_texts(tool_args: dict[str, Any]) -> list[str]:
-    from app.plugins.robot.internal_trace import normalize_robot_message_text
-
     messages = tool_args.get("messages")
     if isinstance(messages, list):
-        return [normalize_robot_message_text(message) for message in messages]
+        return [str(message or "") for message in messages]
 
     text = tool_args.get("text")
     if text is None:
         return []
-    return [normalize_robot_message_text(text)]
+    return [str(text)]
 
 
 def _compact_visible_text(value: str) -> str:
     try:
-        from app.plugins.robot.internal_trace import (
-            compact_robot_visible_message_text,
-            sanitize_robot_visible_text,
+        from app.services.agent.integrations.hooks import (
+            sanitize_integration_visible_text,
         )
 
-        return compact_robot_visible_message_text(sanitize_robot_visible_text(value))
+        sanitized = sanitize_integration_visible_text(value)
     except Exception:
-        return " ".join(str(value or "").split())
+        sanitized = str(value or "")
+    return " ".join(sanitized.split())
 
 
 def robot_reply_event_content(

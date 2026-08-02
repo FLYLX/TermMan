@@ -348,3 +348,115 @@ def notify_integration_item_event(
     payload = payload or {}
     for integration in get_agent_integrations():
         integration.on_item_event(item_id, event, payload)
+
+
+def is_integration_delivery_event(payload: dict[str, Any]) -> bool:
+    return any(
+        integration.is_delivery_event(payload)
+        for integration in get_agent_integrations()
+    )
+
+
+def is_integration_internal_trace(text: str) -> bool:
+    return any(
+        integration.is_internal_trace(text)
+        for integration in get_agent_integrations()
+    )
+
+
+def is_integration_read_only_result(text: str) -> bool:
+    return any(
+        integration.is_read_only_result(text)
+        for integration in get_agent_integrations()
+    )
+
+
+def sanitize_integration_visible_text(text: str) -> str:
+    result = text
+    for integration in get_agent_integrations():
+        result = integration.sanitize_visible_text(result)
+    return result
+
+
+def get_integration_context_by_token(token: str) -> Any:
+    for integration in get_agent_integrations():
+        ctx = integration.get_context_by_token(token)
+        if ctx is not None:
+            return ctx
+    return None
+
+
+def reset_integration_delivery_tracker(key: str) -> None:
+    for integration in get_agent_integrations():
+        integration.reset_delivery_tracker(key)
+
+
+def extract_integration_targets_from_text(
+    *, item_id: str, user_message: str, final_text: str, delivery_key: str
+) -> None:
+    for integration in get_agent_integrations():
+        integration.extract_targets_from_text(
+            item_id=item_id,
+            user_message=user_message,
+            final_text=final_text,
+            delivery_key=delivery_key,
+        )
+
+
+def is_integration_conversation_processing(
+    integration_id: str, conversation_key: str
+) -> bool:
+    return any(
+        integration.is_conversation_processing(integration_id, conversation_key)
+        for integration in get_agent_integrations()
+    )
+
+
+def register_integration_background_job_reply(
+    *, integration_id: str, item_id: str, sender_key: str,
+    reply_target: dict, conversation_key: str, conversation_generation: int,
+) -> str:
+    for integration in get_agent_integrations():
+        result = integration.register_background_job_reply(
+            integration_id=integration_id,
+            item_id=item_id,
+            sender_key=sender_key,
+            reply_target=reply_target,
+            conversation_key=conversation_key,
+            conversation_generation=conversation_generation,
+        )
+        if result:
+            return result
+    return ""
+
+
+def enqueue_integration_background_job_result(
+    *, integration_id: str, item_id: str, reply_target: dict,
+    sender_key: str, conversation_key: str, conversation_generation: int,
+    reply_requires_awake: bool, reply_ticket_id: str, message: str,
+) -> bool:
+    for integration in get_agent_integrations():
+        if integration.enqueue_background_job_result(
+            integration_id=integration_id,
+            item_id=item_id,
+            reply_target=reply_target,
+            sender_key=sender_key,
+            conversation_key=conversation_key,
+            conversation_generation=conversation_generation,
+            reply_requires_awake=reply_requires_awake,
+            reply_ticket_id=reply_ticket_id,
+            message=message,
+        ):
+            return True
+    return False
+
+
+def clear_integration_background_job_reply(
+    *, integration_id: str, conversation_key: str, pending_reply_id: str,
+) -> None:
+    for integration in get_agent_integrations():
+        integration.clear_background_job_reply(
+            integration_id=integration_id,
+            conversation_key=conversation_key,
+            pending_reply_id=pending_reply_id,
+        )

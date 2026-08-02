@@ -834,6 +834,109 @@ class RobotAgentIntegration:
         except Exception:
             pass
 
+    def is_delivery_event(self, payload: dict[str, Any]) -> bool:
+        event_type = str(payload.get("type") or "").strip().lower()
+        tool_name = str(payload.get("tool_name") or "").strip().lower()
+        return (
+            event_type == "agent_qq_reply"
+            or tool_name == "reply_ticket"
+            or tool_name == "mcp_robot_send_message"
+        )
+
+    def is_internal_trace(self, text: str) -> bool:
+        from app.plugins.robot.internal_trace import is_robot_internal_trace_text
+
+        return is_robot_internal_trace_text(text)
+
+    def is_read_only_result(self, text: str) -> bool:
+        from app.plugins.robot.internal_trace import is_robot_read_only_tool_result
+
+        return is_robot_read_only_tool_result(text)
+
+    def sanitize_visible_text(self, text: str) -> str:
+        from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+
+        return sanitize_robot_visible_text(text)
+
+    def get_context_by_token(self, token: str) -> Any:
+        from app.plugins.robot.mcp.context import get_robot_mcp_context
+
+        return get_robot_mcp_context(token)
+
+    def reset_delivery_tracker(self, key: str) -> None:
+        from app.plugins.robot.mcp.server import RobotMCPServer
+
+        RobotMCPServer.reset_delivered_targets(key)
+
+    def extract_targets_from_text(
+        self, *, item_id: str, user_message: str, final_text: str, delivery_key: str
+    ) -> None:
+        from app.plugins.robot.explicit_target_backfill import (
+            run_explicit_target_backfill,
+        )
+
+        run_explicit_target_backfill(
+            item_id=item_id,
+            user_message=user_message,
+            final_text=final_text,
+            delivery_key=delivery_key,
+        )
+
+    def is_conversation_processing(self, integration_id: str, conversation_key: str) -> bool:
+        from app.plugins.robot.service import robot_service
+
+        return robot_service.conversation_is_processing(integration_id, conversation_key)
+
+    def register_background_job_reply(
+        self, *, integration_id: str, item_id: str, sender_key: str,
+        reply_target: dict, conversation_key: str, conversation_generation: int,
+    ) -> str:
+        from app.plugins.robot.service import robot_service
+
+        return robot_service.register_background_job_reply(
+            robot_id=integration_id,
+            item_id=item_id,
+            sender_key=sender_key,
+            reply_target=reply_target,
+            conversation_key=conversation_key,
+            conversation_generation=conversation_generation,
+        )
+
+    def enqueue_background_job_result(
+        self, *, integration_id: str, item_id: str, reply_target: dict,
+        sender_key: str, conversation_key: str, conversation_generation: int,
+        reply_requires_awake: bool, reply_ticket_id: str, message: str,
+    ) -> bool:
+        from app.plugins.robot.service import robot_service
+
+        return robot_service.enqueue_background_job_result(
+            robot_id=integration_id,
+            item_id=item_id,
+            reply_target=reply_target,
+            sender_key=sender_key,
+            conversation_key=conversation_key,
+            conversation_generation=conversation_generation,
+            reply_requires_awake=reply_requires_awake,
+            reply_ticket_id=reply_ticket_id,
+            message=message,
+        )
+
+    def clear_background_job_reply(
+        self, *, integration_id: str, conversation_key: str, pending_reply_id: str,
+    ) -> None:
+        from app.plugins.robot.service import robot_service
+
+        robot_service.clear_background_job_reply(
+            robot_id=integration_id,
+            conversation_key=conversation_key,
+            pending_reply_id=pending_reply_id,
+        )
+
+    def reap_stuck_dispatch_jobs(self) -> int:
+        from app.plugins.robot.service import robot_service
+
+        return robot_service.reap_stuck_dispatch_jobs()
+
     async def _ensure_messaging_tools(self, agent: Agent) -> bool:
         if not is_robot_plugin_enabled():
             return False

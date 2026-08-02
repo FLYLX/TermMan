@@ -949,6 +949,14 @@ class TaskWorkflowManager:
                 step.status = "cancelled"
         workflow.updated_at = _utcnow()
         _persist_workflow(workflow)
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager as _rtm
+
+            for tid in [workflow.reply_ticket_id] + list(workflow.reply_ticket_ids):
+                if tid:
+                    _rtm.update_ticket_plan(tid, [])
+        except Exception:
+            pass
 
     def update(
         self,

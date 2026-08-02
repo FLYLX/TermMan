@@ -530,12 +530,11 @@ def run_once(now: datetime | None = None) -> dict[str, int]:
     except Exception:
         logger.exception("[TaskWatchdog] Waiting-job reconciliation failed")
     try:
-        from app.plugins.robot import is_robot_plugin_enabled
+        from app.services.agent.integrations.registry import get_agent_integrations
 
-        if is_robot_plugin_enabled():
-            from app.plugins.robot.service import robot_service
-
-            stats["dispatch_reaped"] = robot_service.reap_stuck_dispatch_jobs()
+        for integration in get_agent_integrations():
+            if hasattr(integration, "reap_stuck_dispatch_jobs"):
+                stats["dispatch_reaped"] = integration.reap_stuck_dispatch_jobs()
     except Exception:
         logger.exception("[TaskWatchdog] Dispatch reaper failed")
     with task_workflow_manager._lock:

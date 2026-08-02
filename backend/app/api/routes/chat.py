@@ -1361,6 +1361,7 @@ def _generate_stream_unserialized(
     confirmed_external_delivery_to_qq = False
     delivery_retry_used_by_integration: dict[str, bool] = {}
     tool_loop_recovery_used = False
+    pending_async_delivery = False
     thinking_only_retry_used = False
     workflow_correction_used = False
     delivery_retry_used = False
@@ -1755,6 +1756,15 @@ def _generate_stream_unserialized(
                         yield _to_sse({"done": True})
                         return
 
+                    if pending_async_delivery:
+                        logger.info(
+                            "[Chat] Suppressed final response: async tool results pending for item %s, will deliver on callback",
+                            item_id,
+                        )
+                        _broadcast_agent_status(item_id, "idle")
+                        yield _to_sse({"done": True})
+                        return
+
                     _complete_agent_task_plan(planned_task_runtime)
                     ticket_events = _deliver_reply_ticket_final_response(
                         agent=agent,
@@ -2069,6 +2079,8 @@ def _generate_stream_unserialized(
                     tool_name,
                     result_text,
                 )
+                if command_dispatch_pending or is_background_job_started_result(result):
+                    pending_async_delivery = True
                 stop_after_final_robot_delivery = False
                 if result_text and fallback_is_delivery_result(result_text):
                     if tool_name == ROBOT_SEND_TOOL_NAME:

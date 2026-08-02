@@ -143,6 +143,41 @@ class AgentIntegration(Protocol):
 
     def on_item_event(self, item_id: str, event: str, payload: dict[str, Any]) -> None: ...
 
+    def is_delivery_event(self, payload: dict[str, Any]) -> bool: ...
+
+    def is_internal_trace(self, text: str) -> bool: ...
+
+    def is_read_only_result(self, text: str) -> bool: ...
+
+    def sanitize_visible_text(self, text: str) -> str: ...
+
+    def get_context_by_token(self, token: str) -> Any: ...
+
+    def reset_delivery_tracker(self, key: str) -> None: ...
+
+    def extract_targets_from_text(
+        self, *, item_id: str, user_message: str, final_text: str, delivery_key: str
+    ) -> None: ...
+
+    def is_conversation_processing(self, integration_id: str, conversation_key: str) -> bool: ...
+
+    def register_background_job_reply(
+        self, *, integration_id: str, item_id: str, sender_key: str,
+        reply_target: dict, conversation_key: str, conversation_generation: int,
+    ) -> str: ...
+
+    def enqueue_background_job_result(
+        self, *, integration_id: str, item_id: str, reply_target: dict,
+        sender_key: str, conversation_key: str, conversation_generation: int,
+        reply_requires_awake: bool, reply_ticket_id: str, message: str,
+    ) -> bool: ...
+
+    def clear_background_job_reply(
+        self, *, integration_id: str, conversation_key: str, pending_reply_id: str,
+    ) -> None: ...
+
+    def reap_stuck_dispatch_jobs(self) -> int: ...
+
 
 class NoopAgentIntegration:
     name = "noop"
@@ -307,6 +342,53 @@ class NoopAgentIntegration:
 
     def on_item_event(self, item_id: str, event: str, payload: dict[str, Any]) -> None:
         return None
+
+    def is_delivery_event(self, payload: dict[str, Any]) -> bool:
+        return False
+
+    def is_internal_trace(self, text: str) -> bool:
+        return False
+
+    def is_read_only_result(self, text: str) -> bool:
+        return False
+
+    def sanitize_visible_text(self, text: str) -> str:
+        return text
+
+    def get_context_by_token(self, token: str) -> Any:
+        return None
+
+    def reset_delivery_tracker(self, key: str) -> None:
+        return None
+
+    def extract_targets_from_text(
+        self, *, item_id: str, user_message: str, final_text: str, delivery_key: str
+    ) -> None:
+        return None
+
+    def is_conversation_processing(self, integration_id: str, conversation_key: str) -> bool:
+        return False
+
+    def register_background_job_reply(
+        self, *, integration_id: str, item_id: str, sender_key: str,
+        reply_target: dict, conversation_key: str, conversation_generation: int,
+    ) -> str:
+        return ""
+
+    def enqueue_background_job_result(
+        self, *, integration_id: str, item_id: str, reply_target: dict,
+        sender_key: str, conversation_key: str, conversation_generation: int,
+        reply_requires_awake: bool, reply_ticket_id: str, message: str,
+    ) -> bool:
+        return False
+
+    def clear_background_job_reply(
+        self, *, integration_id: str, conversation_key: str, pending_reply_id: str,
+    ) -> None:
+        return None
+
+    def reap_stuck_dispatch_jobs(self) -> int:
+        return 0
 
 
 @dataclass(frozen=True)

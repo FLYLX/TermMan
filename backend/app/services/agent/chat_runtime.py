@@ -21,6 +21,12 @@ from app.services.agent.integrations import (
     send_integration_final_response_fallback,
     setup_integration_chat_contexts,
 )
+from app.services.agent.integrations.hooks import (
+    is_integration_delivery_event,
+    sanitize_integration_visible_text,
+    is_integration_internal_trace,
+    is_integration_read_only_result,
+)
 from app.services.agent.persona_guard import enforce_persona_identity_response
 
 logger = logging.getLogger(__name__)
@@ -37,9 +43,7 @@ class ChatResponseResult:
 
 
 def _looks_like_internal_tool_trace(value: str) -> bool:
-    from app.plugins.robot.internal_trace import is_robot_internal_trace_text
-
-    return is_robot_internal_trace_text(value)
+    return is_integration_internal_trace(str(value or ""))
 
 
 def _is_integration_internal_response(value: str) -> bool:
@@ -50,18 +54,11 @@ def _is_integration_internal_response(value: str) -> bool:
         normalized
     ):
         return True
-    try:
-        from app.plugins.robot.agent.integration import is_robot_read_only_tool_result
-
-        return is_robot_read_only_tool_result(normalized)
-    except Exception:
-        return False
+    return is_integration_read_only_result(normalized)
 
 
 def _sanitize_integration_response(value: str) -> str:
-    from app.plugins.robot.internal_trace import sanitize_robot_visible_text
-
-    return sanitize_robot_visible_text(value)
+    return sanitize_integration_visible_text(str(value or ""))
 
 
 def get_item_handler_llm_config(
@@ -178,6 +175,7 @@ async def _collect_chat_response_unserialized(
     tool_results: list[str] = []
     warnings: list[str] = []
     done_seen = False
+    robot_message_sent = False
     try:
         for chunk in generate_stream(
             message=message,
@@ -215,6 +213,11 @@ async def _collect_chat_response_unserialized(
                 warnings.append(str(payload.get("content") or ""))
             elif payload.get("done") is True:
                 done_seen = True
+            elif is_integration_delivery_event(payload):
+                done_seen = True
+                if integration_contexts:
+                    robot_message_sent = True
+                continue
     finally:
         if integration_contexts:
             clear_integration_chat_contexts(agent, integration_contexts)
@@ -228,7 +231,7 @@ async def _collect_chat_response_unserialized(
         content = _sanitize_integration_response(content)
     if content:
         content = enforce_persona_identity_response(agent, message, content)
-    robot_message_sent = bool(integration_contexts) and integration_message_sent(tool_results)
+    robot_message_sent = robot_message_sent or (bool(integration_contexts) and integration_message_sent(tool_results))
     if robot_message_sent and reply_ticket_id:
         try:
             from app.services.agent.reply_ticket import reply_ticket_manager

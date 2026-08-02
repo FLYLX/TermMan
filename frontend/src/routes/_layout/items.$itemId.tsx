@@ -1243,6 +1243,7 @@ function PlanStepIcon({ status }: { status: PlanStep["status"] }) {
 
 function PlanPanel({
   plan,
+  tasks,
   isOpen,
   onOpenChange,
   isFetching,
@@ -1250,17 +1251,20 @@ function PlanPanel({
   currentTaskTokens,
 }: {
   plan: PlanStep[]
+  tasks: TaskTokenUsage[]
   isOpen: boolean
   onOpenChange: (open: boolean) => void
   isFetching: boolean
   onRefresh: () => void
   currentTaskTokens?: number
 }) {
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
   const total = plan.length
   const completedCount = plan.filter(
     (step) => step.status === "completed",
   ).length
   const currentStep = plan.find((step) => step.status === "in_progress")
+  const tasksWithPlans = tasks.filter((t) => t.plan && t.plan.length > 0)
   return (
     <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/70 text-xs text-slate-300">
       <div className="flex h-10 items-center justify-between gap-2 px-3">
@@ -1279,7 +1283,7 @@ function PlanPanel({
             variant="outline"
             className="h-5 border-zinc-700 bg-zinc-900 px-1.5 font-mono text-[10px] text-slate-300"
           >
-            {completedCount}/{total}
+            {tasksWithPlans.length > 0 ? `${tasksWithPlans.length} 个任务` : `${completedCount}/${total}`}
           </Badge>
           {currentTaskTokens ? (
             <Badge
@@ -1312,9 +1316,48 @@ function PlanPanel({
 
       {isOpen ? (
         <div className="border-t border-zinc-800 px-3 py-2">
-          {total === 0 ? (
+          {tasksWithPlans.length === 0 && total === 0 ? (
             <div className="rounded-md border border-dashed border-zinc-800 bg-zinc-900/40 px-3 py-2 text-slate-500">
               暂无计划。agent 规划多步工作时会出现在这里。
+            </div>
+          ) : tasksWithPlans.length > 0 ? (
+            <div className="space-y-1">
+              {tasksWithPlans.map((task) => {
+                const tTotal = task.plan.length
+                const tDone = task.plan.filter((s) => s.status === "completed").length
+                const tCurrent = task.plan.find((s) => s.status === "in_progress")
+                const isExpanded = expandedTaskId === task.reply_ticket_id
+                return (
+                  <div key={task.reply_ticket_id} className="rounded-md border border-zinc-800/70 bg-zinc-900/40">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-2 py-1.5 text-left"
+                      onClick={() => setExpandedTaskId(isExpanded ? null : task.reply_ticket_id)}
+                    >
+                      <ChevronRight
+                        className={`size-3 shrink-0 text-slate-500 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                      />
+                      <span className="truncate text-[11px] text-slate-300">{task.request_message || task.source_label}</span>
+                        <Badge variant="outline" className="h-4 border-zinc-700 bg-zinc-900 px-1 font-mono text-[9px] text-slate-400">{tDone}/{tTotal}</Badge>
+                        <Badge variant="outline" className="h-4 border-zinc-700 bg-zinc-900 px-1 font-mono text-[9px] text-amber-400/70">{formatCompactTokens(task.total_tokens)} tok</Badge>
+                        <span className="text-[9px] text-slate-500">{task.ticket_status}</span>
+                      {tCurrent ? <span className="truncate text-[10px] text-slate-500">{tCurrent.step}</span> : null}
+                    </button>
+                    {isExpanded ? (
+                      <div className="space-y-0.5 border-t border-zinc-800/70 px-2 py-1.5">
+                        {task.plan.map((step, i) => (
+                          <div key={i} className="flex items-center gap-1.5 text-[10px]">
+                            <PlanStepIcon status={step.status} />
+                            <span className={`truncate ${step.status === "completed" ? "text-slate-500 line-through" : "text-slate-300"}`}>
+                              {step.step}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                      </div>
+                      )
+                      })}
             </div>
           ) : (
             <div className="space-y-1">
@@ -3286,6 +3329,7 @@ function ItemDetailPage({
                 <div className="mt-4 space-y-2">
                   <PlanPanel
                     plan={itemPlanData?.plan || []}
+                    tasks={tokenByTaskList}
                     isOpen={planPanelOpen}
                     onOpenChange={setPlanPanelOpen}
                     isFetching={isFetchingItemPlan}

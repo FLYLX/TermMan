@@ -76,8 +76,10 @@ def _format_background_job_results_batch(entries: list[dict[str, Any]]) -> str:
         elif result.get("error"):
             lines.append(f"   error: {str(result.get('error'))[:300]}")
     lines.append(
-        "Each listed job result is already recorded in its task workflow. "
-        "Advance the affected workflow steps, verify, and report per workflow."
+        "If a task workflow is active, advance the affected workflow steps "
+        "via mcp_local_update_task_workflow. If a plan is active (no workflow), "
+        "sync it via mcp_local_update_plan (mark completed steps, start next, "
+        "or clear when all done). Then verify and report per workflow/plan."
     )
     return "\n".join(lines)
 
@@ -1088,10 +1090,20 @@ class LocalMCPServer:
                 }
             ]
 
-        # plan=[] means "clear it now" — the agent decides when the task is
-        # over (finished or abandoned); no need to mark every step completed.
+        # plan=[] means "task done" — mark all remaining steps as completed
+        # and keep the plan on the ticket for UI history.
         if isinstance(plan, list) and not plan:
-            reply_ticket_manager.update_ticket_plan(ticket.ticket_id, [])
+            existing_ticket = reply_ticket_manager.get(ticket.ticket_id)
+            if existing_ticket and existing_ticket.plan:
+                finalized = [
+                    {**step, "status": "completed"}
+                    if step.get("status") not in {"completed", "cancelled"}
+                    else step
+                    for step in existing_ticket.plan
+                ]
+                reply_ticket_manager.update_ticket_plan(ticket.ticket_id, finalized)
+            else:
+                reply_ticket_manager.update_ticket_plan(ticket.ticket_id, [])
             try:
                 from app.services.agent.stream_manager import stream_manager
 
@@ -1100,13 +1112,13 @@ class LocalMCPServer:
                     {
                         "type": "plan_updated",
                         "item_id": item_id,
-                        "plan": [],
-                        "explanation": "cleared",
+                        "plan": finalized if existing_ticket and existing_ticket.plan else [],
+                        "explanation": "completed",
                     },
                 )
             except Exception:
                 pass
-            return [{"type": "text", "text": "Plan cleared."}]
+            return [{"type": "text", "text": "Plan completed."}]
 
         if not isinstance(plan, list):
             return [{"type": "text", "text": "Error: plan must be a list"}]
@@ -1125,10 +1137,8 @@ class LocalMCPServer:
             return [{"type": "text", "text": "Error: plan has no valid steps"}]
 
         all_completed = all(item["status"] == "completed" for item in normalized)
-        # Done: clear the ticket's plan instead of keeping a finished plan.
-        reply_ticket_manager.update_ticket_plan(
-            ticket.ticket_id, [] if all_completed else normalized
-        )
+        # Keep plan on ticket for UI history (don't clear when all completed).
+        reply_ticket_manager.update_ticket_plan(ticket.ticket_id, normalized)
         try:
             from app.services.agent.stream_manager import stream_manager
 
@@ -1693,9 +1703,11 @@ class LocalMCPServer:
             busy = _session_turn_busy(agent_session)
             if robot_job_context and not busy:
                 try:
-                    from app.plugins.robot.service import robot_service
+                    from app.services.agent.integrations.hooks import (
+                        is_integration_conversation_processing,
+                    )
 
-                    busy = robot_service.conversation_is_processing(
+                    busy = is_integration_conversation_processing(
                         robot_job_context.get("robot_id", ""),
                         robot_job_context.get("conversation_key", ""),
                     )
@@ -1729,9 +1741,11 @@ class LocalMCPServer:
         if not context_token:
             return None
         try:
-            from app.plugins.robot.mcp.context import get_robot_mcp_context
+            from app.services.agent.integrations.hooks import (
+                get_integration_context_by_token,
+            )
 
-            context = get_robot_mcp_context(context_token)
+            context = get_integration_context_by_token(context_token)
             if context is None or getattr(context, "reply_target", None) is None:
                 return None
             return {
@@ -1757,10 +1771,12 @@ class LocalMCPServer:
         if not robot_job_context:
             return None
         try:
-            from app.plugins.robot.service import robot_service
+            from app.services.agent.integrations.hooks import (
+                register_integration_background_job_reply,
+            )
 
-            return robot_service.register_background_job_reply(
-                robot_id=robot_job_context.get("robot_id", ""),
+            return register_integration_background_job_reply(
+                integration_id=robot_job_context.get("robot_id", ""),
                 item_id=item_id,
                 sender_key=robot_job_context.get("sender_key", ""),
                 reply_target=robot_job_context.get("reply_target") or {},
@@ -1790,7 +1806,9 @@ class LocalMCPServer:
         if not robot_job_context:
             return False
         try:
-            from app.plugins.robot.service import robot_service
+            from app.services.agent.integrations.hooks import (
+                enqueue_integration_background_job_result,
+            )
 
             _rb_wf_id = ""
             if reply_ticket_id:
@@ -1804,8 +1822,8 @@ class LocalMCPServer:
             message = message_override or self._format_background_job_robot_message(
                 command, result, workflow_id=_rb_wf_id,
             )
-            queued = robot_service.enqueue_background_job_result(
-                robot_id=robot_job_context.get("robot_id", ""),
+            queued = enqueue_integration_background_job_result(
+                integration_id=robot_job_context.get("robot_id", ""),
                 item_id=item_id,
                 sender_key=robot_job_context.get("sender_key", ""),
                 reply_target=robot_job_context.get("reply_target") or {},
@@ -1813,9 +1831,9 @@ class LocalMCPServer:
                 conversation_generation=int(
                     robot_job_context.get("conversation_generation") or 0
                 ),
-                message=message,
-                pending_reply_id=pending_reply_id,
+                reply_requires_awake=False,
                 reply_ticket_id=reply_ticket_id,
+                message=message,
             )
             if not queued:
                 debug_log(
@@ -1842,10 +1860,12 @@ class LocalMCPServer:
         if not robot_job_context or not pending_reply_id:
             return
         try:
-            from app.plugins.robot.service import robot_service
+            from app.services.agent.integrations.hooks import (
+                clear_integration_background_job_reply,
+            )
 
-            robot_service.clear_background_job_reply(
-                robot_id=robot_job_context.get("robot_id", ""),
+            clear_integration_background_job_reply(
+                integration_id=robot_job_context.get("robot_id", ""),
                 conversation_key=robot_job_context.get("conversation_key", ""),
                 pending_reply_id=pending_reply_id,
             )
@@ -1926,6 +1946,14 @@ class LocalMCPServer:
         plan = list(ticket.plan) if ticket is not None else []
         if not plan:
             return ""
+        try:
+            from app.services.agent.task_workflow import task_workflow_manager
+
+            _wf = task_workflow_manager.get_by_ticket(reply_ticket_id)
+            if _wf and _wf.status in {"cancelled", "failed"}:
+                return ""
+        except Exception:
+            pass
         lines = ["", "当前计划（请根据本结果用 update_plan 同步进度）："]
         lines.extend(
             f"  {index}. [{entry['status']}] {entry['step']}"
@@ -1936,6 +1964,7 @@ class LocalMCPServer:
     def _format_background_job_robot_message(self, command: str, result: dict, *, reply_ticket_id: str = "", workflow_id: str = "") -> str:
         status = "完成" if result.get("success") else "失败"
         has_workflow = bool(workflow_id)
+        has_plan = bool(self._plan_reminder("", reply_ticket_id))
         step_hint = ""
         if has_workflow:
             step_hint = self._workflow_step_hint(reply_ticket_id, workflow_id)
@@ -1950,6 +1979,13 @@ class LocalMCPServer:
                 "只在到达汇报步骤、最终失败且无更多方法、或重大方向变更时才发 QQ。"
                 "如果不需要回复用户，最终只输出 NRN 即可。"
             )
+        elif has_plan:
+            instruction = (
+                "你的第一个动作必须是调用 mcp_local_update_plan，"
+                "把当前步骤标为 completed 并开始下一步（或全部完成时清空 plan）。"
+                "然后再根据结果回复用户。不要为中间结果发送 QQ 消息。"
+                "如果不需要回复用户，最终只输出 NRN 即可。"
+            )
         else:
             instruction = "根据结果直接回复用户。"
         return (
@@ -1962,6 +1998,7 @@ class LocalMCPServer:
 
     def _format_background_job_feedback(self, result: dict, *, reply_ticket_id: str = "", workflow_id: str = "") -> str:
         has_workflow = bool(workflow_id)
+        has_plan = bool(self._plan_reminder("", reply_ticket_id))
         if result.get("success"):
             if has_workflow:
                 step_hint = self._workflow_step_hint(reply_ticket_id, workflow_id)
@@ -1974,6 +2011,14 @@ class LocalMCPServer:
                     "用下面的输出作为 evidence。"
                     "不要先调 read_terminal_log 或 list_jobs。"
                 )
+            elif has_plan:
+                header = (
+                    "[Background terminal job completed]\n"
+                    "后台任务已完成。你的第一个动作必须是调用 mcp_local_update_plan，"
+                    "把当前步骤标为 completed 并开始下一步（或全部完成时清空 plan）。"
+                    "然后再根据结果回复用户。"
+                    "如果此命令的结果已在之前的回复中处理过，静默结束即可，不要重复回复。"
+                )
             else:
                 header = (
                     "[Background terminal job completed]\n"
@@ -1982,11 +2027,27 @@ class LocalMCPServer:
                 )
             return f"{header}\n{self._format_job_result(result)}"
         step_hint = self._workflow_step_hint(reply_ticket_id, workflow_id) if has_workflow else ""
+        if has_workflow:
+            return (
+                "[Background terminal job failed]\n"
+                + step_hint
+                + "后台任务失败。调用 mcp_local_update_task_workflow "
+                "(action=insert_recovery_step) 换方法继续，或确认无更多方法时汇报失败。\n"
+                f"Error: {result.get('error', 'daemon job failed')}\n"
+                f"command: {result.get('command', '')}"
+            )
+        if has_plan:
+            return (
+                "[Background terminal job failed]\n"
+                "后台任务失败。你的第一个动作必须是调用 mcp_local_update_plan，"
+                "把当前步骤标为 completed 并换方法继续下一步，"
+                "或确认无更多方法时用 update_plan(plan=[]) 清空计划并汇报失败。\n"
+                f"Error: {result.get('error', 'daemon job failed')}\n"
+                f"command: {result.get('command', '')}"
+            )
         return (
             "[Background terminal job failed]\n"
-            + step_hint
-            + "后台任务失败。调用 mcp_local_update_task_workflow "
-            "(action=insert_recovery_step) 换方法继续，或确认无更多方法时汇报失败。\n"
+            "后台任务失败。根据结果回复用户，或换方法重试。\n"
             f"Error: {result.get('error', 'daemon job failed')}\n"
             f"command: {result.get('command', '')}"
         )

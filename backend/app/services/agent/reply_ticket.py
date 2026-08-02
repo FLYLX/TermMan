@@ -356,9 +356,11 @@ class ReplyTicketManager:
 
         if robot_id:
             try:
-                from app.plugins.robot.mcp.context import get_robot_mcp_context
+                from app.services.agent.integrations.hooks import (
+                    get_integration_context_by_token,
+                )
 
-                robot_context = get_robot_mcp_context(
+                robot_context = get_integration_context_by_token(
                     str(getattr(context, "robot_context_token", "") or "").strip()
                 )
             except Exception:
@@ -434,9 +436,11 @@ class ReplyTicketManager:
     @staticmethod
     def _sanitize_delivery_text(content: Any) -> str:
         try:
-            from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+            from app.services.agent.integrations.hooks import (
+                sanitize_integration_visible_text,
+            )
 
-            return sanitize_robot_visible_text(content).strip()
+            return sanitize_integration_visible_text(content).strip()
         except Exception:
             return str(content or "").strip()
 
@@ -517,16 +521,22 @@ class ReplyTicketManager:
         non-empty plan inside the activity window. Plans whose ticket has not
         been touched for PLAN_LOOKUP_FRESH_SECONDS are considered abandoned.
         """
+        from app.services.agent.task_workflow import task_workflow_manager
+
         with self._lock:
             now = datetime.now()
-            candidates = [
-                ticket
-                for ticket in self._tickets.values()
-                if ticket.item_id == str(item_id)
-                and ticket.plan
-                and (now - ticket.updated_at).total_seconds()
-                <= PLAN_LOOKUP_FRESH_SECONDS
-            ]
+            candidates = []
+            for ticket in self._tickets.values():
+                if ticket.item_id != str(item_id):
+                    continue
+                if not ticket.plan:
+                    continue
+                if (now - ticket.updated_at).total_seconds() > PLAN_LOOKUP_FRESH_SECONDS:
+                    continue
+                wf = task_workflow_manager.get_by_ticket(ticket.ticket_id)
+                if wf and wf.status in {"cancelled", "failed"}:
+                    continue
+                candidates.append(ticket)
         if not candidates:
             return None, []
         ticket = max(candidates, key=lambda entry: entry.updated_at)

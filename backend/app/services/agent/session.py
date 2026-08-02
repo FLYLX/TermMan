@@ -1172,9 +1172,11 @@ class AgentSession:
             return {}
 
         try:
-            from app.plugins.robot.mcp.context import get_robot_mcp_context
+            from app.services.agent.integrations.hooks import (
+                get_integration_context_by_token,
+            )
 
-            context = get_robot_mcp_context(context_token)
+            context = get_integration_context_by_token(context_token)
             reply_target = getattr(context, "reply_target", None) if context else None
             robot_id = str(getattr(context, "robot_id", "") or "").strip()
             sender_key = str(getattr(context, "sender_key", "") or "").strip()
@@ -1306,31 +1308,27 @@ class AgentSession:
             if ticket.source_type == "qq":
                 if ticket.external_report_sent:
                     return reply_ticket_manager.mark_delivered(ticket_id)
-                from app.plugins.robot.bridge_client import robot_bridge_client
-                from app.plugins.robot.contracts import RobotReplyTarget
-                from app.plugins.robot.conversation_memory import robot_conversation_memory
+                from app.services.agent.integrations.hooks import (
+                    deliver_integration_ticket,
+                    integration_conversation_memory_append,
+                    sanitize_integration_visible_text,
+                )
                 from app.services.agent.reply_ticket import ReplyTicketManager
 
-                text = ReplyTicketManager._sanitize_delivery_text(content)
+                text = sanitize_integration_visible_text(content).strip()
                 if not text:
                     return False
-                target = RobotReplyTarget.model_validate(ticket.reply_target)
-                robot_bridge_client.send_message(ticket.robot_id, target, text)
-                if ticket.conversation_key:
-                    robot_conversation_memory.append_assistant_message(
-                        ticket.robot_id,
-                        ticket.conversation_key,
-                        text,
+                if deliver_integration_ticket(ticket, text):
+                    integration_conversation_memory_append(ticket, text)
+                    self.emit_output(
+                        f"已回复 QQ：{text}",
+                        ROBOT_QQ_REPLY_EVENT_TYPE,
+                        {"tool_name": "reply_ticket", "qq_delivery": True},
                     )
-                self.emit_output(
-                    f"已回复 QQ：{text}",
-                    ROBOT_QQ_REPLY_EVENT_TYPE,
-                    {"tool_name": "reply_ticket", "qq_delivery": True},
-                )
-                can_fin, _ = task_workflow_manager.can_finalize(ticket_id)
-                if can_fin:
-                    reply_ticket_manager.mark_delivered(ticket_id)
-                return True
+                    can_fin, _ = task_workflow_manager.can_finalize(ticket_id)
+                    if can_fin:
+                        reply_ticket_manager.mark_delivered(ticket_id)
+                    return True
         except Exception:
             logger.exception(
                 "[AgentSession] Failed to deliver terminal reply ticket: item=%s ticket=%s",
@@ -2681,9 +2679,11 @@ class AgentSession:
             is_plain_chat = input_msg.input_type == InputType.CHAT
             if is_plain_chat:
                 try:
-                    from app.plugins.robot.mcp.server import RobotMCPServer
+                    from app.services.agent.integrations.hooks import (
+                        reset_integration_delivery_tracker,
+                    )
 
-                    RobotMCPServer.reset_delivered_targets(f"item:{self.item_id}")
+                    reset_integration_delivery_tracker(f"item:{self.item_id}")
                 except Exception:
                     logger.exception(
                         "[AgentSession] Failed to reset QQ delivery tracker: item=%s",
@@ -2748,11 +2748,11 @@ class AgentSession:
 
             if is_plain_chat and turn_completed:
                 try:
-                    from app.plugins.robot.explicit_target_backfill import (
-                        run_explicit_target_backfill,
+                    from app.services.agent.integrations.hooks import (
+                        extract_integration_targets_from_text,
                     )
 
-                    run_explicit_target_backfill(
+                    extract_integration_targets_from_text(
                         item_id=str(self.item_id),
                         user_message=str(input_msg.content or ""),
                         final_text=turn_final_content,
