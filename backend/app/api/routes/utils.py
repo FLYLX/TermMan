@@ -65,6 +65,98 @@ async def mem_snapshot():
     }
 
 
+_GC_BASELINE = {}
+
+@router.get("/leak-probe/")
+async def leak_probe():
+    import gc, resource
+    gc.collect()
+    out = {}
+    out["rss_mb"] = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024)
+    out["gc_objects"] = len(gc.get_objects())
+    def safe(fn):
+        try:
+            return fn()
+        except Exception as exc:
+            return f"err:{exc}"
+    from app.services.agent.reply_ticket import reply_ticket_manager
+    from app.services.agent.task_workflow import task_workflow_manager
+    from app.services.agent.session import agent_session_manager
+    from app.services.agent.stream_manager import stream_manager
+    from app.services.agent.agent import Agent, AgentManager
+    out["tickets"] = safe(lambda: len(reply_ticket_manager._tickets))
+    out["workflows"] = safe(lambda: len(task_workflow_manager._workflows))
+    out["sessions"] = safe(lambda: len(agent_session_manager._sessions))
+    out["agent_instances"] = safe(lambda: len(Agent._instances))
+    out["stream_chat_items"] = safe(lambda: len(stream_manager._chat_callbacks))
+    out["stream_chat_cbs"] = safe(lambda: sum(len(s) for s in stream_manager._chat_callbacks.values()))
+    out["stream_agent_windows"] = safe(lambda: len(stream_manager._agent_windows))
+    out["stream_term_batches"] = safe(lambda: len(stream_manager._terminal_batches))
+    out["robot_controllers"] = safe(lambda: __import__("app.plugins.robot.service", fromlist=["robot_service"]).robot_service._conversation_controllers.__len__())
+    def _sd():
+        d=[]
+        for item_id, sess in agent_session_manager._sessions.items():
+            d.append({"item": item_id[:8], "callbacks": len(getattr(sess, "output_callbacks", [])), "queue": getattr(sess, "input_queue", None).qsize() if getattr(sess, "input_queue", None) else -1})
+        return d
+    out["session_detail"] = safe(_sd)
+    return out
+
+@router.get("/malloc-test/")
+async def malloc_test():
+    import gc, ctypes, glob
+    def vmrss_kb():
+        try:
+            for line in open("/proc/self/status"):
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1])
+        except Exception:
+            return -1
+        return -1
+    before = vmrss_kb()
+    th = len(glob.glob("/proc/self/task/*"))
+    gc.collect()
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        trimmed = int(libc.malloc_trim(0))
+    except Exception as exc:
+        trimmed = f"err:{exc}"
+    after = vmrss_kb()
+    mi = {}
+    try:
+        class _mallinfo2(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_size_t) for n in ("arena","ordblks","smblks","hblks","hblkhd","usmblks","fsmblks","uordblks","fordblks","keepcost")]
+        libc2 = ctypes.CDLL("libc.so.6")
+        libc2.mallinfo2.restype = _mallinfo2
+        m = libc2.mallinfo2()
+        mb = 1024*1024
+        mi = {"arena_mb": round(m.arena/mb,1), "used_mb": round(m.uordblks/mb,1), "free_in_arena_mb": round(m.fordblks/mb,1), "mmap_mb": round(m.hblkhd/mb,1), "frag_pct": round((m.arena-m.uordblks)/max(m.arena,1)*100,1)}
+    except Exception as exc:
+        mi = {"err": str(exc)}
+    return {"rss_before_mb": round(before/1024,1), "rss_after_mb": round(after/1024,1), "rss_freed_mb": round((before-after)/1024,1), "malloc_trim_return": trimmed, "threads": th, "mallinfo": mi}
+
+@router.get("/gc-diff/")
+async def gc_diff(action: str = "diff", top: int = 30):
+    import gc
+    gc.collect()
+    objs = gc.get_objects()
+    counts = {}
+    for o in objs:
+        t = type(o).__name__
+        counts[t] = counts.get(t, 0) + 1
+    if action == "baseline":
+        _GC_BASELINE.clear()
+        _GC_BASELINE.update(counts)
+        return {"action": "baseline", "total": len(objs), "types": len(counts)}
+    base = _GC_BASELINE or {}
+    rows = []
+    for t in set(counts) | set(base):
+        d = counts.get(t, 0) - base.get(t, 0)
+        if d:
+            rows.append({"type": t, "now": counts.get(t, 0), "base": base.get(t, 0), "diff": d})
+    rows.sort(key=lambda r: r["diff"], reverse=True)
+    return {"total_now": len(objs), "total_base": sum(base.values()), "top_growth": rows[:top], "top_shrink": rows[-top:]}
+
+
 @router.get(
     "/backend-runtime/",
     response_model=BackendRuntimeStatsResponse,

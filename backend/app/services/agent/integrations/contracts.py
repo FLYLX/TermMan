@@ -164,6 +164,7 @@ class AgentIntegration(Protocol):
     def register_background_job_reply(
         self, *, integration_id: str, item_id: str, sender_key: str,
         reply_target: dict, conversation_key: str, conversation_generation: int,
+        command: str,
     ) -> str: ...
 
     def enqueue_background_job_result(
@@ -372,6 +373,7 @@ class NoopAgentIntegration:
     def register_background_job_reply(
         self, *, integration_id: str, item_id: str, sender_key: str,
         reply_target: dict, conversation_key: str, conversation_generation: int,
+        command: str,
     ) -> str:
         return ""
 

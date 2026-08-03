@@ -415,6 +415,7 @@ def is_integration_conversation_processing(
 def register_integration_background_job_reply(
     *, integration_id: str, item_id: str, sender_key: str,
     reply_target: dict, conversation_key: str, conversation_generation: int,
+    command: str,
 ) -> str:
     for integration in get_agent_integrations():
         result = integration.register_background_job_reply(
@@ -424,6 +425,7 @@ def register_integration_background_job_reply(
             reply_target=reply_target,
             conversation_key=conversation_key,
             conversation_generation=conversation_generation,
+            command=command,
         )
         if result:
             return result

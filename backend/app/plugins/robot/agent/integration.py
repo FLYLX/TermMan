@@ -890,6 +890,7 @@ class RobotAgentIntegration:
     def register_background_job_reply(
         self, *, integration_id: str, item_id: str, sender_key: str,
         reply_target: dict, conversation_key: str, conversation_generation: int,
+        command: str,
     ) -> str:
         from app.plugins.robot.service import robot_service
 
@@ -900,6 +901,7 @@ class RobotAgentIntegration:
             reply_target=reply_target,
             conversation_key=conversation_key,
             conversation_generation=conversation_generation,
+            command=command,
         )
 
     def enqueue_background_job_result(
