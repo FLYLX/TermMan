@@ -80,12 +80,10 @@ async def leak_probe():
         except Exception as exc:
             return f"err:{exc}"
     from app.services.agent.reply_ticket import reply_ticket_manager
-    from app.services.agent.task_workflow import task_workflow_manager
     from app.services.agent.session import agent_session_manager
     from app.services.agent.stream_manager import stream_manager
     from app.services.agent.agent import Agent, AgentManager
     out["tickets"] = safe(lambda: len(reply_ticket_manager._tickets))
-    out["workflows"] = safe(lambda: len(task_workflow_manager._workflows))
     out["sessions"] = safe(lambda: len(agent_session_manager._sessions))
     out["agent_instances"] = safe(lambda: len(Agent._instances))
     out["stream_chat_items"] = safe(lambda: len(stream_manager._chat_callbacks))

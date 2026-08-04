@@ -1064,17 +1064,9 @@ def test_robot_dispatch_queues_before_slow_memory_and_context_work(
 
     captured = _capture_queued_chat(monkeypatch)
 
-    def fail_slow_memory(**_kwargs):
-        raise AssertionError("long-term memory must run in the worker, not dispatch")
-
     def fail_impression(**_kwargs):
         raise AssertionError("impression card must run in the worker, not dispatch")
 
-    monkeypatch.setattr(
-        robot_service,
-        "_persist_inbound_long_term_memory",
-        fail_slow_memory,
-    )
     monkeypatch.setattr(robot_service, "_conversation_impression_card", fail_impression)
 
     response = robot_service.handle_inbound_message(
@@ -1089,186 +1081,6 @@ def test_robot_dispatch_queues_before_slow_memory_and_context_work(
     assert captured["job"].message_text == "hello"
     assert captured["job"].trigger_reason == "mention_bot"
     assert captured["job"].inbound_message is not None
-
-
-def test_robot_explicit_memory_is_persisted_with_conversation_scope(
-    db: Session,
-    monkeypatch,
-) -> None:
-    item = create_random_item(db)
-    robot = create_random_robot(db)
-    db.add(
-        RobotItem(
-            robot_id=robot.id,
-            item_id=item.id,
-            allow_chat=True,
-            receive_filtered_output=False,
-            chat_alias="alpha",
-            is_default_target=True,
-        )
-    )
-    db.commit()
-
-    captured = _capture_queued_chat(monkeypatch)
-    persisted: list[tuple[str, object, object]] = []
-
-    def fake_persist_memory_candidate(item_id, candidate, store):
-        persisted.append((item_id, candidate, store))
-        return "memory-1"
-
-    monkeypatch.setattr(
-        "app.services.agent.prompts.policy.persist_memory_candidate",
-        fake_persist_memory_candidate,
-    )
-
-    response = robot_service.handle_inbound_message(
-        db,
-        robot,
-        _message(
-            "remember this: nickname is XiaoChai",
-            target={"id": "g1"},
-            mentioned_bot=True,
-        ),
-    )
-
-    assert response.success is True
-    assert response.ignored is False
-    assert captured["job"].conversation_key == "group:g1"
-    _process_captured_chat_job(monkeypatch, captured["job"])
-    assert len(persisted) == 1
-    assert persisted[0][0] == str(item.id)
-    candidate = persisted[0][1]
-    assert candidate.content == "nickname is XiaoChai"
-    assert candidate.memory_type == "fact"
-    assert candidate.metadata["source"] == "qq_robot"
-    assert candidate.metadata["robot_id"] == str(robot.id)
-    assert candidate.metadata["conversation_key"] == "group:g1"
-    assert candidate.metadata["robot_conversation_key"] == "group:g1"
-
-
-def test_robot_auto_memory_high_confidence_is_persisted_with_sender_scope(
-    db: Session,
-    monkeypatch,
-) -> None:
-    item = create_random_item(db)
-    robot = create_random_robot(db)
-    db.add(
-        RobotItem(
-            robot_id=robot.id,
-            item_id=item.id,
-            allow_chat=True,
-            receive_filtered_output=False,
-            chat_alias="alpha",
-            is_default_target=True,
-        )
-    )
-    db.commit()
-
-    captured = _capture_queued_chat(monkeypatch)
-    monkeypatch.setattr(vector_store, "get_all_memories", lambda *args, **kwargs: [])
-    persisted: list[tuple[str, object, object]] = []
-
-    def fake_persist_memory_candidate(item_id, candidate, store):
-        persisted.append((item_id, candidate, store))
-        return "memory-auto"
-
-    monkeypatch.setattr(
-        "app.services.agent.prompts.policy.persist_memory_candidate",
-        fake_persist_memory_candidate,
-    )
-
-    response = robot_service.handle_inbound_message(
-        db,
-        robot,
-        _message(
-            "我喜欢短回复",
-            target={"id": "g1"},
-            sender={"user_id": "u1", "display_name": "Alice"},
-            mentioned_bot=True,
-        ),
-    )
-
-    assert response.success is True
-    assert response.ignored is False
-    _process_captured_chat_job(monkeypatch, captured["job"])
-    assert len(persisted) == 1
-    candidate = persisted[0][1]
-    assert persisted[0][0] == str(item.id)
-    assert candidate.memory_type == "preference"
-    assert "Alice (u1)" in candidate.content
-    assert "我喜欢短回复" in candidate.content
-    assert candidate.metadata["source"] == "qq_robot_auto"
-    assert candidate.metadata["robot_id"] == str(robot.id)
-    assert candidate.metadata["conversation_key"] == "group:g1"
-    assert candidate.metadata["robot_conversation_key"] == "group:g1"
-    assert candidate.metadata["speaker"] == "Alice (u1)"
-    assert candidate.metadata["observations"] == 1
-
-
-def test_robot_auto_memory_low_confidence_promotes_after_repeat(
-    db: Session,
-    monkeypatch,
-) -> None:
-    item = create_random_item(db)
-    robot = create_random_robot(db)
-    db.add(
-        RobotItem(
-            robot_id=robot.id,
-            item_id=item.id,
-            allow_chat=True,
-            receive_filtered_output=False,
-            chat_alias="alpha",
-            is_default_target=True,
-        )
-    )
-    db.commit()
-
-    captured = _capture_queued_chat(monkeypatch)
-    monkeypatch.setattr(vector_store, "get_all_memories", lambda *args, **kwargs: [])
-    persisted: list[object] = []
-
-    def fake_persist_memory_candidate(_item_id, candidate, **_kwargs):
-        persisted.append(candidate)
-        return f"memory-{len(persisted)}"
-
-    monkeypatch.setattr(
-        "app.services.agent.prompts.policy.persist_memory_candidate",
-        fake_persist_memory_candidate,
-    )
-
-    first = robot_service.handle_inbound_message(
-        db,
-        robot,
-        _message(
-            "最近在研究股票",
-            target={"id": "g1"},
-            sender={"user_id": "u1", "display_name": "Alice"},
-            mentioned_bot=True,
-        ),
-    )
-    assert first.success is True
-    _process_captured_chat_job(monkeypatch, captured["job"])
-    assert persisted == []
-
-    second = robot_service.handle_inbound_message(
-        db,
-        robot,
-        _message(
-            "最近在研究股票",
-            target={"id": "g1"},
-            sender={"user_id": "u1", "display_name": "Alice"},
-            mentioned_bot=True,
-        ),
-    )
-    assert second.success is True
-    _process_captured_chat_job(monkeypatch, captured["job"])
-    assert len(persisted) == 1
-    candidate = persisted[0]
-    assert candidate.memory_type == "context"
-    assert "最近在研究股票" in candidate.content
-    assert candidate.metadata["source"] == "qq_robot_auto_promoted"
-    assert candidate.metadata["observations"] == 2
-    assert candidate.metadata["conversation_key"] == "group:g1"
 
 
 def test_robot_message_includes_current_conversation_impression_card(
@@ -1733,7 +1545,6 @@ def test_prepare_queued_chat_message_excludes_later_pending_messages(
 
     captured = _capture_queued_chat(monkeypatch)
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
-    monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
     bot_self_id = str(robot.config["credentials"]["self_id"])
     target = RobotReplyTarget(
         target_type="group",
@@ -2890,7 +2701,6 @@ def test_direct_wakeup_job_reaches_agent_even_if_controller_window_expires(
     assert captured_messages == [job.message]
 
 
-
 def test_visible_agent_response_without_robot_tool_is_sent_to_qq(
     db: Session,
     monkeypatch,
@@ -3114,8 +2924,6 @@ def test_direct_wakeup_countdown_starts_after_agent_result(
     assert sleeping_snapshot["processing"] is False
 
 
-
-
 def test_direct_wakeup_messages_queue_without_superseding_active_reply(
     db: Session,
     monkeypatch,
@@ -3150,7 +2958,6 @@ def test_direct_wakeup_messages_queue_without_superseding_active_reply(
 
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
-    monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
     bot_self_id = str(robot.config["credentials"]["self_id"])
     first = robot_service.handle_inbound_message(
         db,
@@ -3248,7 +3055,6 @@ def test_pending_followup_includes_recent_live_context_without_duplicate(
         },
     )
     queued_jobs: list[Any] = []
-    persisted_messages: list[str] = []
     current_question = "\u8c01\u662f\u732b\u5a18"
     fact = "\u732b\u5a18\u5c31\u662f\u6708\u5f71\u6c49\u5821\u732b\u5a18"
     confirmation = "\u6536\u5230\uff0c\u732b\u5a18\u5c31\u662f\u6708\u5f71\u6c49\u5821\u732b\u5a18"
@@ -3259,11 +3065,6 @@ def test_pending_followup_includes_recent_live_context_without_duplicate(
         lambda job: queued_jobs.append(job) or True,
     )
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
-    monkeypatch.setattr(
-        robot_service,
-        "_persist_inbound_long_term_memory",
-        lambda **kwargs: persisted_messages.append(kwargs["message_text"]),
-    )
     monkeypatch.setattr(
         robot_conversation_memory,
         "read_recent",
@@ -3290,7 +3091,6 @@ def test_pending_followup_includes_recent_live_context_without_duplicate(
         conversation_key="group:770362397",
     )
     assert len(queued_jobs) == 1
-    assert persisted_messages == [current_question]
     message = queued_jobs[0].message
     assert "[Recent QQ live context; background only" in message
     assert fact in message
@@ -3312,7 +3112,6 @@ def test_pending_qq_batch_keeps_senders_and_isolates_conversations(
         lambda job: queued_jobs.append(job) or True,
     )
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
-    monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
     monkeypatch.setattr(robot_conversation_memory, "read_recent", lambda *_args, **_kwargs: "")
 
     def target(group_id: str, user_id: str, display_name: str) -> RobotReplyTarget:
@@ -3390,7 +3189,6 @@ def test_pending_qq_batch_merges_same_sender_into_one_reply_intent(
         lambda job: queued_jobs.append(job) or True,
     )
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
-    monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
     monkeypatch.setattr(robot_conversation_memory, "read_recent", lambda *_args, **_kwargs: "")
 
     for text in ("Are you there?", "Reply now"):
@@ -3451,11 +3249,6 @@ def test_plain_task_control_message_dispatches_immediately_while_processing(
         lambda job: queued_jobs.append(job) or True,
     )
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
-    monkeypatch.setattr(
-        robot_service,
-        "_persist_inbound_long_term_memory",
-        lambda **_: None,
-    )
 
     first = robot_service.handle_inbound_message(
         db,
@@ -3521,7 +3314,6 @@ def test_direct_wakeup_pending_messages_continue_after_first_job_sends_no_reply(
     queued_jobs: list[Any] = []
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", lambda job: queued_jobs.append(job) or True)
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
-    monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
 
     first = robot_service.handle_inbound_message(
         db,
@@ -3647,7 +3439,6 @@ def test_qq_image_segments_are_removed_from_agent_and_pending_messages(
     queued_jobs: list[Any] = []
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", lambda job: queued_jobs.append(job) or True)
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
-    monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
 
     first = robot_service.handle_inbound_message(
         db,
@@ -3742,7 +3533,6 @@ def test_pending_chat_queue_keeps_latest_five_messages(
     queued_jobs: list[Any] = []
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", lambda job: queued_jobs.append(job) or True)
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
-    monkeypatch.setattr(robot_service, "_persist_inbound_long_term_memory", lambda **_: None)
     first = robot_service.handle_inbound_message(
         db,
         robot,
@@ -4564,11 +4354,6 @@ def test_failed_job_drains_pending_chat_inputs_into_followup(
         robot_service,
         "_record_and_send_job_error",
         lambda *args, **kwargs: None,
-    )
-    monkeypatch.setattr(
-        robot_service,
-        "_persist_inbound_long_term_memory",
-        lambda **kwargs: None,
     )
     enqueued: list[object] = []
     monkeypatch.setattr(

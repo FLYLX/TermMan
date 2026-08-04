@@ -50,7 +50,6 @@ from app.services.agent.robot_delivery import (
     ROBOT_SEND_TOOL_NAME,
     robot_reply_event_content,
 )
-from app.services.agent.task_workflow import task_workflow_manager
 from app.services.agent.tool_arguments import (
     ToolArgumentParseError,
     parse_tool_arguments,
@@ -539,7 +538,6 @@ class InputType(Enum):
     TERMINAL = "terminal"
     CHAT = "chat"
     SCHEDULED_TASK = "scheduled_task"
-    TASK_CONTINUATION = "task_continuation"
 
 
 @dataclass
@@ -1004,23 +1002,6 @@ class AgentSession:
             if self._normalize_text(job_command) == normalized_command:
                 return dict(job)
 
-        try:
-            for workflow in task_workflow_manager.list_resumable(item_id=self.item_id):
-                for wf_job in workflow.jobs:
-                    if (
-                        wf_job.status == "running"
-                        and self._normalize_text(wf_job.command) == normalized_command
-                    ):
-                        return {
-                            "command": wf_job.command,
-                            "elapsed_seconds": 0,
-                            "source": "workflow",
-                            "job_id": wf_job.workflow_job_id,
-                        }
-
-        except Exception:
-            pass
-
         return None
 
     def _build_duplicate_background_job_warning(
@@ -1114,7 +1095,6 @@ class AgentSession:
         )
         with self.lock:
             self._pending_command = pending
-        self._update_pending_reply_waiting(pending)
         self._schedule_pending_command_recheck()
 
     @staticmethod
@@ -1127,32 +1107,6 @@ class AgentSession:
         if not player or not question:
             return None
         return player, question
-
-    def _update_pending_reply_waiting(self, pending: PendingCommand) -> None:
-        parsed = self._parse_terminal_relay_command(pending.command)
-        if not parsed or not pending.reply_ticket_id:
-            return
-        target_player, question = parsed
-        try:
-            task_workflow_manager.mark_waiting(
-                pending.reply_ticket_id,
-                awaiting_kind="minecraft_player",
-                awaiting_key=target_player,
-                note=question,
-            )
-            logger.info(
-                "[AgentSession] Task workflow now awaits Minecraft player item=%s "
-                "ticket=%s player=%s question=%s",
-                self.item_id,
-                pending.reply_ticket_id,
-                target_player,
-                question[:160],
-            )
-        except Exception as exc:
-            logger.warning(
-                "[AgentSession] Failed to update workflow awaiting target: %s",
-                exc,
-            )
 
     def _clear_pending_command(self):
         self._cancel_pending_command_recheck()
@@ -1328,9 +1282,7 @@ class AgentSession:
                         ROBOT_QQ_REPLY_EVENT_TYPE,
                         {"tool_name": "reply_ticket", "qq_delivery": True},
                     )
-                    can_fin, _ = task_workflow_manager.can_finalize(ticket_id)
-                    if can_fin:
-                        reply_ticket_manager.mark_delivered(ticket_id)
+                    reply_ticket_manager.mark_delivered(ticket_id)
                     return True
         except Exception:
             logger.exception(
@@ -1354,11 +1306,6 @@ class AgentSession:
         try:
             from app.services.agent.reply_ticket import reply_ticket_manager
 
-            task_workflow_manager.update(
-                ticket_id,
-                action="cancel",
-                note=str(reason or report)[:2000],
-            )
             reply_ticket_manager.mark_failed(ticket_id, reason or report)
             if not notify:
                 # Timeout/turn-guard cancels fail the ticket quietly: the task
@@ -2001,29 +1948,6 @@ class AgentSession:
 
         return True
 
-    def schedule_task_workflow_continuation(self, ticket_id: str) -> bool:
-        normalized_ticket_id = str(ticket_id or "").strip()
-        if not normalized_ticket_id:
-            return False
-        if not task_workflow_manager.claim_auto_resume(normalized_ticket_id):
-            return False
-        input_msg = InputMessage(
-            input_type=InputType.TASK_CONTINUATION,
-            content=(
-                "[Internal task workflow continuation]\n"
-                "Resume the authoritative workflow from its current step. Execute one "
-                "concrete safe action now; do not provide a next-step narration."
-            ),
-            query="Resume the unfinished authoritative task workflow with one concrete action.",
-            reply_ticket_id=normalized_ticket_id,
-        )
-        threading.Thread(
-            target=self.process_input,
-            args=(input_msg,),
-            daemon=True,
-        ).start()
-        return True
-
     def clear_queued_inputs(self) -> int:
         cleared = 0
         while True:
@@ -2133,7 +2057,6 @@ class AgentSession:
             InputType.TERMINAL: "终端输出",
             InputType.CHAT: "聊天消息",
             InputType.SCHEDULED_TASK: "定时任务",
-            InputType.TASK_CONTINUATION: "任务续跑",
         }
         sections: list[str] = []
         for msg in batch:
@@ -2146,25 +2069,12 @@ class AgentSession:
 
         combined_content = "\n---\n".join(sections) if sections else ""
 
-        # Pick primary reply_ticket: prefer one with an active workflow
+        # Pick primary reply_ticket: the most recent input carrying one.
         primary_ticket = ""
-        try:
-            from app.services.agent.task_workflow import task_workflow_manager
-            for msg in batch:
-                ticket = str(msg.reply_ticket_id or "").strip()
-                if not ticket:
-                    continue
-                workflow = task_workflow_manager.get_by_ticket(ticket)
-                if workflow and workflow.status in {"active", "verifying", "waiting_job", "ready_to_report"}:
-                    primary_ticket = ticket
-                    break
-        except Exception:
-            pass
-        if not primary_ticket:
-            for msg in reversed(batch):
-                if msg.reply_ticket_id:
-                    primary_ticket = msg.reply_ticket_id
-                    break
+        for msg in reversed(batch):
+            if msg.reply_ticket_id:
+                primary_ticket = msg.reply_ticket_id
+                break
 
         # Use the last callback (most recent sender expects a reply)
         last_callback = None
@@ -2217,7 +2127,7 @@ class AgentSession:
 
         self._last_activity = datetime.now()
 
-        if input_msg.input_type in {InputType.TERMINAL, InputType.TASK_CONTINUATION}:
+        if input_msg.input_type == InputType.TERMINAL:
             self._attach_reply_ticket_to_agent(agent, input_msg.reply_ticket_id)
             try:
                 self._process_terminal_input(input_msg, agent)
@@ -2247,18 +2157,6 @@ class AgentSession:
             self._process_chat_input(input_msg, agent)
 
     def _process_terminal_input(self, input_msg: InputMessage, agent: Agent):
-        if input_msg.reply_ticket_id:
-            _wf = task_workflow_manager.get_by_ticket(input_msg.reply_ticket_id)
-            if _wf and _wf.status in {"completed", "cancelled", "failed"}:
-                logger.info(
-                    "[AgentSession] Skipping callback for finished workflow: "
-                    "item=%s ticket=%s status=%s",
-                    self.item_id, input_msg.reply_ticket_id, _wf.status,
-                )
-                return
-        internal_task_continuation = (
-            input_msg.input_type == InputType.TASK_CONTINUATION
-        )
         combined_input = "\n".join(
             part
             for part in (input_msg.content, input_msg.raw_content)
@@ -2267,23 +2165,7 @@ class AgentSession:
         try:
             from app.services.agent.reply_ticket import reply_ticket_manager
 
-            matched_entry = None
-            if not internal_task_continuation:
-                resumable = task_workflow_manager.find_resumable(
-                    item_id=self.item_id,
-                    source_type="",
-                    source_label="",
-                )
-                if (
-                    resumable
-                    and resumable.reply_ticket_id
-                    and resumable.status in {"waiting_job", "blocked"}
-                ):
-                    matched_entry = {"id": resumable.reply_ticket_id}
-            if matched_entry:
-                input_msg.reply_ticket_id = str(matched_entry["id"])
-                self._attach_reply_ticket_to_agent(agent, input_msg.reply_ticket_id)
-            elif not input_msg.reply_ticket_id:
+            if not input_msg.reply_ticket_id:
                 pending = self._get_pending_command()
                 if pending and pending.reply_ticket_id:
                     input_msg.reply_ticket_id = pending.reply_ticket_id
@@ -2307,9 +2189,6 @@ class AgentSession:
                 self.item_id,
             )
 
-        if not internal_task_continuation and input_msg.reply_ticket_id:
-            task_workflow_manager.reset_auto_resume(input_msg.reply_ticket_id)
-
         reply_ticket = self._get_reply_ticket(input_msg.reply_ticket_id)
         reply_ticket_is_web = bool(
             reply_ticket and getattr(reply_ticket, "source_type", "") == "web"
@@ -2323,17 +2202,10 @@ class AgentSession:
             clear_robot_context = getattr(agent, "clear_robot_context", None)
             if callable(clear_robot_context):
                 clear_robot_context()
-        analysis = (
-            TerminalAnalysisResult(
-                content=input_msg.content,
-                terminal_source=TERMINAL_SOURCE_FILTERED,
-            )
-            if internal_task_continuation
-            else self._resolve_terminal_analysis_content(input_msg)
-        )
-        if input_msg.content and not internal_task_continuation:
+        analysis = self._resolve_terminal_analysis_content(input_msg)
+        if input_msg.content:
             attach_terminal_feedback_to_pending_continuation(self.item_id, input_msg.content)
-        should_emit_terminal_output = bool(input_msg.content) and not internal_task_continuation and (
+        should_emit_terminal_output = bool(input_msg.content) and (
             not had_pending_command
             or bool(analysis.content)
             or self._should_display_pending_held_output(
@@ -2432,34 +2304,17 @@ class AgentSession:
 
                 finalization_only = False
                 if iteration_index == MAX_ITERATIONS - 1:
-                    can_finalize, _ = task_workflow_manager.can_finalize(
-                        input_msg.reply_ticket_id
+                    finalization_only = True
+                    messages.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "The tool-call budget is finished. Do not call any more "
+                                "tools. Use the latest confirmed tool results to give the "
+                                "user one concise final answer now."
+                            ),
+                        }
                     )
-                    if can_finalize:
-                        finalization_only = True
-                        messages.append(
-                            {
-                                "role": "system",
-                                "content": (
-                                    "The tool-call budget is finished. Do not call any more "
-                                    "tools. Use the latest confirmed tool results to give the "
-                                    "user one concise final answer now."
-                                ),
-                            }
-                        )
-                    else:
-                        messages.append(
-                            {
-                                "role": "system",
-                                "content": (
-                                    "This is the action-recovery pass for an unfinished task. "
-                                    "Do not answer with a diagnosis, recommendation, promise, or "
-                                    "next-step sentence. Call exactly one concrete execution tool "
-                                    "that advances the current workflow. If the previous method "
-                                    "failed, execute a safe recovery action now."
-                                ),
-                            }
-                        )
 
                 iteration_tools = [] if finalization_only else tools
                 response = self._call_llm(agent, messages, tools=iteration_tools)
@@ -2473,22 +2328,6 @@ class AgentSession:
                         raw_content = ""
                     if raw_content:
                         final_content = strip_think_tags(guard_fabricated_tool_trace(raw_content))
-                        can_finalize, workflow_correction = (
-                            task_workflow_manager.can_finalize(
-                                input_msg.reply_ticket_id
-                            )
-                        )
-                        if not can_finalize:
-                            messages.append(
-                                {"role": "assistant", "content": final_content}
-                            )
-                            messages.append(
-                                {"role": "system", "content": workflow_correction}
-                            )
-                            self._emit_running_terminal_status(
-                                analysis.terminal_source
-                            )
-                            continue
                         reply_ticket = self._get_reply_ticket(
                             input_msg.reply_ticket_id
                         )
@@ -2567,14 +2406,6 @@ class AgentSession:
                                 }
                             )
                             continue
-                        workflow = task_workflow_manager.get_by_ticket(
-                            input_msg.reply_ticket_id
-                        )
-                        if workflow and workflow.latest_progress:
-                            self.emit_output(
-                                workflow.latest_progress,
-                                "agent_response",
-                            )
                     break
 
                 next_messages = self._handle_tool_calls(
@@ -2591,19 +2422,6 @@ class AgentSession:
                 if next_messages is None:
                     break
                 messages = next_messages
-            else:
-                has_running_jobs = task_workflow_manager.has_running_jobs(
-                    input_msg.reply_ticket_id
-                )
-                if not has_running_jobs:
-                    can_finalize, _ = task_workflow_manager.can_finalize(
-                        input_msg.reply_ticket_id
-                    )
-                    if not can_finalize:
-                        terminal_failure_report = (
-                            "任务未能完成：本轮未启动后台任务且无法继续推进，已停止。重新发送指令可继续。"
-                        )
-
             if terminal_failure_report:
                 self._fail_and_report_pending_reply(
                     input_msg.reply_ticket_id,
@@ -2611,28 +2429,6 @@ class AgentSession:
                     reason=terminal_failure_report,
                     notify=not terminal_failure_silent,
                 )
-            elif input_msg.reply_ticket_id and not _response_emitted_in_loop:
-                _wf_done = task_workflow_manager.get_by_ticket(
-                    input_msg.reply_ticket_id
-                )
-                if (
-                    _wf_done
-                    and _wf_done.status in {"ready_to_report", "completed", "cancelled"}
-                    and _wf_done.latest_progress
-                ):
-                    _post_ticket = self._get_reply_ticket(
-                        input_msg.reply_ticket_id
-                    )
-                    if _post_ticket and _post_ticket.source_type == "qq":
-                        self._deliver_terminal_reply_ticket(
-                            input_msg.reply_ticket_id,
-                            _wf_done.latest_progress,
-                        )
-                    else:
-                        self.emit_output(
-                            _wf_done.latest_progress,
-                            "agent_response",
-                        )
 
             if pending_integration_contexts:
                 clear_integration_chat_contexts(agent, pending_integration_contexts)
@@ -3237,13 +3033,6 @@ class AgentSession:
                         {"tool_name": tool_name},
                     )
 
-            if tool_name != "mcp_local_update_task_workflow":
-                task_workflow_manager.record_tool_call(
-                    reply_ticket_id,
-                    tool_name=tool_name,
-                    command=str(tool_args.get("command") or ""),
-                )
-
             if terminal_validation_result is not None:
                 result = terminal_validation_result
             else:
@@ -3256,24 +3045,6 @@ class AgentSession:
             robot_delivery_result = self._is_successful_robot_send(
                 tool_name, result_text
             )
-            # Once the agent attempts a report send while the workflow is
-            # ready_to_report, force-complete the workflow regardless of
-            # send success/failure. The report is a notification, not a
-            # gate -- this prevents infinite retry loops on send errors.
-            if (
-                tool_name == ROBOT_SEND_TOOL_NAME
-                and reply_ticket_id
-                and not robot_delivery_result
-            ):
-                _wf = task_workflow_manager.get_by_ticket(reply_ticket_id)
-                if _wf and _wf.status == "ready_to_report":
-                    task_workflow_manager.on_delivery(reply_ticket_id)
-                    robot_delivery_result = True
-            delivery_is_final = True
-            if robot_delivery_result:
-                delivery_is_final, _ = task_workflow_manager.can_finalize(
-                    reply_ticket_id
-                )
             if (
                 tool_results_sink is not None
                 and result_text
@@ -3302,12 +3073,6 @@ class AgentSession:
                         self.item_id,
                         reply_ticket_id,
                     )
-                    # Fallback: force-complete workflow directly if
-                    # mark_delivered failed, to prevent report loops.
-                    try:
-                        task_workflow_manager.on_delivery(reply_ticket_id)
-                    except Exception:
-                        pass
 
                 self.emit_output(
                     robot_reply_event_content(tool_args, result_text),
@@ -3317,11 +3082,9 @@ class AgentSession:
                         "qq_delivery": True,
                     },
                 )
-                # Report sent and workflow completed -- stop the turn
-                # immediately to prevent duplicate reports.
-                _wf_after = task_workflow_manager.get_by_ticket(reply_ticket_id)
-                if not _wf_after or _wf_after.status in {"completed", "cancelled", "failed"}:
-                    return None
+                # Report sent -- stop the turn immediately to prevent
+                # duplicate reports.
+                return None
             command_dispatch_failed = is_command_dispatch_failure_result(
                 tool_name,
                 result_text,
@@ -3357,24 +3120,11 @@ class AgentSession:
                 return None
 
             if is_background_job_started_result(result):
-                task_workflow_manager.mark_job_started(
-                    reply_ticket_id,
-                    command=str(tool_args.get("command") or ""),
-                )
                 clear_pending_terminal_continuation(
                     self.item_id,
                     command=str(tool_args.get("command") or ""),
                 )
                 return None
-
-            if tool_name != "mcp_local_update_task_workflow":
-                task_workflow_manager.record_tool_result(
-                    reply_ticket_id,
-                    tool_name=tool_name,
-                    success=bool(result.get("success", True))
-                    and not result_text.lower().startswith("error:"),
-                    result_summary=result_text,
-                )
 
             assistant_message["tool_calls"].append(
                 {
@@ -3479,49 +3229,10 @@ class AgentSession:
             if clear_queue:
                 cleared = self.clear_queued_inputs()
         self._cancel_pending_command_recheck()
-        if clear_queue:
-            self._cancel_active_workflows_on_abort()
         self.emit_status("interrupting", "中断当前轮中")
         if clear_queue and cleared > 0:
             self.emit_output(f"已清空 {cleared} 条排队输入", "agent_warning")
         logger.info(f"[AgentSession] Aborted session for item {self.item_id}")
-
-    def _cancel_active_workflows_on_abort(self):
-        try:
-            workflows = task_workflow_manager.list_resumable(
-                item_id=self.item_id,
-            )
-            for workflow in workflows:
-                ticket_id = workflow.reply_ticket_id or (
-                    workflow.reply_ticket_ids[-1] if workflow.reply_ticket_ids else ""
-                )
-                if ticket_id:
-                    task_workflow_manager.update(
-                        ticket_id,
-                        action="cancel",
-                        note="User interrupted the task.",
-                    )
-                    logger.info(
-                        "[AgentSession] Cancelled workflow on abort: item=%s workflow=%s",
-                        self.item_id,
-                        workflow.workflow_id,
-                    )
-        except Exception:
-            logger.exception(
-                "[AgentSession] Failed to cancel workflows on abort: item=%s",
-                self.item_id,
-            )
-        try:
-            from app.services.agent.mcp.local_server import (
-                cancel_background_jobs_for_item,
-            )
-
-            cancel_background_jobs_for_item(self.item_id)
-        except Exception:
-            logger.debug(
-                "[AgentSession] Failed to cancel background jobs on abort: item=%s",
-                self.item_id,
-            )
 
     def _schedule_delayed_retry(self, ticket_id: str, delay_seconds: float = 10.0):
         """Disabled: callback-driven design. LLM errors are reported, not auto-retried.

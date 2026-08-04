@@ -27,8 +27,6 @@ ALL_TOOLS = [
     _tool("mcp_local_cancel_job"),
     _tool("mcp_local_read_terminal_log"),
     _tool("mcp_local_read_chat_history"),
-    _tool("mcp_local_get_task_workflow"),
-    _tool("mcp_local_update_task_workflow"),
     _tool("mcp_local_save_memory"),
     _tool("mcp_local_recall_memory"),
     _tool("mcp_local_list_memories"),

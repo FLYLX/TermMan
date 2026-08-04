@@ -1,6 +1,6 @@
 """Best-effort SQLite state store for agent task state.
 
-Persists task workflows, reply tickets, and queued robot dispatch jobs so a
+Persists reply tickets and key-value agent state so a
 backend restart does not silently lose in-flight tasks. This store is
 intentionally separate from the main application database (which is managed
 by Alembic): it owns its engine and creates its tables on demand.
@@ -27,16 +27,6 @@ logger = logging.getLogger(__name__)
 
 class _StateBase(DeclarativeBase):
     pass
-
-
-class WorkflowStateRow(_StateBase):
-    __tablename__ = "agent_workflow_state"
-
-    workflow_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    item_id: Mapped[str] = mapped_column(String(64), index=True, default="")
-    status: Mapped[str] = mapped_column(String(32), index=True, default="")
-    updated_at: Mapped[str] = mapped_column(String(64), index=True, default="")
-    payload: Mapped[str] = mapped_column(Text, default="{}")
 
 
 class TicketStateRow(_StateBase):
@@ -117,69 +107,6 @@ def _row_to_payload(row: Any) -> dict[str, Any] | None:
     except Exception:
         return None
     return payload if isinstance(payload, dict) else None
-
-
-# ---------------------------------------------------------------------------
-# Workflow rows
-# ---------------------------------------------------------------------------
-
-def save_workflow(payload: dict[str, Any]) -> None:
-    import json
-
-    session = _session()
-    if session is None:
-        return
-    try:
-        workflow_id = str(payload.get("workflow_id") or "")
-        if not workflow_id:
-            return
-        with session:
-            row = session.get(WorkflowStateRow, workflow_id)
-            if row is None:
-                row = WorkflowStateRow(workflow_id=workflow_id)
-            row.item_id = str(payload.get("item_id") or "")
-            row.status = str(payload.get("status") or "")
-            row.updated_at = str(payload.get("updated_at") or "")
-            row.payload = json.dumps(payload, ensure_ascii=False)
-            session.add(row)
-            session.commit()
-    except Exception as exc:
-        logger.warning("[AgentStateStore] save_workflow failed: %s", exc)
-    finally:
-        session.close()
-
-
-def delete_workflow(workflow_id: str) -> None:
-    session = _session()
-    if session is None:
-        return
-    try:
-        with session:
-            session.execute(
-                delete(WorkflowStateRow).where(
-                    WorkflowStateRow.workflow_id == str(workflow_id)
-                )
-            )
-            session.commit()
-    except Exception as exc:
-        logger.warning("[AgentStateStore] delete_workflow failed: %s", exc)
-    finally:
-        session.close()
-
-
-def load_workflows() -> list[dict[str, Any]]:
-    session = _session()
-    if session is None:
-        return []
-    try:
-        with session:
-            rows = session.execute(select(WorkflowStateRow)).scalars().all()
-            return [payload for row in rows if (payload := _row_to_payload(row))]
-    except Exception as exc:
-        logger.warning("[AgentStateStore] load_workflows failed: %s", exc)
-        return []
-    finally:
-        session.close()
 
 
 # ---------------------------------------------------------------------------
@@ -308,7 +235,6 @@ def clear_all() -> None:
     try:
         with session:
             for model in (
-                WorkflowStateRow,
                 TicketStateRow,
                 KVStateRow,
             ):
@@ -324,12 +250,9 @@ __all__ = [
     "clear_all",
     "delete_kv",
     "delete_ticket",
-    "delete_workflow",
-    "load_kv",
+        "load_kv",
     "load_tickets",
-    "load_workflows",
-    "reset_state_store_engine",
+        "reset_state_store_engine",
     "save_kv",
     "save_ticket",
-    "save_workflow",
-]
+    ]

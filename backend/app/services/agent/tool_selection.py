@@ -27,8 +27,6 @@ CORE_TOOL_NAMES = frozenset(
         "mcp_robot_compress_memories",
         "mcp_robot_sleep_conversation",
         "mcp_local_update_plan",
-        "mcp_local_update_task_workflow",
-        "mcp_local_get_task_workflow",
         PREPARE_CAPABILITIES_TOOL,
     }
 )

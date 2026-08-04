@@ -2,14 +2,13 @@ from types import SimpleNamespace
 
 from app.services.agent.reply_ticket import reply_ticket_manager
 from app.services.agent.session import AgentSession, InputMessage, InputType
-from app.services.agent.task_workflow import task_workflow_manager
 
 
 def test_agent_session_converts_dsml_content_into_tool_call() -> None:
     session = AgentSession("item-1", "handler-1")
     message = SimpleNamespace(
         content="""<｜｜DSML｜｜tool_calls>
-<｜｜DSML｜｜invoke name="mcp_local_update_task_workflow">
+<｜｜DSML｜｜invoke name="mcp_local_run_job">
 <｜｜DSML｜｜parameter name="action" string="true">complete_current_step</｜｜DSML｜｜parameter>
 <｜｜DSML｜｜parameter name="note" string="true">Java 安装完成</｜｜DSML｜｜parameter>
 </｜｜DSML｜｜invoke>
@@ -19,7 +18,7 @@ def test_agent_session_converts_dsml_content_into_tool_call() -> None:
     tools = [
         {
             "type": "function",
-            "function": {"name": "mcp_local_update_task_workflow"},
+            "function": {"name": "mcp_local_run_job"},
         }
     ]
 
@@ -29,7 +28,7 @@ def test_agent_session_converts_dsml_content_into_tool_call() -> None:
     assert len(normalized.tool_calls) == 1
     assert (
         normalized.tool_calls[0].function.name
-        == "mcp_local_update_task_workflow"
+        == "mcp_local_run_job"
     )
     assert "complete_current_step" in normalized.tool_calls[0].function.arguments
 
@@ -100,45 +99,3 @@ def test_terminal_callback_attaches_original_ticket_during_processing(
     reply_ticket_manager.reset()
 
 
-def test_schedule_task_workflow_continuation_is_internal_and_bounded(
-    monkeypatch,
-) -> None:
-    from app.services.agent import session as session_module
-
-    task_workflow_manager.reset()
-    task_workflow_manager.create(
-        item_id="item-1",
-        handler_id="handler-1",
-        reply_ticket_id="ticket-java",
-        objective="安装 Java",
-        source_type="qq",
-        source_label="QQ private:2537134688",
-        step_titles=["安装 Java", "验证 java -version"],
-    )
-    captured: list[tuple] = []
-
-    class FakeThread:
-        def __init__(self, *, target, args, daemon):
-            captured.append((target, args, daemon))
-
-        def start(self):
-            return None
-
-    monkeypatch.setattr(session_module.threading, "Thread", FakeThread)
-    session = AgentSession("item-1", "handler-1")
-
-    try:
-        assert session.schedule_task_workflow_continuation("ticket-java") is True
-        assert session.schedule_task_workflow_continuation("ticket-java") is True
-        assert session.schedule_task_workflow_continuation("ticket-java") is True
-        assert session.schedule_task_workflow_continuation("ticket-java") is True
-        assert session.schedule_task_workflow_continuation("ticket-java") is True
-        assert session.schedule_task_workflow_continuation("ticket-java") is True
-
-        queued_input = captured[0][1][0]
-        assert queued_input.input_type == InputType.TASK_CONTINUATION
-        assert queued_input.reply_ticket_id == "ticket-java"
-        assert "Internal task workflow continuation" in queued_input.content
-        assert captured[0][2] is True
-    finally:
-        task_workflow_manager.reset()

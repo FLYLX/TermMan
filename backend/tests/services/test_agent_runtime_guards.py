@@ -2000,7 +2000,6 @@ def test_builtin_skills_are_terminal_qq_mcp_and_personas() -> None:
     assert "mcp_local_delete_terminal_input_filter_rule" in (terminal_mcp.action.prompt or "")
     assert "mcp_local_clear_terminal_input_filter_rules" in (terminal_mcp.action.prompt or "")
     assert "mcp_local_read_chat_history" in (terminal_mcp.action.prompt or "")
-    assert "mcp_local_get_task_workflow" in (terminal_mcp.action.prompt or "")
     assert "mcp_local_list_reply_tickets" not in (terminal_mcp.action.prompt or "")
     assert "刚才" in (terminal_mcp.action.prompt or "")
     assert "`&&`" in (terminal_mcp.action.prompt or "")

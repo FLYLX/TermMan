@@ -26,7 +26,6 @@ from app.services.agent.prompts.policy import (
 )
 from app.services.agent.prompts.system import get_system_prompt
 from app.services.agent.skills import skill_loader
-from app.services.agent.task_workflow import task_workflow_manager
 
 if TYPE_CHECKING:
     from app.services.agent.agent import Agent
@@ -810,42 +809,6 @@ def _build_current_source_route_context(
     )
 
 
-def _build_active_task_ledger_context(
-    item_id: str,
-    agent: "Agent | None" = None,
-) -> str:
-    context = getattr(agent, "_context", None) if agent is not None else None
-    reply_ticket_id = str(getattr(context, "reply_ticket_id", "") or "").strip()
-    workflow_context = task_workflow_manager.build_prompt_context(
-        item_id=item_id,
-        reply_ticket_id=reply_ticket_id,
-        # Per-turn system prompt: state only. The full rule set is sent once
-        # at workflow creation and can be re-fetched via get_task_workflow.
-        include_rules=False,
-    )
-    if workflow_context:
-        return workflow_context
-    related = task_workflow_manager.find_related_workflows(
-        item_id=item_id,
-        objective=getattr(context, "current_query", "") or "",
-    )
-    if not related:
-        return ""
-    lines = ["[Existing task workflows for this item]"]
-    for wf in related[:3]:
-        status_hint = wf.status
-        evidence = (wf.latest_progress or "")[:200]
-        lines.append(
-            f"- [{status_hint}] {wf.objective}"
-            f" (evidence: {evidence})"
-        )
-    lines.append(
-        "If the user's request matches an existing completed workflow, "
-        "report the existing result instead of re-executing. "
-        "If the user explicitly wants a fresh run, create a new workflow."
-    )
-    return "\n".join(lines)
-
 def _dedupe_adjacent_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
     deduped: list[dict[str, str]] = []
     for message in messages:
@@ -896,9 +859,6 @@ def build_chat_turn_messages(
     source_route_context = _build_current_source_route_context(agent, source="chat")
     if source_route_context:
         extra_prompt_parts.append(source_route_context)
-    active_task_ledger_context = _build_active_task_ledger_context(item_id, agent)
-    if active_task_ledger_context:
-        extra_prompt_parts.append(active_task_ledger_context)
     if not latest_only_context:
         integration_prompt = build_integration_history_prompt(
             agent,
@@ -1026,9 +986,6 @@ def build_terminal_turn_messages(
     source_route_context = _build_current_source_route_context(agent, source="terminal")
     if source_route_context:
         extra_prompt_parts.append(source_route_context)
-    active_task_ledger_context = _build_active_task_ledger_context(item_id, agent)
-    if active_task_ledger_context:
-        extra_prompt_parts.append(active_task_ledger_context)
     prompt_messages: list[dict[str, str]] = [
         {
             "role": "system",

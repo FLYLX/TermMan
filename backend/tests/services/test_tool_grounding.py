@@ -47,8 +47,8 @@ def test_guard_keeps_plain_claim_text() -> None:
 
 def test_footer_strips_existing_chinese_footer() -> None:
     text = append_tool_call_footer(
-        "已经装好了。\n\n———\n本回合实际工具调用:3 次 [mcp_local_run_job ×2, mcp_local_update_task_workflow]",
-        ["mcp_local_run_job", "mcp_local_run_job", "mcp_local_update_task_workflow"],
+        "已经装好了。\n\n———\n本回合实际工具调用:3 次 [mcp_local_run_job ×2, mcp_local_list_jobs]",
+        ["mcp_local_run_job", "mcp_local_run_job", "mcp_local_list_jobs"],
     )
 
     assert text == "已经装好了。"

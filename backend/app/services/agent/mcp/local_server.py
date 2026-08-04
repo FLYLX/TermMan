@@ -84,10 +84,8 @@ def _format_background_job_results_batch(entries: list[dict[str, Any]]) -> str:
         elif result.get("error"):
             lines.append(f"   error: {str(result.get('error'))[:300]}")
     lines.append(
-        "If a task workflow is active, advance the affected workflow steps "
-        "via mcp_local_update_task_workflow. If a plan is active (no workflow), "
-        "sync it via mcp_local_update_plan (mark completed steps, start next, "
-        "or clear when all done). Then verify and report per workflow/plan."
+        "If a plan is active, sync it via mcp_local_update_plan (mark completed "
+        "steps, start next, or clear when all done). Then verify and report."
     )
     return "\n".join(lines)
 
@@ -105,80 +103,35 @@ def flush_background_job_results_for_entries(
     if robot_entries:
         first = robot_entries[0]
         robot_ticket = first.get("reply_ticket_id") or ""
-        skip_robot = False
-        if robot_ticket:
-            try:
-                from app.services.agent.task_workflow import task_workflow_manager
-
-                if not task_workflow_manager.job_result_needs_new_turn(robot_ticket):
-                    debug_log(
-                        f"[LocalMCPServer] skip robot job-result: workflow "
-                        f"finished/delivered for ticket={robot_ticket}, item={item_id}"
-                    )
-                    skip_robot = True
-                else:
-                    _wf = task_workflow_manager.get_by_ticket(robot_ticket)
-                    if _wf and getattr(_wf, "report_sent_at", None) is not None:
-                        debug_log(
-                            f"[LocalMCPServer] skip robot job-result: report already "
-                            f"sent for ticket={robot_ticket}, item={item_id}"
-                        )
-                        skip_robot = True
-            except Exception:
-                pass
-        if not skip_robot:
-            if len(robot_entries) == 1:
-                _robot_wf_id = ""
-                if robot_ticket:
-                    try:
-                        _rwf = task_workflow_manager.get_by_ticket(robot_ticket)
-                        if _rwf:
-                            _robot_wf_id = _rwf.workflow_id
-                    except Exception:
-                        pass
-                message = server._format_background_job_robot_message(
-                    first["command"],
-                    first["result"],
-                    reply_ticket_id=robot_ticket,
-                    workflow_id=_robot_wf_id,
-                )
-            else:
-                message = _format_background_job_results_batch(robot_entries)
-            message += server._plan_reminder(item_id, robot_ticket)
-            delivered = server._deliver_background_job_to_robot(
-                item_id=item_id,
-                command=first["command"],
-                result=first["result"],
-                robot_job_context=first["robot_job_context"],
-                pending_reply_id=first.get("pending_robot_reply_id") or "",
+        if len(robot_entries) == 1:
+            message = server._format_background_job_robot_message(
+                first["command"],
+                first["result"],
                 reply_ticket_id=robot_ticket,
-                message_override=message,
             )
-            flushed_any = delivered or flushed_any
-            if delivered and len(robot_entries) > 1:
-                # The batch message covers every entry; clear the per-job
-                # pending replies of the non-first entries so they do not
-                # linger as orphaned queue items.
-                for extra in robot_entries[1:]:
-                    if extra.get("pending_robot_reply_id"):
-                        server._clear_background_job_robot_reply(
-                            robot_job_context=extra.get("robot_job_context"),
-                            pending_reply_id=extra.get("pending_robot_reply_id") or "",
-                        )
         else:
-            # The owning workflow already finished/was delivered, so these
-            # results will never be delivered to the robot conversation.
-            # Clear the registered pending robot replies as well, otherwise
-            # they linger forever as orphaned queue entries.
-            for entry in robot_entries:
-                try:
+            message = _format_background_job_results_batch(robot_entries)
+        message += server._plan_reminder(item_id, robot_ticket)
+        delivered = server._deliver_background_job_to_robot(
+            item_id=item_id,
+            command=first["command"],
+            result=first["result"],
+            robot_job_context=first["robot_job_context"],
+            pending_reply_id=first.get("pending_robot_reply_id") or "",
+            reply_ticket_id=robot_ticket,
+            message_override=message,
+        )
+        flushed_any = delivered or flushed_any
+        if delivered and len(robot_entries) > 1:
+            # The batch message covers every entry; clear the per-job
+            # pending replies of the non-first entries so they do not
+            # linger as orphaned queue items.
+            for extra in robot_entries[1:]:
+                if extra.get("pending_robot_reply_id"):
                     server._clear_background_job_robot_reply(
-                        robot_job_context=entry.get("robot_job_context"),
-                        pending_reply_id=entry.get("pending_robot_reply_id") or "",
+                        robot_job_context=extra.get("robot_job_context"),
+                        pending_reply_id=extra.get("pending_robot_reply_id") or "",
                     )
-                except Exception:
-                    pass
-            flushed_any = True
 
     if other_entries:
         message = (
@@ -195,31 +148,6 @@ def flush_background_job_results_for_entries(
             if session is None:
                 continue
             entry_ticket = entry.get("reply_ticket_id") or ""
-            if entry_ticket:
-                try:
-                    from app.services.agent.task_workflow import task_workflow_manager
-
-                    if not task_workflow_manager.job_result_needs_new_turn(
-                        entry_ticket
-                    ):
-                        debug_log(
-                            f"[LocalMCPServer] skip job-result turn: owning workflow "
-                            f"finished/delivered for ticket={entry_ticket}, item={item_id}"
-                        )
-                        flushed_any = True
-                        continue
-                    _wf_check = task_workflow_manager.get_by_ticket(entry_ticket)
-                    if _wf_check and getattr(_wf_check, "report_sent_at", None) is not None:
-                        debug_log(
-                            f"[LocalMCPServer] skip job-result turn: report already sent "
-                            f"for ticket={entry_ticket}, item={item_id}"
-                        )
-                        flushed_any = True
-                        continue
-                except Exception as exc:
-                    debug_log(
-                        f"[LocalMCPServer] job-result turn guard error: ticket={entry_ticket}, error={exc}"
-                    )
             try:
                 from app.services.agent.session import InputMessage, InputType
 
@@ -532,51 +460,6 @@ class LocalMCPServer:
                 "required": ["item_id"],
             },
             handler=self._read_chat_history,
-            skip_memory=True,
-        )
-        self.register_tool(
-            name="get_task_workflow",
-            description="Read task workflow linked to current ticket.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "item_id": {
-                        "type": "string",
-                        "description": "Current terminal item id.",
-                    }
-                },
-                "required": ["item_id"],
-            },
-            handler=self._get_task_workflow,
-            skip_memory=True,
-        )
-        self.register_tool(
-            name="update_task_workflow",
-            description=(
-                "Optional structured tracking for long/fragile tasks (cross-turn "
-                "installs, migrations, tasks that must report to a specific "
-                "QQ/web ticket); prefer update_plan for ordinary multi-step work. "
-                "action=create, title='step1|step2|step3'. Continue the existing "
-                "workflow, don't duplicate. complete_current_step needs evidence; "
-                "insert_recovery_step(title=...) on failure; cancel only when the "
-                "user abandons. Completing the LAST step auto-transitions to "
-                "ready_to_report - then report to the ticket target (QQ: "
-                "mcp_robot_send_message; web: output directly). After updating, "
-                "call the execution tool."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "item_id": {"type": "string"},
-                    "action": {"type": "string", "enum": ["create", "record_progress", "complete_current_step", "set_current_step", "insert_recovery_step", "mark_ready_to_report", "mark_blocked", "resume", "cancel"]},
-                    "force_new": {"type": "boolean"},
-                    "note": {"type": "string", "description": "Evidence or reason."},
-                    "step_index": {"type": "integer"},
-                    "title": {"type": "string", "description": "Step title for create/recovery."},
-                },
-                "required": ["item_id", "action"],
-            },
-            handler=self._update_task_workflow,
             skip_memory=True,
         )
         self.register_tool(
@@ -1116,51 +999,6 @@ class LocalMCPServer:
             debug_log(f"[LocalMCPServer] read_chat_history error: {e}")
             return [{"type": "text", "text": f"Error: {e}"}]
 
-    def _get_task_workflow(self, args: dict) -> list:
-        item_id = str(args.get("item_id") or "").strip()
-        reply_ticket_id = str(args.get("_reply_ticket_id") or "").strip()
-        if not item_id:
-            return [{"type": "text", "text": "Error: item_id required"}]
-        try:
-            from app.services.agent.task_workflow import task_workflow_manager
-
-            workflow = task_workflow_manager.snapshot_for_ticket(reply_ticket_id)
-            if workflow is None:
-                active = [
-                    candidate
-                    for candidate in task_workflow_manager.snapshot(item_id)
-                    if candidate.get("status")
-                    not in {"completed", "cancelled"}
-                ]
-                if active:
-                    workflow = active[0]
-                    # Auto-attach ticket so subsequent tool calls find it
-                    if reply_ticket_id:
-                        try:
-                            wf_id = workflow.get("workflow_id") or workflow.get("id", "")
-                            task_workflow_manager.attach_ticket(wf_id, reply_ticket_id)
-                        except Exception:
-                            pass
-            if workflow is None:
-                return [
-                    {
-                        "type": "text",
-                        "text": "No authoritative task workflow is linked to this turn.",
-                    }
-                ]
-            return [
-                {
-                    "type": "text",
-                    "text": task_workflow_manager.build_prompt_context(
-                        item_id=item_id,
-                        reply_ticket_id=reply_ticket_id,
-                    ),
-                }
-            ]
-        except Exception as exc:
-            debug_log(f"[LocalMCPServer] get_task_workflow error: {exc}")
-            return [{"type": "text", "text": f"Error: {exc}"}]
-
     def _update_plan(self, args: dict) -> list:
         item_id = str(args.get("item_id") or "").strip()
         reply_ticket_id = str(args.get("_reply_ticket_id") or "").strip()
@@ -1234,8 +1072,12 @@ class LocalMCPServer:
             return [{"type": "text", "text": "Error: plan has no valid steps"}]
 
         all_completed = all(item["status"] == "completed" for item in normalized)
-        # Keep plan on ticket for UI history (don't clear when all completed).
-        reply_ticket_manager.update_ticket_plan(ticket.ticket_id, normalized)
+        # Once every step is completed, broadcast the final all-completed
+        # snapshot once, then clear the plan from the ticket so finished work
+        # leaves the plan table immediately (no extra plan=[] call needed).
+        reply_ticket_manager.update_ticket_plan(
+            ticket.ticket_id, [] if all_completed else normalized
+        )
         try:
             from app.services.agent.stream_manager import stream_manager
 
@@ -1245,7 +1087,9 @@ class LocalMCPServer:
                     "type": "plan_updated",
                     "item_id": item_id,
                     "plan": normalized,
-                    "explanation": str(args.get("explanation") or ""),
+                    "explanation": "completed"
+                    if all_completed
+                    else str(args.get("explanation") or ""),
                 },
             )
         except Exception:
@@ -1319,80 +1163,6 @@ class LocalMCPServer:
         except Exception as exc:
             debug_log(f"[LocalMCPServer] provision reply ticket error: {exc}")
             return ""
-
-    def _update_task_workflow(self, args: dict) -> list:
-        item_id = str(args.get("item_id") or "").strip()
-        reply_ticket_id = str(args.get("_reply_ticket_id") or "").strip()
-        if not item_id:
-            return [{"type": "text", "text": "Error: item_id required"}]
-        if not reply_ticket_id:
-            reply_ticket_id = self._provision_turn_reply_ticket(item_id, args)
-        if not reply_ticket_id:
-            return [
-                {
-                    "type": "text",
-                    "text": "Error: no reply ticket is linked to this task turn and none could be created",
-                }
-            ]
-        try:
-            from app.services.agent.task_workflow import task_workflow_manager
-
-            raw_step_index = args.get("step_index")
-            step_index = None
-            if raw_step_index is not None:
-                step_index = int(raw_step_index)
-            task_workflow_manager._last_item_id = item_id
-            task_workflow_manager._last_handler_id = str(args.get("_handler_id") or "")
-            if not task_workflow_manager._last_handler_id:
-                try:
-                    from app.services.agent.session import agent_session_manager
-                    _sess = agent_session_manager.get_session(item_id)
-                    if _sess:
-                        task_workflow_manager._last_handler_id = _sess.handler_id
-                except Exception:
-                    pass
-            _action = str(args.get("action") or "").strip().lower()
-            if _action in {"cancel", "resume"} and task_workflow_manager.get_by_ticket(reply_ticket_id) is None:
-                _active = [
-                    candidate
-                    for candidate in task_workflow_manager.snapshot(item_id)
-                    if candidate.get("status") not in {"completed", "cancelled"}
-                ]
-                if len(_active) == 1:
-                    _wf_id = str(_active[0].get("workflow_id") or "")
-                    if _wf_id:
-                        task_workflow_manager.attach_ticket(_wf_id, reply_ticket_id)
-            success, detail = task_workflow_manager.update(
-                reply_ticket_id,
-                action=str(args.get("action") or ""),
-                note=str(args.get("note") or ""),
-                step_index=step_index,
-                title=str(args.get("title") or ""),
-                force_new=bool(args.get("force_new")),
-            )
-            if not success:
-                return [{"type": "text", "text": f"Error: {detail}"}]
-            # The full rule set is delivered once at create time; incremental
-            # updates only need the state delta to keep token usage down.
-            context = task_workflow_manager.build_prompt_context(
-                item_id=item_id,
-                reply_ticket_id=reply_ticket_id,
-                include_rules=False,
-            )
-            return [
-                {
-                    "type": "text",
-                    "text": (
-                        f"Task workflow updated: {detail}\n{context}\n"
-                        "Workflow bookkeeping is not task progress by itself. If a safe "
-                        "execution action is available, call that tool now instead of "
-                        "describing the next step."
-                    ),
-                }
-            ]
-        except Exception as exc:
-            debug_log(f"[LocalMCPServer] update_task_workflow error: {exc}")
-            return [{"type": "text", "text": f"Error: {exc}"}]
 
     def _list_jobs(self, args: dict) -> list:
         item_id = args.get("item_id", "")
@@ -1520,46 +1290,6 @@ class LocalMCPServer:
                 "tail_lines": tail_lines,
             }
 
-            if reply_ticket_id:
-                try:
-                    from app.services.agent.reply_ticket import reply_ticket_manager
-                    from app.services.agent.task_workflow import task_workflow_manager
-
-                    ticket = reply_ticket_manager.get(reply_ticket_id)
-                    existing_wf = task_workflow_manager.get_by_ticket(reply_ticket_id)
-                    if ticket is not None and existing_wf is None:
-                        item_workflows = task_workflow_manager.list_resumable(
-                            item_id=str(item_id),
-                        )
-                        active_wf = next(
-                            (wf for wf in item_workflows if wf.status in {"active", "waiting_job", "verifying"}),
-                            None,
-                        )
-                        if active_wf is not None:
-                            task_workflow_manager.attach_ticket(
-                                active_wf.workflow_id, reply_ticket_id
-                            )
-                except Exception as exc:
-                    debug_log(
-                        f"[LocalMCPServer] failed to register background job workflow: "
-                        f"ticket={reply_ticket_id}, error={exc}"
-                    )
-
-            job_workflow_id = ""
-            if reply_ticket_id:
-                try:
-                    from app.services.agent.task_workflow import task_workflow_manager as _twm
-                    _wf = _twm.get_by_ticket(reply_ticket_id)
-                    if _wf:
-                        job_workflow_id = _wf.workflow_id
-                        _twm.register_job_start(
-                            reply_ticket_id,
-                            command=command,
-                            workflow_id=job_workflow_id,
-                        )
-                except Exception:
-                    pass
-
             # Check for duplicate running command
             _dup_hint = ""
             try:
@@ -1584,7 +1314,6 @@ class LocalMCPServer:
                 agent_session=agent_session,
                 robot_job_context=robot_job_context,
                 reply_ticket_id=reply_ticket_id,
-                workflow_id=job_workflow_id,
                 pending_robot_reply_id=self._register_background_job_robot_reply(
                     item_id=str(item_id),
                     command=command,
@@ -1610,34 +1339,6 @@ class LocalMCPServer:
             if agent_session:
                 agent_session.clear_terminal_job(command)
             return [{"type": "text", "text": f"Error: {e}"}]
-
-    def _attach_daemon_job_id_with_retry(
-        self,
-        reply_ticket_id: str,
-        *,
-        command: str,
-        daemon_job_id: str,
-        workflow_id: str = "",
-        attempts: int = 10,
-    ) -> None:
-        try:
-            from app.services.agent.task_workflow import task_workflow_manager
-
-            for _ in range(attempts):
-                if task_workflow_manager.attach_daemon_job_id(
-                    reply_ticket_id,
-                    command=command,
-                    daemon_job_id=daemon_job_id,
-                    workflow_id=workflow_id,
-                ):
-                    return
-                # The workflow job entry is created by the turn that started
-                # this job, which may land a moment after the async start.
-                time.sleep(0.5)
-        except Exception as exc:
-            debug_log(
-                f"[LocalMCPServer] failed to attach daemon job id: ticket={reply_ticket_id}, error={exc}"
-            )
 
     def _poll_background_job_result(
         self,
@@ -1698,7 +1399,6 @@ class LocalMCPServer:
         robot_job_context: dict | None = None,
         reply_ticket_id: str = "",
         pending_robot_reply_id: str | None = None,
-        workflow_id: str = "",
     ) -> None:
         def worker() -> None:
             try:
@@ -1726,13 +1426,6 @@ class LocalMCPServer:
                     debug_log(
                         f"[LocalMCPServer] background job scheduled: item={item_id}, job_id={daemon_job_id}, command={command}"
                     )
-                    if reply_ticket_id and daemon_job_id:
-                        threading.Thread(
-                            target=self._attach_daemon_job_id_with_retry,
-                            args=(reply_ticket_id,),
-                            kwargs={"command": command, "daemon_job_id": daemon_job_id, "workflow_id": workflow_id},
-                            daemon=True,
-                        ).start()
                     result = self._poll_background_job_result(
                         connection,
                         item_id=item_id,
@@ -1744,7 +1437,7 @@ class LocalMCPServer:
                 f"[LocalMCPServer] background run_job result: item={item_id}, success={result.get('success')}, exit_code={result.get('exit_code')}, timed_out={result.get('timed_out')}"
             )
 
-            feedback = self._format_background_job_feedback(result, reply_ticket_id=reply_ticket_id, workflow_id=workflow_id)
+            feedback = self._format_background_job_feedback(result, reply_ticket_id=reply_ticket_id)
             if reply_ticket_id:
                 try:
                     from app.services.agent.scheduled_tasks import (
@@ -1765,28 +1458,6 @@ class LocalMCPServer:
                     debug_log(
                         f"[LocalMCPServer] failed to update scheduled task result: "
                         f"ticket={reply_ticket_id}, error={exc}"
-                    )
-            if reply_ticket_id:
-                try:
-                    from app.services.agent.task_workflow import task_workflow_manager
-
-                    task_workflow_manager.record_job_result(
-                        reply_ticket_id,
-                        command=command,
-                        success=(
-                            bool(result.get("success"))
-                            and result.get("exit_code") == 0
-                            and not result.get("timed_out")
-                            and not result.get("cancelled")
-                        ),
-                        result_summary=self._format_job_result(result),
-                        daemon_job_id=str(result.get("job_id") or ""),
-                        exit_code=result.get("exit_code"),
-                        workflow_id=workflow_id,
-                    )
-                except Exception as exc:
-                    debug_log(
-                        f"[LocalMCPServer] failed to update task workflow from job: ticket={reply_ticket_id}, error={exc}"
                     )
             if agent_session:
                 agent_session.clear_terminal_job(command)
@@ -1904,17 +1575,8 @@ class LocalMCPServer:
                 enqueue_integration_background_job_result,
             )
 
-            _rb_wf_id = ""
-            if reply_ticket_id:
-                try:
-                    from app.services.agent.task_workflow import task_workflow_manager as _twm
-                    _rbwf = _twm.get_by_ticket(reply_ticket_id)
-                    if _rbwf:
-                        _rb_wf_id = _rbwf.workflow_id
-                except Exception:
-                    pass
             message = message_override or self._format_background_job_robot_message(
-                command, result, reply_ticket_id=reply_ticket_id, workflow_id=_rb_wf_id,
+                command, result, reply_ticket_id=reply_ticket_id,
             )
             queued = enqueue_integration_background_job_result(
                 integration_id=robot_job_context.get("robot_id", ""),
@@ -2005,25 +1667,6 @@ class LocalMCPServer:
             return f"{message}\n输出：\n{output_tail}"
         return message
 
-    def _workflow_step_hint(self, reply_ticket_id: str, workflow_id: str) -> str:
-        try:
-            from app.services.agent.task_workflow import task_workflow_manager
-            wf = (
-                task_workflow_manager._workflows.get(workflow_id)
-                if workflow_id
-                else None
-            ) or task_workflow_manager.get_by_ticket(reply_ticket_id)
-            if not wf:
-                return ""
-            step = wf.current_step()
-            if not step:
-                return ""
-            idx = wf.current_step_index + 1
-            total = len(wf.steps)
-            return f"当前步骤: {idx}/{total} [{step.title}]。"
-        except Exception:
-            return ""
-
     def _plan_reminder(self, item_id: str, reply_ticket_id: str = "") -> str:
         """Lightweight plan<->job link: remind the agent to sync its plan
         when a background job result arrives. The plan is read from the
@@ -2040,14 +1683,6 @@ class LocalMCPServer:
         plan = list(ticket.plan) if ticket is not None else []
         if not plan:
             return ""
-        try:
-            from app.services.agent.task_workflow import task_workflow_manager
-
-            _wf = task_workflow_manager.get_by_ticket(reply_ticket_id)
-            if _wf and _wf.status in {"cancelled", "failed"}:
-                return ""
-        except Exception:
-            pass
         lines = ["", "当前计划（请根据本结果用 update_plan 同步进度）："]
         lines.extend(
             f"  {index}. [{entry['status']}] {entry['step']}"
@@ -2055,26 +1690,11 @@ class LocalMCPServer:
         )
         return "\n".join(lines)
 
-    def _format_background_job_robot_message(self, command: str, result: dict, *, reply_ticket_id: str = "", workflow_id: str = "") -> str:
+    def _format_background_job_robot_message(self, command: str, result: dict, *, reply_ticket_id: str = "") -> str:
         status = "完成" if result.get("success") else "失败"
-        has_workflow = bool(workflow_id)
         has_plan = bool(self._plan_reminder("", reply_ticket_id))
         request_boundary = self._job_callback_task_boundary(reply_ticket_id)
-        step_hint = ""
-        if has_workflow:
-            step_hint = self._workflow_step_hint(reply_ticket_id, workflow_id)
-            instruction = (
-                "重要：任务工作流活跃。"
-                + step_hint
-                + "你的第一个动作必须是调用 "
-                "mcp_local_update_task_workflow (action=complete_current_step 或 "
-                "insert_recovery_step)，用上面的输出作为 evidence。"
-                "不要先调 read_terminal_log 或 list_jobs。"
-                "不要为中间结果发送 QQ 消息。"
-                "只在到达汇报步骤、最终失败且无更多方法、或重大方向变更时才发 QQ。"
-                "如果不需要回复用户，最终只输出 NRN 即可。"
-            )
-        elif has_plan:
+        if has_plan:
             instruction = (
                 "你的第一个动作必须是调用 mcp_local_update_plan，"
                 "把当前步骤标为 completed 并开始下一步（或全部完成时清空 plan）。"
@@ -2114,22 +1734,10 @@ class LocalMCPServer:
         except Exception:
             return ""
 
-    def _format_background_job_feedback(self, result: dict, *, reply_ticket_id: str = "", workflow_id: str = "") -> str:
-        has_workflow = bool(workflow_id)
+    def _format_background_job_feedback(self, result: dict, *, reply_ticket_id: str = "") -> str:
         has_plan = bool(self._plan_reminder("", reply_ticket_id))
         if result.get("success"):
-            if has_workflow:
-                step_hint = self._workflow_step_hint(reply_ticket_id, workflow_id)
-                header = (
-                    "[Background terminal job completed]\n"
-                    "后台任务已完成。"
-                    + step_hint
-                    + "你的第一个动作必须是调用 mcp_local_update_task_workflow "
-                    "(action=complete_current_step 或 insert_recovery_step)，"
-                    "用下面的输出作为 evidence。"
-                    "不要先调 read_terminal_log 或 list_jobs。"
-                )
-            elif has_plan:
+            if has_plan:
                 header = (
                     "[Background terminal job completed]\n"
                     "后台任务已完成。你的第一个动作必须是调用 mcp_local_update_plan，"
@@ -2144,16 +1752,6 @@ class LocalMCPServer:
                     "如果此命令的结果已在之前的回复中处理过，静默结束即可，不要重复回复。"
                 )
             return f"{header}\n{self._format_job_result(result)}"
-        step_hint = self._workflow_step_hint(reply_ticket_id, workflow_id) if has_workflow else ""
-        if has_workflow:
-            return (
-                "[Background terminal job failed]\n"
-                + step_hint
-                + "后台任务失败。调用 mcp_local_update_task_workflow "
-                "(action=insert_recovery_step) 换方法继续，或确认无更多方法时汇报失败。\n"
-                f"Error: {result.get('error', 'daemon job failed')}\n"
-                f"command: {result.get('command', '')}"
-            )
         if has_plan:
             return (
                 "[Background terminal job failed]\n"

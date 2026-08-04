@@ -406,7 +406,6 @@ def test_execute_command_sends_cd_then_server_launcher_when_console_context_is_s
     assert "cd temp_extract && bash run.sh" in result[0]["text"]
 
 
-
 def test_system_prompt_forbids_claiming_command_success_without_confirmation() -> None:
     skill_loader.reload()
     prompt = get_system_prompt()
@@ -776,69 +775,6 @@ def test_run_job_is_always_asynchronous_even_when_wait_requested(monkeypatch) ->
     }
     run_job_tool = next(tool for tool in server.list_tools() if tool["name"] == "run_job")
     assert "wait_for_completion" not in run_job_tool["inputSchema"]["properties"]
-
-
-def test_background_run_job_registers_task_workflow_only_after_start(
-    monkeypatch,
-) -> None:
-    from types import SimpleNamespace
-
-    from app.services.agent.reply_ticket import reply_ticket_manager
-    from app.services.agent.task_workflow import task_workflow_manager
-
-    item_id = "item-background-pending"
-    server = LocalMCPServer()
-    _allow_main_terminal(monkeypatch, server)
-    started: list[dict] = []
-    fake_agent = SimpleNamespace(
-        _context=SimpleNamespace(
-            robot_id="",
-            robot_context_token="",
-            reply_ticket_id="",
-        )
-    )
-
-    monkeypatch.setattr(
-        server,
-        "_get_item_daemon_context",
-        lambda _item_id: (
-            SimpleNamespace(owner_id="user-1", working_directory="/workspace/item"),
-            SimpleNamespace(),
-        ),
-    )
-    monkeypatch.setattr(
-        server,
-        "_start_background_job_thread",
-        lambda **kwargs: started.append(kwargs),
-    )
-
-    reply_ticket_manager.reset()
-    try:
-        ticket = reply_ticket_manager.create_for_agent(
-            fake_agent,
-            item_id=item_id,
-            handler_id="handler-1",
-            message="安装 Temurin Java 17",
-            source_type="web",
-        )
-        result = server.call_tool(
-            "run_job",
-            {
-                "item_id": item_id,
-                "command": "apt-get install -y temurin-17-jdk",
-                "_reply_ticket_id": ticket.ticket_id,
-            },
-        )
-
-        assert "后台任务已启动" in result[0]["text"]
-        assert len(started) == 1
-        workflow = task_workflow_manager.get_by_ticket(ticket.ticket_id)
-        assert workflow is not None
-        assert workflow.item_id == item_id
-        assert workflow.objective == "后台任务：apt-get install -y temurin-17-jdk"
-        assert workflow.source_type == "web"
-    finally:
-        reply_ticket_manager.reset()
 
 
 def test_tool_descriptions_guide_foreground_background_command_choice() -> None:
@@ -1483,7 +1419,6 @@ def test_run_job_allows_distinct_background_jobs_but_blocks_duplicates(monkeypat
     assert second_result[0]["type"] == "text"
     assert commands.count("curl https://example.test/file -o file") == 1
     assert "python -m pip install demo-package" in commands
-
 
 
 def test_interrupt_command_cancels_running_daemon_job(monkeypatch) -> None:

@@ -233,10 +233,8 @@ def build_robot_history_prompt(agent: Agent, *, has_robot_context: bool) -> str:
     return "\n\n".join([ROBOT_MESSAGING_PROMPT, ROBOT_LONG_TERM_MEMORY_INSTRUCTION, ROBOT_BACKEND_CONTEXT_PROMPT])
 
 
-def build_robot_delivery_reflection_prompt(final_response: str, *, workflow_active: bool = False) -> str:
+def build_robot_delivery_reflection_prompt(final_response: str) -> str:
     if not is_robot_plugin_enabled():
-        return ""
-    if workflow_active:
         return ""
 
     return (

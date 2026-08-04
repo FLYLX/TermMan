@@ -11,7 +11,6 @@ from app.plugins.robot.mcp.context import (
     unregister_robot_mcp_context,
 )
 from app.services.agent.reply_ticket import ReplyTicketManager
-from app.services.agent.task_workflow import task_workflow_manager
 
 
 def test_qq_reply_ticket_snapshot_keeps_request_and_route_until_delivery() -> None:
@@ -242,59 +241,6 @@ def test_deliver_skips_qq_resend_after_external_report_sent(monkeypatch) -> None
         unregister_robot_mcp_context(token)
 
 
-def test_intermediate_delivery_cannot_close_active_task_workflow() -> None:
-    task_workflow_manager.reset()
-    manager = ReplyTicketManager()
-    agent = SimpleNamespace(
-        _context=SimpleNamespace(
-            robot_id="",
-            robot_context_token="",
-            reply_ticket_id="",
-        )
-    )
-    ticket = manager.create_for_agent(
-        agent,
-        item_id="item-java",
-        handler_id="handler-java",
-        message="install Java 17",
-        source_type="web",
-    )
-    task_workflow_manager.create(
-        item_id="item-java",
-        handler_id="handler-java",
-        reply_ticket_id=ticket.ticket_id,
-        objective="install Java 17",
-        source_type="web",
-        source_label="TermMan web chat",
-        step_titles=["install Java", "verify Java"],
-    )
-
-    assert manager.mark_delivered(ticket.ticket_id) is False
-    assert manager.get(ticket.ticket_id).status == "pending"
-
-    task_workflow_manager.update(
-        ticket.ticket_id,
-        action="complete_current_step",
-        note="Java installed",
-    )
-    task_workflow_manager.record_tool_call(
-        ticket.ticket_id,
-        tool_name="mcp_local_run_job",
-        command="java -version",
-    )
-    task_workflow_manager.update(
-        ticket.ticket_id,
-        action="complete_current_step",
-        note='openjdk version "17"',
-    )
-
-    assert manager.mark_delivered(ticket.ticket_id) is True
-    assert manager.get(ticket.ticket_id).status == "delivered"
-    assert task_workflow_manager.get_by_ticket(ticket.ticket_id).status == "completed"
-    task_workflow_manager.reset()
-
-
-
 def _qq_ticket_manager(conversation_key: str = "group:770362397"):
     target = RobotReplyTarget(
         target_type="group",
@@ -406,7 +352,6 @@ def test_watchdog_closes_stale_orphan_qq_ticket(monkeypatch) -> None:
 
     from app.services.agent import task_watchdog
 
-    task_workflow_manager.reset()
     token, agent, manager = _qq_ticket_manager()
     monkeypatch.setattr(
         "app.services.agent.reply_ticket.reply_ticket_manager",
@@ -445,7 +390,6 @@ def test_watchdog_closes_stale_orphan_qq_ticket(monkeypatch) -> None:
         assert manager.get(fresh.ticket_id).status == "pending"
     finally:
         unregister_robot_mcp_context(token)
-
 
 
 def test_prune_tolerates_aware_restored_timestamps() -> None:

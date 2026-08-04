@@ -45,136 +45,117 @@
 
 ---
 
-## 二、任务工作流（mcp_local_*）
+## 二、终端过滤规则（mcp_local_*）
 
-### 8. get_task_workflow
-- **用途**：查看当前任务工作流的状态（步骤、进度、job、阻塞原因）
-- **参数**：无
-- **场景**：需要了解任务执行到哪一步了
-
-### 9. update_task_workflow
-- **用途**：推进/更新任务工作流
-- **参数**：`action`（必填）、`note`、`step_index`、`title`
-- **action 取值**：
-  - `record_progress` — 记录进展
-  - `complete_current_step` — 完成当前步骤，推进到下一步
-  - `insert_recovery_step` — 当前步骤失败时插入恢复步骤
-  - `cancel` — 取消整个工作流
-- **场景**：每完成一个步骤都要调这个推进状态机
-
----
-
-## 三、终端过滤规则（mcp_local_*）
-
-### 10. add_terminal_input_filter_rule
+### 8. add_terminal_input_filter_rule
 - **用途**：添加终端输入过滤规则（正则匹配，命中后触发 Agent 处理）
 - **参数**：`pattern`（正则）、`label`（标签）、`source`（来源）
 - **场景**：需要监听终端特定输出（如报错、特定提示）时自动触发 Agent
 
-### 11. list_terminal_input_filter_rules
+### 9. list_terminal_input_filter_rules
 - **用途**：列出当前生效的终端输入过滤规则
 - **参数**：无
 
-### 12. list_terminal_filter_rules
+### 10. list_terminal_filter_rules
 - **用途**：列出终端过滤规则（含输出过滤）
 - **参数**：无
 
-### 13. delete_terminal_input_filter_rule
+### 11. delete_terminal_input_filter_rule
 - **用途**：删除指定的终端输入过滤规则
 - **参数**：`rule_id`
 
-### 14. clear_terminal_input_filter_rules
+### 12. clear_terminal_input_filter_rules
 - **用途**：清除所有终端输入过滤规则
 - **参数**：无
 
 ---
 
-## 四、定时任务（mcp_local_*）
+## 三、定时任务（mcp_local_*）
 
-### 15. list_scheduled_tasks
+### 13. list_scheduled_tasks
 - **用途**：列出所有定时任务
 - **参数**：无
 
-### 16. write_scheduled_task
+### 14. write_scheduled_task
 - **用途**：创建或更新一个定时任务（cron 表达式）
 - **参数**：`name`（必填）、`cron`（必填）、`command`（必填）、`timezone`（默认 Asia/Shanghai）
 - **场景**：用户要求定时执行某个命令
 
-### 17. delete_scheduled_task
+### 15. delete_scheduled_task
 - **用途**：删除一个定时任务
 - **参数**：`task_id`（必填）、`reason`
 
 ---
 
-## 五、长期记忆（mcp_local_*）
+## 四、长期记忆（mcp_local_*）
 
-### 18. save_memory
+### 16. save_memory
 - **用途**：保存稳定、可复用、已验证的重要信息到长期记忆
 - **参数**：`content`（必填）、`memory_type`（fact/preference/error/context）、`ttl_days`
 - **注意**：执行中的任务状态放任务队列，不放记忆
 
-### 19. recall_memory
+### 17. recall_memory
 - **用途**：语义搜索长期记忆
 - **参数**：`query`（必填）、`n_results`、`memory_type`
 
-### 20. list_memories
+### 18. list_memories
 - **用途**：列出所有记忆，可按类型过滤
 - **参数**：`memory_type`（可选）
 
-### 21. delete_memory
+### 19. delete_memory
 - **用途**：删除指定记忆
 - **参数**：`memory_id`（必填）
 
-### 22. compress_memories
+### 20. compress_memories
 - **用途**：将多条重复/冗余/过时的记忆压缩合并成一条精炼记忆
 - **参数**：`memory_ids`（必填，≥2）、`content`（必填）、`memory_type`、`ttl_days`
 - **场景**：recall 或 list 结果里有重复内容、同一事实的旧版本
 
 ---
 
-## 六、聊天历史（mcp_local_*）
+## 五、聊天历史（mcp_local_*）
 
-### 23. read_chat_history
+### 21. read_chat_history
 - **用途**：读取 Web 端聊天历史
 - **参数**：`limit`（条数）
 - **场景**：需要回顾之前的对话内容
 
 ---
 
-## 七、QQ 机器人（mcp_robot_*）
+## 六、QQ 机器人（mcp_robot_*）
 
 > 以下工具仅在 QQ 会话上下文中可用（由 robot 插件动态注入）。
 
-### 24. mcp_robot_send_message
+### 22. mcp_robot_send_message
 - **用途**：向 QQ 会话发送消息（回复用户）
 - **参数**：`text` 或 `messages`（必填）、`target`（可选，指定发送目标）
 - **场景**：任务完成后汇报结果、回答用户问题
 - **注意**：只在完成/失败/方向变更时发，不要发中间进度
 
-### 25. mcp_robot_sleep_conversation
+### 23. mcp_robot_sleep_conversation
 - **用途**：让当前 QQ 会话进入休眠（不再主动回复）
 - **参数**：无
 - **场景**：用户说"别回了""安静"时调用
 
-### 26. mcp_robot_save_memory
+### 24. mcp_robot_save_memory
 - **用途**：保存 QQ 相关的长期记忆
 - **参数**：同 save_memory
 - **场景**：记住用户的 QQ 偏好、群规等
 
-### 27. mcp_robot_list_memories
+### 25. mcp_robot_list_memories
 - **用途**：列出 QQ 相关的长期记忆
 - **参数**：同 list_memories
 
-### 28. mcp_robot_recall_memory
+### 26. mcp_robot_recall_memory
 - **用途**：语义搜索 QQ 相关的长期记忆
 - **参数**：同 recall_memory
 
-### 29. mcp_robot_read_conversation_memory
+### 27. mcp_robot_read_conversation_memory
 - **用途**：读取 QQ 对话的原始近期消息记录
 - **参数**：`target`（可选）
 - **场景**：需要查看最近的 QQ 聊天原文（不是长期记忆，是原始消息）
 
-### 30. mcp_robot_compress_memories
+### 28. mcp_robot_compress_memories
 - **用途**：压缩合并 QQ 相关的长期记忆
 - **参数**：同 compress_memories
 
@@ -189,7 +170,6 @@
 | 查看后台任务进度 | `list_jobs` |
 | 停止一个后台任务 | `cancel_job` |
 | 中断当前终端命令 | `interrupt_command` |
-| 推进任务步骤 | `update_task_workflow` |
 | 给 QQ 发结果 | `mcp_robot_send_message` |
 | 记住一个信息 | `save_memory` / `mcp_robot_save_memory` |
 | 想起一个信息 | `recall_memory` / `mcp_robot_recall_memory` |

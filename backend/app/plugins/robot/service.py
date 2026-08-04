@@ -30,7 +30,6 @@ from .contracts import RobotDispatchResponse, RobotInboundMessage, RobotReplyTar
 from .debug_log import preview_text, record_robot_event
 from .memory_scope import (
     memory_content_is_question_like,
-    memory_scope_for_content,
     memory_scope_rank,
     speaker_global_key_from_context,
 )
@@ -162,14 +161,6 @@ class RobotCommand:
     text: str
 
 
-@dataclass
-class PendingRobotMemoryCandidate:
-    candidate: object
-    confidence: float
-    observations: int
-    updated_at: datetime
-
-
 @dataclass(frozen=True)
 class PendingRobotChatInput:
     item_id: uuid.UUID
@@ -182,7 +173,6 @@ class PendingRobotChatInput:
     enqueued_at: datetime
     # True once the entry has been written to long-term memory by a first
     # drain; requeued copies must not be persisted again.
-    memory_persisted: bool = False
 
 
 @dataclass(frozen=True)
@@ -236,7 +226,6 @@ class RobotService:
     def __init__(self) -> None:
         self._conversation_routes: dict[tuple[str, str], ConversationState] = {}
         self._conversation_controllers: dict[tuple[str, str], RobotConversationController] = {}
-        self._pending_memory_candidates: dict[tuple[str, str, str], PendingRobotMemoryCandidate] = {}
         self._pending_task_replies: dict[tuple[str, str], list[PendingRobotTaskReply]] = {}
         self._lock = threading.RLock()
         self._dispatch_queue: queue.Queue[QueuedRobotChatJob] = queue.Queue(
@@ -1161,13 +1150,6 @@ class RobotService:
         if inbound_message is None or not message_text:
             return job.message
 
-        self._persist_inbound_long_term_memory(
-            item_id=item.id,
-            robot=robot,
-            message=inbound_message,
-            conversation_key=job.conversation_key,
-            message_text=message_text,
-        )
         pending_message_texts = self._pending_chat_message_texts(
             robot.id,
             job.conversation_key,
@@ -2004,22 +1986,6 @@ class RobotService:
         if not entries:
             return False
 
-        for entry in entries:
-            if entry.memory_persisted:
-                continue
-            self._persist_inbound_long_term_memory(
-                item_id=entry.item_id,
-                robot=robot,
-                message=RobotInboundMessage(
-                    sender_key=entry.sender_key,
-                    text=entry.message_text,
-                    reply_target=entry.reply_target.model_copy(deep=True),
-                ),
-                conversation_key=conversation_key,
-                message_text=entry.message_text,
-            )
-
-        entries = [replace(entry, memory_persisted=True) for entry in entries]
         latest = entries[-1]
         distinct_sender_keys = {
             entry.sender_key for entry in entries if entry.sender_key.strip()
@@ -2325,177 +2291,6 @@ class RobotService:
                 robot.id,
                 conversation_key,
             )
-
-    def _persist_inbound_long_term_memory(
-        self,
-        *,
-        item_id: uuid.UUID | str,
-        robot: Robot,
-        message: RobotInboundMessage,
-        conversation_key: str,
-        message_text: str,
-    ) -> None:
-        if not message_text.strip():
-            return
-        try:
-            from app.services.agent.memory.vector_store import vector_store
-            from app.services.agent.prompts import policy as memory_policy
-
-            explicit_candidate = memory_policy.build_conversation_memory_candidate(
-                message_text,
-                "recorded",
-            )
-            if explicit_candidate is not None:
-                self._persist_scoped_memory_candidate(
-                    item_id=item_id,
-                    robot=robot,
-                    conversation_key=conversation_key,
-                    sender_key=message.sender_key,
-                    reply_target=message.reply_target,
-                    candidate=explicit_candidate,
-                    store=vector_store,
-                    source="qq_robot",
-                )
-                return
-
-            scored_candidate = memory_policy.build_auto_conversation_memory_candidate(
-                message_text,
-                "recorded",
-                speaker_label=self._sender_memory_label(message),
-                speaker_key=message.sender_key,
-                conversation_key=conversation_key,
-            )
-            if scored_candidate is None:
-                return
-
-            if scored_candidate.confidence >= memory_policy.AUTO_MEMORY_DIRECT_THRESHOLD:
-                self._persist_scoped_memory_candidate(
-                    item_id=item_id,
-                    robot=robot,
-                    conversation_key=conversation_key,
-                    sender_key=message.sender_key,
-                    reply_target=message.reply_target,
-                    candidate=scored_candidate.candidate,
-                    store=vector_store,
-                    source="qq_robot_auto",
-                    extra_metadata={"type": "conversation_auto", "observations": 1},
-                )
-                return
-
-            promoted_candidate, observations = self._record_pending_memory_candidate(
-                robot=robot,
-                conversation_key=conversation_key,
-                scored_candidate=scored_candidate,
-                repeat_threshold=memory_policy.AUTO_MEMORY_REPEAT_THRESHOLD,
-            )
-            if promoted_candidate is None:
-                return
-
-            self._persist_scoped_memory_candidate(
-                item_id=item_id,
-                robot=robot,
-                conversation_key=conversation_key,
-                sender_key=message.sender_key,
-                reply_target=message.reply_target,
-                candidate=promoted_candidate,
-                store=vector_store,
-                source="qq_robot_auto_promoted",
-                extra_metadata={
-                    "type": "conversation_auto_promoted",
-                    "observations": observations,
-                    "verified": False,
-                },
-            )
-        except Exception:
-            logger.exception(
-                "[RobotService] Failed to write long-term robot memory robot=%s conversation=%s",
-                robot.id,
-                conversation_key,
-            )
-
-    def _persist_scoped_memory_candidate(
-        self,
-        *,
-        item_id: uuid.UUID | str,
-        robot: Robot,
-        conversation_key: str,
-        sender_key: str = "",
-        reply_target: RobotReplyTarget | None = None,
-        candidate: object,
-        store: object,
-        source: str,
-        extra_metadata: dict[str, object] | None = None,
-    ) -> str | None:
-        from app.services.agent.prompts import policy as memory_policy
-
-        memory_type = str(getattr(candidate, "memory_type", "") or "")
-        content = str(getattr(candidate, "content", "") or "")
-        speaker_global_key = speaker_global_key_from_context(sender_key, reply_target)
-        metadata = {
-            **dict(getattr(candidate, "metadata", {}) or {}),
-            "source": source,
-            "robot_id": str(robot.id),
-            "robot_conversation_key": conversation_key,
-            "conversation_key": conversation_key,
-            "memory_scope": memory_scope_for_content(content, memory_type),
-        }
-        if sender_key:
-            metadata.setdefault("speaker_key", sender_key)
-        if speaker_global_key:
-            metadata["speaker_global_key"] = speaker_global_key
-        if extra_metadata:
-            metadata.update(extra_metadata)
-        return memory_policy.persist_memory_candidate(
-            str(item_id),
-            replace(candidate, metadata=metadata),
-            store=store,
-        )
-
-    def _record_pending_memory_candidate(
-        self,
-        *,
-        robot: Robot,
-        conversation_key: str,
-        scored_candidate: object,
-        repeat_threshold: int,
-    ) -> tuple[object | None, int]:
-        now = self._now()
-        promotion_key = str(getattr(scored_candidate, "promotion_key", "") or "").strip()
-        if not promotion_key:
-            return None, 0
-
-        key = (str(robot.id), conversation_key, promotion_key)
-        with self._lock:
-            self._prune_pending_memory_candidates_locked(now)
-            existing = self._pending_memory_candidates.get(key)
-            observations = (existing.observations + 1) if existing is not None else 1
-            confidence = max(
-                float(getattr(scored_candidate, "confidence", 0.0) or 0.0),
-                existing.confidence if existing is not None else 0.0,
-            )
-            candidate = getattr(scored_candidate, "candidate", None)
-            if candidate is None:
-                return None, observations
-            if observations < max(2, repeat_threshold):
-                self._pending_memory_candidates[key] = PendingRobotMemoryCandidate(
-                    candidate=candidate,
-                    confidence=confidence,
-                    observations=observations,
-                    updated_at=now,
-                )
-                return None, observations
-            self._pending_memory_candidates.pop(key, None)
-            return candidate, observations
-
-    def _prune_pending_memory_candidates_locked(self, now: datetime) -> None:
-        expired_after = now - CONVERSATION_TTL
-        expired_keys = [
-            key
-            for key, candidate in self._pending_memory_candidates.items()
-            if candidate.updated_at < expired_after
-        ]
-        for key in expired_keys:
-            self._pending_memory_candidates.pop(key, None)
 
     def _sender_memory_label(self, message: RobotInboundMessage) -> str:
         sender_data = message.reply_target.metadata.get("sender")

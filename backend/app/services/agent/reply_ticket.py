@@ -239,12 +239,6 @@ class ReplyTicketManager:
             self._tickets.clear()
             self._ticket_aliases.clear()
             _persist_aliases(self._ticket_aliases)
-        try:
-            from app.services.agent.task_workflow import task_workflow_manager
-
-            task_workflow_manager.reset()
-        except Exception:
-            pass
 
     @staticmethod
     def _robot_request_message(
@@ -306,10 +300,6 @@ class ReplyTicketManager:
         """
         if new_ticket.source_type != SOURCE_QQ or not new_ticket.conversation_key:
             return
-        try:
-            from app.services.agent.task_workflow import task_workflow_manager
-        except Exception:
-            return
         for ticket in list(self._tickets.values()):
             if (
                 ticket.ticket_id == new_ticket.ticket_id
@@ -324,11 +314,6 @@ class ReplyTicketManager:
             # from the same conversation); only idle follow-up turns get
             # superseded.
             if ticket.plan:
-                continue
-            try:
-                if task_workflow_manager.get_by_ticket(ticket.ticket_id) is not None:
-                    continue
-            except Exception:
                 continue
             if ticket.external_report_sent:
                 ticket.status = "delivered"
@@ -543,8 +528,6 @@ class ReplyTicketManager:
         ticket. Plans whose ticket has not been touched for
         PLAN_LOOKUP_FRESH_SECONDS are considered abandoned.
         """
-        from app.services.agent.task_workflow import task_workflow_manager
-
         with self._lock:
             now = datetime.now()
             candidates = []
@@ -568,9 +551,6 @@ class ReplyTicketManager:
                     }
                     if all_steps_done or terminal_ticket:
                         continue
-                wf = task_workflow_manager.get_by_ticket(ticket.ticket_id)
-                if wf and wf.status in {"cancelled", "failed"}:
-                    continue
                 candidates.append(ticket)
         if not candidates:
             return None, []
@@ -640,38 +620,6 @@ class ReplyTicketManager:
 
     def mark_delivered(self, ticket_id: str) -> bool:
         ticket_id = self.resolve_ticket_id(ticket_id)
-        try:
-            from app.services.agent.task_workflow import task_workflow_manager
-
-            # Hard constraint: if the report already reached the user via
-            # the send tool, skip the can_finalize gate and force-close.
-            pre_ticket = self.get(ticket_id)
-            if not (pre_ticket and pre_ticket.external_report_sent):
-                can_finalize, reason = task_workflow_manager.can_finalize(ticket_id)
-                if not can_finalize:
-                    if task_workflow_manager.complete_final_step_on_delivery(ticket_id):
-                        can_finalize, reason = task_workflow_manager.can_finalize(ticket_id)
-                if not can_finalize:
-                    logger.info(
-                        "[ReplyTicket] Kept ticket active after intermediate delivery: ticket=%s reason=%s",
-                        ticket_id,
-                        reason,
-                    )
-                    return False
-        except Exception:
-            logger.exception(
-                "[ReplyTicket] Failed to validate workflow delivery state: ticket=%s",
-                ticket_id,
-            )
-            return False
-
-        ticket = self.get(ticket_id)
-        if ticket is not None:
-            # A delivered conclusion also closes any last-step workflow in this
-            # item, even when this ticket was never attached to it.
-            task_workflow_manager.complete_last_step_workflow_on_delivery(
-                ticket.item_id
-            )
 
         with self._lock:
             ticket = self._tickets.get(ticket_id)
@@ -683,15 +631,6 @@ class ReplyTicketManager:
             ticket.updated_at = now
             ticket.delivery_error = ""
             _persist_ticket(ticket)
-        try:
-            from app.services.agent.task_workflow import task_workflow_manager
-
-            task_workflow_manager.on_delivery(ticket_id)
-        except Exception:
-            logger.exception(
-                "[ReplyTicket] Failed to complete task workflow after delivery: ticket=%s",
-                ticket_id,
-            )
         return True
 
     def build_prompt(self, ticket_id: str) -> str:
@@ -788,12 +727,6 @@ class ReplyTicketManager:
                     current.delivery_error = str(exc)
                     current.updated_at = datetime.now()
                 _persist_ticket(current)
-            try:
-                from app.services.agent.task_workflow import task_workflow_manager
-
-                task_workflow_manager.mark_delivery_failed(ticket_id, str(exc))
-            except Exception:
-                pass
             return False
 
         self.mark_delivered(ticket_id)
@@ -834,13 +767,6 @@ class ReplyTicketManager:
         tickets.sort(key=lambda ticket: ticket.updated_at, reverse=True)
         snapshots: list[dict[str, Any]] = []
         for ticket in tickets:
-            workflow = None
-            try:
-                from app.services.agent.task_workflow import task_workflow_manager
-
-                workflow = task_workflow_manager.snapshot_for_ticket(ticket.ticket_id)
-            except Exception:
-                pass
             snapshots.append(
                 {
                     "ticket_id": ticket.ticket_id,
@@ -860,29 +786,17 @@ class ReplyTicketManager:
                     "delivery_error": ticket.delivery_error,
                     "scheduled_task_id": ticket.scheduled_task_id,
                     "scheduled_execution_id": ticket.scheduled_execution_id,
-                    "pending_reply_status": str(
-                        (workflow or {}).get("queue_status") or ""
-                    ),
-                    "pending_reply_requester": str(
-                        (workflow or {}).get("requester") or ""
-                    ),
-                    "pending_reply_plan": [
-                        str(step.get("title") or "")
-                        for step in (workflow or {}).get("steps") or []
-                        if isinstance(step, dict) and step.get("title")
-                    ],
-                    "pending_reply_awaiting_kind": str(
-                        (workflow or {}).get("awaiting_kind") or ""
-                    ),
-                    "pending_reply_awaiting_key": str(
-                        (workflow or {}).get("awaiting_key") or ""
-                    ),
+                    "pending_reply_status": "",
+                    "pending_reply_requester": "",
+                    "pending_reply_plan": [],
+                    "pending_reply_awaiting_kind": "",
+                    "pending_reply_awaiting_key": "",
                     "robot_id": ticket.robot_id,
                     "sender_key": ticket.sender_key,
                     "sender_label": ticket.sender_label,
                     "conversation_key": ticket.conversation_key,
                     "conversation_generation": ticket.conversation_generation,
-                    "workflow": workflow,
+                    "workflow": None,
                 }
             )
         return snapshots

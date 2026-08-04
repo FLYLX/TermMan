@@ -3,7 +3,6 @@ from types import SimpleNamespace
 from app.services.agent.prompts.policy import (
     MemoryCandidate,
     PromptTurnType,
-    build_auto_conversation_memory_candidate,
     build_confirmation_memory_candidate,
     build_conversation_memory_candidate,
     build_manual_status_update,
@@ -69,46 +68,6 @@ def test_build_conversation_memory_candidate_rejects_generic_or_log_noise() -> N
     assert should_reject_long_term_memory("[no_qq_reply]") is True
 
 
-
-def test_build_auto_conversation_memory_candidate_for_preference() -> None:
-    candidate = build_auto_conversation_memory_candidate(
-        "我喜欢短回复",
-        speaker_label="Alice (u1)",
-        speaker_key="onebot_v11:group:g1:u1",
-        conversation_key="group:g1",
-    )
-
-    assert candidate is not None
-    assert candidate.confidence >= 0.74
-    assert candidate.candidate.memory_type == "preference"
-    assert "Alice (u1)" in candidate.candidate.content
-    assert "我喜欢短回复" in candidate.candidate.content
-    assert candidate.candidate.metadata["source"] == "chat_user_auto"
-    assert candidate.candidate.metadata["conversation_key"] == "group:g1"
-    assert candidate.candidate.metadata["speaker_key"] == "onebot_v11:group:g1:u1"
-
-
-def test_build_auto_conversation_memory_candidate_for_personal_reply_style() -> None:
-    candidate = build_auto_conversation_memory_candidate(
-        "\u5728\u56de\u590d\u6211\u7684\u65f6\u5019\uff0c\u4f60\u8981\u5728\u6bcf\u53e5\u8bdd\u7684\u672b\u5c3e\u52a0\u4e0a\u55b5",
-        speaker_label="EX_GuguX (u2)",
-        speaker_key="onebot_v11:group:g1:u2",
-        conversation_key="group:g1",
-    )
-
-    assert candidate is not None
-    assert candidate.confidence >= 0.74
-    assert candidate.candidate.memory_type == "preference"
-    assert "EX_GuguX (u2)" in candidate.candidate.content
-    assert candidate.candidate.ttl_days is None
-
-
-def test_build_auto_conversation_memory_candidate_skips_noise_and_questions() -> None:
-    assert build_auto_conversation_memory_candidate("666") is None
-    assert build_auto_conversation_memory_candidate("要是跌了能不能再入一点？") is None
-    assert build_auto_conversation_memory_candidate("[CQ:image,file=a.jpg]") is None
-
-
 def test_build_conversation_memory_candidate_accepts_remember_variants() -> None:
     candidate = build_conversation_memory_candidate(
         "\u8bb0\u4e00\u4e0b\u4f60\u53eb\u5927\u72d7",
@@ -118,61 +77,6 @@ def test_build_conversation_memory_candidate_accepts_remember_variants() -> None
     assert candidate is not None
     assert candidate.memory_type == "fact"
     assert candidate.content == "\u4f60\u53eb\u5927\u72d7"
-
-
-def test_build_auto_conversation_memory_candidate_for_bot_identity() -> None:
-    candidate = build_auto_conversation_memory_candidate("\u4f60\u53eb\u5927\u72d7")
-
-    assert candidate is not None
-    assert candidate.confidence >= 0.74
-    assert candidate.candidate.memory_type == "fact"
-    assert candidate.candidate.content == "\u4f60\u53eb\u5927\u72d7"
-
-
-def test_build_auto_conversation_memory_candidate_for_named_person_alias() -> None:
-    candidate = build_auto_conversation_memory_candidate(
-        "\u82b1\u7cd5\u53eb\u5c0f\u82b1",
-        speaker_label="FLY (u1)",
-        speaker_key="onebot_v11:group:g1:u1",
-        conversation_key="group:g1",
-    )
-
-    assert candidate is not None
-    assert candidate.confidence >= 0.74
-    assert candidate.candidate.memory_type == "fact"
-    assert "\u82b1\u7cd5\u53eb\u5c0f\u82b1" in candidate.candidate.content
-
-
-def test_auto_memory_keeps_identity_fact_with_qq_mention() -> None:
-    candidate = build_auto_conversation_memory_candidate(
-        (
-            "\u6211\u660e\u786e\u7684\u544a\u8bc9\u4f60\uff0c"
-            "\u732b\u5a18\u662f\u5979 [CQ:at,qq=3385417251] "
-            "\u5979\u5c31\u662f\u6708\u5f71\u6c49\u5821\u732b\u5a18"
-        ),
-        speaker_label="New+7 (2206406352)",
-        speaker_key="onebot_v11:group:770362397:2206406352",
-        conversation_key="group:770362397",
-    )
-
-    assert candidate is not None
-    assert candidate.confidence >= 0.74
-    assert candidate.candidate.memory_type == "fact"
-    assert "[CQ:" not in candidate.candidate.content
-    assert "@QQ(3385417251)" in candidate.candidate.content
-    assert "\u6708\u5f71\u6c49\u5821\u732b\u5a18" in candidate.candidate.content
-
-
-def test_build_auto_conversation_memory_candidate_promotes_stable_person_fact_after_repeats() -> None:
-    candidate = build_auto_conversation_memory_candidate("\u82b1\u7cd5\u662f\u7fa4\u7ba1\u7406\u5458")
-
-    assert candidate is not None
-    assert 0.45 <= candidate.confidence < 0.74
-    assert candidate.candidate.memory_type == "fact"
-
-
-def test_build_auto_conversation_memory_candidate_skips_uncertain_stable_fact_question() -> None:
-    assert build_auto_conversation_memory_candidate("\u82b1\u7cd5\u662f\u7fa4\u7ba1\u7406\u5458\u5417\uff1f") is None
 
 
 def test_persist_memory_candidate_skips_duplicate_hash() -> None:
@@ -313,15 +217,9 @@ def test_task_word_does_not_block_a_real_preference_memory() -> None:
         "记住以后都要在任务开始前先确认",
         "已记录。",
     )
-    automatic = build_auto_conversation_memory_candidate(
-        "我喜欢任务完成后只回复一次",
-        speaker_label="FLY (2537134688)",
-    )
 
     assert explicit is not None
     assert explicit.memory_type == "preference"
-    assert automatic is not None
-    assert automatic.candidate.memory_type == "preference"
 
 
 def test_build_status_update_memory_candidate_ignores_task_queue_state() -> None:

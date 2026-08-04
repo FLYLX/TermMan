@@ -54,3 +54,15 @@
 [10:16:10] QQ [send_private_msg] -> 2537134688: 2
 [10:17:50] QQ [send_private_msg] -> 2537134688: 主人~后台任务跑完啦喵 输出是 LONG_JOB_DONE (≧▽≦)
 [10:23:15] QQ [send_private_msg] -> 2537134688: 换清华源搞定啦喵～99M 只用了9秒 (≧▽≦) JDK 8u502 装好在 /opt/java8，java -version 验证通过
+[10:59:56] QQ [send_private_msg] -> 2537134688: 主人，四个任务全部搞定啦 (≧▽≦)
+[10:59:56] QQ [send_private_msg] -> 2537134688: c.txt 内容是 alpha 换行 beta 喵~
+[11:05:18] QQ [send_private_msg] -> 2537134688: 主人~任务全部完成啦(≧▽≦)
+[11:05:18] QQ [send_private_msg] -> 2537134688: c.txt 内容是两行：alpha 和 beta，用 cat -A 验证过没有多余字符喵
+[11:05:19] QQ [send_private_msg] -> 2537134688: 四步全部搞定：建目录→写a.txt→写b.txt→合并读取，随时听候差遣~
+[13:00:34] QQ [send_private_msg] -> 2537134688: 主人来啦～小柴在等主人找我玩呢(≧▽≦)
+[13:04:42] QQ [send_private_msg] -> 2537134688: 主人 /tmp/plan_smoke 建好啦，验证存在喵(≧▽≦)
+[13:08:20] QQ [send_private_msg] -> 2537134688: 计划全部跑完啦主人～目录建好 hello.txt 写好，验证内容是 hi 喵(≧▽≦)
+[13:55:40] QQ [send_private_msg] -> 2537134688: 主人～任务完成啦(≧▽≦) /tmp/mem_check 已创建并验证存在 权限drwxr-xr-x 一切正常喵
+[13:56:41] QQ [send_private_msg] -> 2537134688: 记住啦喵 主人完成任务要喝可乐 (≧▽≦)
+[14:08:24] QQ [send_private_msg] -> 2537134688: 主人～都办好啦 (≧▽≦) /tmp/mem_check 已创建，验证存在，妥妥的喵
+[14:08:34] QQ [send_private_msg] -> 2537134688: 记住啦主人~ 任务完成就给你递可乐 (≧▽≦)

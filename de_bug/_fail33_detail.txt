@@ -1,0 +1,80 @@
+﻿docker : /app/.venv/lib/python3.11/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) o
+r chardet (7.1.0)/charset_normalizer (3.4.5) doesn't match a supported version!
+At line:2 char:1
++ docker exec -e PROJECT_NAME=TermMan -e FIRST_SUPERUSER=admin@example. ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (/app/.venv/lib/...ported version!:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  warnings.warn(
+...................................FFF..F.............F..FFFFF.FFFFF..FF [ 51%]
+FFFFFFFFFF..F........F.....F.............................F..FF.......    [100%]
+=================================== FAILURES ===================================
+/app/backend/tests/services/test_robot_service.py:1033: AssertionError: assert None == 'f1ef2432-68eb-4855-b6a9-e047b2f28957'
+/app/backend/tests/services/test_robot_service.py:1079: AssertionError: assert 'conversation_sleeping' == 'queued'
+/app/backend/tests/services/test_robot_service.py:1172: KeyError: 'job'
+/app/backend/tests/services/test_robot_service.py:1340: KeyError: 'job'
+/app/backend/tests/services/test_robot_service.py:1945: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:2111: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:2217: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:2355: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:2425: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:2506: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:2685: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:2756: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:2826: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:2877: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:3005: AssertionError: assert 'queued' == 'queued_pending'
+/app/backend/tests/services/test_robot_service.py:3214: AssertionError: assert 'Are you there?' in '[Robot message; conversation=group:g1; trigger=pending_queue; sender=Alice (u1)]\n[Current QQ sender; authoritative f...er each sender once in order. Default to one concise QQ bubble; use separate messages only for those distinct senders.'
+/app/backend/tests/services/test_robot_service.py:3264: AssertionError: assert 'conversation_sleeping' == 'queued'
+/app/backend/tests/services/test_robot_service.py:3329: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:3409: AssertionError: assert 'conversation_sleeping' == 'media_message_ignored'
+/app/backend/tests/services/test_robot_service.py:3487: AssertionError: assert 'queued' == 'queued_pending'
+/app/backend/tests/services/test_robot_service.py:3547: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:3625: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:3695: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:3760: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:3830: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:3929: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:4004: AssertionError: assert True is False
+/app/backend/tests/services/test_robot_service.py:4187: AssertionError: assert 'conversation_sleeping' == 'dispatch_queue_full'
+/app/backend/tests/services/test_robot_service.py:4550: assert ([])
+/app/backend/tests/services/test_memory_policy.py:42: AssertionError: assert 3 == 0
+/app/backend/tests/services/test_memory_retrieval.py:612: AttributeError: <module 'app.services.agent.prompts.builder' from '/app/backend/app/services/agent/prompts/builder.py'> has no attribute '_build_active_task_ledger_context'
+/app/backend/tests/services/test_memory_retrieval.py:757: AssertionError: assert '另一个群在聊股票' not in '- 另一个群在聊股票\...在开 Forge 服务器'
+/app/backend/tests/services/test_memory_retrieval.py:813: AssertionError: assert 'Bob 以后叫他大主人' not in '- 用户偏好：Bob ...Alice 以后叫她主人'
+=========================== short test summary info ============================
+FAILED tests/services/test_robot_service.py::test_mentioned_group_message_routes_to_default_item_agent
+FAILED tests/services/test_robot_service.py::test_robot_dispatch_queues_before_slow_memory_and_context_work
+FAILED tests/services/test_robot_service.py::test_robot_message_includes_current_conversation_impression_card
+FAILED tests/services/test_robot_service.py::test_robot_message_passes_sender_prefix_to_agent
+FAILED tests/services/test_robot_service.py::test_reply_message_type_filter_allows_mention_when_group_is_disabled
+FAILED tests/services/test_robot_service.py::test_mention_only_keeps_context_active_after_agent_sends_qq_message
+FAILED tests/services/test_robot_service.py::test_reply_context_window_is_scoped_to_current_conversation
+FAILED tests/services/test_robot_service.py::test_direct_wakeup_agent_message_excludes_recent_same_conversation_context
+FAILED tests/services/test_robot_service.py::test_reply_context_uses_onebot_group_id_before_universal_target_id
+FAILED tests/services/test_robot_service.py::test_conversation_controller_rejects_stale_generation_after_sleep
+FAILED tests/services/test_robot_service.py::test_direct_wakeup_job_reaches_agent_even_if_controller_window_expires
+FAILED tests/services/test_robot_service.py::test_visible_agent_response_without_robot_tool_is_sent_to_qq
+FAILED tests/services/test_robot_service.py::test_visible_agent_response_is_sent_after_long_processing
+FAILED tests/services/test_robot_service.py::test_direct_wakeup_countdown_starts_after_agent_result
+FAILED tests/services/test_robot_service.py::test_direct_wakeup_messages_queue_without_superseding_active_reply
+FAILED tests/services/test_robot_service.py::test_pending_qq_batch_merges_same_sender_into_one_reply_intent
+FAILED tests/services/test_robot_service.py::test_plain_task_control_message_dispatches_immediately_while_processing
+FAILED tests/services/test_robot_service.py::test_direct_wakeup_pending_messages_continue_after_first_job_sends_no_reply
+FAILED tests/services/test_robot_service.py::test_pure_qq_image_message_is_ignored_before_agent_dispatch
+FAILED tests/services/test_robot_service.py::test_qq_image_segments_are_removed_from_agent_and_pending_messages
+FAILED tests/services/test_robot_service.py::test_pending_chat_queue_keeps_latest_five_messages
+FAILED tests/services/test_robot_service.py::test_processing_controller_timeout_sleeps_group_and_blocks_plain_message
+FAILED tests/services/test_robot_service.py::test_agent_no_reply_clears_controller_as_sleeping_gate
+FAILED tests/services/test_robot_service.py::test_reply_context_expiry_sleeps_group_conversation_until_direct_wakeup
+FAILED tests/services/test_robot_service.py::test_active_chat_window_no_reply_sleeps_group_controller_until_direct_wakeup
+FAILED tests/services/test_robot_service.py::test_conversation_controller_snapshot_reports_awake_then_sleeping
+FAILED tests/services/test_robot_service.py::test_sleep_command_blocks_group_messages_until_direct_wakeup
+FAILED tests/services/test_robot_service.py::test_robot_message_is_ignored_when_backend_queue_is_full
+FAILED tests/services/test_robot_service.py::test_reap_stuck_dispatch_jobs_force_fails_and_recovers
+FAILED tests/services/test_memory_policy.py::test_prompt_memory_policy_enables_long_term_by_default
+FAILED tests/services/test_memory_retrieval.py::test_latest_only_robot_turn_skips_duplicate_memory_injection
+FAILED tests/services/test_memory_retrieval.py::test_robot_scoped_always_on_memory_does_not_cross_conversations
+FAILED tests/services/test_memory_retrieval.py::test_robot_speaker_memory_does_not_cross_users_in_same_group
+33 failed, 108 passed in 14.31s

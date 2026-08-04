@@ -7,7 +7,7 @@ from app.core.tool_markup import (
 
 
 DSML_WORKFLOW_CALL = """<｜｜DSML｜｜tool_calls>
-<｜｜DSML｜｜invoke name="mcp_local_update_task_workflow">
+<｜｜DSML｜｜invoke name="mcp_local_run_job">
 <｜｜DSML｜｜parameter name="action" string="true">complete_current_step</｜｜DSML｜｜parameter>
 <｜｜DSML｜｜parameter name="note" string="true">结果检查完成，无需QQ回复</｜｜DSML｜｜parameter>
 </｜｜DSML｜｜invoke>
@@ -17,12 +17,12 @@ DSML_WORKFLOW_CALL = """<｜｜DSML｜｜tool_calls>
 def test_extract_dsml_tool_call_from_content() -> None:
     visible, calls = extract_dsml_tool_calls(
         DSML_WORKFLOW_CALL,
-        allowed_tool_names={"mcp_local_update_task_workflow"},
+        allowed_tool_names={"mcp_local_run_job"},
     )
 
     assert visible == ""
     assert len(calls) == 1
-    assert calls[0]["function"]["name"] == "mcp_local_update_task_workflow"
+    assert calls[0]["function"]["name"] == "mcp_local_run_job"
     assert json.loads(calls[0]["function"]["arguments"]) == {
         "action": "complete_current_step",
         "note": "结果检查完成，无需QQ回复",

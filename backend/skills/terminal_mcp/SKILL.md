@@ -48,8 +48,6 @@ tools:
   - mcp_local_get_terminal_status
   - mcp_local_read_terminal_log
   - mcp_local_read_chat_history
-  - mcp_local_get_task_workflow
-  - mcp_local_update_task_workflow
   - mcp_local_execute_command
   - mcp_local_run_job
   - mcp_local_add_terminal_input_filter_rule

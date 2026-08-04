@@ -7,12 +7,12 @@ import pytest
 
 from app.plugins.robot.contracts import RobotReplyTarget
 from app.plugins.robot.conversation_memory import robot_conversation_memory
-from app.services.agent.mcp.robot_context import (
+from app.plugins.robot.mcp.context import (
     RobotMCPContext,
     register_robot_mcp_context,
     unregister_robot_mcp_context,
 )
-from app.services.agent.mcp.robot_server import RobotMCPServer
+from app.plugins.robot.mcp.server import RobotMCPServer
 from app.services.agent.memory.vector_store import vector_store
 
 
@@ -260,7 +260,7 @@ def test_robot_mcp_send_message_blocks_dsml_tool_trace(monkeypatch) -> None:
         {
             "text": (
                 '<｜｜DSML｜｜tool_calls>\n'
-                '<｜｜DSML｜｜invoke name="mcp_local_update_task_workflow">\n'
+                '<｜｜DSML｜｜invoke name="mcp_local_run_job">\n'
                 '<｜｜DSML｜｜parameter name="action" string="true">'
                 'complete_current_step</｜｜DSML｜｜parameter>\n'
                 '</｜｜DSML｜｜invoke>\n'
