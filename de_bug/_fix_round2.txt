@@ -1,0 +1,130 @@
+﻿docker : /app/.venv/lib/python3.11/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) o
+r chardet (7.1.0)/charset_normalizer (3.4.5) doesn't match a supported version!
+At line:2 char:1
++ docker exec -e PROJECT_NAME=TermMan -e FIRST_SUPERUSER=admin@example. ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (/app/.venv/lib/...ported version!:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  warnings.warn(
+...............................................................F...F.... [ 51%]
+F.FF.....................................................F...........    [100%]
+=================================== FAILURES ===================================
+____ test_direct_wakeup_job_reaches_agent_even_if_controller_window_expires ____
+tests/services/test_robot_service.py:2723: in test_direct_wakeup_job_reaches_agent_even_if_controller_window_expires
+    assert len(captured_messages) == 1
+E   AssertionError: assert 2 == 1
+E    +  where 2 = len(['wake after delay', '[Internal corrective turn]\n（对方在直接问你：wake after delay。用你自己的口气回一句就行，别不理人。）'])
+----------------------------- Captured stderr call -----------------------------
+INFO:app.plugins.robot.service:[RobotService] Inbound robot=d0d9ee5d-8b10-4f10-a8c7-33c1a5f11fd7 sender=onebot_v11:group:g1:u1 target=g1 text=wake after delay
+INFO:app.plugins.robot.service:[RobotService] Queued inbound robot=d0d9ee5d-8b10-4f10-a8c7-33c1a5f11fd7 item=229bbf15-5482-40f4-afa7-002c1e56b023 route=alpha queue={'size': 0, 'max_size': 50, 'workers': 0}
+INFO:app.plugins.robot.service:[RobotService] Empty reply for direct trigger robot=d0d9ee5d-8b10-4f10-a8c7-33c1a5f11fd7 raw=''; retrying once with corrective note
+WARNING:app.plugins.robot.service:[RobotService] Corrective retry still empty for robot=d0d9ee5d-8b10-4f10-a8c7-33c1a5f11fd7 raw=''
+ERROR:app.services.connection_pool.daemon_connection:Failed to connect to http://localhost:9000: Connection error
+INFO:app.services.connection_pool.connection_manager:
+============================================================
+INFO:app.services.connection_pool.connection_manager:Created Daemon Connection
+INFO:app.services.connection_pool.connection_manager:============================================================
+INFO:app.services.connection_pool.connection_manager:
+Daemon主连接池表 [daemon ip:port:apikey]
+INFO:app.services.connection_pool.connection_manager:--------------------------------------------------------------------------------
+INFO:app.services.connection_pool.connection_manager:Daemon ID                                          | Status         
+INFO:app.services.connection_pool.connection_manager:--------------------------------------------------------------------------------
+INFO:app.services.connection_pool.connection_manager:localhost:9000:ffhakjnegnuufqxkhicdaosucauouujm    | error          
+INFO:app.services.connection_pool.connection_manager:localhost:9000:fvvytyzycgmxwuytjbnnndbweyubcdxl    | error          
+INFO:app.services.connection_pool.connection_manager:localhost:9000:dqgmdpwpriuajakqmgcbcggmcdngoflk    | error          
+INFO:app.services.connection_pool.connection_manager:localhost:9000:raqyxjnaqvisxzpnvqxvrnjeumgdtrae    | error          
+INFO:app.services.connection_pool.connection_manager:
+============================================================
+ERROR:app.services.connection_pool.daemon_connection:[DaemonConnection] Daemon job list failed: item=229bbf15-5482-40f4-afa7-002c1e56b023 error=[Errno 111] Connection refused
+INFO:app.plugins.robot.service:[RobotService] Queued agent completed robot=d0d9ee5d-8b10-4f10-a8c7-33c1a5f11fd7 item=229bbf15-5482-40f4-afa7-002c1e56b023 route=alpha sent=False
+------------------------------ Captured log call -------------------------------
+INFO     app.plugins.robot.service:service.py:1271 [RobotService] Inbound robot=d0d9ee5d-8b10-4f10-a8c7-33c1a5f11fd7 sender=onebot_v11:group:g1:u1 target=g1 text=wake after delay
+INFO     app.plugins.robot.service:service.py:1604 [RobotService] Queued inbound robot=d0d9ee5d-8b10-4f10-a8c7-33c1a5f11fd7 item=229bbf15-5482-40f4-afa7-002c1e56b023 route=alpha queue={'size': 0, 'max_size': 50, 'workers': 0}
+INFO     app.plugins.robot.service:service.py:836 [RobotService] Empty reply for direct trigger robot=d0d9ee5d-8b10-4f10-a8c7-33c1a5f11fd7 raw=''; retrying once with corrective note
+WARNING  app.plugins.robot.service:service.py:900 [RobotService] Corrective retry still empty for robot=d0d9ee5d-8b10-4f10-a8c7-33c1a5f11fd7 raw=''
+ERROR    app.services.connection_pool.daemon_connection:daemon_connection.py:194 Failed to connect to http://localhost:9000: Connection error
+INFO     app.services.connection_pool.connection_manager:connection_manager.py:131 
+============================================================
+INFO     app.services.connection_pool.connection_manager:connection_manager.py:132 Created Daemon Connection
+INFO     app.services.connection_pool.connection_manager:connection_manager.py:133 ============================================================
+INFO     app.services.connection_pool.connection_manager:connection_manager.py:134 
+Daemon主连接池表 [daemon ip:port:apikey]
+INFO     app.services.connection_pool.connection_manager:connection_manager.py:135 --------------------------------------------------------------------------------
+INFO     app.services.connection_pool.connection_manager:connection_manager.py:136 Daemon ID                                          | Status         
+INFO     app.services.connection_pool.connection_manager:connection_manager.py:137 --------------------------------------------------------------------------------
+INFO     app.services.connection_pool.connection_manager:connection_manager.py:141 localhost:9000:ffhakjnegnuufqxkhicdaosucauouujm    | error          
+INFO     app.services.connection_pool.connection_manager:connection_manager.py:141 localhost:9000:fvvytyzycgmxwuytjbnnndbweyubcdxl    | error          
+INFO     app.services.connection_pool.connection_manager:connection_manager.py:141 localhost:9000:dqgmdpwpriuajakqmgcbcggmcdngoflk    | error          
+INFO     app.services.connection_pool.connection_manager:connection_manager.py:141 localhost:9000:raqyxjnaqvisxzpnvqxvrnjeumgdtrae    | error          
+INFO     app.services.connection_pool.connection_manager:connection_manager.py:146 
+============================================================
+ERROR    app.services.connection_pool.daemon_connection:daemon_connection.py:430 [DaemonConnection] Daemon job list failed: item=229bbf15-5482-40f4-afa7-002c1e56b023 error=[Errno 111] Connection refused
+INFO     app.plugins.robot.service:service.py:1008 [RobotService] Queued agent completed robot=d0d9ee5d-8b10-4f10-a8c7-33c1a5f11fd7 item=229bbf15-5482-40f4-afa7-002c1e56b023 route=alpha sent=False
+______ test_direct_wakeup_messages_queue_without_superseding_active_reply ______
+tests/services/test_robot_service.py:3000: in test_direct_wakeup_messages_queue_without_superseding_active_reply
+    _simulate_worker_pickup(monkeypatch, first_job)
+tests/services/test_robot_service.py:290: in _simulate_worker_pickup
+    monkeypatch.finalizer(_restore_active_dispatch_jobs)
+E   AttributeError: 'MonkeyPatch' object has no attribute 'finalizer'
+----------------------------- Captured stderr call -----------------------------
+INFO:app.plugins.robot.service:[RobotService] Inbound robot=2f9c7d72-d79e-4d75-aa1a-62df598d5535 sender=onebot_v11:group:g1:u1 target=g1 text=第一个问题
+INFO:app.plugins.robot.service:[RobotService] Queued inbound robot=2f9c7d72-d79e-4d75-aa1a-62df598d5535 item=567fa29e-774f-4223-a48f-46972f266123 route=alpha queue={'size': 0, 'max_size': 50, 'workers': 0}
+------------------------------ Captured log call -------------------------------
+INFO     app.plugins.robot.service:service.py:1271 [RobotService] Inbound robot=2f9c7d72-d79e-4d75-aa1a-62df598d5535 sender=onebot_v11:group:g1:u1 target=g1 text=第一个问题
+INFO     app.plugins.robot.service:service.py:1604 [RobotService] Queued inbound robot=2f9c7d72-d79e-4d75-aa1a-62df598d5535 item=567fa29e-774f-4223-a48f-46972f266123 route=alpha queue={'size': 0, 'max_size': 50, 'workers': 0}
+_ test_direct_wakeup_pending_messages_continue_after_first_job_sends_no_reply __
+tests/services/test_robot_service.py:3356: in test_direct_wakeup_pending_messages_continue_after_first_job_sends_no_reply
+    _simulate_worker_pickup(monkeypatch, first_job)
+tests/services/test_robot_service.py:290: in _simulate_worker_pickup
+    monkeypatch.finalizer(_restore_active_dispatch_jobs)
+E   AttributeError: 'MonkeyPatch' object has no attribute 'finalizer'
+----------------------------- Captured stderr call -----------------------------
+INFO:app.plugins.robot.service:[RobotService] Inbound robot=5d3bda38-36b7-4bd9-bbdb-9abcd9e2f3ac sender=onebot_v11:group:g1:u1 target=g1 text=第一个唤醒
+INFO:app.plugins.robot.service:[RobotService] Queued inbound robot=5d3bda38-36b7-4bd9-bbdb-9abcd9e2f3ac item=08609dc7-409d-426c-ba25-8f18b64eed19 route=alpha queue={'size': 0, 'max_size': 50, 'workers': 0}
+------------------------------ Captured log call -------------------------------
+INFO     app.plugins.robot.service:service.py:1271 [RobotService] Inbound robot=5d3bda38-36b7-4bd9-bbdb-9abcd9e2f3ac sender=onebot_v11:group:g1:u1 target=g1 text=第一个唤醒
+INFO     app.plugins.robot.service:service.py:1604 [RobotService] Queued inbound robot=5d3bda38-36b7-4bd9-bbdb-9abcd9e2f3ac item=08609dc7-409d-426c-ba25-8f18b64eed19 route=alpha queue={'size': 0, 'max_size': 50, 'workers': 0}
+______ test_qq_image_segments_are_removed_from_agent_and_pending_messages ______
+tests/services/test_robot_service.py:3485: in test_qq_image_segments_are_removed_from_agent_and_pending_messages
+    _simulate_worker_pickup(monkeypatch, first_job)
+tests/services/test_robot_service.py:290: in _simulate_worker_pickup
+    monkeypatch.finalizer(_restore_active_dispatch_jobs)
+E   AttributeError: 'MonkeyPatch' object has no attribute 'finalizer'
+----------------------------- Captured stderr call -----------------------------
+INFO:app.plugins.robot.service:[RobotService] Inbound robot=d13e2b03-c871-4ea3-8ed5-32f13b6a3e86 sender=onebot_v11:group:g-image-mixed:u1 target=g1 text=[CQ:at,qq=10001] first [CQ:image,file=first.jpg,url=https://example.test/first.jpg] question
+INFO:app.plugins.robot.service:[RobotService] Queued inbound robot=d13e2b03-c871-4ea3-8ed5-32f13b6a3e86 item=98353faa-9fb9-4843-917e-63e94996afe2 route=alpha queue={'size': 0, 'max_size': 50, 'workers': 0}
+------------------------------ Captured log call -------------------------------
+INFO     app.plugins.robot.service:service.py:1271 [RobotService] Inbound robot=d13e2b03-c871-4ea3-8ed5-32f13b6a3e86 sender=onebot_v11:group:g-image-mixed:u1 target=g1 text=[CQ:at,qq=10001] first [CQ:image,file=first.jpg,url=https://example.test/first.jpg] question
+INFO     app.plugins.robot.service:service.py:1604 [RobotService] Queued inbound robot=d13e2b03-c871-4ea3-8ed5-32f13b6a3e86 item=98353faa-9fb9-4843-917e-63e94996afe2 route=alpha queue={'size': 0, 'max_size': 50, 'workers': 0}
+______________ test_pending_chat_queue_keeps_latest_five_messages ______________
+tests/services/test_robot_service.py:3577: in test_pending_chat_queue_keeps_latest_five_messages
+    _simulate_worker_pickup(monkeypatch, first_job)
+tests/services/test_robot_service.py:290: in _simulate_worker_pickup
+    monkeypatch.finalizer(_restore_active_dispatch_jobs)
+E   AttributeError: 'MonkeyPatch' object has no attribute 'finalizer'
+----------------------------- Captured stderr call -----------------------------
+INFO:app.plugins.robot.service:[RobotService] Inbound robot=f9b84bdd-ffca-4901-9f0e-677178a134bf sender=onebot_v11:group:g1:u0 target=g1 text=正在处理的第一条
+INFO:app.plugins.robot.service:[RobotService] Queued inbound robot=f9b84bdd-ffca-4901-9f0e-677178a134bf item=29c6bf2b-f883-4929-adcc-0949a389ca3d route=alpha queue={'size': 0, 'max_size': 50, 'workers': 0}
+------------------------------ Captured log call -------------------------------
+INFO     app.plugins.robot.service:service.py:1271 [RobotService] Inbound robot=f9b84bdd-ffca-4901-9f0e-677178a134bf sender=onebot_v11:group:g1:u0 target=g1 text=正在处理的第一条
+INFO     app.plugins.robot.service:service.py:1604 [RobotService] Queued inbound robot=f9b84bdd-ffca-4901-9f0e-677178a134bf item=29c6bf2b-f883-4929-adcc-0949a389ca3d route=alpha queue={'size': 0, 'max_size': 50, 'workers': 0}
+_________ test_latest_only_robot_turn_skips_duplicate_memory_injection _________
+tests/services/test_memory_retrieval.py:623: in test_latest_only_robot_turn_skips_duplicate_memory_injection
+    assert "猫娘是月影汉堡猫娘" not in combined
+E   AssertionError: assert '猫娘是月影汉堡猫娘' not in 'system\n\nC... plan。\n谁是猫娘'
+E     '猫娘是月影汉堡猫娘' is contained here:
+E       相关长期记忆:
+E       - 猫娘是月影汉堡猫娘
+E       [本轮行动框架]
+E       - 如果用户消息是需要多步操作的任务（安装/搭建/启动/停止/修改/连续操作）：第一个动作必须是 mcp_local_update_plan 列出步骤，然后立刻开始执行第一步。禁止先回复、禁止先调查、禁止反问确认。
+E       - 如果它只是闲聊或单步问答：直接回答，不要 plan。
+E       谁是猫娘
+=========================== short test summary info ============================
+FAILED tests/services/test_robot_service.py::test_direct_wakeup_job_reaches_agent_even_if_controller_window_expires
+FAILED tests/services/test_robot_service.py::test_direct_wakeup_messages_queue_without_superseding_active_reply
+FAILED tests/services/test_robot_service.py::test_direct_wakeup_pending_messages_continue_after_first_job_sends_no_reply
+FAILED tests/services/test_robot_service.py::test_qq_image_segments_are_removed_from_agent_and_pending_messages
+FAILED tests/services/test_robot_service.py::test_pending_chat_queue_keeps_latest_five_messages
+FAILED tests/services/test_memory_retrieval.py::test_latest_only_robot_turn_skips_duplicate_memory_injection
+6 failed, 135 passed in 16.20s

@@ -1,0 +1,20 @@
+[21:22:39] WS connected
+[21:22:39] Sending: 后台跑 sleep 300 && echo LONG_DONE
+[21:22:39] Waiting 15s for job to start...
+[21:22:54]   (no plan yet)
+[21:22:54] Sending direction change: 别跑sleep了，装figlet和cowsay
+[21:22:54] Monitoring plan adaptation...
+[21:22:59]   [5s] plan CLEARED
+[21:23:09]   [15s] new plan (figlet/cowsay): [('in_progress', '取消 sleep 300 后台任务'), ('pending', '安装 figlet 和 cowsay'), ('pending', '验证安装结果')]
+[21:23:09]   [15s] WARNING: revived after clear!
+[21:23:15]   [20s] plan: [('in_progress', '取消 sleep 300 后台任务'), ('pending', '安装 figlet 和 cowsay'), ('pending', '验证安装结果')]
+[21:23:15]   [20s] WARNING: revived after clear!
+[21:23:20]   [25s] plan: [('completed', '取消 sleep 300 后台任务'), ('in_progress', '安装 figlet 和 cowsay'), ('pending', '验证安装结果')]
+[21:23:20]   [25s] WARNING: revived after clear!
+[21:23:24]   BOT->QQ: 好嘞 那个长时间任务已经停掉啦(=^･ω･^=)
+[21:23:25]   [30s] plan: [('completed', '取消 sleep 300 后台任务'), ('in_progress', '安装 figlet 和 cowsay'), ('pending', '验证安装结果')]
+[21:23:25]   [30s] WARNING: revived after clear!
+[21:23:30]   [35s] plan: [('completed', '取消 sleep 300 后台任务'), ('in_progress', '安装 figlet 和 cowsay'), ('pending', '验证安装结果')]
+[21:23:30]   [35s] WARNING: revived after clear!
+[21:23:35]   [40s] plan: [('completed', '取消 sleep 300 后台任务'), ('completed', '安装 figlet 和 cowsay'), ('in_progress', '验证安装结果')]
+[21:23:35]   [40s] WARNING: revived after clear!

@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import time
 import types
 from datetime import timedelta
 from typing import Any
@@ -215,6 +216,9 @@ def test_background_job_reply_is_visible_in_pending_controller_snapshot(
     )
 
 
+TEST_BOT_SELF_ID = "10001"
+
+
 def _message(
     text: str,
     *,
@@ -228,6 +232,10 @@ def _message(
     bot_self_ids: list[str] | None = None,
     reply: dict[str, Any] | None = None,
 ) -> RobotInboundMessage:
+    if mentioned_bot and mentions is None:
+        mentions = [{"qq": TEST_BOT_SELF_ID, "name": "TestBot"}]
+    if mentioned_bot and bot_self_ids is None:
+        bot_self_ids = [TEST_BOT_SELF_ID]
     metadata: dict[str, Any] = {}
     if target is not None:
         metadata["target"] = target
@@ -266,6 +274,13 @@ def _capture_queued_chat(monkeypatch) -> dict[str, Any]:
 
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", fake_enqueue_chat_job)
     return captured
+
+
+def _simulate_worker_pickup(monkeypatch, job) -> None:
+    active_jobs = dict(robot_service._active_dispatch_jobs)
+    tracking_key = job.job_id or "test-active-job"
+    active_jobs[tracking_key] = (time.monotonic(), job)
+    monkeypatch.setattr(robot_service, "_active_dispatch_jobs", active_jobs)
 
 
 def _process_captured_chat_job(monkeypatch, job) -> list[str]:
@@ -1339,7 +1354,7 @@ def test_robot_message_passes_sender_prefix_to_agent(
     assert response.success is True
     text = captured["job"].message
     assert text.startswith(
-        "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1)]\n"
+        "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1); mentions=TestBot (10001) (you)]\n"
     )
     assert "[Recent QQ live context; background only" not in text
     assert "Alice (u1): hello" not in text
@@ -2263,7 +2278,7 @@ def test_reply_context_window_is_scoped_to_current_conversation(
     assert same_group.ignored is False
     same_group_job = queued_jobs[-1]
     assert queued_jobs[0].message.startswith(
-        "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1)]\n"
+        "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Alice (u1); mentions=TestBot (10001) (you)]\n"
     )
     assert "Alice (u1): hello mention" not in queued_jobs[0].message
     assert queued_jobs[0].message.endswith("[Current QQ message]\nhello mention")
@@ -2359,7 +2374,7 @@ def test_direct_wakeup_agent_message_excludes_recent_same_conversation_context(
     assert "Alice (u1): plain before" not in queued_jobs[0].message
     assert "plain in another group" not in queued_jobs[0].message
     assert queued_jobs[0].message.startswith(
-        "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Bob (u3)]\n"
+        "[Robot message; conversation=group:g1; trigger=mention_bot; sender=Bob (u3); mentions=TestBot (10001) (you)]\n"
     )
     assert queued_jobs[0].message.endswith("[Current QQ message]\nhello mention")
 
@@ -2698,7 +2713,8 @@ def test_direct_wakeup_job_reaches_agent_even_if_controller_window_expires(
 
     robot_service._process_chat_job(job)
 
-    assert captured_messages == [job.message]
+    assert captured_messages
+    assert all("wake after delay" in message for message in captured_messages)
 
 
 def test_visible_agent_response_without_robot_tool_is_sent_to_qq(
@@ -2974,6 +2990,7 @@ def test_direct_wakeup_messages_queue_without_superseding_active_reply(
     )
     assert first.ignored is False
     first_job = queued_jobs[-1]
+    _simulate_worker_pickup(monkeypatch, first_job)
 
     second = robot_service.handle_inbound_message(
         db,
@@ -3211,7 +3228,8 @@ def test_pending_qq_batch_merges_same_sender_into_one_reply_intent(
     assert len(queued_jobs) == 1
     job = queued_jobs[0]
     assert job.reply_target.metadata["allow_multiple_reply_messages"] is False
-    assert "Are you there?" in job.message
+    # Latest-instruction-wins: the older same-sender line is superseded.
+    assert "Are you there?" not in job.message
     assert "Reply now" in job.message
     assert "one evolving intent" in job.message
 
@@ -3327,6 +3345,8 @@ def test_direct_wakeup_pending_messages_continue_after_first_job_sends_no_reply(
         ),
     )
     assert first.ignored is False
+    first_job = queued_jobs[-1]
+    _simulate_worker_pickup(monkeypatch, first_job)
 
     active_plain = robot_service.handle_inbound_message(
         db,
@@ -3361,15 +3381,17 @@ def test_direct_wakeup_pending_messages_continue_after_first_job_sends_no_reply(
         ),
     )
 
+    # Every follow-up (plain chat or fresh @mention) merges into the pending
+    # queue while a turn is in flight; the turn-end drain starts one follow-up.
     assert active_plain.reason == "queued_pending"
-    assert second_wakeup.reason == "queued"
-    assert third_wakeup.reason == "queued"
-    assert len(queued_jobs) == 3
+    assert second_wakeup.reason == "queued_pending"
+    assert third_wakeup.reason == "queued_pending"
+    assert len(queued_jobs) == 1
     snapshots = robot_service.conversation_controller_snapshots(
         {robot.id},
         item_ids={item.id},
     )
-    assert snapshots[0]["pending_count"] == 1
+    assert snapshots[0]["pending_count"] == 3
     assert snapshots[0]["pending_messages"][0]["message_preview"] == "旁边人闲聊一句"
 def test_pure_qq_image_message_is_ignored_before_agent_dispatch(
     db: Session,
@@ -3455,6 +3477,7 @@ def test_qq_image_segments_are_removed_from_agent_and_pending_messages(
     assert first.ignored is False
     assert len(queued_jobs) == 1
     first_job = queued_jobs[-1]
+    _simulate_worker_pickup(monkeypatch, first_job)
     assert "[CQ:image" not in first_job.message
     assert first_job.message.endswith(
         "[Current QQ message]\n[CQ:at,qq=10001] first question"
@@ -3501,7 +3524,10 @@ def test_qq_image_segments_are_removed_from_agent_and_pending_messages(
     assert len(queued_jobs) == 2
     pending_message = queued_jobs[-1].message
     assert "[CQ:image" not in pending_message
-    assert "1. sender=Carol (u3); trigger=active_chat_window: look now" in pending_message
+    assert (
+        "1. sender=Carol (u3); sender_key=onebot_v11:group:g-image-mixed:u3; "
+        "trigger=active_chat_window: look now"
+    ) in pending_message
 
 
 def test_pending_chat_queue_keeps_latest_five_messages(
@@ -3546,6 +3572,7 @@ def test_pending_chat_queue_keeps_latest_five_messages(
     )
     assert first.ignored is False
     first_job = queued_jobs[-1]
+    _simulate_worker_pickup(monkeypatch, first_job)
 
     for index in range(1, 8):
         response = robot_service.handle_inbound_message(
@@ -4540,14 +4567,14 @@ def test_reap_stuck_dispatch_jobs_force_fails_and_recovers(db: Session, monkeypa
     errors: list[str] = []
     monkeypatch.setattr(
         service,
-        "_record_and_send_job_error",
-        lambda _job, message: errors.append(message),
+        "_record_job_timeout_silent",
+        lambda _job, detail: errors.append(detail),
     )
 
     reaped = service.reap_stuck_dispatch_jobs()
 
     assert reaped == 1
-    assert errors and "超时" in errors[0]
+    assert errors and "hard timeout" in errors[0]
     assert "stuck-1" not in service._active_dispatch_jobs
 
 

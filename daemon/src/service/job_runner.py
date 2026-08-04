@@ -258,6 +258,13 @@ class JobRunner:
             if pending_line.strip():
                 self._append_output_line(item_uuid, job_id, pending_line, tail)
 
+            # cancel_job terminates the process immediately; the loop above can
+            # break on the same iteration before re-checking the cancel flag.
+            # Re-check here (the job is still registered) so the finished
+            # result is authoritatively marked cancelled.
+            if not cancelled:
+                cancelled = self._is_cancel_requested(job_id)
+
         except Exception as exc:
             logger.error(f"[JobRunner] Job failed before completion: job_id={job_id} item={item_uuid} error={exc}")
             return {

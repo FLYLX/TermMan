@@ -1828,7 +1828,7 @@ class RobotService:
         snapshots: list[dict[str, object]] = []
         first_item_id: uuid.UUID | None = None
         index = 1
-        for entry in entries[:PENDING_CHAT_QUEUE_LIMIT]:
+        for entry in entries[-PENDING_CHAT_QUEUE_LIMIT:]:
             if first_item_id is None:
                 first_item_id = entry.item_id
             text = re.sub(
@@ -1904,7 +1904,7 @@ class RobotService:
             f"source=QQ; conversation={conversation_key or 'current'}",
         ]
         index = 1
-        for entry in entries[:PENDING_CHAT_QUEUE_LIMIT]:
+        for entry in entries[-PENDING_CHAT_QUEUE_LIMIT:]:
             text = re.sub(
                 r"\s+", " ", self._agent_visible_message_text(entry.message_text)
             ).strip()

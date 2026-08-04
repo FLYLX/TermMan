@@ -295,6 +295,8 @@ def integration_memory_scope_rank(agent: Agent, memory: dict[str, Any]) -> int:
     best = 0
     for integration in get_agent_integrations():
         rank = integration.memory_scope_rank(agent, memory)
+        if rank < 0:
+            return rank
         if rank > best:
             best = rank
     return best

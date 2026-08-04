@@ -609,12 +609,6 @@ def test_latest_only_robot_turn_skips_duplicate_memory_injection(monkeypatch) ->
         "_collect_long_term_memories",
         lambda *args, **kwargs: collect_calls.append(1) or "- 猫娘是月影汉堡猫娘",
     )
-    monkeypatch.setattr(
-        prompt_builder,
-        "_build_active_task_ledger_context",
-        lambda *args, **kwargs: "",
-    )
-
     messages = prompt_builder.build_chat_turn_messages(
         agent,
         item_id="item-1",
@@ -698,7 +692,20 @@ def test_verified_recent_fact_memories_are_always_included_without_query_match(m
     assert "你叫大狗" in memories
 
 
+def _register_robot_integration(monkeypatch) -> None:
+    from app.plugins.robot.agent.integration import get_robot_agent_integration
+    from app.services.agent.integrations import registry as integration_registry
+
+    integration = get_robot_agent_integration()
+    monkeypatch.setitem(
+        integration_registry._integrations,
+        integration.name,
+        integration,
+    )
+
+
 def test_robot_scoped_always_on_memory_does_not_cross_conversations(monkeypatch) -> None:
+    _register_robot_integration(monkeypatch)
     agent = SimpleNamespace(
         _context=SimpleNamespace(
             robot_id="robot-1",
@@ -758,6 +765,7 @@ def test_robot_scoped_always_on_memory_does_not_cross_conversations(monkeypatch)
 
 
 def test_robot_speaker_memory_does_not_cross_users_in_same_group(monkeypatch) -> None:
+    _register_robot_integration(monkeypatch)
     agent = SimpleNamespace(
         _context=SimpleNamespace(
             robot_id="robot-1",

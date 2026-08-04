@@ -39,10 +39,10 @@ def test_prompt_memory_policy_enables_long_term_by_default() -> None:
     raw_feedback_policy = resolve_prompt_memory_policy(PromptTurnType.TERMINAL_RAW_FEEDBACK)
 
     assert chat_policy.include_long_term is True
-    assert chat_policy.max_long_term_memories == 0
+    assert chat_policy.max_long_term_memories == 3
     assert "task" not in chat_policy.allowed_long_term_types
     assert terminal_policy.include_long_term is True
-    assert terminal_policy.max_long_term_memories == 0
+    assert terminal_policy.max_long_term_memories == 12
     assert "task" not in terminal_policy.allowed_long_term_types
     assert raw_feedback_policy.include_long_term is False
 

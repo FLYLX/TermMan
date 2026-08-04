@@ -70,7 +70,10 @@ def _format_background_job_results_batch(entries: list[dict[str, Any]]) -> str:
     lines = [f"[Background job results batch: {len(entries)} jobs finished]"]
     for index, entry in enumerate(entries, start=1):
         result = entry["result"]
-        status = "succeeded" if result.get("success") else "failed"
+        if result.get("cancelled"):
+            status = "cancelled (user-initiated cancel, NOT a failure; do not retry)"
+        else:
+            status = "succeeded" if result.get("success") else "failed"
         exit_code = result.get("exit_code")
         duration = result.get("duration_seconds")
         ticket = str(entry.get("reply_ticket_id") or "")[:8]
@@ -331,7 +334,7 @@ class LocalMCPServer:
             name="update_plan",
             description=(
                 "Track multi-step work. Skip for simple 1-2 step tasks. "
-                "plan: list of {step, status} with status pending/in_progress/completed; "
+                "plan: list of {step, status} with status pending/in_progress/completed/cancelled; "
                 "exactly one in_progress. Update it after finishing each step. "
                 "任务结束（全部完成或中途放弃）时调用 update_plan(plan=[]) 直接清除计划，"
                 "不需要把每步都标 completed。"
@@ -347,7 +350,7 @@ class LocalMCPServer:
                             "type": "object",
                             "properties": {
                                 "step": {"type": "string"},
-                                "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]},
+                                "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "cancelled"]},
                             },
                             "required": ["step", "status"],
                         },
@@ -1065,18 +1068,20 @@ class LocalMCPServer:
             status = str(entry.get("status") or "pending").strip()
             if not step:
                 continue
-            if status not in {"pending", "in_progress", "completed"}:
+            if status not in {"pending", "in_progress", "completed", "cancelled"}:
                 status = "pending"
             normalized.append({"step": step, "status": status})
         if not normalized:
             return [{"type": "text", "text": "Error: plan has no valid steps"}]
 
-        all_completed = all(item["status"] == "completed" for item in normalized)
-        # Once every step is completed, broadcast the final all-completed
+        all_terminal = all(
+            item["status"] in {"completed", "cancelled"} for item in normalized
+        )
+        # Once every step reached a terminal state, broadcast the final
         # snapshot once, then clear the plan from the ticket so finished work
         # leaves the plan table immediately (no extra plan=[] call needed).
         reply_ticket_manager.update_ticket_plan(
-            ticket.ticket_id, [] if all_completed else normalized
+            ticket.ticket_id, [] if all_terminal else normalized
         )
         try:
             from app.services.agent.stream_manager import stream_manager
@@ -1088,7 +1093,7 @@ class LocalMCPServer:
                     "item_id": item_id,
                     "plan": normalized,
                     "explanation": "completed"
-                    if all_completed
+                    if all_terminal
                     else str(args.get("explanation") or ""),
                 },
             )
@@ -1107,13 +1112,21 @@ class LocalMCPServer:
                 "All steps complete. Report the final result to the user now "
                 "(QQ: mcp_robot_send_message; web: direct reply)."
             )
+        elif all(item["status"] == "cancelled" for item in normalized):
+            lines.append(
+                "All steps cancelled. Briefly confirm the task was stopped."
+            )
         else:
             current = next(
                 (item for item in normalized if item["status"] == "in_progress"),
                 None,
             )
             if current is not None:
-                remaining = [item for item in normalized if item["status"] != "completed"]
+                remaining = [
+                    item
+                    for item in normalized
+                    if item["status"] not in {"completed", "cancelled"}
+                ]
                 if len(remaining) == 1:
                     lines.append(
                         f"Next action: finish step '{current['step']}' and report to the user. "
@@ -1437,6 +1450,47 @@ class LocalMCPServer:
                 f"[LocalMCPServer] background run_job result: item={item_id}, success={result.get('success')}, exit_code={result.get('exit_code')}, timed_out={result.get('timed_out')}"
             )
 
+            if result.get("cancelled") and reply_ticket_id:
+                # User-initiated cancel: broadcast the cancelled snapshot for
+                # UI, then clear the plan from the ticket — same lifecycle as
+                # update_plan with all-terminal steps. The plan is gone from
+                # every subsequent turn.
+                try:
+                    from app.services.agent.reply_ticket import reply_ticket_manager
+
+                    ticket = reply_ticket_manager.get(reply_ticket_id)
+                    if ticket and ticket.plan:
+                        finalized = [
+                            {**step, "status": "cancelled"}
+                            if step.get("status") not in {"completed", "cancelled"}
+                            else step
+                            for step in ticket.plan
+                        ]
+                        reply_ticket_manager.update_ticket_plan(
+                            ticket.ticket_id, []
+                        )
+                        try:
+                            from app.services.agent.stream_manager import (
+                                stream_manager,
+                            )
+
+                            stream_manager.broadcast_chat_event(
+                                item_id,
+                                {
+                                    "type": "plan_updated",
+                                    "item_id": item_id,
+                                    "plan": finalized,
+                                    "explanation": "cancelled",
+                                },
+                            )
+                        except Exception:
+                            pass
+                except Exception as exc:
+                    debug_log(
+                        f"[LocalMCPServer] failed to finalize plan on cancel: "
+                        f"ticket={reply_ticket_id}, error={exc}"
+                    )
+
             feedback = self._format_background_job_feedback(result, reply_ticket_id=reply_ticket_id)
             if reply_ticket_id:
                 try:
@@ -1464,7 +1518,7 @@ class LocalMCPServer:
                 agent_session.record_finished_job(
                     command,
                     job_id=str(result.get("job_id") or ""),
-                    success=bool(result.get("success")),
+                    success=bool(result.get("success")) and not result.get("cancelled"),
                     exit_code=result.get("exit_code"),
                 )
 
@@ -1671,7 +1725,9 @@ class LocalMCPServer:
         """Lightweight plan<->job link: remind the agent to sync its plan
         when a background job result arrives. The plan is read from the
         ticket that owns this job result (not from the item's latest
-        ticket), so multi-ticket items never see a foreign plan."""
+        ticket), so multi-ticket items never see a foreign plan.
+        Plans whose steps are all in terminal states (completed/cancelled)
+        are finished work and never reminded again."""
         if not reply_ticket_id:
             return ""
         try:
@@ -1683,6 +1739,11 @@ class LocalMCPServer:
         plan = list(ticket.plan) if ticket is not None else []
         if not plan:
             return ""
+        if all(
+            str(entry.get("status")) in {"completed", "cancelled"}
+            for entry in plan
+        ):
+            return ""
         lines = ["", "当前计划（请根据本结果用 update_plan 同步进度）："]
         lines.extend(
             f"  {index}. [{entry['status']}] {entry['step']}"
@@ -1691,6 +1752,14 @@ class LocalMCPServer:
         return "\n".join(lines)
 
     def _format_background_job_robot_message(self, command: str, result: dict, *, reply_ticket_id: str = "") -> str:
+        if result.get("cancelled"):
+            return (
+                "[后台终端任务结果 - 来自 QQ 会话]\n"
+                "后台任务已被主动取消（用户发起的取消，不是失败）。\n"
+                "对应 plan 已由系统标记为 cancelled，不要重新执行这个任务。\n"
+                "简短确认任务已停止即可。\n"
+                f"命令: {command}\n"
+            )
         status = "完成" if result.get("success") else "失败"
         has_plan = bool(self._plan_reminder("", reply_ticket_id))
         request_boundary = self._job_callback_task_boundary(reply_ticket_id)
@@ -1735,6 +1804,14 @@ class LocalMCPServer:
             return ""
 
     def _format_background_job_feedback(self, result: dict, *, reply_ticket_id: str = "") -> str:
+        if result.get("cancelled"):
+            return (
+                "[Background terminal job cancelled]\n"
+                "后台任务已被取消（这是主动取消，不是失败）。\n"
+                "对应 plan 已由系统标记为 cancelled，不要重试这个任务。\n"
+                "简短确认任务已停止即可。\n"
+                f"command: {result.get('command', '')}"
+            )
         has_plan = bool(self._plan_reminder("", reply_ticket_id))
         if result.get("success"):
             if has_plan:

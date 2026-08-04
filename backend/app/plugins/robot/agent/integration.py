@@ -748,15 +748,15 @@ class RobotAgentIntegration:
             return -1 if has_robot_scope else 0
         try:
             from app.plugins.robot.memory_scope import (
-                memory_content_is_question_like,
                 memory_scope_rank as plugin_memory_scope_rank,
+                speaker_global_key_from_context,
             )
 
             return plugin_memory_scope_rank(
-                metadata=metadata,
+                memory,
                 robot_id=robot_id,
                 conversation_key=conversation_key,
-                sender_key=sender_key,
+                speaker_global_key=speaker_global_key_from_context(sender_key),
             )
         except Exception:
             return 0

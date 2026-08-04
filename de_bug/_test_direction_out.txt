@@ -1,0 +1,11 @@
+[21:18:16] WS connected
+[21:18:16] Sending: 后台跑 sleep 300 && echo LONG_DONE
+[21:18:16] Waiting 15s for job to start...
+[21:18:27]   BOT->QQ: 主人 这条已经在后台跑着啦 还剩四分多钟 好了立刻告诉你喵(=^･ω･^=)
+[21:18:31]   (no plan yet)
+[21:18:31] Sending direction change: 别跑sleep了，装figlet和cowsay
+[21:18:31] Monitoring plan adaptation...
+[21:18:36]   [5s] plan CLEARED
+[21:18:42]   BOT->QQ: 好嘞主人 先停掉sleep 马上装figlet和cowsay喵(=^･ω･^=)
+[21:18:46]   [15s] new plan (figlet/cowsay): [('in_progress', '取消正在跑的 sleep 后台任务'), ('pending', '安装 figlet 和 cowsay'), ('pending', '验证两个命令可用并汇报')]
+[21:18:46]   [15s] WARNING: revived after clear!
