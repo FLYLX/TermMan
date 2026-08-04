@@ -1,0 +1,25 @@
+[   0.3s] BASELINE rss=534.7MB threads=78 plan=[{'step': '安装 cowsay（首次尝试未生效）', 'status': 'completed'}, {'step': '重新安装 cowsay 并验证可用', 'status': 'in_progress'}, {'step': '运行 cowsay 输出你好', 'status': 'pending'}, {'step': '把结果发给主人', 'status': 'pending'}]
+[   0.5s] DISPATCH A(cowsay) -> 200 queued
+[   0.6s] DISPATCH B(jq) -> 200 queued_pending
+[   2.7s] cards(1): '帮我安装 cowsay，装完'[running] 1/4 | item-plan: c:安装 cowsay（首次尝试 | i:重新安装 cowsay 并验 | p:运行 cowsay 输出你好 | p:把结果发给主人
+[  13.1s] cards(2): '帮我安装 cowsay，装完'[pending] 0/2 || '帮我安装 cowsay，装完'[running] 1/4 | item-plan: i:安装 cowsay | p:运行 cowsay 输出你好
+[  20.6s] CHATTER -> 200 queued_pending
+[  35.9s] cards(3): '帮我安装 jq，装完验证 j'[pending] 0/3 || '帮我安装 cowsay，装完'[running] 0/2 || '帮我安装 cowsay，装完'[running] 1/4 | item-plan: i:安装 jq | p:验证 jq --versio | p:用 jq 解析 {"a":1
+[  87.1s] cards(3): '帮我安装 cowsay，装完'[running] 0/2 || '帮我安装 jq，装完验证 j'[running] 0/3 || '帮我安装 cowsay，装完'[running] 1/4 | item-plan: i:安装 jq | p:验证 jq --versio | p:用 jq 解析 {"a":1
+[  89.2s] cards(3): '帮我安装 cowsay，装完'[running] 0/2 || '帮我安装 jq，装完验证 j'[running] 0/3 || '帮我安装 cowsay，装完'[running] 1/4 | item-plan: i:安装 cowsay（重试：去 | p:运行 cowsay 输出你好
+[ 192.8s] cards(2): '帮我安装 cowsay，装完'[running] 0/2 || '帮我安装 cowsay，装完'[running] 1/4 | item-plan: i:安装 cowsay（重试：去 | p:运行 cowsay 输出你好
+[ 243.6s] cards(2): '帮我安装 cowsay，装完'[running] 1/2 || '帮我安装 cowsay，装完'[running] 1/4 | item-plan: c:安装 cowsay（重试：去 | i:运行 cowsay 输出你好
+[ 327.0s] cards(3): '帮我安装 jq，装完验证 j'[running] 0/1 || '帮我安装 cowsay，装完'[running] 1/2 || '帮我安装 cowsay，装完'[running] 1/4 | item-plan: i:确认/重装 cowsay 并
+[ 394.0s] cards(3): '帮我安装 jq，装完验证 j'[running] 0/1 || '帮我安装 cowsay，装完'[running] 1/2 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: c:安装 cowsay（首次尝试 | i:重新安装 cowsay 并验 | p:运行 cowsay 输出你好 | p:把结果发给主人
+[ 408.2s] cards(3): '帮我安装 cowsay，装完'[running] 1/3 || '帮我安装 jq，装完验证 j'[running] 0/1 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: c:安装 cowsay（重试：去 | i:等待后台安装任务完成，确认  | p:重新运行 cowsay 你好
+[ 433.2s] cards(2): '帮我安装 cowsay，装完'[running] 1/3 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: c:安装 cowsay（重试：去 | i:等待后台安装任务完成，确认  | p:重新运行 cowsay 你好
+[ 468.1s] cards(1): '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: c:安装 cowsay（首次尝试 | i:重新安装 cowsay 并验 | p:运行 cowsay 输出你好 | p:把结果发给主人
+[ 612.3s] DISPATCH C(sl follow-up) -> 200 queued
+[ 614.4s] cards(1): '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: c:安装 cowsay（首次尝试 | i:重新安装 cowsay 并验 | p:运行 cowsay 输出你好 | p:把结果发给主人
+[ 752.7s] cards(2): '[Scheduled tas'[running] 0/3 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: i:apt-get instal | p:验证 sl 可执行 | p:向 QQ 私聊 253713
+[ 813.5s] cards(2): '[Scheduled tas'[running] 1/3 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: c:apt-get instal | i:验证 sl 可执行 | p:向 QQ 私聊 253713
+[ 844.4s] cards(2): '[Scheduled tas'[running] 2/4 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: c:apt-get instal | c:验证 sl 安装状态（dpk | i:用完整路径 /usr/gam | p:向 QQ 私聊 253713
+[ 879.7s] cards(2): '[Scheduled tas'[running] 3/4 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: c:apt-get instal | c:验证 sl 安装状态（dpk | c:用完整路径 /usr/gam | i:向 QQ 私聊 253713
+
+SUMMARY: max concurrent cards=3, ticks with >=2 cards=223, rss 534.7->873.3MB threads 78->136
+[DONE]

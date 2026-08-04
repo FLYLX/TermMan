@@ -1,0 +1,86 @@
+﻿# -*- coding: utf-8 -*-
+import sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+p = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\mcp\local_server.py"
+s = open(p, encoding="utf-8").read()
+
+old_head = '''    def _format_background_job_robot_message(self, command: str, result: dict, *, reply_ticket_id: str = "", workflow_id: str = "") -> str:
+        status = "\u5b8c\u6210" if result.get("success") else "\u5931\u8d25"
+        has_workflow = bool(workflow_id)
+        has_plan = bool(self._plan_reminder("", reply_ticket_id))'''
+new_head = '''    def _format_background_job_robot_message(self, command: str, result: dict, *, reply_ticket_id: str = "", workflow_id: str = "") -> str:
+        status = "\u5b8c\u6210" if result.get("success") else "\u5931\u8d25"
+        has_workflow = bool(workflow_id)
+        has_plan = bool(self._plan_reminder("", reply_ticket_id))
+        request_boundary = self._job_callback_task_boundary(reply_ticket_id)'''
+
+old_else = '''            instruction = "\u6839\u636e\u7ed3\u679c\u76f4\u63a5\u56de\u590d\u7528\u6237\u3002"'''
+new_else = '''            instruction = (
+                "\u6839\u636e\u7ed3\u679c\u76f4\u63a5\u56de\u590d\u7528\u6237\u3002"
+                "\u5982\u679c\u7528\u6237\u539f\u59cb\u8bf7\u6c42\u8868\u793a\u4e0d\u9700\u8981\u56de\u590d\uff0c\u6700\u7ec8\u53ea\u8f93\u51fa NRN \u5373\u53ef\u3002"
+            )'''
+
+old_ret = '''        return (
+            "[\u540e\u53f0\u7ec8\u7aef\u4efb\u52a1\u7ed3\u679c - \u6765\u81ea QQ \u4f1a\u8bdd]\\n"
+            f"\u540e\u53f0\u4efb\u52a1\u5df2{status}\u3002\\n"
+            f"{instruction}\\n"
+            f"\u547d\u4ee4: {command}\\n"
+            f"{self._format_job_result(result)}"
+        )'''
+new_ret = '''        return (
+            "[\u540e\u53f0\u7ec8\u7aef\u4efb\u52a1\u7ed3\u679c - \u6765\u81ea QQ \u4f1a\u8bdd]\\n"
+            f"\u540e\u53f0\u4efb\u52a1\u5df2{status}\u3002\\n"
+            f"{instruction}\\n"
+            f"{request_boundary}"
+            f"\u547d\u4ee4: {command}\\n"
+            f"{self._format_job_result(result)}"
+        )'''
+
+old_call = '''            message = message_override or self._format_background_job_robot_message(
+                command, result, workflow_id=_rb_wf_id,
+            )'''
+new_call = '''            message = message_override or self._format_background_job_robot_message(
+                command, result, reply_ticket_id=reply_ticket_id, workflow_id=_rb_wf_id,
+            )'''
+
+for name, old, new in [("head", old_head, new_head), ("else_instr", old_else, new_else), ("return_block", old_ret, new_ret), ("call_site", old_call, new_call)]:
+    c = s.count(old)
+    assert c == 1, f"{name}: anchor count={c}"
+    s = s.replace(old, new)
+    print(f"{name}: OK")
+
+helper = '''
+    def _job_callback_task_boundary(self, reply_ticket_id: str) -> str:
+        """Task boundary for job callbacks: pin the turn to the ticket's own
+        original request so stale tasks in memory/history/live context cannot
+        hijack the callback turn, and carry the original reply requirement
+        (e.g. explicit no-reply) into the callback."""
+        if not reply_ticket_id:
+            return ""
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            ticket = reply_ticket_manager.get(reply_ticket_id)
+            request = str(getattr(ticket, "request_message", "") or "").strip() if ticket else ""
+            if not request:
+                return ""
+            if len(request) > 200:
+                request = request[:200] + "\u2026"
+            return (
+                f"\u4efb\u52a1\u8fb9\u754c\uff1a\u672c\u6b21\u540e\u53f0\u4efb\u52a1\u6e90\u81ea\u7528\u6237\u8bf7\u6c42\uff1a\u300c{request}\u300d"
+                "\u672c\u8f6e\u53ea\u5904\u7406\u8be5\u8bf7\u6c42\u7684\u540e\u7eed\uff1b\u8bb0\u5fc6\u3001\u5386\u53f2\u6216 live context \u91cc\u51fa\u73b0\u7684\u5176\u4ed6\u4efb\u52a1\u4e0e\u672c\u8f6e\u65e0\u5173\uff0c"
+                "\u4e0d\u8981\u6062\u590d\u6216\u91cd\u65b0\u6267\u884c\u5b83\u4eec\u3002"
+                "\u662f\u5426\u56de\u590d\u7528\u6237\u4ee5\u539f\u59cb\u8bf7\u6c42\u4e3a\u51c6\uff1a\u539f\u59cb\u8bf7\u6c42\u660e\u786e\u4e0d\u9700\u8981\u56de\u590d\u65f6\uff0c\u6700\u7ec8\u53ea\u8f93\u51fa NRN\u3002\\n"
+            )
+        except Exception:
+            return ""
+
+'''
+anchor = '''    def _format_background_job_feedback(self, result: dict, *, reply_ticket_id: str = "", workflow_id: str = "") -> str:'''
+c = s.count(anchor)
+assert c == 1, f"helper anchor count={c}"
+s = s.replace(anchor, helper + anchor)
+print("helper: OK")
+
+open(p, "w", encoding="utf-8", newline="").write(s)
+print("written")

@@ -413,6 +413,7 @@ class RobotAgentIntegration:
             conversation_key = _robot_conversation_key(reply_target, sender_key)
         conversation_generation = _int_context_value(context.get("conversation_generation"))
         reply_requires_awake = bool(context.get("reply_requires_awake"))
+        request_message = str(context.get("request_message") or "").strip()
         mcp_context = RobotMCPContext(
             robot_id=robot_id,
             sender_key=sender_key,
@@ -420,6 +421,7 @@ class RobotAgentIntegration:
             conversation_key=conversation_key,
             conversation_generation=conversation_generation,
             reply_requires_awake=reply_requires_awake,
+            request_message=request_message,
         )
         agent_context.robot_id = robot_id
         agent_context.robot_sender_key = sender_key
@@ -715,7 +717,7 @@ class RobotAgentIntegration:
         return (
             "Current source route:\n"
             f"- current source: QQ robot conversation ({route})\n"
-            "- reply contract: reply to the current QQ conversation by outputting the reply text directly; the system auto-delivers it back to this conversation. Only call mcp_robot_send_message when sending to a different conversation or multiple targets. Do not leave the answer only in the TermMan web chat.\n"
+            "- reply contract: to reply to the current QQ conversation, call `mcp_robot_send_message` in your current response (pass only `text`; it is routed to this conversation automatically). Do not end the turn with plain reply text - final text is NOT auto-delivered. Do not leave the answer only in the TermMan web chat.\n"
             "- reply only to the source: do NOT broadcast the answer to the terminal "
             "or game server console (e.g., say/tell commands). The user must explicitly "
             "ask to '在服务器说/广播/公告' to trigger a console say; reporting a task result "
@@ -741,10 +743,9 @@ class RobotAgentIntegration:
             f"- ticket_id: {ticket_id}\n"
             f"- source: QQ ({conv_key or 'current conversation'})\n"
             f"{target_hint}"
-            "- REPLY ROUTING: output your reply text directly and the system "
-            "auto-delivers it back to this QQ conversation. Only call "
-            "`mcp_robot_send_message` when sending to a different conversation "
-            "or multiple targets. Do not leave answers only in TermMan.\n"
+            "- REPLY ROUTING: to reply to this QQ conversation, call "
+            "`mcp_robot_send_message` in your current response (pass only `text`). "
+            "Plain final text is NOT auto-delivered. Do not leave answers only in TermMan.\n"
             "- If the user asks you to send elsewhere, do it then report back here.\n"
             "- Do not duplicate: if already sent via tool, do not restate in final text.\n"
         )
@@ -849,8 +850,8 @@ class RobotAgentIntegration:
         return is_robot_internal_trace_text(text)
 
     def is_read_only_result(self, text: str) -> bool:
-        from app.plugins.robot.internal_trace import is_robot_read_only_tool_result
-
+        # Defined at module level in this file; internal_trace has no such
+        # export (the old import raised ImportError mid-delivery).
         return is_robot_read_only_tool_result(text)
 
     def sanitize_visible_text(self, text: str) -> str:
@@ -885,7 +886,14 @@ class RobotAgentIntegration:
     def is_conversation_processing(self, integration_id: str, conversation_key: str) -> bool:
         from app.plugins.robot.service import robot_service
 
-        return robot_service.conversation_is_processing(integration_id, conversation_key)
+        # A conversation counts as processing when a dispatch job is running
+        # or queued for it. The raw controller `processing` flag is not used
+        # here: job-result buffering relies on the turn-end flush hook, which
+        # only fires for dispatch jobs, so only an active/queued dispatch job
+        # guarantees buffered results get drained.
+        return robot_service.conversation_has_active_dispatch(
+            integration_id, conversation_key
+        )
 
     def register_background_job_reply(
         self, *, integration_id: str, item_id: str, sender_key: str,
@@ -938,6 +946,11 @@ class RobotAgentIntegration:
         from app.plugins.robot.service import robot_service
 
         return robot_service.reap_stuck_dispatch_jobs()
+
+    def sweep_pending_inputs(self) -> dict[str, int]:
+        from app.plugins.robot.service import robot_service
+
+        return robot_service.sweep_pending_conversations()
 
     async def _ensure_messaging_tools(self, agent: Agent) -> bool:
         if not is_robot_plugin_enabled():

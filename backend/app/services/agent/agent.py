@@ -383,30 +383,14 @@ class Agent:
         self._load_skills()
 
     def match_skills(self, query: str) -> list[SkillDefinition]:
-        matched = []
-        query_lower = query.lower()
+        """Deprecated compatibility shim.
 
-        for skill in self._skills.values():
-            if skill.trigger and skill.trigger.patterns:
-                for pattern in skill.trigger.patterns:
-                    try:
-                        if re.search(pattern, query_lower):
-                            matched.append(skill)
-                            break
-                    except re.error:
-                        if pattern.lower() in query_lower:
-                            matched.append(skill)
-                            break
-            else:
-                keywords = [skill.skill_id.lower(), skill.name.lower()]
-                if skill.description:
-                    keywords.extend(skill.description.lower().split())
-                for kw in keywords:
-                    if kw in query_lower:
-                        matched.append(skill)
-                    break
-
-        return matched
+        Regex/keyword-based skill matching was removed: skill guides are now
+        exposed through the capability catalog and loaded on demand by the
+        agent (see app.services.agent.tool_selection). Always returns [].
+        """
+        del query
+        return []
 
     def get_mcp_servers(self) -> list[str]:
         return self._mcp_servers.copy()

@@ -143,14 +143,15 @@ def _build_skill_prompt(
     agent: "Agent",
     query: str,
     *,
+    item_id: str = "",
     force_skill_ids: set[str] | None = None,
     extra_prompt_parts: list[str] | None = None,
     append_user_query: bool = True,
 ) -> str:
     prompt_parts = [get_system_prompt(agent)]
 
-    skills = agent.match_skills(query) if query else []
-    existing_skill_ids = {skill.skill_id for skill in skills}
+    skills: list = []
+    existing_skill_ids: set[str] = set()
     for skill in agent.get_skills():
         if skill.category in ALWAYS_ON_SKILL_CATEGORIES and skill.skill_id not in existing_skill_ids:
             skills.append(skill)
@@ -165,6 +166,13 @@ def _build_skill_prompt(
             if forced_skill is not None:
                 skills.append(forced_skill)
                 existing_skill_ids.add(forced_skill.skill_id)
+    if item_id:
+        from app.services.agent.tool_selection import loaded_guide_skills
+
+        for skill in loaded_guide_skills(agent, item_id):
+            if skill.skill_id not in existing_skill_ids:
+                skills.append(skill)
+                existing_skill_ids.add(skill.skill_id)
     skills = integration_filter_skills(skills, agent)
     for skill in skills:
         if skill.category in {"system", "persona"}:
@@ -880,6 +888,11 @@ def build_chat_turn_messages(
     )
 
     extra_prompt_parts: list[str] = []
+    from app.services.agent.tool_selection import build_capability_catalog
+
+    capability_catalog = build_capability_catalog(agent, source="chat")
+    if capability_catalog:
+        extra_prompt_parts.append(capability_catalog)
     source_route_context = _build_current_source_route_context(agent, source="chat")
     if source_route_context:
         extra_prompt_parts.append(source_route_context)
@@ -901,6 +914,7 @@ def build_chat_turn_messages(
             "content": _build_skill_prompt(
                 agent,
                 effective_query,
+                item_id=item_id,
                 extra_prompt_parts=extra_prompt_parts,
                 # The chat message itself is appended as the final user
                 # message below; repeating it here would double long
@@ -1001,6 +1015,14 @@ def build_terminal_turn_messages(
         recent_context_messages,
     )
     extra_prompt_parts: list[str] = []
+    if item_id:
+        from app.services.agent.capability_state import ensure_loaded
+        from app.services.agent.tool_selection import (
+            TERMINAL_GUIDE_IDS,
+            TERMINAL_TOOLSET,
+        )
+
+        ensure_loaded(item_id, tools=TERMINAL_TOOLSET, guides=TERMINAL_GUIDE_IDS)
     source_route_context = _build_current_source_route_context(agent, source="terminal")
     if source_route_context:
         extra_prompt_parts.append(source_route_context)
@@ -1013,6 +1035,7 @@ def build_terminal_turn_messages(
             "content": _build_skill_prompt(
                 agent,
                 effective_query,
+                item_id=item_id,
                 force_skill_ids={TERMINAL_CRITICAL_ALERT_SKILL_ID}
                 if is_critical_terminal_event(terminal_content)
                 else None,

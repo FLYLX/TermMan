@@ -8,7 +8,7 @@ except ImportError:
 
 LOG = r'E:\dev\TermMan\dev\TermMan\de_bug\_mock_qq.log'
 WS_URL = 'ws://127.0.0.1:33333/onebot/v11/ws'
-HEADERS = {'X-Self-ID': '10001', 'X-Client-Role': 'Universal'}
+HEADERS = {'X-Self-ID': '10001', 'X-Client-Role': 'Universal', 'Authorization': 'Bearer x0SA-6tPi_ZbWciyKDr7F6e_arctgnMbRRWsK-lwQBs'}
 
 def log(msg):
     with open(LOG, 'a', encoding='utf-8', errors='replace') as f:

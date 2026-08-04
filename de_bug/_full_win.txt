@@ -1,0 +1,1006 @@
+﻿2026-08-03T16:12:23.795271119Z INFO:     127.0.0.1:47220 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:12:33.883185029Z INFO:     127.0.0.1:59554 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:12:43.970721376Z INFO:     127.0.0.1:38902 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:12:54.058679163Z INFO:     127.0.0.1:46696 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:13:04.147081867Z INFO:     127.0.0.1:33316 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:13:14.234370539Z INFO:     127.0.0.1:34010 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:13:24.321531818Z INFO:     127.0.0.1:37822 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:13:34.412517265Z INFO:     127.0.0.1:38102 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:13:44.502711239Z INFO:     127.0.0.1:36056 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:13:54.593264309Z INFO:     127.0.0.1:37900 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:14:04.688561183Z INFO:     127.0.0.1:42382 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:14:14.784613147Z INFO:     127.0.0.1:38128 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:14:24.895613625Z INFO:     127.0.0.1:57314 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:14:34.986109606Z INFO:     127.0.0.1:53274 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:14:45.076637308Z INFO:     127.0.0.1:53936 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:14:55.166362209Z INFO:     127.0.0.1:50150 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:15:05.259455020Z INFO:     127.0.0.1:41446 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:15:15.372831438Z INFO:     127.0.0.1:34920 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:15:25.480145691Z INFO:     127.0.0.1:35194 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:15:35.589832715Z INFO:     127.0.0.1:59178 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:15:45.684433012Z INFO:     127.0.0.1:54920 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:15:55.773514364Z INFO:     127.0.0.1:59452 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:16:05.866244426Z INFO:     127.0.0.1:38672 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:16:15.958150722Z INFO:     127.0.0.1:40348 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:16:26.051823645Z INFO:     127.0.0.1:46584 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:16:36.151762751Z INFO:     127.0.0.1:52350 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:16:46.251610565Z INFO:     127.0.0.1:41778 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:16:56.345348397Z INFO:     127.0.0.1:42708 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:17:06.435717833Z INFO:     127.0.0.1:51162 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:17:16.525421325Z INFO:     127.0.0.1:34678 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:17:26.613690677Z INFO:     127.0.0.1:53980 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:17:36.701357724Z INFO:     127.0.0.1:57410 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:17:46.797331132Z INFO:     127.0.0.1:56808 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:17:56.887160421Z INFO:     127.0.0.1:54516 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:18:06.973059148Z INFO:     127.0.0.1:55788 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:18:17.059132580Z INFO:     127.0.0.1:57990 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:18:27.149459307Z INFO:     127.0.0.1:39250 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:18:37.237219961Z INFO:     127.0.0.1:50404 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:18:47.322629589Z INFO:     127.0.0.1:48730 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:18:57.407632881Z INFO:     127.0.0.1:43100 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:19:07.495912956Z INFO:     127.0.0.1:35936 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:19:17.588049286Z INFO:     127.0.0.1:38498 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:19:27.676947955Z INFO:     127.0.0.1:48328 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:19:37.764721548Z INFO:     127.0.0.1:59036 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:19:47.858570636Z INFO:     127.0.0.1:45254 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:19:57.947490948Z INFO:     127.0.0.1:33040 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:20:08.034554681Z INFO:     127.0.0.1:52426 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:20:18.119809569Z INFO:     127.0.0.1:40768 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:20:24.748440601Z INFO:     172.19.0.1:53020 - "GET /api/v1/robots/5cbc7f55-04a2-40f6-900a-05e0b0dd652a HTTP/1.1" 200 OK
+2026-08-03T16:20:28.205425599Z INFO:     127.0.0.1:34256 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:20:38.303127735Z INFO:     127.0.0.1:48972 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:20:48.388479968Z INFO:     127.0.0.1:51664 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:20:58.477068401Z INFO:     127.0.0.1:50544 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:21:08.568753997Z INFO:     127.0.0.1:55242 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:21:18.655562085Z INFO:     127.0.0.1:59410 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:21:28.743845962Z INFO:     127.0.0.1:52556 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:21:38.830173882Z INFO:     127.0.0.1:37468 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:21:48.920156861Z INFO:     127.0.0.1:59376 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:21:59.011189617Z INFO:     127.0.0.1:49702 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:22:09.097661751Z INFO:     127.0.0.1:42050 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:22:19.182838898Z INFO:     127.0.0.1:57210 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:22:29.269475588Z INFO:     127.0.0.1:49670 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:22:39.356978338Z INFO:     127.0.0.1:38428 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:22:49.441291055Z INFO:     127.0.0.1:52020 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:22:59.530249982Z INFO:     127.0.0.1:49878 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:23:09.617322198Z INFO:     127.0.0.1:53078 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:23:19.702634894Z INFO:     127.0.0.1:46560 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:23:29.800176664Z INFO:     127.0.0.1:39044 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:23:39.887935991Z INFO:     127.0.0.1:36724 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:23:49.972889343Z INFO:     127.0.0.1:51870 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:24:00.059844556Z INFO:     127.0.0.1:40606 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:24:10.149357100Z INFO:     127.0.0.1:39664 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:24:20.235908553Z INFO:     127.0.0.1:43310 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:24:30.328845388Z INFO:     127.0.0.1:49756 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:24:40.437538442Z INFO:     127.0.0.1:43028 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:24:50.523756506Z INFO:     127.0.0.1:39248 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:25:00.612911514Z INFO:     127.0.0.1:59570 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:25:10.703794017Z INFO:     127.0.0.1:56532 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:25:20.794912093Z INFO:     127.0.0.1:46560 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:25:30.882676370Z INFO:     127.0.0.1:42126 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:25:40.974186336Z INFO:     127.0.0.1:54014 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+docker : 2026-08-03T16:25:41.669478597Z INFO:     Shutting down
+At line:2 char:1
++ docker logs --since 20m -t termman-backend-1 2>&1 | Out-File -Encodin ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (2026-08-03T16:2...  Shutting down:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+2026-08-03T16:25:41.770038596Z INFO:     Waiting for connections to close. (CTRL+C to force quit)
+2026-08-03T16:25:46.769325546Z ERROR:    Cancel 1 running task(s), timeout graceful shutdown exceeded
+2026-08-03T16:25:46.769394650Z INFO:     Waiting for application shutdown.
+2026-08-03T16:25:46.769794659Z INFO:app.services.agent.scheduled_tasks:[ScheduledTasks] Scheduler stopped
+2026-08-03T16:25:46.770159401Z INFO:app.main:[App] Stopping MCP servers...
+2026-08-03T16:25:46.770167847Z INFO:app.main:[App] MCP servers stopped
+2026-08-03T16:25:46.770264272Z INFO:     Application shutdown complete.
+2026-08-03T16:25:46.770315617Z INFO:     Finished server process [7]
+2026-08-03T16:26:25.516809848Z /app/.venv/lib/python3.11/site-packages/requests/__init__.py:113: RequestsDependencyWarn
+ing: urllib3 (2.6.3) or chardet (7.1.0)/charset_normalizer (3.4.5) doesn't match a supported version!
+2026-08-03T16:26:25.516847101Z   warnings.warn(
+2026-08-03T16:26:27.565348733Z INFO:     Started server process [7]
+2026-08-03T16:26:27.565412648Z INFO:     Waiting for application startup.
+2026-08-03T16:26:27.565808120Z INFO:app.services.daemon_initializer:Starting up application and initializing daemon con
+nections...
+2026-08-03T16:26:27.586717801Z INFO:app.services.daemon_initializer:Found 5 items in database
+2026-08-03T16:26:27.586748341Z INFO:app.services.daemon_initializer:Found 1 unique daemon configurations
+2026-08-03T16:26:27.591014746Z INFO:app.services.connection_pool.daemon_connection:[WebSocket] Connected to http://daem
+on:9000
+2026-08-03T16:26:27.593708183Z INFO:app.services.connection_pool.daemon_connection:[WebSocket] Authenticated with daemo
+n: http://daemon:9000
+2026-08-03T16:26:27.594367752Z INFO:app.services.connection_pool.daemon_connection:[WebSocket] Auth completed for http:
+//daemon:9000
+2026-08-03T16:26:27.594560316Z INFO:app.services.connection_pool.connection_manager:
+2026-08-03T16:26:27.594569254Z ============================================================
+2026-08-03T16:26:27.594604537Z INFO:app.services.connection_pool.connection_manager:Created Daemon Connection
+2026-08-03T16:26:27.594611130Z INFO:app.services.connection_pool.connection_manager:===================================
+=========================
+2026-08-03T16:26:27.594617512Z INFO:app.services.connection_pool.connection_manager:
+2026-08-03T16:26:27.594620939Z Daemon主连接池表 [daemon ip:port:apikey]
+2026-08-03T16:26:27.594703958Z INFO:app.services.connection_pool.connection_manager:-----------------------------------
+---------------------------------------------
+2026-08-03T16:26:27.594713106Z INFO:app.services.connection_pool.connection_manager:Daemon ID                          
+                | Status         
+2026-08-03T16:26:27.594716913Z INFO:app.services.connection_pool.connection_manager:-----------------------------------
+---------------------------------------------
+2026-08-03T16:26:27.594720450Z INFO:app.services.connection_pool.connection_manager:daemon:9000:termman_daemon_secret_k
+ey_2024         | connected      
+2026-08-03T16:26:27.594736772Z INFO:app.services.connection_pool.connection_manager:
+2026-08-03T16:26:27.594740339Z ============================================================
+2026-08-03T16:26:27.594809254Z INFO:app.services.connection_pool.connection_models:
+2026-08-03T16:26:27.594814906Z ============================================================
+2026-08-03T16:26:27.595065582Z INFO:app.services.connection_pool.connection_models:[BackendConnPool] Created DaemonMain
+ConnState for daemon=termman_daemon_s...
+2026-08-03T16:26:27.595205823Z INFO:app.services.connection_pool.connection_models:====================================
+========================
+2026-08-03T16:26:27.595211775Z INFO:app.services.connection_pool.connection_models:  Room监听连接池: 0 个
+2026-08-03T16:26:27.595246126Z INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
+2026-08-03T16:26:27.595414292Z INFO:app.services.connection_pool.daemon_connection:
+2026-08-03T16:26:27.595422007Z @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+2026-08-03T16:26:27.595470171Z INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=d
+isconnected
+2026-08-03T16:26:27.595552373Z INFO:app.services.connection_pool.daemon_connection:[DaemonConnection] Received full con
+nection snapshot from daemon
+2026-08-03T16:26:27.595608874Z INFO:app.services.connection_pool.connection_models:====================================
+========================
+2026-08-03T16:26:27.595617762Z 
+2026-08-03T16:26:27.595807609Z INFO:app.services.connection_pool.daemon_connection:@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+2026-08-03T16:26:27.595832634Z INFO:app.services.connection_pool.daemon_connection:  Source: http://daemon:9000
+2026-08-03T16:26:27.595926809Z INFO:app.services.connection_pool.daemon_connection:  Item count: 0
+2026-08-03T16:26:27.595936307Z INFO:app.services.daemon_initializer:[Backend] Received daemon connection update: type=f
+ull_sync, rooms=0
+2026-08-03T16:26:27.595943211Z INFO:app.services.connection_pool.daemon_connection:  [OK] Triggered connection_update c
+allback
+2026-08-03T16:26:27.595983710Z INFO:app.services.connection_pool.daemon_connection:@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+2026-08-03T16:26:27.595998279Z 
+2026-08-03T16:26:27.607558680Z INFO:app.services.socket_pool.socket_manager:
+2026-08-03T16:26:27.607593238Z ================================================================================
+2026-08-03T16:26:27.607597416Z INFO:app.services.socket_pool.socket_manager:[Backend SocketManager] Added Token for Ite
+m ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:26:27.607601013Z INFO:app.services.socket_pool.socket_manager:===========================================
+=====================================
+2026-08-03T16:26:27.607604279Z INFO:app.services.socket_pool.socket_manager:
+2026-08-03T16:26:27.607607376Z 1. Item-Token映射表 [daemon_id -> {item_uuid: token}]
+2026-08-03T16:26:27.607621614Z INFO:app.services.socket_pool.socket_manager:-------------------------------------------
+-------------------------------------
+2026-08-03T16:26:27.607625130Z INFO:app.services.socket_pool.socket_manager:  daemon:9000:termman_daemon_sec... | ea52d
+e0c-51b7-4b49-a... | c05aa640-5fb4-49...
+2026-08-03T16:26:27.607631623Z INFO:app.services.socket_pool.socket_manager:  共 1 个Token
+2026-08-03T16:26:27.607635391Z INFO:app.services.socket_pool.socket_manager:
+2026-08-03T16:26:27.607638547Z 2. Socket实例表 [(user_uuid, item_uuid, type) -> ItemSocket]
+2026-08-03T16:26:27.607641773Z INFO:app.services.socket_pool.socket_manager:-------------------------------------------
+-------------------------------------
+2026-08-03T16:26:27.607645050Z INFO:app.services.socket_pool.socket_manager:  无数据
+2026-08-03T16:26:27.607650951Z INFO:app.services.socket_pool.socket_manager:
+2026-08-03T16:26:27.607654318Z ================================================================================
+2026-08-03T16:26:27.607657524Z 
+2026-08-03T16:26:27.607660700Z INFO:app.services.terminal_service:[TerminalService] Creating backend socket for item=ea
+52de0c-51b7-4b49-a43d-985ed2e09579, daemon_url=http://daemon:9000
+2026-08-03T16:26:27.607745156Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Connecting to http://daemon:9000 
+for item ea52de0c-51b7-4b49-a43d-985ed2e09579, user backend, type backend
+2026-08-03T16:26:27.611386222Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Socket connect event for item=ea5
+2de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:26:27.611650446Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Socket connected, waiting for ter
+minal_connect confirmation
+2026-08-03T16:26:27.611660526Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Waiting for terminal_connected ev
+ent (timeout=10.0s)
+2026-08-03T16:26:27.616175886Z INFO:app.services.daemon_initializer:[Backend] Received daemon connection update: type=i
+tem_update, rooms=0
+2026-08-03T16:26:27.616835825Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Terminal connected: {'item_uuid':
+ 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'subscriber_type': 'backend', 'room_info': {'room_id': 'ea52de0c-51b7-4b49-a43
+d-985ed2e09579', 'permanent_count': 1, 'temporary_count': 0, 'permanent': [{'sid': 'a343CYjhPWK-f-EO...', 'type': 'back
+end', 'user_uuid': 'backend', 'ip': 'unknown'}], 'temporary': []}}
+2026-08-03T16:26:27.616952810Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Connection confirmed for item=ea5
+2de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:26:27.616967659Z INFO:app.services.socket_pool.socket_manager:
+2026-08-03T16:26:27.616971747Z ================================================================================
+2026-08-03T16:26:27.617007632Z INFO:app.services.socket_pool.socket_manager:[Backend SocketManager] Created backend Soc
+ket for Item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:26:27.617017321Z INFO:app.services.socket_pool.socket_manager:===========================================
+=====================================
+2026-08-03T16:26:27.617074248Z INFO:app.services.socket_pool.socket_manager:
+2026-08-03T16:26:27.617083657Z 1. Item-Token映射表 [daemon_id -> {item_uuid: token}]
+2026-08-03T16:26:27.617096752Z INFO:app.services.socket_pool.socket_manager:-------------------------------------------
+-------------------------------------
+2026-08-03T16:26:27.617101201Z INFO:app.services.socket_pool.socket_manager:  daemon:9000:termman_daemon_sec... | ea52d
+e0c-51b7-4b49-a... | c05aa640-5fb4-49...
+2026-08-03T16:26:27.617130944Z INFO:app.services.socket_pool.socket_manager:  共 1 个Token
+2026-08-03T16:26:27.617137557Z INFO:app.services.socket_pool.socket_manager:
+2026-08-03T16:26:27.617140814Z 2. Socket实例表 [(user_uuid, item_uuid, type) -> ItemSocket]
+2026-08-03T16:26:27.617173343Z INFO:app.services.socket_pool.socket_manager:-------------------------------------------
+-------------------------------------
+2026-08-03T16:26:27.617179274Z INFO:app.services.socket_pool.socket_manager:  backend... | ea52de0c-51b7-4b49-a... | ba
+ckend    | connected
+2026-08-03T16:26:27.617224748Z INFO:app.services.socket_pool.socket_manager:  共 1 个Socket
+2026-08-03T16:26:27.617230540Z INFO:app.services.socket_pool.socket_manager:
+2026-08-03T16:26:27.617233696Z ================================================================================
+2026-08-03T16:26:27.617236792Z 
+2026-08-03T16:26:27.617334739Z INFO:app.services.socket_pool.input_center:[InputCenter] Handler registered: backend_soc
+ket_ea52de0c-51b7-4b49-a43d-985ed2e09579_5e927d14 for item=ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:26:27.617352394Z INFO:app.services.socket_pool.socket_manager:[SocketManager] Registered input handler ba
+ckend_socket_ea52de0c-51b7-4b49-a43d-985ed2e09579_5e927d14 for item=ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:26:27.617360099Z INFO:app.services.terminal_service:[TerminalService] Backend socket connected for item=e
+a52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:26:27.617447040Z INFO:app.services.socket_pool.event_bus:[ItemEventBus] Subscriber registered: backend_lo
+g_ea52de0c-51b7-4b49-a43d-985ed2e09579_8e34607e for item=ea52de0c-51b7-4b49-a43d-985ed2e09579, types=['stream']
+2026-08-03T16:26:27.617455266Z INFO:app.services.socket_pool.event_bus:
+2026-08-03T16:26:27.617458532Z ============================================================
+2026-08-03T16:26:27.617461598Z INFO:app.services.socket_pool.event_bus:[ItemEventBus] Current State
+2026-08-03T16:26:27.617464604Z INFO:app.services.socket_pool.event_bus:================================================
+============
+2026-08-03T16:26:27.617467841Z INFO:app.services.socket_pool.event_bus:Total subscribers: 1
+2026-08-03T16:26:27.617516641Z INFO:app.services.socket_pool.event_bus:  Item ea52de0c-51b7-4b...: 1 subscribers
+2026-08-03T16:26:27.617525339Z INFO:app.services.socket_pool.event_bus:    - backend_log_ea52de0c-51b7-4b49-a43d-985ed2
+e09579_8e34607e (backend_log)
+2026-08-03T16:26:27.617528685Z INFO:app.services.socket_pool.event_bus:================================================
+============
+2026-08-03T16:26:27.617531851Z 
+2026-08-03T16:26:27.617558368Z INFO:app.services.socket_pool.service_facade:[SocketPoolFacade] Log subscriber registere
+d: backend_log_ea52de0c-51b7-4b49-a43d-985ed2e09579_8e34607e for item=ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:26:27.617591639Z INFO:app.services.connection_pool.connection_models:
+2026-08-03T16:26:27.617600256Z ============================================================
+2026-08-03T16:26:27.617604614Z INFO:app.services.connection_pool.connection_models:[BackendConnPool] Created RoomListen
+Connection for item=ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:26:27.617655980Z INFO:app.services.connection_pool.connection_models:====================================
+========================
+2026-08-03T16:26:27.617662994Z INFO:app.services.connection_pool.connection_models:  Room监听连接池: 1 个
+2026-08-03T16:26:27.617666371Z INFO:app.services.connection_pool.connection_models:    - ea52de0c-51b7-4b49-a... | stat
+us=disconnected
+2026-08-03T16:26:27.617669527Z INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
+2026-08-03T16:26:27.617705312Z INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=c
+onnected
+2026-08-03T16:26:27.617711093Z INFO:app.services.connection_pool.connection_models:====================================
+========================
+2026-08-03T16:26:27.617714410Z 
+2026-08-03T16:26:27.617790525Z INFO:app.services.connection_pool.connection_models:
+2026-08-03T16:26:27.617799182Z ============================================================
+2026-08-03T16:26:27.617803170Z INFO:app.services.connection_pool.connection_models:[BackendConnPool] Backend Room监听连接已建
+立: item=ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:26:27.617806777Z INFO:app.services.connection_pool.connection_models:====================================
+========================
+2026-08-03T16:26:27.617809953Z INFO:app.services.connection_pool.connection_models:  Room监听连接池: 1 个
+2026-08-03T16:26:27.617813039Z INFO:app.services.connection_pool.connection_models:    - ea52de0c-51b7-4b49-a... | stat
+us=connected
+2026-08-03T16:26:27.617816025Z INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
+2026-08-03T16:26:27.617819031Z INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=c
+onnected
+2026-08-03T16:26:27.617849711Z INFO:app.services.connection_pool.connection_models:====================================
+========================
+2026-08-03T16:26:27.617860793Z 
+2026-08-03T16:26:27.626841323Z INFO:app.services.daemon_initializer:Synchronized daemon state for daemon:9000:termman_d
+aemon_secret_key_2024
+2026-08-03T16:26:32.220903600Z INFO:     127.0.0.1:36770 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:26:42.307599791Z INFO:     127.0.0.1:44424 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:26:52.396255356Z INFO:     127.0.0.1:33760 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:26:54.096499531Z INFO:     172.19.0.1:41046 - "OPTIONS /api/v1/chat/ea52de0c-51b7-4b49-a43d-985ed2e09579/agent-events HTTP/1.1" 200 OK
+2026-08-03T16:26:27.626864539Z INFO:app.services.daemon_initializer:Daemon initialization completed
+2026-08-03T16:26:27.626869449Z INFO:app.main:[App] Starting MCP servers...
+2026-08-03T16:26:27.656870668Z INFO:app.services.agent.mcp.inprocess_client:[InProcessMCPClient] Initialized server 'lo
+cal'
+2026-08-03T16:26:27.656900727Z INFO:app.services.agent.mcp.inprocess_client:[InProcessMCPClient] Found 25 tools in serv
+er 'local'
+2026-08-03T16:26:27.656905036Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Builtin server 'local' sta
+rted with 25 tools (JSON-RPC)
+2026-08-03T16:26:27.656952219Z INFO:app.main:[App] MCP servers started
+2026-08-03T16:26:27.696246201Z INFO:app.services.agent.state_restore:[StateRestore] Restored workflows=0 tickets=38
+2026-08-03T16:26:27.696476352Z INFO:app.services.agent.task_watchdog:[TaskWatchdog] Started (interval=30.0s, idle_resum
+e=180.0s, stale=900.0s, blocked_stale=3600.0s, waiting_job_stale=21600.0s)
+2026-08-03T16:26:27.700749381Z INFO:app.services.agent.scheduled_tasks:[ScheduledTasks] Scheduler started
+2026-08-03T16:26:27.701005954Z INFO:     Application startup complete.
+2026-08-03T16:26:27.701534632Z INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2026-08-03T16:26:57.698000264Z INFO:app.services.agent.memory.vector_store:[VectorStore] Initializing ChromaDB with per
+sistence at /app/backend/chroma_data
+2026-08-03T16:26:57.866707620Z INFO:app.services.agent.memory.vector_store:[VectorStore] ChromaDB initialized with pers
+istence
+2026-08-03T16:26:57.893502022Z INFO:app.services.agent.memory.vector_store:[Embedding] Loading BAAI/bge-small-zh-v1.5 m
+odel...
+2026-08-03T16:27:04.050432043Z INFO:sentence_transformers.SentenceTransformer:Use pytorch device_name: cpu
+2026-08-03T16:27:04.050481079Z INFO:sentence_transformers.SentenceTransformer:Load pretrained SentenceTransformer: BAAI
+/bge-small-zh-v1.5
+2026-08-03T16:27:04.133605395Z 
+Loading weights:   0%|          | 0/71 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 71/71 [00:00<00:00, 3120.70it/s]
+2026-08-03T16:27:04.136563021Z [1mBertModel LOAD REPORT[0m from: BAAI/bge-small-zh-v1.5
+2026-08-03T16:27:04.136588551Z Key                     | Status     |  | 
+2026-08-03T16:27:04.136592439Z ------------------------+------------+--+-
+2026-08-03T16:27:04.136595565Z embeddings.position_ids | UNEXPECTED |  | 
+2026-08-03T16:27:04.136598541Z 
+2026-08-03T16:27:04.136601497Z Notes:
+2026-08-03T16:27:04.136604653Z - UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if yo
+u expect identical arch.
+2026-08-03T16:27:04.168299731Z INFO:app.services.agent.memory.vector_store:[Embedding] Model loaded from local cache
+2026-08-03T16:27:04.249780090Z 
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]
+Batches: 100%|██████████| 1/1 [00:00<00:00, 12.49it/s]
+2026-08-03T16:28:28.093586175Z INFO:app.plugins.robot.service:[RobotService] Inbound robot=5cbc7f55-04a2-40f6-900a-05e0
+b0dd652a sender=private_2537134688 target=2537134688 text=帮我并行跑3个后台任务（必须都用run_job后台任务派发，不要用execute_command）：1) sleep 5 
+&& echo JOB_A_DONE  2) sleep 12 && echo JOB_B_DONE  3) sleep 14 && echo JOB_C_DONE。派发完先简短回我一句。任务完成时你会收到结果通知，注意汇总。
+2026-08-03T16:28:28.115775314Z INFO:app.plugins.robot.service:[RobotService] Queued inbound robot=5cbc7f55-04a2-40f6-90
+0a-05e0b0dd652a item=ea52de0c-51b7-4b49-a43d-985ed2e09579 route=测试项目-5 queue={'size': 1, 'max_size': 50, 'workers': 2}
+2026-08-03T16:28:28.199981310Z 
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]
+Batches: 100%|██████████| 1/1 [00:00<00:00, 19.07it/s]
+2026-08-03T16:28:28.244130744Z INFO:app.services.agent.agent:[Agent] Created agent for handler 288d27b5-82cf-41f2-90dd-
+f56a5300521e
+2026-08-03T16:28:28.244161594Z INFO:app.services.agent.agent:[Agent] Added MCP server from handler config: local
+2026-08-03T16:28:28.244165933Z INFO:app.services.agent.agent:[Agent] Added MCP server from skill 'qq_mcp': robot
+2026-08-03T16:28:28.244171984Z INFO:app.services.agent.agent:[Agent] Got 25 tools from server 'local'
+2026-08-03T16:28:28.244252067Z INFO:app.services.agent.agent:[Agent] Got 0 tools from server 'robot'
+2026-08-03T16:28:28.244264472Z INFO:app.services.agent.agent:[Agent] Loaded 5 skills (['cheshire_persona', 'minecraft_s
+erver_helper', 'qq_mcp', 'system_prompt', 'terminal_mcp']), 2 MCP servers (['local', 'robot']), 25 tools for handler 28
+8d27b5-82cf-41f2-90dd-f56a5300521e
+2026-08-03T16:28:28.244328163Z INFO:app.services.agent.agent:[ItemHandlerContext] Set handler=288d27b5-82cf-41f2-90dd-f
+56a5300521e for item=ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:28.252505807Z INFO:app.services.agent.mcp.inprocess_client:[InProcessMCPClient] Initialized server 'ro
+bot'
+2026-08-03T16:28:28.252522670Z INFO:app.services.agent.mcp.inprocess_client:[InProcessMCPClient] Found 7 tools in serve
+r 'robot'
+2026-08-03T16:28:28.252527048Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Builtin server 'robot' sta
+rted with 7 tools (JSON-RPC)
+2026-08-03T16:28:28.252533832Z INFO:app.services.agent.agent:[Agent] Got 25 tools from server 'local'
+2026-08-03T16:28:28.252603628Z INFO:app.services.agent.agent:[Agent] Got 7 tools from server 'robot'
+2026-08-03T16:28:28.252615170Z INFO:app.services.agent.agent:[Agent] MCP server 'local' running, loaded 25 tools
+2026-08-03T16:28:28.252658386Z INFO:app.services.agent.agent:[Agent] MCP server 'robot' running, loaded 7 tools
+2026-08-03T16:28:28.252821535Z INFO:app.services.agent.agent:[Agent] Got 25 tools from server 'local'
+2026-08-03T16:28:28.252829982Z INFO:app.services.agent.agent:[Agent] Got 7 tools from server 'robot'
+2026-08-03T16:28:28.253101275Z INFO:app.services.agent.chat_runtime:[ChatRuntime] robot context registered: robot_id=5c
+bc7f55-04a2-40f6-900a-05e0b0dd652a source=qq
+2026-08-03T16:28:28.296319648Z 
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]
+Batches: 100%|██████████| 1/1 [00:00<00:00, 66.46it/s]
+2026-08-03T16:28:28.866115591Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted qq_user to 1 chat subscri
+ber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:28.883269583Z [92m16:28:28 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:28:28.883299892Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:28:28.883304902Z INFO:LiteLLM:
+2026-08-03T16:28:28.883308840Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:28:36.145676979Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to 1 chat 
+subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:36.633058427Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_action to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:36.634108848Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'update_plan'
+ on server 'local' with args: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'plan': [{'step': '加载 run_job 能力', 's
+tatus': 'in_progress'}, {'step': '并行派发 JOB_A/B/C 三个后台任务', 'status': 'pending'}, {'step': '简短回执给用户', 'status': 'pending'
+}, {'step': '收到结果通知后汇总汇报', 'status': 'pending'}], '_reply_ticket_id': '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:28:36.634128547Z [LocalMCPServer] call_tool: name=update_plan, args={'item_id': 'ea52de0c-51b7-4b49-a43d-
+985ed2e09579', 'plan': [{'step': '加载 run_job 能力', 'status': 'in_progress'}, {'step': '并行派发 JOB_A/B/C 三个后台任务', 'status':
+ 'pending'}, {'step': '简短回执给用户', 'status': 'pending'}, {'step': '收到结果通知后汇总汇报', 'status': 'pending'}], '_reply_ticket_id
+': '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:28:36.644374868Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted plan_updated to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:36.644511426Z [LocalMCPServer] Tool 'update_plan' result: [{'type': 'text', 'text': "Plan updated:\n  
+1. [in_progress] 加载 run_job 能力\n  2. [pending] 并行派发 JOB_A/B/C 三个后台任务\n  3. [pending] 简短回执给用户\n  4. [pending] 收到结果通知后汇总汇
+报\nNext action: execute step '加载 run_job 能力' immediately. Do NOT reply to the user yet — report only when all steps are
+ done, or one is genuinely blocked."}]
+2026-08-03T16:28:36.644526175Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'te
+xt', 'text': "Plan updated:\n  1. [in_progress] 加载 run_job 能力\n  2. [pending] 并行派发 JOB_A/B/C 三个后台任务\n  3. [pending] 简短回
+执给用户\n  4. [pending] 收到结果通知后汇总汇报\nNext action: execute step '加载 run_job 能力' immediately. Do NOT reply to the user yet —
+ report only when all steps are done, or one is genuinely blocked."}]
+2026-08-03T16:28:36.644587366Z INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_local_update_plan' with arg
+s: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'plan': [{'step': '加载 run_job 能力', 'status': 'in_progress'}, {'s
+tep': '并行派发 JOB_A/B/C 三个后台任务', 'status': 'pending'}, {'step': '简短回执给用户', 'status': 'pending'}, {'step': '收到结果通知后汇总汇报', 
+'status': 'pending'}], '_reply_ticket_id': '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:28:37.144896079Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_tool_result to 1 ch
+at subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:37.636780955Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_action to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:37.637818041Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'prepare_capa
+bilities' on server 'local' with args: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'names': ['mcp_local_run_job
+', 'mcp_local_list_jobs'], '_reply_ticket_id': '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:28:37.637838661Z [LocalMCPServer] call_tool: name=prepare_capabilities, args={'item_id': 'ea52de0c-51b7-4
+b49-a43d-985ed2e09579', 'names': ['mcp_local_run_job', 'mcp_local_list_jobs'], '_reply_ticket_id': '0413127254534b23aa3
+170464774cf82'}
+2026-08-03T16:28:37.640162347Z [LocalMCPServer] Tool 'prepare_capabilities' result: [{'type': 'text', 'text': 'Tool `mc
+p_local_run_job` is now loaded. Schema:\n{"type": "function", "function": {"name": "mcp_local_run_job", "description": 
+"后台一次性命令，只需最终结果。用于下载、安装、构建、查询等不需要交互的操作。可并行多个不同任务。用户明确要求的安装/运行直接用本工具执行，无需先向用户确认。大型安装（如 JDK 等几百 MB 的包）必须显式设大 timeout_seco
+nds（如 1800）。", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Shell comm
+and."}, "timeout_seconds": {"type": "integer", "default": 1200}, "tail_lines": {"type": "integer", "default": 80}}, "re
+quired": ["command"]}}}\n\nTool `mcp_local_list_jobs` is now loaded. Schema:\n{"type": "function", "function": {"name":
+ "mcp_local_list_jobs", "description": "列出运行中的后台任务及输出尾部。查进度/状态时先调这个。", "parameters": {"type": "object", "properties": {
+}, "required": []}}}\n\nLoaded capabilities stay available for this item; call them normally now.'}]
+2026-08-03T16:28:37.640191334Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'te
+xt', 'text': 'Tool `mcp_local_run_job` is now loaded. Schema:\n{"type": "function", "function": {"name": "mcp_local_run
+_job", "description": "后台一次性命令，只需最终结果。用于下载、安装、构建、查询等不需要交互的操作。可并行多个不同任务。用户明确要求的安装/运行直接用本工具执行，无需先向用户确认。大型安装（如 JDK 等几百 MB 
+的包）必须显式设大 timeout_seconds（如 1800）。", "parameters": {"type": "object", "properties": {"command": {"type": "string", "des
+cription": "Shell command."}, "timeout_seconds": {"type": "integer", "default": 1200}, "tail_lines": {"type": "integer"
+, "default": 80}}, "required": ["command"]}}}\n\nTool `mcp_local_list_jobs` is now loaded. Schema:\n{"type": "function"
+, "function": {"name": "mcp_local_list_jobs", "description": "列出运行中的后台任务及输出尾部。查进度/状态时先调这个。", "parameters": {"type": "ob
+ject", "properties": {}, "required": []}}}\n\nLoaded capabilities stay available for this item; call them normally now.
+'}]
+2026-08-03T16:28:37.640202466Z INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_local_prepare_capabilities'
+ with args: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'names': ['mcp_local_run_job', 'mcp_local_list_jobs'], 
+'_reply_ticket_id': '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:28:38.133331786Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_tool_result to 1 ch
+at subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:38.134523396Z [92m16:28:38 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:28:38.134536892Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:28:38.134893285Z INFO:LiteLLM:
+2026-08-03T16:28:38.134904907Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:28:44.170368936Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to 1 chat 
+subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:44.662676981Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_action to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:44.663697980Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'update_plan'
+ on server 'local' with args: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'plan': [{'status': 'completed', 'ste
+p': '加载 run_job 能力'}, {'status': 'in_progress', 'step': '并行派发 JOB_A/B/C 三个后台任务'}, {'status': 'pending', 'step': '简短回执给用
+户'}, {'status': 'pending', 'step': '收到结果通知后汇总汇报'}], '_reply_ticket_id': '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:28:44.663715825Z [LocalMCPServer] call_tool: name=update_plan, args={'item_id': 'ea52de0c-51b7-4b49-a43d-
+985ed2e09579', 'plan': [{'status': 'completed', 'step': '加载 run_job 能力'}, {'status': 'in_progress', 'step': '并行派发 JOB_A
+/B/C 三个后台任务'}, {'status': 'pending', 'step': '简短回执给用户'}, {'status': 'pending', 'step': '收到结果通知后汇总汇报'}], '_reply_ticket_
+id': '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:28:44.673576032Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted plan_updated to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:44.673990871Z [LocalMCPServer] Tool 'update_plan' result: [{'type': 'text', 'text': "Plan updated:\n  
+1. [completed] 加载 run_job 能力\n  2. [in_progress] 并行派发 JOB_A/B/C 三个后台任务\n  3. [pending] 简短回执给用户\n  4. [pending] 收到结果通知后汇
+总汇报\nNext action: execute step '并行派发 JOB_A/B/C 三个后台任务' immediately. Do NOT reply to the user yet — report only when all
+ steps are done, or one is genuinely blocked."}]
+2026-08-03T16:28:44.674035293Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'te
+xt', 'text': "Plan updated:\n  1. [completed] 加载 run_job 能力\n  2. [in_progress] 并行派发 JOB_A/B/C 三个后台任务\n  3. [pending] 简
+短回执给用户\n  4. [pending] 收到结果通知后汇总汇报\nNext action: execute step '并行派发 JOB_A/B/C 三个后台任务' immediately. Do NOT reply to the 
+user yet — report only when all steps are done, or one is genuinely blocked."}]
+2026-08-03T16:28:44.674091068Z INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_local_update_plan' with arg
+s: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'plan': [{'status': 'completed', 'step': '加载 run_job 能力'}, {'sta
+tus': 'in_progress', 'step': '并行派发 JOB_A/B/C 三个后台任务'}, {'status': 'pending', 'step': '简短回执给用户'}, {'status': 'pending', 
+'step': '收到结果通知后汇总汇报'}], '_reply_ticket_id': '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:28:45.173798573Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_tool_result to 1 ch
+at subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:45.174694736Z INFO:app.services.agent.session:[AgentSession] Created session for item=ea52de0c-51b7-4b
+49-a43d-985ed2e09579, handler=288d27b5-82cf-41f2-90dd-f56a5300521e
+2026-08-03T16:28:45.175214320Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'run_job' on 
+server 'local' with args: {'command': 'sleep 5 && echo JOB_A_DONE', 'timeout_seconds': 60, 'item_id': 'ea52de0c-51b7-4b
+49-a43d-985ed2e09579', '_reply_ticket_id': '0413127254534b23aa3170464774cf82', '_robot_context_token': 'N9ciglVK0DpjEv9
+m7WbuFU8E0c5xkFfiK73PaAMKRhk'}
+2026-08-03T16:28:45.175237105Z [LocalMCPServer] call_tool: name=run_job, args={'command': 'sleep 5 && echo JOB_A_DONE',
+ 'timeout_seconds': 60, 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '0413127254534b23aa31704
+64774cf82', '_robot_context_token': 'N9ciglVK0DpjEv9m7WbuFU8E0c5xkFfiK73PaAMKRhk'}
+2026-08-03T16:28:45.190441554Z [LocalMCPServer] _run_job: item=ea52de0c-51b7-4b49-a43d-985ed2e09579, timeout=60, tail_l
+ines=80, requested_wait=False, command=sleep 5 && echo JOB_A_DONE
+2026-08-03T16:28:45.195223834Z INFO:app.services.connection_pool.daemon_connection:[DaemonConnection] Running daemon jo
+b over HTTP: url=http://daemon:9000/api/internal/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs/run item=ea52de0c-51b7
+-4b49-a43d-985ed2e09579 timeout=60 command='sleep 5 && echo JOB_A_DONE'
+2026-08-03T16:28:45.195246628Z [LocalMCPServer] Tool 'run_job' result: [{'type': 'text', 'text': '后台任务已启动，完成后自动送回结果。'},
+ {'type': 'metadata', 'background_job_started': True, 'effective_tool_name': 'mcp_local_run_job'}]
+2026-08-03T16:28:45.195551917Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'te
+xt', 'text': '后台任务已启动，完成后自动送回结果。'}, {'type': 'metadata', 'background_job_started': True, 'effective_tool_name': 'mcp_lo
+cal_run_job'}]
+2026-08-03T16:28:45.195569170Z INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_local_run_job' with args: {
+'command': 'sleep 5 && echo JOB_A_DONE', 'timeout_seconds': 60, 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_re
+ply_ticket_id': '0413127254534b23aa3170464774cf82', '_robot_context_token': 'N9ciglVK0DpjEv9m7WbuFU8E0c5xkFfiK73PaAMKRh
+k'}
+2026-08-03T16:28:45.196447850Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'run_job' on 
+server 'local' with args: {'command': 'sleep 12 && echo JOB_B_DONE', 'timeout_seconds': 60, 'item_id': 'ea52de0c-51b7-4
+b49-a43d-985ed2e09579', '_reply_ticket_id': '0413127254534b23aa3170464774cf82', '_robot_context_token': 'N9ciglVK0DpjEv
+9m7WbuFU8E0c5xkFfiK73PaAMKRhk'}
+2026-08-03T16:28:45.196458440Z [LocalMCPServer] call_tool: name=run_job, args={'command': 'sleep 12 && echo JOB_B_DONE'
+, 'timeout_seconds': 60, 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '0413127254534b23aa3170
+464774cf82', '_robot_context_token': 'N9ciglVK0DpjEv9m7WbuFU8E0c5xkFfiK73PaAMKRhk'}
+2026-08-03T16:28:45.207746014Z [LocalMCPServer] background job scheduled: item=ea52de0c-51b7-4b49-a43d-985ed2e09579, jo
+b_id=0fe31428ee2a, command=sleep 5 && echo JOB_A_DONE
+2026-08-03T16:28:45.211061675Z [LocalMCPServer] _run_job: item=ea52de0c-51b7-4b49-a43d-985ed2e09579, timeout=60, tail_l
+ines=80, requested_wait=False, command=sleep 12 && echo JOB_B_DONE
+2026-08-03T16:26:54.122588898Z INFO:     172.19.0.1:41046 - "GET /api/v1/chat/ea52de0c-51b7-4b49-a43d-985ed2e09579/agent-events HTTP/1.1" 200 OK
+2026-08-03T16:27:02.485348978Z INFO:     127.0.0.1:54860 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:27:12.572940124Z INFO:     127.0.0.1:35524 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:27:22.656270160Z INFO:     127.0.0.1:35562 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:27:32.741010697Z INFO:     127.0.0.1:47286 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:27:42.938990039Z INFO:     127.0.0.1:50550 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:27:53.024785016Z INFO:     127.0.0.1:41654 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:28:03.115192548Z INFO:     127.0.0.1:44806 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:28:13.198913404Z INFO:     127.0.0.1:39190 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:28:23.283224173Z INFO:     127.0.0.1:54570 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:28:28.030075459Z INFO:     172.19.0.1:46194 - "POST /api/v1/login/access-token HTTP/1.1" 200 OK
+2026-08-03T16:28:28.080749482Z INFO:     172.19.0.1:46202 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:28:28.116554223Z INFO:     172.19.0.1:46218 - "POST /api/v1/robots/5cbc7f55-04a2-40f6-900a-05e0b0dd652a/dispatch HTTP/1.1" 200 OK
+2026-08-03T16:28:33.142914155Z INFO:     172.19.0.1:46226 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:28:33.162612069Z INFO:     172.19.0.1:46234 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:28:33.374945984Z INFO:     127.0.0.1:39748 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:28:36.648197690Z INFO:     172.19.0.1:35314 - "OPTIONS /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/plan HTTP/1.1" 200 OK
+2026-08-03T16:28:36.648588148Z INFO:     172.19.0.1:35320 - "OPTIONS /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage/by-task HTTP/1.1" 200 OK
+2026-08-03T16:28:36.660401026Z INFO:     172.19.0.1:35314 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/plan HTTP/1.1" 200 OK
+2026-08-03T16:28:36.679941874Z INFO:     172.19.0.1:35320 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage/by-task HTTP/1.1" 200 OK
+2026-08-03T16:28:38.185235127Z INFO:     172.19.0.1:35336 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:28:38.201030658Z INFO:     172.19.0.1:35344 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:28:43.221656614Z INFO:     172.19.0.1:35360 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:28:43.252517419Z INFO:     172.19.0.1:35370 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:28:43.478822051Z INFO:     127.0.0.1:41794 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:28:44.682185135Z INFO:     172.19.0.1:35378 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/plan HTTP/1.1" 200 OK
+2026-08-03T16:28:44.700104056Z INFO:     172.19.0.1:35388 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage/by-task HTTP/1.1" 200 OK
+2026-08-03T16:28:45.260549038Z INFO:     172.19.0.1:35388 - "OPTIONS /api/v1/memory/ea52de0c-51b7-4b49-a43d-985ed2e09579/session?limit=20&offset=0 HTTP/1.1" 200 OK
+2026-08-03T16:28:45.338461101Z INFO:     172.19.0.1:35388 - "GET /api/v1/memory/ea52de0c-51b7-4b49-a43d-985ed2e09579/session?limit=20&offset=0 HTTP/1.1" 200 OK
+2026-08-03T16:28:48.296282436Z INFO:     172.19.0.1:56948 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:28:48.311200077Z INFO:     172.19.0.1:56956 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:28:45.214367872Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Received stdout for item=ea52de0c
+-51b7-4b49-a43d-985ed2e09579: 62 chars
+2026-08-03T16:28:45.217039529Z INFO:app.services.socket_pool.subscription_center:[SubscriptionCenter] publish_stream: i
+tem=ea52de0c-51b7-4b49-a43d-985ed2e09579 stdout_len=62 delivered=1
+2026-08-03T16:28:45.217215115Z INFO:app.services.socket_pool.agent_bridge:[AgentInputBridge] Skipping daemon job stream
+ for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:45.217819140Z INFO:app.services.connection_pool.daemon_connection:[DaemonConnection] Running daemon jo
+b over HTTP: url=http://daemon:9000/api/internal/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs/run item=ea52de0c-51b7
+-4b49-a43d-985ed2e09579 timeout=60 command='sleep 12 && echo JOB_B_DONE'
+2026-08-03T16:28:45.217831764Z [LocalMCPServer] Tool 'run_job' result: [{'type': 'text', 'text': '后台任务已启动，完成后自动送回结果。'},
+ {'type': 'metadata', 'background_job_started': True, 'effective_tool_name': 'mcp_local_run_job'}]
+2026-08-03T16:28:45.218169236Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'te
+xt', 'text': '后台任务已启动，完成后自动送回结果。'}, {'type': 'metadata', 'background_job_started': True, 'effective_tool_name': 'mcp_lo
+cal_run_job'}]
+2026-08-03T16:28:45.218179766Z INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_local_run_job' with args: {
+'command': 'sleep 12 && echo JOB_B_DONE', 'timeout_seconds': 60, 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_r
+eply_ticket_id': '0413127254534b23aa3170464774cf82', '_robot_context_token': 'N9ciglVK0DpjEv9m7WbuFU8E0c5xkFfiK73PaAMKR
+hk'}
+2026-08-03T16:28:45.219076417Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'run_job' on 
+server 'local' with args: {'command': 'sleep 14 && echo JOB_C_DONE', 'timeout_seconds': 60, 'item_id': 'ea52de0c-51b7-4
+b49-a43d-985ed2e09579', '_reply_ticket_id': '0413127254534b23aa3170464774cf82', '_robot_context_token': 'N9ciglVK0DpjEv
+9m7WbuFU8E0c5xkFfiK73PaAMKRhk'}
+2026-08-03T16:28:45.219086937Z [LocalMCPServer] call_tool: name=run_job, args={'command': 'sleep 14 && echo JOB_C_DONE'
+, 'timeout_seconds': 60, 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '0413127254534b23aa3170
+464774cf82', '_robot_context_token': 'N9ciglVK0DpjEv9m7WbuFU8E0c5xkFfiK73PaAMKRhk'}
+2026-08-03T16:28:45.231144867Z [LocalMCPServer] background job scheduled: item=ea52de0c-51b7-4b49-a43d-985ed2e09579, jo
+b_id=3aa75045aa6c, command=sleep 12 && echo JOB_B_DONE
+2026-08-03T16:28:45.234885103Z [LocalMCPServer] _run_job: item=ea52de0c-51b7-4b49-a43d-985ed2e09579, timeout=60, tail_l
+ines=80, requested_wait=False, command=sleep 14 && echo JOB_C_DONE
+2026-08-03T16:28:45.237529339Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Received stdout for item=ea52de0c
+-51b7-4b49-a43d-985ed2e09579: 63 chars
+2026-08-03T16:28:45.239656339Z INFO:app.services.socket_pool.subscription_center:[SubscriptionCenter] publish_stream: i
+tem=ea52de0c-51b7-4b49-a43d-985ed2e09579 stdout_len=63 delivered=1
+2026-08-03T16:28:45.239674685Z INFO:app.services.socket_pool.agent_bridge:[AgentInputBridge] Skipping daemon job stream
+ for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:45.240390299Z INFO:app.services.connection_pool.daemon_connection:[DaemonConnection] Running daemon jo
+b over HTTP: url=http://daemon:9000/api/internal/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs/run item=ea52de0c-51b7
+-4b49-a43d-985ed2e09579 timeout=60 command='sleep 14 && echo JOB_C_DONE'
+2026-08-03T16:28:45.240410589Z [LocalMCPServer] Tool 'run_job' result: [{'type': 'text', 'text': '后台任务已启动，完成后自动送回结果。'},
+ {'type': 'metadata', 'background_job_started': True, 'effective_tool_name': 'mcp_local_run_job'}]
+2026-08-03T16:28:45.240791225Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'te
+xt', 'text': '后台任务已启动，完成后自动送回结果。'}, {'type': 'metadata', 'background_job_started': True, 'effective_tool_name': 'mcp_lo
+cal_run_job'}]
+2026-08-03T16:28:45.240802778Z INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_local_run_job' with args: {
+'command': 'sleep 14 && echo JOB_C_DONE', 'timeout_seconds': 60, 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_r
+eply_ticket_id': '0413127254534b23aa3170464774cf82', '_robot_context_token': 'N9ciglVK0DpjEv9m7WbuFU8E0c5xkFfiK73PaAMKR
+hk'}
+2026-08-03T16:28:45.241220478Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_status to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:45.242449574Z INFO:app.plugins.robot.service:[DBGPROC] apply_reply_context_result conv=private:2537134
+688 sent=False gen=1 sleep_no_reply=False
+2026-08-03T16:28:45.255345092Z [LocalMCPServer] background job scheduled: item=ea52de0c-51b7-4b49-a43d-985ed2e09579, jo
+b_id=89b0681dfb57, command=sleep 14 && echo JOB_C_DONE
+2026-08-03T16:28:45.256026374Z INFO:app.plugins.robot.service:[DBGPROC] item_has_running_jobs item=ea52de0c-51b7-4b49-a
+43d-985ed2e09579 -> False (no running)
+2026-08-03T16:28:45.256091096Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted qq_message_processed to 1
+ chat subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:45.256308588Z INFO:app.plugins.robot.service:[RobotService] Queued agent completed robot=5cbc7f55-04a2
+-40f6-900a-05e0b0dd652a item=ea52de0c-51b7-4b49-a43d-985ed2e09579 route=测试项目-5 sent=False
+2026-08-03T16:28:45.256438888Z [BUSYCHECK] flush_job_results_for_turn_end item=ea52de0c-51b7-4b49-a43d-985ed2e09579 con
+v_key=private:2537134688 popped=0
+2026-08-03T16:28:45.256447776Z INFO:app.plugins.robot.service:[DBGPROC] turn_end flush item=ea52de0c-51b7-4b49-a43d-985
+ed2e09579 conv=private:2537134688 flushed=False
+2026-08-03T16:28:45.262919584Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Received stdout for item=ea52de0c
+-51b7-4b49-a43d-985ed2e09579: 63 chars
+2026-08-03T16:28:45.264905225Z INFO:app.services.socket_pool.subscription_center:[SubscriptionCenter] publish_stream: i
+tem=ea52de0c-51b7-4b49-a43d-985ed2e09579 stdout_len=63 delivered=1
+2026-08-03T16:28:45.264923902Z INFO:app.services.socket_pool.agent_bridge:[AgentInputBridge] Skipping daemon job stream
+ for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:50.228329447Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Received stdout for item=ea52de0c
+-51b7-4b49-a43d-985ed2e09579: 11 chars
+2026-08-03T16:28:50.229638396Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Received stdout for item=ea52de0c
+-51b7-4b49-a43d-985ed2e09579: 253 chars
+2026-08-03T16:28:50.230698768Z INFO:app.services.socket_pool.subscription_center:[SubscriptionCenter] publish_stream: i
+tem=ea52de0c-51b7-4b49-a43d-985ed2e09579 stdout_len=11 delivered=1
+2026-08-03T16:28:50.230712104Z INFO:app.services.socket_pool.agent_bridge:[AgentInputBridge] Skipping daemon job stream
+ for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:50.232705836Z INFO:app.services.socket_pool.subscription_center:[SubscriptionCenter] publish_stream: i
+tem=ea52de0c-51b7-4b49-a43d-985ed2e09579 stdout_len=253 delivered=1
+2026-08-03T16:28:50.232722198Z INFO:app.services.socket_pool.agent_bridge:[AgentInputBridge] Skipping daemon job stream
+ for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:50.234243462Z [LocalMCPServer] background run_job result: item=ea52de0c-51b7-4b49-a43d-985ed2e09579, s
+uccess=True, exit_code=0, timed_out=False
+2026-08-03T16:28:50.234359891Z [BUSYCHECK] sess_busy=False conv_busy=False has_ctx=True robot_id=5cbc7f55 conv_key=priv
+ate:2537134688 err=
+2026-08-03T16:28:50.243781057Z INFO:app.services.agent.agent:[ItemHandlerContext] Set handler=288d27b5-82cf-41f2-90dd-f
+56a5300521e for item=ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:50.243801036Z INFO:app.services.agent.agent:[Agent] Got 25 tools from server 'local'
+2026-08-03T16:28:50.243804994Z INFO:app.services.agent.agent:[Agent] Got 7 tools from server 'robot'
+2026-08-03T16:28:50.243859236Z INFO:app.services.agent.agent:[Agent] MCP server 'local' running, loaded 25 tools
+2026-08-03T16:28:50.243870848Z INFO:app.services.agent.agent:[Agent] MCP server 'robot' running, loaded 7 tools
+2026-08-03T16:28:50.244168648Z INFO:app.services.agent.agent:[Agent] Got 25 tools from server 'local'
+2026-08-03T16:28:50.244182355Z INFO:app.services.agent.agent:[Agent] Got 7 tools from server 'robot'
+2026-08-03T16:28:50.244194228Z INFO:app.services.agent.chat_runtime:[ChatRuntime] robot context registered: robot_id=5c
+bc7f55-04a2-40f6-900a-05e0b0dd652a source=qq
+2026-08-03T16:28:50.322804968Z 
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]
+Batches: 100%|██████████| 1/1 [00:00<00:00, 14.02it/s]
+2026-08-03T16:28:50.863147988Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted qq_user to 1 chat subscri
+ber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:50.864427904Z [92m16:28:50 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:28:50.864458424Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:28:50.864462752Z INFO:LiteLLM:
+2026-08-03T16:28:50.864466069Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:28:57.240973075Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Received stdout for item=ea52de0c
+-51b7-4b49-a43d-985ed2e09579: 11 chars
+2026-08-03T16:28:57.242143427Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Received stdout for item=ea52de0c
+-51b7-4b49-a43d-985ed2e09579: 254 chars
+2026-08-03T16:28:57.243147732Z INFO:app.services.socket_pool.subscription_center:[SubscriptionCenter] publish_stream: i
+tem=ea52de0c-51b7-4b49-a43d-985ed2e09579 stdout_len=11 delivered=1
+2026-08-03T16:28:57.243177922Z INFO:app.services.socket_pool.agent_bridge:[AgentInputBridge] Skipping daemon job stream
+ for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:57.244584833Z INFO:app.services.socket_pool.subscription_center:[SubscriptionCenter] publish_stream: i
+tem=ea52de0c-51b7-4b49-a43d-985ed2e09579 stdout_len=254 delivered=1
+2026-08-03T16:28:57.244594662Z INFO:app.services.socket_pool.agent_bridge:[AgentInputBridge] Skipping daemon job stream
+ for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:58.298895717Z [LocalMCPServer] background run_job result: item=ea52de0c-51b7-4b49-a43d-985ed2e09579, s
+uccess=True, exit_code=0, timed_out=False
+2026-08-03T16:28:58.299027076Z [BUSYCHECK] sess_busy=False conv_busy=False has_ctx=True robot_id=5cbc7f55 conv_key=priv
+ate:2537134688 err=
+2026-08-03T16:28:59.267627072Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Received stdout for item=ea52de0c
+-51b7-4b49-a43d-985ed2e09579: 11 chars
+2026-08-03T16:28:59.268758242Z INFO:app.services.socket_pool.item_socket:[ItemSocket] Received stdout for item=ea52de0c
+-51b7-4b49-a43d-985ed2e09579: 254 chars
+2026-08-03T16:28:59.269767708Z INFO:app.services.socket_pool.subscription_center:[SubscriptionCenter] publish_stream: i
+tem=ea52de0c-51b7-4b49-a43d-985ed2e09579 stdout_len=11 delivered=1
+2026-08-03T16:28:59.269778499Z INFO:app.services.socket_pool.agent_bridge:[AgentInputBridge] Skipping daemon job stream
+ for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:28:59.271188346Z INFO:app.services.socket_pool.subscription_center:[SubscriptionCenter] publish_stream: i
+tem=ea52de0c-51b7-4b49-a43d-985ed2e09579 stdout_len=254 delivered=1
+2026-08-03T16:28:59.271197695Z INFO:app.services.socket_pool.agent_bridge:[AgentInputBridge] Skipping daemon job stream
+ for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:29:00.327595030Z [LocalMCPServer] background run_job result: item=ea52de0c-51b7-4b49-a43d-985ed2e09579, s
+uccess=True, exit_code=0, timed_out=False
+2026-08-03T16:29:00.327659366Z [BUSYCHECK] sess_busy=False conv_busy=False has_ctx=True robot_id=5cbc7f55 conv_key=priv
+ate:2537134688 err=
+2026-08-03T16:29:09.386562616Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to 1 chat 
+subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:29:09.925507466Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_action to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:29:09.926697280Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'update_plan'
+ on server 'local' with args: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'explanation': 'JOB_A 已完成；B/C 仍在运行，回执
+并入最终汇报，避免中间消息', 'plan': [{'step': '加载 run_job 能力', 'status': 'completed'}, {'step': '并行派发 JOB_A/B/C（A 已 DONE，B/C 运行中）',
+ 'status': 'completed'}, {'step': '等待 JOB_B/JOB_C 回调后汇总汇报', 'status': 'in_progress'}], '_reply_ticket_id': '04131272545
+34b23aa3170464774cf82'}
+2026-08-03T16:29:09.926721879Z [LocalMCPServer] call_tool: name=update_plan, args={'item_id': 'ea52de0c-51b7-4b49-a43d-
+985ed2e09579', 'explanation': 'JOB_A 已完成；B/C 仍在运行，回执并入最终汇报，避免中间消息', 'plan': [{'step': '加载 run_job 能力', 'status': 'compl
+eted'}, {'step': '并行派发 JOB_A/B/C（A 已 DONE，B/C 运行中）', 'status': 'completed'}, {'step': '等待 JOB_B/JOB_C 回调后汇总汇报', 'status
+': 'in_progress'}], '_reply_ticket_id': '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:29:09.940343338Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted plan_updated to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:29:09.940881454Z [LocalMCPServer] Tool 'update_plan' result: [{'type': 'text', 'text': "Plan updated:\n  
+1. [completed] 加载 run_job 能力\n  2. [completed] 并行派发 JOB_A/B/C（A 已 DONE，B/C 运行中）\n  3. [in_progress] 等待 JOB_B/JOB_C 回调后汇
+总汇报\nNote: JOB_A 已完成；B/C 仍在运行，回执并入最终汇报，避免中间消息\nNext action: finish step '等待 JOB_B/JOB_C 回调后汇总汇报' and report to the user
+. 汇报发出后，调用 update_plan(plan=[]) 直接清除计划，不用逐步标 completed。"}]
+2026-08-03T16:29:09.940933295Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'te
+xt', 'text': "Plan updated:\n  1. [completed] 加载 run_job 能力\n  2. [completed] 并行派发 JOB_A/B/C（A 已 DONE，B/C 运行中）\n  3. [i
+n_progress] 等待 JOB_B/JOB_C 回调后汇总汇报\nNote: JOB_A 已完成；B/C 仍在运行，回执并入最终汇报，避免中间消息\nNext action: finish step '等待 JOB_B/JOB_C 
+回调后汇总汇报' and report to the user. 汇报发出后，调用 update_plan(plan=[]) 直接清除计划，不用逐步标 completed。"}]
+2026-08-03T16:29:09.941035727Z INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_local_update_plan' with arg
+s: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'explanation': 'JOB_A 已完成；B/C 仍在运行，回执并入最终汇报，避免中间消息', 'plan': [{'
+step': '加载 run_job 能力', 'status': 'completed'}, {'step': '并行派发 JOB_A/B/C（A 已 DONE，B/C 运行中）', 'status': 'completed'}, {'
+step': '等待 JOB_B/JOB_C 回调后汇总汇报', 'status': 'in_progress'}], '_reply_ticket_id': '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:29:10.557724472Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_tool_result to 1 ch
+at subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:29:10.559485468Z [92m16:29:10 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:29:10.559517431Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:29:10.559521790Z INFO:LiteLLM:
+2026-08-03T16:29:10.559525206Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:29:13.537450284Z [92m16:29:13 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:29:13.537479542Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:29:13.537560830Z INFO:LiteLLM:
+2026-08-03T16:29:13.537571722Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:29:22.345191098Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_response to 1 chat 
+subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:29:22.409097182Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_status to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:29:22.705923595Z INFO:app.services.agent.agent:[ItemHandlerContext] Set handler=288d27b5-82cf-41f2-90dd-f
+56a5300521e for item=ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:29:22.706206650Z INFO:app.services.agent.agent:[Agent] Got 25 tools from server 'local'
+2026-08-03T16:29:22.706732876Z INFO:app.plugins.robot.service:[RobotService] Empty reply for direct trigger robot=5cbc7
+f55-04a2-40f6-900a-05e0b0dd652a raw='[no_qq_reply]'; retrying once with corrective note
+2026-08-03T16:29:22.706865405Z INFO:app.services.agent.agent:[Agent] Got 7 tools from server 'robot'
+2026-08-03T16:29:22.706917353Z INFO:app.services.agent.agent:[Agent] MCP server 'local' running, loaded 25 tools
+2026-08-03T16:29:22.707556009Z INFO:app.services.agent.agent:[Agent] MCP server 'robot' running, loaded 7 tools
+2026-08-03T16:29:22.707715257Z INFO:app.services.agent.agent:[Agent] Got 25 tools from server 'local'
+2026-08-03T16:29:22.707724305Z INFO:app.services.agent.agent:[Agent] Got 7 tools from server 'robot'
+2026-08-03T16:29:22.707788911Z INFO:app.services.agent.chat_runtime:[ChatRuntime] robot context registered: robot_id=5c
+bc7f55-04a2-40f6-900a-05e0b0dd652a source=qq
+2026-08-03T16:29:22.767045642Z 
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]
+Batches: 100%|██████████| 1/1 [00:00<00:00, 19.21it/s]
+2026-08-03T16:29:23.305746718Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted qq_user to 1 chat subscri
+ber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:29:23.306732634Z [92m16:29:23 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:29:23.306748616Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:29:23.307070757Z INFO:LiteLLM:
+2026-08-03T16:29:23.307083933Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:28:53.355276181Z INFO:     172.19.0.1:56964 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:28:53.372474238Z INFO:     172.19.0.1:56972 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:28:53.566910748Z INFO:     127.0.0.1:55394 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:28:58.393873296Z INFO:     172.19.0.1:52640 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:28:58.408895756Z INFO:     172.19.0.1:52656 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:29:03.431975810Z INFO:     172.19.0.1:52664 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:29:03.448109143Z INFO:     172.19.0.1:52672 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:29:03.682851395Z INFO:     127.0.0.1:58352 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:29:08.459284006Z INFO:     172.19.0.1:35774 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:29:08.475224656Z INFO:     172.19.0.1:35782 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:29:09.955607860Z INFO:     172.19.0.1:35784 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/plan HTTP/1.1" 200 OK
+2026-08-03T16:29:09.977157808Z INFO:     172.19.0.1:35798 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage/by-task HTTP/1.1" 200 OK
+2026-08-03T16:29:13.506575798Z INFO:     172.19.0.1:35812 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:29:13.535140522Z INFO:     172.19.0.1:35818 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:29:13.784156539Z INFO:     127.0.0.1:60894 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:29:18.557914845Z INFO:     172.19.0.1:43300 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:29:18.573804675Z INFO:     172.19.0.1:43312 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:29:23.597593869Z INFO:     172.19.0.1:43314 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:29:23.614154403Z INFO:     172.19.0.1:43328 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:29:23.871569179Z INFO:     127.0.0.1:39916 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:29:28.625701075Z INFO:     172.19.0.1:40046 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:29:28.641027181Z INFO:     172.19.0.1:40056 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:29:33.652228452Z INFO:     172.19.0.1:40066 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:29:33.667369188Z INFO:     172.19.0.1:40070 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:29:33.961420970Z INFO:     127.0.0.1:52732 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:29:38.693248392Z INFO:     172.19.0.1:34756 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:29:38.709688300Z INFO:     172.19.0.1:34764 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:29:43.722887866Z INFO:     172.19.0.1:34774 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:29:43.740964715Z INFO:     172.19.0.1:34788 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:29:44.058530149Z INFO:     127.0.0.1:50674 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:29:48.750279992Z INFO:     172.19.0.1:33924 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:29:48.765180055Z INFO:     172.19.0.1:33936 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:29:53.776396802Z INFO:     172.19.0.1:33952 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:29:53.791536002Z INFO:     172.19.0.1:33968 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:29:54.150067479Z INFO:     127.0.0.1:38546 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:29:58.803539259Z INFO:     172.19.0.1:55222 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:29:58.818677405Z INFO:     172.19.0.1:55228 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:30:03.832158164Z INFO:     172.19.0.1:55230 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:30:03.847722534Z INFO:     172.19.0.1:55236 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/jobs HTTP/1.1" 200 OK
+2026-08-03T16:30:03.857176075Z INFO:     172.19.0.1:55248 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
+2026-08-03T16:30:03.926109855Z INFO:     172.19.0.1:55256 - "GET /api/v1/memory/ea52de0c-51b7-4b49-a43d-985ed2e09579/session?limit=30&offset=0 HTTP/1.1" 200 OK
+2026-08-03T16:30:04.236747335Z INFO:     127.0.0.1:46724 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:30:14.340327372Z INFO:     127.0.0.1:33814 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:30:24.426161985Z INFO:     127.0.0.1:36840 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:30:34.513178074Z INFO:     127.0.0.1:51658 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:30:44.608530919Z INFO:     127.0.0.1:49690 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:30:48.927952735Z INFO:     172.19.0.1:42866 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/plan HTTP/1.1" 200 OK
+2026-08-03T16:30:48.947801574Z INFO:     172.19.0.1:42874 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage/by-task HTTP/1.1" 200 OK
+2026-08-03T16:30:48.369727535Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to 1 chat 
+subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:30:48.901256351Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_action to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:30:48.902498274Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'update_plan'
+ on server 'local' with args: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'explanation': 'JOB_A/JOB_B 已完成（JOB_A
+_DONE、JOB_B_DONE），等 JOB_C 回调后汇总', 'plan': [{'step': '加载 run_job 能力', 'status': 'completed'}, {'step': '并行派发 JOB_A/B/C 三
+个后台任务', 'status': 'completed'}, {'step': '简短回执给用户', 'status': 'completed'}, {'step': '收到结果通知后汇总汇报', 'status': 'in_progr
+ess'}], '_reply_ticket_id': '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:30:48.902523163Z [LocalMCPServer] call_tool: name=update_plan, args={'item_id': 'ea52de0c-51b7-4b49-a43d-
+985ed2e09579', 'explanation': 'JOB_A/JOB_B 已完成（JOB_A_DONE、JOB_B_DONE），等 JOB_C 回调后汇总', 'plan': [{'step': '加载 run_job 能力'
+, 'status': 'completed'}, {'step': '并行派发 JOB_A/B/C 三个后台任务', 'status': 'completed'}, {'step': '简短回执给用户', 'status': 'comp
+leted'}, {'step': '收到结果通知后汇总汇报', 'status': 'in_progress'}], '_reply_ticket_id': '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:30:48.914519145Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted plan_updated to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:30:54.698358092Z INFO:     127.0.0.1:33772 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:31:04.788979070Z INFO:     127.0.0.1:44056 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:31:14.880147638Z INFO:     127.0.0.1:46510 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:31:20.498757729Z INFO:     172.19.0.1:48232 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/plan HTTP/1.1" 200 OK
+2026-08-03T16:31:20.517234134Z INFO:     172.19.0.1:48242 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage/by-task HTTP/1.1" 200 OK
+2026-08-03T16:30:48.915111561Z [LocalMCPServer] Tool 'update_plan' result: [{'type': 'text', 'text': "Plan updated:\n  
+1. [completed] 加载 run_job 能力\n  2. [completed] 并行派发 JOB_A/B/C 三个后台任务\n  3. [completed] 简短回执给用户\n  4. [in_progress] 收到结果
+通知后汇总汇报\nNote: JOB_A/JOB_B 已完成（JOB_A_DONE、JOB_B_DONE），等 JOB_C 回调后汇总\nNext action: finish step '收到结果通知后汇总汇报' and report 
+to the user. 汇报发出后，调用 update_plan(plan=[]) 直接清除计划，不用逐步标 completed。"}]
+2026-08-03T16:30:48.915196788Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'te
+xt', 'text': "Plan updated:\n  1. [completed] 加载 run_job 能力\n  2. [completed] 并行派发 JOB_A/B/C 三个后台任务\n  3. [completed] 简
+短回执给用户\n  4. [in_progress] 收到结果通知后汇总汇报\nNote: JOB_A/JOB_B 已完成（JOB_A_DONE、JOB_B_DONE），等 JOB_C 回调后汇总\nNext action: finish
+ step '收到结果通知后汇总汇报' and report to the user. 汇报发出后，调用 update_plan(plan=[]) 直接清除计划，不用逐步标 completed。"}]
+2026-08-03T16:30:48.915258849Z INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_local_update_plan' with arg
+s: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'explanation': 'JOB_A/JOB_B 已完成（JOB_A_DONE、JOB_B_DONE），等 JOB_C 回
+调后汇总', 'plan': [{'step': '加载 run_job 能力', 'status': 'completed'}, {'step': '并行派发 JOB_A/B/C 三个后台任务', 'status': 'complete
+d'}, {'step': '简短回执给用户', 'status': 'completed'}, {'step': '收到结果通知后汇总汇报', 'status': 'in_progress'}], '_reply_ticket_id':
+ '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:30:49.527833388Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_tool_result to 1 ch
+at subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:30:49.529030014Z [92m16:30:49 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:30:49.529054050Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:30:49.529058148Z INFO:LiteLLM:
+2026-08-03T16:30:49.529061305Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:30:53.733844110Z [92m16:30:53 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:30:53.733887314Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:30:53.733891603Z INFO:LiteLLM:
+2026-08-03T16:30:53.733894749Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:30:58.075637734Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_response to 1 chat 
+subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:30:58.137638522Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_status to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:30:58.433160776Z INFO:app.plugins.robot.service:[RobotService] Empty reply for direct trigger robot=5cbc7
+f55-04a2-40f6-900a-05e0b0dd652a raw='[no_qq_reply]'; retrying once with corrective note
+2026-08-03T16:30:58.457878321Z INFO:app.services.agent.agent:[ItemHandlerContext] Set handler=288d27b5-82cf-41f2-90dd-f
+56a5300521e for item=ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:30:58.457911095Z INFO:app.services.agent.agent:[Agent] Got 25 tools from server 'local'
+2026-08-03T16:30:58.457966855Z INFO:app.services.agent.agent:[Agent] Got 7 tools from server 'robot'
+2026-08-03T16:30:58.457981103Z INFO:app.services.agent.agent:[Agent] MCP server 'local' running, loaded 25 tools
+2026-08-03T16:30:58.458050093Z INFO:app.services.agent.agent:[Agent] MCP server 'robot' running, loaded 7 tools
+2026-08-03T16:30:58.458230012Z INFO:app.services.agent.agent:[Agent] Got 25 tools from server 'local'
+2026-08-03T16:30:58.458237186Z INFO:app.services.agent.agent:[Agent] Got 7 tools from server 'robot'
+2026-08-03T16:30:58.458312678Z INFO:app.services.agent.chat_runtime:[ChatRuntime] robot context registered: robot_id=5c
+bc7f55-04a2-40f6-900a-05e0b0dd652a source=qq
+2026-08-03T16:30:58.524778515Z 
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]
+Batches: 100%|██████████| 1/1 [00:00<00:00, 16.87it/s]
+2026-08-03T16:30:58.568297384Z [92m16:30:58 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:30:58.568315609Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:31:24.969273641Z INFO:     127.0.0.1:51952 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:31:30.187193822Z INFO:     172.19.0.2:53440 - "POST /api/v1/robots/5cbc7f55-04a2-40f6-900a-05e0b0dd652a/debug-events HTTP/1.1" 200 OK
+2026-08-03T16:31:30.191998298Z INFO:     172.19.0.2:53440 - "POST /api/v1/robots/5cbc7f55-04a2-40f6-900a-05e0b0dd652a/debug-events HTTP/1.1" 200 OK
+2026-08-03T16:31:30.196810761Z INFO:     172.19.0.2:53440 - "POST /api/v1/robots/5cbc7f55-04a2-40f6-900a-05e0b0dd652a/debug-events HTTP/1.1" 200 OK
+2026-08-03T16:31:30.385790296Z INFO:     172.19.0.2:53440 - "POST /api/v1/robots/5cbc7f55-04a2-40f6-900a-05e0b0dd652a/debug-events HTTP/1.1" 200 OK
+2026-08-03T16:30:58.568320599Z INFO:LiteLLM:
+2026-08-03T16:30:58.568324507Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:31:19.944992213Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to 1 chat 
+subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:31:20.474160060Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_action to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:31:20.475344944Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'update_plan'
+ on server 'local' with args: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'plan': [], 'explanation': 'JOB_A/B/C
+ 三个后台任务全部成功，汇总汇报并清空计划', '_reply_ticket_id': '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:31:20.475372929Z [LocalMCPServer] call_tool: name=update_plan, args={'item_id': 'ea52de0c-51b7-4b49-a43d-
+985ed2e09579', 'plan': [], 'explanation': 'JOB_A/B/C 三个后台任务全部成功，汇总汇报并清空计划', '_reply_ticket_id': '0413127254534b23aa3170
+464774cf82'}
+2026-08-03T16:31:20.486919165Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted plan_updated to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:31:20.487408876Z [LocalMCPServer] Tool 'update_plan' result: [{'type': 'text', 'text': 'Plan completed.'}
+]
+2026-08-03T16:31:20.487474544Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'te
+xt', 'text': 'Plan completed.'}]
+2026-08-03T16:31:20.487532297Z INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_local_update_plan' with arg
+s: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'plan': [], 'explanation': 'JOB_A/B/C 三个后台任务全部成功，汇总汇报并清空计划', '_r
+eply_ticket_id': '0413127254534b23aa3170464774cf82'}
+2026-08-03T16:31:21.058988290Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_tool_result to 1 ch
+at subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:31:21.060708339Z [92m16:31:21 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:31:21.060729641Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:31:21.060733869Z INFO:LiteLLM:
+2026-08-03T16:31:21.060737186Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:31:25.544827025Z [92m16:31:25 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:31:25.544872153Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:31:25.544876272Z INFO:LiteLLM:
+2026-08-03T16:31:25.544879428Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:31:30.168923315Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to 1 chat 
+subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:31:30.170097759Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message
+' on server 'robot' with args: {'target_type': 'private', 'target_id': '2537134688', 'messages': ['主人～三个后台任务都跑完啦 (≧▽≦)'
+, 'JOB_A 5秒、JOB_B 12秒、JOB_C 14秒，全部成功退出，没有失败喵～'], 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id':
+ '0413127254534b23aa3170464774cf82', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser
+': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private
+:2537134688', 'target_type': 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f5
+5-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'T97g9fG-p7UNiWbmGm3TW32hjkv7NOBrLsuhSJIQaqA'}
+2026-08-03T16:31:30.421230850Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'te
+xt', 'text': 'Message sent to current robot conversation.'}]
+2026-08-03T16:31:30.421260969Z INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with ar
+gs: {'target_type': 'private', 'target_id': '2537134688', 'messages': ['主人～三个后台任务都跑完啦 (≧▽≦)', 'JOB_A 5秒、JOB_B 12秒、JOB_C
+ 14秒，全部成功退出，没有失败喵～'], 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '0413127254534b23aa3170464
+774cf82', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_item_id'
+: 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:2537134688', 'target_type'
+: 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd65
+2a'}], '_robot_context_token': 'T97g9fG-p7UNiWbmGm3TW32hjkv7NOBrLsuhSJIQaqA'}
+2026-08-03T16:31:30.955216897Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_qq_reply to 1 chat 
+subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:31:30.966653787Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_status to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:31:30.977770729Z INFO:app.plugins.robot.service:[DBGPROC] apply_reply_context_result conv=private:2537134
+688 sent=True gen=1 sleep_no_reply=False
+2026-08-03T16:31:30.977800437Z INFO:app.plugins.robot.service:[DBGPROC] remember_window: GEN MISMATCH conv=private:2537
+134688 expected=1 current=2 (no state change)
+2026-08-03T16:31:30.987930323Z INFO:app.services.agent.agent:[ItemHandlerContext] Set handler=288d27b5-82cf-41f2-90dd-f
+56a5300521e for item=ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:31:30.987956464Z INFO:app.services.agent.agent:[Agent] Got 25 tools from server 'local'
+2026-08-03T16:31:30.988082022Z INFO:app.services.agent.agent:[Agent] Got 7 tools from server 'robot'
+2026-08-03T16:31:30.988095037Z INFO:app.services.agent.agent:[Agent] MCP server 'local' running, loaded 25 tools
+2026-08-03T16:31:30.988100187Z INFO:app.services.agent.agent:[Agent] MCP server 'robot' running, loaded 7 tools
+2026-08-03T16:31:30.988265191Z INFO:app.services.agent.agent:[Agent] Got 25 tools from server 'local'
+2026-08-03T16:31:30.988322883Z INFO:app.services.agent.agent:[Agent] Got 7 tools from server 'robot'
+2026-08-03T16:31:30.988836895Z INFO:app.services.agent.chat_runtime:[ChatRuntime] robot context registered: robot_id=5c
+bc7f55-04a2-40f6-900a-05e0b0dd652a source=qq
+2026-08-03T16:31:30.989619360Z INFO:app.plugins.robot.service:[DBGPROC] item_has_running_jobs item=ea52de0c-51b7-4b49-a
+43d-985ed2e09579 -> False (no running)
+2026-08-03T16:31:30.989702674Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted qq_message_processed to 1
+ chat subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:31:30.990302285Z INFO:app.plugins.robot.service:[RobotService] Queued agent completed robot=5cbc7f55-04a2
+-40f6-900a-05e0b0dd652a item=ea52de0c-51b7-4b49-a43d-985ed2e09579 route=background_job sent=True
+2026-08-03T16:31:30.990312756Z [BUSYCHECK] flush_job_results_for_turn_end item=ea52de0c-51b7-4b49-a43d-985ed2e09579 con
+v_key=private:2537134688 popped=0
+2026-08-03T16:31:30.990378329Z INFO:app.plugins.robot.service:[DBGPROC] turn_end flush item=ea52de0c-51b7-4b49-a43d-985
+ed2e09579 conv=private:2537134688 flushed=False
+2026-08-03T16:31:31.092558681Z 
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]
+Batches: 100%|██████████| 1/1 [00:00<00:00, 13.80it/s]
+2026-08-03T16:31:31.135928786Z [92m16:31:31 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:31:31.135942563Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:31:31.135947142Z INFO:LiteLLM:
+2026-08-03T16:31:31.135950980Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:31:49.897321761Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to 1 chat 
+subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:31:50.452467863Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_action to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:31:50.453261235Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'update_plan'
+ on server 'local' with args: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'plan': [], 'explanation': 'JOB_A/B/C
+ 三个后台任务全部成功完成，清空计划', '_reply_ticket_id': '171bfde8858a4d61b771ae3192b03f25'}
+2026-08-03T16:31:50.453288048Z [LocalMCPServer] call_tool: name=update_plan, args={'item_id': 'ea52de0c-51b7-4b49-a43d-
+985ed2e09579', 'plan': [], 'explanation': 'JOB_A/B/C 三个后台任务全部成功完成，清空计划', '_reply_ticket_id': '171bfde8858a4d61b771ae319
+2b03f25'}
+2026-08-03T16:31:50.466147700Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted plan_updated to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:31:50.466632662Z [LocalMCPServer] Tool 'update_plan' result: [{'type': 'text', 'text': 'Plan completed.'}
+]
+2026-08-03T16:31:50.466706005Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'te
+xt', 'text': 'Plan completed.'}]
+2026-08-03T16:31:50.466752517Z INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_local_update_plan' with arg
+s: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'plan': [], 'explanation': 'JOB_A/B/C 三个后台任务全部成功完成，清空计划', '_repl
+y_ticket_id': '171bfde8858a4d61b771ae3192b03f25'}
+2026-08-03T16:31:51.054213696Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_tool_result to 1 ch
+at subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:31:51.056214741Z [92m16:31:51 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:31:51.056248518Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:31:51.056252726Z INFO:LiteLLM:
+2026-08-03T16:31:51.056256072Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:31:55.995233702Z [92m16:31:55 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:31:55.995277578Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:31:55.995282117Z INFO:LiteLLM:
+2026-08-03T16:31:55.995285364Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:32:02.409309660Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to 1 chat 
+subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:32:02.410988955Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message
+' on server 'robot' with args: {'text': '主人～三个后台任务都跑完啦，A/B/C 全部成功 (≧▽≦) 喵～', 'target_type': 'private', 'target_id': '25
+37134688', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '171bfde8858a4d61b771ae3192b03f25', '
+_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_item_id': 'ea52de0c
+-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:2537134688', 'target_type': 'private'
+, 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_ro
+bot_context_token': 'RXUh3Ob6tFwbIDxJgJ_titpR2LJueSaNTdCrVUcwXeA'}
+2026-08-03T16:32:02.441866148Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'te
+xt', 'text': 'Message sent to current robot conversation.'}]
+2026-08-03T16:32:02.441897410Z INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with ar
+gs: {'text': '主人～三个后台任务都跑完啦，A/B/C 全部成功 (≧▽≦) 喵～', 'target_type': 'private', 'target_id': '2537134688', 'item_id': 'ea52
+de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '171bfde8858a4d61b771ae3192b03f25', '_termman_user_id': 'ed04396
+a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e0957
+9', '_robot_known_targets': [{'conversation': 'private:2537134688', 'target_type': 'private', 'target_id': '2537134688'
+, 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'RXUh3O
+b6tFwbIDxJgJ_titpR2LJueSaNTdCrVUcwXeA'}
+2026-08-03T16:32:02.927114115Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_qq_reply to 1 chat 
+subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:32:02.937933188Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_status to 1 chat su
+bscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:32:02.938953726Z INFO:app.plugins.robot.service:[DBGPROC] apply_reply_context_result conv=private:2537134
+688 sent=True gen=1 sleep_no_reply=False
+2026-08-03T16:32:02.939016995Z INFO:app.plugins.robot.service:[DBGPROC] remember_window: GEN MISMATCH conv=private:2537
+134688 expected=1 current=2 (no state change)
+2026-08-03T16:32:02.949981921Z INFO:app.plugins.robot.service:[DBGPROC] item_has_running_jobs item=ea52de0c-51b7-4b49-a
+43d-985ed2e09579 -> False (no running)
+2026-08-03T16:32:02.950053351Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted qq_message_processed to 1
+ chat subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:32:02.950424263Z INFO:app.plugins.robot.service:[RobotService] Queued agent completed robot=5cbc7f55-04a2
+-40f6-900a-05e0b0dd652a item=ea52de0c-51b7-4b49-a43d-985ed2e09579 route=background_job sent=True
+2026-08-03T16:32:02.950762453Z [BUSYCHECK] flush_job_results_for_turn_end item=ea52de0c-51b7-4b49-a43d-985ed2e09579 con
+v_key=private:2537134688 popped=0
+2026-08-03T16:32:02.950848701Z INFO:app.plugins.robot.service:[DBGPROC] turn_end flush item=ea52de0c-51b7-4b49-a43d-985
+ed2e09579 conv=private:2537134688 flushed=False
+2026-08-03T16:32:02.958044070Z INFO:app.services.agent.agent:[ItemHandlerContext] Set handler=288d27b5-82cf-41f2-90dd-f
+56a5300521e for item=ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:32:02.958071394Z INFO:app.services.agent.agent:[Agent] Got 25 tools from server 'local'
+2026-08-03T16:32:02.958076394Z INFO:app.services.agent.agent:[Agent] Got 7 tools from server 'robot'
+2026-08-03T16:32:02.958146041Z INFO:app.services.agent.agent:[Agent] MCP server 'local' running, loaded 25 tools
+2026-08-03T16:32:02.958157714Z INFO:app.services.agent.agent:[Agent] MCP server 'robot' running, loaded 7 tools
+2026-08-03T16:32:02.958376217Z INFO:app.services.agent.agent:[Agent] Got 25 tools from server 'local'
+2026-08-03T16:32:02.958387830Z INFO:app.services.agent.agent:[Agent] Got 7 tools from server 'robot'
+2026-08-03T16:32:02.958429106Z INFO:app.services.agent.chat_runtime:[ChatRuntime] robot context registered: robot_id=5c
+bc7f55-04a2-40f6-900a-05e0b0dd652a source=qq
+2026-08-03T16:32:03.056955983Z 
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]
+Batches: 100%|██████████| 1/1 [00:00<00:00, 13.91it/s]
+2026-08-03T16:32:03.721105782Z INFO:app.services.agent.stream_manager:[StreamManager] Emitted qq_user to 1 chat subscri
+ber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
+2026-08-03T16:32:03.722124837Z [92m16:32:03 - LiteLLM:INFO[0m: utils.py:3995 - 
+2026-08-03T16:32:03.722141790Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:32:03.722684426Z INFO:LiteLLM:
+2026-08-03T16:32:03.722698023Z LiteLLM completion() model= qwen3.8-max; provider = dashscope
+2026-08-03T16:31:31.084025931Z INFO:     172.19.0.1:35368 - "GET /api/v1/memory/ea52de0c-51b7-4b49-a43d-985ed2e09579/session?limit=20&offset=0 HTTP/1.1" 200 OK
+2026-08-03T16:31:35.058617460Z INFO:     127.0.0.1:55748 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:31:45.152227720Z INFO:     127.0.0.1:59996 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:31:50.476763237Z INFO:     172.19.0.1:40724 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/plan HTTP/1.1" 200 OK
+2026-08-03T16:31:50.500232374Z INFO:     172.19.0.1:40728 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage/by-task HTTP/1.1" 200 OK
+2026-08-03T16:31:55.264363408Z INFO:     127.0.0.1:39820 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:32:02.425782022Z INFO:     172.19.0.2:38752 - "POST /api/v1/robots/5cbc7f55-04a2-40f6-900a-05e0b0dd652a/debug-events HTTP/1.1" 200 OK
+2026-08-03T16:32:02.429797552Z INFO:     172.19.0.2:38752 - "POST /api/v1/robots/5cbc7f55-04a2-40f6-900a-05e0b0dd652a/debug-events HTTP/1.1" 200 OK
+2026-08-03T16:32:03.046655978Z INFO:     172.19.0.1:52852 - "GET /api/v1/memory/ea52de0c-51b7-4b49-a43d-985ed2e09579/session?limit=20&offset=0 HTTP/1.1" 200 OK
+2026-08-03T16:32:05.359247256Z INFO:     127.0.0.1:47542 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:32:15.459301847Z INFO:     127.0.0.1:53978 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK

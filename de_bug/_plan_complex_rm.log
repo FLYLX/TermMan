@@ -1,0 +1,17 @@
+[   0.2s] BASELINE rss=423.2MB threads=63 plan=[]
+[   0.3s] DISPATCH A(cowsay) -> 200 queued
+[   0.4s] DISPATCH B(jq) -> 200 queued_pending
+[   2.6s] cards(2): '[Scheduled tas'[failed] 3/4 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: -
+[  19.7s] cards(3): '帮我安装 cowsay，装完'[pending] 0/2 || '[Scheduled tas'[failed] 3/4 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: i:安装 cowsay | p:运行 cowsay 输出你好
+[  20.4s] CHATTER -> 200 queued_pending
+[ 107.9s] cards(3): '帮我安装 cowsay，装完'[running] 0/2 || '[Scheduled tas'[failed] 3/4 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: i:安装 cowsay（去掉 s | p:运行 cowsay 输出你好
+[ 181.9s] cards(3): '帮我安装 cowsay，装完'[running] 1/2 || '[Scheduled tas'[failed] 3/4 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: c:安装 cowsay（去掉 s | i:运行 cowsay 输出你好
+[ 228.7s] cards(3): '帮我安装 cowsay，装完'[running] 1/3 || '[Scheduled tas'[failed] 3/4 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: c:安装 cowsay（去掉 s | i:排查 cowsay 为何 n | p:运行 cowsay 输出你好
+[ 253.5s] cards(3): '帮我安装 cowsay，装完'[running] 2/3 || '[Scheduled tas'[failed] 3/4 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: c:安装 cowsay（去掉 s | c:排查 cowsay 为何 n | i:运行 cowsay 输出你好
+[ 282.0s] cards(2): '[Scheduled tas'[failed] 3/4 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: -
+[ 612.6s] DISPATCH C(sl follow-up) -> 200 queued
+[ 614.6s] cards(2): '[Scheduled tas'[failed] 3/4 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: -
+[ 675.9s] cards(3): '再帮我装一下 sl，装完告诉'[pending] 0/3 || '[Scheduled tas'[failed] 3/4 || '帮我安装 cowsay，装完'[failed] 1/4 | item-plan: i:安装 sl 命令 | p:验证安装结果 | p:向主人汇报
+
+SUMMARY: max concurrent cards=3, ticks with >=2 cards=300, rss 423.2->901.2MB threads 63->125
+[DONE]

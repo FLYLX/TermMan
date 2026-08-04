@@ -589,6 +589,7 @@ class ScheduledTaskManager:
                     completion_callback=complete,
                     scheduled_task_id=task_id,
                     scheduled_execution_id=str(task.get("execution_id") or ""),
+                    request_display=_scheduled_display_message(task),
                 )
             )
         except Exception as exc:

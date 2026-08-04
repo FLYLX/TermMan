@@ -1264,7 +1264,27 @@ function PlanPanel({
     (step) => step.status === "completed",
   ).length
   const currentStep = plan.find((step) => step.status === "in_progress")
-  const tasksWithPlans = tasks.filter((t) => t.plan && t.plan.length > 0)
+  const now = Date.now()
+  const tasksWithPlans = tasks.filter((t) => {
+    if (!t.plan || t.plan.length === 0) return false
+    // Finished tasks leave the plan table shortly after their last activity
+    // so completed work does not pile up in the panel. Delivered counts as
+    // finished once idle: live chains keep refreshing last_seen because
+    // background-job turns reuse the same ticket.
+    const allDone = t.plan.every((step) => step.status === "completed")
+    const terminalTask =
+      allDone ||
+      t.ticket_status === "delivered" ||
+      t.ticket_status === "failed" ||
+      t.ticket_status === "cancelled"
+    if (terminalTask && t.last_seen) {
+      const lastSeen = new Date(t.last_seen).getTime()
+      if (Number.isFinite(lastSeen) && now - lastSeen > 60_000) {
+        return false
+      }
+    }
+    return true
+  })
   return (
     <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/70 text-xs text-slate-300">
       <div className="flex h-10 items-center justify-between gap-2 px-3">
@@ -1939,7 +1959,7 @@ function ItemDetailPage({
     queryKey: ["items", "plan", item.id],
     queryFn: () => requestItemPlan(item.id),
     enabled: Boolean(item.id),
-    refetchInterval: 30_000,
+    refetchInterval: 5_000,
     retry: false,
   })
 
@@ -1947,7 +1967,14 @@ function ItemDetailPage({
     queryKey: ["items", "token-by-task", item.id],
     queryFn: () => requestItemTokenByTask(item.id),
     enabled: Boolean(item.id),
-    refetchInterval: 30_000,
+    refetchInterval: (query) => {
+      const data = query.state.data as ItemTokenByTaskResponse | undefined
+      const active = data?.tasks?.some(
+        (task) =>
+          task.ticket_status === "running" || task.ticket_status === "pending",
+      )
+      return active ? 5_000 : 15_000
+    },
     retry: false,
   })
   const tokenByTaskList = useMemo(

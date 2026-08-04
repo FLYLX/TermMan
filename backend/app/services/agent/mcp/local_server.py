@@ -35,7 +35,7 @@ TERMINAL_UNAVAILABLE_RESULT_MARKER = "terminal_unavailable"
 
 
 def buffer_background_job_result(item_id: str, entry: dict[str, Any]) -> None:
-    input_merge_buffer.add(
+    _pending_size, evicted = input_merge_buffer.add(
         MergeBufferEntry(
             source_type=SOURCE_JOB_RESULT,
             item_id=str(item_id),
@@ -46,6 +46,14 @@ def buffer_background_job_result(item_id: str, entry: dict[str, Any]) -> None:
             payload=entry,
         )
     )
+    if evicted:
+        evicted_entries = [e.payload for e in evicted if e.payload is not None]
+        debug_log(
+            f"[LocalMCPServer] job result buffer overflow: flushing {len(evicted_entries)} "
+            f"evicted result(s) immediately, item={item_id}"
+        )
+        if evicted_entries:
+            flush_background_job_results_for_entries(item_id, evicted_entries)
 
 
 def _pop_buffered_job_results(
@@ -137,7 +145,7 @@ def flush_background_job_results_for_entries(
             else:
                 message = _format_background_job_results_batch(robot_entries)
             message += server._plan_reminder(item_id, robot_ticket)
-            flushed_any = server._deliver_background_job_to_robot(
+            delivered = server._deliver_background_job_to_robot(
                 item_id=item_id,
                 command=first["command"],
                 result=first["result"],
@@ -145,7 +153,18 @@ def flush_background_job_results_for_entries(
                 pending_reply_id=first.get("pending_robot_reply_id") or "",
                 reply_ticket_id=robot_ticket,
                 message_override=message,
-            ) or flushed_any
+            )
+            flushed_any = delivered or flushed_any
+            if delivered and len(robot_entries) > 1:
+                # The batch message covers every entry; clear the per-job
+                # pending replies of the non-first entries so they do not
+                # linger as orphaned queue items.
+                for extra in robot_entries[1:]:
+                    if extra.get("pending_robot_reply_id"):
+                        server._clear_background_job_robot_reply(
+                            robot_job_context=extra.get("robot_job_context"),
+                            pending_reply_id=extra.get("pending_robot_reply_id") or "",
+                        )
         else:
             # The owning workflow already finished/was delivered, so these
             # results will never be delivered to the robot conversation.
@@ -239,6 +258,57 @@ def flush_background_job_results_for_entries(
 def flush_job_results_for_turn_end(item_id: str, conversation_key: str = "") -> bool:
     entries = _pop_buffered_job_results(item_id, conversation_key)
     return flush_background_job_results_for_entries(item_id, entries)
+
+
+def flush_all_job_results_for_item(item_id: str) -> int:
+    """Drain every buffered job result of an item at turn end.
+
+    Results are grouped per conversation so each conversation gets exactly
+    one merged follow-up turn, but no conversation's results can be stranded
+    by a turn that belongs to a different conversation.
+    """
+    drained = [
+        entry.payload
+        for entry in input_merge_buffer.pop_all_for_item(str(item_id))
+        if entry.payload is not None
+    ]
+    if not drained:
+        return 0
+    by_conversation: dict[str, list[dict[str, Any]]] = {}
+    for entry in drained:
+        key = str(entry.get("conversation_key") or "")
+        by_conversation.setdefault(key, []).append(entry)
+    flushed = 0
+    for entries in by_conversation.values():
+        if flush_background_job_results_for_entries(str(item_id), entries):
+            flushed += len(entries)
+    if flushed:
+        debug_log(
+            f"[LocalMCPServer] turn-end item flush: item={item_id} "
+            f"drained={len(drained)} flushed={flushed} "
+            f"conversations={len(by_conversation)}"
+        )
+    return flushed
+
+
+def _conversation_turn_busy(agent_session, robot_job_context: dict | None) -> bool:
+    if _session_turn_busy(agent_session):
+        return True
+    if not robot_job_context:
+        return False
+    try:
+        from app.services.agent.integrations.hooks import (
+            is_integration_conversation_processing,
+        )
+
+        return bool(
+            is_integration_conversation_processing(
+                robot_job_context.get("robot_id", ""),
+                robot_job_context.get("conversation_key", ""),
+            )
+        )
+    except Exception:
+        return False
 
 
 def _session_turn_busy(agent_session) -> bool:
@@ -483,17 +553,16 @@ class LocalMCPServer:
         self.register_tool(
             name="update_task_workflow",
             description=(
-                "Optional structured tracking for long or fragile tasks "
-                "(cross-turn installs, migrations, tasks that must report to a "
-                "specific QQ/web ticket). For ordinary multi-step work prefer "
-                "update_plan instead. "
-                "action=create, title='step1|step2|step3'. "
-                "Continue existing workflow, don't duplicate. "
-                "complete_current_step needs evidence. "
-                "insert_recovery_step(title=...) on failure. "
-                "cancel only when user abandons. "
-                "Completing the LAST step auto-transitions to ready_to_report—then report result to the ticket target (QQ: call mcp_robot_send_message; web: output directly). "
-                "After updating, call execution tool."
+                "Optional structured tracking for long/fragile tasks (cross-turn "
+                "installs, migrations, tasks that must report to a specific "
+                "QQ/web ticket); prefer update_plan for ordinary multi-step work. "
+                "action=create, title='step1|step2|step3'. Continue the existing "
+                "workflow, don't duplicate. complete_current_step needs evidence; "
+                "insert_recovery_step(title=...) on failure; cancel only when the "
+                "user abandons. Completing the LAST step auto-transitions to "
+                "ready_to_report - then report to the ticket target (QQ: "
+                "mcp_robot_send_message; web: output directly). After updating, "
+                "call the execution tool."
             ),
             input_schema={
                 "type": "object",
@@ -508,6 +577,32 @@ class LocalMCPServer:
                 "required": ["item_id", "action"],
             },
             handler=self._update_task_workflow,
+            skip_memory=True,
+        )
+        self.register_tool(
+            name="prepare_capabilities",
+            description=(
+                "Load on-demand capabilities listed in the capability catalog. "
+                "Pass the exact tool names and/or guide ids you need; returns "
+                "their full schemas/guidance and keeps them available for this "
+                "item. Call this before using any catalog-listed tool."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {
+                        "type": "string",
+                        "description": "Current terminal item id.",
+                    },
+                    "names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Tool names and/or guide ids to load.",
+                    },
+                },
+                "required": ["item_id", "names"],
+            },
+            handler=self._prepare_capabilities,
             skip_memory=True,
         )
         self.register_tool(
@@ -1094,6 +1189,7 @@ class LocalMCPServer:
         # and keep the plan on the ticket for UI history.
         if isinstance(plan, list) and not plan:
             existing_ticket = reply_ticket_manager.get(ticket.ticket_id)
+            finalized: list[dict] = []
             if existing_ticket and existing_ticket.plan:
                 finalized = [
                     {**step, "status": "completed"}
@@ -1101,9 +1197,10 @@ class LocalMCPServer:
                     else step
                     for step in existing_ticket.plan
                 ]
-                reply_ticket_manager.update_ticket_plan(ticket.ticket_id, finalized)
-            else:
-                reply_ticket_manager.update_ticket_plan(ticket.ticket_id, [])
+            # The agent explicitly declared the task done: broadcast the final
+            # all-completed snapshot once, then clear the plan from the ticket
+            # so finished work leaves the plan table immediately.
+            reply_ticket_manager.update_ticket_plan(ticket.ticket_id, [])
             try:
                 from app.services.agent.stream_manager import stream_manager
 
@@ -1112,7 +1209,7 @@ class LocalMCPServer:
                     {
                         "type": "plan_updated",
                         "item_id": item_id,
-                        "plan": finalized if existing_ticket and existing_ticket.plan else [],
+                        "plan": finalized,
                         "explanation": "completed",
                     },
                 )
@@ -1700,19 +1797,7 @@ class LocalMCPServer:
                     exit_code=result.get("exit_code"),
                 )
 
-            busy = _session_turn_busy(agent_session)
-            if robot_job_context and not busy:
-                try:
-                    from app.services.agent.integrations.hooks import (
-                        is_integration_conversation_processing,
-                    )
-
-                    busy = is_integration_conversation_processing(
-                        robot_job_context.get("robot_id", ""),
-                        robot_job_context.get("conversation_key", ""),
-                    )
-                except Exception:
-                    busy = False
+            busy = _conversation_turn_busy(agent_session, robot_job_context)
             entry = {
                 "command": command,
                 "result": result,
@@ -1723,11 +1808,20 @@ class LocalMCPServer:
                 "agent_session": agent_session,
                 "conversation_key": (robot_job_context or {}).get("conversation_key", ""),
             }
-            # Always deliver immediately – the session input queue is
-            # serialised by the turn coordinator, so enqueueing while a
-            # turn is running is safe and avoids stalled workflows when
-            # the turn ends without the agent acting on the result.
-            flush_background_job_results_for_entries(item_id, [entry])
+            if busy:
+                # A turn is running: park the result in the merge buffer so
+                # results finishing during this turn are merged into ONE
+                # follow-up turn at turn end. Idle conversations still get an
+                # immediate turn (else branch), so nothing waits artificially.
+                buffer_background_job_result(item_id, entry)
+                debug_log(
+                    f"[LocalMCPServer] job result buffered while turn active: "
+                    f"item={item_id}, command={command}"
+                )
+                if not _conversation_turn_busy(agent_session, robot_job_context):
+                    flush_all_job_results_for_item(item_id)
+            else:
+                flush_background_job_results_for_entries(item_id, [entry])
 
         thread = threading.Thread(
             target=worker,
@@ -1820,7 +1914,7 @@ class LocalMCPServer:
                 except Exception:
                     pass
             message = message_override or self._format_background_job_robot_message(
-                command, result, workflow_id=_rb_wf_id,
+                command, result, reply_ticket_id=reply_ticket_id, workflow_id=_rb_wf_id,
             )
             queued = enqueue_integration_background_job_result(
                 integration_id=robot_job_context.get("robot_id", ""),
@@ -1965,6 +2059,7 @@ class LocalMCPServer:
         status = "完成" if result.get("success") else "失败"
         has_workflow = bool(workflow_id)
         has_plan = bool(self._plan_reminder("", reply_ticket_id))
+        request_boundary = self._job_callback_task_boundary(reply_ticket_id)
         step_hint = ""
         if has_workflow:
             step_hint = self._workflow_step_hint(reply_ticket_id, workflow_id)
@@ -1987,14 +2082,37 @@ class LocalMCPServer:
                 "如果不需要回复用户，最终只输出 NRN 即可。"
             )
         else:
-            instruction = "根据结果直接回复用户。"
+            instruction = ""
+        instruction_line = f"{instruction}\n" if instruction else ""
         return (
             "[后台终端任务结果 - 来自 QQ 会话]\n"
             f"后台任务已{status}。\n"
-            f"{instruction}\n"
+            f"{instruction_line}"
+            f"{request_boundary}"
             f"命令: {command}\n"
             f"{self._format_job_result(result)}"
         )
+
+
+    def _job_callback_task_boundary(self, reply_ticket_id: str) -> str:
+        """Task background for job callbacks: surface the ticket's original
+        user request as pure context so the agent itself can judge scope and
+        whether a reply is wanted (e.g. an explicit no-reply). No behavioral
+        instructions -- the agent decides."""
+        if not reply_ticket_id:
+            return ""
+        try:
+            from app.services.agent.reply_ticket import reply_ticket_manager
+
+            ticket = reply_ticket_manager.get(reply_ticket_id)
+            request = str(getattr(ticket, "request_message", "") or "").strip() if ticket else ""
+            if not request:
+                return ""
+            if len(request) > 200:
+                request = request[:200] + "…"
+            return f"任务背景：本次后台任务源自用户请求：「{request}」\n"
+        except Exception:
+            return ""
 
     def _format_background_job_feedback(self, result: dict, *, reply_ticket_id: str = "", workflow_id: str = "") -> str:
         has_workflow = bool(workflow_id)
@@ -2051,6 +2169,96 @@ class LocalMCPServer:
             f"Error: {result.get('error', 'daemon job failed')}\n"
             f"command: {result.get('command', '')}"
         )
+
+    def _resolve_agent_for_item(self, item_id: str):
+        try:
+            import uuid as _uuid
+
+            from sqlmodel import Session
+
+            from app.core.db import engine
+            from app.models import ItemHandler
+            from app.services.agent.agent import agent_manager, item_handler_context
+
+            handler_id = item_handler_context.get_handler(str(item_id))
+            if not handler_id:
+                return None
+            with Session(engine) as session:
+                handler = session.get(ItemHandler, _uuid.UUID(str(handler_id)))
+            if handler is None:
+                return None
+            return agent_manager.get_or_create(handler)
+        except Exception as exc:
+            debug_log(f"[LocalMCPServer] _resolve_agent_for_item error: {exc}")
+            return None
+
+    def _prepare_capabilities(self, args: dict) -> list:
+        import json as _json
+
+        from app.services.agent.capability_state import ensure_loaded
+
+        item_id = str(args.get("item_id") or "").strip()
+        names = [str(name).strip() for name in (args.get("names") or []) if str(name).strip()]
+        if not item_id or not names:
+            return [{"type": "text", "text": "Error: item_id and names are required."}]
+
+        agent = self._resolve_agent_for_item(item_id)
+        if agent is None:
+            return [{"type": "text", "text": "Error: no agent context available for this item."}]
+
+        try:
+            tool_index = {}
+            for tool in agent.get_tools_for_litellm():
+                function = tool.get("function") if isinstance(tool, dict) else None
+                if isinstance(function, dict):
+                    tool_name = str(function.get("name") or "").strip()
+                    if tool_name:
+                        tool_index[tool_name] = tool
+        except Exception:
+            tool_index = {}
+
+        guide_index = {}
+        try:
+            for skill in agent.get_skills():
+                category = str(getattr(skill, "category", "") or "")
+                if category in {"system", "persona"}:
+                    continue
+                action = getattr(skill, "action", None)
+                prompt = str(getattr(action, "prompt", "") or "").strip() if action else ""
+                if prompt:
+                    guide_index[str(getattr(skill, "skill_id", "") or "")] = prompt
+        except Exception:
+            guide_index = {}
+
+        loaded_tools: list[str] = []
+        loaded_guides: list[str] = []
+        unknown: list[str] = []
+        for name in names:
+            if name in tool_index:
+                loaded_tools.append(name)
+            elif name in guide_index:
+                loaded_guides.append(name)
+            else:
+                unknown.append(name)
+
+        ensure_loaded(item_id, tools=loaded_tools, guides=loaded_guides)
+
+        parts: list[str] = []
+        for name in loaded_tools:
+            parts.append(
+                f"Tool `{name}` is now loaded. Schema:\n{_json.dumps(tool_index[name], ensure_ascii=False)}"
+            )
+        for guide_id in loaded_guides:
+            parts.append(f"Guide `{guide_id}` is now loaded:\n{guide_index[guide_id]}")
+        if unknown:
+            parts.append(
+                "Unknown names (not present in the capability catalog): "
+                + ", ".join(unknown)
+            )
+        parts.append(
+            "Loaded capabilities stay available for this item; call them normally now."
+        )
+        return [{"type": "text", "text": "\n\n".join(parts)}]
 
     def _execute_command(self, args: dict) -> list:
         command = args.get("command", "")

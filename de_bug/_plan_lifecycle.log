@@ -1,0 +1,8 @@
+[   0.0s] START plan=[] cards=0
+[   0.2s] DISPATCH(bc) -> 200 queued
+[   2.2s] cards(0): none | item-plan: 0 steps
+[   8.4s] cards(1): '帮我安装 bc，装完运行 echo 2+3 | bc 验证结'[pending] 0/3 | item-plan: 3 steps
+[  12.5s] cards(1): '帮我安装 bc，装完运行 echo 2+3 | bc 验证结'[running] 0/3 | item-plan: 3 steps
+[  18.8s] cards(1): '帮我安装 bc，装完运行 echo 2+3 | bc 验证结'[running] 0/3 | item-plan: 3 steps
+[  43.3s] cards(1): '帮我安装 bc，装完运行 echo 2+3 | bc 验证结'[running] 1/3 | item-plan: 3 steps
+[  51.7s] cards(0): none | item-plan: 3 steps

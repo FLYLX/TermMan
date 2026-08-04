@@ -75,23 +75,16 @@ class RobotMCPServer:
         self.register_tool(
             name="send_message",
             description=(
-                "Send a concise message through the TermMan QQ connector. "
-                "In an incoming QQ-triggered agent turn, calling this tool with only "
-                "text sends to the current QQ conversation that triggered the turn. "
-                "Do not use reply_to, conversation, broadcast, target_type, "
-                "target_id, or targets in that incoming QQ-triggered context; "
-                "cross-conversation sends are blocked there to prevent replying "
-                "to the wrong group. "
-                "Outside an active QQ-triggered context, never infer the QQ "
-                "destination from prior chat history. Use target_type and target_id "
-                "only when the user explicitly provided a QQ group number or QQ "
-                "number. To deliver one message to several explicit QQ targets, "
-                "pass them in a single call via the targets array instead of "
-                "making multiple send_message calls. "
-                "In backend web chat, reply_to may select one QQ conversation "
-                "that is visibly present in the current chat context, such as a sender "
-                "name or group reference. If the visible target is missing or ambiguous, "
-                "ask the user instead. If multiple robots are available, provide robot_id."
+                "Send a QQ message through the TermMan connector. In an incoming "
+                "QQ-triggered turn, call with only text/messages to reply to the "
+                "current conversation; target parameters are not allowed there "
+                "(cross-conversation sends are blocked). Outside an active QQ "
+                "context never infer destinations from chat history: use "
+                "target_type+target_id only for explicit user-provided group/QQ "
+                "numbers, or reply_to for a backend web chat conversation visibly "
+                "present (ask the user if ambiguous). Deliver one message to "
+                "several explicit targets via the targets array in a single call. "
+                "Provide robot_id when multiple robots exist."
             ),
             input_schema={
                 "type": "object",
@@ -99,10 +92,9 @@ class RobotMCPServer:
                     "text": {
                         "type": "string",
                         "description": (
-                            "Single QQ message text. Use this for one-message replies. "
-                            "Do not put blank lines, paragraph breaks, or multiple "
-                            "information blocks inside this field. For QQ groups, "
-                            "keep this within 36 characters; use messages for more."
+                            "Single QQ message text. No blank lines or multiple "
+                            "blocks inside. Group replies: keep within 36 "
+                            "characters; use messages for more."
                         ),
                     },
                     "messages": {
@@ -111,55 +103,48 @@ class RobotMCPServer:
                         "minItems": 1,
                         "maxItems": 3,
                         "description": (
-                            "Optional ordered QQ messages for human-like "
-                            "multi-message replies. Use only when a normal chat "
-                            "reply would naturally follow up or add one more "
-                            "thought. The LLM decides each complete message; the "
-                            "backend sends each array item as one QQ message in "
-                            "order. Do not split into tiny fragments, and do not "
-                            "use this for long logs or summaries. Do not put blank "
-                            "lines or paragraph breaks inside any one array item."
+                            "Optional 1-3 ordered messages for a natural "
+                            "multi-message reply; each item is sent as one QQ "
+                            "message in order. Each item is one complete thought: "
+                            "no fragments, no blank lines inside, not for long "
+                            "logs or summaries."
                         ),
                     },
                     "target_type": {
                         "type": "string",
                         "enum": ["group", "private"],
                         "description": (
-                            "Optional in QQ-triggered robot context. Required in "
-                            "backend chat. Use 'group' for QQ group messages and "
-                            "'private' for QQ private messages."
+                            "Optional in QQ-triggered context, required in "
+                            "backend chat. 'group' or 'private'."
                         ),
                     },
                     "target_id": {
                         "type": "string",
                         "description": (
-                            "Optional in QQ-triggered robot context. Required in "
-                            "backend chat. QQ group number for group messages, or QQ "
-                            "number for private messages."
+                            "Optional in QQ-triggered context, required in "
+                            "backend chat. Group number or QQ number."
                         ),
                     },
                     "conversation": {
                         "type": "string",
                         "description": (
-                            "Deprecated for sending. Do not use this for delivery; "
-                            "provide target_type and target_id for an explicit manual "
-                            "QQ target outside the current QQ-triggered context."
+                            "Deprecated for sending; use target_type+target_id "
+                            "for explicit targets outside the current QQ context."
                         ),
                     },
                     "reply_to": {
                         "type": "string",
                         "description": (
-                            "Backend web chat only: a sender name, conversation key, "
-                            "or group reference that uniquely matches a QQ conversation "
-                            "visible in the current TermMan chat context. Never infer a "
-                            "target that is not visible in the current request context."
+                            "Backend web chat only: sender name or group reference "
+                            "uniquely matching a QQ conversation visible in the "
+                            "current context. Never infer invisible targets."
                         ),
                     },
                     "robot_id": {
                         "type": "string",
                         "description": (
-                            "Optional robot UUID. Omit only when there is an active "
-                            "QQ robot context or exactly one accessible enabled robot."
+                            "Robot UUID. Omit when an active QQ context exists or "
+                            "exactly one enabled robot is accessible."
                         ),
                     },
                     "broadcast": {
@@ -185,13 +170,10 @@ class RobotMCPServer:
                         "minItems": 1,
                         "maxItems": 10,
                         "description": (
-                            "Optional explicit multi-target fan-out for backend "
-                            "chat. The same text/messages is sent once to every "
-                            "listed QQ target in this single call; do not split "
-                            "multi-target sends into multiple calls. Do not combine "
-                            "with target_type/target_id/reply_to/conversation/"
-                            "broadcast. The result reports one status line per "
-                            "target (sent / skipped_duplicate / error)."
+                            "Backend chat only: send the same text/messages once "
+                            "to each listed target in this single call. Do not "
+                            "combine with other target parameters. Result reports "
+                            "one status line per target."
                         ),
                     },
                 },
@@ -202,17 +184,13 @@ class RobotMCPServer:
         self.register_tool(
             name="read_conversation_memory",
             description=(
-                "Read or search the conversation-local QQ .log memory for the "
-                "TermMan robot. In an incoming QQ-triggered agent turn, call this "
-                "tool with no target arguments to read the current QQ "
-                "conversation that woke the agent only when the user explicitly "
-                "asks about previous QQ context or the current message cannot be "
-                "answered without earlier chat. Do not call this tool just to "
-                "decide whether to reply or to verify whether the current reply "
-                "was sent. In backend chat, use conversation or reply_to only for "
-                "a QQ conversation visible in context, or provide "
-                "target_type/target_id plus robot_id when the user explicitly "
-                "supplied them."
+                "Read or search the conversation-local QQ .log memory. In an "
+                "incoming QQ-triggered turn, call with no target arguments, and "
+                "only when the user explicitly asks about earlier QQ context or "
+                "the message cannot be answered without it - never just to decide "
+                "whether to reply or to verify a send. In backend chat use a "
+                "visible conversation/reply_to, or explicit target_type/target_id "
+                "plus robot_id."
             ),
             input_schema={
                 "type": "object",
@@ -220,9 +198,9 @@ class RobotMCPServer:
                     "conversation": {
                         "type": "string",
                         "description": (
-                            "Optional conversation key such as 'group:123456' or "
-                            "'private:654321'. In active QQ context this must "
-                            "match the current conversation."
+                            "Optional key like 'group:123456' or 'private:654321'; "
+                            "must match the current conversation in an active QQ "
+                            "context."
                         ),
                     },
                     "reply_to": {
@@ -250,9 +228,8 @@ class RobotMCPServer:
                         "minimum": 1,
                         "maximum": 500,
                         "description": (
-                            "Maximum recent or matching log lines to return. "
-                            "Default is 8; active QQ-triggered context is "
-                            "capped to the latest 12 lines."
+                            "Max recent or matching lines to return (default 8; "
+                            "capped to 12 in active QQ context)."
                         ),
                     },
                     "query": {
@@ -267,13 +244,11 @@ class RobotMCPServer:
         self.register_tool(
             name="list_memories",
             description=(
-                "List durable TermMan long-term memories visible in the current "
-                "QQ robot scope without requiring a semantic search query. Use "
-                "this when the user asks what the bot remembers, asks to view "
-                "all/current memories, or says the bot cannot see its memories. "
-                "Results are restricted to the current TermMan item and active "
-                "QQ robot/conversation/sender scope. This is not raw QQ chat "
-                "history; use read_conversation_memory for exact recent lines."
+                "List durable long-term memories in the current QQ robot scope "
+                "without a query. Use when the user asks what the bot remembers "
+                "or to view all memories. Scoped to the current item and active "
+                "robot/conversation/sender. Not raw chat history - use "
+                "read_conversation_memory for exact recent lines."
             ),
             input_schema={
                 "type": "object",
@@ -296,14 +271,12 @@ class RobotMCPServer:
         self.register_tool(
             name="recall_memory",
             description=(
-                "Search TermMan long-term memory for stable facts, user "
-                "preferences, errors, and reusable context. This is "
-                "not raw QQ .log history. In an incoming QQ-triggered turn, "
-                "use this when the current message refers to a specific known "
-                "preference/person/fact or needs durable context. Use "
-                "list_memories instead when the user asks what the bot remembers "
-                "in general. Omit target arguments; results are scoped to the "
-                "current TermMan item and prefer the current QQ conversation."
+                "Search long-term memory for stable facts, preferences, errors, "
+                "and reusable context (not raw .log). Use when the current "
+                "message refers to a known preference/person/fact or needs "
+                "durable context. Omit target arguments: results are scoped to "
+                "the current item, preferring the current conversation. For a "
+                "general list use list_memories."
             ),
             input_schema={
                 "type": "object",
@@ -326,15 +299,12 @@ class RobotMCPServer:
         self.register_tool(
             name="save_memory",
             description=(
-                "Save concise, durable information from the current QQ chat into "
-                "TermMan long-term memory for the bound terminal item. Use this "
-                "when the live QQ message contains an explicit remember request, "
-                "stable names/nicknames, bot identity/name rules, durable user "
-                "preferences, relationships, reusable facts, or recurring group "
-                "context. Active execution state belongs only to the task queue. "
-                "Do not save trivial "
-                "chat, images, short "
-                "reactions, temporary chatter, raw logs, or sensitive secrets."
+                "Save concise durable information from the current QQ chat to "
+                "long-term memory: explicit remember requests, stable "
+                "names/nicknames, bot identity rules, durable preferences, "
+                "relationships, reusable facts, recurring group context. "
+                "Execution state belongs to the task queue. Never save trivial "
+                "chatter, images, reactions, raw logs, or secrets."
             ),
             input_schema={
                 "type": "object",
@@ -363,14 +333,12 @@ class RobotMCPServer:
         self.register_tool(
             name="compress_memories",
             description=(
-                "Merge several redundant, overlapping, or outdated TermMan "
-                "long-term memories into one concise replacement memory. The "
-                "new memory is saved first, then the listed old memories are "
-                "deleted. Use this when recalled or listed memories contain "
-                "duplicates, stale versions of the same fact, or noisy "
-                "chatter that should be condensed. Do not merge different "
-                "users' personal memories into one entry. Use list_memories "
-                "or recall_memory first to collect the memory ids."
+                "Merge redundant, overlapping, or outdated long-term memories "
+                "into one concise replacement: the new memory is saved first, "
+                "then the listed old ones are deleted. Use on duplicates, stale "
+                "versions of the same fact, or noisy chatter. Never merge "
+                "different users' personal memories. Collect ids via "
+                "list_memories/recall_memory first."
             ),
             input_schema={
                 "type": "object",
@@ -411,13 +379,11 @@ class RobotMCPServer:
         self.register_tool(
             name="sleep_conversation",
             description=(
-                "Put the current QQ conversation to sleep. Use this only in an "
-                "incoming QQ-triggered context when the current sender asks the "
-                "bot to sleep, stop replying, be quiet, or not answer this chat, "
-                "or when a `trigger=active_chat_window` message is ordinary "
-                "group chatter not addressed to the bot. "
-                "It closes the robot controller for this group/private chat until "
-                "someone wakes the bot again by mentioning or replying to it."
+                "Put the current QQ conversation to sleep, in an incoming "
+                "QQ-triggered context only: the sender asks the bot to sleep/be "
+                "quiet/stop replying, or a trigger=active_chat_window message is "
+                "ordinary chatter not addressed to the bot. Closes the controller "
+                "until someone mentions or replies to the bot."
             ),
             input_schema={
                 "type": "object",

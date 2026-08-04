@@ -19,6 +19,10 @@ TICKET_TTL = timedelta(hours=6)
 # How long a ticket's plan stays visible to the /plan API after the ticket
 # was last touched (plan updates and turn activity refresh it).
 PLAN_LOOKUP_FRESH_SECONDS = 30 * 60
+# Fully-completed plans linger on the ticket for UI history, but the item
+# plan panel should drop them shortly after completion so finished tasks do
+# not occupy the current-plan table indefinitely.
+PLAN_COMPLETED_GRACE_SECONDS = 60
 QQ_TICKET_SUPERSEDE_REASON = "superseded by newer QQ message"
 CURRENT_QQ_MESSAGE_MARKER = "[Current QQ message]"
 CQ_CODE_RE = re.compile(r"\[CQ:[^\]]+\]", re.IGNORECASE)
@@ -243,16 +247,24 @@ class ReplyTicketManager:
             pass
 
     @staticmethod
-    def _robot_request_message(reply_target: Any, fallback: str) -> str:
-        metadata = getattr(reply_target, "metadata", None)
-        metadata = metadata if isinstance(metadata, dict) else {}
-        native_message = metadata.get("message")
-        native_message = native_message if isinstance(native_message, dict) else {}
-        text = str(
-            native_message.get("raw_message")
-            or native_message.get("plain_text")
-            or ""
-        ).strip()
+    def _robot_request_message(
+        reply_target: Any,
+        fallback: str,
+        request_message: str = "",
+    ) -> str:
+        # Structured propagation from the robot dispatch queue carries the
+        # real user request; fall back to bridge metadata, then raw text.
+        text = str(request_message or "").strip()
+        if not text:
+            metadata = getattr(reply_target, "metadata", None)
+            metadata = metadata if isinstance(metadata, dict) else {}
+            native_message = metadata.get("message")
+            native_message = native_message if isinstance(native_message, dict) else {}
+            text = str(
+                native_message.get("raw_message")
+                or native_message.get("plain_text")
+                or ""
+            ).strip()
         if not text:
             raw_fallback = str(fallback or "")
             if CURRENT_QQ_MESSAGE_MARKER in raw_fallback:
@@ -307,6 +319,11 @@ class ReplyTicketManager:
                 or ticket.status in {"delivered", "failed", "sending"}
                 or ticket.task_request_id
             ):
+                continue
+            # A ticket with a plan is a real in-flight task (parallel dispatch
+            # from the same conversation); only idle follow-up turns get
+            # superseded.
+            if ticket.plan:
                 continue
             try:
                 if task_workflow_manager.get_by_ticket(ticket.ticket_id) is not None:
@@ -388,6 +405,7 @@ class ReplyTicketManager:
                 ticket.request_message = self._robot_request_message(
                     reply_target,
                     message,
+                    str(getattr(robot_context, "request_message", "") or ""),
                 )
 
         if forced_source_type == SOURCE_QQ and ticket.source_type != SOURCE_QQ:
@@ -414,6 +432,7 @@ class ReplyTicketManager:
         message: str,
         scheduled_task_id: str,
         scheduled_execution_id: str = "",
+        request_message: str = "",
     ) -> ReplyTicket:
         ticket = self.create_for_agent(
             agent,
@@ -424,7 +443,7 @@ class ReplyTicketManager:
         )
         with self._lock:
             ticket.source_label = "TermMan scheduled task"
-            ticket.request_message = str(message or "")[:4000]
+            ticket.request_message = str(request_message or message or "").strip()[:4000]
             ticket.scheduled_task_id = str(scheduled_task_id or "").strip()
             ticket.scheduled_execution_id = str(
                 scheduled_execution_id or ""
@@ -518,8 +537,11 @@ class ReplyTicketManager:
         task chain ended — long chains keep working across follow-up turns,
         and their plan lives on the ticket that created it. So instead of
         requiring a live ticket, we return the freshest ticket with a
-        non-empty plan inside the activity window. Plans whose ticket has not
-        been touched for PLAN_LOOKUP_FRESH_SECONDS are considered abandoned.
+        non-empty plan inside the activity window. Delivered tickets also
+        drop out after the grace window once they go idle: live chains keep
+        bumping updated_at because background-job turns reuse the same
+        ticket. Plans whose ticket has not been touched for
+        PLAN_LOOKUP_FRESH_SECONDS are considered abandoned.
         """
         from app.services.agent.task_workflow import task_workflow_manager
 
@@ -533,6 +555,19 @@ class ReplyTicketManager:
                     continue
                 if (now - ticket.updated_at).total_seconds() > PLAN_LOOKUP_FRESH_SECONDS:
                     continue
+                idle_seconds = (now - ticket.updated_at).total_seconds()
+                if idle_seconds > PLAN_COMPLETED_GRACE_SECONDS:
+                    all_steps_done = all(
+                        str(step.get("status")) in {"completed", "cancelled"}
+                        for step in ticket.plan
+                    )
+                    terminal_ticket = ticket.status in {
+                        "delivered",
+                        "failed",
+                        "cancelled",
+                    }
+                    if all_steps_done or terminal_ticket:
+                        continue
                 wf = task_workflow_manager.get_by_ticket(ticket.ticket_id)
                 if wf and wf.status in {"cancelled", "failed"}:
                     continue

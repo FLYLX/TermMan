@@ -272,3 +272,114 @@ def termman_runtime_stats(session: SessionDep) -> TermManRuntimeStatsResponse:
     services.extend(_daemon_runtime_services(session))
     services.extend(_robot_runtime_service())
     return build_termman_runtime_response(services)
+
+
+@router.get("/mem-top/")
+async def mem_top(top: int = 25):
+    """Shallow-size scan of live gc objects, run in a worker thread."""
+    import asyncio
+
+    return await asyncio.to_thread(_mem_top_sync, top)
+
+
+def _mem_top_sync(top: int):
+    import gc, sys
+
+    gc.collect()
+    objs = gc.get_objects()
+    by_type: dict = {}
+    for o in objs:
+        try:
+            sz = sys.getsizeof(o)
+        except Exception:
+            continue
+        t = type(o).__name__
+        agg = by_type.get(t)
+        if agg is None:
+            by_type[t] = [1, sz, sz, ""]
+        else:
+            agg[0] += 1
+            agg[1] += sz
+            if sz > agg[2]:
+                agg[2] = sz
+                if isinstance(o, str):
+                    agg[3] = repr(o[:120])
+                elif isinstance(o, bytes):
+                    agg[3] = repr(o[:120])
+                else:
+                    try:
+                        ln = len(o)
+                    except Exception:
+                        ln = -1
+                    agg[3] = f"len={ln}"
+
+    def rss_kb():
+        try:
+            with open("/proc/self/status") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        return int(line.split()[1])
+        except Exception:
+            return -1
+        return -1
+
+    types_sorted = sorted(by_type.items(), key=lambda kv: -kv[1][1])[:top]
+    return {
+        "rss_mb": round(rss_kb() / 1024, 1),
+        "gc_objects": len(objs),
+        "note": "shallow sizes (containers exclude their elements)",
+        "top_types_by_total": [
+            {"type": k, "count": v[0], "total_kb": round(v[1] / 1024, 1),
+             "largest_kb": round(v[2] / 1024, 1), "largest_info": v[3][:160]}
+            for k, v in types_sorted
+        ],
+    }
+
+
+_TM_STATE: dict = {"baseline": None}
+
+
+@router.get("/tracemalloc-ctl/")
+async def tracemalloc_ctl(action: str = "status", top: int = 20, frames: int = 1):
+    """start | status | top | clear | stop. top = diff vs baseline snapshot."""
+    import tracemalloc
+
+    def rss_kb():
+        try:
+            with open("/proc/self/status") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        return int(line.split()[1])
+        except Exception:
+            return -1
+        return -1
+
+    if action == "start":
+        if not tracemalloc.is_tracing():
+            tracemalloc.start(max(1, min(int(frames), 30)))
+        _TM_STATE["baseline"] = tracemalloc.take_snapshot()
+        return {"tracing": True, "rss_mb": round(rss_kb() / 1024, 1)}
+    if action == "clear":
+        if tracemalloc.is_tracing():
+            _TM_STATE["baseline"] = tracemalloc.take_snapshot()
+            return {"ok": True, "rss_mb": round(rss_kb() / 1024, 1)}
+        return {"ok": False, "error": "not tracing"}
+    if action == "top":
+        if not tracemalloc.is_tracing():
+            return {"error": "not tracing, call action=start first"}
+        if _TM_STATE["baseline"] is None:
+            return {"error": "no baseline, call action=start first"}
+        current = tracemalloc.take_snapshot()
+        stats = current.compare_to(_TM_STATE["baseline"], "lineno")[:top]
+        return {
+            "rss_mb": round(rss_kb() / 1024, 1),
+            "top_growth": [
+                {"diff_kb": round(s.size_diff / 1024, 1), "total_kb": round(s.size / 1024, 1), "location": str(s)}
+                for s in stats
+            ],
+        }
+    if action == "stop":
+        tracemalloc.stop()
+        _TM_STATE["baseline"] = None
+        return {"tracing": False, "rss_mb": round(rss_kb() / 1024, 1)}
+    return {"tracing": tracemalloc.is_tracing(), "has_baseline": _TM_STATE["baseline"] is not None, "rss_mb": round(rss_kb() / 1024, 1)}

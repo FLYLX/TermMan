@@ -1,0 +1,22 @@
+[BASELINE] tokens=24286735 turns=2607
+[09:59:46] DISPATCH A(py36): ???? Python 3.6????? python3.6 --version ??
+[09:59:46] DISPATCH A(py36) returned after 0.1s status=200: {"success": true, "ignored": false, "reason": "queued", "error": null, "item_id": "ea52de0c-51b7-4b49-a43d-985ed2e09579", "route_key": "测试项目-5", "reply_chunks": []}
+[09:59:48] DISPATCH B(java8): ???? Java 8?openjdk-8-jdk?????? java -version ??
+[09:59:48] DISPATCH B(java8) returned after 0.1s status=200: {"success": true, "ignored": false, "reason": "queued_pending", "error": null, "item_id": "ea52de0c-51b7-4b49-a43d-985ed2e09579", "route_key": "测试项目-5", "reply_chunks": []}
+[5s] WF: none | running jobs: 0
+[10s] WF: none | running jobs: 0
+[15s] WF: none | running jobs: 0
+[20s] WF: none | running jobs: 0
+[25s] WF: none | running jobs: 0
+[30s] WF: none | running jobs: 0
+[35s] WF: none | running jobs: 0
+[35s] all workflows terminal and dispatches returned
+
+================================================================
+FINAL WORKFLOWS
+
+PARALLELISM TIMELINE (seconds since test start)
+
+Tokens: +33211 turns +4
+
+[SCRIPT DONE]

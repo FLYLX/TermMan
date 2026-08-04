@@ -1,0 +1,18 @@
+
+[   0.1s] === 纯聊天（无工具）: '你好呀小柒，今天心情怎么样' -> 200 queued
+[   9.2s]   call#1: model=dashscope/qwen3.8-max-preview prompt=8144 completion=259 total=8403 ticket=f1097614
+[   9.2s]   TURN TOTAL: 1 LLM calls, prompt=8144 completion=259 total=8403 (ticket=delivered)
+
+[  14.2s] === 纯聊天（无工具）2: '你最喜欢什么颜色呀' -> 200 queued
+[  44.4s]   call#1: model=dashscope/qwen3.8-max-preview prompt=8140 completion=318 total=8458 ticket=d3aba5df
+[  44.4s]   call#2: model=dashscope/qwen3.8-max-preview prompt=9217 completion=912 total=10129 ticket=d3aba5df
+[  44.4s]   TURN TOTAL: 2 LLM calls, prompt=17357 completion=1230 total=18587 (ticket=delivered)
+
+[  49.5s] === 触发终端工具: '帮我运行 uptime 看看终端负载，把结果告诉我' -> 200 queued
+[  91.8s]   call#1: model=dashscope/qwen3.8-max-preview prompt=9865 completion=76 total=9941 ticket=c7b7bae7
+[  91.8s]   call#2: model=dashscope/qwen3.8-max-preview prompt=10697 completion=321 total=11018 ticket=c7b7bae7
+[  91.8s]   call#3: model=dashscope/qwen3.8-max-preview prompt=11773 completion=1418 total=13191 ticket=c7b7bae7
+[  91.8s]   TURN TOTAL: 3 LLM calls, prompt=32335 completion=1815 total=34150 (ticket=delivered)
+
+[  96.8s] GRAND TOTAL: prompt=57836 completion=3304 total=61140
+[DONE]

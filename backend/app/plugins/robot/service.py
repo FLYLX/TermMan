@@ -49,6 +49,7 @@ CONVERSATION_PROCESSING_MIN_TIMEOUT_SECONDS = 120
 CONVERSATION_PROCESSING_MAX_TIMEOUT_SECONDS = 600
 DISPATCH_WORKER_MAX_COUNT = 8
 PENDING_CHAT_QUEUE_LIMIT = 5
+BACKGROUND_JOB_ROUTE_KEY = "background_job"
 PENDING_DIRECT_WAKE_TRIGGER_REASONS = frozenset({
     "mention_bot",
     "reply_to_bot",
@@ -332,7 +333,7 @@ class RobotService:
                 robot_id=robot.id,
                 robot_owner_id=robot.owner_id,
                 item_id=item.id,
-                route_key="background_job",
+                route_key=BACKGROUND_JOB_ROUTE_KEY,
                 message=message,
                 sender_key=sender_key,
                 reply_target=target.model_copy(deep=True),
@@ -492,25 +493,82 @@ class RobotService:
                         "[RobotService] Failed to report worker failure for robot %s",
                         job.robot_id,
                     )
-            else:
+            finally:
+                with self._lock:
+                    self._active_dispatch_jobs.pop(tracking_key, None)
                 try:
                     from app.services.agent.mcp.local_server import (
-                        flush_job_results_for_turn_end,
+                        flush_all_job_results_for_item,
                     )
 
-                    flush_job_results_for_turn_end(
-                        str(job.item_id),
-                        conversation_key=job.conversation_key,
-                    )
+                    flush_all_job_results_for_item(str(job.item_id))
                 except Exception:
                     logger.debug(
                         "[RobotService] Failed to flush buffered job results for item=%s",
                         job.item_id,
                     )
-            finally:
-                with self._lock:
-                    self._active_dispatch_jobs.pop(tracking_key, None)
                 self._dispatch_queue.task_done()
+
+    def sweep_pending_conversations(self) -> dict[str, int]:
+        """Global invariant: no active LLM turn + pending input -> start a turn.
+
+        Safety net for races/crashes where the turn-end drain never fired
+        (e.g. a job result buffered right after the last flush, or a worker
+        that died before its finally hook). Runs from the task watchdog every
+        pass. Busy conversations are skipped; buffered job results re-buffer
+        themselves if their conversation turns out to be busy, so this can
+        never force concurrent turns on one conversation.
+        """
+        stats = {"pending_turns_kicked": 0, "buffered_results_flushed": 0}
+        with self._lock:
+            pending_keys = [
+                (robot_id, conversation_key)
+                for (robot_id, conversation_key), entries
+                in self._pending_task_replies.items()
+                if entries
+            ]
+        for robot_id, conversation_key in pending_keys:
+            try:
+                if self.conversation_has_active_dispatch(robot_id, conversation_key):
+                    continue
+                with Session(engine) as session:
+                    robot = session.get(Robot, uuid.UUID(robot_id))
+                if robot is None or not robot.is_enabled:
+                    continue
+                if self._enqueue_pending_chat_followup(
+                    robot=robot, conversation_key=conversation_key
+                ):
+                    stats["pending_turns_kicked"] += 1
+                    logger.info(
+                        "[RobotService] Sweep kicked pending turn: robot=%s conversation=%s",
+                        robot_id,
+                        conversation_key,
+                    )
+            except Exception:
+                logger.exception(
+                    "[RobotService] Sweep failed for pending conversation robot=%s conversation=%s",
+                    robot_id,
+                    conversation_key,
+                )
+        try:
+            from app.services.agent.input_merge_buffer import input_merge_buffer
+            from app.services.agent.mcp.local_server import (
+                flush_all_job_results_for_item,
+            )
+
+            for item_id in input_merge_buffer.distinct_item_ids():
+                if item_id == "qq":
+                    continue
+                try:
+                    uuid.UUID(item_id)
+                except ValueError:
+                    continue
+                flushed = flush_all_job_results_for_item(item_id)
+                if flushed:
+                    stats["buffered_results_flushed"] += flushed
+        except Exception:
+            logger.exception("[RobotService] Sweep buffer flush failed")
+        return stats
 
     def reap_stuck_dispatch_jobs(self) -> int:
         """Force-fail dispatch jobs frozen past the hard timeout.
@@ -725,6 +783,7 @@ class RobotService:
                                 conversation_generation=job.conversation_generation,
                                 reply_requires_awake=job.reply_requires_awake,
                                 reply_ticket_id=job.reply_ticket_id,
+                                request_message=self._job_request_display(job),
                             ),
                             timeout=settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS,
                         )
@@ -772,6 +831,7 @@ class RobotService:
                     not response_text
                     and not robot_message_sent
                     and job.direct_reply_trigger
+                    and job.route_key != BACKGROUND_JOB_ROUTE_KEY
                     and not (_agent_sess and _agent_sess.has_running_terminal_job())
                 ):
                     record_robot_event(
@@ -819,6 +879,7 @@ class RobotService:
                                         conversation_generation=job.conversation_generation,
                                         reply_requires_awake=job.reply_requires_awake,
                                         reply_ticket_id=job.reply_ticket_id,
+                                        request_message=self._job_request_display(job),
                                     ),
                                     timeout=remaining_timeout,
                                 )
@@ -866,9 +927,16 @@ class RobotService:
                     sleep_when_no_reply=job.reply_context_active
                     and not job.direct_reply_trigger,
                 )
-                if self._item_has_running_jobs(str(job.item_id)):
+                if (
+                    self._session_has_running_terminal_jobs(str(job.item_id))
+                    or self._item_has_running_jobs(str(job.item_id))
+                ):
                     self._extend_processing_for_active_jobs(
                         robot, job.conversation_key,
+                    )
+                else:
+                    self._release_processing_hold(
+                        robot.id, job.conversation_key,
                     )
                 try:
                     from app.services.agent.stream_manager import stream_manager
@@ -1429,9 +1497,16 @@ class RobotService:
                 mention_match_mode=mention_match_mode,
             )
             task_control_message = bool(TASK_CONTROL_MESSAGE_RE.search(message_text))
+            # Merge chat into a running turn only when a dispatch turn is
+            # actually running/queued. Background jobs alone must not hold
+            # chat hostage: jobs run in the daemon while the backend is free,
+            # so an incoming chat message starts its own turn immediately.
+            turn_actively_busy = self.conversation_has_active_dispatch(
+                robot.id, conversation_key
+            )
             if (
                 command.mode == "chat"
-                and controller_gate.processing
+                and turn_actively_busy
                 and reply_context_active
                 and not task_control_message
             ):
@@ -1997,6 +2072,7 @@ class RobotService:
             sender_key=latest.sender_key,
             reply_target=followup_reply_target,
             conversation_key=conversation_key,
+            message_text=latest.message_text,
             direct_reply_trigger=False,
             reply_context_active=True,
             conversation_generation=conversation_generation,
@@ -3330,6 +3406,21 @@ class RobotService:
             expected_generation=conversation_generation,
         )
 
+    def _session_has_running_terminal_jobs(self, item_id: str) -> bool:
+        """In-process check for running terminal jobs (no daemon round-trip).
+
+        The daemon list lookup races with freshly started jobs; the session
+        bookkeeping is updated synchronously when run_job starts, so it is
+        the reliable signal right after a dispatch turn.
+        """
+        try:
+            from app.services.agent.session import agent_session_manager
+
+            session = agent_session_manager.get_session(item_id)
+            return bool(session and session.has_running_terminal_job())
+        except Exception:
+            return False
+
     def _item_has_running_jobs(self, item_id: str) -> bool:
         """Check if the daemon has running background jobs for this item."""
         try:
@@ -3387,6 +3478,68 @@ class RobotService:
         with self._lock:
             controller = self._conversation_controllers.get(key)
             return bool(controller and controller.processing)
+
+    def conversation_has_active_dispatch(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+    ) -> bool:
+        """Whether a dispatch job for this conversation is running or queued.
+
+        This is the authoritative "a turn is in flight" signal used to decide
+        whether background job results should be buffered and merged into the
+        running turn instead of starting a new turn immediately. Unlike the
+        raw controller `processing` flag, an active/queued dispatch job
+        guarantees the turn-end flush hook will drain the buffer, so buffered
+        results can never linger.
+        """
+        if not conversation_key:
+            return False
+        robot_id_text = str(robot_id)
+        with self._lock:
+            for _tracking_key, (_started, queued_job) in self._active_dispatch_jobs.items():
+                if (
+                    str(queued_job.robot_id) == robot_id_text
+                    and queued_job.conversation_key == conversation_key
+                ):
+                    return True
+        try:
+            with self._dispatch_queue.mutex:
+                queued_snapshot = list(self._dispatch_queue.queue)
+        except Exception:
+            queued_snapshot = []
+        for queued_job in queued_snapshot:
+            if (
+                str(queued_job.robot_id) == robot_id_text
+                and queued_job.conversation_key == conversation_key
+            ):
+                return True
+        return False
+
+    def _release_processing_hold(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+    ) -> None:
+        """Clear the job-scoped processing hold once no background jobs remain.
+
+        Callback rounds carry a stale conversation generation, so the normal
+        reply-context bookkeeping (guarded by generation) never clears the
+        processing flag set by `_extend_processing_for_active_jobs`. Without
+        this release the conversation stays "processing" until the hard
+        timeout, and new inbound messages pile up in the pending queue with
+        no turn to drain them.
+        """
+        if not conversation_key:
+            return
+        key = self._conversation_controller_key(robot_id, conversation_key)
+        with self._lock:
+            controller = self._conversation_controllers.get(key)
+            if controller is None or not controller.processing:
+                return
+            controller.processing = False
+            controller.processing_expires_at = None
+            controller.updated_at = self._now()
 
     def conversation_controller_allows_reply(
         self,
@@ -4043,6 +4196,22 @@ class RobotService:
 
         return socket_pool_facade.write_to_item(str(item_id), command)
 
+    @staticmethod
+    def _job_request_display(job: QueuedRobotChatJob) -> str:
+        """Visible user request behind a dispatch job.
+
+        Direct dispatches carry the sanitized message text; pending-batch
+        dispatches carry the latest drained message plus a count of earlier
+        batched messages. Internal jobs (background reports) have none.
+        """
+        text = (job.message_text or "").strip()
+        if not text:
+            return ""
+        earlier = max(len(job.pending_entries) - 1, 0)
+        if earlier:
+            return f"{text} (+{earlier} earlier)"
+        return text
+
     async def _chat_with_item(
         self,
         *,
@@ -4056,6 +4225,7 @@ class RobotService:
         conversation_generation: int = 0,
         reply_requires_awake: bool = False,
         reply_ticket_id: str = "",
+        request_message: str = "",
     ) -> ChatResponseResult:
         owner = session.get(User, robot.owner_id)
         if owner is None:
@@ -4074,6 +4244,7 @@ class RobotService:
                 robot_conversation_generation=conversation_generation,
                 robot_reply_requires_awake=reply_requires_awake,
                 reply_ticket_id=reply_ticket_id,
+                robot_request_message=request_message,
                 return_result=True,
             )
             if isinstance(result, ChatResponseResult):

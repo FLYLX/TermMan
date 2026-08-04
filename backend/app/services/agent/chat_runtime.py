@@ -137,6 +137,7 @@ async def _collect_chat_response_unserialized(
     robot_conversation_key: str | None = None,
     robot_conversation_generation: int = 0,
     robot_reply_requires_awake: bool = False,
+    robot_request_message: str = "",
     reply_ticket_id: str = "",
     return_result: bool = False,
     prepared: tuple[ItemHandler, Item] | None = None,
@@ -163,6 +164,7 @@ async def _collect_chat_response_unserialized(
             "conversation_key": robot_conversation_key or "",
             "conversation_generation": robot_conversation_generation,
             "reply_requires_awake": robot_reply_requires_awake,
+            "request_message": robot_request_message,
         }
         setup_integration_chat_contexts(agent, integration_contexts)
         await ensure_integration_chat_context_tools(agent, integration_contexts)
@@ -293,6 +295,7 @@ async def collect_chat_response(
     robot_conversation_key: str | None = None,
     robot_conversation_generation: int = 0,
     robot_reply_requires_awake: bool = False,
+    robot_request_message: str = "",
     reply_ticket_id: str = "",
     return_result: bool = False,
 ) -> str | ChatResponseResult:
@@ -329,6 +332,7 @@ async def collect_chat_response(
             robot_conversation_key=robot_conversation_key,
             robot_conversation_generation=robot_conversation_generation,
             robot_reply_requires_awake=robot_reply_requires_awake,
+            robot_request_message=robot_request_message,
             reply_ticket_id=reply_ticket_id,
             return_result=return_result,
             prepared=prepared,

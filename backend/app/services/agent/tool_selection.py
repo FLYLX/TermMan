@@ -1,48 +1,58 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-import re
 from typing import Any, Literal
+
+from app.services.agent.capability_state import (
+    ensure_loaded,
+    get_loaded_guides,
+    get_loaded_tools,
+)
 
 TurnSource = Literal["web", "qq", "terminal"]
 
 LOCAL_PREFIX = "mcp_local_"
 ROBOT_PREFIX = "mcp_robot_"
 
-ROBOT_PATTERNS = (
-    r"\bqq\b",
-    "\u673a\u5668\u4eba",
-    "\u7fa4",
-    "\u79c1\u804a",
-    "\u53d1\u7ed9",
-    "\u53d1\u9001\u7ed9",
-    "\u56de\u590d\u5230",
-    "napcat",
-    "onebot",
+PREPARE_CAPABILITIES_TOOL = "mcp_local_prepare_capabilities"
+
+# Tools whose full schemas are always exposed: delivery, conversation memory,
+# plan management, and the progressive-loading meta tool itself.
+CORE_TOOL_NAMES = frozenset(
+    {
+        "mcp_robot_send_message",
+        "mcp_robot_read_conversation_memory",
+        "mcp_robot_save_memory",
+        "mcp_robot_recall_memory",
+        "mcp_robot_list_memories",
+        "mcp_robot_compress_memories",
+        "mcp_robot_sleep_conversation",
+        "mcp_local_update_plan",
+        "mcp_local_update_task_workflow",
+        "mcp_local_get_task_workflow",
+        PREPARE_CAPABILITIES_TOOL,
+    }
 )
 
-TERMINAL_TOOL_PATTERNS = (
-    "\u7ec8\u7aef", "\u547d\u4ee4", "\u65e5\u5fd7", "shell", "command",
-    "\u5b89\u88c5", "\u4e0b\u8f7d", "\u6784\u5efa", "java", "minecraft",
-    "\u670d\u52a1\u5668", "\u542f\u52a8", "\u505c\u6b62", "\u8fd0\u884c",
-    "\u6267\u884c", "\u67e5\u770b", "\u68c0\u67e5", "terminal", "install",
-    "run", "build", "start", "stop", "status", "job", "\u811a\u672c",
-    "\u8fdb\u7a0b", "\u914d\u7f6e", "\u7f16\u8bd1", "\u5378\u8f7d", "\u5347\u7ea7",
+TERMINAL_TOOLSET = frozenset(
+    {
+        "mcp_local_execute_command",
+        "mcp_local_run_job",
+        "mcp_local_list_jobs",
+        "mcp_local_cancel_job",
+        "mcp_local_interrupt_command",
+        "mcp_local_get_terminal_status",
+        "mcp_local_read_terminal_log",
+        "mcp_local_add_terminal_input_filter_rule",
+        "mcp_local_list_terminal_input_filter_rules",
+        "mcp_local_list_terminal_filter_rules",
+        "mcp_local_delete_terminal_input_filter_rule",
+        "mcp_local_clear_terminal_input_filter_rules",
+    }
 )
 
-TERMINAL_ONLY_TOOLS = {
-    "mcp_local_execute_command",
-    "mcp_local_run_job",
-    "mcp_local_get_terminal_status",
-    "mcp_local_read_terminal_log",
-    "mcp_local_interrupt_command",
-    "mcp_local_add_terminal_input_filter_rule",
-    "mcp_local_list_terminal_input_filter_rules",
-    "mcp_local_list_terminal_filter_rules",
-    "mcp_local_delete_terminal_input_filter_rule",
-    "mcp_local_clear_terminal_input_filter_rules",
-    "mcp_local_list_jobs",
-    "mcp_local_cancel_job",
-}
+TERMINAL_GUIDE_IDS = ("terminal_mcp", "minecraft_server_helper")
+
+_GUIDE_EXCLUDED_CATEGORIES = {"system", "persona"}
 
 
 def _tool_name(tool: dict[str, Any]) -> str:
@@ -52,23 +62,11 @@ def _tool_name(tool: dict[str, Any]) -> str:
     return str(function.get("name") or "").strip()
 
 
-def _matches_any(text: str, patterns: tuple[str, ...]) -> bool:
-    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
-
-
-def _wants_robot_tools(text: str, *, source: TurnSource, agent: Any) -> bool:
-    del agent
-    if source == "qq":
-        return True
-    if source == "terminal":
-        return False
-    return _matches_any(text, ROBOT_PATTERNS)
-
-
-def _wants_terminal_tools(text: str, source: TurnSource) -> bool:
-    if source == "terminal":
-        return True
-    return _matches_any(text, TERMINAL_TOOL_PATTERNS)
+def _agent_item_id(agent: Any) -> str:
+    context = getattr(agent, "_context", None)
+    if context is None:
+        return ""
+    return str(getattr(context, "item_id", "") or "")
 
 
 def select_tools_for_turn(
@@ -79,9 +77,19 @@ def select_tools_for_turn(
     agent: Any = None,
     reply_ticket_id: str = "",
 ) -> list[dict[str, Any]]:
-    text = str(query or "")
-    include_robot = _wants_robot_tools(text, source=source, agent=agent)
-    include_terminal = _wants_terminal_tools(text, source=source)
+    """Progressive tool exposure: core tools + capabilities loaded for the item.
+
+    No keyword matching. The agent sees a catalog of on-demand capabilities in
+    the system prompt and loads what it needs via prepare_capabilities.
+    Terminal-sourced turns auto-load the terminal toolset.
+    """
+    del query, reply_ticket_id
+    item_id = _agent_item_id(agent)
+    if source == "terminal" and item_id:
+        ensure_loaded(item_id, tools=TERMINAL_TOOLSET, guides=TERMINAL_GUIDE_IDS)
+    loaded = get_loaded_tools(item_id) if item_id else frozenset()
+    if source == "terminal":
+        loaded = loaded | TERMINAL_TOOLSET
 
     selected: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -89,16 +97,80 @@ def select_tools_for_turn(
         name = _tool_name(tool)
         if not name or name in seen:
             continue
-
-        if name.startswith(ROBOT_PREFIX):
-            keep = include_robot
-        elif name in TERMINAL_ONLY_TOOLS:
-            keep = include_terminal
-        else:
-            keep = True
-
-        if keep:
+        if name in CORE_TOOL_NAMES or name in loaded:
             selected.append(tool)
             seen.add(name)
-
     return selected
+
+
+def _guide_skills(agent: Any) -> list[Any]:
+    get_skills = getattr(agent, "get_skills", None)
+    if not callable(get_skills):
+        return []
+    guides: list[Any] = []
+    try:
+        skills = list(get_skills())
+    except Exception:
+        return []
+    for skill in skills:
+        category = str(getattr(skill, "category", "") or "")
+        if category in _GUIDE_EXCLUDED_CATEGORIES:
+            continue
+        action = getattr(skill, "action", None)
+        prompt = str(getattr(action, "prompt", "") or "").strip() if action else ""
+        if not prompt:
+            continue
+        guides.append(skill)
+    return guides
+
+
+def loaded_guide_skills(agent: Any, item_id: str) -> list[Any]:
+    loaded = get_loaded_guides(item_id)
+    if not loaded:
+        return []
+    return [skill for skill in _guide_skills(agent) if str(getattr(skill, "skill_id", "")) in loaded]
+
+
+def build_capability_catalog(agent: Any, *, source: TurnSource) -> str:
+    """Compact catalog of on-demand tools and guides for the system prompt."""
+    item_id = _agent_item_id(agent)
+    try:
+        all_tools = list(agent.get_tools_for_litellm())
+    except Exception:
+        all_tools = []
+    catalog_tools = [
+        tool
+        for tool in all_tools
+        if _tool_name(tool) and _tool_name(tool) not in CORE_TOOL_NAMES
+    ]
+    guides = _guide_skills(agent)
+    if not catalog_tools and not guides:
+        return ""
+
+    lines = [
+        "## On-demand capabilities (not loaded yet)",
+        (
+            f"To use one, call `{PREPARE_CAPABILITIES_TOOL}` with item_id and the "
+            "exact names; full schemas/guides are returned and stay loaded for this item."
+        ),
+    ]
+    if catalog_tools:
+        lines.append("Tools:")
+        for tool in sorted(catalog_tools, key=_tool_name):
+            function = tool.get("function", {})
+            description = str(function.get("description") or "").strip()
+            description = " ".join(description.split())
+            if len(description) > 60:
+                description = description[:57] + "..."
+            lines.append(f"- {_tool_name(tool)}: {description}")
+    if guides:
+        lines.append("Guides:")
+        for skill in guides:
+            skill_id = str(getattr(skill, "skill_id", "") or "")
+            description = str(getattr(skill, "description", "") or "").strip()
+            description = " ".join(description.split())
+            if len(description) > 60:
+                description = description[:57] + "..."
+            lines.append(f"- {skill_id}: {description or getattr(skill, 'name', '')}")
+    del source
+    return "\n".join(lines)

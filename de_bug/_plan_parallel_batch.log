@@ -1,0 +1,11 @@
+[   0.0s] START
+[   0.0s] DISPATCH A(tree) -> 200 queued
+[   0.4s] DISPATCH B(figlet) -> 200 queued_pending
+[   2.4s] cards(1): '再帮我装一下 sl，装完告诉我'[delivered] 0/3 | item-plan: i:安装 sl 命令 | p:验证安装结果 | p:向主人汇报
+[  35.3s] cards(2): '再帮我安装 figlet，装完运行 figlet h'[running] 0/3 || '再帮我装一下 sl，装完告诉我'[delivered] 0/3 | item-plan: i:安装 figlet（等  | p:运行 figlet he | p:把结果发给主人
+[ 141.7s] cards(2): '再帮我安装 figlet，装完运行 figlet h'[running] 2/3 || '再帮我装一下 sl，装完告诉我'[delivered] 0/3 | item-plan: c:安装 figlet（等  | c:运行 figlet he | i:把结果发给主人
+[ 150.3s] cards(1): '再帮我装一下 sl，装完告诉我'[delivered] 0/3 | item-plan: i:安装 sl 命令 | p:验证安装结果 | p:向主人汇报
+[ 368.0s] cards(0): none | item-plan: -
+[ 368.0s] table empty -> settled
+RESULT: seen_b_card=True b_title_is_real_text=True
+[DONE]

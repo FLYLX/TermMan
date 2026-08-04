@@ -125,6 +125,7 @@ INTERNAL_QQ_BACKGROUND_JOB_PREFIX = (
     "[后台终端任务结果 - 本 QQ 会话]"
 )
 INTERNAL_QQ_BACKGROUND_JOB_BATCH_PREFIX = "[Background job results batch:"
+INTERNAL_QQ_BACKGROUND_JOB_ROBOT_PREFIX = "[后台终端任务结果 - 来自 QQ 会话]"
 INTERNAL_AGENT_RETRY_PREFIX = "[Internal corrective turn]"
 CURRENT_QQ_MESSAGE_MARKER = "[Current QQ message]"
 CQ_CODE_RE = re.compile(r"\[CQ:[^\]]+\]", re.IGNORECASE)
@@ -162,6 +163,7 @@ def _is_internal_agent_callback(message: str, source_type: str) -> bool:
     text = str(message or "").lstrip()
     return (
         text.startswith(INTERNAL_QQ_BACKGROUND_JOB_PREFIX)
+        or text.startswith(INTERNAL_QQ_BACKGROUND_JOB_ROBOT_PREFIX)
         or text.startswith(INTERNAL_QQ_BACKGROUND_JOB_BATCH_PREFIX)
         or text.startswith(INTERNAL_AGENT_RETRY_PREFIX)
     )
@@ -292,11 +294,10 @@ def build_system_prompt_with_skills(
         agent = agent_manager.get_or_create(handler)
 
     all_skills = agent.get_skills()
-    matched_skills = agent.match_skills(message)
+    matched_skills: list = []
     tools = select_tools_for_turn(
         agent.get_tools_for_litellm(),
         source="web",
-        query=message,
         agent=agent,
     )
 
@@ -478,10 +479,17 @@ def _deliver_reply_ticket_final_response(
     reply_ticket_id: str = "",
 ) -> list[dict[str, Any]]:
     from app.plugins.robot.internal_trace import sanitize_robot_visible_text
+    from app.plugins.robot.reply_intent import is_no_reply_intent
 
     ticket_id = str(reply_ticket_id or "").strip() or _current_reply_ticket_id(agent)
     ticket = reply_ticket_manager.get(ticket_id)
     if not ticket or ticket.source_type != SOURCE_QQ:
+        return []
+    if is_no_reply_intent(content):
+        # The agent chose silence (e.g. bare "NRN" on a job callback); never
+        # deliver the marker itself. Finalize as completed so the ticket does
+        # not linger as "running" on the task board.
+        reply_ticket_manager.mark_completed(ticket_id)
         return []
     if ticket.external_report_sent:
         # The result already reached QQ via the send tool in an earlier turn;
@@ -1262,12 +1270,11 @@ def _generate_stream_unserialized(
         )
     else:
         reply_ticket_manager.attach_to_agent(agent, reply_ticket.ticket_id)
-    matched_skills = agent.match_skills(message)
-    tool_selection_query = _build_tool_selection_query(message, history)
+    matched_skills: list = []
+    turn_source = "qq" if normalized_source_type == SOURCE_QQ else "web"
     tools = select_tools_for_turn(
         agent.get_tools_for_litellm(),
-        source="qq" if normalized_source_type == SOURCE_QQ else "web",
-        query=tool_selection_query,
+        source=turn_source,
         agent=agent,
         reply_ticket_id=reply_ticket.ticket_id,
     )
@@ -1281,8 +1288,7 @@ def _generate_stream_unserialized(
         )
         tools = select_tools_for_turn(
             agent.get_tools_for_litellm(),
-            source="qq" if normalized_source_type == SOURCE_QQ else "web",
-            query=tool_selection_query,
+            source=turn_source,
             agent=agent,
             reply_ticket_id=reply_ticket.ticket_id,
         )
@@ -1333,13 +1339,26 @@ def _generate_stream_unserialized(
 
     AgentMessageQueue.clear_abort(item_id)
 
-    if not internal_agent_callback:
+    _stripped_message = str(message or "").lstrip()
+    background_job_callback = internal_agent_callback and (
+        _stripped_message.startswith(INTERNAL_QQ_BACKGROUND_JOB_PREFIX)
+        or _stripped_message.startswith(INTERNAL_QQ_BACKGROUND_JOB_ROBOT_PREFIX)
+        or _stripped_message.startswith(INTERNAL_QQ_BACKGROUND_JOB_BATCH_PREFIX)
+    )
+    if not internal_agent_callback or background_job_callback:
         user_message_type = "qq_user" if normalized_source_type == SOURCE_QQ else "chat_user"
         # The model gets the fully composed message (sender cards, live
         # context, memories...), but the chat history and the web UI should
-        # only show the raw text the QQ user actually sent.
+        # only show the raw text the QQ user actually sent. Background job
+        # callback rounds have no user text of their own; persist the
+        # callback content itself so the history stays self-consistent.
+        # (Otherwise the ticket's original request would be re-persisted
+        # once per callback and later turns lose track of which round they
+        # are answering.)
         display_content = message
-        if normalized_source_type == SOURCE_QQ:
+        if background_job_callback:
+            display_content = _qq_display_text(message)
+        elif normalized_source_type == SOURCE_QQ:
             display_content = _qq_display_text(reply_ticket.request_message or message)
         user_event = _persist_and_broadcast_event(
             item_id,
@@ -1380,7 +1399,16 @@ def _generate_stream_unserialized(
             finalization_only = bool(
                 iteration_index == MAX_ITERATIONS and workflow_can_finalize
             )
-            iteration_tools = [] if finalization_only else tools
+            iteration_tools = (
+                []
+                if finalization_only
+                else select_tools_for_turn(
+                    agent.get_tools_for_litellm(),
+                    source=turn_source,
+                    agent=agent,
+                    reply_ticket_id=reply_ticket.ticket_id,
+                )
+            )
             if action_recovery_only:
                 messages.append(
                     {
@@ -1850,6 +1878,7 @@ def _generate_stream_unserialized(
             }
             tool_messages: list[dict[str, Any]] = []
 
+            background_job_started_this_iteration = False
             for tool_call in ordered_tool_calls:
                 tool_name = tool_call["function"]["name"]
                 tool_args_str = tool_call["function"]["arguments"]
@@ -2174,9 +2203,8 @@ def _generate_stream_unserialized(
                         item_id,
                         command=str(tool_args.get("command") or ""),
                     )
-                    _broadcast_agent_status(item_id, "idle")
-                    yield _to_sse({"done": True})
-                    return
+                    background_job_started_this_iteration = True
+                    continue
 
                 if tool_name != "mcp_local_update_task_workflow":
                     tool_success = bool(result.get("success", True)) and not (
@@ -2241,6 +2269,11 @@ def _generate_stream_unserialized(
                         "content": result_text,
                     }
                 )
+
+            if background_job_started_this_iteration:
+                _broadcast_agent_status(item_id, "idle")
+                yield _to_sse({"done": True})
+                return
 
             if not assistant_message["tool_calls"]:
                 # Providers like ZAI reject assistant messages carrying an
@@ -2401,7 +2434,7 @@ async def chat(
             current_user,
             prepared=prepared,
         )
-        matched_skills = agent.match_skills(request.message)
+        matched_skills: list = []
 
         content = ""
         error_message = ""
@@ -2551,7 +2584,7 @@ async def get_matched_skills(
             current_user,
             prepared=prepared,
         )
-        matched = agent.match_skills(query)
+        matched = list(agent.get_skills())
     finally:
         lease.release()
     return {

@@ -1,0 +1,7 @@
+﻿2026-08-03T16:28:45.242449574Z INFO:app.plugins.robot.service:[DBGPROC] apply_reply_context_result conv=private:2537134688 sent=False gen=1 sleep_no_reply=False
+2026-08-03T16:28:45.256026374Z INFO:app.plugins.robot.service:[DBGPROC] item_has_running_jobs item=ea52de0c-51b7-4b49-a43d-985ed2e09579 -> False (no running)
+2026-08-03T16:28:45.256438888Z [BUSYCHECK] flush_job_results_for_turn_end item=ea52de0c-51b7-4b49-a43d-985ed2e09579 conv_key=private:2537134688 popped=0
+2026-08-03T16:28:45.256447776Z INFO:app.plugins.robot.service:[DBGPROC] turn_end flush item=ea52de0c-51b7-4b49-a43d-985ed2e09579 conv=private:2537134688 flushed=False
+2026-08-03T16:28:50.234359891Z [BUSYCHECK] sess_busy=False conv_busy=False has_ctx=True robot_id=5cbc7f55 conv_key=private:2537134688 err=
+2026-08-03T16:28:58.299027076Z [BUSYCHECK] sess_busy=False conv_busy=False has_ctx=True robot_id=5cbc7f55 conv_key=private:2537134688 err=
+2026-08-03T16:29:00.327659366Z [BUSYCHECK] sess_busy=False conv_busy=False has_ctx=True robot_id=5cbc7f55 conv_key=private:2537134688 err=

@@ -18,6 +18,9 @@ class RobotMCPContext:
     conversation_key: str = ""
     conversation_generation: int = 0
     reply_requires_awake: bool = False
+    # Sanitized visible user request text behind this turn. Empty for
+    # internal turns such as background job result reports.
+    request_message: str = ""
 
 
 ROBOT_MESSAGE_STAMP_RE = re.compile(r"\[Robot message; (?P<body>[^\]]+)\]")
@@ -209,11 +212,10 @@ def build_robot_reply_context_summary(
                     "the bot or another person from recent context."
                 ),
                 (
-                    "- send rule: to reply, output your reply text directly and the system "
-                    "auto-delivers it back to this conversation; only call "
-                    "`mcp_robot_send_message` when sending to a different conversation or "
-                    "multiple targets. Private chat is addressed to you; reply directly. "
-                    "If this turn should not be replied to, call "
+                    "- send rule: to reply, call `mcp_robot_send_message` in your current "
+                    "response with only `text` (it is routed to this conversation automatically); "
+                    "plain final text is NOT auto-delivered. Private chat is addressed to you; "
+                    "reply directly. If this turn should not be replied to, call "
                     "`mcp_robot_sleep_conversation` instead."
                 ),
                 (
@@ -254,7 +256,7 @@ def build_robot_reply_context_summary(
             ),
             *_robot_identity_context_lines(reply_target, conversation_type),
             (
-                "- send rule: to reply to this current QQ conversation, output your reply text directly and the system auto-delivers it back to this conversation; only call `mcp_robot_send_message` when sending to a different conversation or multiple targets. Reply when the current message "
+                "- send rule: to reply to this current QQ conversation, call `mcp_robot_send_message` in your current response with only `text` (routed to this conversation automatically); plain final text is NOT auto-delivered. Reply when the current message "
                 "is plausibly addressed to the bot after considering recent QQ "
                 "context. Treat `reply_to_bot`, bot mentions, and "
                 "`trigger=active_chat_window` as candidate continuations; reply "

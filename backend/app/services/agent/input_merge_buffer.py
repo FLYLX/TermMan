@@ -117,6 +117,35 @@ class InputMergeBuffer:
         with self._lock:
             return self._entries.pop(scope_buffer_key(item_id, scope_key), [])
 
+    def pop_all_for_item(self, item_id: str) -> list[MergeBufferEntry]:
+        """Drain every buffered scope belonging to an item.
+
+        Turn-end drains must not be limited to the ending turn's own
+        conversation: entries of other conversations buffered while the turn
+        ran would otherwise linger until a turn for their own conversation
+        happens to end (which may never come).
+        """
+        item_key = str(item_id)
+        prefix = f"{item_key}|"
+        with self._lock:
+            drained: list[MergeBufferEntry] = []
+            keys = [
+                key
+                for key in self._entries
+                if key == item_key or key.startswith(prefix)
+            ]
+            for key in keys:
+                drained.extend(self._entries.pop(key, []))
+            return drained
+
+    def distinct_item_ids(self) -> list[str]:
+        """Item ids that currently have buffered entries (any scope)."""
+        with self._lock:
+            ids: set[str] = set()
+            for key in self._entries:
+                ids.add(key.split("|", 1)[0])
+            return sorted(ids)
+
     def peek(self, item_id: str, scope_key: str = "") -> list[MergeBufferEntry]:
         with self._lock:
             return list(self._entries.get(scope_buffer_key(item_id, scope_key), []))

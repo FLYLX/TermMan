@@ -23,6 +23,7 @@ _NO_REPLY_EXACTS = {
     "dontsend",
     "silent",
     "silence",
+    "nrn",
 }
 
 _CHINESE_NO_REPLY_PATTERNS = (

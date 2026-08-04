@@ -1244,6 +1244,14 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
       return
     }
 
+    if (data.type === "plan_updated") {
+      queryClient.invalidateQueries({ queryKey: ["items", "plan", itemId] })
+      queryClient.invalidateQueries({
+        queryKey: ["items", "token-by-task", itemId],
+      })
+      return
+    }
+
     if (data.type === "agent_status") {
       const status = typeof data.status === "string" ? data.status : ""
       const content = typeof data.content === "string" ? data.content.trim() : ""

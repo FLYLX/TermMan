@@ -554,6 +554,9 @@ class InputMessage:
     completion_callback: Callable[[bool, str], None] | None = None
     scheduled_task_id: str = ""
     scheduled_execution_id: str = ""
+    # Human-readable request shown in the plan table; structured alternative
+    # to parsing the agent-facing wrapper text.
+    request_display: str = ""
 
 
 @dataclass
@@ -2059,10 +2062,10 @@ class AgentSession:
             return
         try:
             from app.services.agent.mcp.local_server import (
-                flush_job_results_for_turn_end,
+                flush_all_job_results_for_item,
             )
 
-            flush_job_results_for_turn_end(self.item_id)
+            flush_all_job_results_for_item(self.item_id)
         except Exception:
             pass
 
@@ -2231,6 +2234,7 @@ class AgentSession:
                     message=input_msg.content,
                     scheduled_task_id=input_msg.scheduled_task_id,
                     scheduled_execution_id=input_msg.scheduled_execution_id,
+                    request_message=input_msg.request_display,
                 )
                 input_msg.reply_ticket_id = ticket.ticket_id
             else:
@@ -2801,9 +2805,14 @@ class AgentSession:
             if not has_system_prompt:
                 system_parts = [get_system_prompt(agent)]
                 try:
-                    for skill in agent.match_skills(
-                        (input_msg.query or effective_terminal_content or "")[:500]
-                    ):
+                    from app.services.agent.capability_state import ensure_loaded
+                    from app.services.agent.tool_selection import (
+                        TERMINAL_GUIDE_IDS,
+                        loaded_guide_skills,
+                    )
+
+                    ensure_loaded(self.item_id, guides=TERMINAL_GUIDE_IDS)
+                    for skill in loaded_guide_skills(agent, self.item_id):
                         action = getattr(skill, "action", None)
                         prompt = str(getattr(action, "prompt", "") or "").strip()
                         if prompt:
@@ -2999,8 +3008,9 @@ class AgentSession:
     ) -> str:
         prompt_parts = [get_system_prompt(agent)]
 
-        effective_skill_query = skill_query if skill_query is not None else query
-        skills = agent.match_skills(effective_skill_query) if effective_skill_query else []
+        from app.services.agent.tool_selection import loaded_guide_skills
+
+        skills = loaded_guide_skills(agent, self.item_id)
         for skill in skills:
             if skill.category == "system":
                 continue

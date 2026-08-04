@@ -70,7 +70,7 @@ class AgentTurnCoordinator:
                 self._condition.wait()
         return AgentTurnLease(self, normalized_key, token)
 
-    async def acquire_async(self, key: str, timeout_seconds: float = 150.0) -> AgentTurnLease:
+    async def acquire_async(self, key: str, timeout_seconds: float = 230.0) -> AgentTurnLease:
         normalized_key = str(key)
         token = self._enqueue(normalized_key)
         import time as _time

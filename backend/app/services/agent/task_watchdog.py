@@ -537,6 +537,22 @@ def run_once(now: datetime | None = None) -> dict[str, int]:
                 stats["dispatch_reaped"] = integration.reap_stuck_dispatch_jobs()
     except Exception:
         logger.exception("[TaskWatchdog] Dispatch reaper failed")
+    try:
+        from app.services.agent.integrations.registry import get_agent_integrations
+
+        for integration in get_agent_integrations():
+            if hasattr(integration, "sweep_pending_inputs"):
+                swept = integration.sweep_pending_inputs() or {}
+                stats["pending_turns_kicked"] = (
+                    stats.get("pending_turns_kicked", 0)
+                    + int(swept.get("pending_turns_kicked") or 0)
+                )
+                stats["buffered_results_flushed"] = (
+                    stats.get("buffered_results_flushed", 0)
+                    + int(swept.get("buffered_results_flushed") or 0)
+                )
+    except Exception:
+        logger.exception("[TaskWatchdog] Pending input sweep failed")
     with task_workflow_manager._lock:
         candidates = [
             workflow
