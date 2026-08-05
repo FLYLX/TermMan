@@ -59,14 +59,14 @@ class SocketManager:
         if existing_socket:
             if existing_socket.is_connected():
                 logger.info(f"[SocketManager] Backend socket already exists and connected for item={item_uuid}, reusing")
-                if not hasattr(existing_socket, '_input_handler_id') or not existing_socket._input_handler_id:
+                if not self._input_handler_registered(existing_socket):
                     self._register_input_handler(existing_socket)
                 return existing_socket
             else:
                 logger.info(f"[SocketManager] Backend socket exists but disconnected for item={item_uuid}, reconnecting")
                 existing_socket.connect(api_key)
                 if existing_socket.is_connected():
-                    if not hasattr(existing_socket, '_input_handler_id') or not existing_socket._input_handler_id:
+                    if not self._input_handler_registered(existing_socket):
                         self._register_input_handler(existing_socket)
                 return existing_socket
 
@@ -85,6 +85,22 @@ class SocketManager:
             logger.warning(f"[SocketManager] Backend socket NOT connected for item={item_uuid}")
 
         return socket
+
+    @staticmethod
+    def _input_handler_registered(socket: "ItemSocket") -> bool:
+        """Registration truth lives in input_center, not in the socket's cached
+        handler id: the id attribute survives unregister_all_by_item and would
+        wrongly suppress re-registration, leaving the item with no live handler
+        while looking 'registered'."""
+        handler_id = getattr(socket, "_input_handler_id", None)
+        if not handler_id:
+            return False
+        from .input_center import input_center
+
+        return any(
+            handler.handler_id == handler_id
+            for handler in input_center.get_handlers_by_item(socket.item_uuid)
+        )
 
     def _register_input_handler(self, socket: ItemSocket):
         from .input_center import InputCommand

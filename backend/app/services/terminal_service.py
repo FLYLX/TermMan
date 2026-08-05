@@ -159,10 +159,16 @@ class TerminalService:
             and backend_socket
             and backend_socket.is_connected()
         ):
-            logger.info(
-                f"[TerminalService] Existing backend room subscriber is already healthy for item={item_uuid}"
-            )
-            return True
+            # Socket connectivity alone is not enough: the input handler may
+            # have been unregistered while the sockets stayed up. Verify the
+            # handler is actually live before declaring the session healthy.
+            from app.services.socket_pool.socket_manager import SocketManager
+
+            if SocketManager._input_handler_registered(backend_socket):
+                logger.info(
+                    f"[TerminalService] Existing backend room subscriber is already healthy for item={item_uuid}"
+                )
+                return True
 
         return self._create_backend_room_subscriber(
             item_uuid=item_uuid,
