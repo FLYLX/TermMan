@@ -642,22 +642,46 @@ class RobotService:
                 DISPATCH_WORKER_MAX_COUNT,
             )
 
-    def _conversation_other_dispatch_active(
+    def _try_claim_deferred_generation(
         self,
-        robot_id: uuid.UUID | str,
-        conversation_key: str,
-        current_job: "QueuedRobotChatJob",
-    ) -> bool:
-        robot_id_text = str(robot_id)
+        robot: Robot,
+        job: QueuedRobotChatJob,
+    ) -> int:
+        """Atomically claim the conversation generation iff no *claimed* turn
+        of this conversation is running. Returns 0 when busy.
+
+        The wait target is another job that already claimed its generation
+        (i.e. a turn actually running). Deferred jobs still waiting carry
+        generation=0 and never block each other, and a background job
+        running in the daemon is not a turn at all — so neither can
+        deadlock or starve this claim. Check and claim share one lock, so
+        two waiters can never both claim and supersede each other's reply.
+        """
+        now = self._now()
         with self._lock:
-            for _tracking_key, (_started, queued_job) in self._active_dispatch_jobs.items():
+            for _tracking_key, (_started, other) in self._active_dispatch_jobs.items():
                 if (
-                    queued_job is not current_job
-                    and str(queued_job.robot_id) == robot_id_text
-                    and queued_job.conversation_key == conversation_key
+                    other is not job
+                    and str(other.robot_id) == str(job.robot_id)
+                    and other.conversation_key == job.conversation_key
+                    and other.conversation_generation > 0
                 ):
-                    return True
-        return False
+                    return 0
+            self._prune_conversation_controllers_locked(now)
+            controller = self._get_or_create_controller_locked(
+                robot.id,
+                job.conversation_key,
+                now,
+            )
+            controller.generation += 1
+            controller.sleeping = False
+            controller.processing = True
+            controller.processing_expires_at = now + timedelta(
+                seconds=self._controller_processing_timeout_seconds(robot)
+            )
+            controller.expires_at = None
+            controller.updated_at = now
+            return controller.generation
 
     def _claim_deferred_generation(
         self,
@@ -675,20 +699,28 @@ class RobotService:
         deadline = time.monotonic() + float(
             settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS
         )
+        generation = 0
         while time.monotonic() < deadline:
-            if not self._conversation_other_dispatch_active(
-                robot.id,
-                job.conversation_key,
-                job,
-            ):
+            generation = self._try_claim_deferred_generation(robot, job)
+            if generation > 0:
                 break
             time.sleep(0.5)
-        generation = self._begin_reply_context_dispatch(
-            robot,
-            job.conversation_key,
-            metadata=job.reply_target.metadata,
-        )
-        return replace(job, conversation_generation=generation)
+        if generation <= 0:
+            # Previous turn never finished within the budget; claim anyway so
+            # this job is not dropped — the stale turn is reaped separately.
+            generation = self._begin_reply_context_dispatch(
+                robot,
+                job.conversation_key,
+                metadata=job.reply_target.metadata,
+            )
+        claimed = replace(job, conversation_generation=generation)
+        # Publish the claim into the active-job registry (keyed by identity of
+        # the pre-claim object) so other deferred waiters see a running turn.
+        with self._lock:
+            for tracking_key, (started, stored) in list(self._active_dispatch_jobs.items()):
+                if stored is job:
+                    self._active_dispatch_jobs[tracking_key] = (started, claimed)
+        return claimed
 
     def _process_chat_job(self, job: QueuedRobotChatJob) -> None:
         queue_wait_seconds = (self._now() - job.enqueued_at).total_seconds()
