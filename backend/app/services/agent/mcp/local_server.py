@@ -333,7 +333,9 @@ class LocalMCPServer:
         self.register_tool(
             name="update_plan",
             description=(
-                "Track multi-step work. Skip for simple 1-2 step tasks. "
+                "Track multi-step work. Any task with more than one step must be "
+                "tracked with a plan so the user can see progress; only skip for "
+                "single-step questions or chat. "
                 "plan: list of {step, status} with status pending/in_progress/completed/cancelled; "
                 "exactly one in_progress. Update it after finishing each step. "
                 "任务结束（全部完成或中途放弃）时调用 update_plan(plan=[]) 直接清除计划，"
@@ -1813,6 +1815,7 @@ class LocalMCPServer:
                 f"command: {result.get('command', '')}"
             )
         has_plan = bool(self._plan_reminder("", reply_ticket_id))
+        request_boundary = self._job_callback_task_boundary(reply_ticket_id)
         if result.get("success"):
             if has_plan:
                 header = (
@@ -1825,10 +1828,11 @@ class LocalMCPServer:
             else:
                 header = (
                     "[Background terminal job completed]\n"
-                    "后台任务已完成。根据结果直接回复用户。"
-                    "如果此命令的结果已在之前的回复中处理过，静默结束即可，不要重复回复。"
+                    "后台任务已完成。"
+                    "对照任务背景判断是否还有未完成的后续步骤：有就立即继续执行，"
+                    "全部完成才回复用户；已在之前回复中处理过则静默结束。"
                 )
-            return f"{header}\n{self._format_job_result(result)}"
+            return f"{header}\n{request_boundary}{self._format_job_result(result)}"
         if has_plan:
             return (
                 "[Background terminal job failed]\n"
@@ -1840,7 +1844,8 @@ class LocalMCPServer:
             )
         return (
             "[Background terminal job failed]\n"
-            "后台任务失败。根据结果回复用户，或换方法重试。\n"
+            "后台任务失败。对照任务背景换方法继续，或确认无更多方法时汇报失败。\n"
+            f"{request_boundary}"
             f"Error: {result.get('error', 'daemon job failed')}\n"
             f"command: {result.get('command', '')}"
         )
@@ -2062,11 +2067,16 @@ class LocalMCPServer:
 
         try:
             from app.services.log_manager import LogManager
+            # The PTY log only carries interactive-terminal content — job
+            # stream output is split into {item}.jobs.log at write time and
+            # reaches the agent through structured job callbacks instead.
             content = LogManager().get_last_lines(item_id, lines)
 
             if not content:
                 return [{"type": "text", "text": f"No log found for {item_id}"}]
 
+            if len(content) > 4000:
+                content = "…[截断，仅保留最新部分]…\n" + content[-4000:]
             return [{"type": "text", "text": f"=== 终端日志 (最后 {lines} 行) ===\n{content}"}]
         except Exception as e:
             return [{"type": "text", "text": f"Error: {e}"}]

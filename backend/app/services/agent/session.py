@@ -2495,6 +2495,28 @@ class AgentSession:
                         "[AgentSession] Failed to reset QQ delivery tracker: item=%s",
                         self.item_id,
                     )
+                # Web chat turns run through the session queue and never get a
+                # reply ticket from the route layer. The ticket owns the plan
+                # scratchpad and background-job tracking (_reply_ticket_id),
+                # so create one here — without it update_plan/run_job callbacks
+                # have nothing to attach to.
+                if not str(input_msg.reply_ticket_id or "").strip():
+                    try:
+                        from app.services.agent.reply_ticket import reply_ticket_manager
+
+                        ticket = reply_ticket_manager.create_for_agent(
+                            agent,
+                            item_id=self.item_id,
+                            handler_id=self.handler_id,
+                            message=input_msg.content,
+                            source_type="web",
+                        )
+                        input_msg.reply_ticket_id = ticket.ticket_id
+                    except Exception:
+                        logger.exception(
+                            "[AgentSession] Failed to create web reply ticket: item=%s",
+                            self.item_id,
+                        )
             _chat_loop_mgr = _ManagedEventLoop()
             loop = _chat_loop_mgr.__enter__()
             loop.run_until_complete(agent.start_mcp_servers())

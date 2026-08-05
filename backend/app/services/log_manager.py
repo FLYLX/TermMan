@@ -53,14 +53,21 @@ class LogManager:
     def get_log_path(self, item_uuid: str) -> str:
         """
         获取日志文件路径
-        
+
         Args:
             item_uuid: 终端UUID
-            
+
         Returns:
             日志文件的绝对路径: log/{item_uuid}.log
         """
         return os.path.join(self.base_dir, f"{item_uuid}.log")
+
+    def get_job_log_path(self, item_uuid: str) -> str:
+        """Background-job stream output lives in its own file
+        ({item_uuid}.jobs.log), separate from the interactive PTY log —
+        the agent reads the PTY log, job results arrive via structured
+        job callbacks instead of log scraping."""
+        return os.path.join(self.base_dir, f"{item_uuid}.jobs.log")
 
     def _get_legacy_log_path(self, item_uuid: str) -> str:
         return str(self._legacy_base_dir / f"{item_uuid}.log")
@@ -79,34 +86,39 @@ class LogManager:
     def write_to_log(self, user_uuid: str, item_uuid: str, content: str) -> bool:
         """
         写入日志到文件
-        
+
         Args:
             user_uuid: 用户UUID (保留参数兼容性)
             item_uuid: 终端UUID
             content: 要写入的内容
-            
+
         Returns:
             是否成功写入
         """
+        return self._write(user_uuid, item_uuid, content, self.get_log_path(item_uuid))
+
+    def write_to_job_log(self, user_uuid: str, item_uuid: str, content: str) -> bool:
+        return self._write(user_uuid, item_uuid, content, self.get_job_log_path(item_uuid))
+
+    def _write(self, user_uuid: str, item_uuid: str, content: str, log_path: str) -> bool:
         lock = self._get_lock(item_uuid)
         with lock:
             try:
-                log_path = self.get_log_path(item_uuid)
                 self.logger.debug(
                     "[LogManager] Writing to log: %s, content length: %s",
                     log_path,
                     len(content),
                 )
-                
+
                 if os.path.exists(log_path):
                     file_size = os.path.getsize(log_path)
                     if file_size >= self.max_log_size:
                         with open(log_path, "w", encoding="utf-8") as f:
                             f.write("""=== 日志文件已超出最大大小，已清空 ===\n\n""")
-                
+
                 with open(log_path, "a", encoding="utf-8") as f:
                     f.write(content)
-                
+
                 return True
             except Exception as e:
                 self.logger.error(f"Failed to write log for terminal {item_uuid}: {e}")

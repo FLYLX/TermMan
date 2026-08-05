@@ -77,10 +77,17 @@ class ItemSubscriberSDK:
         def log_callback(event: SubscriptionEvent):
             data = event.data
             output = f"{data.get('stdout', '')}{data.get('stderr', '')}"
-            
-            if output:
+
+            if not output:
+                return
+            # The daemon tags background-job stream output with source="job";
+            # it goes to the per-item jobs log, keeping the interactive PTY
+            # log clean for the agent's read_terminal_log / command feedback.
+            if data.get("source") == "job":
+                log_manager.write_to_job_log(owner_uuid, item_uuid, output)
+            else:
                 log_manager.write_to_log(owner_uuid, item_uuid, output)
-        
+
         return self.subscribe(
             item_uuid=item_uuid,
             callback=log_callback,
