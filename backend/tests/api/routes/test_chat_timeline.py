@@ -142,52 +142,40 @@ def test_tool_loop_detection_ignores_changing_notes() -> None:
     assert "mcp_local_run_job" in reason
 
 
-def test_explicit_web_qq_send_accepts_visible_context_reference() -> None:
-    from app.api.routes import chat as chat_route
+def test_robot_send_explicit_destination_detection() -> None:
+    from app.services.agent.reply_ticket import robot_send_has_explicit_destination
 
-    assert chat_route._explicit_web_qq_send_requested(
-        "跟群里的 baka 说服务器没开",
-        {"reply_to": "baka", "text": "服务器没开"},
+    assert robot_send_has_explicit_destination(
+        {"target_type": "group", "target_id": "770362397", "text": "hi"}
     )
-    assert chat_route._explicit_web_qq_send_requested(
-        "帮我转发过去",
-        {"reply_to": "baka", "text": "服务器没开"},
+    assert robot_send_has_explicit_destination(
+        {"targets": [{"target_type": "private", "target_id": "2537134688"}], "text": "hi"}
     )
-    assert chat_route._explicit_web_qq_send_requested(
-        "发你好",
-        {"reply_to": "baka", "text": "你好"},
+    assert robot_send_has_explicit_destination(
+        {"reply_to": "baka", "text": "服务器没开"}
     )
-    assert not chat_route._explicit_web_qq_send_requested(
-        "现在呢",
-        {"reply_to": "baka", "text": "误发"},
+    assert robot_send_has_explicit_destination(
+        {"conversation": "group:770362397", "text": "hi"}
     )
+    assert not robot_send_has_explicit_destination({"text": "误发"})
+    assert not robot_send_has_explicit_destination({"text": "误发", "targets": []})
+    assert not robot_send_has_explicit_destination({})
 
 
-def test_short_send_follow_up_inherits_recent_qq_tool_context() -> None:
-    from app.api.routes import chat as chat_route
+def test_send_message_tool_is_core_for_web_turns() -> None:
+    """mcp_robot_send_message is a core tool: exposed on every web turn
+    regardless of message content — no keyword/intent pre-filtering."""
     from app.services.agent.tool_selection import select_tools_for_turn
 
-    history = [
-        chat_route.ChatMessage(role="user", content="帮我往群里发咕咕嘎嘎"),
-        chat_route.ChatMessage(role="assistant", content="你想发什么内容？"),
-    ]
-    query = chat_route._build_tool_selection_query("发你好", history)
     tools = [
-        {
-            "type": "function",
-            "function": {"name": "mcp_robot_send_message"},
-        },
-        {
-            "type": "function",
-            "function": {"name": "mcp_local_execute_command"},
-        },
+        {"type": "function", "function": {"name": "mcp_robot_send_message"}},
+        {"type": "function", "function": {"name": "mcp_local_execute_command"}},
     ]
-    selected = select_tools_for_turn(tools, source="web", query=query)
-
-    assert [tool["function"]["name"] for tool in selected] == [
-        "mcp_robot_send_message"
-    ]
-    assert chat_route._build_tool_selection_query("现在呢", history) == "现在呢"
+    for query in ("发你好", "现在呢", "帮我往群里发咕咕嘎嘎"):
+        selected = select_tools_for_turn(tools, source="web", query=query)
+        assert "mcp_robot_send_message" in [
+            tool["function"]["name"] for tool in selected
+        ]
 
 
 def test_web_chat_keeps_visible_qq_targets_without_active_qq_context() -> None:
@@ -360,7 +348,10 @@ def test_generate_stream_allows_short_web_forward_follow_up_to_visible_qq_target
         )
         payloads = _sse_payloads(chunks)
 
-        assert completion_calls["value"] == 1
+        # The turn no longer hard-stops after a delivery tool call: the agent
+        # finishes on its own (second completion returns the final text),
+        # and the post-delivery suppression drops that final text.
+        assert completion_calls["value"] == 2
         assert len(executed) == 1
         assert executed[0]["reply_to"] == "baka"
         assert executed[0]["text"] == "你好"
@@ -434,41 +425,18 @@ def test_generate_stream_replaces_fabricated_tool_transcript_when_no_tool_ran(
     assert not any("发送成功" in chunk for chunk in chunks)
 
 
-def test_generate_stream_forces_live_terminal_status_tool(
+def test_generate_stream_always_injects_live_terminal_state(
     db: Session,
     monkeypatch,
 ) -> None:
+    """Live terminal state goes into every turn's prompt unconditionally —
+    the LLM reads authoritative state and decides itself, instead of the
+    backend regex-guessing 'is this a status query' and forcing tool calls."""
     from app.api.routes import chat as chat_route
     from app.services.terminal_runtime_state import TerminalRuntimeState
 
     item, handler = _create_linked_item_and_handler(db)
-    completion_calls = {"value": 0}
-    tool_calls = []
-    tool_name = "mcp_local_get_terminal_status"
-    fake_agent = _make_fake_agent(
-        tools=[
-            {
-                "type": "function",
-                "function": {
-                    "name": tool_name,
-                    "description": "Read live terminal state",
-                    "parameters": {"type": "object", "properties": {}},
-                },
-            }
-        ],
-        execute_tool_result=lambda name, args: (
-            tool_calls.append((name, dict(args)))
-            or {
-                "success": True,
-                "result": [
-                    {
-                        "type": "text",
-                        "text": "终端未启动或未连接。Backend 与 Daemon 当前没有 Socket 连接。",
-                    }
-                ],
-            }
-        ),
-    )
+    fake_agent = _make_fake_agent(tools=[])
 
     def chunk(*, content="", tool_calls_value=None):
         return SimpleNamespace(
@@ -484,35 +452,19 @@ def test_generate_stream_forces_live_terminal_status_tool(
         )
 
     def fake_completion(**kwargs):
-        completion_calls["value"] += 1
-        if completion_calls["value"] == 1:
-            return iter([chunk(content="终端开着，当前可用。")])
-        if completion_calls["value"] == 2:
-            assert any(
-                "requires authoritative live terminal evidence" in message["content"]
-                for message in kwargs["messages"]
-                if message.get("role") == "system"
-            )
-            return iter(
-                [
-                    chunk(
-                        tool_calls_value=[
-                            SimpleNamespace(
-                                index=0,
-                                id="call_terminal_status",
-                                function=SimpleNamespace(name=tool_name, arguments="{}"),
-                            )
-                        ]
-                    )
-                ]
-            )
+        assert any(
+            "Authoritative live terminal state" in message["content"]
+            and "active: false" in message["content"]
+            for message in kwargs["messages"]
+            if message.get("role") == "system"
+        )
         return iter([chunk(content="终端没开，Backend 和 Daemon 当前没有连接。")])
 
     monkeypatch.setattr(chat_route, "completion", fake_completion)
     monkeypatch.setattr(
         chat_route,
         "build_chat_turn_messages",
-        lambda *args, **kwargs: [{"role": "user", "content": "终端开了吗"}],
+        lambda *args, **kwargs: [{"role": "user", "content": "随便聊聊"}],
     )
     monkeypatch.setattr(
         chat_route,
@@ -527,7 +479,7 @@ def test_generate_stream_forces_live_terminal_status_tool(
 
     chunks = list(
         chat_route.generate_stream(
-            message="终端开了吗",
+            message="随便聊聊",
             history=[],
             handler=handler,
             item_id=str(item.id),
@@ -535,20 +487,17 @@ def test_generate_stream_forces_live_terminal_status_tool(
         )
     )
 
-    assert completion_calls["value"] == 3
-    assert len(tool_calls) == 1
-    assert tool_calls[0][0] == tool_name
-    assert tool_calls[0][1]["item_id"] == str(item.id)
     assert any("终端没开" in chunk_text for chunk_text in chunks)
-    assert not any("终端开着，当前可用" in chunk_text for chunk_text in chunks)
 
 
-def test_generate_stream_forces_terminal_action_tool_before_claiming_execution(
+def test_generate_stream_no_forced_tool_retry_on_unexecuted_claim(
     db: Session,
     monkeypatch,
 ) -> None:
+    """No regex-intent forced retry: when the agent claims execution without
+    calling a tool, the turn simply ends (fabricated-trace grounding strips
+    the claim). Tool choice is the LLM's, guided by the injected live state."""
     from app.api.routes import chat as chat_route
-    from app.services.agent.session import COMMAND_DISPATCH_FAILURE_MESSAGE
 
     item, handler = _create_linked_item_and_handler(db)
     completion_calls = {"value": 0}
@@ -567,62 +516,22 @@ def test_generate_stream_forces_terminal_action_tool_before_claiming_execution(
         ],
         execute_tool_result=lambda name, args: (
             tool_calls.append((name, dict(args)))
-            or {
-                "success": True,
-                "result": [
-                    {"type": "text", "text": "main terminal is inactive"},
-                    {
-                        "type": "metadata",
-                        "command_dispatch_failed": True,
-                        "reason": "terminal_unavailable",
-                    },
-                ],
-            }
+            or {"success": True, "result": [{"type": "text", "text": "ok"}]}
         ),
     )
 
     def fake_completion(**kwargs):
         completion_calls["value"] += 1
-        if completion_calls["value"] == 1:
-            return iter(
-                [
-                    SimpleNamespace(
-                        choices=[
-                            SimpleNamespace(
-                                delta=SimpleNamespace(
-                                    content="我先执行 ls，等一下给你结果。",
-                                    tool_calls=None,
-                                ),
-                                finish_reason="stop",
-                            )
-                        ]
-                    )
-                ]
-            )
-        assert any(
-            "requires authoritative live terminal evidence" in message["content"]
-            for message in kwargs["messages"]
-            if message.get("role") == "system"
-        )
         return iter(
             [
                 SimpleNamespace(
                     choices=[
                         SimpleNamespace(
                             delta=SimpleNamespace(
-                                content="",
-                                tool_calls=[
-                                    SimpleNamespace(
-                                        index=0,
-                                        id="call_ls",
-                                        function=SimpleNamespace(
-                                            name=tool_name,
-                                            arguments='{"command":"ls"}',
-                                        ),
-                                    )
-                                ],
+                                content="我先执行 ls，等一下给你结果。",
+                                tool_calls=None,
                             ),
-                            finish_reason=None,
+                            finish_reason="stop",
                         )
                     ]
                 )
@@ -638,7 +547,7 @@ def test_generate_stream_forces_terminal_action_tool_before_claiming_execution(
     )
 
     try:
-        chunks = list(
+        list(
             chat_route.generate_stream(
                 message="跑一下ls",
                 history=[],
@@ -650,12 +559,8 @@ def test_generate_stream_forces_terminal_action_tool_before_claiming_execution(
     finally:
         agent_session_manager.remove_session(str(item.id))
 
-    assert completion_calls["value"] == 2
-    assert len(tool_calls) == 1
-    assert tool_calls[0][0] == tool_name
-    assert tool_calls[0][1]["command"] == "ls"
-    assert any(COMMAND_DISPATCH_FAILURE_MESSAGE in chunk_text for chunk_text in chunks)
-    assert not any("等一下给你结果" in chunk_text for chunk_text in chunks)
+    assert completion_calls["value"] == 1
+    assert tool_calls == []
 
 
 def test_abort_chat_preserves_running_background_jobs(monkeypatch) -> None:
@@ -1604,28 +1509,46 @@ def test_generate_stream_stops_after_successful_qq_send_tool(
 
     def fake_completion(**_kwargs):
         completion_calls["value"] += 1
+        if completion_calls["value"] == 1:
+            return iter(
+                [
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(
+                                    content="",
+                                    tool_calls=[
+                                        SimpleNamespace(
+                                            index=0,
+                                            id=f"call_send_{completion_calls['value']}",
+                                            function=SimpleNamespace(
+                                                name=tool_name,
+                                                arguments=json.dumps(
+                                                    {"text": "莫西莫西，我在。"},
+                                                    ensure_ascii=False,
+                                                ),
+                                            ),
+                                        )
+                                    ],
+                                ),
+                                finish_reason=None,
+                            )
+                        ]
+                    )
+                ]
+            )
+        # After the delivery the agent wraps up with a final text; the
+        # post-delivery suppression keeps it from double-sending to QQ.
         return iter(
             [
                 SimpleNamespace(
                     choices=[
                         SimpleNamespace(
                             delta=SimpleNamespace(
-                                content="",
-                                tool_calls=[
-                                    SimpleNamespace(
-                                        index=0,
-                                        id=f"call_send_{completion_calls['value']}",
-                                        function=SimpleNamespace(
-                                            name=tool_name,
-                                            arguments=json.dumps(
-                                                {"text": "莫西莫西，我在。"},
-                                                ensure_ascii=False,
-                                            ),
-                                        ),
-                                    )
-                                ],
+                                content="已回复。",
+                                tool_calls=None,
                             ),
-                            finish_reason=None,
+                            finish_reason="stop",
                         )
                     ]
                 )
@@ -1671,7 +1594,9 @@ def test_generate_stream_stops_after_successful_qq_send_tool(
         reply_ticket_manager.reset()
 
     payloads = _sse_payloads(chunks)
-    assert completion_calls["value"] == 1
+    # Turn continues after the send and ends naturally on the agent's final
+    # text; that text is suppressed (no duplicate QQ delivery).
+    assert completion_calls["value"] == 2
     assert len(executed) == 1
     assert executed[0]["text"] == "莫西莫西，我在。"
     assert sum(payload.get("type") == "agent_qq_reply" for payload in payloads) == 1
@@ -2029,10 +1954,13 @@ def test_generate_stream_web_source_does_not_reuse_stale_qq_reply_ticket(
     assert not any(payload.get("type") == "agent_qq_reply" for payload in payloads)
 
 
-def test_generate_stream_blocks_web_chat_from_reusing_qq_send_target(
+def test_generate_stream_blocks_destination_less_qq_send_from_web(
     db: Session,
     monkeypatch,
 ) -> None:
+    """Web turns have no current QQ conversation: a send_message call with no
+    destination at all is blocked. Calls carrying an explicit destination go
+    through — routing decisions belong to the agent, not to text heuristics."""
     from app.api.routes import chat as chat_route
     from app.plugins.robot.bridge_client import robot_bridge_client
     from app.services.agent.reply_ticket import reply_ticket_manager
@@ -2051,7 +1979,7 @@ def test_generate_stream_blocks_web_chat_from_reusing_qq_send_target(
             }
         ],
         execute_tool_result=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("web chat must not execute accidental QQ send")
+            AssertionError("destination-less send must not execute")
         ),
     )
 
@@ -2070,7 +1998,7 @@ def test_generate_stream_blocks_web_chat_from_reusing_qq_send_target(
                                         id="call_1",
                                         function=SimpleNamespace(
                                             name=tool_name,
-                                            arguments='{"target_type":"group","target_id":"770362397","text":"误发"}',
+                                            arguments='{"text":"误发"}',
                                         ),
                                     )
                                 ],

@@ -1,26 +1,11 @@
 from __future__ import annotations
 
-import re
 import uuid
 from dataclasses import dataclass
 from typing import Any
 
 
 ACTIVE_TERMINAL_STATUSES = frozenset({"running", "waiting_backend"})
-
-TERMINAL_STATUS_QUERY_RE = re.compile(
-    r"(?:终端|控制台).{0,10}(?:开(?:着|了)?|启动|连接|在线|状态|能用)"
-    r"|(?:开(?:着|了)?|启动|连接).{0,6}(?:终端|控制台)",
-    re.IGNORECASE,
-)
-
-TERMINAL_ACTION_REQUEST_RE = re.compile(
-    r"(?:跑一下|执行一下|执行命令|运行一下|帮我运行|帮我执行|"
-    r"安装(?:一下)?|下载(?:一下)?|构建(?:一下)?|解压(?:一下)?|"
-    r"启动(?:服务|服务器)|开服|重启(?:服务|服务器)|停止(?:服务|服务器))"
-    r"|(?:^|\s)(?:ls|pwd|cat|grep|find|ps|java\s+-version)(?:\s|$)",
-    re.IGNORECASE,
-)
 
 
 @dataclass(frozen=True)
@@ -69,18 +54,6 @@ class TerminalRuntimeState:
                 "is not evidence of a live terminal connection.",
             ]
         )
-
-
-def is_terminal_status_query(query: str) -> bool:
-    return bool(TERMINAL_STATUS_QUERY_RE.search(str(query or "")))
-
-
-def is_terminal_action_request(query: str) -> bool:
-    return bool(TERMINAL_ACTION_REQUEST_RE.search(str(query or "")))
-
-
-def terminal_request_requires_live_tool(query: str) -> bool:
-    return is_terminal_status_query(query) or is_terminal_action_request(query)
 
 
 def _room_state(data: dict[str, Any]) -> tuple[bool, int]:

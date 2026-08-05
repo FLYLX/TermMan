@@ -1496,12 +1496,14 @@ def test_recent_live_context_uses_progressive_budget(
         current_message_text="今天群里在聊服务器配置",
     )
 
-    assert "context_budget: baseline" in clear_direct_card
+    # Directly-addressed turns always get the full window; the message text
+    # is never pattern-matched to shrink the budget.
+    assert "context_budget: expanded" in clear_direct_card
     assert "上一条" in clear_direct_card
     assert "context_budget: expanded" in expanded_card
     assert "上一条" in expanded_card
     assert "context_budget: active_window" in active_card
-    assert calls == [24, 48, 24]
+    assert calls == [48, 48, 24]
 
 
 def test_recent_live_context_keeps_user_lines_when_bot_replies_repeat(
@@ -1533,7 +1535,10 @@ def test_recent_live_context_keeps_user_lines_when_bot_replies_repeat(
         current_message_text="回冬啊",
     )
 
-    assert "context_budget: expanded" in card
+    # Active-window turns always get the small sample budget; if the sample
+    # is ambiguous the agent escalates via read_conversation_memory instead
+    # of the budget being guessed from the message text.
+    assert "context_budget: active_window" in card
     assert "你怎么不说话了" in card
     assert card.count(repeated_reply) == 1
     assert "回冬啊" not in card
@@ -3019,9 +3024,12 @@ def test_direct_wakeup_messages_queue_without_superseding_active_reply(
         ),
     )
 
-    assert second.reason == "queued_pending"
-    assert third.reason == "queued_pending"
-    assert len(queued_jobs) == 1
+    assert second.reason == "queued"
+    assert third.reason == "queued"
+    # Directly-addressed messages always dispatch immediately as their own
+    # jobs, even while a turn is active; the turn coordinator serializes
+    # execution so the active reply still completes first.
+    assert len(queued_jobs) == 3
     assert robot_service.conversation_controller_allows_completion_reply(
         robot.id,
         first_job.conversation_key,
@@ -3033,28 +3041,7 @@ def test_direct_wakeup_messages_queue_without_superseding_active_reply(
         item_ids={item.id},
     )
     assert len(snapshots) == 1
-    assert snapshots[0]["pending_count"] == 2
-
-    robot_service._apply_reply_context_result(
-        robot,
-        first_job.conversation_key,
-        robot_message_sent=True,
-        reply_target=first_job.reply_target,
-        conversation_generation=first_job.conversation_generation,
-    )
-    assert robot_service._enqueue_pending_chat_followup(
-        robot=robot,
-        conversation_key=first_job.conversation_key,
-    )
-    assert len(queued_jobs) == 2
-    followup_job = queued_jobs[-1]
-    assert followup_job.conversation_generation > first_job.conversation_generation
-    assert "Bob" in followup_job.message
-    assert "Carol" in followup_job.message
-    assert robot_service.conversation_controller_snapshots(
-        {robot.id},
-        item_ids={item.id},
-    )[0]["pending_count"] == 0
+    assert snapshots[0]["pending_count"] == 0
 
 
 def test_pending_followup_includes_recent_live_context_without_duplicate(
@@ -3381,17 +3368,18 @@ def test_direct_wakeup_pending_messages_continue_after_first_job_sends_no_reply(
         ),
     )
 
-    # Every follow-up (plain chat or fresh @mention) merges into the pending
-    # queue while a turn is in flight; the turn-end drain starts one follow-up.
+    # Passive chatter merges into the pending queue while a turn is in
+    # flight; directly-addressed (@mention) messages dispatch immediately as
+    # their own jobs — the turn coordinator serializes execution.
     assert active_plain.reason == "queued_pending"
-    assert second_wakeup.reason == "queued_pending"
-    assert third_wakeup.reason == "queued_pending"
-    assert len(queued_jobs) == 1
+    assert second_wakeup.reason == "queued"
+    assert third_wakeup.reason == "queued"
+    assert len(queued_jobs) == 3
     snapshots = robot_service.conversation_controller_snapshots(
         {robot.id},
         item_ids={item.id},
     )
-    assert snapshots[0]["pending_count"] == 3
+    assert snapshots[0]["pending_count"] == 1
     assert snapshots[0]["pending_messages"][0]["message_preview"] == "旁边人闲聊一句"
 def test_pure_qq_image_message_is_ignored_before_agent_dispatch(
     db: Session,

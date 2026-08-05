@@ -49,7 +49,12 @@ from app.services.agent.prompts.policy import (
     persist_memory_candidate,
 )
 from app.services.agent.prompts.system import get_system_prompt
-from app.services.agent.reply_ticket import SOURCE_QQ, SOURCE_WEB, reply_ticket_manager
+from app.services.agent.reply_ticket import (
+    SOURCE_QQ,
+    SOURCE_WEB,
+    reply_ticket_manager,
+    robot_send_has_explicit_destination,
+)
 from app.services.agent.robot_delivery import (
     ROBOT_QQ_REPLY_EVENT_TYPE,
     ROBOT_SEND_TOOL_NAME,
@@ -78,11 +83,7 @@ from app.services.agent.tool_grounding import (
 from app.services.agent.tool_selection import select_tools_for_turn
 from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
 from app.services.llm_completion import build_litellm_completion_kwargs
-from app.services.terminal_runtime_state import (
-    get_terminal_runtime_state,
-    is_terminal_action_request,
-    is_terminal_status_query,
-)
+from app.services.terminal_runtime_state import get_terminal_runtime_state
 
 if TYPE_CHECKING:
     from app.services.agent.agent import Agent
@@ -112,13 +113,6 @@ HIDDEN_TOOL_RESULT_NAMES = {
     "mcp_robot_send_message",
 }
 MAX_AUTO_TASKS = 5
-TERMINAL_STATUS_TOOL_NAME = "mcp_local_get_terminal_status"
-TERMINAL_ACTION_EVIDENCE_TOOLS = {
-    "mcp_local_execute_command",
-    "mcp_local_run_job",
-    "mcp_local_interrupt_command",
-    "mcp_local_cancel_job",
-}
 INTERNAL_QQ_BACKGROUND_JOB_PREFIX = (
     "[后台终端任务结果 - 本 QQ 会话]"
 )
@@ -127,30 +121,6 @@ INTERNAL_QQ_BACKGROUND_JOB_ROBOT_PREFIX = "[后台终端任务结果 - 来自 QQ
 INTERNAL_AGENT_RETRY_PREFIX = "[Internal corrective turn]"
 CURRENT_QQ_MESSAGE_MARKER = "[Current QQ message]"
 CQ_CODE_RE = re.compile(r"\[CQ:[^\]]+\]", re.IGNORECASE)
-TASK_WORKFLOW_REQUEST_RE = re.compile(
-    r"(安装|装(?:个|一下|好)?|下载|部署|构建|编译|配置|修改|修复|创建|删除|启动|停止|重启|"
-    r"更新|升级|迁移|解压|上传|运行|执行|测试|开服|换源|"
-    r"下(?:载|一个|一下)?\s*(?:java|jdk|软件|依赖|包|文件|模组|整合包|服务端)|"
-    r"问问|问一下|帮我问|帮忙问|转问|转告后等待|"
-    r"\b(?:install|download|deploy|build|compile|configure|modify|fix|create|"
-    r"delete|start|stop|restart|update|upgrade|migrate|extract|upload|run|"
-    r"execute|test)\b)",
-    re.IGNORECASE,
-)
-ROBOT_SEND_FOLLOW_UP_RE = re.compile(
-    r"(?:转发|发送|发(?!现|生|布|挥|明|烧|呆|票|热)|通知|告诉|(?:跟|向|对).{0,24}说)",
-    re.IGNORECASE,
-)
-ROBOT_CONTEXT_HISTORY_RE = re.compile(
-    r"(?:\[Robot message;|\bQQ\b|QQ群|群里|群号|私聊|转发|发给)",
-    re.IGNORECASE,
-)
-DEFERRED_TASK_RE = re.compile(
-    r"(?:安装|下载|构建|编译|部署|升级|等待|后台|定时|任务|问问|转问|"
-    r"完成后|结束后|成功后|失败后|收到.+后|等.+后|之后再|"
-    r"\b(?:install|download|build|compile|deploy|wait|background|after|when|job)\b)",
-    re.IGNORECASE,
-)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -170,30 +140,6 @@ def _is_internal_agent_callback(message: str, source_type: str) -> bool:
 class ChatMessage(BaseModel):
     role: str
     content: str
-
-
-def _build_tool_selection_query(
-    message: str,
-    history: list[ChatMessage | dict[str, Any]],
-) -> str:
-    current = str(message or "").strip()
-    if not current or len(current) > 80 or not ROBOT_SEND_FOLLOW_UP_RE.search(current):
-        return current
-
-    recent_parts: list[str] = []
-    for entry in history[-6:]:
-        raw_content = (
-            entry.get("content")
-            if isinstance(entry, dict)
-            else getattr(entry, "content", "")
-        )
-        content = str(raw_content or "").strip()
-        if content:
-            recent_parts.append(content)
-    recent_context = "\n".join(recent_parts)
-    if not recent_context or not ROBOT_CONTEXT_HISTORY_RE.search(recent_context):
-        return current
-    return f"{current}\nRecent forwarding context:\n{recent_context}"
 
 
 class ChatRequest(BaseModel):
@@ -414,35 +360,9 @@ def _format_tool_result(result: Any) -> str:
 
 
 
-def _has_active_robot_chat_context(agent: Any) -> bool:
-    context = getattr(agent, "_context", None)
-    return bool(str(getattr(context, "robot_id", "") or "").strip())
-
-
 def _current_reply_ticket_id(agent: Any) -> str:
     context = getattr(agent, "_context", None)
     return str(getattr(context, "reply_ticket_id", "") or "").strip()
-
-
-def _explicit_web_qq_send_requested(message: str, tool_args: dict[str, Any]) -> bool:
-    text = str(message or "").lower()
-    has_explicit_target = bool(
-        str(tool_args.get("target_type") or "").strip()
-        and str(tool_args.get("target_id") or "").strip()
-    )
-    has_context_target = bool(
-        str(tool_args.get("reply_to") or tool_args.get("conversation") or "").strip()
-    )
-    has_target = has_explicit_target or has_context_target
-    if not has_target:
-        return False
-    qq_words = ("qq", "群", "群号", "qq号", "group")
-    has_send_intent = bool(ROBOT_SEND_FOLLOW_UP_RE.search(text)) or any(
-        word in text for word in ("send", "message")
-    )
-    return has_send_intent and (
-        has_context_target or any(word in text for word in qq_words)
-    )
 
 
 def _ticket_delivery_trace() -> dict[str, Any]:
@@ -1065,7 +985,6 @@ def _generate_stream_unserialized(
     if agent_context is not None:
         agent_context.robot_backend_target_resolution_enabled = bool(
             normalized_source_type == SOURCE_WEB
-            and ROBOT_SEND_FOLLOW_UP_RE.search(str(message or ""))
             and any(
                 tool.get("function", {}).get("name") == ROBOT_SEND_TOOL_NAME
                 for tool in tools
@@ -1081,23 +1000,23 @@ def _generate_stream_unserialized(
         latest_only_context=latest_only_context,
         pending_context=pending_context,
     )
-    terminal_status_required = is_terminal_status_query(message)
-    terminal_action_required = is_terminal_action_request(message)
-    if terminal_status_required:
-        try:
-            live_terminal_state = get_terminal_runtime_state(item_id)
-            messages.insert(
-                max(len(messages) - 1, 0),
-                {
-                    "role": "system",
-                    "content": live_terminal_state.prompt_context(),
-                },
-            )
-        except Exception:
-            logger.exception(
-                "[Chat] Failed to inject live terminal state: item=%s",
-                item_id,
-            )
+    # Authoritative live terminal state is cheap (one daemon HTTP call) and
+    # prevents stale-memory answers about terminal status; inject it for
+    # every turn instead of guessing intent from the message text.
+    try:
+        live_terminal_state = get_terminal_runtime_state(item_id)
+        messages.insert(
+            max(len(messages) - 1, 0),
+            {
+                "role": "system",
+                "content": live_terminal_state.prompt_context(),
+            },
+        )
+    except Exception:
+        logger.exception(
+            "[Chat] Failed to inject live terminal state: item=%s",
+            item_id,
+        )
     reply_ticket_prompt = reply_ticket_manager.build_prompt(reply_ticket.ticket_id)
     if reply_ticket_prompt:
         messages.insert(1, {"role": "system", "content": reply_ticket_prompt})
@@ -1142,7 +1061,6 @@ def _generate_stream_unserialized(
     tool_called_this_turn = False
     called_tool_names: set[str] = set()
     called_tool_sequence: list[str] = []
-    terminal_grounding_retry_used = False
     delivery_tool_sent_by_integration = False
     qq_message_sent_this_turn = False
     confirmed_external_delivery_to_qq = False
@@ -1395,48 +1313,6 @@ def _generate_stream_unserialized(
 
             if not ordered_tool_calls:
                 final_response = strip_think_tags(guard_fabricated_tool_trace(iteration_content))
-                missing_terminal_evidence = bool(
-                    (
-                        terminal_status_required
-                        and TERMINAL_STATUS_TOOL_NAME not in called_tool_names
-                    )
-                    or (
-                        terminal_action_required
-                        and not called_tool_names.intersection(
-                            TERMINAL_ACTION_EVIDENCE_TOOLS
-                        )
-                    )
-                )
-                if (
-                    missing_terminal_evidence
-                    and not terminal_grounding_retry_used
-                    and not finalization_only
-                    and not internal_agent_callback
-                ):
-                    if final_response:
-                        messages.append(
-                            {"role": "assistant", "content": final_response}
-                        )
-                    required_tool = (
-                        TERMINAL_STATUS_TOOL_NAME
-                        if terminal_status_required
-                        and TERMINAL_STATUS_TOOL_NAME not in called_tool_names
-                        else "mcp_local_execute_command or mcp_local_run_job"
-                    )
-                    messages.append(
-                        {
-                            "role": "system",
-                            "content": (
-                                "This request requires authoritative live terminal evidence, "
-                                f"but you did not call {required_tool}. Call the appropriate "
-                                "terminal tool now. Do not claim the terminal is open, a command "
-                                "was sent, or output is pending without a tool result."
-                            ),
-                        }
-                    )
-                    terminal_grounding_retry_used = True
-                    final_response = ""
-                    continue
                 if finalization_only and not final_response:
                     break
                 delivery_retry_decision = None
@@ -1647,14 +1523,11 @@ def _generate_stream_unserialized(
 
                 if (
                     tool_name == ROBOT_SEND_TOOL_NAME
-                    and (
-                        reply_ticket.source_type == SOURCE_WEB
-                        or not _has_active_robot_chat_context(agent)
-                    )
-                    and not _explicit_web_qq_send_requested(message, tool_args)
+                    and reply_ticket.source_type != SOURCE_QQ
+                    and not robot_send_has_explicit_destination(tool_args)
                 ):
                     logger.info(
-                        "[Chat] Blocked accidental QQ send from source=%s item=%s",
+                        "[Chat] Blocked destination-less QQ send from source=%s item=%s",
                         reply_ticket.source_type,
                         item_id,
                     )
@@ -1750,7 +1623,6 @@ def _generate_stream_unserialized(
                 )
                 if command_dispatch_pending or is_background_job_started_result(result):
                     pending_async_delivery = True
-                stop_after_final_robot_delivery = False
                 if result_text and fallback_is_delivery_result(result_text):
                     if tool_name == ROBOT_SEND_TOOL_NAME:
                         confirmed_external_delivery_to_qq = True
@@ -1771,7 +1643,11 @@ def _generate_stream_unserialized(
                             },
                         )
                         yield _to_sse(reply_event)
-                        stop_after_final_robot_delivery = True
+                        # No early return here: the agent continues the turn,
+                        # delivers any remaining targets, and ends the task by
+                        # reporting (or NRN) on its own. Duplicate delivery is
+                        # already prevented by ticket.external_report_sent plus
+                        # final-response suppression — not by cutting the turn.
 
                 if result_text and not command_dispatch_pending:
                     if hide_tool_details:
@@ -1836,11 +1712,6 @@ def _generate_stream_unserialized(
                         reply_ticket.ticket_id
                     ):
                         delivery_tool_sent_by_integration = True
-
-                if stop_after_final_robot_delivery:
-                    _broadcast_agent_status(item_id, "idle")
-                    yield _to_sse({"done": True})
-                    return
 
                 if (
                     tool_name in COMMAND_TOOL_NAMES

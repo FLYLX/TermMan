@@ -60,11 +60,6 @@ USER_INSTRUCTION_TRIGGER_REASONS = frozenset({
     "private_chat",
     "active_chat_window",
 })
-TASK_CONTROL_MESSAGE_RE = re.compile(
-    r"(先别|别下|不要下|暂停|取消|停一下|停止下载|换源|换个源|"
-    r"换(?:个)?(?:国内|国外)?镜像|改用.{0,20}镜像|\b(?:pause|cancel|stop)\b)",
-    re.IGNORECASE,
-)
 RECENT_LIVE_CONTEXT_ACTIVE_LINES = 6
 RECENT_LIVE_CONTEXT_BASE_LINES = 4
 RECENT_LIVE_CONTEXT_EXPANDED_LINES = 12
@@ -106,16 +101,6 @@ MENTION_MATCH_MODE_BOT = "bot"
 DEFAULT_MENTION_MATCH_MODE = MENTION_MATCH_MODE_BOT
 QQ_AGENT_IGNORED_CQ_TYPES = frozenset({"image"})
 CQ_CODE_PATTERN = re.compile(r"\[CQ:([A-Za-z0-9_]+)(?:,[^\]]*)?\]")
-CONTEXT_DEPENDENT_TEXT_RE = re.compile(
-    r"("
-    r"为什么|为啥|怎么回事|什么意思|啥意思|然后呢|后来呢|继续|接着|刚才|刚刚|上面|前面|之前|"
-    r"这个|那个|这事|那事|这下|那现在|然后|所以呢|咋办|怎么办|怎么弄|怎么搞|"
-    r"好了吗|完了吗|结束了吗|成功了吗|失败了吗|装好了吗|换好了吗|行了吗|可以了吗|"
-    r"是不是|对不对|对吗|是吗|呢|吗|"
-    r"\b(?:why|continue|again|then|that|this|it|he|she|done|ready|status|what about)\b"
-    r")",
-    re.IGNORECASE,
-)
 ALLOWED_MENTION_MATCH_MODES = frozenset(
     {
         MENTION_MATCH_MODE_BOT,
@@ -657,6 +642,54 @@ class RobotService:
                 DISPATCH_WORKER_MAX_COUNT,
             )
 
+    def _conversation_other_dispatch_active(
+        self,
+        robot_id: uuid.UUID | str,
+        conversation_key: str,
+        current_job: "QueuedRobotChatJob",
+    ) -> bool:
+        robot_id_text = str(robot_id)
+        with self._lock:
+            for _tracking_key, (_started, queued_job) in self._active_dispatch_jobs.items():
+                if (
+                    queued_job is not current_job
+                    and str(queued_job.robot_id) == robot_id_text
+                    and queued_job.conversation_key == conversation_key
+                ):
+                    return True
+        return False
+
+    def _claim_deferred_generation(
+        self,
+        robot: Robot,
+        job: QueuedRobotChatJob,
+    ) -> QueuedRobotChatJob:
+        """Claim the conversation generation for a job enqueued with the
+        deferred marker (generation=0).
+
+        The job skipped the pending-merge queue so it could reach a turn
+        quickly (cancel/redirect), but the generation — the delivery right —
+        only transfers once the previous turn of this conversation has
+        finished, so an in-flight reply is never suppressed by a queued job.
+        """
+        deadline = time.monotonic() + float(
+            settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS
+        )
+        while time.monotonic() < deadline:
+            if not self._conversation_other_dispatch_active(
+                robot.id,
+                job.conversation_key,
+                job,
+            ):
+                break
+            time.sleep(0.5)
+        generation = self._begin_reply_context_dispatch(
+            robot,
+            job.conversation_key,
+            metadata=job.reply_target.metadata,
+        )
+        return replace(job, conversation_generation=generation)
+
     def _process_chat_job(self, job: QueuedRobotChatJob) -> None:
         queue_wait_seconds = (self._now() - job.enqueued_at).total_seconds()
         record_robot_event(
@@ -680,6 +713,11 @@ class RobotService:
                     "Robot or item no longer exists.",
                 )
                 return
+
+            if job.conversation_generation <= 0 and (
+                job.direct_reply_trigger or job.reply_context_active
+            ):
+                job = self._claim_deferred_generation(robot, job)
 
             try:
                 dispatch_requires_awake = (
@@ -1478,7 +1516,13 @@ class RobotService:
                 reply_context_active=reply_context_active,
                 mention_match_mode=mention_match_mode,
             )
-            task_control_message = bool(TASK_CONTROL_MESSAGE_RE.search(message_text))
+            # Directly-addressed messages (mention/reply/private) always
+            # dispatch immediately, even while a turn is running — the user
+            # is talking to the bot NOW (e.g. cancel, redirect). Only
+            # passively-triggered active-window chatter merges into the
+            # pending queue. The trigger path is the structural signal; the
+            # message text is never pattern-matched for intent.
+            direct_address = trigger_reason in PENDING_DIRECT_WAKE_TRIGGER_REASONS
             # Merge chat into a running turn only when a dispatch turn is
             # actually running/queued. Background jobs alone must not hold
             # chat hostage: jobs run in the daemon while the backend is free,
@@ -1490,7 +1534,7 @@ class RobotService:
                 command.mode == "chat"
                 and turn_actively_busy
                 and reply_context_active
-                and not task_control_message
+                and not direct_address
             ):
                 pending_size = self._record_pending_chat_input(
                     robot=robot,
@@ -1524,11 +1568,19 @@ class RobotService:
                 )
 
             if direct_reply_trigger or reply_context_active:
-                conversation_generation = self._begin_reply_context_dispatch(
-                    robot,
-                    conversation_key,
-                    metadata=message.reply_target.metadata,
-                )
+                if direct_address and turn_actively_busy:
+                    # Deferred generation claim: the job enters the dispatch
+                    # queue right away (no pending-merge wait), but only
+                    # claims the conversation generation when its turn
+                    # actually starts — the in-flight turn keeps its delivery
+                    # right until then. See _process_chat_job.
+                    conversation_generation = 0
+                else:
+                    conversation_generation = self._begin_reply_context_dispatch(
+                        robot,
+                        conversation_key,
+                        metadata=message.reply_target.metadata,
+                    )
 
             queued_job = QueuedRobotChatJob(
                 robot_id=robot.id,
@@ -2165,13 +2217,6 @@ class RobotService:
                 "caller requested a fixed recent-context budget",
             )
 
-        if self._message_needs_progressive_context(message_text):
-            return (
-                RECENT_LIVE_CONTEXT_EXPANDED_LINES,
-                "expanded",
-                "current QQ message is short, referential, or asks about prior status/context",
-            )
-
         if trigger_reason == "active_chat_window":
             return (
                 RECENT_LIVE_CONTEXT_ACTIVE_LINES,
@@ -2179,26 +2224,14 @@ class RobotService:
                 "active wake window needs a small same-conversation sample to decide reply vs sleep",
             )
 
+        # Static budget for directly-addressed turns: never shrink context
+        # by guessing whether the message "needs" it — the LLM decides what
+        # is relevant; starving it of history only forces clarification loops.
         return (
-            RECENT_LIVE_CONTEXT_BASE_LINES,
-            "baseline",
-            "keep a small same-conversation window for natural continuity",
+            RECENT_LIVE_CONTEXT_EXPANDED_LINES,
+            "expanded",
+            "full recent same-conversation window",
         )
-
-    @staticmethod
-    def _message_needs_progressive_context(message_text: str) -> bool:
-        compact = re.sub(
-            r"[\s\uFF0C\u3002\uFF01\uFF1F!,.\u3001~\uFF5E\u2026]+",
-            "",
-            str(message_text or "").strip(),
-        )
-        if not compact:
-            return False
-        if CONTEXT_DEPENDENT_TEXT_RE.search(compact):
-            return True
-        if len(compact) <= 8 and compact not in {"你好", "hello", "hi", "在吗"}:
-            return True
-        return False
 
     def _recent_context_lines_without_current(
         self,

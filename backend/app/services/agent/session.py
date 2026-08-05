@@ -64,10 +64,7 @@ from app.services.agent.token_usage import token_usage_tracker
 from app.services.agent.turn_coordinator import agent_turn_coordinator, agent_turn_key
 from app.services.llm_completion import build_litellm_completion_kwargs
 from app.services.terminal_command_state import terminal_command_state_manager
-from app.services.terminal_runtime_state import (
-    get_terminal_runtime_state,
-    is_terminal_status_query,
-)
+from app.services.terminal_runtime_state import get_terminal_runtime_state
 
 logger = logging.getLogger(__name__)
 
@@ -1361,13 +1358,22 @@ class AgentSession:
             ):
                 context.reply_ticket_id = ""
 
-    def _robot_send_blocked_by_reply_ticket(self, ticket_id: str, tool_name: str) -> str:
+    def _robot_send_blocked_by_reply_ticket(
+        self, ticket_id: str, tool_name: str, tool_args: dict | None = None
+    ) -> str:
         if tool_name != ROBOT_SEND_TOOL_NAME:
             return ""
         ticket = self._get_reply_ticket(ticket_id)
         if not ticket:
             return ""
         if ticket.source_type == "qq":
+            return ""
+        # Non-QQ turns have no "current QQ conversation"; the send tool must
+        # carry an explicit destination (target/targets/reply_to). The agent
+        # decides who to send to — this only rejects destination-less calls.
+        from app.services.agent.reply_ticket import robot_send_has_explicit_destination
+
+        if robot_send_has_explicit_destination(tool_args or {}):
             return ""
         return (
             "\u5df2\u62e6\u622a QQ \u53d1\u9001\uff1a"
@@ -2780,18 +2786,19 @@ class AgentSession:
             pending_context=pending_context,
         )
         query = input_msg.query or input_msg.content
-        if is_terminal_status_query(query):
-            try:
-                state = get_terminal_runtime_state(self.item_id)
-                messages.insert(
-                    max(len(messages) - 1, 0),
-                    {"role": "system", "content": state.prompt_context()},
-                )
-            except Exception:
-                logger.exception(
-                    "[AgentSession] Failed to inject live terminal state: item=%s",
-                    self.item_id,
-                )
+        # Always inject authoritative live terminal state (cheap daemon call);
+        # never guess "status query" intent from the message text.
+        try:
+            state = get_terminal_runtime_state(self.item_id)
+            messages.insert(
+                max(len(messages) - 1, 0),
+                {"role": "system", "content": state.prompt_context()},
+            )
+        except Exception:
+            logger.exception(
+                "[AgentSession] Failed to inject live terminal state: item=%s",
+                self.item_id,
+            )
         self.inject_active_jobs_prompt_context(messages)
         return messages
 
@@ -2980,6 +2987,7 @@ class AgentSession:
             robot_send_source_error = self._robot_send_blocked_by_reply_ticket(
                 reply_ticket_id,
                 tool_name,
+                tool_args,
             )
             if robot_send_source_error:
                 logger.info(

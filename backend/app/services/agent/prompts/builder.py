@@ -130,12 +130,6 @@ ALWAYS_ON_MEMORY_RECORD_TYPES = {
     "conversation_auto_promoted",
     "robot_agent_saved",
 }
-CONTEXT_DEPENDENT_QUERY_RE = re.compile(
-    r"(?:为什么|怎么回事|什么意思|然后呢|后来呢|继续|接着|刚才|刚刚|上面|前面|之前|"
-    r"这个|那个|这件事|那件事|现在呢|怎么样了|完成了吗|好了吗|成功了吗|失败了吗|"
-    r"\b(?:why|continue|again|then|that|this|it|he|she|done|ready|status|what about)\b)",
-    re.IGNORECASE,
-)
 
 
 def _build_skill_prompt(
@@ -379,23 +373,13 @@ def _event_to_model_message(event: dict[str, Any]) -> dict[str, str] | None:
     return None
 
 
-def _message_needs_expanded_history(message: str) -> bool:
-    compact = re.sub(r"\s+", "", str(message or "").strip())
-    if not compact:
-        return False
-    if CONTEXT_DEPENDENT_QUERY_RE.search(compact):
-        return True
-    return len(compact) <= 6 and bool(
-        re.search(r"(?:呢|吗|了|它|他|她|这|那)$", compact, flags=re.IGNORECASE)
-    )
-
-
 def _recent_context_limit(message: str, maximum: int) -> int:
+    # Static history budget: never guess from the message text whether it
+    # "needs" context. The LLM decides what is relevant; shrinking history by
+    # keyword-matching only produces avoidable clarification loops.
     if maximum <= 0:
         return 0
-    if _message_needs_expanded_history(message):
-        return maximum
-    return min(DEFAULT_RECENT_CONTEXT_MESSAGES, maximum)
+    return maximum
 
 
 def _latest_session_summary_from_messages(
@@ -412,7 +396,7 @@ def _build_memory_retrieval_query(
     recent_context_messages: list[dict[str, str]],
 ) -> str:
     normalized_query = str(query or "").strip()
-    if not normalized_query or not _message_needs_expanded_history(normalized_query):
+    if not normalized_query:
         return normalized_query
 
     prior_parts: list[str] = []

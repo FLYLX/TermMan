@@ -74,6 +74,33 @@ def extract_explicit_qq_targets(message: str) -> list[dict[str, str]]:
     return targets
 
 
+def robot_send_has_explicit_destination(tool_args: dict[str, Any]) -> bool:
+    """Whether an mcp_robot_send_message call carries an explicit destination.
+
+    QQ-originated turns reply to the current conversation with no target args
+    (the robot MCP server locks those turns to that conversation). Every other
+    source has no "current QQ conversation", so the call must name where to go:
+    target_type+target_id, a targets array, or a reply_to/conversation
+    reference that the robot MCP server resolves against visible context
+    targets. Anything else is a bare send with no destination.
+    """
+    if not isinstance(tool_args, dict):
+        return False
+    if str(tool_args.get("target_id") or "").strip():
+        return True
+    if str(tool_args.get("reply_to") or "").strip():
+        return True
+    if str(tool_args.get("conversation") or "").strip():
+        return True
+    targets = tool_args.get("targets")
+    if isinstance(targets, list):
+        return any(
+            isinstance(target, dict) and str(target.get("target_id") or "").strip()
+            for target in targets
+        )
+    return False
+
+
 def ticket_to_payload(ticket: ReplyTicket) -> dict[str, Any]:
     payload = asdict(ticket)
     for key in ("created_at", "updated_at", "delivered_at"):
