@@ -3024,12 +3024,11 @@ def test_direct_wakeup_messages_queue_without_superseding_active_reply(
         ),
     )
 
-    assert second.reason == "queued"
-    assert third.reason == "queued"
-    # Directly-addressed messages always dispatch immediately as their own
-    # jobs, even while a turn is active; the turn coordinator serializes
-    # execution so the active reply still completes first.
-    assert len(queued_jobs) == 3
+    assert second.reason == "queued_pending"
+    assert third.reason == "queued_pending"
+    # All chat messages merge into the pending queue while a turn is in
+    # flight, regardless of trigger; the batch drains at turn end.
+    assert len(queued_jobs) == 1
     assert robot_service.conversation_controller_allows_completion_reply(
         robot.id,
         first_job.conversation_key,
@@ -3041,7 +3040,7 @@ def test_direct_wakeup_messages_queue_without_superseding_active_reply(
         item_ids={item.id},
     )
     assert len(snapshots) == 1
-    assert snapshots[0]["pending_count"] == 0
+    assert snapshots[0]["pending_count"] == 2
 
 
 def test_pending_followup_includes_recent_live_context_without_duplicate(
@@ -3059,14 +3058,14 @@ def test_pending_followup_includes_recent_live_context_without_duplicate(
         },
     )
     queued_jobs: list[Any] = []
-    current_question = "\u8c01\u662f\u732b\u5a18"
-    fact = "\u732b\u5a18\u5c31\u662f\u6708\u5f71\u6c49\u5821\u732b\u5a18"
-    confirmation = "\u6536\u5230\uff0c\u732b\u5a18\u5c31\u662f\u6708\u5f71\u6c49\u5821\u732b\u5a18"
+    current_question = "谁是猫娘"
+    fact = "猫娘就是月影汉堡猫娘"
+    confirmation = "收到，猫娘就是月影汉堡猫娘"
 
     monkeypatch.setattr(
         robot_service,
-        "_enqueue_chat_job",
-        lambda job: queued_jobs.append(job) or True,
+        "_dispatch_pending_batch_to_session_queue",
+        lambda **kwargs: queued_jobs.append(kwargs) or True,
     )
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
     monkeypatch.setattr(
@@ -3095,7 +3094,7 @@ def test_pending_followup_includes_recent_live_context_without_duplicate(
         conversation_key="group:770362397",
     )
     assert len(queued_jobs) == 1
-    message = queued_jobs[0].message
+    message = queued_jobs[0]["composed_message"]
     assert "[Recent QQ live context; background only" in message
     assert fact in message
     assert confirmation in message
@@ -3112,8 +3111,8 @@ def test_pending_qq_batch_keeps_senders_and_isolates_conversations(
 
     monkeypatch.setattr(
         robot_service,
-        "_enqueue_chat_job",
-        lambda job: queued_jobs.append(job) or True,
+        "_dispatch_pending_batch_to_session_queue",
+        lambda **kwargs: queued_jobs.append(kwargs) or True,
     )
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
     monkeypatch.setattr(robot_conversation_memory, "read_recent", lambda *_args, **_kwargs: "")
@@ -3150,7 +3149,7 @@ def test_pending_qq_batch_keeps_senders_and_isolates_conversations(
         conversation_key="group:g1",
     )
     assert len(queued_jobs) == 1
-    message = queued_jobs[0].message
+    message = queued_jobs[0]["composed_message"]
     assert "source=QQ; conversation=group:g1" in message
     assert "sender=Alice (u1)" in message
     assert "sender_key=onebot_v11:group:g1:u1" in message
@@ -3158,7 +3157,7 @@ def test_pending_qq_batch_keeps_senders_and_isolates_conversations(
     assert "sender_key=onebot_v11:group:g1:u2" in message
     assert "A 的问题" in message
     assert "B 的问题" in message
-    assert queued_jobs[0].reply_target.metadata["allow_multiple_reply_messages"] is True
+    assert queued_jobs[0]["followup_reply_target"].metadata["allow_multiple_reply_messages"] is True
     assert "Carol" not in message
     assert "另一个群的问题" not in message
 
@@ -3189,8 +3188,8 @@ def test_pending_qq_batch_merges_same_sender_into_one_reply_intent(
 
     monkeypatch.setattr(
         robot_service,
-        "_enqueue_chat_job",
-        lambda job: queued_jobs.append(job) or True,
+        "_dispatch_pending_batch_to_session_queue",
+        lambda **kwargs: queued_jobs.append(kwargs) or True,
     )
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
     monkeypatch.setattr(robot_conversation_memory, "read_recent", lambda *_args, **_kwargs: "")
@@ -3214,11 +3213,11 @@ def test_pending_qq_batch_merges_same_sender_into_one_reply_intent(
     )
     assert len(queued_jobs) == 1
     job = queued_jobs[0]
-    assert job.reply_target.metadata["allow_multiple_reply_messages"] is False
+    assert job["followup_reply_target"].metadata["allow_multiple_reply_messages"] is False
     # Latest-instruction-wins: the older same-sender line is superseded.
-    assert "Are you there?" not in job.message
-    assert "Reply now" in job.message
-    assert "one evolving intent" in job.message
+    assert "Are you there?" not in job["composed_message"]
+    assert "Reply now" in job["composed_message"]
+    assert "one evolving intent" in job["composed_message"]
 
 
 def test_plain_task_control_message_dispatches_immediately_while_processing(
@@ -3368,18 +3367,17 @@ def test_direct_wakeup_pending_messages_continue_after_first_job_sends_no_reply(
         ),
     )
 
-    # Passive chatter merges into the pending queue while a turn is in
-    # flight; directly-addressed (@mention) messages dispatch immediately as
-    # their own jobs — the turn coordinator serializes execution.
+    # Every follow-up (plain chat or fresh @mention) merges into the pending
+    # queue while a turn is in flight; the turn-end drain starts one follow-up.
     assert active_plain.reason == "queued_pending"
-    assert second_wakeup.reason == "queued"
-    assert third_wakeup.reason == "queued"
-    assert len(queued_jobs) == 3
+    assert second_wakeup.reason == "queued_pending"
+    assert third_wakeup.reason == "queued_pending"
+    assert len(queued_jobs) == 1
     snapshots = robot_service.conversation_controller_snapshots(
         {robot.id},
         item_ids={item.id},
     )
-    assert snapshots[0]["pending_count"] == 1
+    assert snapshots[0]["pending_count"] == 3
     assert snapshots[0]["pending_messages"][0]["message_preview"] == "旁边人闲聊一句"
 def test_pure_qq_image_message_is_ignored_before_agent_dispatch(
     db: Session,
@@ -3447,7 +3445,13 @@ def test_qq_image_segments_are_removed_from_agent_and_pending_messages(
     db.commit()
 
     queued_jobs: list[Any] = []
+    dispatched_batches: list[Any] = []
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", lambda job: queued_jobs.append(job) or True)
+    monkeypatch.setattr(
+        robot_service,
+        "_dispatch_pending_batch_to_session_queue",
+        lambda **kwargs: dispatched_batches.append(kwargs) or True,
+    )
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
 
     first = robot_service.handle_inbound_message(
@@ -3509,8 +3513,9 @@ def test_qq_image_segments_are_removed_from_agent_and_pending_messages(
         conversation_key=first_job.conversation_key,
     ) is True
 
-    assert len(queued_jobs) == 2
-    pending_message = queued_jobs[-1].message
+    assert len(queued_jobs) == 1
+    assert len(dispatched_batches) == 1
+    pending_message = dispatched_batches[-1]["composed_message"]
     assert "[CQ:image" not in pending_message
     assert (
         "1. sender=Carol (u3); sender_key=onebot_v11:group:g-image-mixed:u3; "
@@ -3545,7 +3550,13 @@ def test_pending_chat_queue_keeps_latest_five_messages(
     db.commit()
 
     queued_jobs: list[Any] = []
+    dispatched_batches: list[Any] = []
     monkeypatch.setattr(robot_service, "_enqueue_chat_job", lambda job: queued_jobs.append(job) or True)
+    monkeypatch.setattr(
+        robot_service,
+        "_dispatch_pending_batch_to_session_queue",
+        lambda **kwargs: dispatched_batches.append(kwargs) or True,
+    )
     monkeypatch.setattr(robot_service, "_conversation_impression_card", lambda **_: "")
     first = robot_service.handle_inbound_message(
         db,
@@ -3587,8 +3598,9 @@ def test_pending_chat_queue_keeps_latest_five_messages(
         conversation_key=first_job.conversation_key,
     ) is True
 
-    assert len(queued_jobs) == 2
-    message = queued_jobs[-1].message
+    assert len(queued_jobs) == 1
+    assert len(dispatched_batches) == 1
+    message = dispatched_batches[-1]["composed_message"]
     assert "pending 1" not in message
     assert "pending 2" not in message
     for index in range(3, 8):
@@ -4373,14 +4385,14 @@ def test_failed_job_drains_pending_chat_inputs_into_followup(
     enqueued: list[object] = []
     monkeypatch.setattr(
         robot_service,
-        "_enqueue_chat_job",
-        lambda followup_job: enqueued.append(followup_job) or True,
+        "_dispatch_pending_batch_to_session_queue",
+        lambda **kwargs: enqueued.append(kwargs) or True,
     )
 
     robot_service._process_chat_job(job)
 
     assert input_merge_buffer.count(scope_item, scope_key) == 0
-    assert enqueued, "failed job should drain pending inputs into a followup job"
+    assert enqueued, "failed job should drain pending inputs into a followup batch"
 
 
 def test_empty_direct_reply_retries_once_with_corrective_note(

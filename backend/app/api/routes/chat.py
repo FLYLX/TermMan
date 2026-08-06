@@ -1972,6 +1972,7 @@ async def chat_stream(
         content=request.message,
         query=request.message,
         completion_callback=_on_complete,
+        source_label="web 聊天",
     )
     agent_session.add_output_callback(_on_output)
     import asyncio as _aio

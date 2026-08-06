@@ -552,6 +552,14 @@ class InputMessage:
     # Human-readable request shown in the plan table; structured alternative
     # to parsing the agent-facing wrapper text.
     request_display: str = ""
+    # Source identity bound at enqueue time (e.g. "QQ 私聊 2537134688",
+    # "web 聊天"). The merge layer never guesses origins: whoever enqueues
+    # labels the input, and the batch prompt groups sections by this label so
+    # the agent can see which message belongs to which reply route.
+    source_label: str = ""
+    # All reply routes merged into this input (ticket ids, in arrival order).
+    # Set by _merge_input_batch; delivery fans out per route afterwards.
+    merged_ticket_ids: tuple[str, ...] = ()
 
 
 @dataclass
@@ -2065,13 +2073,17 @@ class AgentSession:
             InputType.SCHEDULED_TASK: "定时任务",
         }
         sections: list[str] = []
+        merged_ticket_ids: list[str] = []
         for msg in batch:
-            label = source_labels.get(msg.input_type, msg.input_type.value)
+            label = msg.source_label or source_labels.get(
+                msg.input_type, msg.input_type.value
+            )
             body = (msg.content or msg.raw_content or "").strip()
             if not body:
                 continue
-            query_hint = f" ({msg.query})" if msg.query and msg.query != body else ""
-            sections.append(f"[{label}{query_hint}]" + "\n" + body)
+            sections.append(f"[{label}]\n" + body)
+            if msg.reply_ticket_id and msg.reply_ticket_id not in merged_ticket_ids:
+                merged_ticket_ids.append(msg.reply_ticket_id)
 
         combined_content = "\n---\n".join(sections) if sections else ""
 
@@ -2096,6 +2108,7 @@ class AgentSession:
             query=f"batch:{len(batch)} inputs merged",
             reply_ticket_id=primary_ticket,
             callback=last_callback,
+            merged_ticket_ids=tuple(merged_ticket_ids),
         )
 
     def process_input(self, input_msg: InputMessage):
@@ -2474,6 +2487,30 @@ class AgentSession:
                 clear_integration_chat_contexts(agent, pending_integration_contexts)
             _loop_mgr.__exit__(None, None, None)
 
+    def _setup_robot_context_from_ticket(self, agent: Agent, ticket: Any) -> None:
+        """Rebuild the robot integration context from a persisted QQ reply
+        ticket, so a session turn that owns this ticket (e.g. a merged
+        pending batch) can use QQ send tools aimed at the right conversation.
+        The ticket carries every field the live dispatch path would have
+        injected from the inbound message."""
+        from app.plugins.robot.contracts import RobotReplyTarget
+        from app.services.agent.integrations import setup_integration_chat_contexts
+
+        reply_target = RobotReplyTarget.model_validate(ticket.reply_target or {})
+        setup_integration_chat_contexts(
+            agent,
+            {
+                "robot": {
+                    "robot_id": ticket.robot_id,
+                    "sender_key": ticket.sender_key,
+                    "reply_target": reply_target,
+                    "conversation_key": ticket.conversation_key,
+                    "conversation_generation": ticket.conversation_generation,
+                    "reply_requires_awake": False,
+                }
+            },
+        )
+
     def _process_chat_input(self, input_msg: InputMessage, agent: Agent):
         if input_msg.callback:
             self.add_output_callback(input_msg.callback)
@@ -2517,6 +2554,33 @@ class AgentSession:
                             "[AgentSession] Failed to create web reply ticket: item=%s",
                             self.item_id,
                         )
+            # QQ-sourced turn (e.g. merged pending batch riding this queue):
+            # rebuild the robot context from its ticket so send tools target
+            # the right conversation.
+            qq_ticket = None
+            if str(input_msg.reply_ticket_id or "").strip():
+                try:
+                    from app.services.agent.reply_ticket import reply_ticket_manager
+
+                    candidate = reply_ticket_manager.get(input_msg.reply_ticket_id)
+                    if (
+                        candidate is not None
+                        and candidate.source_type == "qq"
+                        and candidate.robot_id
+                        and candidate.reply_target
+                    ):
+                        qq_ticket = candidate
+                except Exception:
+                    qq_ticket = None
+            if qq_ticket is not None:
+                try:
+                    self._setup_robot_context_from_ticket(agent, qq_ticket)
+                except Exception:
+                    logger.exception(
+                        "[AgentSession] Failed to setup robot context from ticket: item=%s ticket=%s",
+                        self.item_id,
+                        input_msg.reply_ticket_id,
+                    )
             _chat_loop_mgr = _ManagedEventLoop()
             loop = _chat_loop_mgr.__enter__()
             loop.run_until_complete(agent.start_mcp_servers())
@@ -2575,6 +2639,55 @@ class AgentSession:
                 messages = next_messages
 
             if is_plain_chat and turn_completed:
+                # Fan out the final text to every reply route merged into this
+                # turn. The primary ticket is covered by the paths below; each
+                # secondary ticket gets the same combined answer through its
+                # own route (QQ -> bridge, web -> history+SSE). Tickets the
+                # agent already served via the send tool carry
+                # external_report_sent and finalize silently — never duplicate.
+                if input_msg.merged_ticket_ids and turn_final_content.strip():
+                    from app.services.agent.reply_ticket import reply_ticket_manager
+
+                    for route_ticket_id in input_msg.merged_ticket_ids:
+                        if route_ticket_id == input_msg.reply_ticket_id:
+                            continue
+                        try:
+                            route_ticket = reply_ticket_manager.get(route_ticket_id)
+                            if (
+                                route_ticket is not None
+                                and route_ticket.status not in {"delivered", "failed"}
+                            ):
+                                reply_ticket_manager.deliver(
+                                    route_ticket_id,
+                                    turn_final_content,
+                                )
+                        except Exception:
+                            logger.exception(
+                                "[AgentSession] Failed to fan out to merged ticket: item=%s ticket=%s",
+                                self.item_id,
+                                route_ticket_id,
+                            )
+                # QQ ticket turn finished without the agent calling the send
+                # tool: deliver the final text through the ticket's own route
+                # (integration hook -> QQ bridge). If the agent did send, the
+                # ticket already carries external_report_sent and this is a
+                # silent finalize instead of a duplicate.
+                if qq_ticket is not None and turn_final_content.strip():
+                    try:
+                        from app.services.agent.reply_ticket import reply_ticket_manager
+
+                        current = reply_ticket_manager.get(qq_ticket.ticket_id)
+                        if current is not None and current.status != "delivered":
+                            reply_ticket_manager.deliver(
+                                qq_ticket.ticket_id,
+                                turn_final_content,
+                            )
+                    except Exception:
+                        logger.exception(
+                            "[AgentSession] Failed to deliver QQ ticket after chat turn: item=%s ticket=%s",
+                            self.item_id,
+                            qq_ticket.ticket_id,
+                        )
                 try:
                     from app.services.agent.integrations.hooks import (
                         extract_integration_targets_from_text,

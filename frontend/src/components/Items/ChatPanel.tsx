@@ -1698,7 +1698,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
 
   const sendMessage = async () => {
     const messageText = input.trim()
-    if (!messageText || isLoading || !handler) {
+    if (!messageText || !handler) {
       return
     }
 
@@ -1825,7 +1825,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
   const hasConnectionIssue = historyError || liveError
   const terminalBusy = isTerminalBusyStatus(visibleAgentStatus)
   const inputPlaceholder = terminalBusy
-    ? "\u7ec8\u7aef\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u7b49\u5f53\u524d\u4f1a\u8bdd\u7ed3\u675f\u540e\u7ee7\u7eed\u53d1\u9001"
+    ? "\u7ec8\u7aef\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u6d88\u606f\u5c06\u6392\u961f\u5408\u5e76\u5904\u7406"
     : handler
       ? "\u8f93\u5165\u6d88\u606f..."
       : "\u8bf7\u5148\u5173\u8054 ItemHandler"
@@ -1989,13 +1989,13 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
               }
             }}
             placeholder={inputPlaceholder}
-            disabled={isLoading || !handler}
+            disabled={!handler}
             className="flex-1"
           />
           <Button
             size="icon"
             onClick={() => void sendMessage()}
-            disabled={!input.trim() || !handler || isLoading}
+            disabled={!input.trim() || !handler}
           >
             <Send className="size-4" />
           </Button>

@@ -642,86 +642,6 @@ class RobotService:
                 DISPATCH_WORKER_MAX_COUNT,
             )
 
-    def _try_claim_deferred_generation(
-        self,
-        robot: Robot,
-        job: QueuedRobotChatJob,
-    ) -> int:
-        """Atomically claim the conversation generation iff no *claimed* turn
-        of this conversation is running. Returns 0 when busy.
-
-        The wait target is another job that already claimed its generation
-        (i.e. a turn actually running). Deferred jobs still waiting carry
-        generation=0 and never block each other, and a background job
-        running in the daemon is not a turn at all — so neither can
-        deadlock or starve this claim. Check and claim share one lock, so
-        two waiters can never both claim and supersede each other's reply.
-        """
-        now = self._now()
-        with self._lock:
-            for _tracking_key, (_started, other) in self._active_dispatch_jobs.items():
-                if (
-                    other is not job
-                    and str(other.robot_id) == str(job.robot_id)
-                    and other.conversation_key == job.conversation_key
-                    and other.conversation_generation > 0
-                ):
-                    return 0
-            self._prune_conversation_controllers_locked(now)
-            controller = self._get_or_create_controller_locked(
-                robot.id,
-                job.conversation_key,
-                now,
-            )
-            controller.generation += 1
-            controller.sleeping = False
-            controller.processing = True
-            controller.processing_expires_at = now + timedelta(
-                seconds=self._controller_processing_timeout_seconds(robot)
-            )
-            controller.expires_at = None
-            controller.updated_at = now
-            return controller.generation
-
-    def _claim_deferred_generation(
-        self,
-        robot: Robot,
-        job: QueuedRobotChatJob,
-    ) -> QueuedRobotChatJob:
-        """Claim the conversation generation for a job enqueued with the
-        deferred marker (generation=0).
-
-        The job skipped the pending-merge queue so it could reach a turn
-        quickly (cancel/redirect), but the generation — the delivery right —
-        only transfers once the previous turn of this conversation has
-        finished, so an in-flight reply is never suppressed by a queued job.
-        """
-        deadline = time.monotonic() + float(
-            settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS
-        )
-        generation = 0
-        while time.monotonic() < deadline:
-            generation = self._try_claim_deferred_generation(robot, job)
-            if generation > 0:
-                break
-            time.sleep(0.5)
-        if generation <= 0:
-            # Previous turn never finished within the budget; claim anyway so
-            # this job is not dropped — the stale turn is reaped separately.
-            generation = self._begin_reply_context_dispatch(
-                robot,
-                job.conversation_key,
-                metadata=job.reply_target.metadata,
-            )
-        claimed = replace(job, conversation_generation=generation)
-        # Publish the claim into the active-job registry (keyed by identity of
-        # the pre-claim object) so other deferred waiters see a running turn.
-        with self._lock:
-            for tracking_key, (started, stored) in list(self._active_dispatch_jobs.items()):
-                if stored is job:
-                    self._active_dispatch_jobs[tracking_key] = (started, claimed)
-        return claimed
-
     def _process_chat_job(self, job: QueuedRobotChatJob) -> None:
         queue_wait_seconds = (self._now() - job.enqueued_at).total_seconds()
         record_robot_event(
@@ -745,11 +665,6 @@ class RobotService:
                     "Robot or item no longer exists.",
                 )
                 return
-
-            if job.conversation_generation <= 0 and (
-                job.direct_reply_trigger or job.reply_context_active
-            ):
-                job = self._claim_deferred_generation(robot, job)
 
             try:
                 dispatch_requires_awake = (
@@ -1548,17 +1463,12 @@ class RobotService:
                 reply_context_active=reply_context_active,
                 mention_match_mode=mention_match_mode,
             )
-            # Directly-addressed messages (mention/reply/private) always
-            # dispatch immediately, even while a turn is running — the user
-            # is talking to the bot NOW (e.g. cancel, redirect). Only
-            # passively-triggered active-window chatter merges into the
-            # pending queue. The trigger path is the structural signal; the
-            # message text is never pattern-matched for intent.
-            direct_address = trigger_reason in PENDING_DIRECT_WAKE_TRIGGER_REASONS
-            # Merge chat into a running turn only when a dispatch turn is
-            # actually running/queued. Background jobs alone must not hold
-            # chat hostage: jobs run in the daemon while the backend is free,
-            # so an incoming chat message starts its own turn immediately.
+            # Every chat message merges into the pending queue while a turn is
+            # running, regardless of how it was triggered. The queue batches
+            # rapid-fire messages into one follow-up turn, and the batch
+            # claims its generation only when drained at turn end — so the
+            # in-flight turn keeps its delivery right and the agent always
+            # sees pending messages merged, never one-by-one.
             turn_actively_busy = self.conversation_has_active_dispatch(
                 robot.id, conversation_key
             )
@@ -1566,7 +1476,6 @@ class RobotService:
                 command.mode == "chat"
                 and turn_actively_busy
                 and reply_context_active
-                and not direct_address
             ):
                 pending_size = self._record_pending_chat_input(
                     robot=robot,
@@ -1600,19 +1509,11 @@ class RobotService:
                 )
 
             if direct_reply_trigger or reply_context_active:
-                if direct_address and turn_actively_busy:
-                    # Deferred generation claim: the job enters the dispatch
-                    # queue right away (no pending-merge wait), but only
-                    # claims the conversation generation when its turn
-                    # actually starts — the in-flight turn keeps its delivery
-                    # right until then. See _process_chat_job.
-                    conversation_generation = 0
-                else:
-                    conversation_generation = self._begin_reply_context_dispatch(
-                        robot,
-                        conversation_key,
-                        metadata=message.reply_target.metadata,
-                    )
+                conversation_generation = self._begin_reply_context_dispatch(
+                    robot,
+                    conversation_key,
+                    metadata=message.reply_target.metadata,
+                )
 
             queued_job = QueuedRobotChatJob(
                 robot_id=robot.id,
@@ -2100,55 +2001,47 @@ class RobotService:
             conversation_key,
             metadata=latest.reply_target.metadata,
         )
-        queued_job = QueuedRobotChatJob(
-            robot_id=robot.id,
-            robot_owner_id=robot.owner_id,
-            item_id=latest.item_id,
-            route_key=latest.route_key,
-            message=self._agent_message_with_context(
-                synthetic_message,
-                batch_text,
-                trigger_reason="pending_queue",
-                impression_card=self._conversation_impression_card(
-                    item_id=latest.item_id,
-                    robot=robot,
-                    conversation_key=conversation_key,
-                    sender_key=latest.sender_key,
-                    reply_target=latest.reply_target,
-                    query=batch_text,
-                ),
-                live_context_card=live_context_card,
+        composed_message = self._agent_message_with_context(
+            synthetic_message,
+            batch_text,
+            trigger_reason="pending_queue",
+            impression_card=self._conversation_impression_card(
+                item_id=latest.item_id,
+                robot=robot,
+                conversation_key=conversation_key,
+                sender_key=latest.sender_key,
+                reply_target=latest.reply_target,
+                query=batch_text,
             ),
-            sender_key=latest.sender_key,
-            reply_target=followup_reply_target,
-            conversation_key=conversation_key,
-            message_text=latest.message_text,
-            direct_reply_trigger=False,
-            reply_context_active=True,
-            conversation_generation=conversation_generation,
-            reply_requires_awake=self._reply_context_window_seconds(robot) > 0,
-            enqueued_at=self._now(),
-            pending_entries=tuple(entries),
+            live_context_card=live_context_card,
         )
-        if not self._enqueue_chat_job(queued_job):
+        dispatched = self._dispatch_pending_batch_to_session_queue(
+            robot=robot,
+            conversation_key=conversation_key,
+            latest=latest,
+            followup_reply_target=followup_reply_target,
+            composed_message=composed_message,
+            batch_text=batch_text,
+            conversation_generation=conversation_generation,
+        )
+        if not dispatched:
             self._prepend_pending_chat_inputs(robot.id, conversation_key, entries)
             self._clear_reply_context_window_for_key(
                 robot.id,
                 conversation_key,
-                reason="pending_dispatch_queue_full",
+                reason="pending_dispatch_failed",
                 expected_generation=conversation_generation or None,
             )
             record_robot_event(
                 str(robot.id),
                 direction="backend_queue",
-                event="pending_dispatch_dropped_queue_full",
+                event="pending_dispatch_dropped_enqueue_failed",
                 status="ignored",
                 payload={
                     "item_id": str(latest.item_id),
                     "route_key": latest.route_key,
                     "conversation": conversation_key,
                     "pending_size": len(entries),
-                    "queue": self.dispatch_queue_snapshot(),
                 },
             )
             return False
@@ -2166,6 +2059,98 @@ class RobotService:
             },
         )
         return True
+
+    def _dispatch_pending_batch_to_session_queue(
+        self,
+        *,
+        robot: Robot,
+        conversation_key: str,
+        latest: Any,
+        followup_reply_target: RobotReplyTarget,
+        composed_message: str,
+        batch_text: str,
+        conversation_generation: int,
+    ) -> bool:
+        """Feed the merged pending batch into the item's system input queue.
+
+        The batch rides the same per-item queue as web/terminal inputs, so
+        cross-source messages merge into one turn instead of each source
+        opening its own. The QQ reply ticket bound here is the batch's reply
+        route; the session turn rebuilds the robot context from it, so the
+        agent's send tools target the right conversation.
+        """
+        from sqlmodel import Session as _DbSession
+
+        from app.core.db import engine as _engine
+        from app.models import User as _User
+        from app.services.agent.chat_runtime import get_item_handler_llm_config
+        from app.services.agent.integrations import (
+            clear_integration_chat_contexts,
+            setup_integration_chat_contexts,
+        )
+        from app.services.agent.reply_ticket import reply_ticket_manager
+        from app.services.agent.session import (
+            InputMessage,
+            InputType,
+            agent_session_manager,
+        )
+
+        try:
+            with _DbSession(_engine) as db:
+                owner = db.get(_User, robot.owner_id)
+                if owner is None:
+                    return False
+                prepared = get_item_handler_llm_config(
+                    db, latest.item_id, owner
+                )
+            if not prepared:
+                return False
+            handler, _item = prepared
+            agent_session = agent_session_manager.get_or_create_session(
+                str(latest.item_id), str(handler.id)
+            )
+            agent = agent_session.get_agent()
+            if agent is None:
+                return False
+
+            contexts = {
+                "robot": {
+                    "robot_id": str(robot.id),
+                    "sender_key": latest.sender_key,
+                    "reply_target": followup_reply_target,
+                    "conversation_key": conversation_key,
+                    "conversation_generation": conversation_generation,
+                    "reply_requires_awake": self._reply_context_window_seconds(robot) > 0,
+                }
+            }
+            setup_integration_chat_contexts(agent, contexts)
+            try:
+                ticket = reply_ticket_manager.create_for_agent(
+                    agent,
+                    item_id=str(latest.item_id),
+                    handler_id=str(handler.id),
+                    message=latest.message_text or batch_text,
+                )
+            finally:
+                clear_integration_chat_contexts(agent, contexts)
+
+            agent_session.process_input(
+                InputMessage(
+                    input_type=InputType.CHAT,
+                    content=composed_message,
+                    raw_content=batch_text,
+                    query=latest.message_text,
+                    reply_ticket_id=ticket.ticket_id,
+                    source_label=f"QQ {conversation_key}",
+                )
+            )
+            return True
+        except Exception:
+            logger.exception(
+                "[RobotService] Failed to dispatch pending batch to session queue: conversation=%s",
+                conversation_key,
+            )
+            return False
 
     def _recent_live_context_card(
         self,
