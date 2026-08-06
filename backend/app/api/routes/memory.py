@@ -22,6 +22,15 @@ from app.services.agent.prompts.policy import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _memory_scope(item_id: uuid.UUID) -> str:
+    """Memories are handler-scoped: all items driven by one ItemHandler share
+    its memory pool. The URL keeps item-level permission checks; the scope
+    resolves to the handler."""
+    from app.services.agent.memory.scope import resolve_scope
+
+    return resolve_scope(str(item_id))
 LongTermMemoryType = Literal["fact", "preference", "error", "context"]
 STATUS_MEMORY_TYPES = {"error"}
 INACTIVE_MEMORY_STATUSES = {"resolved"}
@@ -346,7 +355,7 @@ def clear_all_session_data(
         results["chat_session"] = "cleared"
 
     try:
-        vector_store.delete_item_memories(str(item_id))
+        vector_store.delete_item_memories(_memory_scope(item_id))
         results["memories"] = "cleared"
     except Exception as e:
         logger.error(f"Failed to clear memories: {e}")
@@ -442,7 +451,7 @@ def get_all_memories(
     _get_accessible_item(item_id, session, current_user)
 
     memories = vector_store.get_all_memories(
-        item_id=str(item_id),
+        handler_id=_memory_scope(item_id),
         memory_type=memory_type,
     )
     filtered_memories = _filter_memories_by_status(
@@ -470,7 +479,7 @@ def export_memories(
     _get_accessible_item(item_id, session, current_user)
 
     memories = vector_store.get_all_memories(
-        item_id=str(item_id),
+        handler_id=_memory_scope(item_id),
         memory_type=memory_type,
     )
     sorted_memories = _sort_memories(_visible_long_term_memories(memories))
@@ -511,7 +520,7 @@ def import_memories(
         raw_memory_type = str(memory.metadata.get("memory_type") or "fact")
         try:
             memory_id = vector_store.add_memory(
-                item_id=str(item_id),
+                handler_id=_memory_scope(item_id),
                 content=content,
                 memory_type=_coerce_memory_type(raw_memory_type),
                 metadata=metadata,
@@ -546,7 +555,7 @@ def get_memory_stats(
     _get_accessible_item(item_id, session, current_user)
 
     memories = _visible_long_term_memories(
-        vector_store.get_all_memories(str(item_id))
+        vector_store.get_all_memories(_memory_scope(item_id))
     )
     stats = _visible_memory_stats(memories)
     stats["memory_types"] = MEMORY_TYPES
@@ -569,7 +578,7 @@ def search_memories(
     _get_accessible_item(item_id, session, current_user)
 
     memories = vector_store.search_memories(
-        item_id=str(item_id),
+        handler_id=_memory_scope(item_id),
         query=request.query,
         n_results=request.n_results,
         memory_type=request.memory_type,
@@ -590,7 +599,7 @@ def add_memory(
     _get_accessible_item(item_id, session, current_user)
 
     memory_id = vector_store.add_memory(
-        item_id=str(item_id),
+        handler_id=_memory_scope(item_id),
         content=request.content,
         memory_type=request.memory_type,
         metadata=request.metadata,
@@ -695,7 +704,7 @@ def clear_memories(
 ) -> Any:
     _get_accessible_item(item_id, session, current_user)
 
-    vector_store.delete_item_memories(str(item_id))
+    vector_store.delete_item_memories(_memory_scope(item_id))
     return {"message": "All memories cleared"}
 
 
@@ -707,7 +716,7 @@ def expire_memories(
 ) -> Any:
     _get_accessible_item(item_id, session, current_user)
 
-    count = vector_store.expire_old_memories(str(item_id))
+    count = vector_store.expire_old_memories(_memory_scope(item_id))
     return {"message": f"Expired {count} memories", "count": count}
 
 
@@ -719,7 +728,7 @@ def deduplicate_memories(
 ) -> Any:
     _get_accessible_item(item_id, session, current_user)
 
-    count = vector_store.deduplicate_memories(str(item_id))
+    count = vector_store.deduplicate_memories(_memory_scope(item_id))
     return {"message": f"Deduplicated {count} memories", "count": count}
 
 
@@ -733,7 +742,7 @@ def summarize_memories(
     _get_accessible_item(item_id, session, current_user)
 
     result = vector_store.summarize_memories(
-        item_id=str(item_id),
+        handler_id=_memory_scope(item_id),
         threshold=threshold,
     )
 

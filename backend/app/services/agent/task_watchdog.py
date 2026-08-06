@@ -129,35 +129,38 @@ def _dedupe_memory_clusters(now: datetime, stats: dict[str, int]) -> None:
     first memory of each near-duplicate cluster and deletes the rest, so
     recalled context does not fill up with repeated facts.
     """
+    from app.services.agent.memory.scope import resolve_scope
     from app.services.agent.memory.vector_store import vector_store
 
     now_ts = now.timestamp()
     item_ids = _list_all_item_ids()
-    known = set(item_ids)
+    scopes = {resolve_scope(item_id) for item_id in item_ids}
+    scopes.discard("")
+    known = scopes
     for stale_key in set(_memory_dedup_last_run) - known:
         _memory_dedup_last_run.pop(stale_key, None)
-    for item_id in item_ids:
-        last_run = _memory_dedup_last_run.get(item_id, 0.0)
+    for scope in scopes:
+        last_run = _memory_dedup_last_run.get(scope, 0.0)
         if now_ts - last_run < MEMORY_DEDUP_INTERVAL_SECONDS:
             continue
-        _memory_dedup_last_run[item_id] = now_ts
+        _memory_dedup_last_run[scope] = now_ts
         try:
             removed = vector_store.deduplicate_memories(
-                item_id, threshold=MEMORY_DEDUP_SIMILARITY_THRESHOLD
+                scope, threshold=MEMORY_DEDUP_SIMILARITY_THRESHOLD
             )
-            superseded = vector_store.supersede_by_memory_key(item_id)
+            superseded = vector_store.supersede_by_memory_key(scope)
             removed += superseded
         except Exception as exc:
             logger.info(
-                "[TaskWatchdog] Memory dedup failed for item=%s: %s", item_id, exc
+                "[TaskWatchdog] Memory dedup failed for scope=%s: %s", scope, exc
             )
             continue
         if removed:
             stats["memories_deduplicated"] += removed
             logger.info(
-                "[TaskWatchdog] Merged %s near-duplicate/keyed memories for item=%s",
+                "[TaskWatchdog] Merged %s near-duplicate/keyed memories for scope=%s",
                 removed,
-                item_id,
+                scope,
             )
 
 

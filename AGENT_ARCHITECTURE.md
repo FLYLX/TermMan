@@ -29,6 +29,12 @@
 
 `ROBOT_BRIDGE_EMBEDDED=true` 时 bridge 可内嵌进 backend 进程。
 
+## 核心原则
+
+1. **用户意图只由 LLM 判定**——代码里禁止用正则/关键词猜测用户意图（取消？发送？查状态？）。结构化信号（触发路径、显式目的地、ticket 状态）可以做判定；消息文本的内容不行
+2. **route 入队绑死**——每个输入的回复路由（ticket）由来源适配器在入队时创建绑定，合并层只保管不猜测
+3. **来源可插拔**——新出入口 = 实现 `AgentIntegration` + 入队时绑 ticket，核心零改动
+
 ## Backend 启动流程（`main.py` lifespan）
 
 1. `plugin_manager.startup(app)` — 启动插件（robot embedded bridge / terminal_ws）
@@ -37,164 +43,121 @@
 4. `restore_agent_state()` — 从 SQLite 恢复 reply tickets
 5. `agent_task_watchdog.start()` + `scheduled_task_manager.start()` — 后台维护循环
 
-## Agent 核心（`app/services/agent/`）
+## 统一合并队列（系统级消息入口）
+
+**所有来源的输入汇入 per-item 的 session 输入队列，单消费者线程合并成批次轮次：**
 
 ```
-                     ┌────────────────────────────────────┐
-                     │           Agent (agent.py)          │
-                     │ per-handler 单例，持有 AgentContext │
-                     │ model 配置 / skills / MCP tools    │
-                     └───────┬───────────────────┬────────┘
-                             │                   │
-              ┌──────────────▼──────┐   ┌────────▼─────────────┐
-              │ turn_coordinator.py │   │  chat_runtime.py     │
-              │ FIFO lease 串行化   │   │ collect_chat_response│
-              │ 同一 handler 的轮次 │   │ QQ/定时任务入口      │
-              └─────────────────────┘   └────────┬─────────────┘
-                                                 │
-                              ┌──────────────────▼──────────────────┐
-                              │  generate_stream (api/routes/chat.py)│
-                              │  agent 主循环：LLM stream → 工具调用 │
-                              │  → MCP 执行 → 最多 6 轮迭代          │
-                              └──────────────────┬──────────────────┘
-                                                 │
-        ┌────────────────┬───────────────────────┼───────────────────────┬────────────────┐
-        ▼                ▼                       ▼                       ▼                ▼
-┌───────────────┐ ┌─────────────┐   ┌───────────────────┐   ┌────────────────┐ ┌─────────────┐
-│ reply_ticket  │ │ prompts/    │   │ mcp/local_server  │   │ robot MCP      │ │ memory/     │
-│ 回执票据系统   │ │ builder.py  │   │ 内建工具集(双手)   │   │ QQ发送/记忆    │ │ vector_store│
-│ 来源路由+plan │ │ 组装prompt  │   │ 终端/job/计划     │   │                │ │ 长期记忆RAG │
-└───────────────┘ └─────────────┘   └───────────────────┘   └────────────────┘ └─────────────┘
+QQ 直接消息 ──→ robot dispatch 快路径（立即开轮次）
+QQ 后续消息 ──→ pending 缓冲 ──→ drain 时建 QQ ticket ──→ ┐
+Web 聊天 ────→ /chat/{id}/stream 建 web ticket ────────→ ├─→ session 输入队列
+Terminal ──→ daemon 输出 ─────────────────────────────→ ┤      │ 单消费者
+定时任务 ──→ scheduled_tasks ──────────────────────────→ ┘      ▼
+                                              _merge_input_batch：按 source_label 分段、
+                                              保留全部 ticket（merged_ticket_ids）
+                                                       ▼
+                                              合并轮次（prompt 分源标注）
+                                                       ▼
+                                              分源投递（每张 ticket 走自己的 route）
 ```
 
-### 关键模块
+**关键行为**：
+- 轮次忙时，任何来源的消息都进队列合并——不会一条条单独开轮次
+- 批次放行时才认领会话代际（drain 时刻），在飞轮次的投递权不被抢
+- 连发 10 条 = 第 1 条一轮 + 后 9 条合并一轮
 
-| 模块 | 职责 |
+**接入新来源（插件）**：
+
+```python
+ticket = reply_ticket_manager.create_for_agent(...)  # 填齐 source_type/reply_target/conversation_key
+agent_session.process_input(InputMessage(
+    input_type=InputType.CHAT,
+    content=..., reply_ticket_id=ticket.ticket_id,
+    source_label="我的来源",
+))
+```
+
+## Reply Ticket —— 回复路由与 plan 载体
+
+每轮对话创建一张 `ReplyTicket`，贯穿：**路由 + plan 草稿本 + 投递追踪**。
+
+### 生命周期
+
+```
+pending → running → sending → delivered / failed
+                     └─ 用户取消 → cancelled（系统直接终止 plan，不等 LLM）
+TTL 6h；SQLite 持久化，重启恢复；QQ 同会话旧 ticket 被新消息 supersede
+```
+
+### 关键字段
+
+| 字段 | 用途 |
 |---|---|
-| `agent.py` | Agent 单例管理、工具分发 `mcp_<server>_<tool>`、handler 热重载 |
-| `chat_runtime.py` | 非流式入口（QQ 轮次/定时任务），权限检查、robot context 注入 |
-| `turn_coordinator.py` | per-handler FIFO 租约，防止并发轮次破坏共享 Agent context |
-| `session.py` | per-item 有状态会话，终端驱动的轮次（MC 服务器聊天等） |
-| `stream_manager.py` | Web SSE 事件广播 |
-| `state_store.py` | SQLite 持久化 tickets，启动时恢复 |
-| `task_watchdog.py` | 周期清理：孤儿 ticket、卡死 dispatch、滞留会话 |
-| `scheduled_tasks.py` | cron 式定时任务，以独立 ticket 跑 agent 轮次 |
+| `source_type` | qq / web / terminal —— 投递路由 |
+| `reply_target` / `conversation_key` | QQ 目标会话（轮次内可由此重建 robot 上下文） |
+| `plan` | `[{step, status}]`，status ∈ pending/in_progress/completed/cancelled |
+| `extra_targets` | 用户消息里显式点名的 QQ 目标（结构化授权） |
+| `external_report_sent` | agent 已用 send 工具投递过 → 后续 deliver 静默收尾防重复 |
 
-## Reply Ticket —— 核心设计模式
+### plan 生命周期（系统保证，不依赖 LLM 自觉）
 
-每轮对话创建一张 `ReplyTicket`，是**投递追踪 + plan 草稿本**的载体：
+- 全步骤 terminal（completed/cancelled）→ **系统自动清空**，不再喂给后续轮次
+- job 被用户取消 → **系统直接把剩余步骤标 cancelled 并清空**
+- `_plan_reminder` 在 job 结果回调时附带当前 plan；全 terminal 的 plan 不再附带
+- 任何超过一步的任务都要求建 plan（工具描述明确"只有单步问答才可跳过"）
 
+## 投递层（插件注册表驱动）
+
+```python
+# reply_ticket._deliver_ticket_content
+if deliver_integration_ticket(ticket, text):   # 遍历 integration 注册表
+    ...
+if ticket.source_type == SOURCE_WEB:           # web 是唯一内建兜底
+    ...
 ```
-ticket 生命周期: pending → running → sending → delivered / failed
-                                         ↘ cancelled（用户取消）
-```
 
-- `source_type`：qq / web / terminal，决定回复路由
-- `plan`：`[{step, status}]` 列表（pending/in_progress/completed/cancelled），由 `mcp_local_update_plan` 写入
-- plan 全 terminal 时**系统自动清空**，不再喂给后续轮次
-- 用户取消 job → 系统直接把 plan 标 cancelled 并清空（不依赖 LLM）
-- `_plan_reminder`：job 结果回调时附带当前 plan 提醒（全 terminal 则跳过）
-- QQ 同会话旧 ticket 被新消息 supersede；有 plan 的 ticket 视为在飞任务不被取代
-- TTL 6h，启动时从 SQLite 恢复
+新来源插件实现 `AgentIntegration.deliver_ticket(ticket, text)`（匹配自家 source_type 则投递），注册后扇出自动生效。
+
+### 发送守卫（纯结构，无意图判定）
+
+| 守卫 | 规则 |
+|---|---|
+| QQ 轮次 | robot MCP server 锁当前会话（跨会话须显式 target） |
+| 非 QQ 轮次 | `robot_send_has_explicit_destination(tool_args)`——调用必须带显式目的地（target/targets/reply_to），裸发被拒 |
+| 轮次提前结束 | 仅当"裸发回当前会话"成功（回复完毕）；带显式目标的发送继续轮次直到 agent 发完所有目标 |
 
 ## MCP 工具体系
 
-所有能力都是 MCP 工具，命名 `mcp_<server>_<tool>`：
+全部能力是 MCP 工具（`mcp_<server>_<tool>`），内建 server 进程内直连：
 
-**`local` server（内建，`mcp/local_server.py`）**— agent 的双手：
-- 计划：`update_plan`
-- 终端：`execute_command`（前台交互）、`run_job`（后台异步）、`list_jobs`、`cancel_job`、`interrupt_command`、`read_terminal_log`、`get_terminal_status`
-- 记忆：`save_memory` / `recall_memory` / `list_memories` / `delete_memory` / `compress_memories`
-- 其他：`read_chat_history`、`prepare_capabilities`（按需加载能力）、定时任务 CRUD、输出过滤规则 CRUD
+- **`local`**（内建）：`update_plan`、`execute_command`（前台交互）、`run_job`（后台异步）、`list_jobs`、`cancel_job`、`interrupt_command`、`read_terminal_log`、记忆 CRUD、`prepare_capabilities`（按需加载工具）、定时任务/过滤规则 CRUD
+- **`robot`**（插件注册内建）：`send_message`、会话记忆、`sleep_conversation`
+- **外部**：`mcp_servers.json` 配置的 stdio server
 
-**`robot` server（QQ 插件提供）**：`send_message`、会话记忆读写、`sleep_conversation`
+工具渐进暴露：每轮只给 9 个核心工具全量 schema，其余以目录形式出现、按需 `prepare_capabilities` 加载。
 
-**外部 stdio MCP servers**：从 `mcp_servers.json` 加载。
+## 日志通道（写入侧分流）
 
-工具经由 daemon HTTP 执行：`run_job_http` / `list_jobs_http` / `cancel_job_http` / `get_job_result_http`。
-
-## 消息流
-
-### QQ 消息 → 回复
+daemon stream 事件带 `source` 标签，backend 订阅落盘时分流：
 
 ```
-QQ → NapCat → robot-bridge(NoneBot 事件)
-  → 归一化 RobotInboundMessage
-  → POST /robots/{id}/dispatch (token 认证)
-  → robot_service.handle_inbound_message()
-      触发判定(@/回复/私聊/活跃窗口) → 会话控制器(代际/休眠/处理中闸口)
-      → 入队 QueuedRobotChatJob（合并 input_merge_buffer 中的待处理输入）
-  → dispatch worker(2~8 线程池)
-      组装消息(发送者卡片/印象卡片/实况上下文/行动框架/[Current QQ message])
-      → collect_chat_response(robot context)
-  → turn lease 串行化 → 创建 ReplyTicket
-  → generate_stream 主循环
-      build_chat_turn_messages(历史+记忆+知识+ticket prompt+挂起终端上下文)
-      → LiteLLM → 工具调用 → MCP 执行
-  → 回复路径（优先级）：
-      ① agent 调 mcp_robot_send_message（ticket 标 external_report_sent）
-      ② 最终可见文本 → reply_ticket_manager.deliver() → bridge /send → QQ
-      ③ "NRN" 不回复意图 → 静默结束
-  → 后台 job 完成 → input_merge_buffer 缓冲
-      → 合并为 [后台终端任务结果] 回调轮次送回原会话
+无 source（前台 PTY）   → {item}.log       → agent read_terminal_log / 命令反馈 / 前端
+source="job"（后台 job）→ {item}.jobs.log  → 归档；agent 走结构化 job 结果回调（daemon 已过滤噪音）
 ```
 
-### Web 消息 → 回复
+agent 读到的终端日志永远是前台真实内容；job 结果不经日志打捞。
 
-```
-POST /chat/{item}/stream → prepare_chat_agent(权限检查)
-  → generate_stream(source_type=web) → 同一 agent 主循环
-  → SSE 推送 (agent_response/agent_tool_result/agent_status/done)
-  → 历史持久化 ItemChatSession（滚动摘要）
-```
+## 终端输入恢复
 
-### 终端驱动轮次
+`input_center` 是 handler 注册的唯一事实来源。socket 上缓存的 handler id 会在注销后变陈旧——恢复路径（`create_backend_socket` / `restore_terminal_session`）一律向 `input_center` 验活后才决定是否重注册，杜绝"看着已注册实际没有"。
 
-```
-daemon 终端输出 → backend room listener → AgentSession 消费线程
-  → build_terminal_turn_messages → agent 轮次
-  → MC 玩家聊天 → execute_command 回服务器控制台
-```
+## 轮次串行与看护
 
-## 插件 + Integration 双层解耦
+- `AgentTurnCoordinator`：per-handler FIFO 租约，串行化共享 Agent 实例的所有轮次（异步获取带 230s 超时）
+- 会话控制器（robot service）：代际计数 + 休眠/处理中闸口 + 超时收割
+- `task_watchdog`：周期清理孤儿 ticket、卡死 dispatch、滞留会话
 
-```
-BackendPlugin (plugins/manager.py)
-  │ entrypoints: include_router / startup / register_agent_integration
-  ▼
-AgentIntegration Protocol (integrations/contracts.py, ~40 方法)
-  │ prompt 构建 / 历史作用域 / chat context 装配拆卸
-  │ 工具参数注入 / 投递重试回退 / ticket 投递
-  ▼
-RobotAgentIntegration (plugins/robot/agent/integration.py)
-```
+## 前端
 
-核心 agent 循环不含任何 QQ 逻辑；QQ 全在 robot 插件内。
-
-## Robot 插件（`plugins/robot/`）
-
-| 模块 | 职责 |
-|---|---|
-| `service.py` | QQ 会话大脑：触发分类、会话控制器（代际计数+休眠/处理态）、dispatch 队列+工作线程池+卡死收割、pending 输入合并 |
-| `api.py` | `/robots` CRUD、绑定、`POST /robots/{id}/dispatch` 接收入口 |
-| `mcp/server.py` | robot MCP 工具（send_message/记忆） |
-| `bridge/embedded.py` | 内嵌 NoneBot2 bridge（可选）；`bridge/proxy.py` 外部容器代理 |
-| `bridge_client.py` | 到外部 bridge 的 HTTP 客户端 |
-| `conversation_memory.py` | 每会话 `.log` 记忆文件 |
-| `internal_trace.py` | 可见文本清洗；`reply_intent.py` NRN 不回复意图 |
-
-## Daemon（`daemon/src/`）
-
-- `terminal_manager.py` — PTY 进程 spawn、日志、resize
-- `job_runner.py` — 异步后台 job：ActiveJob 追踪、结果轮询、取消
-- `socket_service.py` + `room_manager.py` — per-item Socket.IO 房间、订阅者管理
-- `file_service.py` — per-user/per-item workdir 沙箱文件操作
-- backend 侧对应：`connection_pool/`（DaemonConnection HTTP 客户端）、`socket_pool/`（Socket.IO 事件总线、input center）、`terminal_service.py`
-
-## 其他子系统
-
-- **记忆**：`memory/vector_store.py` Chroma+BGE embedding 长期记忆 + 词法回退；`knowledge/service.py` 知识文件 RAG；会话滚动摘要
-- **技能**：`skills/` 文件系统 SKILL.md 包（persona/system/terminal_mcp/minecraft），revision 变更触发 agent 热重载
-- **能力渐进加载**：`capability_state.py` 目录式紧凑列表 + `prepare_capabilities` 按需全量加载，避免 prompt 塞满工具 schema
-- **persona_guard**：人设身份强制
-- **token_usage**：SQLite token 记账
+- web 聊天输入框**不锁定**——处理中可继续发，消息入队合并；多条流各自接收事件，前端按"相邻同内容"去重渲染
+- plan 面板经 `plan_updated` SSE 实时刷新

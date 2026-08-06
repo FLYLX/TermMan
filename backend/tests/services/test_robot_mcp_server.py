@@ -1013,7 +1013,7 @@ def test_robot_mcp_recalls_long_term_memory_scoped_to_active_context(monkeypatch
     finally:
         unregister_robot_mcp_context(token)
 
-    assert calls[0]["item_id"] == "item-1"
+    assert calls[0]["handler_id"] == "item-1"
     assert calls[0]["query"] == "nickname"
     assert calls[0]["n_results"] == 1
     text = result[0]["text"]
@@ -2055,7 +2055,7 @@ def test_robot_mcp_compress_memories_merges_and_deletes(monkeypatch) -> None:
     text = result[0]["text"]
     assert "Compressed 2" in text
     assert "deleted 2" in text
-    assert added["item_id"] == "item-1"
+    assert added["handler_id"] == "item-1"
     assert added["content"] == "服务器端口是 43906"
     assert added["memory_type"] == "fact"
     assert added["allow_duplicate"] is True

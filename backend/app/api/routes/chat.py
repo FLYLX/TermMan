@@ -168,8 +168,10 @@ def get_relevant_memories(
                 return ""
 
     try:
+        from app.services.agent.memory.scope import resolve_scope
+
         memories = vector_store.search_memories(
-            item_id=item_id,
+            handler_id=resolve_scope(item_id, agent),
             query=query,
             n_results=n_results,
         )
@@ -1280,8 +1282,10 @@ def _generate_stream_unserialized(
                 from app.services.agent.token_usage import token_usage_tracker as _tt
                 _su = _chunk_usage or getattr(response, "usage", None)
                 if _su:
+                    from app.services.agent.memory.scope import resolve_scope
+
                     _tt.record(
-                        str(item_id),
+                        resolve_scope(str(item_id), agent),
                         str(handler.model or "unknown"),
                         int(getattr(_su, "prompt_tokens", 0) or 0),
                         int(getattr(_su, "completion_tokens", 0) or 0),

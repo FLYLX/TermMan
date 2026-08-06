@@ -35,7 +35,7 @@ def _add(service, item_id, content, memory_key=None, updated_at=None):
     if updated_at:
         metadata["updated_at"] = updated_at
     return service.add_memory(
-        item_id=item_id,
+        handler_id=item_id,
         content=content,
         memory_type="fact",
         metadata=metadata,

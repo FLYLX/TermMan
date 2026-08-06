@@ -1872,6 +1872,16 @@ class LocalMCPServer:
             debug_log(f"[LocalMCPServer] _resolve_agent_for_item error: {exc}")
             return None
 
+    def _memory_scope(self, item_id: str) -> str:
+        """Memory/token operations are handler-scoped: one handler's items
+        share its memories. Resolve via the live agent when possible."""
+        try:
+            from app.services.agent.memory.scope import resolve_scope
+
+            return resolve_scope(item_id, self._resolve_agent_for_item(item_id))
+        except Exception:
+            return str(item_id or "")
+
     def _prepare_capabilities(self, args: dict) -> list:
         import json as _json
 
@@ -2551,7 +2561,7 @@ class LocalMCPServer:
                 metadata["status"] = "active"
 
             memory_id = vector_store.add_memory(
-                item_id=item_id,
+                handler_id=self._memory_scope(item_id),
                 content=content,
                 memory_type=memory_type,
                 metadata=metadata,
@@ -2588,7 +2598,7 @@ class LocalMCPServer:
             from app.services.agent.memory.vector_store import vector_store
             from app.services.agent.prompts import policy as memory_policy
 
-            all_memories = vector_store.get_all_memories(item_id)
+            all_memories = vector_store.get_all_memories(self._memory_scope(item_id))
             sources: list[dict[str, Any]] = []
             seen_ids: set[str] = set()
             unmatched: list[str] = []
@@ -2643,7 +2653,7 @@ class LocalMCPServer:
                 metadata["status"] = "active"
 
             new_memory_id = vector_store.add_memory(
-                item_id=item_id,
+                handler_id=self._memory_scope(item_id),
                 content=content,
                 memory_type=memory_type,
                 metadata=metadata,
@@ -2678,10 +2688,11 @@ class LocalMCPServer:
 
         try:
             from app.services.agent.memory.vector_store import vector_store
+            scope = self._memory_scope(item_id)
             if n_results <= 0:
-                n_results = max(1, len(vector_store.get_all_memories(item_id)))
+                n_results = max(1, len(vector_store.get_all_memories(scope)))
             results = vector_store.search_memories(
-                item_id=item_id,
+                handler_id=scope,
                 query=query,
                 n_results=n_results,
                 memory_type=memory_type
@@ -2724,7 +2735,9 @@ class LocalMCPServer:
 
         try:
             from app.services.agent.memory.vector_store import vector_store
-            memories = vector_store.get_all_memories(item_id, memory_type=memory_type)
+            memories = vector_store.get_all_memories(
+                self._memory_scope(item_id), memory_type=memory_type
+            )
             memories = [
                 memory
                 for memory in memories

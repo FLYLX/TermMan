@@ -715,13 +715,16 @@ def build_status_update_memory_candidate(
     if not next_status:
         return None
 
+    from app.services.agent.memory.scope import resolve_scope
+
+    scope = resolve_scope(item_id)
     try:
-        memories = store.get_all_memories(item_id, memory_type=target_type)
+        memories = store.get_all_memories(scope, memory_type=target_type)
     except Exception as exc:
         logger.warning(
-            "[MemoryPolicy] Failed to inspect existing %s memories for item=%s: %s",
+            "[MemoryPolicy] Failed to inspect existing %s memories for scope=%s: %s",
             target_type,
-            item_id,
+            scope,
             exc,
         )
         return None
@@ -789,13 +792,16 @@ def persist_memory_candidate(
             item_id,
         )
         return None
+    from app.services.agent.memory.scope import resolve_scope
+
+    scope = resolve_scope(item_id)
     content_hash = candidate.metadata.get("content_hash")
     try:
-        existing_memories = store.get_all_memories(item_id, memory_type=candidate.memory_type)
+        existing_memories = store.get_all_memories(scope, memory_type=candidate.memory_type)
     except Exception as exc:
         logger.warning(
-            "[MemoryPolicy] Failed to inspect existing memories for item=%s: %s",
-            item_id,
+            "[MemoryPolicy] Failed to inspect existing memories for scope=%s: %s",
+            scope,
             exc,
         )
         existing_memories = []
@@ -860,7 +866,7 @@ def persist_memory_candidate(
             "updated_at": datetime.now().isoformat(),
         }
         return store.add_memory(
-            item_id=item_id,
+            item_id=scope,
             content=candidate.content,
             memory_type=candidate.memory_type,
             metadata=metadata,

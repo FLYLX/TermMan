@@ -58,7 +58,7 @@ def memory_store(monkeypatch, tmp_path):
 def _seed(service: VectorStoreService, item_id: str, contents: list[str]) -> None:
     for content in contents:
         service.add_memory(
-            item_id=item_id,
+            handler_id=item_id,
             content=content,
             memory_type="fact",
             allow_duplicate=True,

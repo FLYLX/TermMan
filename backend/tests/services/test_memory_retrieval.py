@@ -228,7 +228,7 @@ def test_vector_add_memory_can_allow_manual_duplicates(monkeypatch, tmp_path) ->
     monkeypatch.setattr(service, "_check_duplicate", fail_duplicate_check)
 
     memory_id = service.add_memory(
-        item_id="item-1",
+        handler_id="item-1",
         content="same memory",
         memory_type="fact",
         allow_duplicate=True,
@@ -253,7 +253,7 @@ def test_vector_add_memory_saves_with_fallback_embedding_when_model_unavailable(
     service._embedding_service = FailingEmbeddingService()
 
     memory_id = service.add_memory(
-        item_id="item-1",
+        handler_id="item-1",
         content="memory survives embedding failure",
         memory_type="fact",
         allow_duplicate=True,
@@ -299,7 +299,7 @@ def test_hybrid_search_uses_fts_for_exact_technical_values(
 
     try:
         results = service.search_memories(
-            item_id="item-1",
+            handler_id="item-1",
             query="43906",
             n_results=1,
         )
@@ -324,7 +324,7 @@ def test_preference_and_error_memories_are_permanent(monkeypatch, tmp_path) -> N
 
     try:
         service.add_memory(
-            item_id="item-permanent",
+            handler_id="item-permanent",
             content="reply in Chinese",
             memory_type="preference",
             ttl_days=1,
@@ -332,7 +332,7 @@ def test_preference_and_error_memories_are_permanent(monkeypatch, tmp_path) -> N
             run_maintenance=False,
         )
         service.add_memory(
-            item_id="item-permanent",
+            handler_id="item-permanent",
             content="known startup error and solution",
             memory_type="error",
             ttl_days=1,
@@ -340,7 +340,7 @@ def test_preference_and_error_memories_are_permanent(monkeypatch, tmp_path) -> N
             run_maintenance=False,
         )
         service.add_memory(
-            item_id="item-permanent",
+            handler_id="item-permanent",
             content="server port is 43906",
             memory_type="fact",
             ttl_days=1,
@@ -421,7 +421,7 @@ def test_vector_store_rejects_removed_task_memory_type(monkeypatch, tmp_path) ->
     try:
         with pytest.raises(ValueError, match="Unsupported long-term memory type"):
             service.add_memory(
-                item_id="item-task",
+                handler_id="item-task",
                 content="install Java",
                 memory_type="task",  # type: ignore[arg-type]
                 allow_duplicate=True,
@@ -445,7 +445,7 @@ def test_vector_memory_search_filters_expired_and_inactive_by_default(monkeypatc
 
     try:
         results = service.search_memories(
-            item_id="item-1",
+            handler_id="item-1",
             query="robot bridge task",
             n_results=5,
         )
@@ -542,9 +542,13 @@ def test_prompt_long_term_memory_recall_ranks_and_formats(monkeypatch) -> None:
     assert search_calls == [None]
 
 
-def test_progressive_history_expands_only_for_referential_messages() -> None:
-    assert prompt_builder._recent_context_limit("请检查服务端口", 10) == 4
+def test_recent_context_limit_is_static_maximum() -> None:
+    # History budget is static: never guess from the message text whether it
+    # "needs" context. The LLM decides what is relevant.
+    assert prompt_builder._recent_context_limit("请检查服务端口", 10) == 10
     assert prompt_builder._recent_context_limit("刚才那个怎么样了", 10) == 10
+    assert prompt_builder._recent_context_limit("hi", 10) == 10
+    assert prompt_builder._recent_context_limit("hi", 0) == 0
 
 
 def test_referential_memory_query_uses_two_recent_conversation_messages() -> None:

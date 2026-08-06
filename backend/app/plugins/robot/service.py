@@ -3576,14 +3576,17 @@ class RobotService:
             return ""
 
         speaker_global_key = speaker_global_key_from_context(sender_key, reply_target)
-        ensure_legacy_robot_memories_upgraded(str(item_id), store=vector_store)
-        vector_store.maintain_memories(str(item_id))
+        from app.services.agent.memory.scope import resolve_scope
+
+        memory_scope = resolve_scope(str(item_id))
+        ensure_legacy_robot_memories_upgraded(memory_scope, store=vector_store)
+        vector_store.maintain_memories(memory_scope)
         try:
-            all_memories = vector_store.get_all_memories(str(item_id))
+            all_memories = vector_store.get_all_memories(memory_scope)
         except Exception as exc:
             logger.debug(
-                "[RobotService] Failed to load robot impression memories item=%s: %s",
-                item_id,
+                "[RobotService] Failed to load robot impression memories scope=%s: %s",
+                memory_scope,
                 exc,
             )
             all_memories = []
@@ -3610,7 +3613,7 @@ class RobotService:
         if query_text:
             try:
                 recalled = vector_store.search_memories(
-                    item_id=str(item_id),
+                    handler_id=memory_scope,
                     query=query_text,
                     n_results=max(1, len(scoped_memories)),
                     include_expired=False,

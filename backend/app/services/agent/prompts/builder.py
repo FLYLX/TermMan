@@ -474,12 +474,15 @@ def _collect_long_term_memories(
     if not allowed_types:
         return ""
 
+    from app.services.agent.memory.scope import resolve_scope
+
+    scope = resolve_scope(item_id, agent)
     try:
-        all_memories = vector_store.get_all_memories(item_id)
+        all_memories = vector_store.get_all_memories(scope)
     except Exception as exc:
         logger.warning(
-            "[PromptBuilder] Failed to load long-term memories for item=%s: %s",
-            item_id,
+            "[PromptBuilder] Failed to load long-term memories for scope=%s: %s",
+            scope,
             exc,
         )
         all_memories = []
@@ -498,7 +501,7 @@ def _collect_long_term_memories(
     seen_ids: set[str] = set()
 
     for memory in _collect_always_on_memories(
-        item_id,
+        scope,
         allowed_types=allowed_types,
         agent=agent,
         all_memories=all_memories,
@@ -512,7 +515,7 @@ def _collect_long_term_memories(
     if query:
         try:
             memories = vector_store.search_memories(
-                item_id=item_id,
+                item_id=scope,
                 query=query,
                 n_results=max(1, len(scoped_memories)),
                 include_expired=False,
@@ -522,8 +525,8 @@ def _collect_long_term_memories(
             )
         except Exception as exc:
             logger.warning(
-                "[PromptBuilder] Failed to query long-term memories for item=%s: %s",
-                item_id,
+                "[PromptBuilder] Failed to query long-term memories for scope=%s: %s",
+                scope,
                 exc,
             )
             memories = []

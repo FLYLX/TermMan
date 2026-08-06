@@ -1269,9 +1269,10 @@ def get_token_usage(
     current_user: CurrentUser,
     id: uuid.UUID,
 ) -> dict[str, Any]:
+    from app.services.agent.memory.scope import resolve_scope
     from app.services.agent.token_usage import token_usage_tracker
 
-    stats = token_usage_tracker.get_item_stats(str(id))
+    stats = token_usage_tracker.get_item_stats(resolve_scope(str(id)))
     if stats is None:
         return {
             "item_id": str(id),
@@ -1298,11 +1299,12 @@ def get_token_usage_by_task(
         raise HTTPException(status_code=404, detail="Item not found")
     _check_item_permission(item, current_user)
 
+    from app.services.agent.memory.scope import resolve_scope
     from app.services.agent.reply_ticket import reply_ticket_manager
     from app.services.agent.token_usage import token_usage_tracker
 
     tasks: list[dict[str, Any]] = []
-    for row in token_usage_tracker.get_task_stats(str(id), limit=50):
+    for row in token_usage_tracker.get_task_stats(resolve_scope(str(id)), limit=50):
         ticket = reply_ticket_manager.get(row["reply_ticket_id"])
         plan: list[dict[str, Any]] = []
         if ticket is not None:

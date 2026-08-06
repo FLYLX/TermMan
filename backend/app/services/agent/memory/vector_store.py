@@ -484,14 +484,14 @@ class VectorStoreService:
         self,
         *,
         memory_id: str | None = None,
-        item_id: str | None = None,
+        handler_id: str | None = None,
     ) -> None:
         if not self._ensure_lexical_index():
             return
         if memory_id is None and item_id is None:
             return
         field = "memory_id" if memory_id is not None else "item_id"
-        value = str(memory_id if memory_id is not None else item_id)
+        value = str(memory_id if memory_id is not None else handler_id)
         with self._lexical_index_lock:
             try:
                 with sqlite3.connect(self._lexical_index_file(), timeout=10) as connection:
@@ -555,7 +555,7 @@ class VectorStoreService:
     def _search_lexical_index(
         self,
         *,
-        item_id: str,
+        handler_id: str,
         query: str,
         memory_type: MemoryType | None,
         limit: int,
@@ -576,7 +576,7 @@ class VectorStoreService:
             "SELECT memory_id, content, metadata_json "
             "FROM memory_fts WHERE memory_fts MATCH ? AND item_id = ?"
         )
-        params: list[Any] = [match_query, str(item_id)]
+        params: list[Any] = [match_query, str(handler_id)]
         if memory_type:
             sql += " AND memory_type = ?"
             params.append(str(memory_type))
@@ -737,13 +737,13 @@ class VectorStoreService:
 
     def _fallback_memories_for_item(
         self,
-        item_id: str,
+        handler_id: str,
         memory_type: MemoryType | None = None,
     ) -> list[dict[str, Any]]:
         memories: list[dict[str, Any]] = []
         for memory in self._load_fallback_memories():
             metadata = memory.get("metadata") if isinstance(memory.get("metadata"), dict) else {}
-            if str(metadata.get("item_id") or "") != str(item_id):
+            if str(metadata.get("item_id") or "") != str(handler_id):
                 continue
             if memory_type and metadata.get("memory_type") != memory_type:
                 continue
@@ -766,12 +766,12 @@ class VectorStoreService:
 
     @staticmethod
     def _build_where_filter(
-        item_id: str | None = None,
+        handler_id: str | None = None,
         memory_type: MemoryType | None = None,
     ) -> dict[str, Any] | None:
         filters: list[dict[str, Any]] = []
-        if item_id:
-            filters.append({"item_id": item_id})
+        if handler_id:
+            filters.append({"item_id": handler_id})
         if memory_type:
             filters.append({"memory_type": memory_type})
 
@@ -892,7 +892,7 @@ class VectorStoreService:
     def _search_collection_lexically(
         self,
         *,
-        item_id: str,
+        handler_id: str,
         query: str,
         memory_type: MemoryType | None,
         include_expired: bool,
@@ -900,9 +900,9 @@ class VectorStoreService:
         n_results: int,
     ) -> list[dict[str, Any]]:
         candidates: list[dict[str, Any]] = []
-        where_filter = self._build_where_filter(item_id=item_id, memory_type=memory_type)
+        where_filter = self._build_where_filter(handler_id=handler_id, memory_type=memory_type)
         for memory in self._search_lexical_index(
-            item_id=item_id,
+            handler_id=handler_id,
             query=query,
             memory_type=memory_type,
             limit=max(n_results * 4, n_results),
@@ -937,7 +937,7 @@ class VectorStoreService:
             except Exception as exc:
                 logger.warning("[VectorStore] Failed to scan Chroma memories: %s", exc)
 
-        for memory in self._fallback_memories_for_item(item_id, memory_type=memory_type):
+        for memory in self._fallback_memories_for_item(handler_id, memory_type=memory_type):
             content = str(memory.get("content") or "")
             metadata = self._visible_memory_metadata(memory.get("metadata") or {})
             if str(metadata.get("memory_type") or "fact") not in MEMORY_TYPES:
@@ -979,7 +979,7 @@ class VectorStoreService:
 
     def add_memory(
         self,
-        item_id: str,
+        handler_id: str,
         content: str,
         memory_type: MemoryType = "fact",
         metadata: dict[str, Any] | None = None,
@@ -988,6 +988,11 @@ class VectorStoreService:
         allow_duplicate: bool = False,
         run_maintenance: bool = True,
     ) -> str | None:
+        """Add a long-term memory under the ItemHandler scope.
+
+        Memories belong to the handler and are shared by every item it
+        drives. The `item_id` metadata column physically stores the handler
+        id (kept for backward compatibility with existing rows)."""
         self._ensure_initialized()
         if memory_type not in MEMORY_TYPES:
             raise ValueError(f"Unsupported long-term memory type: {memory_type}")
@@ -995,9 +1000,9 @@ class VectorStoreService:
             memory_id = str(uuid.uuid4())
 
         if not allow_duplicate:
-            existing = self._check_duplicate(item_id, content)
+            existing = self._check_duplicate(handler_id, content)
             if existing:
-                logger.info(f"[VectorStore] Skipping duplicate memory for item {item_id}")
+                logger.info(f"[VectorStore] Skipping duplicate memory for handler {handler_id}")
                 return None
 
         now = datetime.now()
@@ -1007,7 +1012,7 @@ class VectorStoreService:
             now=now,
             ttl_days=ttl_days,
         )
-        meta["item_id"] = item_id
+        meta["item_id"] = handler_id
         meta["memory_type"] = memory_type
         meta.setdefault("created_at", now.isoformat())
 
@@ -1031,27 +1036,27 @@ class VectorStoreService:
             )
             saved_id = memory_id
 
-        logger.info(f"[VectorStore] Added {memory_type} memory {memory_id} for item {item_id}")
+        logger.info(f"[VectorStore] Added {memory_type} memory {memory_id} for handler {handler_id}")
         self._upsert_lexical_memory(
             memory_id=memory_id,
             content=content,
             metadata=meta,
         )
         if run_maintenance:
-            self._maybe_compact_expired_memories(item_id)
+            self._maybe_compact_expired_memories(handler_id)
         return saved_id
 
-    def _check_duplicate(self, item_id: str, content: str) -> bool:
+    def _check_duplicate(self, handler_id: str, content: str) -> bool:
         self._ensure_initialized()
         if self._collection is None:
             return any(
                 memory.get("content") == content
-                for memory in self._fallback_memories_for_item(item_id)
+                for memory in self._fallback_memories_for_item(handler_id)
             )
         if not self._collection_supports_current_model():
             try:
                 results = self._collection.get(
-                    where={"item_id": item_id},
+                    where={"handler_id": handler_id},
                     include=["documents"],
                 )
                 return content in (results.get("documents") or [])
@@ -1064,7 +1069,7 @@ class VectorStoreService:
         results = self._collection.query(
             query_embeddings=[query_embedding],
             n_results=1,
-            where={"item_id": item_id},
+            where={"handler_id": handler_id},
         )
 
         if results["distances"] and results["distances"][0]:
@@ -1076,7 +1081,7 @@ class VectorStoreService:
 
     def search_memories(
         self,
-        item_id: str,
+        handler_id: str,
         query: str,
         n_results: int = 5,
         memory_type: MemoryType | None = None,
@@ -1087,10 +1092,10 @@ class VectorStoreService:
         candidate_multiplier: int = DEFAULT_RECALL_CANDIDATE_MULTIPLIER,
     ) -> list[dict[str, Any]]:
         self._ensure_initialized()
-        self.maintain_memories(item_id)
+        self.maintain_memories(handler_id)
         if self._collection is None or not self._collection_supports_current_model():
             return self._search_collection_lexically(
-                item_id=item_id,
+                handler_id=handler_id,
                 query=query,
                 memory_type=memory_type,
                 include_expired=include_expired,
@@ -1101,14 +1106,14 @@ class VectorStoreService:
         query_embedding = self._try_encode_single(query)
         if query_embedding is None:
             return self._search_collection_lexically(
-                item_id=item_id,
+                handler_id=handler_id,
                 query=query,
                 memory_type=memory_type,
                 include_expired=include_expired,
                 active_only=active_only,
                 n_results=n_results,
             )
-        where_filter = self._build_where_filter(item_id=item_id, memory_type=memory_type)
+        where_filter = self._build_where_filter(handler_id=handler_id, memory_type=memory_type)
         query_results = max(n_results, n_results * max(candidate_multiplier, 1))
 
         memories: list[dict[str, Any]] = []
@@ -1151,7 +1156,7 @@ class VectorStoreService:
         except Exception as exc:
             logger.warning("[VectorStore] Failed to search Chroma memories: %s", exc)
             return self._search_collection_lexically(
-                item_id=item_id,
+                handler_id=handler_id,
                 query=query,
                 memory_type=memory_type,
                 include_expired=include_expired,
@@ -1159,7 +1164,7 @@ class VectorStoreService:
                 n_results=n_results,
             )
 
-        for memory in self._fallback_memories_for_item(item_id, memory_type=memory_type):
+        for memory in self._fallback_memories_for_item(handler_id, memory_type=memory_type):
             metadata = self._visible_memory_metadata(memory.get("metadata", {}))
             content = str(memory.get("content") or "")
             if str(metadata.get("memory_type") or "fact") not in MEMORY_TYPES:
@@ -1180,7 +1185,7 @@ class VectorStoreService:
             })
 
         for memory in self._search_lexical_index(
-            item_id=item_id,
+            handler_id=handler_id,
             query=query,
             memory_type=memory_type,
             limit=query_results,
@@ -1249,11 +1254,11 @@ class VectorStoreService:
 
     def get_all_memories(
         self,
-        item_id: str,
+        handler_id: str,
         memory_type: MemoryType | None = None,
     ) -> list[dict[str, Any]]:
         self._ensure_initialized()
-        where_filter = self._build_where_filter(item_id=item_id, memory_type=memory_type)
+        where_filter = self._build_where_filter(handler_id=handler_id, memory_type=memory_type)
 
         memories = []
         if self._collection is not None:
@@ -1271,7 +1276,7 @@ class VectorStoreService:
             except Exception as exc:
                 logger.warning("[VectorStore] Failed to read Chroma memories: %s", exc)
 
-        memories.extend(self._fallback_memories_for_item(item_id, memory_type=memory_type))
+        memories.extend(self._fallback_memories_for_item(handler_id, memory_type=memory_type))
         return memories
 
     def get_memory(self, memory_id: str) -> dict[str, Any] | None:
@@ -1300,8 +1305,8 @@ class VectorStoreService:
                 }
         return None
 
-    def get_memory_stats(self, item_id: str) -> dict[str, Any]:
-        all_memories = self.get_all_memories(item_id)
+    def get_memory_stats(self, handler_id: str) -> dict[str, Any]:
+        all_memories = self.get_all_memories(handler_id)
 
         stats = {
             "total": 0,
@@ -1346,23 +1351,23 @@ class VectorStoreService:
         self._delete_lexical_memories(memory_id=memory_id)
         return deleted
 
-    def delete_item_memories(self, item_id: str):
+    def delete_item_memories(self, handler_id: str):
         self._ensure_initialized()
         if self._collection is not None:
-            self._collection.delete(where={"item_id": item_id})
+            self._collection.delete(where={"handler_id": handler_id})
         fallback_memories = self._load_fallback_memories()
         kept = []
         for memory in fallback_memories:
             metadata = memory.get("metadata") if isinstance(memory.get("metadata"), dict) else {}
-            if str(metadata.get("item_id") or "") != str(item_id):
+            if str(metadata.get("handler_id") or "") != str(handler_id):
                 kept.append(memory)
         if len(kept) != len(fallback_memories):
             self._write_fallback_memories(kept)
-        self._delete_lexical_memories(item_id=item_id)
+        self._delete_lexical_memories(handler_id=handler_id)
         with self._maintenance_lock:
-            self._maintenance_items.discard(str(item_id))
-            self._maintenance_last_checked.pop(str(item_id), None)
-        logger.info(f"[VectorStore] Deleted all memories for item {item_id}")
+            self._maintenance_items.discard(str(handler_id))
+            self._maintenance_last_checked.pop(str(handler_id), None)
+        logger.info(f"[VectorStore] Deleted all memories for item {handler_id}")
 
     @staticmethod
     def _memory_compaction_scope_key(memory: dict[str, Any]) -> tuple[str, ...]:
@@ -1465,34 +1470,34 @@ class VectorStoreService:
             break
         return prefix + "；".join(parts)
 
-    def _enter_memory_maintenance(self, item_id: str) -> bool:
+    def _enter_memory_maintenance(self, handler_id: str) -> bool:
         with self._maintenance_lock:
-            if item_id in self._maintenance_items:
+            if handler_id in self._maintenance_items:
                 return False
-            self._maintenance_items.add(item_id)
+            self._maintenance_items.add(handler_id)
             return True
 
-    def _leave_memory_maintenance(self, item_id: str) -> None:
+    def _leave_memory_maintenance(self, handler_id: str) -> None:
         with self._maintenance_lock:
-            self._maintenance_items.discard(item_id)
+            self._maintenance_items.discard(handler_id)
 
-    def _maybe_compact_expired_memories(self, item_id: str) -> None:
+    def _maybe_compact_expired_memories(self, handler_id: str) -> None:
         try:
-            self.maintain_memories(item_id, interval_seconds=0)
+            self.maintain_memories(handler_id, interval_seconds=0)
         except Exception as exc:
             logger.warning(
                 "[VectorStore] Expired memory maintenance failed for item=%s: %s",
-                item_id,
+                handler_id,
                 exc,
             )
 
     def maintain_memories(
         self,
-        item_id: str,
+        handler_id: str,
         *,
         interval_seconds: float = 300,
     ) -> dict[str, Any]:
-        normalized_item_id = str(item_id)
+        normalized_item_id = str(handler_id)
         now = time.monotonic()
         with self._maintenance_lock:
             last_checked = self._maintenance_last_checked.get(normalized_item_id, 0.0)
@@ -1558,7 +1563,7 @@ class VectorStoreService:
                     continue
                 summary_type = self._compaction_memory_type(source_type)
                 summary_id = self.add_memory(
-                    item_id=normalized_item_id,
+                    handler_id=normalized_item_id,
                     content=summary_content,
                     memory_type=summary_type,
                     metadata=self._compaction_metadata(group),
@@ -1588,14 +1593,14 @@ class VectorStoreService:
         finally:
             self._leave_memory_maintenance(normalized_item_id)
 
-    def expire_old_memories(self, item_id: str) -> int:
+    def expire_old_memories(self, handler_id: str) -> int:
         compaction = self.compact_expired_memories(
-            item_id,
+            handler_id,
             threshold=EXPIRED_MEMORY_COMPACTION_THRESHOLD,
         )
         expired_ids = {
             str(memory.get("id") or "")
-            for memory in self.get_all_memories(item_id)
+            for memory in self.get_all_memories(handler_id)
             if memory.get("id")
             and self._is_expired_memory(memory.get("metadata") or {})
         }
@@ -1606,7 +1611,7 @@ class VectorStoreService:
             logger.info(
                 "[VectorStore] Removed or compacted %s expired memories for item %s",
                 removed,
-                item_id,
+                handler_id,
             )
         return removed
 
@@ -1674,8 +1679,8 @@ class VectorStoreService:
         b_arr = np.array(b)
         return np.dot(a_arr, b_arr) / (np.linalg.norm(a_arr) * np.linalg.norm(b_arr))
 
-    def get_memories_by_type(self, item_id: str, memory_type: MemoryType) -> list[dict[str, Any]]:
-        return self.get_all_memories(item_id, memory_type=memory_type)
+    def get_memories_by_type(self, handler_id: str, memory_type: MemoryType) -> list[dict[str, Any]]:
+        return self.get_all_memories(handler_id, memory_type=memory_type)
 
     def update_memory(self, memory_id: str, content: str | None = None, metadata: dict[str, Any] | None = None) -> bool:
         self._ensure_initialized()
@@ -1763,9 +1768,9 @@ class VectorStoreService:
         return updated or fallback_updated
 
 
-    def supersede_by_memory_key(self, item_id: str) -> int:
+    def supersede_by_memory_key(self, handler_id: str) -> int:
         """Keep only the newest memory per memory_key; delete older same-key entries."""
-        all_memories = self.get_all_memories(item_id)
+        all_memories = self.get_all_memories(handler_id)
         if len(all_memories) < 2:
             return 0
 
@@ -1808,12 +1813,12 @@ class VectorStoreService:
         logger.info(
             "[VectorStore] Superseded %s keyed memories for item %s",
             len(ids_to_delete),
-            item_id,
+            handler_id,
         )
         return len(ids_to_delete)
 
-    def get_item_memory_count(self, item_id: str) -> int:
-        return len(self.get_all_memories(item_id))
+    def get_item_memory_count(self, handler_id: str) -> int:
+        return len(self.get_all_memories(handler_id))
 
     def summarize_memories(
         self,
