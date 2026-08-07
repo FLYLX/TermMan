@@ -284,7 +284,7 @@ def _always_on_memory_sort_key(memory: dict[str, Any]) -> tuple[float, float]:
 
 
 def _collect_always_on_memories(
-    item_id: str,
+    handler_id: str,
     *,
     allowed_types: tuple[str, ...],
     agent: "Agent | None" = None,
@@ -301,11 +301,11 @@ def _collect_always_on_memories(
     ]
     if all_memories is None:
         try:
-            all_memories = vector_store.get_all_memories(item_id)
+            all_memories = vector_store.get_all_memories(handler_id)
         except Exception as exc:
             logger.warning(
-                "[PromptBuilder] Failed to load always-on memories for item=%s: %s",
-                item_id,
+                "[PromptBuilder] Failed to load always-on memories for handler=%s: %s",
+                handler_id,
                 exc,
             )
             return collected
@@ -474,15 +474,17 @@ def _collect_long_term_memories(
     if not allowed_types:
         return ""
 
-    from app.services.agent.memory.scope import resolve_scope
+    handler_id = str(getattr(agent, "handler_id", "") or "").strip()
+    if not handler_id:
+        from app.services.agent.memory.scope import resolve_handler_id
 
-    scope = resolve_scope(item_id, agent)
+        handler_id = resolve_handler_id(item_id)
     try:
-        all_memories = vector_store.get_all_memories(scope)
+        all_memories = vector_store.get_all_memories(handler_id)
     except Exception as exc:
         logger.warning(
-            "[PromptBuilder] Failed to load long-term memories for scope=%s: %s",
-            scope,
+            "[PromptBuilder] Failed to load long-term memories for handler=%s: %s",
+            handler_id,
             exc,
         )
         all_memories = []
@@ -501,7 +503,7 @@ def _collect_long_term_memories(
     seen_ids: set[str] = set()
 
     for memory in _collect_always_on_memories(
-        scope,
+        handler_id,
         allowed_types=allowed_types,
         agent=agent,
         all_memories=all_memories,
@@ -515,7 +517,7 @@ def _collect_long_term_memories(
     if query:
         try:
             memories = vector_store.search_memories(
-                item_id=scope,
+                handler_id=handler_id,
                 query=query,
                 n_results=max(1, len(scoped_memories)),
                 include_expired=False,
@@ -525,8 +527,8 @@ def _collect_long_term_memories(
             )
         except Exception as exc:
             logger.warning(
-                "[PromptBuilder] Failed to query long-term memories for scope=%s: %s",
-                scope,
+                "[PromptBuilder] Failed to query long-term memories for handler=%s: %s",
+                handler_id,
                 exc,
             )
             memories = []
@@ -548,6 +550,7 @@ def _collect_long_term_memories(
         collected = sorted(
             collected,
             key=lambda m: (
+                0 if _memory_source_item_id(m) == item_id else 1,
                 type_rank.get(_memory_type(m), 4),
                 -_memory_relevance_score(m),
             ),
@@ -566,7 +569,13 @@ def _collect_long_term_memories(
     if not trimmed:
         return ""
 
-    return _format_memories_with_conflict_hints(trimmed)
+    # Current terminal's memories first (stable: keeps relevance order
+    # within each group).
+    trimmed = sorted(
+        trimmed,
+        key=lambda m: 0 if _memory_source_item_id(m) == item_id else 1,
+    )
+    return _format_memories_with_conflict_hints(trimmed, current_item_id=item_id)
 
 
 def _parse_memory_datetime(value: Any) -> datetime | None:
@@ -699,7 +708,54 @@ def _format_long_term_memory(memory: dict[str, Any]) -> str:
     return f"- {prefix}{content}"
 
 
-def _format_memories_with_conflict_hints(memories: list[dict[str, Any]]) -> str:
+def _terminal_identity(item_id: str) -> tuple[str, str]:
+    """(context_prompt, current_terminal_label) for this turn.
+
+    Tells the agent which terminal this turn's messages come from and which
+    terminals its handler manages in total (memories are shared across
+    them, so cross-terminal facts arrive with a source label)."""
+    if not item_id:
+        return "", ""
+    try:
+        from app.services.agent.memory.scope import handler_item_directory
+
+        _handler_id, items = handler_item_directory(item_id)
+    except Exception:
+        return "", ""
+    if not items:
+        return "", ""
+
+    current = items[0]
+    current_label = current["title"] or current["item_id"]
+    lines = [
+        "Current terminal context:",
+        f"- This turn's messages come from terminal: {current_label}",
+    ]
+    if len(items) > 1:
+        others = ", ".join(
+            (entry["title"] or entry["item_id"]) for entry in items[1:]
+        )
+        lines.append(f"- You also manage these terminals: {others}")
+        lines.append(
+            "- Routing rule: terminal commands, terminal state queries and "
+            "replies for this turn all target the source terminal above — "
+            "the backend routes tool calls to it automatically. Long-term "
+            "memories are shared across every terminal you manage, and "
+            "memories from another terminal are labeled with [from <terminal>]."
+        )
+    return "\n".join(lines), current_label
+
+
+def _memory_source_item_id(memory: dict[str, Any]) -> str:
+    metadata = memory.get("metadata") or {}
+    return str(metadata.get("source_item_id") or "").strip()
+
+
+def _format_memories_with_conflict_hints(
+    memories: list[dict[str, Any]],
+    *,
+    current_item_id: str = "",
+) -> str:
     """Format recalled memories; annotate older entries that share a memory_key with a newer one."""
     key_newest: dict[str, str] = {}
     for memory in memories:
@@ -723,11 +779,30 @@ def _format_memories_with_conflict_hints(memories: list[dict[str, Any]]) -> str:
         if count > 1:
             conflict_keys.add(key)
 
+    source_ids = {
+        _memory_source_item_id(memory)
+        for memory in memories
+        if _memory_source_item_id(memory)
+        and _memory_source_item_id(memory) != current_item_id
+    }
+    titles: dict[str, str] = {}
+    if source_ids:
+        try:
+            from app.services.agent.memory.scope import item_titles
+
+            titles = item_titles(sorted(source_ids))
+        except Exception:
+            titles = {}
+
     lines: list[str] = []
     for memory in memories:
         metadata = memory.get("metadata") or {}
         key = str(metadata.get("memory_key") or "").strip()
         line = _format_long_term_memory(memory)
+        source_id = _memory_source_item_id(memory)
+        if source_id and source_id != current_item_id:
+            source_title = titles.get(source_id) or source_id
+            line = line.replace("- ", f"- [from {source_title}] ", 1)
         if key in conflict_keys:
             timestamp = str(metadata.get("updated_at") or metadata.get("created_at") or "")
             if timestamp < key_newest.get(key, ""):
@@ -871,6 +946,10 @@ def build_chat_turn_messages(
         }
     ]
 
+    terminal_context, terminal_label = _terminal_identity(item_id)
+    if terminal_context:
+        prompt_messages.append({"role": "system", "content": terminal_context})
+
     if not latest_only_context and policy.include_session_summary:
         summary = _latest_session_summary_from_messages(history_events)
         if summary and summary.get("content"):
@@ -921,7 +1000,10 @@ def build_chat_turn_messages(
         }
     )
 
-    prompt_messages.append({"role": "user", "content": message.strip()})
+    user_content = message.strip()
+    if terminal_label and not user_content.startswith("[Robot message"):
+        user_content = f"[来自终端：{terminal_label}] {user_content}"
+    prompt_messages.append({"role": "user", "content": user_content})
     return _dedupe_adjacent_messages(prompt_messages)
 
 
@@ -988,6 +1070,10 @@ def build_terminal_turn_messages(
         }
     ]
 
+    terminal_context, terminal_label = _terminal_identity(item_id)
+    if terminal_context:
+        prompt_messages.append({"role": "system", "content": terminal_context})
+
     if turn_type == PromptTurnType.TERMINAL_RAW_FEEDBACK:
         raw_feedback_notice = (
             "下面输入的是命令发出后的原生日志反馈。"
@@ -1053,6 +1139,8 @@ def build_terminal_turn_messages(
     source_label = FILTERED_TERMINAL_LABEL
     if turn_type == PromptTurnType.TERMINAL_RAW_FEEDBACK:
         source_label = RAW_TERMINAL_LABEL
+    if terminal_label:
+        source_label = f"{source_label}（来自终端：{terminal_label}）"
 
     prompt_messages.append(
         {

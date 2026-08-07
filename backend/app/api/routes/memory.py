@@ -25,12 +25,12 @@ router = APIRouter()
 
 
 def _memory_scope(item_id: uuid.UUID) -> str:
-    """Memories are handler-scoped: all items driven by one ItemHandler share
-    its memory pool. The URL keeps item-level permission checks; the scope
-    resolves to the handler."""
-    from app.services.agent.memory.scope import resolve_scope
+    """Memories are keyed by handler id: all items driven by one ItemHandler
+    share its memory pool. The URL keeps item-level permission checks; the
+    scope resolves to the handler."""
+    from app.services.agent.memory.scope import resolve_handler_id
 
-    return resolve_scope(str(item_id))
+    return resolve_handler_id(str(item_id))
 LongTermMemoryType = Literal["fact", "preference", "error", "context"]
 STATUS_MEMORY_TYPES = {"error"}
 INACTIVE_MEMORY_STATUSES = {"resolved"}
@@ -174,8 +174,8 @@ def _get_item_memory_or_404(item_id: uuid.UUID, memory_id: str) -> dict[str, Any
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
 
-    memory_item_id = str((memory.get("metadata") or {}).get("item_id") or "")
-    if memory_item_id != str(item_id):
+    memory_handler_id = str((memory.get("metadata") or {}).get("handler_id") or "")
+    if memory_handler_id != _memory_scope(item_id):
         raise HTTPException(status_code=404, detail="Memory not found")
 
     return memory
@@ -233,7 +233,7 @@ def _visible_memory_stats(memories: list[dict[str, Any]]) -> dict[str, Any]:
 def _sanitize_import_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
     clean_metadata: dict[str, Any] = {}
     for key, value in dict(metadata or {}).items():
-        if key in {"item_id", "memory_type", "distance"}:
+        if key in {"item_id", "handler_id", "memory_type", "distance"}:
             continue
         if value is None:
             continue
@@ -355,7 +355,7 @@ def clear_all_session_data(
         results["chat_session"] = "cleared"
 
     try:
-        vector_store.delete_item_memories(_memory_scope(item_id))
+        vector_store.delete_handler_memories(_memory_scope(item_id))
         results["memories"] = "cleared"
     except Exception as e:
         logger.error(f"Failed to clear memories: {e}")
@@ -515,6 +515,7 @@ def import_memories(
 
         metadata = _sanitize_import_metadata(memory.metadata)
         metadata["imported_at"] = imported_at
+        metadata.setdefault("source_item_id", str(item_id))
         if memory.id:
             metadata["imported_from_memory_id"] = memory.id
         raw_memory_type = str(memory.metadata.get("memory_type") or "fact")
@@ -598,11 +599,13 @@ def add_memory(
 ) -> Any:
     _get_accessible_item(item_id, session, current_user)
 
+    metadata = dict(request.metadata or {})
+    metadata.setdefault("source_item_id", str(item_id))
     memory_id = vector_store.add_memory(
         handler_id=_memory_scope(item_id),
         content=request.content,
         memory_type=request.memory_type,
-        metadata=request.metadata,
+        metadata=metadata,
         ttl_days=request.ttl_days,
         allow_duplicate=True,
     )
@@ -704,7 +707,7 @@ def clear_memories(
 ) -> Any:
     _get_accessible_item(item_id, session, current_user)
 
-    vector_store.delete_item_memories(_memory_scope(item_id))
+    vector_store.delete_handler_memories(_memory_scope(item_id))
     return {"message": "All memories cleared"}
 
 

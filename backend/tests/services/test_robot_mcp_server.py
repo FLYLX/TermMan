@@ -1407,7 +1407,7 @@ def test_robot_mcp_save_memory_persists_scoped_long_term_memory(monkeypatch) -> 
     assert "Memory saved" in result[0]["text"]
     assert captured["existing_item_id"] == "item-1"
     assert captured["existing_memory_type"] == "fact"
-    assert captured["item_id"] == "item-1"
+    assert captured["handler_id"] == "item-1"
     assert captured["content"] == "\u4f60\u53eb\u5927\u72d7"
     assert captured["memory_type"] == "fact"
     metadata = captured["metadata"]

@@ -88,7 +88,7 @@ def test_persist_memory_candidate_skips_duplicate_hash() -> None:
     )
 
     class FakeStore:
-        def get_all_memories(self, item_id: str, memory_type: str | None = None):
+        def get_all_memories(self, handler_id: str, memory_type: str | None = None):
             return [{"id": "old-1", "metadata": {"content_hash": "same-hash"}}]
 
         def add_memory(self, **kwargs):
@@ -108,7 +108,7 @@ def test_persist_memory_candidate_writes_with_candidate_ttl() -> None:
     captured: dict[str, object] = {}
 
     class FakeStore:
-        def get_all_memories(self, item_id: str, memory_type: str | None = None):
+        def get_all_memories(self, handler_id: str, memory_type: str | None = None):
             return []
 
         def add_memory(self, **kwargs):
@@ -118,7 +118,7 @@ def test_persist_memory_candidate_writes_with_candidate_ttl() -> None:
     memory_id = persist_memory_candidate("item-2", candidate, store=FakeStore())
 
     assert memory_id == "mem-1"
-    assert captured["item_id"] == "item-2"
+    assert captured["handler_id"] == "item-2"
     assert captured["content"] == "cron_job.py 位于 /app/src/cron_job.py"
     assert captured["memory_type"] == "fact"
     assert captured["ttl_days"] == 90
@@ -171,7 +171,7 @@ def test_persist_memory_candidate_updates_existing_same_key_memory() -> None:
     captured: dict[str, object] = {}
 
     class FakeStore:
-        def get_all_memories(self, item_id: str, memory_type: str | None = None):
+        def get_all_memories(self, handler_id: str, memory_type: str | None = None):
             return [
                 {
                     "id": "old-1",
@@ -224,7 +224,7 @@ def test_task_word_does_not_block_a_real_preference_memory() -> None:
 
 def test_build_status_update_memory_candidate_ignores_task_queue_state() -> None:
     class FakeStore:
-        def get_all_memories(self, item_id: str, memory_type: str | None = None):
+        def get_all_memories(self, handler_id: str, memory_type: str | None = None):
             return [
                 {
                     "id": "task-1",
@@ -267,7 +267,7 @@ def test_persist_memory_candidate_rejects_removed_task_memory_type() -> None:
 
 def test_build_status_update_memory_candidate_skips_ambiguous_targets() -> None:
     class FakeStore:
-        def get_all_memories(self, item_id: str, memory_type: str | None = None):
+        def get_all_memories(self, handler_id: str, memory_type: str | None = None):
             return [
                 {
                     "id": "task-1",

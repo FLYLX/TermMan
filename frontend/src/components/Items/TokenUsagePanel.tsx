@@ -12,7 +12,7 @@ interface ModelUsage {
 }
 
 interface TokenStats {
-  item_id: string
+  handler_id: string
   total_prompt_tokens: number
   total_completion_tokens: number
   total_tokens: number
@@ -43,7 +43,7 @@ interface TaskUsage {
 }
 
 interface TaskUsageResponse {
-  item_id: string
+  handler_id: string
   tasks: TaskUsage[]
 }
 

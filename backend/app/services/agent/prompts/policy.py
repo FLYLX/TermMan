@@ -701,7 +701,7 @@ def build_confirmation_memory_candidate(
 
 
 def build_status_update_memory_candidate(
-    item_id: str,
+    handler_id: str,
     user_message: str,
     *,
     store: Any,
@@ -715,16 +715,13 @@ def build_status_update_memory_candidate(
     if not next_status:
         return None
 
-    from app.services.agent.memory.scope import resolve_scope
-
-    scope = resolve_scope(item_id)
     try:
-        memories = store.get_all_memories(scope, memory_type=target_type)
+        memories = store.get_all_memories(handler_id, memory_type=target_type)
     except Exception as exc:
         logger.warning(
-            "[MemoryPolicy] Failed to inspect existing %s memories for scope=%s: %s",
+            "[MemoryPolicy] Failed to inspect existing %s memories for handler=%s: %s",
             target_type,
-            scope,
+            handler_id,
             exc,
         )
         return None
@@ -778,30 +775,31 @@ def build_status_update_memory_candidate(
 
 
 def persist_memory_candidate(
-    item_id: str,
+    handler_id: str,
     candidate: MemoryCandidate | None,
     *,
     store: Any,
+    source_item_id: str = "",
 ) -> str | None:
     if candidate is None:
         return None
     if candidate.memory_type not in SUPPORTED_LONG_TERM_MEMORY_TYPES:
         logger.info(
-            "[MemoryPolicy] Skip unsupported long-term memory type=%s for item=%s",
+            "[MemoryPolicy] Skip unsupported long-term memory type=%s for handler=%s",
             candidate.memory_type,
-            item_id,
+            handler_id,
         )
         return None
-    from app.services.agent.memory.scope import resolve_scope
-
-    scope = resolve_scope(item_id)
+    source_item_id = str(source_item_id or "").strip()
+    if source_item_id:
+        candidate.metadata.setdefault("source_item_id", source_item_id)
     content_hash = candidate.metadata.get("content_hash")
     try:
-        existing_memories = store.get_all_memories(scope, memory_type=candidate.memory_type)
+        existing_memories = store.get_all_memories(handler_id, memory_type=candidate.memory_type)
     except Exception as exc:
         logger.warning(
-            "[MemoryPolicy] Failed to inspect existing memories for scope=%s: %s",
-            scope,
+            "[MemoryPolicy] Failed to inspect existing memories for handler=%s: %s",
+            handler_id,
             exc,
         )
         existing_memories = []
@@ -811,8 +809,8 @@ def persist_memory_candidate(
             existing_hash = (memory.get("metadata") or {}).get("content_hash")
             if existing_hash == content_hash:
                 logger.info(
-                    "[MemoryPolicy] Skip duplicate long-term memory by content hash for item=%s",
-                    item_id,
+                    "[MemoryPolicy] Skip duplicate long-term memory by content hash for handler=%s",
+                    handler_id,
                 )
                 return None
 
@@ -841,8 +839,8 @@ def persist_memory_candidate(
                     )
                 except Exception as exc:
                     logger.warning(
-                        "[MemoryPolicy] Failed to update keyed long-term memory for item=%s: %s",
-                        item_id,
+                        "[MemoryPolicy] Failed to update keyed long-term memory for handler=%s: %s",
+                        handler_id,
                         exc,
                     )
                     updated = False
@@ -866,7 +864,7 @@ def persist_memory_candidate(
             "updated_at": datetime.now().isoformat(),
         }
         return store.add_memory(
-            item_id=scope,
+            handler_id=handler_id,
             content=candidate.content,
             memory_type=candidate.memory_type,
             metadata=metadata,
@@ -874,8 +872,8 @@ def persist_memory_candidate(
         )
     except Exception as exc:
         logger.warning(
-            "[MemoryPolicy] Failed to persist long-term memory for item=%s: %s",
-            item_id,
+            "[MemoryPolicy] Failed to persist long-term memory for handler=%s: %s",
+            handler_id,
             exc,
         )
         return None

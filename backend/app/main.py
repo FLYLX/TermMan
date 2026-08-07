@@ -36,12 +36,6 @@ async def lifespan(app: FastAPI):
     restore_agent_state()
     agent_task_watchdog.start()
 
-    from app.services.agent.memory.handler_scope_migration import (
-        run_handler_scope_migration,
-    )
-
-    run_handler_scope_migration()
-
     from app.services.agent.scheduled_tasks import scheduled_task_manager
 
     scheduled_task_manager.start()

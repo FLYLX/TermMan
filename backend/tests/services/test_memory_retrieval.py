@@ -50,22 +50,22 @@ class FakeMemoryCollection:
             "metadatas": [
                 [
                     {
-                        "item_id": "item-1",
+                        "handler_id": "item-1",
                         "memory_type": "fact",
                         "expires_at": (now - timedelta(days=1)).isoformat(),
                     },
                     {
-                        "item_id": "item-1",
+                        "handler_id": "item-1",
                         "memory_type": "task",
                         "status": "completed",
                     },
                     {
-                        "item_id": "item-1",
+                        "handler_id": "item-1",
                         "memory_type": "error",
                         "status": "resolved",
                     },
                     {
-                        "item_id": "item-1",
+                        "handler_id": "item-1",
                         "memory_type": "task",
                         "status": "active",
                     },
@@ -131,7 +131,7 @@ def test_vector_store_opens_chroma_when_remote_model_loading_is_disabled(
 
     class FakeClient:
         def get_or_create_collection(self, **kwargs):
-            assert kwargs["name"] == "item_memories"
+            assert kwargs["name"] == "handler_memories"
             return collection
 
     monkeypatch.setattr(settings, "CHROMA_PERSIST_DIR", str(tmp_path))
@@ -166,14 +166,14 @@ def test_vector_store_reindexes_existing_memories_when_model_changes(
     )
     client = vector_store_module.chromadb.PersistentClient(path=str(tmp_path))
     legacy = client.get_or_create_collection(
-        name="item_memories",
+        name="handler_memories",
         metadata={"description": "Long-term memory for items"},
     )
     legacy.add(
         ids=["memory-1"],
         embeddings=[[1.0, *([0.0] * 383)]],
         documents=["用户希望被叫主人"],
-        metadatas=[{"item_id": "item-1", "memory_type": "preference"}],
+        metadatas=[{"handler_id": "item-1", "memory_type": "preference"}],
     )
 
     monkeypatch.setattr(settings, "CHROMA_PERSIST_DIR", str(tmp_path))
@@ -193,7 +193,7 @@ def test_vector_store_reindexes_existing_memories_when_model_changes(
         service._ensure_initialized()
 
         assert service._collection is not None
-        assert service._collection.name.startswith("item_memories_baai_bge_small_zh")
+        assert service._collection.name.startswith("handler_memories_baai_bge_small_zh")
         assert service._collection.count() == 1
         assert service._collection.metadata["embedding_model"] == "BAAI/bge-small-zh-v1.5"
         assert service._collection.metadata["embedding_dimension"] == 512
@@ -202,7 +202,7 @@ def test_vector_store_reindexes_existing_memories_when_model_changes(
         assert [
             collection.name
             for collection in service._client.list_collections()
-            if collection.name.startswith("item_memories")
+            if collection.name.startswith("handler_memories")
         ] == [service._collection.name]
     finally:
         service._client = None
@@ -278,7 +278,7 @@ def test_hybrid_search_uses_fts_for_exact_technical_values(
             return {
                 "ids": [["semantic-only"]],
                 "documents": [["Minecraft server is configured"]],
-                "metadatas": [[{"item_id": "item-1", "memory_type": "fact"}]],
+                "metadatas": [[{"handler_id": "item-1", "memory_type": "fact"}]],
                 "distances": [[0.45]],
             }
 
@@ -294,7 +294,7 @@ def test_hybrid_search_uses_fts_for_exact_technical_values(
     service._upsert_lexical_memory(
         memory_id="exact-port",
         content="Minecraft 服务端口是 43906",
-        metadata={"item_id": "item-1", "memory_type": "fact"},
+        metadata={"handler_id": "item-1", "memory_type": "fact"},
     )
 
     try:
@@ -380,7 +380,7 @@ def test_compacts_ten_expired_memories_into_one_scoped_summary(
             memory_id=f"expired-{index}",
             content=f"historical server fact {index}",
             metadata={
-                "item_id": "item-expired",
+                "handler_id": "item-expired",
                 "memory_type": "fact",
                 "memory_scope": "conversation",
                 "robot_id": "robot-1",

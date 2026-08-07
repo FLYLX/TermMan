@@ -4217,43 +4217,6 @@ def test_robot_message_is_ignored_when_backend_queue_is_full(
     assert response.reply_chunks == []
 
 
-def test_send_command_writes_directly_to_terminal(
-    db: Session,
-    monkeypatch,
-) -> None:
-    item = create_random_item(db)
-    robot = create_random_robot(db)
-    db.add(
-        RobotItem(
-            robot_id=robot.id,
-            item_id=item.id,
-            allow_chat=True,
-            receive_filtered_output=False,
-            chat_alias="alpha",
-            is_default_target=False,
-        )
-    )
-    db.commit()
-
-    written: dict[str, object] = {}
-
-    def fake_write(item_id, command):
-        written["item_id"] = item_id
-        written["command"] = command
-        return True
-
-    monkeypatch.setattr(robot_service, "_write_to_item_terminal", fake_write)
-
-    response = robot_service.handle_inbound_message(
-        db,
-        robot,
-        _message("/send alpha ls -la"),
-    )
-
-    assert response.success is True
-    assert response.item_id == str(item.id)
-    assert written == {"item_id": item.id, "command": "ls -la"}
-
 
 def test_robot_impression_card_is_not_truncated_by_count(
     db: Session,
@@ -4705,3 +4668,54 @@ def test_think_blocks_are_stripped_from_visible_text() -> None:
     assert is_robot_internal_trace_text("</think>") is True
     assert is_robot_internal_trace_text("<think>想了一下</think>") is True
     assert is_robot_internal_trace_text("在呢") is False
+
+def test_term_command_without_text_switches_default_terminal(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item_a = create_random_item(db)
+    item_b = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item_a.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item_b.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="beta",
+            is_default_target=False,
+        )
+    )
+    db.commit()
+
+    captured = _capture_queued_chat(monkeypatch)
+
+    switch = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("/term beta"),
+    )
+    assert switch.success is True
+    assert switch.item_id == str(item_b.id)
+    assert switch.route_key == "beta"
+    assert any("已切换" in chunk for chunk in switch.reply_chunks)
+    assert "job" not in captured
+
+    follow_up = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("现在默认是哪个终端？", mentioned_bot=True),
+    )
+    assert follow_up.success is True
+    assert follow_up.item_id == str(item_b.id)
+    assert captured["job"].message == "现在默认是哪个终端？"

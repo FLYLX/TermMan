@@ -2854,7 +2854,8 @@ def test_stream_chat_uses_sqlite_shared_short_term_history(
         and message["content"] == "终端过滤输出:\nerror: missing file"
         for message in prompt_messages
     )
-    assert prompt_messages[-1] == {"role": "user", "content": "What should I do next?"}
+    assert prompt_messages[-1]["role"] == "user"
+    assert prompt_messages[-1]["content"].endswith("What should I do next?")
 
 
 def test_stream_chat_persists_explicit_preference_memory(
@@ -2865,7 +2866,7 @@ def test_stream_chat_persists_explicit_preference_memory(
 ) -> None:
     from app.api.routes import chat as chat_route
 
-    item, _ = _create_linked_item_and_handler(db)
+    item, handler = _create_linked_item_and_handler(db)
     fake_agent = _make_fake_agent()
     captured_memory: dict[str, object] = {}
 
@@ -2888,7 +2889,7 @@ def test_stream_chat_persists_explicit_preference_memory(
         assert response.status_code == 200
         list(response.iter_text())
 
-    assert captured_memory["item_id"] == str(item.id)
+    assert captured_memory["handler_id"] == str(handler.id)
     assert captured_memory["content"] == "用户偏好：以后都用中文并且回复简洁"
     assert captured_memory["memory_type"] == "preference"
     assert captured_memory["ttl_days"] is None
@@ -2905,7 +2906,7 @@ def test_stream_chat_confirmation_persists_previous_assistant_fact(
 ) -> None:
     from app.api.routes import chat as chat_route
 
-    item, _ = _create_linked_item_and_handler(db)
+    item, handler = _create_linked_item_and_handler(db)
     fake_agent = _make_fake_agent()
     captured_memory: dict[str, object] = {}
 
@@ -2935,7 +2936,7 @@ def test_stream_chat_confirmation_persists_previous_assistant_fact(
         assert response.status_code == 200
         list(response.iter_text())
 
-    assert captured_memory["item_id"] == str(item.id)
+    assert captured_memory["handler_id"] == str(handler.id)
     assert captured_memory["content"] == "cron_job.py 位于 /app/src/cron_job.py"
     assert captured_memory["memory_type"] == "fact"
     assert captured_memory["ttl_days"] == 90

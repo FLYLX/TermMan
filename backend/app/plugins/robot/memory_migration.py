@@ -144,23 +144,23 @@ def build_legacy_memory_metadata_upgrade(memory: dict[str, Any]) -> dict[str, An
 
 
 def ensure_legacy_robot_memories_upgraded(
-    item_id: str,
+    handler_id: str,
     *,
     store: Any,
     interval_seconds: float = ROBOT_MEMORY_MIGRATION_INTERVAL_SECONDS,
 ) -> dict[str, int]:
-    normalized_item_id = str(item_id or "").strip()
-    if not normalized_item_id:
+    normalized_handler_id = str(handler_id or "").strip()
+    if not normalized_handler_id:
         return {"checked": 0, "upgraded": 0, "deduplicated": 0, "failed": 0}
 
     now = time.monotonic()
     with _migration_lock:
-        last_checked = _migration_last_checked.get(normalized_item_id, 0.0)
+        last_checked = _migration_last_checked.get(normalized_handler_id, 0.0)
         if interval_seconds > 0 and now - last_checked < interval_seconds:
             return {"checked": 0, "upgraded": 0, "deduplicated": 0, "failed": 0}
-        _migration_last_checked[normalized_item_id] = now
+        _migration_last_checked[normalized_handler_id] = now
 
-    memories = store.get_all_memories(normalized_item_id)
+    memories = store.get_all_memories(normalized_handler_id)
     memories_by_id = {
         str(memory.get("id") or "").strip(): memory
         for memory in memories
@@ -204,8 +204,8 @@ def ensure_legacy_robot_memories_upgraded(
 
     if upgraded or deduplicated or failed:
         logger.info(
-            "[RobotMemoryMigration] item=%s upgraded=%s deduplicated=%s failed=%s",
-            normalized_item_id,
+            "[RobotMemoryMigration] handler=%s upgraded=%s deduplicated=%s failed=%s",
+            normalized_handler_id,
             upgraded,
             deduplicated,
             failed,

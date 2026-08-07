@@ -226,7 +226,7 @@ def test_save_memory_uses_type_ttl_and_verified_metadata(monkeypatch) -> None:
     )
 
     assert "memory-1" in result[0]["text"]
-    assert captured["item_id"] == "item-1"
+    assert captured["handler_id"] == "item-1"
     assert captured["content"] == "你叫大狗"
     assert captured["memory_type"] == "fact"
     assert captured["ttl_days"] == 90
@@ -1519,7 +1519,7 @@ def test_local_compress_memories_merges_and_deletes(monkeypatch) -> None:
 
     text = result[0]["text"]
     assert "压缩" in text
-    assert added["item_id"] == "item-1"
+    assert added["handler_id"] == "item-1"
     assert added["content"] == "服务器端口是 43906"
     assert added["memory_type"] == "fact"
     assert added["metadata"]["source"] == "local_agent_compress"

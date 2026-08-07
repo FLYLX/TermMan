@@ -2962,11 +2962,10 @@ class AgentSession:
 
     def _get_relevant_memories(self, query: str, n_results: int = 3) -> str:
         try:
-            from app.services.agent.memory.scope import resolve_scope
             from app.services.agent.memory.vector_store import vector_store
 
             memories = vector_store.search_memories(
-                handler_id=resolve_scope(self.item_id),
+                handler_id=str(self.handler_id),
                 query=query,
                 n_results=n_results,
             )
@@ -3010,10 +3009,8 @@ class AgentSession:
                 try:
                     usage = getattr(response, "usage", None)
                     if usage:
-                        from app.services.agent.memory.scope import resolve_scope
-
                         token_usage_tracker.record(
-                            resolve_scope(self.item_id, agent),
+                            str(agent.handler_id or self.handler_id),
                             str(agent._context.model or "unknown"),
                             int(getattr(usage, "prompt_tokens", 0) or 0),
                             int(getattr(usage, "completion_tokens", 0) or 0),

@@ -1386,76 +1386,68 @@ class RobotService:
                 conversation_key,
                 fallback_sender_key=message.sender_key,
             )
-            if command.mode != "send":
-                message_text = self._agent_visible_message_text(message_text)
-                if not message_text:
-                    record_robot_event(
-                        str(robot.id),
-                        direction="backend",
-                        event="message_ignored",
-                        status="ignored",
-                        message=message.text,
-                        payload={
-                            "reason": "media_message_ignored",
-                            "conversation": conversation_key,
-                        },
-                    )
-                    return RobotDispatchResponse(
-                        success=True,
-                        ignored=True,
-                        reason="media_message_ignored",
-                    )
-            self._remember_conversation(
-                robot.id,
-                conversation_key,
-                resolved_binding.item.id,
-            )
-
-            if command.mode == "send":
-                self._remember_inbound_conversation_memory(
-                    robot,
-                    message,
-                    conversation_key,
-                    self._agent_visible_message_text(message_text),
-                )
-                success = self._write_to_item_terminal(resolved_binding.item.id, message_text)
-                if not success:
-                    raise RobotServiceError("终端未运行或后端尚未连接到该终端。")
-                response_text = "已发送到终端。"
-                self._clear_reply_context_window_for_key(
+            if command.mode == "term" and not command.text:
+                # `/term <alias>` with no content: switch the conversation's
+                # default terminal. Plain chat messages then route to it via
+                # the remembered binding below.
+                self._remember_conversation(
                     robot.id,
                     conversation_key,
-                    reason="terminal_command",
-                    expected_generation=conversation_generation or None,
+                    resolved_binding.item.id,
+                )
+                response_text = (
+                    f"已切换到终端「{resolved_binding.item.title}」"
+                    f"（别名 {resolved_binding.route_key}）。后续消息默认发送到该终端。"
                 )
                 record_robot_event(
                     str(robot.id),
-                    direction="backend_to_item",
-                    event="terminal_write",
-                    message=message_text,
+                    direction="backend",
+                    event="terminal_switch",
+                    message=message.text,
                     payload={
                         "item_id": str(resolved_binding.item.id),
                         "route_key": resolved_binding.route_key,
                     },
                 )
-                reply_chunks = self._reply_chunks_for_target(
-                    robot,
-                    message.reply_target,
+                self._remember_assistant_conversation_memory(
+                    robot.id,
+                    conversation_key,
                     response_text,
                 )
-                if reply_chunks:
-                    self._remember_assistant_conversation_memory(
-                        robot.id,
-                        conversation_key,
-                        response_text,
-                    )
                 return RobotDispatchResponse(
                     success=True,
                     ignored=False,
                     item_id=str(resolved_binding.item.id),
                     route_key=resolved_binding.route_key,
-                    reply_chunks=reply_chunks,
+                    reply_chunks=self._reply_chunks_for_target(
+                        robot,
+                        message.reply_target,
+                        response_text,
+                    ),
                 )
+            message_text = self._agent_visible_message_text(message_text)
+            if not message_text:
+                record_robot_event(
+                    str(robot.id),
+                    direction="backend",
+                    event="message_ignored",
+                    status="ignored",
+                    message=message.text,
+                    payload={
+                        "reason": "media_message_ignored",
+                        "conversation": conversation_key,
+                    },
+                )
+                return RobotDispatchResponse(
+                    success=True,
+                    ignored=True,
+                    reason="media_message_ignored",
+                )
+            self._remember_conversation(
+                robot.id,
+                conversation_key,
+                resolved_binding.item.id,
+            )
 
             trigger_reason = self._agent_trigger_reason(
                 message,
@@ -2457,8 +2449,8 @@ class RobotService:
                     or str(resolved.item.id) == command.target
                     or self.normalize_chat_alias(resolved.item.title) == explicit_route_key
                 ):
-                    if not command.text:
-                        raise RobotServiceError("请在终端别名后补充内容")
+                    # Empty text = switch the conversation's default terminal;
+                    # the caller turns this into a switch confirmation.
                     return resolved, command.text
             raise RobotServiceError(f"没有找到路由 `{command.target}` 对应的终端")
 
@@ -2656,15 +2648,13 @@ class RobotService:
             return RobotCommand(mode="chat", target=None, text="")
 
         command_match = re.match(
-            r"^/(term|item|terminal|send|write)\s+(\S+)(?:\s+(.*))?$",
+            r"^/(term|item|terminal)\s+(\S+)(?:\s+(.*))?$",
             normalized,
             flags=re.IGNORECASE,
         )
         if command_match:
-            verb = command_match.group(1).lower()
-            mode = "send" if verb in {"send", "write"} else "term"
             return RobotCommand(
-                mode=mode,
+                mode="term",
                 target=command_match.group(2),
                 text=(command_match.group(3) or "").strip(),
             )
@@ -3576,9 +3566,9 @@ class RobotService:
             return ""
 
         speaker_global_key = speaker_global_key_from_context(sender_key, reply_target)
-        from app.services.agent.memory.scope import resolve_scope
+        from app.services.agent.memory.scope import resolve_handler_id
 
-        memory_scope = resolve_scope(str(item_id))
+        memory_scope = resolve_handler_id(str(item_id))
         ensure_legacy_robot_memories_upgraded(memory_scope, store=vector_store)
         vector_store.maintain_memories(memory_scope)
         try:
@@ -4038,11 +4028,6 @@ class RobotService:
                 label = f"{label} (you)"
             labels.append(label)
         return ", ".join(labels)
-
-    def _write_to_item_terminal(self, item_id: uuid.UUID, command: str) -> bool:
-        from app.services import socket_pool_facade
-
-        return socket_pool_facade.write_to_item(str(item_id), command)
 
     @staticmethod
     def _job_request_display(job: QueuedRobotChatJob) -> str:

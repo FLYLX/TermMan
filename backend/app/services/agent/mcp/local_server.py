@@ -1873,12 +1873,16 @@ class LocalMCPServer:
             return None
 
     def _memory_scope(self, item_id: str) -> str:
-        """Memory/token operations are handler-scoped: one handler's items
-        share its memories. Resolve via the live agent when possible."""
+        """Memory/token operations are keyed by handler id: one handler's
+        items share its memories. Resolve via the live agent when possible."""
         try:
-            from app.services.agent.memory.scope import resolve_scope
+            agent = self._resolve_agent_for_item(item_id)
+            handler_id = str(getattr(agent, "handler_id", "") or "").strip()
+            if handler_id:
+                return handler_id
+            from app.services.agent.memory.scope import resolve_handler_id
 
-            return resolve_scope(item_id, self._resolve_agent_for_item(item_id))
+            return resolve_handler_id(item_id)
         except Exception:
             return str(item_id or "")
 
@@ -2553,6 +2557,7 @@ class LocalMCPServer:
                 "verified": True,
                 "content_hash": memory_policy._build_content_hash(str(content)),
                 "updated_at": datetime.now().isoformat(),
+                "source_item_id": str(item_id),
             }
             memory_key = memory_policy.infer_memory_key(str(content), str(memory_type))
             if memory_key:
@@ -2645,6 +2650,7 @@ class LocalMCPServer:
                 "verified": True,
                 "content_hash": memory_policy._build_content_hash(content),
                 "updated_at": datetime.now().isoformat(),
+                "source_item_id": item_id,
             }
             memory_key = memory_policy.infer_memory_key(content, str(memory_type))
             if memory_key:

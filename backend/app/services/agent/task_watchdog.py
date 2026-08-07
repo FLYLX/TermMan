@@ -123,44 +123,44 @@ def _list_all_item_ids() -> list[str]:
 
 
 def _dedupe_memory_clusters(now: datetime, stats: dict[str, int]) -> None:
-    """Auto-merge near-duplicate long-term memories per item (rule-based, no LLM).
+    """Auto-merge near-duplicate long-term memories per handler (rule-based, no LLM).
 
-    Runs at most once per MEMORY_DEDUP_INTERVAL_SECONDS per item. Keeps the
+    Runs at most once per MEMORY_DEDUP_INTERVAL_SECONDS per handler. Keeps the
     first memory of each near-duplicate cluster and deletes the rest, so
     recalled context does not fill up with repeated facts.
     """
-    from app.services.agent.memory.scope import resolve_scope
+    from app.services.agent.memory.scope import resolve_handler_id
     from app.services.agent.memory.vector_store import vector_store
 
     now_ts = now.timestamp()
     item_ids = _list_all_item_ids()
-    scopes = {resolve_scope(item_id) for item_id in item_ids}
-    scopes.discard("")
-    known = scopes
+    handler_ids = {resolve_handler_id(item_id) for item_id in item_ids}
+    handler_ids.discard("")
+    known = handler_ids
     for stale_key in set(_memory_dedup_last_run) - known:
         _memory_dedup_last_run.pop(stale_key, None)
-    for scope in scopes:
-        last_run = _memory_dedup_last_run.get(scope, 0.0)
+    for handler_id in handler_ids:
+        last_run = _memory_dedup_last_run.get(handler_id, 0.0)
         if now_ts - last_run < MEMORY_DEDUP_INTERVAL_SECONDS:
             continue
-        _memory_dedup_last_run[scope] = now_ts
+        _memory_dedup_last_run[handler_id] = now_ts
         try:
             removed = vector_store.deduplicate_memories(
-                scope, threshold=MEMORY_DEDUP_SIMILARITY_THRESHOLD
+                handler_id, threshold=MEMORY_DEDUP_SIMILARITY_THRESHOLD
             )
-            superseded = vector_store.supersede_by_memory_key(scope)
+            superseded = vector_store.supersede_by_memory_key(handler_id)
             removed += superseded
         except Exception as exc:
             logger.info(
-                "[TaskWatchdog] Memory dedup failed for scope=%s: %s", scope, exc
+                "[TaskWatchdog] Memory dedup failed for handler=%s: %s", handler_id, exc
             )
             continue
         if removed:
             stats["memories_deduplicated"] += removed
             logger.info(
-                "[TaskWatchdog] Merged %s near-duplicate/keyed memories for scope=%s",
+                "[TaskWatchdog] Merged %s near-duplicate/keyed memories for handler=%s",
                 removed,
-                scope,
+                handler_id,
             )
 
 

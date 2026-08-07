@@ -1,4 +1,7 @@
-"""Persistent token usage tracker backed by SQLite."""
+"""Persistent token usage tracker backed by the app database.
+
+Usage is keyed by ItemHandler id: one handler's items share the same cost
+pool."""
 from __future__ import annotations
 
 import logging
@@ -16,7 +19,7 @@ class TokenUsageRecord(SQLModel, table=True):
     __tablename__ = "token_usage_record"
 
     id: int | None = Field(default=None, primary_key=True)
-    item_id: str = Field(index=True)
+    handler_id: str = Field(index=True)
     model: str = Field(index=True)
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -26,30 +29,31 @@ class TokenUsageRecord(SQLModel, table=True):
 
 
 def init_token_usage_table() -> None:
-    TokenUsageRecord.__table__.create(engine, checkfirst=True)
-    # Lightweight migration: the table predates the reply_ticket_id column.
-    try:
-        with engine.connect() as conn:
-            columns = {
-                row[1]
-                for row in conn.exec_driver_sql(
-                    "PRAGMA table_info(token_usage_record)"
-                ).fetchall()
-            }
-            if "reply_ticket_id" not in columns:
-                conn.exec_driver_sql(
-                    "ALTER TABLE token_usage_record "
-                    "ADD COLUMN reply_ticket_id VARCHAR NOT NULL DEFAULT ''"
-                )
-                conn.commit()
-    except Exception as exc:
-        logger.warning("[TokenUsage] reply_ticket_id migration skipped: %s", exc)
+    from sqlalchemy import inspect
+
+    with engine.begin() as conn:
+        columns = {
+            column["name"]
+            for column in inspect(conn).get_columns("token_usage_record")
+        }
+        if columns and "handler_id" not in columns:
+            # Legacy item-keyed table: usage stats are ephemeral, recreate.
+            TokenUsageRecord.__table__.drop(conn)
+            columns = set()
+        if not columns:
+            TokenUsageRecord.__table__.create(conn)
+        elif "reply_ticket_id" not in columns:
+            # Lightweight migration: the table predates the reply_ticket_id column.
+            conn.exec_driver_sql(
+                "ALTER TABLE token_usage_record "
+                "ADD COLUMN reply_ticket_id VARCHAR NOT NULL DEFAULT ''"
+            )
 
 
 class TokenUsageTracker:
     def record(
         self,
-        item_id: str,
+        handler_id: str,
         model: str,
         prompt_tokens: int,
         completion_tokens: int,
@@ -59,7 +63,7 @@ class TokenUsageTracker:
         try:
             with Session(engine) as session:
                 record = TokenUsageRecord(
-                    item_id=item_id,
+                    handler_id=handler_id,
                     model=model,
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
@@ -71,7 +75,7 @@ class TokenUsageTracker:
         except Exception as exc:
             logger.warning("[TokenUsage] Failed to record: %s", exc)
 
-    def get_item_stats(self, item_id: str) -> dict[str, Any]:
+    def get_handler_stats(self, handler_id: str) -> dict[str, Any]:
         try:
             with Session(engine) as session:
                 rows = session.exec(
@@ -82,7 +86,7 @@ class TokenUsageTracker:
                         func.sum(TokenUsageRecord.total_tokens).label("total_tokens"),
                         func.count().label("turns"),
                     )
-                    .where(TokenUsageRecord.item_id == item_id)
+                    .where(TokenUsageRecord.handler_id == handler_id)
                     .group_by(TokenUsageRecord.model)
                     .order_by(func.sum(TokenUsageRecord.total_tokens).desc())
                 ).all()
@@ -109,11 +113,11 @@ class TokenUsageTracker:
                     select(
                         func.min(TokenUsageRecord.created_at),
                         func.max(TokenUsageRecord.created_at),
-                    ).where(TokenUsageRecord.item_id == item_id)
+                    ).where(TokenUsageRecord.handler_id == handler_id)
                 ).one()
 
                 return {
-                    "item_id": item_id,
+                    "handler_id": handler_id,
                     "total_prompt_tokens": total_prompt,
                     "total_completion_tokens": total_completion,
                     "total_tokens": total_all,
@@ -125,7 +129,7 @@ class TokenUsageTracker:
         except Exception as exc:
             logger.warning("[TokenUsage] Failed to query: %s", exc)
             return {
-                "item_id": item_id,
+                "handler_id": handler_id,
                 "total_prompt_tokens": 0,
                 "total_completion_tokens": 0,
                 "total_tokens": 0,
@@ -136,8 +140,8 @@ class TokenUsageTracker:
             }
 
 
-    def get_task_stats(self, item_id: str, limit: int = 50) -> list[dict[str, Any]]:
-        """Aggregate token usage per reply ticket for one item.
+    def get_task_stats(self, handler_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Aggregate token usage per reply ticket for one handler.
 
         Only records with a non-empty reply_ticket_id are grouped; the caller
         enriches the rows with in-memory ticket metadata."""
@@ -153,7 +157,7 @@ class TokenUsageTracker:
                         func.min(TokenUsageRecord.created_at).label("first_seen"),
                         func.max(TokenUsageRecord.created_at).label("last_seen"),
                     )
-                    .where(TokenUsageRecord.item_id == item_id)
+                    .where(TokenUsageRecord.handler_id == handler_id)
                     .where(TokenUsageRecord.reply_ticket_id != "")
                     .group_by(TokenUsageRecord.reply_ticket_id)
                     .order_by(func.max(TokenUsageRecord.created_at).desc())

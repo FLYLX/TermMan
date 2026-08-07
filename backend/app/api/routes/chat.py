@@ -153,7 +153,7 @@ class ChatStreamRequest(BaseModel):
 
 
 def get_relevant_memories(
-    item_id: str,
+    handler_id: str,
     query: str,
     agent: "Agent" = None,
     n_results: int = 3,
@@ -168,10 +168,8 @@ def get_relevant_memories(
                 return ""
 
     try:
-        from app.services.agent.memory.scope import resolve_scope
-
         memories = vector_store.search_memories(
-            handler_id=resolve_scope(item_id, agent),
+            handler_id=handler_id,
             query=query,
             n_results=n_results,
         )
@@ -189,6 +187,7 @@ def extract_important_info(
     assistant_msg: str,
     *,
     item_id: str | None = None,
+    handler_id: str = "",
     matched_skills: list | None = None,
 ):
     explicit_candidate = build_conversation_memory_candidate(
@@ -199,13 +198,15 @@ def extract_important_info(
     if explicit_candidate is not None:
         return explicit_candidate
 
-    if not item_id:
+    if not handler_id:
         return None
 
-    previous_assistant_message = get_previous_assistant_response_before_latest_user_message(
-        item_id,
-        user_msg,
-    )
+    previous_assistant_message = ""
+    if item_id:
+        previous_assistant_message = get_previous_assistant_response_before_latest_user_message(
+            item_id,
+            user_msg,
+        )
     confirmation_candidate = build_confirmation_memory_candidate(
         user_msg,
         previous_assistant_message,
@@ -215,7 +216,7 @@ def extract_important_info(
         return confirmation_candidate
 
     return build_status_update_memory_candidate(
-        item_id,
+        handler_id,
         user_msg,
         store=vector_store,
         matched_skills=matched_skills,
@@ -648,20 +649,29 @@ def _append_conversation_memory(
     user_message: str,
     assistant_message: str,
     matched_skills: list,
+    agent: "Agent" = None,
 ):
+    handler_id = str(getattr(agent, "handler_id", "") or "").strip()
+    if not handler_id:
+        from app.services.agent.memory.scope import resolve_handler_id
+
+        handler_id = resolve_handler_id(item_id)
+
     candidate = extract_important_info(
         user_message,
         assistant_message,
         item_id=item_id,
+        handler_id=handler_id,
         matched_skills=matched_skills,
     )
     if not candidate:
         return
 
     persist_memory_candidate(
-        item_id,
+        handler_id,
         candidate,
         store=vector_store,
+        source_item_id=item_id,
     )
 
 
@@ -1282,10 +1292,8 @@ def _generate_stream_unserialized(
                 from app.services.agent.token_usage import token_usage_tracker as _tt
                 _su = _chunk_usage or getattr(response, "usage", None)
                 if _su:
-                    from app.services.agent.memory.scope import resolve_scope
-
                     _tt.record(
-                        resolve_scope(str(item_id), agent),
+                        str(getattr(agent, "handler_id", "") or handler.id),
                         str(handler.model or "unknown"),
                         int(getattr(_su, "prompt_tokens", 0) or 0),
                         int(getattr(_su, "completion_tokens", 0) or 0),
@@ -1395,6 +1403,7 @@ def _generate_stream_unserialized(
                             user_message=message,
                             assistant_message=final_response,
                             matched_skills=matched_skills,
+                            agent=agent,
                         )
                     _broadcast_agent_status(item_id, "idle")
                     yield _to_sse({"done": True})
@@ -1414,6 +1423,7 @@ def _generate_stream_unserialized(
                         user_message=message,
                         assistant_message=final_response,
                         matched_skills=matched_skills,
+                        agent=agent,
                     )
 
                 if not final_response and not finalization_only and not thinking_only_retry_used:

@@ -68,12 +68,12 @@ class RobotMCPServer:
 
     @staticmethod
     def _memory_scope(item_id: str) -> str:
-        """Long-term memories are handler-scoped: every item driven by one
-        ItemHandler (web item, QQ-bound items) shares its memory pool."""
+        """Long-term memories are keyed by handler id: every item driven by
+        one ItemHandler (web item, QQ-bound items) shares its memory pool."""
         try:
-            from app.services.agent.memory.scope import resolve_scope
+            from app.services.agent.memory.scope import resolve_handler_id
 
-            return resolve_scope(item_id)
+            return resolve_handler_id(item_id)
         except Exception:
             return str(item_id or "")
 
@@ -1766,9 +1766,10 @@ class RobotMCPServer:
             from app.services.agent.memory.vector_store import vector_store
 
             memory_id = memory_policy.persist_memory_candidate(
-                item_id,
+                self._memory_scope(item_id),
                 candidate,
                 store=vector_store,
+                source_item_id=item_id,
             )
         except Exception as exc:
             return [{"type": "text", "text": f"Error: {exc}"}]
@@ -1918,6 +1919,7 @@ class RobotMCPServer:
             "source": "qq_robot_agent_compress",
             "verified": False,
             "content_hash": memory_policy._build_content_hash(content),
+            "source_item_id": item_id,
         }
         memory_key = memory_policy.infer_memory_key(content, memory_type)
         if memory_key:
@@ -2014,7 +2016,9 @@ class RobotMCPServer:
             )
             from app.services.agent.memory.vector_store import vector_store
 
-            ensure_legacy_robot_memories_upgraded(item_id, store=vector_store)
+            ensure_legacy_robot_memories_upgraded(
+                self._memory_scope(item_id), store=vector_store
+            )
             vector_store.maintain_memories(self._memory_scope(item_id))
             memories = self._collect_scoped_long_term_memory_candidates(
                 store=vector_store,
@@ -2115,7 +2119,9 @@ class RobotMCPServer:
             )
             from app.services.agent.memory.vector_store import vector_store
 
-            ensure_legacy_robot_memories_upgraded(item_id, store=vector_store)
+            ensure_legacy_robot_memories_upgraded(
+                self._memory_scope(item_id), store=vector_store
+            )
             scoped_memories = self._collect_scoped_long_term_memory_candidates(
                 store=vector_store,
                 item_id=item_id,
