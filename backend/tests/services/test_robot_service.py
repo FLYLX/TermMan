@@ -4719,3 +4719,54 @@ def test_term_command_without_text_switches_default_terminal(
     assert follow_up.success is True
     assert follow_up.item_id == str(item_b.id)
     assert captured["job"].message == "现在默认是哪个终端？"
+
+def test_term_list_shows_bound_terminals_and_switch_hint(
+    db: Session,
+    monkeypatch,
+) -> None:
+    item_a = create_random_item(db)
+    item_b = create_random_item(db)
+    robot = create_random_robot(db)
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item_a.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="alpha",
+            is_default_target=True,
+        )
+    )
+    db.add(
+        RobotItem(
+            robot_id=robot.id,
+            item_id=item_b.id,
+            allow_chat=True,
+            receive_filtered_output=False,
+            chat_alias="beta",
+            is_default_target=False,
+        )
+    )
+    db.commit()
+
+    captured = _capture_queued_chat(monkeypatch)
+
+    response = robot_service.handle_inbound_message(
+        db,
+        robot,
+        _message("/term list"),
+    )
+    assert response.success is True
+    assert response.item_id == str(item_a.id)
+    listing = "\n".join(response.reply_chunks)
+    assert "alpha" in listing
+    assert "beta" in listing
+    assert "默认" in listing
+    assert "/term <别名>" in listing
+    assert "job" not in captured
+
+    # After switching the default to beta, /term list marks beta as current.
+    robot_service.handle_inbound_message(db, robot, _message("/term beta"))
+    follow = robot_service.handle_inbound_message(db, robot, _message("/term ls"))
+    assert follow.item_id == str(item_b.id)
+    assert "当前" in "\n".join(follow.reply_chunks)

@@ -1295,6 +1295,11 @@ class RobotService:
         command = self._parse_robot_command(command_parse_text)
         if command.mode == "chat" and command.target is None:
             command = RobotCommand(mode="chat", target=None, text=text)
+        if command.mode == "term" and self.normalize_chat_alias(command.target) in {
+            "list",
+            "ls",
+        }:
+            return self._binding_listing_response(session, robot, message, conversation_key)
         self._remember_inbound_conversation_memory(
             robot,
             message,
@@ -2476,6 +2481,65 @@ class RobotService:
         raise RobotServiceError(
             "当前机器人绑定了多个终端，请使用 "
             f"`/term <别名> <内容>` 发送。可用别名: {aliases}"
+        )
+
+    def _binding_listing_response(
+        self,
+        session: Session,
+        robot: Robot,
+        message: RobotInboundMessage,
+        conversation_key: str,
+    ) -> RobotDispatchResponse:
+        """`/term list`: show the terminals this robot can route to and how
+        to address them (`/term <alias>` switches the default terminal)."""
+        bindings = [
+            ResolvedRobotBinding(
+                binding=binding,
+                item=item,
+                route_key=self.build_route_key(item, binding),
+            )
+            for binding, item in self._load_robot_bindings(session, robot.id)
+            if binding.allow_chat
+        ]
+        remembered_item_id = self._get_remembered_item_id(robot.id, conversation_key)
+        if not bindings:
+            response_text = "当前机器人没有绑定任何终端。"
+            current_item_id = None
+            current_route_key = None
+        else:
+            lines = ["当前机器人绑定的终端："]
+            current_item_id = None
+            current_route_key = None
+            for index, resolved in enumerate(bindings, 1):
+                markers: list[str] = []
+                if remembered_item_id and resolved.item.id == remembered_item_id:
+                    markers.append("当前")
+                elif not remembered_item_id and resolved.binding.is_default_target:
+                    markers.append("默认")
+                if markers:
+                    current_item_id = str(resolved.item.id)
+                    current_route_key = resolved.route_key
+                suffix = f" ← {'/'.join(markers)}" if markers else ""
+                lines.append(f"{index}. {resolved.route_key}（{resolved.item.title}）{suffix}")
+            lines.append("切换默认终端：/term <别名>；本条消息直接指定：/term <别名> <内容>")
+            response_text = "\n".join(lines)
+        record_robot_event(
+            str(robot.id),
+            direction="backend",
+            event="terminal_list",
+            message=message.text,
+            payload={"conversation": conversation_key},
+        )
+        return RobotDispatchResponse(
+            success=True,
+            ignored=False,
+            item_id=current_item_id,
+            route_key=current_route_key,
+            reply_chunks=self._reply_chunks_for_target(
+                robot,
+                message.reply_target,
+                response_text,
+            ),
         )
 
     def _extract_route_key(self, text: str) -> tuple[str | None, str]:
