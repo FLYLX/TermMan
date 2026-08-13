@@ -1,5 +1,4 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
 import {
   Bot,
   Cable,
@@ -163,10 +162,14 @@ function RobotStatusBadge({ enabled }: { enabled: boolean }) {
   )
 }
 
-function CreateRobotDialog({
+export function CreateRobotDialog({
   platforms,
+  triggerClassName,
+  iconOnly = false,
 }: {
   platforms: RobotPlatformRecord[]
+  triggerClassName?: string
+  iconOnly?: boolean
 }) {
   const queryClient = useQueryClient()
   const { t } = useI18n()
@@ -272,11 +275,12 @@ function CreateRobotDialog({
     >
       <DialogTrigger asChild>
         <Button
-          className="h-9 rounded-xl px-3.5"
+          className={triggerClassName ?? "h-9 rounded-xl px-3.5"}
           disabled={!selectedPlatform}
+          title={t("robots.add")}
         >
-          <CirclePlus className="mr-2 size-4" />
-          {t("robots.add")}
+          <CirclePlus className={iconOnly ? "size-4" : "mr-2 size-4"} />
+          {iconOnly ? null : t("robots.add")}
         </Button>
       </DialogTrigger>
       <DialogContent className="rounded-2xl">
@@ -429,7 +433,6 @@ function RobotCard({
   const platform = platformMap.get(normalizePlatformId(robot.platform)) ?? null
   const credentials = getRobotCredentials(robot)
   const accessToken = credentials.access_token ?? ""
-  const manageLabel = locale === "zh" ? "管理绑定" : "Manage"
   const connectedLabel = locale === "zh" ? "已连接" : "Connected"
   const disconnectedLabel = locale === "zh" ? "未连接" : "Disconnected"
   const diagnoseLabel = locale === "zh" ? "诊断" : "Diagnose"
@@ -556,17 +559,6 @@ function RobotCard({
               <Stethoscope className="size-3.5" />
             )}
             <span className="ml-1">{diagnoseLabel}</span>
-          </Button>
-          <Button
-            asChild
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 rounded-lg px-3"
-          >
-            <Link to="/robots/$robotId" params={{ robotId: robot.id }}>
-              {manageLabel}
-            </Link>
           </Button>
           <Button
             type="button"

@@ -94,9 +94,13 @@ const AddItemHandler = ({
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button className={triggerClassName} variant={triggerVariant}>
-          <Plus className="mr-2" />
-          {triggerLabel || t("itemHandlers.add")}
+        <Button
+          className={triggerClassName}
+          variant={triggerVariant}
+          title={triggerLabel || t("itemHandlers.add")}
+        >
+          <Plus className={triggerLabel ? "mr-2" : ""} />
+          {triggerLabel || null}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">

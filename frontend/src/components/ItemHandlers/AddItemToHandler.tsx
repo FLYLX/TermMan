@@ -118,9 +118,13 @@ const AddItemToHandler = ({ itemHandlerId }: AddItemToHandlerProps) => {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="sm"
+          className="btn-add-compact flex items-center gap-1"
+          title={copy.trigger}
+        >
           <PlusCircle className="h-4 w-4" />
-          {copy.trigger}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">

@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         export PIP_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple; \
     fi \
     && \
-    uv sync --no-install-project
+    uv sync --no-install-project --no-dev
 
 COPY ./robot /app/robot
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -36,6 +36,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         export PIP_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple; \
     fi \
     && \
-    uv sync
+    uv sync --no-dev
 
 CMD ["python", "-m", "termman_robot"]

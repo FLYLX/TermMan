@@ -1,7 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
 import {
-  ArrowLeft,
   Bot,
   Check,
   ChevronDown,
@@ -1006,15 +1004,7 @@ function RobotBindingCard({
       <CardHeader className="gap-3 pb-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
-            <CardTitle className="text-base">
-              <Link
-                to="/items/$itemId"
-                params={{ itemId: binding.item_id }}
-                className="hover:text-primary"
-              >
-                {binding.item_title}
-              </Link>
-            </CardTitle>
+            <CardTitle className="text-base">{binding.item_title}</CardTitle>
             <CardDescription className="flex flex-wrap items-center gap-2 text-xs">
               <span>{copy.routeKey}</span>
               <code className="rounded bg-muted px-1.5 py-0.5 text-foreground">
@@ -2529,12 +2519,6 @@ export function RobotDetail({ robotId }: { robotId: string }) {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
       <section className="space-y-1.5">
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          <Link to="/robots" className="hover:text-foreground">
-            {copy.back}
-          </Link>
-        </div>
-
         <div className="rounded-xl border bg-card/90 px-4 py-3 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 space-y-2">
@@ -2562,19 +2546,6 @@ export function RobotDetail({ robotId }: { robotId: string }) {
                   {copy.availableTerminals}: {availableItems.length}
                 </Badge>
               </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                asChild
-                variant="outline"
-                className="h-9 rounded-xl px-3.5"
-              >
-                <Link to="/robots">
-                  <ArrowLeft className="mr-2 size-4" />
-                  {copy.back}
-                </Link>
-              </Button>
             </div>
           </div>
         </div>

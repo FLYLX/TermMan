@@ -13,7 +13,14 @@
 **/.ruff_cache/
 **/.venv/
 .venv/
+**/.pytest_cache/
+**/.uv-cache/
 node_modules/
+**/node_modules/
 test-results/
 playwright-report/
 blob-report/
+de_bug/
+docs/
+tests/
+*.png

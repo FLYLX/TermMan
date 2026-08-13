@@ -265,9 +265,13 @@ const AddItem = ({
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button className={triggerClassName} variant={triggerVariant}>
-          <Plus className="mr-2 size-4" />
-          {triggerLabel || copy.trigger}
+        <Button
+          className={triggerClassName}
+          variant={triggerVariant}
+          title={triggerLabel || copy.trigger}
+        >
+          <Plus className={triggerLabel ? "mr-2 size-4" : "size-4"} />
+          {triggerLabel || null}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-xl">

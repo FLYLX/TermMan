@@ -15,6 +15,7 @@ import {
   Scissors,
   Trash2,
   Upload,
+  X,
 } from "lucide-react"
 import {
   type ChangeEvent,
@@ -320,9 +321,10 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
     useState<FileContentResponse | null>(null)
   const [editorContent, setEditorContent] = useState("")
   const [originalContent, setOriginalContent] = useState("")
-  const [isLoadingContent, setIsLoadingContent] = useState(false)
+  const [, setIsLoadingContent] = useState(false)
   const [isSavingContent, setIsSavingContent] = useState(false)
-  const [contentError, setContentError] = useState<string | null>(null)
+  const [, setContentError] = useState<string | null>(null)
+  const [editorOpen, setEditorOpen] = useState(false)
 
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] =
@@ -351,7 +353,6 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
     [currentPath],
   )
 
-  const selectedDirectory = directories[selectedDirectoryPath]
   const hasUnsavedChanges =
     Boolean(selectedContent) && editorContent !== originalContent
 
@@ -458,6 +459,7 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
     setSelectedContent(result)
     setEditorContent(result.content)
     setOriginalContent(result.content)
+    setEditorOpen(true)
   }, [])
 
   const loadFileContent = useCallback(
@@ -1287,13 +1289,10 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
   const uploadPercentLabel = `${uploadPercent.toFixed(uploadPercent >= 10 ? 0 : 1)}%`
 
   return (
-    <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <section className="flex h-full min-h-0 flex-col rounded-2xl border bg-card/85 p-3 shadow-sm">
+      <div className="mb-3 flex shrink-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="text-xl font-semibold">{t("files.title")}</h2>
-          <p className="text-sm text-muted-foreground">
-            {t("files.description")}
-          </p>
+          <h2 className="text-base font-semibold">{t("files.title")}</h2>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -1448,20 +1447,20 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
         </div>
       </form>
 
-      <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
-        <div className="rounded-2xl border bg-muted/10">
-          <div className="border-b px-4 py-3">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col rounded-2xl border bg-muted/10">
+          <div className="shrink-0 border-b px-3 py-2">
             <div className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
               {t("files.explorer")}
             </div>
-            <div className="mt-2 truncate font-mono text-sm text-foreground">
+            <div className="mt-1 truncate font-mono text-xs text-foreground">
               {selectedDirectoryPath === ROOT_PATH
                 ? t("files.daemonRoot")
                 : selectedDirectoryPath}
             </div>
           </div>
 
-          <ScrollArea className="h-[40rem] px-2 py-3">
+          <ScrollArea className="min-h-0 flex-1 px-2 py-2">
             {explorerDirectory?.isLoading && !explorerDirectory.loaded ? (
               <div className="flex items-center gap-2 px-3 py-4 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
@@ -1488,112 +1487,83 @@ export function ItemFilesPanel({ itemId }: { itemId: string }) {
             )}
           </ScrollArea>
         </div>
+      </div>
 
-        <div className="rounded-2xl border bg-muted/10">
-          <div className="border-b px-4 py-3">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold">
+      {editorOpen && selectedContent ? (
+        <div
+          className="fixed inset-0 z-[85] flex items-center justify-center bg-black/40 p-6"
+          onClick={() => setEditorOpen(false)}
+        >
+          <div
+            className="flex h-full max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border-2 border-[#3a3a3a] bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center gap-3 border-b-2 border-[#3a3a3a] px-4 py-2.5">
+              <FileText className="size-4 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-bold">
                   {selectedFileName}
                 </div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {selectedContent
-                    ? selectedContent.path
-                    : selectedDirectoryPath === ROOT_PATH
-                      ? t("files.selectFromExplorer")
-                      : selectedDirectoryPath}
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {selectedContent
-                    ? `${formatBytes(selectedContent.size)} · ${selectedContent.encoding}${
-                        selectedContent.truncated ? " · preview truncated" : ""
-                      }`
-                    : selectedDirectory?.loaded
-                      ? t("files.itemsInFolder", {
-                          count: selectedDirectory.entries.length,
-                        })
-                      : t("files.pickFileToEdit")}
+                <div className="truncate font-mono text-[11px] text-muted-foreground">
+                  {selectedContent.path}
                 </div>
               </div>
-
-              <div className="flex flex-wrap gap-2">
-                {selectedContent && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void handleDownload(selectedContent.path)}
-                    disabled={downloadingPath === selectedContent.path}
-                  >
-                    <Download className="size-4" />
-                    {t("files.download")}
-                  </Button>
+              {hasUnsavedChanges ? (
+                <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                  未保存
+                </span>
+              ) : null}
+              {selectedContent.truncated ? (
+                <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">
+                  只读（预览截断）
+                </span>
+              ) : null}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void handleDownload(selectedContent.path)}
+                disabled={downloadingPath === selectedContent.path}
+              >
+                <Download className="size-4" />
+                {t("files.download")}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => void handleSaveContent()}
+                disabled={
+                  !hasUnsavedChanges ||
+                  isSavingContent ||
+                  selectedContent.truncated
+                }
+              >
+                {isSavingContent ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Save className="size-4" />
                 )}
-                <Button
-                  size="sm"
-                  onClick={() => void handleSaveContent()}
-                  disabled={
-                    !selectedContent ||
-                    !hasUnsavedChanges ||
-                    isSavingContent ||
-                    selectedContent.truncated
-                  }
-                >
-                  {isSavingContent ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Save className="size-4" />
-                  )}
-                  {t("files.save")}
-                </Button>
-              </div>
+                {t("files.save")}
+              </Button>
+              <button
+                type="button"
+                onClick={() => setEditorOpen(false)}
+                className="rounded p-1.5 hover:bg-muted"
+                aria-label="关闭编辑器"
+              >
+                <X className="size-4" />
+              </button>
             </div>
-          </div>
-
-          <div className="h-[40rem]">
-            {isLoadingContent ? (
-              <div className="flex h-full items-center justify-center gap-3 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" />
-                {t("files.loading")}
-              </div>
-            ) : contentError ? (
-              <div className="flex h-full items-start gap-3 px-4 py-4 text-sm text-amber-500">
-                <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                <span>{contentError}</span>
-              </div>
-            ) : selectedContent ? (
-              <div className="flex h-full flex-col">
-                {selectedContent.truncated && (
-                  <div className="border-b border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400">
-                    {t("files.previewTruncatedMessage")}
-                  </div>
-                )}
-                <Textarea
-                  value={editorContent}
-                  onChange={(event) => setEditorContent(event.target.value)}
-                  spellCheck={false}
-                  wrap="off"
-                  disabled={selectedContent.truncated}
-                  className="h-full min-h-0 resize-none rounded-none border-0 bg-[#111111] px-4 py-4 font-mono text-[13px] leading-6 text-slate-100 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-80"
-                />
-              </div>
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-                <Folder className="size-8 text-muted-foreground" />
-                <div>
-                  <div className="text-sm font-medium text-foreground">
-                    {selectedDirectoryPath === ROOT_PATH
-                      ? t("files.daemonRoot")
-                      : selectedDirectoryPath}
-                  </div>
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    {t("files.editPrompt")}
-                  </div>
-                </div>
-              </div>
-            )}
+            <Textarea
+              value={editorContent}
+              onChange={(event) => setEditorContent(event.target.value)}
+              spellCheck={false}
+              wrap="off"
+              disabled={selectedContent.truncated}
+              autoFocus
+              className="code-editor min-h-0 flex-1 resize-none rounded-none border-0 bg-[#111111] px-5 py-4 font-mono text-[14px] leading-6 text-slate-100 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-80"
+            />
           </div>
         </div>
-      </div>
+      ) : null}
     </section>
   )
 }

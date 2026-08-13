@@ -83,7 +83,7 @@ function SkillsPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-180px)] min-h-[400px] border rounded-lg overflow-hidden">
+    <div className="flex h-[calc(100vh-181px)] min-h-[400px] border rounded-lg overflow-hidden">
       <div className="w-72 border-r flex flex-col bg-muted/30 shrink-0">
         <div className="p-3 border-b space-y-2 shrink-0">
           <div className="flex items-center justify-between">

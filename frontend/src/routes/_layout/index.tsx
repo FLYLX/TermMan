@@ -261,7 +261,7 @@ type UsageGaugeMetric = {
 
 function UsageGaugePanel({ metrics }: { metrics: UsageGaugeMetric[] }) {
   return (
-    <Card className="gap-4 py-5">
+    <Card className="gap-3 py-4">
       <CardHeader className="flex flex-row items-center gap-2 px-5">
         <Gauge className="size-4 text-primary" />
         <CardTitle>使用率</CardTitle>
@@ -520,7 +520,7 @@ function ServiceRuntimePanel({ services }: { services: RuntimeServiceStats[] }) 
   }
 
   return (
-    <Card className="gap-4 py-5">
+    <Card className="gap-3 py-4">
       <CardHeader className="flex flex-row items-center justify-between gap-3 px-5">
         <div className="flex items-center gap-2">
           <Activity className="size-4 text-primary" />
@@ -573,6 +573,7 @@ function Dashboard() {
     ip: string
   } | null>(null)
   const [disconnecting, setDisconnecting] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState(false)
 
   const isAdmin = currentUser?.is_superuser ?? false
 
@@ -799,8 +800,8 @@ function Dashboard() {
   ]
 
   return (
-    <div className="space-y-6">
-      <section className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div className="space-y-3">
+      <section className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">TermMan</Badge>
@@ -874,7 +875,7 @@ function Dashboard() {
         <ErrorNotice title="机器人列表不可读" message={robotsQuery.error.message} />
       ) : null}
 
-      <section className="grid gap-4 xl:grid-cols-2">
+      <section className="grid gap-3 xl:grid-cols-2">
         <CompactSummaryTable
           title="系统摘要"
           icon={Gauge}
@@ -887,21 +888,34 @@ function Dashboard() {
         />
       </section>
 
-      <UsageGaugePanel metrics={usageGaugeMetrics} />
+      <section className="grid items-start gap-3 xl:grid-cols-2">
+        <UsageGaugePanel metrics={usageGaugeMetrics} />
 
-      <ServiceRuntimePanel
-        services={termManRuntime?.services ?? []}
-      />
+        <ServiceRuntimePanel
+          services={termManRuntime?.services ?? []}
+        />
+      </section>
 
-      <Card className="gap-4 py-5">
-        <CardHeader className="flex flex-row items-center justify-between px-5">
+      <Card className="gap-3 py-3">
+        <CardHeader
+          className="flex cursor-pointer select-none flex-row items-center justify-between px-5 py-0"
+          onClick={() => setDetailsOpen((open) => !open)}
+        >
           <div>
             <CardTitle>{isAdmin ? "全部终端明细" : "我的终端明细"}</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              仍可在这里展开终端、查看连接用户并执行原有管理操作。
+              {detailsOpen
+                ? "点击标题收起明细。"
+                : "点击标题展开终端、查看连接用户并执行管理操作。"}
             </p>
           </div>
+          {detailsOpen ? (
+            <ChevronDown className="size-5 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
+          )}
         </CardHeader>
+        {detailsOpen ? (
         <CardContent className="px-5">
           {loading ? (
             <p className="text-sm text-muted-foreground">正在加载终端...</p>
@@ -1012,6 +1026,7 @@ function Dashboard() {
             </div>
           )}
         </CardContent>
+        ) : null}
       </Card>
 
       <Dialog
@@ -1103,14 +1118,7 @@ function ItemCard({
           )}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <Link
-                to="/items/$itemId"
-                params={{ itemId: item.id }}
-                className="font-medium hover:text-blue-600 hover:underline"
-                onClick={(event) => event.stopPropagation()}
-              >
-                {item.title}
-              </Link>
+              <span className="font-medium">{item.title}</span>
               {handlers.length > 0 && (
                 <Link
                   to="/item-handlers/$itemHandlerId"

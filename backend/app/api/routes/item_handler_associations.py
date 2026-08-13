@@ -53,7 +53,17 @@ def add_item_to_handler(
     
     if existing_association:
         raise HTTPException(status_code=400, detail="Item is already associated with this item handler")
-    
+
+    # An item belongs to exactly one handler: drop any links to other
+    # handlers so handler-scoped data (memory/token) resolves unambiguously.
+    other_links = session.exec(
+        select(ItemHandlerItem)
+        .where(ItemHandlerItem.item_id == item_id)
+        .where(ItemHandlerItem.item_handler_id != item_handler_id)
+    ).all()
+    for link in other_links:
+        session.delete(link)
+
     # Create the association
     association = ItemHandlerItem(item_handler_id=item_handler_id, item_id=item_id)
     session.add(association)

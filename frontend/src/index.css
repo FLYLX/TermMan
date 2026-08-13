@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
@@ -160,3 +160,8 @@
       sans-serif;
   }
 }
+
+
+/* Sketch redesign: force white background & dark ink text (light theme). */
+html, body, #root { background-color: #ffffff; }
+html { color-scheme: light; }

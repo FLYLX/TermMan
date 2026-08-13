@@ -8,7 +8,6 @@ import {
   Package,
   Puzzle,
   Server,
-  Terminal,
   Users,
 } from "lucide-react"
 
@@ -34,7 +33,6 @@ type SidebarItem = Item & {
 
 const baseItems: SidebarItem[] = [
   { icon: Home, title: "nav.dashboard", path: "/" },
-  { icon: Terminal, title: "nav.items", path: "/items" },
   { icon: Layers, title: "nav.itemHandlers", path: "/item-handlers" },
   { icon: Bot, title: "nav.robots", path: "/robots", feature: "robot" },
   { icon: Puzzle, title: "nav.plugins", path: "/plugins" },

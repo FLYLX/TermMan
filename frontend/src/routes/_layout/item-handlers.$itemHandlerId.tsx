@@ -1,2294 +1,373 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { createFileRoute, Link } from "@tanstack/react-router"
 import {
-  Download,
-  FileText,
-  ChevronRight,
-  GripVertical,
-  Loader2,
-  MessageSquare,
-  RefreshCw,
-  Search,
-  Server,
-  Settings,
-  Terminal,
-  Upload,
-  X,
-  Zap,
-} from "lucide-react"
-import {
-  type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react"
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  Bot,
+  Brain,
+  FileText,
+  Filter,
+  Layers,
+  Loader2,
+  MessageSquare,
+  Server,
+  Settings,
+  Stethoscope,
+  Terminal,
+  Trash2,
+  X,
+  Zap,
+} from "lucide-react"
+
 import {
   ApiError,
-  type ItemHandlerUpdate,
   ItemHandlerAssociationsService,
   ItemHandlersService,
   ItemsService,
   McpService,
   SkillsService,
 } from "@/client"
+import AddItem from "@/components/Items/AddItem"
+import AddItemHandler from "@/components/ItemHandlers/AddItemHandler"
+import AddItemToHandler from "@/components/ItemHandlers/AddItemToHandler"
+import { ChatLogPanel } from "@/components/ItemHandlers/ChatLogPanel"
+import { HandlerSettingsPanel } from "@/components/ItemHandlers/HandlerSettingsPanel"
+import { MCPSelector as McpSelector } from "@/components/ItemHandlers/McpSelector"
+import { SkillSelector } from "@/components/ItemHandlers/SkillSelector"
+import { TerminalWsPanel } from "@/components/ItemHandlers/TerminalWsPanel"
+import { ChatPanel } from "@/components/Items/ChatPanel"
+import { TerminalOutputPanel } from "@/components/Items/TerminalOutputPanel"
+import { ItemConfigPanel } from "@/components/Items/ItemConfigPanel"
+import { ItemFilesPanel } from "@/components/Items/ItemFilesPanel"
+import { ItemFiltersPanel } from "@/components/Items/ItemFiltersPanel"
+import ItemHandlersList from "@/components/Items/ItemHandlersList"
+import { RobotConversationDebugPanel } from "@/components/Items/RobotConversationDebugPanel"
+import { TokenUsagePanel } from "@/components/Items/TokenUsagePanel"
+import { ScheduledTasksManager } from "@/components/scheduled-tasks-manager"
 import { KnowledgeBindingSelector } from "@/components/Knowledge/KnowledgeBindingSelector"
-import { useI18n } from "@/components/locale-provider"
+import { MemoryManager } from "@/components/memory-manager"
 import {
-  downloadRobotConversationMemory,
-  getRobotConversationMemoryQueryKey,
+  createRobotBinding,
+  deleteRobot,
+  deleteRobotBinding,
+  diagnoseRobotChain,
+  updateRobotBinding,
+  getRobotPlatformsQueryKey,
   getRobotsQueryKey,
-  importRobotConversationMemory,
   listRobotBindings,
-  listRobotConversationMemory,
+  listRobotPlatforms,
   listRobots,
-  readRobotConversationMemory,
-  type RobotBindingRecord,
-  type RobotConversationMemoryEntry,
-  type RobotRecord,
 } from "@/components/Robots/api"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { PasswordInput } from "@/components/ui/password-input"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { RobotDetail } from "@/components/Robots/RobotDetail"
+import { CreateRobotDialog } from "@/components/Robots/RobotManager"
+import { useI18n } from "@/components/locale-provider"
 import useCustomToast from "@/hooks/useCustomToast"
+import { isLoggedIn } from "@/hooks/useAuth"
 import { extractErrorMessage } from "@/utils"
 
 export const Route = createFileRoute("/_layout/item-handlers/$itemHandlerId")({
-  component: ItemHandlerDetail,
+  component: TerminalDispatcherPage,
+  beforeLoad: async () => {
+    if (!isLoggedIn()) {
+      throw redirect({ to: "/login" })
+    }
+  },
   head: () => ({
-    meta: [
-      {
-        title: "ItemHandler Detail - TermMan",
-      },
-    ],
+    meta: [{ title: "终端调度器 - TermMan" }],
   }),
 })
 
-function getItemHandlerQueryOptions(itemHandlerId: string) {
-  return {
-    queryFn: () => ItemHandlersService.readItemHandler({ id: itemHandlerId }),
-    queryKey: ["itemHandler", itemHandlerId],
-  }
-}
+const DISPATCHER_BOARD_CSS = `
+.dispatcher-board { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #1f1f1f; }
+.dispatcher-board .text-muted-foreground { color: #565654; }
+.dispatcher-board .text-foreground { color: #1f1f1f; }
+.sketch-box { background: #fff; border: 2px solid #3a3a3a; box-shadow: 3px 4px 0 rgba(0,0,0,.10); color: #1f1f1f; }
+.glass-box { background: rgba(255,255,255,.42); backdrop-filter: blur(3px) saturate(1.05); -webkit-backdrop-filter: blur(3px) saturate(1.05); border: 2px solid rgba(58,58,58,.75); box-shadow: 3px 4px 0 rgba(0,0,0,.07); color: #1f1f1f; border-radius: 14px; }
+.glass-box.sketch-hover:hover { background: rgba(255,255,255,.62); }
+.sketch-a { border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px; }
+.sketch-b { border-radius: 15px 225px 15px 255px / 255px 15px 225px 15px; }
+.sketch-c { border-radius: 225px 12px 255px 18px / 18px 255px 12px 225px; }
+.sketch-hover { transition: transform .15s ease, box-shadow .15s ease; cursor: pointer; }
+.sketch-hover:hover { transform: translate(-1px, -2px) rotate(-.3deg); box-shadow: 4px 6px 0 rgba(0,0,0,.14); background: #fbfbfa; }
+.sketch-active { outline: 3px solid #6b7280; outline-offset: 2px; }
+.sketch-tray { background: #f4f4f3; border: 2px dashed #6b6b69; border-radius: 18px; }
+.sketch-tray-hint { background: #e5e5e3; border-color: #525250; outline: 3px dashed #6b7280; outline-offset: 2px; }
+.sketch-drop-target { outline: 3px dashed #4b5563; outline-offset: 3px; }
+.board-wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
+.board-wires .wire-visible { stroke: #3a3a3a; stroke-width: 2; fill: none; stroke-linecap: round; pointer-events: none; }
+.board-wires .wire-bot { stroke: #6baed6; }
+.board-wires .wire-hit { stroke: rgba(0,0,0,0); stroke-width: 18; fill: none; stroke-linecap: round; pointer-events: stroke; cursor: pointer; }
+.board-wires g:hover .wire-visible { stroke: #b91c1c; stroke-width: 3; }
+.board-wires .wire-dash { stroke-dasharray: 8 5; opacity: .45; }
+.board-wires .wire-preview { stroke: #6b7280; stroke-width: 3; stroke-dasharray: 9 5; opacity: .95; }
+.dispatcher-board .board-grid, .dispatcher-board .board-grid section, .dispatcher-board .board-grid aside { pointer-events: none; }
+.dispatcher-board .board-grid button, .dispatcher-board .board-grid a, .dispatcher-board .board-grid .wire-handle, .dispatcher-board .board-grid .item-del, .dispatcher-board .board-grid select, .dispatcher-board .board-grid input { pointer-events: auto; }
+.wire-handle { position: absolute; right: -7px; top: 50%; width: 13px; height: 13px; margin-top: -6px; border-radius: 9999px; background: #fff; border: 2px solid #3a3a3a; cursor: crosshair; z-index: 30; }
+.wire-handle:hover { background: #e5e5e3; border-color: #1f1f1f; }
+.main-terminal-block { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 130px; width: 100%; cursor: pointer; }
+.terminal-titlebar { display: flex; align-items: center; gap: 6px; background: #1b2127; color: #9ae6b4; padding: 6px 10px; border-bottom: 2px solid #3a3a3a; }
+.terminal-titlebar .dot { width: 9px; height: 9px; border-radius: 50%; background: #4a5563; border: 1.5px solid #161616; }
+.drawer-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.28); animation: drawer-fade .15s ease-out; }
+.terminal-detail-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 45; width: min(720px, 94vw); background: #fff; border-left: 2px solid #3a3a3a; box-shadow: -6px 0 0 rgba(0,0,0,.10); display: flex; flex-direction: column; animation: drawer-in-right .2s ease-out; }
+.terminal-detail-panel .terminal-frame { border: none; border-radius: 0; box-shadow: none; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.terminal-detail-panel .terminal-body { flex: 1; min-height: 0; background: #fff; }
+.terminal-frame { border: 3px solid #3a3a3a; box-shadow: 3px 4px 0 rgba(0,0,0,.14); border-radius: 18px 60px 18px 60px / 60px 18px 60px 18px; overflow: hidden; background: #fff; }
+@keyframes drawer-in-right { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes drawer-fade { from { opacity: 0; } to { opacity: 1; } }
+.bot-detail-panel { position: fixed; left: 0; right: 0; bottom: 0; top: 0; z-index: 60; background: #f4f4f3; display: flex; flex-direction: column; animation: bot-panel-up .25s cubic-bezier(.2,.8,.3,1); }
+@keyframes bot-panel-up { from { transform: translateY(60px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.zoom-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 2rem; background: rgba(255,255,255,.72); backdrop-filter: blur(2px); }
+.zoom-backdrop-feature { z-index: 70; }
+.zoom-card { width: min(980px, 94vw); max-height: 84vh; overflow: auto; animation: dispatcher-zoom .16s ease-out; background: #fff; color: #1f1f1f; display: flex; flex-direction: column; }
+.feature-zoom-body { flex: 1; min-height: 0; }
+.feature-zoom-fill { height: 62vh; }
+.sketch-content { color: #1f1f1f; }
+.sketch-content .rounded-lg, .sketch-content .rounded-md { border-color: #3a3a3a; border-width: 2px; }
+.sketch-content .text-muted-foreground { color: #565654; }
+.sketch-content button { font-weight: 600; }
+@keyframes dispatcher-zoom { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.confirm-backdrop { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; padding: 2rem; background: rgba(0,0,0,.3); animation: drawer-fade .15s ease-out; }
+.confirm-card { width: min(400px, 92vw); background: #fff; padding: 20px; animation: dispatcher-zoom .16s ease-out; }
+.terminal-edge-panel { border-left: none; border-radius: 0 18px 18px 0 / 18px 18px 18px 0; animation: edge-slide-in .3s cubic-bezier(.2,.8,.3,1); }
+@keyframes edge-slide-in { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+.terminal-edge-panel-right { border-right: none; border-radius: 18px 0 0 18px / 18px 18px 0 18px; animation: edge-slide-in-right .3s cubic-bezier(.2,.8,.3,1); }
+@keyframes edge-slide-in-right { from { transform: translateX(100%); } to { transform: translateX(0); } }
+.terminal-fullscreen { position: fixed; inset: 0; z-index: 55; background: #f4f4f3; display: flex; flex-direction: column; animation: terminal-slide-in .25s cubic-bezier(.2,.8,.3,1); }
+@keyframes terminal-slide-in { from { transform: translateX(60px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+.terminal-fullscreen-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 2px solid #3a3a3a; background: #fff; }
+.terminal-fullscreen-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; padding: 14px; overflow: hidden; }
+.terminal-fullscreen-body.terminal-body-3col { grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; }
+.terminal-titlebar-light { background: #fff; color: #3a3a3a; }
+.terminal-fullscreen-body .terminal-frame { flex: 1; min-height: 0; display: flex; flex-direction: column; height: 100%; }
+.terminal-fullscreen-body .terminal-body { flex: 1; min-height: 0; background: #fff; }
+.feature-icon-rail { display: flex; flex-direction: column; gap: 6px; width: 44px; overflow: hidden; overflow-y: auto; padding: 4px; border: 2px solid #3a3a3a; border-radius: 14px; background: #fff; box-shadow: 2px 3px 0 rgba(0,0,0,.10); transition: width .22s ease; scrollbar-width: none; }
+.feature-icon-rail::-webkit-scrollbar { display: none; }
+.feature-icon-rail:hover { width: 168px; }
+.feature-icon-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; border-radius: 10px; color: #565654; white-space: nowrap; cursor: pointer; flex-shrink: 0; }
+.feature-icon-btn:hover { background: #f0f0ef; color: #1f1f1f; }
+.feature-icon-btn.feature-icon-active { background: #3a3a3a; color: #fff; }
+.feature-icon-btn svg { flex-shrink: 0; }
+.feature-icon-label { font-size: 11px; font-weight: 700; opacity: 0; transition: opacity .15s ease; }
+.feature-icon-rail:hover .feature-icon-label { opacity: 1; }
+.bot-tag { position: relative; margin-top: 16px; transform-origin: bottom center; transform: rotate(var(--tilt, 0deg)); border: 2px solid #3a3a3a; background: #fff; color: #242424; padding: 8px 12px 16px; font-weight: 700; font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 3px; box-shadow: 3px -4px 0 rgba(0,0,0,.10); border-radius: 18px 18px 10px 10px; cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, background .18s ease; }
+.bot-tag .tag-hole { position: absolute; bottom: 4px; top: auto; left: 50%; margin-left: -5px; width: 10px; height: 10px; border: 2px solid #3a3a3a; border-radius: 9999px; background: #f4f4f3; }
+.bot-tag:hover { transform: rotate(0deg) translateY(-4px); box-shadow: 4px -6px 0 rgba(0,0,0,.14); background: #fbfbfa; }
+.bot-tag .item-del { top: auto; right: auto; bottom: -16px; left: 50%; transform: translateX(-50%); }
+.bot-tag-tool { display: inline-flex; align-items: center; justify-content: center; }
+.bot-tag-tool .btn-add-compact { min-width: 0; height: auto; padding: 0; }
+.bot-diagnose-tab { position: absolute; right: -26px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 26px; border: 2px solid #dc2626; border-left: none; background: #fff; color: #dc2626; border-radius: 0 9px 9px 0; cursor: pointer; z-index: 5; }
+.bot-diagnose-tab:hover { background: #fef2f2; color: #b91c1c; }
+.scroll-arrow { display: flex; align-items: center; justify-content: center; padding: 0 2px; border: none; background: transparent; color: #1f1f1f; font-size: 20px; font-weight: 900; line-height: 1.1; cursor: pointer; flex-shrink: 0; text-shadow: 1px 1px 0 rgba(0,0,0,.15); }
+.scroll-arrow:hover { color: #6b7280; transform: scale(1.15); }
+.scroll-col { scrollbar-width: none; }
+.scroll-col::-webkit-scrollbar { display: none; }
+.host-shade-0 { background: #ffffff; }
+.host-shade-1 { background: #f0f0ef; }
+.host-shade-2 { background: #e3e3e1; }
+.host-shade-3 { background: #d6d6d3; }
+.host-shade-4 { background: #c9c9c6; }
+.btn-add-compact { display: inline-flex; align-items: center; justify-content: center; gap: 0; border: 2px solid #16a34a !important; background: #fff !important; color: #16a34a !important; font-weight: 900; font-size: 15px; line-height: 1; min-width: 26px; height: 26px; padding: 0; border-radius: 9999px !important; cursor: pointer; box-shadow: 1px 2px 0 rgba(0,0,0,.12); }
+.btn-add-compact:hover { background: #f0faf4 !important; color: #15803d !important; }
+.btn-add-compact svg { margin-right: 0 !important; width: 14px; height: 14px; color: #16a34a !important; stroke-width: 3; }
+.edge-add-wrap { display: flex; justify-content: center; padding: 2px 0 8px; }
+.edge-add-frame { display: inline-flex; align-items: center; justify-content: center; padding: 5px; border: 2px solid #3a3a3a; background: #fff; box-shadow: 3px 4px 0 rgba(0,0,0,.10); transition: transform .15s ease, box-shadow .15s ease; }
+.edge-add-frame:hover { transform: translate(-1px, -2px) rotate(-.5deg); box-shadow: 4px 6px 0 rgba(0,0,0,.14); }
+.edge-add-frame-left { border-radius: 18px 60px 18px 60px / 60px 18px 60px 18px; }
+.edge-add-frame-right { border-radius: 60px 18px 60px 18px / 18px 60px 18px 60px; }
+.item-del { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; background: transparent; color: #dc2626; cursor: pointer; z-index: 6; }
+.item-del:hover { background: transparent; color: #b91c1c; }
+.item-del svg { width: 18px; height: 18px; stroke-width: 3; }
+.dispatcher-box-body { padding-right: 30px; }
+.edge-left-box { border-left: none !important; border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; }
+.edge-right-box { border-right: none !important; border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; }
+`
 
-function formatDate(dateString: string | undefined | null, localeTag: string) {
-  if (!dateString) return null
-  return new Date(dateString).toLocaleString(localeTag)
-}
-
-function normalizeOptionalText(value: string) {
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
-}
-
-function parseModelParameters(value: string): Record<string, unknown> {
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return {}
-  }
-  const parsed = JSON.parse(trimmed)
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("模型参数必须是 JSON 对象")
-  }
-  return parsed as Record<string, unknown>
-}
-
-type ModelConfigExample = {
-  label: string
-  model: string
-  apiUrl: string
-  parameters: Record<string, unknown>
-  note: string
-}
-
-const MODEL_CONFIG_EXAMPLES: Record<string, ModelConfigExample> = {
-  "openai-gpt5": {
-    label: "OpenAI GPT-5",
-    model: "openai/gpt-5",
-    apiUrl: "",
-    parameters: {},
-    note: "官方 OpenAI API 可留空 API URL。GPT-5 不要配置 temperature=0.1。",
-  },
-  "openai-codex": {
-    label: "OpenAI GPT-5 Codex",
-    model: "openai/gpt-5-codex",
-    apiUrl: "",
-    parameters: {},
-    note: "Codex 使用空参数对象，由模型采用默认采样与推理配置。",
-  },
-  "deepseek-chat": {
-    label: "DeepSeek Chat",
-    model: "deepseek/deepseek-chat",
-    apiUrl: "https://api.deepseek.com",
-    parameters: { temperature: 0.1 },
-    note: "DeepSeek Chat 可按需要设置 temperature；这里给出偏稳定的 0.1 示例。",
-  },
-  "openai-compatible": {
-    label: "OpenAI 兼容代理",
-    model: "openai/your-model-name",
-    apiUrl: "https://your-api.example.com/v1",
-    parameters: {},
-    note: "模型名前加 openai/，API URL 填兼容接口的 /v1 地址，参数按服务商文档填写。",
-  },
-}
-
-type AgentProfileForm = {
-  persona: string
-  tone: string
-  language: string
-  verbosity: string
-  tool_policy: string
-  response_rules: string
-  avoid: string
-}
-
-function createAgentProfileForm(profile: any = {}): AgentProfileForm {
-  return {
-    persona: profile?.persona ?? "",
-    tone: profile?.tone ?? "",
-    language: profile?.language ?? "",
-    verbosity: profile?.verbosity ?? "",
-    tool_policy: profile?.tool_policy ?? "",
-    response_rules: Array.isArray(profile?.response_rules)
-      ? profile.response_rules.join("\n")
-      : "",
-    avoid: Array.isArray(profile?.avoid) ? profile.avoid.join("\n") : "",
-  }
-}
-
-function serializeAgentProfile(form: AgentProfileForm) {
-  const lineList = (value: string) =>
-    value
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-
-  return {
-    persona: normalizeOptionalText(form.persona),
-    tone: normalizeOptionalText(form.tone),
-    language: normalizeOptionalText(form.language),
-    verbosity: normalizeOptionalText(form.verbosity),
-    tool_policy: normalizeOptionalText(form.tool_policy),
-    response_rules: lineList(form.response_rules),
-    avoid: lineList(form.avoid),
-  }
-}
-
-function ProfileValue({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div className="rounded-md border bg-muted/30 px-3 py-2">
-      <div className="text-sm text-muted-foreground">{label}</div>
-      <div className="mt-1 whitespace-pre-wrap text-sm">
-        {value || "Not set"}
-      </div>
-    </div>
-  )
-}
-
-function KeyValue({ label, value }: { label: string; value?: ReactNode }) {
-  const { t } = useI18n()
-
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <div className="min-w-0 font-mono text-sm">
-        {value || t("common.notAvailable")}
-      </div>
-    </div>
-  )
-}
-
-const LIST_PAGE_SIZE = 10
-type ItemHandlerTab =
-  | "connections"
-  | "skills"
-  | "knowledge"
-  | "mcp"
-  | "chatLogs"
-  | "config"
-
-function formatBytes(value: number | null | undefined) {
-  if (value === null || value === undefined) {
-    return "-"
-  }
-  if (value < 1024) {
-    return `${value} B`
-  }
-
-  const units = ["KB", "MB", "GB"]
-  let size = value
-  let unitIndex = -1
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024
-    unitIndex += 1
-  }
-  return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unitIndex]}`
-}
-
-function getConversationTypeLabel(conversationKey: string, locale: string) {
-  const type = conversationKey.split(":", 1)[0]
-  if (type === "private") {
-    return locale === "zh" ? "私聊" : "Private"
-  }
-  if (type === "channel") {
-    return locale === "zh" ? "频道" : "Channel"
-  }
-  return locale === "zh" ? "群聊" : "Group"
-}
-
-function getConversationId(conversationKey: string) {
-  const [, id = conversationKey] = conversationKey.split(":", 2)
-  return id
-}
-
-function getRobotName(robotId: string, robotsById: Map<string, RobotRecord>) {
-  return robotsById.get(robotId)?.name || robotId
-}
-
-function LoadMoreButton({
-  remainingCount,
-  onClick,
+function ScrollColumn({
+  children,
   className,
+  arrows = true,
 }: {
-  remainingCount: number
-  onClick: () => void
+  children: ReactNode
   className?: string
+  arrows?: boolean
 }) {
-  const { locale } = useI18n()
-  const nextCount = Math.min(LIST_PAGE_SIZE, remainingCount)
-
-  if (remainingCount <= 0) {
-    return null
+  const ref = useRef<HTMLDivElement | null>(null)
+  const scroll = (dir: number) => {
+    ref.current?.scrollBy({ top: dir * 180, behavior: "smooth" })
   }
-
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      className={className}
-      onClick={onClick}
-    >
-      {locale === "zh" ? `再显示 ${nextCount} 条` : `Show ${nextCount} more`}
-    </Button>
-  )
-}
-
-type ItemWithStatus = {
-  id: string
-  title: string
-  description?: string | null
-  status?: string
-}
-
-type NodePosition = {
-  x: number
-  y: number
-}
-
-function ItemWithHandlers({
-  item,
-  currentHandlerId,
-  isConnected,
-}: {
-  item: any
-  currentHandlerId: string
-  isConnected: boolean
-}) {
-  const { t } = useI18n()
-  const [isExpanded, setIsExpanded] = useState(false)
-  const [handlers, setHandlers] = useState<any[]>([])
-
-  const { refetch } = useQuery({
-    queryFn: () =>
-      ItemHandlerAssociationsService.getHandlersForItem({ itemId: item.id }),
-    queryKey: ["item-handlers", item.id],
-    enabled: false,
-  })
-
-  const toggleExpand = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!isExpanded) {
-      const result = await refetch()
-      setHandlers((result.data as any[]) || [])
-    }
-    setIsExpanded(!isExpanded)
-  }
-
-  return (
-    <div className="rounded-lg border overflow-hidden">
-      <div
-        className={`flex items-center gap-2 p-2 transition-colors ${isConnected ? "bg-green-50 dark:bg-green-950" : "hover:bg-slate-100 dark:hover:bg-slate-800"}`}
-      >
+    <div className={`flex min-h-0 flex-1 flex-col gap-1 ${className ?? ""}`}>
+      {arrows ? (
         <button
-          onClick={toggleExpand}
-          className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded"
+          type="button"
+          className="scroll-arrow"
+          onClick={() => scroll(-1)}
+          aria-label="向上滚动"
         >
-          <ChevronRight
-            className={`size-4 text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`}
-          />
+          ▲
         </button>
-        <Link
-          to="/items/$itemId"
-          params={{ itemId: item.id }}
-          className="flex items-center gap-2 flex-1 min-w-0"
-        >
-          <Terminal className="size-4 text-slate-500 shrink-0" />
-          <span className="text-sm font-medium truncate">
-            {item.title || item.id}
-          </span>
-        </Link>
-        {isConnected && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
-            {t("common.connected")}
-          </span>
-        )}
-        <span
-          className={`text-xs px-2 py-0.5 rounded-full ${item.status === "running" ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"}`}
-        >
-          {item.status === "running" ? t("common.online") : t("common.offline")}
-        </span>
+      ) : null}
+      <div ref={ref} className="scroll-col min-h-0 flex-1 overflow-y-auto">
+        {children}
       </div>
-      {isExpanded && (
-        <div className="border-t bg-slate-50 dark:bg-slate-900 p-2">
-          {handlers.length === 0 ? (
-            <p className="text-xs text-muted-foreground px-2">
-              {t("itemHandlers.detail.noHandlersConnected")}
-            </p>
-          ) : (
-            <div className="space-y-1">
-              {handlers.map((handler: any) => (
-                <Link
-                  key={handler.id}
-                  to="/item-handlers/$itemHandlerId"
-                  params={{ itemHandlerId: handler.id }}
-                  className={`flex items-center gap-2 px-2 py-1 rounded text-sm hover:bg-slate-200 dark:hover:bg-slate-800 ${handler.id === currentHandlerId ? "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300" : "text-slate-600 dark:text-slate-400"}`}
-                >
-                  <Zap className="size-3" />
-                  <span>{handler.name}</span>
-                  {handler.id === currentHandlerId && (
-                    <span className="text-xs ml-auto">
-                      ({t("common.current")})
-                    </span>
-                  )}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {arrows ? (
+        <button
+          type="button"
+          className="scroll-arrow"
+          onClick={() => scroll(1)}
+          aria-label="向下滚动"
+        >
+          ▼
+        </button>
+      ) : null}
     </div>
   )
 }
 
-function SkillSelector({
-  allSkills,
-  enabledSkills,
-  onSkillToggle,
-}: {
-  allSkills: any[]
-  enabledSkills: string[]
-  onSkillToggle: (skillId: string, enable: boolean) => Promise<void>
-}) {
-  const [searchQuery, setSearchQuery] = useState("")
-  const [draggedSkill, setDraggedSkill] = useState<string | null>(null)
-  const [dropTarget, setDropTarget] = useState<"enabled" | "available" | null>(
-    null,
+function TerminalMemoryPanel({ connectedItems }: { connectedItems: any[] }) {
+  const [selectedItemId, setSelectedItemId] = useState("")
+  const effectiveItemId = connectedItems.some(
+    (item) => String(item.id) === selectedItemId,
   )
-  const [pendingSkill, setPendingSkill] = useState<string | null>(null)
-  const [enabledVisibleCount, setEnabledVisibleCount] = useState(LIST_PAGE_SIZE)
-  const [availableVisibleCount, setAvailableVisibleCount] =
-    useState(LIST_PAGE_SIZE)
-
-  const enabledSkillsList = useMemo(() => {
-    return allSkills.filter((s) => enabledSkills.includes(s.skill_id))
-  }, [allSkills, enabledSkills])
-
-  const availableSkillsList = useMemo(() => {
-    return allSkills.filter((s) => !enabledSkills.includes(s.skill_id))
-  }, [allSkills, enabledSkills])
-
-  const filteredAvailableSkills = useMemo(() => {
-    if (!searchQuery) return availableSkillsList
-    return availableSkillsList.filter(
-      (s) =>
-        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.description?.toLowerCase().includes(searchQuery.toLowerCase()),
-    )
-  }, [availableSkillsList, searchQuery])
-  const visibleEnabledSkills = enabledSkillsList.slice(0, enabledVisibleCount)
-  const visibleAvailableSkills = filteredAvailableSkills.slice(
-    0,
-    availableVisibleCount,
-  )
-  const enabledRemainingCount = Math.max(
-    enabledSkillsList.length - visibleEnabledSkills.length,
-    0,
-  )
-  const availableRemainingCount = Math.max(
-    filteredAvailableSkills.length - visibleAvailableSkills.length,
-    0,
-  )
-
-  useEffect(() => {
-    setEnabledVisibleCount(LIST_PAGE_SIZE)
-  }, [enabledSkillsList.length])
-
-  useEffect(() => {
-    setAvailableVisibleCount(LIST_PAGE_SIZE)
-  }, [availableSkillsList.length, searchQuery])
-
-  const handleDragStart = (e: React.DragEvent, skillId: string) => {
-    setDraggedSkill(skillId)
-    e.dataTransfer.effectAllowed = "move"
-  }
-
-  const handleDragOver = (
-    e: React.DragEvent,
-    target: "enabled" | "available",
-  ) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = "move"
-    setDropTarget(target)
-  }
-
-  const handleDragLeave = () => {
-    setDropTarget(null)
-  }
-
-  const handleDrop = async (
-    e: React.DragEvent,
-    target: "enabled" | "available",
-  ) => {
-    e.preventDefault()
-    setDropTarget(null)
-
-    if (!draggedSkill) return
-
-    const isCurrentlyEnabled = enabledSkills.includes(draggedSkill)
-
-    if (target === "enabled" && !isCurrentlyEnabled) {
-      setPendingSkill(draggedSkill)
-      await onSkillToggle(draggedSkill, true)
-      setPendingSkill(null)
-    } else if (target === "available" && isCurrentlyEnabled) {
-      setPendingSkill(draggedSkill)
-      await onSkillToggle(draggedSkill, false)
-      setPendingSkill(null)
-    }
-
-    setDraggedSkill(null)
-  }
-
-  const handleDragEnd = () => {
-    setDraggedSkill(null)
-    setDropTarget(null)
-  }
-
-  const removeSkill = async (skillId: string) => {
-    setPendingSkill(skillId)
-    await onSkillToggle(skillId, false)
-    setPendingSkill(null)
-  }
-
-  const addSkill = async (skillId: string) => {
-    if (!enabledSkills.includes(skillId)) {
-      setPendingSkill(skillId)
-      await onSkillToggle(skillId, true)
-      setPendingSkill(null)
-    }
-  }
+    ? selectedItemId
+    : String(connectedItems[0]?.id ?? "")
 
   return (
-    <div className="flex gap-4 h-80">
-      <div
-        className={`flex-1 flex flex-col border rounded-lg overflow-hidden transition-colors ${
-          dropTarget === "enabled"
-            ? "border-green-500 bg-green-50/50 dark:bg-green-950/50"
-            : "border-border"
-        }`}
-        onDragOver={(e) => handleDragOver(e, "enabled")}
-        onDragLeave={handleDragLeave}
-        onDrop={(e) => handleDrop(e, "enabled")}
-      >
-        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
-          <div className="flex items-center gap-2">
-            <Zap className="size-4 text-green-500" />
-            <span className="text-sm font-medium">
-              已启用 ({enabledSkillsList.length})
-            </span>
-          </div>
+    <div className="space-y-3">
+      {connectedItems.length > 1 ? (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">
+            入口终端（记忆池为调度器共享，选哪个都一样）：
+          </span>
+          <select
+            className="rounded-md border bg-background px-2 py-1"
+            value={effectiveItemId}
+            onChange={(event) => setSelectedItemId(event.target.value)}
+          >
+            {connectedItems.map((item) => (
+              <option key={item.id} value={String(item.id)}>
+                {item.title || item.id}
+              </option>
+            ))}
+          </select>
         </div>
-        <ScrollArea className="flex-1">
-          {enabledSkillsList.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
-              <GripVertical className="size-8 mb-2 opacity-30" />
-              <p className="text-sm text-center">拖拽技能到此处启用</p>
-            </div>
-          ) : (
-            <div className="p-2 space-y-1">
-              {visibleEnabledSkills.map((skill) => (
-                <div
-                  key={skill.skill_id}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, skill.skill_id)}
-                  onDragEnd={handleDragEnd}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md bg-green-100 dark:bg-green-900/30 border border-green-200 dark:border-green-800 cursor-grab active:cursor-grabbing transition-all ${
-                    draggedSkill === skill.skill_id ? "opacity-50 scale-95" : ""
-                  } ${pendingSkill === skill.skill_id ? "opacity-60" : ""}`}
-                >
-                  <GripVertical className="size-4 text-green-600 dark:text-green-400 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-green-700 dark:text-green-300 truncate">
-                      {skill.name}
-                    </div>
-                    {skill.description && (
-                      <div className="text-xs text-green-600/70 dark:text-green-400/70 truncate">
-                        {skill.description}
-                      </div>
-                    )}
-                  </div>
-                  {pendingSkill === skill.skill_id ? (
-                    <Loader2 className="size-4 text-green-600 dark:text-green-400 animate-spin" />
-                  ) : (
-                    <button
-                      onClick={() => removeSkill(skill.skill_id)}
-                      className="p-1 hover:bg-green-200 dark:hover:bg-green-800 rounded transition-colors"
-                    >
-                      <X className="size-3 text-green-600 dark:text-green-400" />
-                    </button>
-                  )}
-                </div>
-              ))}
-              <LoadMoreButton
-                remainingCount={enabledRemainingCount}
-                className="w-full"
-                onClick={() =>
-                  setEnabledVisibleCount((current) => current + LIST_PAGE_SIZE)
-                }
-              />
-            </div>
-          )}
-        </ScrollArea>
-      </div>
-
-      <div
-        className={`flex-1 flex flex-col border rounded-lg overflow-hidden transition-colors ${
-          dropTarget === "available"
-            ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/50"
-            : "border-border"
-        }`}
-        onDragOver={(e) => handleDragOver(e, "available")}
-        onDragLeave={handleDragLeave}
-        onDrop={(e) => handleDrop(e, "available")}
-      >
-        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
-          <div className="flex items-center gap-2">
-            <Terminal className="size-4 text-blue-500" />
-            <span className="text-sm font-medium">
-              可用技能 ({availableSkillsList.length})
-            </span>
-          </div>
-        </div>
-        <div className="px-3 py-2 border-b">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <Input
-              placeholder="搜索技能..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 h-8"
-            />
-          </div>
-        </div>
-        <ScrollArea className="flex-1">
-          {filteredAvailableSkills.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
-              <Search className="size-8 mb-2 opacity-30" />
-              <p className="text-sm text-center">
-                {searchQuery ? "未找到匹配的技能" : "所有技能已启用"}
-              </p>
-            </div>
-          ) : (
-            <div className="p-2 space-y-1">
-              {visibleAvailableSkills.map((skill) => (
-                <div
-                  key={skill.skill_id}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, skill.skill_id)}
-                  onDragEnd={handleDragEnd}
-                  onClick={() => addSkill(skill.skill_id)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md bg-muted/50 border border-border cursor-grab active:cursor-grabbing hover:bg-muted transition-all ${
-                    draggedSkill === skill.skill_id ? "opacity-50 scale-95" : ""
-                  } ${pendingSkill === skill.skill_id ? "opacity-60" : ""}`}
-                >
-                  {pendingSkill === skill.skill_id ? (
-                    <Loader2 className="size-4 text-muted-foreground shrink-0 animate-spin" />
-                  ) : (
-                    <GripVertical className="size-4 text-muted-foreground shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">
-                      {skill.name}
-                    </div>
-                    {skill.description && (
-                      <div className="text-xs text-muted-foreground truncate">
-                        {skill.description}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-              <LoadMoreButton
-                remainingCount={availableRemainingCount}
-                className="w-full"
-                onClick={() =>
-                  setAvailableVisibleCount(
-                    (current) => current + LIST_PAGE_SIZE,
-                  )
-                }
-              />
-            </div>
-          )}
-        </ScrollArea>
-      </div>
+      ) : null}
+      {effectiveItemId ? <MemoryManager itemId={effectiveItemId} /> : null}
     </div>
   )
 }
 
-function MCPSelector({
-  allServers,
-  enabledServers,
-  onServerToggle,
-}: {
-  allServers: any[]
-  enabledServers: string[]
-  onServerToggle: (serverName: string, enable: boolean) => Promise<void>
-}) {
-  const [searchQuery, setSearchQuery] = useState("")
-  const [draggedServer, setDraggedServer] = useState<string | null>(null)
-  const [dropTarget, setDropTarget] = useState<"enabled" | "available" | null>(
-    null,
-  )
-  const [pendingServer, setPendingServer] = useState<string | null>(null)
-  const [enabledVisibleCount, setEnabledVisibleCount] = useState(LIST_PAGE_SIZE)
-  const [availableVisibleCount, setAvailableVisibleCount] =
-    useState(LIST_PAGE_SIZE)
-
-  const enabledServersList = useMemo(() => {
-    return allServers.filter((s) => enabledServers.includes(s.name))
-  }, [allServers, enabledServers])
-
-  const availableServersList = useMemo(() => {
-    return allServers.filter((s) => !enabledServers.includes(s.name))
-  }, [allServers, enabledServers])
-
-  const filteredAvailableServers = useMemo(() => {
-    if (!searchQuery) return availableServersList
-    return availableServersList.filter(
-      (s) =>
-        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.description?.toLowerCase().includes(searchQuery.toLowerCase()),
-    )
-  }, [availableServersList, searchQuery])
-  const visibleEnabledServers = enabledServersList.slice(0, enabledVisibleCount)
-  const visibleAvailableServers = filteredAvailableServers.slice(
-    0,
-    availableVisibleCount,
-  )
-  const enabledRemainingCount = Math.max(
-    enabledServersList.length - visibleEnabledServers.length,
-    0,
-  )
-  const availableRemainingCount = Math.max(
-    filteredAvailableServers.length - visibleAvailableServers.length,
-    0,
-  )
-
-  useEffect(() => {
-    setEnabledVisibleCount(LIST_PAGE_SIZE)
-  }, [enabledServersList.length])
-
-  useEffect(() => {
-    setAvailableVisibleCount(LIST_PAGE_SIZE)
-  }, [availableServersList.length, searchQuery])
-
-  const handleDragStart = (e: React.DragEvent, serverName: string) => {
-    setDraggedServer(serverName)
-    e.dataTransfer.effectAllowed = "move"
-  }
-
-  const handleDragOver = (
-    e: React.DragEvent,
-    target: "enabled" | "available",
-  ) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = "move"
-    setDropTarget(target)
-  }
-
-  const handleDragLeave = () => {
-    setDropTarget(null)
-  }
-
-  const handleDrop = async (
-    e: React.DragEvent,
-    target: "enabled" | "available",
-  ) => {
-    e.preventDefault()
-    setDropTarget(null)
-
-    if (!draggedServer) return
-
-    const isCurrentlyEnabled = enabledServers.includes(draggedServer)
-
-    if (target === "enabled" && !isCurrentlyEnabled) {
-      setPendingServer(draggedServer)
-      await onServerToggle(draggedServer, true)
-      setPendingServer(null)
-    } else if (target === "available" && isCurrentlyEnabled) {
-      setPendingServer(draggedServer)
-      await onServerToggle(draggedServer, false)
-      setPendingServer(null)
-    }
-
-    setDraggedServer(null)
-  }
-
-  const handleDragEnd = () => {
-    setDraggedServer(null)
-    setDropTarget(null)
-  }
-
-  const removeServer = async (serverName: string) => {
-    setPendingServer(serverName)
-    await onServerToggle(serverName, false)
-    setPendingServer(null)
-  }
-
-  const addServer = async (serverName: string) => {
-    if (!enabledServers.includes(serverName)) {
-      setPendingServer(serverName)
-      await onServerToggle(serverName, true)
-      setPendingServer(null)
-    }
-  }
-
-  return (
-    <div className="flex gap-4 h-80">
-      <div
-        className={`flex-1 flex flex-col border rounded-lg overflow-hidden transition-colors ${
-          dropTarget === "enabled"
-            ? "border-purple-500 bg-purple-50/50 dark:bg-purple-950/50"
-            : "border-border"
-        }`}
-        onDragOver={(e) => handleDragOver(e, "enabled")}
-        onDragLeave={handleDragLeave}
-        onDrop={(e) => handleDrop(e, "enabled")}
-      >
-        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
-          <div className="flex items-center gap-2">
-            <Server className="size-4 text-purple-500" />
-            <span className="text-sm font-medium">
-              已启用 ({enabledServersList.length})
-            </span>
-          </div>
-        </div>
-        <ScrollArea className="flex-1">
-          {enabledServersList.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
-              <GripVertical className="size-8 mb-2 opacity-30" />
-              <p className="text-sm text-center">拖拽 MCP Server 到此处启用</p>
-            </div>
-          ) : (
-            <div className="p-2 space-y-1">
-              {visibleEnabledServers.map((server) => (
-                <div
-                  key={server.name}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, server.name)}
-                  onDragEnd={handleDragEnd}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md bg-purple-100 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 cursor-grab active:cursor-grabbing transition-all ${
-                    draggedServer === server.name ? "opacity-50 scale-95" : ""
-                  } ${pendingServer === server.name ? "opacity-60" : ""}`}
-                >
-                  <GripVertical className="size-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-purple-700 dark:text-purple-300 truncate">
-                      {server.name}
-                    </div>
-                    {server.description && (
-                      <div className="text-xs text-purple-600/70 dark:text-purple-400/70 truncate">
-                        {server.description}
-                      </div>
-                    )}
-                  </div>
-                  {pendingServer === server.name ? (
-                    <Loader2 className="size-4 text-purple-600 dark:text-purple-400 animate-spin" />
-                  ) : (
-                    <button
-                      onClick={() => removeServer(server.name)}
-                      className="p-1 hover:bg-purple-200 dark:hover:bg-purple-800 rounded transition-colors"
-                    >
-                      <X className="size-3 text-purple-600 dark:text-purple-400" />
-                    </button>
-                  )}
-                </div>
-              ))}
-              <LoadMoreButton
-                remainingCount={enabledRemainingCount}
-                className="w-full"
-                onClick={() =>
-                  setEnabledVisibleCount((current) => current + LIST_PAGE_SIZE)
-                }
-              />
-            </div>
-          )}
-        </ScrollArea>
-      </div>
-
-      <div
-        className={`flex-1 flex flex-col border rounded-lg overflow-hidden transition-colors ${
-          dropTarget === "available"
-            ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/50"
-            : "border-border"
-        }`}
-        onDragOver={(e) => handleDragOver(e, "available")}
-        onDragLeave={handleDragLeave}
-        onDrop={(e) => handleDrop(e, "available")}
-      >
-        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
-          <div className="flex items-center gap-2">
-            <Server className="size-4 text-blue-500" />
-            <span className="text-sm font-medium">
-              可用服务器 ({availableServersList.length})
-            </span>
-          </div>
-        </div>
-        <div className="px-3 py-2 border-b">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <Input
-              placeholder="搜索 MCP Server..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 h-8"
-            />
-          </div>
-        </div>
-        <ScrollArea className="flex-1">
-          {filteredAvailableServers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
-              <Search className="size-8 mb-2 opacity-30" />
-              <p className="text-sm text-center">
-                {searchQuery ? "未找到匹配的服务器" : "所有服务器已启用"}
-              </p>
-            </div>
-          ) : (
-            <div className="p-2 space-y-1">
-              {visibleAvailableServers.map((server) => (
-                <div
-                  key={server.name}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, server.name)}
-                  onDragEnd={handleDragEnd}
-                  onClick={() => addServer(server.name)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md bg-muted/50 border border-border cursor-grab active:cursor-grabbing hover:bg-muted transition-all ${
-                    draggedServer === server.name ? "opacity-50 scale-95" : ""
-                  } ${pendingServer === server.name ? "opacity-60" : ""}`}
-                >
-                  {pendingServer === server.name ? (
-                    <Loader2 className="size-4 text-muted-foreground shrink-0 animate-spin" />
-                  ) : (
-                    <GripVertical className="size-4 text-muted-foreground shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">
-                      {server.name}
-                    </div>
-                    {server.description && (
-                      <div className="text-xs text-muted-foreground truncate">
-                        {server.description}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-              <LoadMoreButton
-                remainingCount={availableRemainingCount}
-                className="w-full"
-                onClick={() =>
-                  setAvailableVisibleCount(
-                    (current) => current + LIST_PAGE_SIZE,
-                  )
-                }
-              />
-            </div>
-          )}
-        </ScrollArea>
-      </div>
-    </div>
-  )
-}
-
-type ChatLogRecord = {
-  robot: RobotRecord
-  binding: RobotBindingRecord
-  entry: RobotConversationMemoryEntry
-}
-
-function ChatLogPanel({
+function TerminalDispatcherBoard({
   itemHandlerId,
-  connectedItems,
+  itemHandler,
 }: {
   itemHandlerId: string
-  connectedItems: any[]
+  itemHandler: any
 }) {
   const queryClient = useQueryClient()
-  const { locale, localeTag } = useI18n()
+  const navigate = useNavigate()
+  const { t } = useI18n()
   const { showSuccessToast, showErrorToast } = useCustomToast()
-  const connectedItemIds = useMemo(
-    () => new Set(connectedItems.map((item) => String(item.id))),
-    [connectedItems],
-  )
-  const [selectedKey, setSelectedKey] = useState("")
-  const [importContent, setImportContent] = useState("")
-  const [appendImport, setAppendImport] = useState(true)
-  const [isImporting, setIsImporting] = useState(false)
-  const [isDownloading, setIsDownloading] = useState(false)
-  const [isRefreshing, setIsRefreshing] = useState(false)
 
-  const copy =
-    locale === "zh"
-      ? {
-          title: "聊天记录",
-          description:
-            "查看当前 TermHandler 关联终端对应机器人的群聊/私聊 .log。",
-          noTerminal: "当前 TermHandler 还没有关联终端。",
-          noRobot: "当前关联终端还没有绑定机器人。",
-          noLog: "这些机器人还没有写入群聊或私聊 .log。",
-          logList: "会话日志",
-          refresh: "刷新",
-          download: "下载",
-          import: "导入",
-          append: "追加导入",
-          replace: "覆盖导入",
-          importPlaceholder: "粘贴 .log 内容...",
-          importRequired: "请先粘贴要导入的 .log 内容",
-          imported: "聊天记录已导入",
-          importFailed: "导入聊天记录失败",
-          downloadFailed: "下载聊天记录失败",
-          loadingLogs: "正在加载聊天记录...",
-          loadingMemory: "正在读取 .log...",
-          emptyMemory: "这个会话还没有聊天记录。",
-          robot: "机器人",
-          terminal: "终端",
-          updated: "更新时间",
-          size: "大小",
-        }
-      : {
-          title: "Chat Logs",
-          description:
-            "View group/private .log files for robots bound to this TermHandler's terminals.",
-          noTerminal: "This TermHandler has no attached terminals.",
-          noRobot: "No robot is bound to the attached terminals.",
-          noLog: "These robots have not written any group/private .log yet.",
-          logList: "Conversation logs",
-          refresh: "Refresh",
-          download: "Download",
-          import: "Import",
-          append: "Append import",
-          replace: "Replace import",
-          importPlaceholder: "Paste .log content...",
-          importRequired: "Paste .log content before importing",
-          imported: "Chat log imported",
-          importFailed: "Failed to import chat log",
-          downloadFailed: "Failed to download chat log",
-          loadingLogs: "Loading chat logs...",
-          loadingMemory: "Reading .log...",
-          emptyMemory: "This conversation has no chat log yet.",
-          robot: "Robot",
-          terminal: "Terminal",
-          updated: "Updated",
-          size: "Size",
-        }
-
-  const robotsQuery = useQuery({
-    queryKey: getRobotsQueryKey(),
-    queryFn: () => listRobots(),
+  const { data: allHandlersData } = useQuery({
+    queryKey: ["itemHandlers"],
+    queryFn: () => ItemHandlersService.readItemHandlers({ skip: 0, limit: 100 }),
   })
-  const robots = robotsQuery.data?.data ?? []
-  const robotsById = useMemo(
-    () => new Map(robots.map((robot) => [robot.id, robot])),
-    [robots],
-  )
-
-  const bindingQueries = useMemo(
-    () =>
-      robots.map((robot) => ({
-        robot,
-        queryKey: ["robot-bindings", robot.id] as const,
-        queryFn: () => listRobotBindings(robot.id),
-      })),
-    [robots],
-  )
-
-  const robotBindingQueries = useQuery({
-    queryKey: ["item-handler-robot-bindings", itemHandlerId, robots.map((robot) => robot.id).join(",")],
-    queryFn: async () => {
-      const results = await Promise.all(
-        bindingQueries.map(async ({ robot, queryFn }) => ({
-          robot,
-          bindings: await queryFn(),
-        })),
-      )
-      return results
-    },
-    enabled: robots.length > 0,
-  })
-
-  const boundRobots = useMemo(() => {
-    const results = robotBindingQueries.data ?? []
-    return results
-      .map(({ robot, bindings }) => ({
-        robot,
-        bindings: bindings.filter((binding) =>
-          connectedItemIds.has(binding.item_id),
-        ),
-      }))
-      .filter((entry) => entry.bindings.length > 0)
-  }, [connectedItemIds, robotBindingQueries.data])
-
-  const memoryQueries = useQuery({
-    queryKey: [
-      "item-handler-chat-log-list",
-      itemHandlerId,
-      boundRobots.map(({ robot }) => robot.id).join(","),
-    ],
-    queryFn: async () => {
-      const results = await Promise.all(
-        boundRobots.map(async ({ robot, bindings }) => ({
-          robot,
-          bindings,
-          memory: await listRobotConversationMemory(robot.id),
-        })),
-      )
-      return results
-    },
-    enabled: boundRobots.length > 0,
-  })
-
-  const records = useMemo<ChatLogRecord[]>(() => {
-    const rows: ChatLogRecord[] = []
-    for (const result of memoryQueries.data ?? []) {
-      const binding = result.bindings[0]
-      if (!binding) {
-        continue
-      }
-      for (const entry of result.memory.data) {
-        rows.push({ robot: result.robot, binding, entry })
-      }
+  const allHandlers = useMemo<any[]>(() => {
+    if (Array.isArray(allHandlersData)) {
+      return allHandlersData
     }
-    return rows.sort((left, right) =>
-      String(right.entry.updated_at ?? "").localeCompare(
-        String(left.entry.updated_at ?? ""),
-      ),
-    )
-  }, [memoryQueries.data])
+    return (allHandlersData as any)?.data ?? []
+  }, [allHandlersData])
 
-  const selectedRecord = useMemo(() => {
-    if (!records.length) {
-      return null
-    }
-    return (
-      records.find(
-        (record) =>
-          `${record.robot.id}:${record.entry.conversation_key}` === selectedKey,
-      ) ?? records[0]
-    )
-  }, [records, selectedKey])
-
-  useEffect(() => {
-    if (!selectedRecord) {
-      setSelectedKey("")
-      return
-    }
-    const nextKey = `${selectedRecord.robot.id}:${selectedRecord.entry.conversation_key}`
-    if (selectedKey !== nextKey) {
-      setSelectedKey(nextKey)
-    }
-  }, [selectedKey, selectedRecord])
-
-  const memoryQuery = useQuery({
-    queryKey: [
-      "robot-conversation-memory-content",
-      selectedRecord?.robot.id,
-      selectedRecord?.entry.conversation_key,
-    ],
-    queryFn: () =>
-      readRobotConversationMemory(
-        selectedRecord!.robot.id,
-        selectedRecord!.entry.conversation_key,
-      ),
-    enabled: Boolean(selectedRecord),
-  })
-
-  const refreshLogs = async () => {
-    setIsRefreshing(true)
-    try {
-      await queryClient.invalidateQueries({
-        queryKey: ["item-handler-chat-log-list", itemHandlerId],
-      })
-      await Promise.all(
-        boundRobots.map(({ robot }) =>
-          queryClient.invalidateQueries({
-            queryKey: getRobotConversationMemoryQueryKey(robot.id),
-          }),
-        ),
-      )
-      if (selectedRecord) {
-        await memoryQuery.refetch()
-      }
-    } finally {
-      setIsRefreshing(false)
-    }
-  }
-
-  const handleDownload = async () => {
-    if (!selectedRecord) {
-      return
-    }
-    setIsDownloading(true)
-    try {
-      await downloadRobotConversationMemory(
-        selectedRecord.robot.id,
-        selectedRecord.entry,
-      )
-    } catch (error) {
-      showErrorToast(
-        error instanceof Error ? error.message : copy.downloadFailed,
-      )
-    } finally {
-      setIsDownloading(false)
-    }
-  }
-
-  const handleImport = async () => {
-    if (!selectedRecord) {
-      return
-    }
-    const content = importContent.trim()
-    if (!content) {
-      showErrorToast(copy.importRequired)
-      return
-    }
-    setIsImporting(true)
-    try {
-      await importRobotConversationMemory(
-        selectedRecord.robot.id,
-        selectedRecord.entry.conversation_key,
-        {
-          content: `${content}\n`,
-          append: appendImport,
-        },
-      )
-      setImportContent("")
-      showSuccessToast(copy.imported)
-      await refreshLogs()
-    } catch (error) {
-      showErrorToast(error instanceof Error ? error.message : copy.importFailed)
-    } finally {
-      setIsImporting(false)
-    }
-  }
-
-  const isLoading =
-    robotsQuery.isLoading ||
-    robotBindingQueries.isLoading ||
-    memoryQueries.isLoading
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <MessageSquare className="size-5 text-sky-500" />
-              {copy.title}
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">{copy.description}</p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => void refreshLogs()}
-            disabled={isRefreshing || isLoading}
-          >
-            {isRefreshing ? (
-              <Loader2 className="mr-2 size-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 size-4" />
-            )}
-            {copy.refresh}
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {connectedItems.length === 0 ? (
-          <div className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-            {copy.noTerminal}
-          </div>
-        ) : boundRobots.length === 0 && !isLoading ? (
-          <div className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-            {copy.noRobot}
-          </div>
-        ) : isLoading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            {copy.loadingLogs}
-          </div>
-        ) : records.length === 0 ? (
-          <div className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-            {copy.noLog}
-          </div>
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-            <div className="rounded-lg border">
-              <div className="border-b px-3 py-2 text-sm font-medium">
-                {copy.logList}
-              </div>
-              <ScrollArea className="h-[560px]">
-                <div className="space-y-1 p-2">
-                  {records.map((record) => {
-                    const key = `${record.robot.id}:${record.entry.conversation_key}`
-                    const selected = key === selectedKey
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        className={`w-full rounded-md border px-3 py-2 text-left transition-colors ${
-                          selected
-                            ? "border-sky-500/40 bg-sky-500/10"
-                            : "bg-background hover:bg-muted/50"
-                        }`}
-                        onClick={() => setSelectedKey(key)}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0 font-medium text-sm">
-                            <span className="truncate">
-                              {getConversationTypeLabel(
-                                record.entry.conversation_key,
-                                locale,
-                              )}{" "}
-                              {getConversationId(record.entry.conversation_key)}
-                            </span>
-                          </div>
-                          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                            .log
-                          </Badge>
-                        </div>
-                        <div className="mt-1 truncate text-xs text-muted-foreground">
-                          {getRobotName(record.robot.id, robotsById)} ·{" "}
-                          {record.binding.item_title}
-                        </div>
-                        <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-                          <span>{formatBytes(record.entry.size_bytes)}</span>
-                          <span>
-                            {record.entry.updated_at
-                              ? new Date(
-                                  record.entry.updated_at,
-                                ).toLocaleString(localeTag)
-                              : "-"}
-                          </span>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              </ScrollArea>
-            </div>
-
-            <div className="space-y-3">
-              {selectedRecord ? (
-                <div className="rounded-lg border bg-muted/20 p-3">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <FileText className="size-4 text-sky-500" />
-                        <span className="font-medium">
-                          {selectedRecord.entry.conversation_key}
-                        </span>
-                        <Badge variant="outline">
-                          {selectedRecord.entry.filename}
-                        </Badge>
-                      </div>
-                      <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                        <div>
-                          {copy.robot}:{" "}
-                          {getRobotName(selectedRecord.robot.id, robotsById)}
-                        </div>
-                        <div>
-                          {copy.terminal}: {selectedRecord.binding.item_title}
-                        </div>
-                        <div>
-                          {copy.size}:{" "}
-                          {formatBytes(selectedRecord.entry.size_bytes)}
-                        </div>
-                        <div>
-                          {copy.updated}:{" "}
-                          {selectedRecord.entry.updated_at
-                            ? new Date(
-                                selectedRecord.entry.updated_at,
-                              ).toLocaleString(localeTag)
-                            : "-"}
-                        </div>
-                      </div>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void handleDownload()}
-                      disabled={isDownloading}
-                    >
-                      {isDownloading ? (
-                        <Loader2 className="mr-2 size-4 animate-spin" />
-                      ) : (
-                        <Download className="mr-2 size-4" />
-                      )}
-                      {copy.download}
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="rounded-lg border">
-                {memoryQuery.isLoading ? (
-                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" />
-                    {copy.loadingMemory}
-                  </div>
-                ) : memoryQuery.data?.memory ? (
-                  <ScrollArea className="h-[360px]">
-                    <pre className="whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed">
-                      {memoryQuery.data.memory}
-                    </pre>
-                  </ScrollArea>
-                ) : (
-                  <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    {copy.emptyMemory}
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-lg border p-3">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm font-medium">{copy.import}</div>
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={appendImport}
-                      onChange={(event) => setAppendImport(event.target.checked)}
-                    />
-                    {appendImport ? copy.append : copy.replace}
-                  </label>
-                </div>
-                <textarea
-                  value={importContent}
-                  onChange={(event) => setImportContent(event.target.value)}
-                  placeholder={copy.importPlaceholder}
-                  className="min-h-32 w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-xs"
-                />
-                <div className="mt-2 flex justify-end">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => void handleImport()}
-                    disabled={isImporting || !selectedRecord}
-                  >
-                    {isImporting ? (
-                      <Loader2 className="mr-2 size-4 animate-spin" />
-                    ) : (
-                      <Upload className="mr-2 size-4" />
-                    )}
-                    {copy.import}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function ConnectionDiagram({
-  itemHandler,
-  connectedItems,
-  availableItems,
-  onConnect,
-  onDisconnect,
-}: {
-  itemHandler: { id: string; name: string }
-  connectedItems: ItemWithStatus[]
-  availableItems: ItemWithStatus[]
-  onConnect: (itemId: string) => void
-  onDisconnect: (itemId: string) => void
-}) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [dimensions, setDimensions] = useState({ width: 800, height: 500 })
-  const [hoveredItem, setHoveredItem] = useState<string | null>(null)
-  const [pendingLine, setPendingLine] = useState<{
-    startX: number
-    startY: number
-    endX: number
-    endY: number
-    sourceId: string | null
-  } | null>(null)
-  const [isDrawingLine, setIsDrawingLine] = useState(false)
-  const [draggingNode, setDraggingNode] = useState<string | null>(null)
-  const [nodePositions, setNodePositions] = useState<
-    Record<string, NodePosition>
-  >({})
-  const [dragStartPos, setDragStartPos] = useState<{
-    x: number
-    y: number
-  } | null>(null)
-  const [hasDragged, setHasDragged] = useState(false)
-
-  const connected = useMemo(() => connectedItems || [], [connectedItems])
-  const available = useMemo(() => availableItems || [], [availableItems])
-  const allItems = useMemo(
-    () => [...connected, ...available],
-    [connected, available],
-  )
-  const connectedIds = useMemo(
-    () => new Set(connected.map((item) => item.id)),
-    [connected],
-  )
-
-  const itemNodeHeight = 40
-  const handlerRadius = 45
-  const padding = 50
-  const calculatedHeight = Math.max(
-    400,
-    allItems.length * 70 + padding * 2 + itemNodeHeight,
-  )
-
-  const getHandlerDefaultY = useCallback(() => {
-    const connectedCount = connected.length
-    if (connectedCount === 0) {
-      return calculatedHeight / 2
-    }
-    const availableHeight = calculatedHeight - padding * 2
-    const spacing = Math.min(70, availableHeight / Math.max(connectedCount, 1))
-    const totalHeight = (connectedCount - 1) * spacing
-    const startY = padding - 20 + (availableHeight - totalHeight) / 2
-
-    if (connectedCount % 2 === 1) {
-      const middleIndex = Math.floor(connectedCount / 2)
-      return startY + middleIndex * spacing
-    }
-    const middleTop = startY + (connectedCount / 2 - 1) * spacing
-    const middleBottom = startY + (connectedCount / 2) * spacing
-    return (middleTop + middleBottom) / 2
-  }, [connected.length, calculatedHeight])
-
-  const defaultHandlerPos = useMemo(
-    () => ({
-      x: 80,
-      y: getHandlerDefaultY(),
-    }),
-    [getHandlerDefaultY],
-  )
-
-  useEffect(() => {
-    const updateDimensions = () => {
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect()
-        setDimensions({
-          width: Math.max(600, rect.width),
-          height: calculatedHeight,
-        })
-      }
-    }
-    updateDimensions()
-    window.addEventListener("resize", updateDimensions)
-    const timer = setTimeout(updateDimensions, 100)
-    return () => {
-      window.removeEventListener("resize", updateDimensions)
-      clearTimeout(timer)
-    }
-  }, [calculatedHeight])
-
-  useEffect(() => {
-    const nodeHalfHeight = itemNodeHeight / 2
-
-    setNodePositions((prev) => {
-      const newPositions: Record<string, NodePosition> = {}
-      const availableHeight = calculatedHeight - padding * 2
-      const spacing = Math.min(
-        70,
-        availableHeight / Math.max(allItems.length, 1),
-      )
-      const totalHeight = (allItems.length - 1) * spacing
-      const startY = padding - 20 + (availableHeight - totalHeight) / 2
-
-      allItems.forEach((item, index) => {
-        if (prev[item.id]) {
-          newPositions[item.id] = prev[item.id]
-        } else {
-          const y = Math.max(
-            padding + nodeHalfHeight,
-            Math.min(
-              calculatedHeight - padding - nodeHalfHeight,
-              startY + index * spacing,
-            ),
-          )
-          newPositions[item.id] = { x: 450, y }
-        }
-      })
-
-      return newPositions
-    })
-  }, [calculatedHeight, allItems.forEach, allItems.length])
-
-  const handlerPos = nodePositions.__handler__ || defaultHandlerPos
-
-  const getItemPos = (itemId: string): NodePosition => {
-    return (
-      nodePositions[itemId] || {
-        x: 450,
-        y: Math.max(
-          padding + itemNodeHeight / 2,
-          Math.min(
-            calculatedHeight - padding - itemNodeHeight / 2,
-            calculatedHeight / 2,
-          ),
-        ),
-      }
-    )
-  }
-
-  const startDrawingLine = (
-    e: React.MouseEvent,
-    sourceId: string | null,
-    startX: number,
-    startY: number,
-  ) => {
-    const rect = containerRef.current?.getBoundingClientRect()
-    if (rect) {
-      setIsDrawingLine(true)
-      setPendingLine({
-        startX,
-        startY,
-        endX: e.clientX - rect.left,
-        endY: e.clientY - rect.top,
-        sourceId,
-      })
-    }
-  }
-
-  const handleHandlerClick = (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-
-    if (hasDragged) {
-      return
-    }
-
-    if (isDrawingLine && pendingLine) {
-      if (pendingLine.sourceId) {
-        if (!connectedIds.has(pendingLine.sourceId)) {
-          onConnect(pendingLine.sourceId)
-        }
-      }
-      setIsDrawingLine(false)
-      setPendingLine(null)
-    } else {
-      startDrawingLine(e, null, handlerPos.x, handlerPos.y)
-    }
-  }
-
-  const handleItemClick = (e: React.MouseEvent, itemId: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-
-    if (hasDragged) {
-      return
-    }
-
-    if (isDrawingLine && pendingLine) {
-      if (pendingLine.sourceId !== itemId) {
-        if (pendingLine.sourceId === null && !connectedIds.has(itemId)) {
-          onConnect(itemId)
-        }
-      }
-      setIsDrawingLine(false)
-      setPendingLine(null)
-    } else {
-      const itemPos = getItemPos(itemId)
-      startDrawingLine(e, itemId, itemPos.x, itemPos.y)
-    }
-  }
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    const rect = containerRef.current?.getBoundingClientRect()
-    if (!rect) return
-
-    if (dragStartPos && !hasDragged) {
-      const dx = e.clientX - dragStartPos.x
-      const dy = e.clientY - dragStartPos.y
-      if (Math.sqrt(dx * dx + dy * dy) > 5) {
-        setHasDragged(true)
-      }
-    }
-
-    if (isDrawingLine && pendingLine) {
-      setPendingLine({
-        ...pendingLine,
-        endX: e.clientX - rect.left,
-        endY: e.clientY - rect.top,
-      })
-    }
-
-    if (draggingNode && containerRef.current) {
-      const nodeBound =
-        draggingNode === "__handler__" ? handlerRadius : itemNodeHeight / 2
-      const newX = Math.max(
-        nodeBound,
-        Math.min(dimensions.width - nodeBound, e.clientX - rect.left),
-      )
-      const newY = Math.max(
-        nodeBound,
-        Math.min(calculatedHeight - nodeBound, e.clientY - rect.top),
-      )
-      setNodePositions((prev) => ({
-        ...prev,
-        [draggingNode]: { x: newX, y: newY },
-      }))
-    }
-  }
-
-  const handleBackgroundClick = () => {
-    if (isDrawingLine) {
-      setIsDrawingLine(false)
-      setPendingLine(null)
-    }
-  }
-
-  const handleNodeDragStart = (e: React.MouseEvent, nodeId: string) => {
-    if (isDrawingLine) return
-    e.preventDefault()
-    e.stopPropagation()
-    setDraggingNode(nodeId)
-    setDragStartPos({ x: e.clientX, y: e.clientY })
-    setHasDragged(false)
-  }
-
-  const handleMouseUp = () => {
-    setDraggingNode(null)
-    setDragStartPos(null)
-    setTimeout(() => setHasDragged(false), 0)
-  }
-
-  return (
-    <div
-      ref={containerRef}
-      className="relative w-full overflow-hidden rounded-xl border bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 select-none"
-      style={{ height: calculatedHeight, minHeight: 400 }}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onClick={handleBackgroundClick}
-    >
-      <svg width="100%" height={calculatedHeight} className="absolute inset-0">
-        <defs>
-          <linearGradient
-            id="lineGradient"
-            x1="0%"
-            y1="0%"
-            x2="100%"
-            y2="0%"
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop offset="0%" stopColor="#60a5fa" stopOpacity="0.8">
-              <animate
-                attributeName="stop-color"
-                values="#60a5fa;#a78bfa;#60a5fa"
-                dur="2s"
-                repeatCount="indefinite"
-              />
-            </stop>
-            <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.8">
-              <animate
-                attributeName="stop-color"
-                values="#a78bfa;#60a5fa;#a78bfa"
-                dur="2s"
-                repeatCount="indefinite"
-              />
-            </stop>
-          </linearGradient>
-          <linearGradient
-            id="pendingLineGradient"
-            x1="0%"
-            y1="0%"
-            x2="100%"
-            y2="0%"
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop offset="0%" stopColor="#22c55e" stopOpacity="0.8" />
-            <stop offset="100%" stopColor="#10b981" stopOpacity="0.8" />
-          </linearGradient>
-          <radialGradient id="handlerGradient" cx="30%" cy="30%">
-            <stop offset="0%" stopColor="#60a5fa" />
-            <stop offset="100%" stopColor="#3b82f6" />
-          </radialGradient>
-          <radialGradient id="handlerActiveGradient" cx="30%" cy="30%">
-            <stop offset="0%" stopColor="#93c5fd" />
-            <stop offset="100%" stopColor="#60a5fa" />
-          </radialGradient>
-          <radialGradient id="itemConnectedGradient" cx="30%" cy="30%">
-            <stop offset="0%" stopColor="#22c55e" />
-            <stop offset="100%" stopColor="#16a34a" />
-          </radialGradient>
-          <radialGradient id="itemAvailableGradient" cx="30%" cy="30%">
-            <stop offset="0%" stopColor="#64748b" />
-            <stop offset="100%" stopColor="#475569" />
-          </radialGradient>
-          <filter id="glow">
-            <feGaussianBlur stdDeviation="1" result="coloredBlur" />
-            <feMerge>
-              <feMergeNode in="coloredBlur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id="glowStrong">
-            <feGaussianBlur stdDeviation="2" result="coloredBlur" />
-            <feMerge>
-              <feMergeNode in="coloredBlur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-
-        <g className="connections">
-          {connected.map((item, index) => {
-            const itemPos = getItemPos(item.id)
-            const isHovered = hoveredItem === item.id
-            const startX = handlerPos.x + handlerRadius
-            const endX = itemPos.x
-            const startY = handlerPos.y
-            const endY = itemPos.y
-            const offset = (index - (connected.length - 1) / 2) * 15
-            const midX = startX + 50 + Math.abs(offset)
-            const pathD = `M ${startX} ${startY} C ${startX + 40} ${startY}, ${midX} ${startY}, ${midX} ${(startY + endY) / 2} S ${midX} ${endY}, ${endX} ${endY}`
-            return (
-              <g key={`line-${item.id}`}>
-                <path
-                  d={pathD}
-                  fill="none"
-                  stroke="transparent"
-                  strokeWidth={10}
-                  className="cursor-pointer"
-                  onDoubleClick={() => onDisconnect(item.id)}
-                  onMouseEnter={() => setHoveredItem(item.id)}
-                  onMouseLeave={() => setHoveredItem(null)}
-                />
-                <path
-                  d={pathD}
-                  fill="none"
-                  stroke={isHovered ? "#ef4444" : "url(#lineGradient)"}
-                  strokeWidth={isHovered ? 3 : 2}
-                  pointerEvents="none"
-                />
-                {isHovered && (
-                  <text
-                    x={midX}
-                    y={(startY + endY) / 2 - 10}
-                    textAnchor="middle"
-                    fill="#ef4444"
-                    fontSize="10"
-                    fontWeight="500"
-                    pointerEvents="none"
-                  >
-                    Double-click to disconnect
-                  </text>
-                )}
-                <circle r={3} fill="#a78bfa" filter="url(#glow)">
-                  <animateMotion
-                    dur="1.5s"
-                    repeatCount="indefinite"
-                    path={pathD}
-                  />
-                </circle>
-              </g>
-            )
-          })}
-        </g>
-
-        {isDrawingLine && pendingLine && (
-          <line
-            x1={pendingLine.startX}
-            y1={pendingLine.startY}
-            x2={pendingLine.endX}
-            y2={pendingLine.endY}
-            stroke="url(#pendingLineGradient)"
-            strokeWidth={2}
-            strokeDasharray="8,4"
-          />
-        )}
-
-        <g
-          className={
-            isDrawingLine
-              ? "cursor-pointer"
-              : "cursor-grab active:cursor-grabbing"
-          }
-        >
-          <circle
-            cx={handlerPos.x}
-            cy={handlerPos.y}
-            r={45}
-            fill={
-              isDrawingLine
-                ? "url(#handlerActiveGradient)"
-                : "url(#handlerGradient)"
-            }
-            stroke={isDrawingLine ? "#22c55e" : "#93c5fd"}
-            strokeWidth={2}
-            onClick={handleHandlerClick}
-            onMouseDown={(e) =>
-              !isDrawingLine && handleNodeDragStart(e, "__handler__")
-            }
-          />
-          <text
-            x={handlerPos.x}
-            y={handlerPos.y - 8}
-            textAnchor="middle"
-            fill="white"
-            fontSize="11"
-            fontWeight="bold"
-            pointerEvents="none"
-          >
-            {itemHandler.name.length > 10
-              ? `${itemHandler.name.slice(0, 10)}...`
-              : itemHandler.name}
-          </text>
-          <text
-            x={handlerPos.x}
-            y={handlerPos.y + 8}
-            textAnchor="middle"
-            fill="#bfdbfe"
-            fontSize="9"
-            pointerEvents="none"
-          >
-            Handler
-          </text>
-          <text
-            x={handlerPos.x}
-            y={handlerPos.y + 22}
-            textAnchor="middle"
-            fill={isDrawingLine ? "#86efac" : "#93c5fd"}
-            fontSize="8"
-            pointerEvents="none"
-          >
-            {isDrawingLine
-              ? "Click item to connect"
-              : `${connected.length} connected`}
-          </text>
-        </g>
-
-        <g className="item-nodes">
-          {allItems.map((item) => {
-            const itemPos = getItemPos(item.id)
-            const isConnected = connectedIds.has(item.id)
-            const isHovered = hoveredItem === item.id
-
-            return (
-              <g
-                key={item.id}
-                className={
-                  isDrawingLine && !isConnected
-                    ? "cursor-pointer"
-                    : "cursor-grab active:cursor-grabbing"
-                }
-                onMouseEnter={() => setHoveredItem(item.id)}
-                onMouseLeave={() => setHoveredItem(null)}
-              >
-                <rect
-                  x={itemPos.x - 70}
-                  y={itemPos.y - 20}
-                  width={140}
-                  height={40}
-                  rx={8}
-                  fill={
-                    isConnected
-                      ? "url(#itemConnectedGradient)"
-                      : "url(#itemAvailableGradient)"
-                  }
-                  stroke={
-                    isConnected
-                      ? "#22c55e"
-                      : isDrawingLine
-                        ? "#22c55e"
-                        : "#64748b"
-                  }
-                  strokeWidth={isHovered ? 2 : 1}
-                  onClick={(e) => handleItemClick(e, item.id)}
-                  onMouseDown={(e) =>
-                    !isDrawingLine && handleNodeDragStart(e, item.id)
-                  }
-                />
-                <circle
-                  cx={itemPos.x - 55}
-                  cy={itemPos.y}
-                  r={5}
-                  fill={item.status === "running" ? "#22c55e" : "#64748b"}
-                  pointerEvents="none"
-                />
-                <text
-                  x={itemPos.x - 45}
-                  y={itemPos.y - 4}
-                  fill="white"
-                  fontSize="10"
-                  fontWeight="500"
-                  pointerEvents="none"
-                >
-                  {item.title.length > 12
-                    ? `${item.title.slice(0, 12)}...`
-                    : item.title}
-                </text>
-                <text
-                  x={itemPos.x - 45}
-                  y={itemPos.y + 8}
-                  fill={
-                    isConnected
-                      ? "#93c5fd"
-                      : isDrawingLine
-                        ? "#22c55e"
-                        : "#94a3b8"
-                  }
-                  fontSize="8"
-                  pointerEvents="none"
-                >
-                  {isConnected
-                    ? "Connected"
-                    : isDrawingLine
-                      ? "Click to connect"
-                      : "Click to draw line"}
-                </text>
-              </g>
-            )
-          })}
-        </g>
-      </svg>
-
-      <div className="absolute top-4 left-4 flex items-center gap-2">
-        <Badge
-          variant="outline"
-          className="bg-sky-500/20 border-sky-500/50 text-sky-300"
-        >
-          {connected.length} Connected
-        </Badge>
-        <Badge
-          variant="outline"
-          className="bg-green-500/20 border-green-500/50 text-green-300"
-        >
-          {available.length} Available
-        </Badge>
-      </div>
-
-      <div className="absolute bottom-4 left-4 text-xs text-slate-500">
-        <span className="flex items-center gap-1">
-          <span className="inline-block w-2 h-2 rounded-full bg-green-500" />{" "}
-          Running
-        </span>
-        <span className="flex items-center gap-1 mt-1">
-          <span className="inline-block w-2 h-2 rounded-full bg-slate-500" />{" "}
-          Stopped
-        </span>
-      </div>
-    </div>
-  )
-}
-
-function ItemHandlerDetail() {
-  const { itemHandlerId } = Route.useParams()
-  const queryClient = useQueryClient()
-  const { t, localeTag } = useI18n()
-  const { showSuccessToast, showErrorToast } = useCustomToast()
-  const [isSaving, setIsSaving] = useState(false)
-  const [isEditing, setIsEditing] = useState(false)
-  const [activeTab, setActiveTab] = useState<ItemHandlerTab>("connections")
-  const [visitedTabs, setVisitedTabs] = useState<Set<ItemHandlerTab>>(
-    () => new Set<ItemHandlerTab>(["connections"]),
-  )
-  const [isConnectionsLoaded, setIsConnectionsLoaded] = useState(false)
-  const [visibleAllItemsCount, setVisibleAllItemsCount] =
-    useState(LIST_PAGE_SIZE)
-  const activateTab = (value: string) => {
-    const nextTab = value as ItemHandlerTab
-    setActiveTab(nextTab)
-    setVisitedTabs((current) => {
-      if (current.has(nextTab)) {
-        return current
-      }
-      const next = new Set(current)
-      next.add(nextTab)
-      return next
-    })
-  }
-  const hasVisitedTab = (value: ItemHandlerTab) => visitedTabs.has(value)
-
-  useEffect(() => {
-    setActiveTab("connections")
-    setVisitedTabs(new Set<ItemHandlerTab>(["connections"]))
-    setIsConnectionsLoaded(false)
-    setVisibleAllItemsCount(LIST_PAGE_SIZE)
-  }, [itemHandlerId])
-
-  const { data: itemHandler, isLoading } = useQuery({
-    ...getItemHandlerQueryOptions(itemHandlerId),
-  })
-
-  const shouldLoadConnectedItems =
-    isConnectionsLoaded || hasVisitedTab("chatLogs")
-
-  const { data: connectedItems, isLoading: connectedItemsLoading } = useQuery({
+  const { data: connectedItems } = useQuery({
     queryFn: () =>
       ItemHandlerAssociationsService.getItemsForHandler({ itemHandlerId }),
     queryKey: ["itemHandler-items", itemHandlerId],
-    enabled: shouldLoadConnectedItems,
+  })
+  const connectedItemsList = useMemo<any[]>(
+    () => (connectedItems as any[]) || [],
+    [connectedItems],
+  )
+  const connectedItemIds = useMemo(
+    () => new Set(connectedItemsList.map((item: any) => String(item.id))),
+    [connectedItemsList],
+  )
+  const { data: allItemsData } = useQuery({
+    queryKey: ["items"],
+    queryFn: () => ItemsService.readItems(),
   })
 
-  const { data: allItemsData, isLoading: allItemsLoading } = useQuery({
-    queryFn: () => ItemsService.readItems(),
-    queryKey: ["items"],
-    enabled: isConnectionsLoaded,
-  })
+  const [selectedTerminalId, setSelectedTerminalId] = useState("")
+  const [mainView, setMainView] = useState<string>("chat")
+  const [expandedCard, setExpandedCard] = useState<string | null>(null)
+  const [terminalPanelOpen, setTerminalPanelOpen] = useState(false)
+  const [botDetailId, setBotDetailId] = useState<string | null>(null)
+  const [confirmState, setConfirmState] = useState<{
+    message: string
+    action: () => void
+  } | null>(null)
+
+  const askConfirm = useCallback((message: string, action: () => void) => {
+    setConfirmState({ message, action })
+  }, [])
 
   const { data: skillsData, isLoading: skillsLoading } = useQuery({
     queryKey: ["skills"],
     queryFn: () => SkillsService.listSkills({}),
-    enabled: hasVisitedTab("skills"),
+    enabled: expandedCard === "skills",
   })
-
   const { data: mcpData, isLoading: mcpLoading } = useQuery({
     queryKey: ["mcp-servers"],
     queryFn: () => McpService.listMcpServers(),
-    enabled: hasVisitedTab("mcp"),
+    enabled: expandedCard === "mcp",
   })
-
-  const allItems = (allItemsData as any)?.data || []
-  const visibleAllItems = allItems.slice(0, visibleAllItemsCount)
-  const allItemsRemainingCount = Math.max(
-    allItems.length - visibleAllItems.length,
-    0,
-  )
-  const connectedItemsList = (connectedItems as any[]) || []
-  const connectedItemIds = new Set(
-    connectedItemsList.map((item: any) => item.id),
-  )
-  const connectedItemCount = isConnectionsLoaded
-    ? connectedItemsList.length
-    : ((itemHandler as any)?.item_count ?? 0)
-  const connectionsLoading =
-    isConnectionsLoaded && (connectedItemsLoading || allItemsLoading)
-  const availableItems = allItems.filter(
-    (item: any) => !connectedItemIds.has(item.id),
-  )
-
   const skills = skillsData?.data || []
-  const enabledSkills = (itemHandler as any)?.enabled_skills ?? []
-  const enabledKnowledgeFiles =
-    (itemHandler as any)?.enabled_knowledge_files ?? []
-
+  const enabledSkills: string[] = itemHandler?.enabled_skills ?? []
   const mcpServers = mcpData?.data || []
-  const enabledMcpServers = (itemHandler as any)?.enabled_mcp_servers ?? []
+  const enabledMcpServers: string[] = itemHandler?.enabled_mcp_servers ?? []
+  const enabledKnowledgeFiles: string[] = itemHandler?.enabled_knowledge_files ?? []
 
   useEffect(() => {
-    setVisibleAllItemsCount(LIST_PAGE_SIZE)
-  }, [isConnectionsLoaded, itemHandlerId])
-
-  const [editForm, setEditForm] = useState({
-    name: "",
-    model: "",
-    api_key: "",
-    api_url: "",
-    model_parameters_json: "{}",
-    enabled_skills: [] as string[],
-    agent_profile: createAgentProfileForm(),
-  })
-
-  useEffect(() => {
-    if (itemHandler) {
-      setEditForm({
-        name: itemHandler.name,
-        model: itemHandler.model ?? "",
-        api_key: "",
-        api_url: itemHandler.api_url ?? "",
-        model_parameters_json: JSON.stringify(
-          (itemHandler as any).model_parameters ?? {},
-          null,
-          2,
-        ),
-        enabled_skills: (itemHandler as any).enabled_skills ?? [],
-        agent_profile: createAgentProfileForm((itemHandler as any).agent_profile),
-      })
-    }
-  }, [itemHandler])
-
-  const startEditing = () => {
-    if (itemHandler) {
-      setEditForm({
-        name: itemHandler.name,
-        model: itemHandler.model ?? "",
-        api_key: "",
-        api_url: itemHandler.api_url ?? "",
-        model_parameters_json: JSON.stringify(
-          (itemHandler as any).model_parameters ?? {},
-          null,
-          2,
-        ),
-        enabled_skills: enabledSkills,
-        agent_profile: createAgentProfileForm((itemHandler as any).agent_profile),
-      })
-      setIsEditing(true)
-      activateTab("config")
-    }
-  }
-
-  const cancelEditing = () => {
-    setIsEditing(false)
-  }
-
-  const saveChanges = async () => {
-    const name = editForm.name.trim()
-    if (!name) {
-      showErrorToast(t("itemHandlers.nameRequired"))
+    if (!expandedCard && !terminalPanelOpen && !botDetailId) {
       return
     }
-
-    let modelParameters: Record<string, unknown>
-    try {
-      modelParameters = parseModelParameters(editForm.model_parameters_json)
-    } catch (error) {
-      showErrorToast(
-        error instanceof Error ? error.message : "模型参数 JSON 格式不正确",
-      )
-      return
-    }
-
-    const replacementApiKey = normalizeOptionalText(editForm.api_key)
-    const requestBody: ItemHandlerUpdate & {
-      agent_profile?: Record<string, unknown>
-      model_parameters?: Record<string, unknown>
-    } = {
-      name,
-      model: normalizeOptionalText(editForm.model),
-      api_url: normalizeOptionalText(editForm.api_url),
-      model_parameters: modelParameters,
-      enabled_skills: editForm.enabled_skills,
-      agent_profile: serializeAgentProfile(editForm.agent_profile),
-    }
-    if (replacementApiKey) {
-      requestBody.api_key = replacementApiKey
-    }
-
-    setIsSaving(true)
-    try {
-      await ItemHandlersService.updateItemHandler({
-        id: itemHandlerId,
-        requestBody,
-      })
-      setEditForm((current) => ({
-        ...current,
-        name,
-        model: requestBody.model ?? "",
-        api_key: "",
-        api_url: requestBody.api_url ?? "",
-        model_parameters_json: JSON.stringify(
-          requestBody.model_parameters ?? {},
-          null,
-          2,
-        ),
-        agent_profile: createAgentProfileForm(requestBody.agent_profile),
-      }))
-      showSuccessToast(t("itemHandlers.detail.itemHandlerUpdated"))
-      setIsEditing(false)
-      queryClient.invalidateQueries({
-        queryKey: ["itemHandler", itemHandlerId],
-      })
-      queryClient.invalidateQueries({ queryKey: ["itemHandlers"] })
-    } catch (error) {
-      if (error instanceof ApiError) {
-        showErrorToast(extractErrorMessage(error))
-      } else {
-        showErrorToast(t("itemHandlers.detail.itemHandlerUpdateFailed"))
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (botDetailId) {
+          setBotDetailId(null)
+        } else {
+          setExpandedCard(null)
+          setTerminalPanelOpen(false)
+        }
       }
-    } finally {
-      setIsSaving(false)
     }
-  }
-
-  const [selectedModelExampleKey, setSelectedModelExampleKey] = useState(
-    "openai-gpt5",
-  )
-  const selectedModelExample =
-    MODEL_CONFIG_EXAMPLES[selectedModelExampleKey] ??
-    MODEL_CONFIG_EXAMPLES["openai-gpt5"]
-
-  const applyModelExample = () => {
-    setEditForm((current) => ({
-      ...current,
-      model: selectedModelExample.model,
-      api_url: selectedModelExample.apiUrl,
-      model_parameters_json: JSON.stringify(
-        selectedModelExample.parameters,
-        null,
-        2,
-      ),
-    }))
-  }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [expandedCard, terminalPanelOpen, botDetailId])
 
   const handleSkillToggle = async (skillId: string, enable: boolean) => {
     try {
       const newSkills = enable
         ? [...enabledSkills, skillId]
-        : enabledSkills.filter((id: string) => id !== skillId)
+        : enabledSkills.filter((id) => id !== skillId)
       await ItemHandlersService.updateItemHandler({
         id: itemHandlerId,
         requestBody: { enabled_skills: newSkills },
       })
-      showSuccessToast(
-        enable
-          ? t("itemHandlers.detail.skillEnabled")
-          : t("itemHandlers.detail.skillDisabled"),
-      )
-      queryClient.invalidateQueries({
-        queryKey: ["itemHandler", itemHandlerId],
-      })
+      showSuccessToast("技能配置已更新")
+      queryClient.invalidateQueries({ queryKey: ["itemHandler", itemHandlerId] })
     } catch (error) {
-      if (error instanceof ApiError) {
-        showErrorToast(extractErrorMessage(error))
-      } else {
-        showErrorToast(t("itemHandlers.detail.skillUpdateFailed"))
-      }
+      showErrorToast(
+        error instanceof ApiError ? extractErrorMessage(error) : "技能配置更新失败",
+      )
     }
   }
 
@@ -2296,25 +375,17 @@ function ItemHandlerDetail() {
     try {
       const newServers = enable
         ? [...enabledMcpServers, serverName]
-        : enabledMcpServers.filter((name: string) => name !== serverName)
+        : enabledMcpServers.filter((name) => name !== serverName)
       await ItemHandlersService.updateItemHandler({
         id: itemHandlerId,
         requestBody: { enabled_mcp_servers: newServers },
       })
-      showSuccessToast(
-        enable
-          ? t("itemHandlers.detail.mcpEnabled")
-          : t("itemHandlers.detail.mcpDisabled"),
-      )
-      queryClient.invalidateQueries({
-        queryKey: ["itemHandler", itemHandlerId],
-      })
+      showSuccessToast("MCP 配置已更新")
+      queryClient.invalidateQueries({ queryKey: ["itemHandler", itemHandlerId] })
     } catch (error) {
-      if (error instanceof ApiError) {
-        showErrorToast(extractErrorMessage(error))
-      } else {
-        showErrorToast(t("itemHandlers.detail.mcpUpdateFailed"))
-      }
+      showErrorToast(
+        error instanceof ApiError ? extractErrorMessage(error) : "MCP 配置更新失败",
+      )
     }
   }
 
@@ -2322,66 +393,29 @@ function ItemHandlerDetail() {
     try {
       const newFiles = enable
         ? [...enabledKnowledgeFiles, filePath]
-        : enabledKnowledgeFiles.filter((path: string) => path !== filePath)
+        : enabledKnowledgeFiles.filter((path) => path !== filePath)
       await ItemHandlersService.updateItemHandler({
         id: itemHandlerId,
         requestBody: { enabled_knowledge_files: newFiles } as any,
       })
-      showSuccessToast(
-        enable
-          ? t("itemHandlers.detail.knowledgeEnabled")
-          : t("itemHandlers.detail.knowledgeDisabled"),
-      )
-      queryClient.invalidateQueries({
-        queryKey: ["itemHandler", itemHandlerId],
-      })
-      queryClient.invalidateQueries({
-        queryKey: ["itemHandler-knowledge", itemHandlerId],
-      })
+      showSuccessToast("知识库配置已更新")
+      queryClient.invalidateQueries({ queryKey: ["itemHandler", itemHandlerId] })
     } catch (error) {
-      if (error instanceof ApiError) {
-        showErrorToast(extractErrorMessage(error))
-      } else {
-        showErrorToast(t("itemHandlers.detail.knowledgeUpdateFailed"))
-      }
-    }
-  }
-
-  const handleConnect = async (itemId: string) => {
-    try {
-      await ItemHandlerAssociationsService.addItemToHandler({
-        requestBody: {
-          item_handler_id: itemHandlerId,
-          item_id: itemId,
-        },
-      })
-      showSuccessToast(t("itemHandlers.detail.itemConnected"))
-      queryClient.invalidateQueries({
-        queryKey: ["itemHandler-items", itemHandlerId],
-      })
-      queryClient.invalidateQueries({
-        queryKey: ["itemHandler", itemHandlerId],
-      })
-      queryClient.invalidateQueries({ queryKey: ["itemHandlers"] })
-      queryClient.invalidateQueries({ queryKey: ["items"] })
-    } catch (_error) {
-      showErrorToast(t("itemHandlers.detail.itemConnectFailed"))
+      showErrorToast(
+        error instanceof ApiError ? extractErrorMessage(error) : "知识库配置更新失败",
+      )
     }
   }
 
   const handleDisconnect = async (itemId: string) => {
     try {
       await ItemHandlerAssociationsService.removeItemFromHandler({
-        itemHandlerId: itemHandlerId,
-        itemId: itemId,
+        itemHandlerId,
+        itemId,
       })
       showSuccessToast(t("itemHandlers.detail.itemDisconnected"))
-      queryClient.invalidateQueries({
-        queryKey: ["itemHandler-items", itemHandlerId],
-      })
-      queryClient.invalidateQueries({
-        queryKey: ["itemHandler", itemHandlerId],
-      })
+      queryClient.invalidateQueries({ queryKey: ["itemHandler-items", itemHandlerId] })
+      queryClient.invalidateQueries({ queryKey: ["itemHandler", itemHandlerId] })
       queryClient.invalidateQueries({ queryKey: ["itemHandlers"] })
       queryClient.invalidateQueries({ queryKey: ["items"] })
     } catch (_error) {
@@ -2389,727 +423,1496 @@ function ItemHandlerDetail() {
     }
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-muted-foreground">{t("common.loading")}</div>
-      </div>
-    )
+  const deleteDispatcherById = (handler: any) => {
+    askConfirm(`确认删除调度器「${handler.name}」？`, async () => {
+      try {
+        await ItemHandlersService.deleteItemHandler({ id: String(handler.id) })
+        showSuccessToast("调度器已删除")
+        queryClient.invalidateQueries({ queryKey: ["itemHandlers"] })
+        if (String(handler.id) === String(itemHandlerId)) {
+          void navigate({ to: "/item-handlers" })
+        }
+      } catch (error) {
+        showErrorToast(
+          error instanceof Error ? error.message : "删除调度器失败",
+        )
+      }
+    })
   }
 
-  if (!itemHandler) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-muted-foreground">
-          {t("itemHandlers.detail.notFound")}
+  const allItemsList = ((allItemsData as any)?.data || []) as any[]
+  const unboundItems = allItemsList.filter(
+    (item: any) => !connectedItemIds.has(String(item.id)),
+  )
+
+  const handleConnect = async (itemId: string) => {
+    try {
+      await ItemHandlerAssociationsService.addItemToHandler({
+        requestBody: { item_handler_id: itemHandlerId, item_id: itemId },
+      })
+      showSuccessToast(t("itemHandlers.detail.itemConnected"))
+      queryClient.invalidateQueries({ queryKey: ["itemHandler-items", itemHandlerId] })
+      queryClient.invalidateQueries({ queryKey: ["itemHandler", itemHandlerId] })
+      queryClient.invalidateQueries({ queryKey: ["itemHandlers"] })
+      queryClient.invalidateQueries({ queryKey: ["items"] })
+    } catch (_error) {
+      showErrorToast(t("itemHandlers.detail.itemConnectFailed"))
+    }
+  }
+
+  const robotsQuery = useQuery({
+    queryKey: getRobotsQueryKey(),
+    queryFn: () => listRobots(),
+  })
+  const dispatcherRobots = robotsQuery.data?.data ?? []
+  const platformsQuery = useQuery({
+    queryKey: getRobotPlatformsQueryKey(),
+    queryFn: () => listRobotPlatforms(),
+  })
+  const robotPlatforms = Array.isArray(platformsQuery.data)
+    ? platformsQuery.data
+    : ((platformsQuery.data as any)?.data ?? [])
+  const [diagnoseOpen, setDiagnoseOpen] = useState(false)
+  const [diagnoseResults, setDiagnoseResults] = useState<any[]>([])
+  const [isDiagnosing, setIsDiagnosing] = useState(false)
+
+  const runDiagnose = async () => {
+    setDiagnoseOpen(true)
+    setIsDiagnosing(true)
+    try {
+      const results = await Promise.all(
+        dispatcherRobots.map(async (robot: any) => {
+          try {
+            return await diagnoseRobotChain(String(robot.id))
+          } catch (error) {
+            return {
+              robot_name: robot.name,
+              overall_status: "error",
+              error: error instanceof Error ? error.message : String(error),
+            }
+          }
+        }),
+      )
+      setDiagnoseResults(results)
+    } finally {
+      setIsDiagnosing(false)
+    }
+  }
+
+  const deleteRobotById = (robot: any) => {
+    askConfirm(`确认删除机器人「${robot.name}」？`, async () => {
+      try {
+        await deleteRobot(String(robot.id))
+        showSuccessToast("机器人已删除")
+        invalidateBots()
+      } catch (error) {
+        showErrorToast(
+          error instanceof Error ? error.message : "删除机器人失败",
+        )
+      }
+    })
+  }
+  const botBindingsQuery = useQuery({
+    queryKey: [
+      "dispatcher-bot-bindings",
+      itemHandlerId,
+      dispatcherRobots.map((robot: any) => robot.id).join(","),
+    ],
+    queryFn: async () =>
+      Promise.all(
+        dispatcherRobots.map(async (robot: any) => ({
+          robot,
+          bindings: ((await listRobotBindings(robot.id)) as any[]).filter(
+            (binding) => connectedItemIds.has(String(binding.item_id)),
+          ),
+        })),
+      ),
+    enabled: dispatcherRobots.length > 0,
+  })
+  const boundBots = useMemo(
+    () =>
+      (botBindingsQuery.data ?? []).filter(
+        (entry: any) => entry.bindings.length > 0,
+      ),
+    [botBindingsQuery.data],
+  )
+  const unboundBots = useMemo(
+    () =>
+      (botBindingsQuery.data ?? []).filter(
+        (entry: any) => entry.bindings.length === 0,
+      ),
+    [botBindingsQuery.data],
+  )
+
+  const [panelSettingsOpen, setPanelSettingsOpen] = useState(false)
+
+  type WireDrag = {
+    mode: "bind-item" | "bind-bot" | "wire-from-dispatcher"
+    id: string
+    from: { x: number; y: number }
+    to: { x: number; y: number }
+  }
+  const [wireDrag, setWireDrag] = useState<WireDrag | null>(null)
+  const [dropHint, setDropHint] = useState<"dispatcher" | "tray" | null>(null)
+  const wireDragRef = useRef<WireDrag | null>(null)
+  const dispatcherNodeRef = useRef<HTMLDivElement | null>(null)
+
+  const hitRect = (point: { x: number; y: number }, rect: DOMRect) =>
+    point.x >= rect.left &&
+    point.x <= rect.right &&
+    point.y >= rect.top &&
+    point.y <= rect.bottom
+
+  const startWireDrag = (
+    event: React.PointerEvent,
+    mode: WireDrag["mode"],
+    id: string,
+    anchorKey: string,
+  ) => {
+    const board = boardRef.current
+    if (!board) {
+      return
+    }
+    event.preventDefault()
+    const boardRect = board.getBoundingClientRect()
+    const anchorEl = anchorRefs.current.get(anchorKey)
+    const anchorRect = anchorEl?.getBoundingClientRect()
+    const from = {
+      x: (anchorRect ? anchorRect.right : event.clientX) - boardRect.left,
+      y:
+        (anchorRect
+          ? (anchorRect.top + anchorRect.bottom) / 2
+          : event.clientY) - boardRect.top,
+    }
+    const initial: WireDrag = {
+      mode,
+      id,
+      from,
+      to: { x: event.clientX - boardRect.left, y: event.clientY - boardRect.top },
+    }
+    wireDragRef.current = initial
+    setWireDrag(initial)
+
+    const onMove = (ev: PointerEvent) => {
+      const current = wireDragRef.current
+      if (!current) {
+        return
+      }
+      const to = {
+        x: ev.clientX - boardRect.left,
+        y: ev.clientY - boardRect.top,
+      }
+      let hint: "dispatcher" | "tray" | null = null
+      const dispatcherRect =
+        dispatcherNodeRef.current?.getBoundingClientRect() ?? null
+      if (current.mode === "bind-item") {
+        if (dispatcherRect && hitRect({ x: ev.clientX, y: ev.clientY }, dispatcherRect)) {
+          hint = "dispatcher"
+        }
+      }
+      wireDragRef.current = { ...current, to }
+      setWireDrag(wireDragRef.current)
+      setDropHint(hint)
+    }
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+      const ended = wireDragRef.current
+      wireDragRef.current = null
+      setWireDrag(null)
+      setDropHint(null)
+      if (!ended) {
+        return
+      }
+      const point = { x: ev.clientX, y: ev.clientY }
+      const dispatcherRect = dispatcherNodeRef.current?.getBoundingClientRect()
+      const overDispatcher = dispatcherRect ? hitRect(point, dispatcherRect) : false
+
+      if (ended.mode === "bind-item" && overDispatcher) {
+        void handleConnect(ended.id)
+        return
+      }
+      if (ended.mode === "bind-item" && !overDispatcher) {
+        showErrorToast("请把线拖到左侧带 ⚙ 的当前调度器卡片上")
+        return
+      }
+      if (ended.mode === "wire-from-dispatcher") {
+        // drop onto one of the unbound terminal boxes
+        for (const item of unboundItems) {
+          const el = anchorRefs.current.get(`item-${item.id}`)
+          if (el && hitRect(point, el.getBoundingClientRect())) {
+            void handleConnect(String(item.id))
+            return
+          }
+        }
+        showErrorToast("请把线拖到右侧待接入的终端卡片上")
+        return
+      }
+      if (ended.mode === "bind-bot") {
+        // drop onto one of the bound terminal boxes
+        for (const item of connectedItemsList) {
+          const el = anchorRefs.current.get(`item-${item.id}`)
+          if (el && hitRect(point, el.getBoundingClientRect())) {
+            void bindBotToTerminal(ended.id, String(item.id))
+            return
+          }
+        }
+        // dropped onto a terminal that is not connected to this dispatcher
+        for (const item of unboundItems) {
+          const el = anchorRefs.current.get(`item-${item.id}`)
+          if (el && hitRect(point, el.getBoundingClientRect())) {
+            showErrorToast("只能连接到已接入调度器的终端")
+            return
+          }
+        }
+      }
+    }
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }
+
+  const invalidateBots = () => {
+    queryClient.invalidateQueries({ queryKey: ["dispatcher-bot-bindings"] })
+    queryClient.invalidateQueries({ queryKey: ["robot-bindings"] })
+    queryClient.invalidateQueries({ queryKey: getRobotsQueryKey() })
+  }
+
+  const bindBotToTerminal = async (robotId: string, itemId: string) => {
+    try {
+      // 一个 bot 只保留一个主连接终端：拖到哪个终端就切到哪个
+      const existing = (await listRobotBindings(String(robotId))) as any[]
+      const alreadyBound = existing.some(
+        (binding) => String(binding.item_id) === String(itemId),
+      )
+      for (const binding of existing) {
+        if (String(binding.item_id) !== String(itemId)) {
+          await deleteRobotBinding(String(robotId), String(binding.item_id))
+        }
+      }
+      if (!alreadyBound) {
+        await createRobotBinding(String(robotId), {
+          item_id: itemId,
+          allow_chat: true,
+          is_default_target: true,
+        })
+      } else {
+        await updateRobotBinding(String(robotId), String(itemId), {
+          is_default_target: true,
+        })
+      }
+      showSuccessToast("机器人主连接终端已切换")
+      invalidateBots()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ""
+      showErrorToast(message || "机器人连接失败")
+    }
+  }
+
+  const unbindBotFromDispatcher = (robotId: string) => {
+    const entry = boundBots.find((bot: any) => bot.robot.id === robotId)
+    if (!entry) {
+      return
+    }
+    const doUnbind = async () => {
+      try {
+        for (const binding of entry.bindings) {
+          await deleteRobotBinding(String(robotId), String(binding.item_id))
+        }
+        showSuccessToast("机器人已断开")
+        invalidateBots()
+      } catch (_error) {
+        showErrorToast("机器人断开失败")
+      }
+    }
+    if (entry.bindings.length > 1) {
+      askConfirm(
+        `该机器人连接了本调度器的 ${entry.bindings.length} 个终端，全部断开？`,
+        () => void doUnbind(),
+      )
+    } else {
+      void doUnbind()
+    }
+  }
+
+  // Keep the terminals in their original (stable) order — do NOT group by
+  // bound status, otherwise rows jump around on connect/disconnect and the
+  // wire endpoints no longer line up with the row you clicked.
+  const terminalItems = useMemo(
+    () => allItemsList,
+    [allItemsList],
+  )
+  // Assign a gray shade per daemon host so terminals on different hosts are
+  // visually distinguishable.
+  const hostShadeClass = useMemo(() => {
+    const hosts = Array.from(
+      new Set(
+        terminalItems.map((item: any) =>
+          String(item.socket_host || item.daemon_url || "unknown"),
+        ),
+      ),
+    ).sort()
+    const shadeOf = new Map<string, string>()
+    hosts.forEach((host, index) => {
+      shadeOf.set(host, `host-shade-${index % 5}`)
+    })
+    return (item: any) =>
+      shadeOf.get(String(item.socket_host || item.daemon_url || "unknown")) ||
+      "host-shade-0"
+  }, [terminalItems])
+  // Group terminals by daemon host so same-host items stay together.
+  const terminalGroups = useMemo(() => {
+    const groups = new Map<string, any[]>()
+    for (const item of terminalItems) {
+      const host = String(item.socket_host || item.daemon_url || "unknown")
+      if (!groups.has(host)) {
+        groups.set(host, [])
+      }
+      groups.get(host)!.push(item)
+    }
+    return Array.from(groups.entries()).map(([host, items]) => ({
+      host,
+      items,
+      shade: hostShadeClass(items[0]),
+    }))
+  }, [terminalItems, hostShadeClass])
+  const primaryTerminalId = terminalItems.some(
+    (item: any) => String(item.id) === selectedTerminalId,
+  )
+    ? selectedTerminalId
+    : String(terminalItems[0]?.id ?? "")
+  const primaryTerminalTitle =
+    terminalItems.find(
+      (item: any) => String(item.id) === primaryTerminalId,
+    )?.title ?? ""
+  const primaryTerminalStatus =
+    terminalItems.find(
+      (item: any) => String(item.id) === primaryTerminalId,
+    )?.status ?? ""
+  const terminalFeatures = [
+    { key: "chat", title: "Web Chat", icon: <MessageSquare className="size-4" /> },
+    { key: "output", title: "终端输出", icon: <Terminal className="size-4" /> },
+    { key: "ws", title: "WebSocket Server", icon: <Server className="size-4" /> },
+    { key: "qq", title: "QQ 对话调试", icon: <MessageSquare className="size-4" /> },
+    { key: "files", title: "文件", icon: <FileText className="size-4" /> },
+    { key: "filters", title: "过滤器", icon: <Filter className="size-4" /> },
+    { key: "config", title: "配置", icon: <Settings className="size-4" /> },
+    { key: "handlers", title: "调度器", icon: <Layers className="size-4" /> },
+    { key: "tasks", title: "定时任务", icon: <Zap className="size-4" /> },
+    { key: "token", title: "Token 统计", icon: <Brain className="size-4" /> },
+  ]
+  const [itemAction, setItemAction] = useState<
+    "start" | "stop" | "restart" | null
+  >(null)
+  const refreshTerminalData = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["itemHandler-items", itemHandlerId] })
+    queryClient.invalidateQueries({ queryKey: ["items"] })
+  }, [queryClient, itemHandlerId])
+  const handleItemAction = useCallback(
+    async (action: "start" | "stop" | "restart") => {
+      if (!primaryTerminalId || itemAction) {
+        return
+      }
+      setItemAction(action)
+      try {
+        const service =
+          action === "start"
+            ? ItemsService.startItem
+            : action === "stop"
+              ? ItemsService.stopItem
+              : ItemsService.restartItem
+        const result = (await service({ id: primaryTerminalId })) as any
+        showSuccessToast(
+          result?.message ||
+            (action === "start"
+              ? "终端已启动"
+              : action === "stop"
+                ? "终端已停止"
+                : "终端已重启"),
+        )
+      } catch (error) {
+        console.error(`Failed to ${action} item:`, error)
+        showErrorToast(
+          action === "start"
+            ? "启动失败"
+            : action === "stop"
+              ? "停止失败"
+              : "重启失败",
+        )
+      } finally {
+        setItemAction(null)
+        refreshTerminalData()
+      }
+    },
+    [primaryTerminalId, itemAction, refreshTerminalData, showSuccessToast, showErrorToast],
+  )
+
+  const boardRef = useRef<HTMLDivElement | null>(null)
+  const anchorRefs = useRef(new Map<string, Element>())
+  const [wirePaths, setWirePaths] = useState<
+    { key: string; d: string; kind: "item" | "bot"; id: string }[]
+  >([])
+
+  // All wires share the same dispatcher origin, so their hit areas overlap.
+  // Pick the wire whose path is geometrically nearest to the click point
+  // instead of whichever overlapping path happens to be on top.
+  const pickWireAtPoint = useCallback(
+    (clientX: number, clientY: number) => {
+      const board = boardRef.current
+      if (!board) {
+        return null
+      }
+      const rect = board.getBoundingClientRect()
+      const px = clientX - rect.left
+      const py = clientY - rect.top
+      let best: { key: string; kind: string; id: string; dist: number } | null =
+        null
+      for (const wire of wirePaths) {
+        const pathEl = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "path",
+        )
+        pathEl.setAttribute("d", wire.d)
+        const len = pathEl.getTotalLength()
+        const steps = 28
+        for (let i = 0; i <= steps; i++) {
+          const pt = pathEl.getPointAtLength((len * i) / steps)
+          const dist = Math.hypot(pt.x - px, pt.y - py)
+          if (!best || dist < best.dist) {
+            best = { key: wire.key, kind: wire.kind, id: wire.id, dist }
+          }
+        }
+      }
+      return best && best.dist <= 24 ? best : null
+    },
+    [wirePaths],
+  )
+
+  const setAnchor = useCallback(
+    (key: string) => (el: Element | null) => {
+      if (el) {
+        anchorRefs.current.set(key, el)
+      } else {
+        anchorRefs.current.delete(key)
+      }
+    },
+    [],
+  )
+
+  const recomputeWires = useCallback(() => {
+    const board = boardRef.current
+    if (!board) {
+      return
+    }
+    const boardRect = board.getBoundingClientRect()
+    const anchorPoint = (key: string, side: "left" | "right" | "top") => {
+      const el = anchorRefs.current.get(key)
+      if (!el) {
+        return null
+      }
+      const rect = el.getBoundingClientRect()
+      const x =
+        side === "left"
+          ? rect.left
+          : side === "right"
+            ? rect.right
+            : (rect.left + rect.right) / 2
+      const y = side === "top" ? rect.top : (rect.top + rect.bottom) / 2
+      return { x: x - boardRect.left, y: y - boardRect.top }
+    }
+    const horizontalCurve = (
+      a: { x: number; y: number },
+      b: { x: number; y: number },
+    ) => {
+      const midX = (a.x + b.x) / 2
+      return `M ${a.x} ${a.y} C ${midX} ${a.y}, ${midX} ${b.y}, ${b.x} ${b.y}`
+    }
+    // Inverse-function bend: leaves the bot going straight up, then flattens
+    // and plugs into the item's front face horizontally.
+    const inverseCurve = (
+      from: { x: number; y: number },
+      to: { x: number; y: number },
+    ) => {
+      const rise = Math.max(70, (from.y - to.y) * 0.5)
+      const approach = Math.min(120, Math.max(50, (to.x - from.x) * 0.4))
+      const cp1 = { x: from.x, y: from.y - rise }
+      const cp2 = { x: to.x - approach, y: to.y }
+      return `M ${from.x} ${from.y} C ${cp1.x} ${cp1.y}, ${cp2.x} ${cp2.y}, ${to.x} ${to.y}`
+    }
+    const next: { key: string; d: string; kind: "item" | "bot"; id: string }[] = []
+    for (const item of connectedItemsList) {
+      const from = anchorPoint("dispatcher-port", "right")
+      const to = anchorPoint(`item-port-${item.id}`, "left")
+      if (from && to) {
+        next.push({
+          key: `wire-item-${item.id}`,
+          d: horizontalCurve(from, to),
+          kind: "item",
+          id: String(item.id),
+        })
+      }
+    }
+    for (const entry of boundBots) {
+      const from = anchorPoint(`bot-${entry.robot.id}`, "top")
+      const targetItemId = String(entry.bindings[0]?.item_id ?? "")
+      const to = targetItemId
+        ? anchorPoint(`item-port-${targetItemId}`, "left")
+        : null
+      if (from && to) {
+        next.push({
+          key: `wire-bot-${entry.robot.id}`,
+          d: inverseCurve(from, to),
+          kind: "bot",
+          id: String(entry.robot.id),
+        })
+      }
+    }
+    setWirePaths(next)
+  }, [connectedItemsList, boundBots, primaryTerminalId])
+
+  useLayoutEffect(() => {
+    recomputeWires()
+    window.addEventListener("resize", recomputeWires)
+    const observer = new ResizeObserver(() => recomputeWires())
+    if (boardRef.current) {
+      observer.observe(boardRef.current)
+    }
+    // re-measure after slide-in animations / fonts settle so wire
+    // endpoints land on the real anchor positions
+    const raf = requestAnimationFrame(() => recomputeWires())
+    const timers = [80, 250, 450].map((ms) =>
+      setTimeout(recomputeWires, ms),
+    )
+    return () => {
+      window.removeEventListener("resize", recomputeWires)
+      observer.disconnect()
+      cancelAnimationFrame(raf)
+      timers.forEach(clearTimeout)
+    }
+  }, [recomputeWires, expandedCard])
+
+  const loadingHint = (text: string) => (
+    <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+      <Loader2 className="size-4 animate-spin" />
+      {text}
+    </div>
+  )
+
+  const boardCards: {
+    key: string
+    title: string
+    icon: ReactNode
+    summary: string
+    content: ReactNode
+  }[] = [
+    {
+      key: "bindings",
+      title: "终端绑定",
+      icon: <Terminal className="size-4" />,
+      summary: `${connectedItemsList.length} 个终端`,
+      content: (
+        <div className="space-y-2">
+          {connectedItemsList.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              还没有绑定任何终端，点击下方按钮添加。
+            </p>
+          ) : (
+            connectedItemsList.map((item: any) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5 text-sm"
+              >
+                <span className="min-w-0 truncate">{item.title || item.id}</span>
+                <button
+                  type="button"
+                  onClick={() => void handleDisconnect(String(item.id))}
+                  className="rounded border px-2 py-0.5 text-xs hover:bg-muted"
+                >
+                  解绑
+                </button>
+              </div>
+            ))
+          )}
+          <AddItemToHandler itemHandlerId={itemHandlerId} />
         </div>
+      ),
+    },
+    {
+      key: "skills",
+      title: "技能",
+      icon: <Zap className="size-4" />,
+      summary: `${enabledSkills.length} 项启用`,
+      content: skillsLoading ? (
+        loadingHint("正在加载技能...")
+      ) : (
+        <SkillSelector
+          allSkills={skills}
+          enabledSkills={enabledSkills}
+          onSkillToggle={handleSkillToggle}
+        />
+      ),
+    },
+    {
+      key: "mcp",
+      title: "MCP",
+      icon: <Server className="size-4" />,
+      summary: `${enabledMcpServers.length} 个服务`,
+      content: mcpLoading ? (
+        loadingHint("正在加载 MCP...")
+      ) : (
+        <McpSelector
+          allServers={mcpServers}
+          enabledServers={enabledMcpServers}
+          onServerToggle={handleMcpServerToggle}
+        />
+      ),
+    },
+    {
+      key: "knowledge",
+      title: "知识库",
+      icon: <FileText className="size-4" />,
+      summary: `${enabledKnowledgeFiles.length} 个文件`,
+      content: (
+        <KnowledgeBindingSelector
+          itemHandlerId={itemHandlerId}
+          enabledKnowledgeFiles={enabledKnowledgeFiles}
+          onKnowledgeToggle={handleKnowledgeToggle}
+        />
+      ),
+    },
+    {
+      key: "memory",
+      title: "长期记忆",
+      icon: <Brain className="size-4" />,
+      summary: "共享记忆池",
+      content:
+        connectedItemsList.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            还没有绑定任何终端，绑定后即可管理共享记忆。
+          </p>
+        ) : (
+          <TerminalMemoryPanel connectedItems={connectedItemsList} />
+        ),
+    },
+    {
+      key: "chatLogs",
+      title: "聊天记录",
+      icon: <MessageSquare className="size-4" />,
+      summary: `${boundBots.length} 个机器人`,
+      content: (
+        <ChatLogPanel
+          itemHandlerId={itemHandlerId}
+          connectedItems={connectedItemsList}
+        />
+      ),
+    },
+    {
+      key: "config",
+      title: "模型配置",
+      icon: <Settings className="size-4" />,
+      summary: String(itemHandler.model || ""),
+      content: <HandlerSettingsPanel itemHandler={itemHandler} />,
+    },
+  ]
+  const expandedCardData =
+    boardCards.find((card) => card.key === expandedCard) ?? null
+
+  return (
+    <div ref={boardRef} className="dispatcher-board relative flex min-h-0 w-full flex-1 flex-col">
+      <style>{DISPATCHER_BOARD_CSS}</style>
+      <svg className="board-wires" aria-hidden>
+        {wirePaths.map((wire) => (
+          <g key={wire.key}>
+            <path
+              d={wire.d}
+              className={`wire-visible ${wire.kind === "bot" ? "wire-bot" : ""}`}
+            />
+            <path
+              d={wire.d}
+              className="wire-hit"
+              onClick={(event) => {
+                const picked = pickWireAtPoint(event.clientX, event.clientY)
+                if (!picked) {
+                  return
+                }
+                if (picked.kind === "item") {
+                  const title =
+                    terminalItems.find(
+                      (it: any) => String(it.id) === picked.id,
+                    )?.title || picked.id
+                  askConfirm(`断开终端「${title}」与调度器的连接？`, () =>
+                    handleDisconnect(picked.id),
+                  )
+                } else {
+                  const robot = boundBots.find(
+                    (b: any) => String(b.robot.id) === picked.id,
+                  )?.robot
+                  askConfirm(
+                    `断开机器人「${robot?.name || picked.id}」的连接？`,
+                    () => unbindBotFromDispatcher(picked.id),
+                  )
+                }
+              }}
+            />
+          </g>
+        ))}
+        {wireDrag ? (
+          <path
+            className="wire-preview"
+            d={`M ${wireDrag.from.x} ${wireDrag.from.y} L ${wireDrag.to.x} ${wireDrag.to.y}`}
+          />
+        ) : null}
+      </svg>
+
+      <div className="board-grid relative z-30 grid min-h-0 flex-1 gap-4 lg:grid-cols-[230px_minmax(0,1fr)_230px]">
+        <aside className="terminal-edge-panel relative z-30 flex min-h-0 flex-col self-stretch py-3 pl-0 pr-1">
+          <div className="edge-add-wrap">
+            <span className="edge-add-frame edge-add-frame-left">
+              <AddItemHandler
+                triggerVariant="outline"
+                triggerClassName="btn-add-compact"
+              />
+            </span>
+          </div>
+          <ScrollColumn>
+            <div className="space-y-2">
+            {allHandlers.length === 0 ? (
+              <div className="sketch-box sketch-b px-3 py-4 text-center text-xs">
+                还没有调度器
+              </div>
+            ) : (
+              allHandlers.map((handler: any, index: number) => {
+                const isActive = String(handler.id) === String(itemHandlerId)
+                const boxClass = `sketch-box edge-left-box px-3 py-2.5 text-left text-sm w-full ${
+                  index % 2 ? "sketch-b" : "sketch-c"
+                } ${isActive ? "sketch-active" : "sketch-hover"}`
+                if (isActive) {
+                  return (
+                    <div
+                      key={handler.id}
+                      ref={(el) => {
+                        dispatcherNodeRef.current = el
+                        setAnchor("dispatcher")(el)
+                      }}
+                      title="当前调度器"
+                      className={`${boxClass} relative ${
+                        dropHint === "dispatcher" ? "sketch-drop-target" : ""
+                      }`}
+                    >
+                      <div className="dispatcher-box-body">
+                        <div className="font-black">⚙ {handler.name}</div>
+                        <div className="text-[10px] text-muted-foreground">
+                          dispatcher · {handler.model || "未设置模型"}
+                        </div>
+                      </div>
+                      <div ref={setAnchor("dispatcher-bot") as any} className="mx-auto h-0 w-0" />
+                      <span
+                        className="item-del"
+                        title="删除该调度器"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          deleteDispatcherById(handler)
+                        }}
+                      >
+                        <Trash2 className="size-3" />
+                      </span>
+                      <span
+                        ref={setAnchor("dispatcher-port") as any}
+                        className="wire-handle"
+                        title="按住拉线到右侧待接入终端进行连接"
+                        onPointerDown={(event) => {
+                          event.stopPropagation()
+                          startWireDrag(
+                            event,
+                            "wire-from-dispatcher",
+                            "",
+                            "dispatcher-port",
+                          )
+                        }}
+                      />
+                    </div>
+                  )
+                }
+                return (
+                  <button
+                    key={handler.id}
+                    type="button"
+                    onClick={() =>
+                      void navigate({
+                        to: "/item-handlers/$itemHandlerId",
+                        params: { itemHandlerId: String(handler.id) },
+                      })
+                    }
+                    title="切换到这个调度器"
+                    className={`${boxClass} relative`}
+                  >
+                    <div className="dispatcher-box-body">
+                      <div className="font-bold">⚙ {handler.name}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {handler.model || "未设置模型"}
+                      </div>
+                    </div>
+                    <span
+                      className="item-del"
+                      title="删除该调度器"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        deleteDispatcherById(handler)
+                      }}
+                    >
+                      <Trash2 className="size-3" />
+                    </span>
+                  </button>
+                )
+              })
+            )}
+            </div>
+          </ScrollColumn>
+        </aside>
+
+        <section className="relative z-30 flex min-h-0 flex-col justify-center pb-4 pt-18">
+          <ScrollColumn className="scroll-col-pad" arrows={false}>
+            <div className="mx-auto grid w-full max-w-xl auto-rows-[68px] grid-cols-4 grid-flow-dense gap-2.5">
+              {boardCards.map((card) => (
+                <button
+                  key={card.key}
+                  type="button"
+                  onClick={() => setExpandedCard(card.key)}
+                  className={`glass-box sketch-hover col-span-2 flex flex-col justify-center px-4 py-3 text-left ${
+                    card.key === "bindings" ||
+                    card.key === "chatLogs" ||
+                    card.key === "config"
+                      ? "row-span-2"
+                      : ""
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 text-sm font-semibold">
+                    {card.icon}
+                    {card.title}
+                  </div>
+                  <div className="mt-1 truncate text-[11px] text-muted-foreground">
+                    {card.summary}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </ScrollColumn>
+        </section>
+
+        <section className="terminal-edge-panel-right relative z-30 flex min-h-0 flex-col space-y-2 pr-0">
+          <div className="edge-add-wrap">
+            <span className="edge-add-frame edge-add-frame-right">
+              <AddItem
+                items={terminalItems}
+                triggerVariant="outline"
+                triggerClassName="btn-add-compact"
+              />
+            </span>
+          </div>
+          <ScrollColumn>
+            <div className="space-y-3 pr-0">
+            {terminalGroups.length === 0 ? (
+              <div className="sketch-box sketch-b px-3 py-4 text-center text-xs">
+                还没有终端，先去项目页创建
+              </div>
+            ) : (
+              terminalGroups.map((group) => (
+                <div key={group.host} className={`space-y-1 rounded-lg p-1.5 ${group.shade}`}>
+                  <div className="truncate px-1 text-[10px] font-bold text-muted-foreground" title={group.host}>
+                    {group.host}
+                  </div>
+                  {group.items.map((item: any, index: number) => {
+                    const bound = connectedItemIds.has(String(item.id))
+                    return (
+                      <button
+                        key={item.id}
+                        ref={setAnchor(`item-${item.id}`) as any}
+                        type="button"
+                        onClick={() => {
+                          setSelectedTerminalId(String(item.id))
+                          setTerminalPanelOpen(true)
+                        }}
+                        title={
+                          bound
+                            ? "点击打开交互终端 · 点连线断开"
+                            : "点击打开详情 · 拉圆圈到调度器接入"
+                        }
+                        className={`relative block w-full px-3 py-2 text-left text-sm edge-right-box ${
+                          bound
+                            ? `sketch-box sketch-hover ${
+                                index % 2 ? "sketch-b" : "sketch-c"
+                              } ${
+                                String(item.id) === primaryTerminalId
+                                  ? "sketch-active"
+                                  : ""
+                              }`
+                            : "sketch-tray sketch-hover cursor-crosshair border-dashed bg-white"
+                        }`}
+                      >
+                        <div className="font-bold">{item.title || item.id}</div>
+                        <div className="text-[10px] text-muted-foreground">
+                          {bound ? "已接入" : "待接入"}
+                        </div>
+                        <span
+                          className="item-del"
+                          title={bound ? "断开该终端" : "删除该终端"}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            if (bound) {
+                              askConfirm(
+                                `断开终端「${item.title || item.id}」与调度器的连接？`,
+                                () => void handleDisconnect(String(item.id)),
+                              )
+                            }
+                          }}
+                        >
+                          <Trash2 className="size-3" />
+                        </span>
+                        <span
+                          ref={setAnchor(`item-port-${item.id}`) as any}
+                          className="wire-handle"
+                          style={{ left: "-7px", right: "auto" }}
+                          title={
+                            bound ? "连接点" : "按住拉线到调度器接入"
+                          }
+                          onPointerDown={
+                            bound
+                              ? undefined
+                              : (event) => {
+                                  event.stopPropagation()
+                                  startWireDrag(
+                                    event,
+                                    "bind-item",
+                                    String(item.id),
+                                    `item-port-${item.id}`,
+                                  )
+                                }
+                          }
+                        />
+                      </button>
+                    )
+                  })}
+                </div>
+              ))
+            )}
+            </div>
+          </ScrollColumn>
+        </section>
+      </div>
+
+      <footer className="relative z-10 mt-4 flex flex-shrink-0 items-end justify-center gap-4 px-4 pb-6 pt-3">
+        <span className="bot-tag bot-tag-tool">
+          <CreateRobotDialog
+            platforms={robotPlatforms}
+            iconOnly
+            triggerClassName="btn-add-compact"
+          />
+        </span>
+        {boundBots.length === 0 && unboundBots.length === 0 ? (
+          <div className="sketch-box sketch-c inline-block px-3 py-2 text-xs">
+            还没有机器人
+          </div>
+        ) : null}
+        {boundBots.map((entry: any, index: number) => (
+          <div
+            key={entry.robot.id}
+            ref={setAnchor(`bot-${entry.robot.id}`) as any}
+            title="点击查看机器人详情"
+            className="bot-tag"
+            onClick={() => setBotDetailId(String(entry.robot.id))}
+            style={{ "--tilt": index % 2 ? "1.6deg" : "-1.8deg" } as any}
+          >
+            <span
+              className="item-del"
+              title="删除该机器人"
+              onClick={(event) => {
+                event.stopPropagation()
+                deleteRobotById(entry.robot)
+              }}
+            >
+              <Trash2 className="size-3" />
+            </span>
+            <span
+              className="bot-diagnose-tab"
+              title="诊断机器人链路"
+              onClick={(event) => {
+                event.stopPropagation()
+                void runDiagnose()
+              }}
+            >
+              <Stethoscope className="size-3.5" />
+            </span>
+            <div className="flex items-center gap-1.5 font-bold">
+              <Bot className="size-4" />
+              {entry.robot.name}
+            </div>
+            <div className="text-[10px]">
+              {entry.robot.platform} →{" "}
+              {entry.bindings
+                .map((binding: any) => binding.route_key || binding.item_title)
+                .join(", ")}
+            </div>
+          </div>
+        ))}
+        {unboundBots.map((entry: any, index: number) => (
+          <div
+            key={entry.robot.id}
+            ref={setAnchor(`bot-${entry.robot.id}`) as any}
+            title="点击查看机器人详情"
+            className="bot-tag relative border-dashed"
+            onClick={() => setBotDetailId(String(entry.robot.id))}
+            style={{ "--tilt": index % 2 ? "-1.4deg" : "1.7deg" } as any}
+          >
+            <span
+              className="item-del"
+              title="删除该机器人"
+              onClick={(event) => {
+                event.stopPropagation()
+                deleteRobotById(entry.robot)
+              }}
+            >
+              <Trash2 className="size-3" />
+            </span>
+            <span
+              className="bot-diagnose-tab"
+              title="诊断机器人链路"
+              onClick={(event) => {
+                event.stopPropagation()
+                void runDiagnose()
+              }}
+            >
+              <Stethoscope className="size-3.5" />
+            </span>
+            <span className="flex items-center gap-1.5 font-bold">
+              <Bot className="size-4" />
+              {entry.robot.name}
+            </span>
+            <span className="text-[10px]">{entry.robot.platform}</span>
+            <span
+              className="wire-handle"
+              style={{ top: "-7px", left: "50%", marginLeft: "-6px", right: "auto", marginTop: "0" }}
+              onPointerDown={(event) => {
+                event.stopPropagation()
+                startWireDrag(
+                  event,
+                  "bind-bot",
+                  String(entry.robot.id),
+                  `bot-${entry.robot.id}`,
+                )
+              }}
+            />
+          </div>
+        ))}
+      </footer>
+
+      {diagnoseOpen ? (
+        <div className="zoom-backdrop" onClick={() => setDiagnoseOpen(false)}>
+          <div
+            className="zoom-card sketch-box sketch-a"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white/95 px-4 py-2 backdrop-blur">
+              <div className="flex items-center gap-2 text-sm font-bold">
+                <Stethoscope className="size-4" />
+                机器人链路诊断
+              </div>
+              <button
+                type="button"
+                onClick={() => setDiagnoseOpen(false)}
+                className="rounded p-1 hover:bg-muted"
+                aria-label="关闭"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="space-y-3 p-4 text-sm">
+              {isDiagnosing ? (
+                <div className="flex items-center gap-2 py-6 text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" /> 正在诊断…
+                </div>
+              ) : diagnoseResults.length === 0 ? (
+                <div className="py-6 text-center text-muted-foreground">
+                  没有可诊断的机器人
+                </div>
+              ) : (
+                diagnoseResults.map((result: any, index: number) => (
+                  <div key={index} className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold">
+                        {result.robot_name || result.robot_id}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                          result.overall_status === "ok"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {result.overall_status === "ok" ? "正常" : "异常"}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {result.platform}
+                      {result.chain
+                        ? ` · 配置:${result.chain.robot_config?.status ?? "-"} · 桥接:${result.chain.qq_to_bridge?.status ?? "-"} · 后端:${result.chain.bridge_to_backend?.status ?? "-"}`
+                        : ""}
+                      {result.error ? ` · ${result.error}` : ""}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmState ? (
+        <div
+          className="confirm-backdrop"
+          onClick={() => setConfirmState(null)}
+        >
+          <div
+            className="confirm-card sketch-box sketch-a"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="text-sm font-bold">{confirmState.message}</div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="sketch-mini-box px-3 py-1"
+                onClick={() => setConfirmState(null)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="sketch-mini-box px-3 py-1 hover:bg-red-50"
+                onClick={() => {
+                  const action = confirmState.action
+                  setConfirmState(null)
+                  action()
+                }}
+              >
+                确认断开
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {botDetailId ? (
+        <div className="bot-detail-panel">
+          <div className="flex items-center gap-2 border-b-2 border-[#3a3a3a] bg-white px-3 py-2">
+            <button
+              type="button"
+              onClick={() => setBotDetailId(null)}
+              className="sketch-box sketch-c flex items-center gap-1 px-2 py-1 text-xs font-bold hover:bg-stone-100"
+            >
+              ← 返回
+            </button>
+            <div className="flex items-center gap-2 text-sm font-black">
+              <Bot className="size-4" />
+              机器人详情
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <RobotDetail robotId={botDetailId} />
+          </div>
+        </div>
+      ) : null}
+
+      {terminalPanelOpen ? (
+        <div className="terminal-fullscreen">
+          <div className="terminal-fullscreen-header">
+            <button
+              type="button"
+              onClick={() => {
+                setTerminalPanelOpen(false)
+              }}
+              className="sketch-box sketch-c flex items-center gap-1 px-2 py-1 text-xs font-bold hover:bg-stone-100"
+            >
+              ← 返回
+            </button>
+            <div className="flex items-center gap-2 text-sm font-black">
+              <Terminal className="size-4" />
+              主交互终端
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {primaryTerminalTitle || "未绑定终端"}
+            </span>
+            {primaryTerminalStatus ? (
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                  primaryTerminalStatus === "running"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : primaryTerminalStatus === "error"
+                      ? "bg-red-100 text-red-700"
+                      : "bg-stone-200 text-stone-600"
+                }`}
+              >
+                {primaryTerminalStatus === "running"
+                  ? "运行中"
+                  : primaryTerminalStatus === "starting"
+                    ? "启动中"
+                    : primaryTerminalStatus === "stopping"
+                      ? "停止中"
+                      : primaryTerminalStatus === "stopped"
+                        ? "已停止"
+                        : primaryTerminalStatus === "error"
+                          ? "错误"
+                          : primaryTerminalStatus}
+              </span>
+            ) : null}
+            {primaryTerminalId ? (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={itemAction !== null}
+                  onClick={() => void handleItemAction("start")}
+                  className="sketch-box sketch-c flex items-center gap-1 px-2 py-1 text-xs font-bold hover:bg-emerald-50 disabled:opacity-50"
+                >
+                  {itemAction === "start" ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : null}
+                  启动
+                </button>
+                <button
+                  type="button"
+                  disabled={itemAction !== null}
+                  onClick={() => void handleItemAction("stop")}
+                  className="sketch-box sketch-c flex items-center gap-1 px-2 py-1 text-xs font-bold hover:bg-amber-50 disabled:opacity-50"
+                >
+                  {itemAction === "stop" ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : null}
+                  停止
+                </button>
+                <button
+                  type="button"
+                  disabled={itemAction !== null}
+                  onClick={() => void handleItemAction("restart")}
+                  className="sketch-box sketch-c flex items-center gap-1 px-2 py-1 text-xs font-bold hover:bg-sky-50 disabled:opacity-50"
+                >
+                  {itemAction === "restart" ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : null}
+                  重启
+                </button>
+              </div>
+            ) : null}
+            <div className="flex-1" />
+            <button
+              type="button"
+              onClick={() => setPanelSettingsOpen((v) => !v)}
+              className="text-xs font-bold hover:underline"
+            >
+              {panelSettingsOpen ? "▾" : "▸"} 终端功能设置
+            </button>
+          </div>
+          {panelSettingsOpen ? (
+            <div className="border-b-2 border-[#3a3a3a] bg-white px-3 py-2">
+              <div className="sketch-box sketch-b mt-1 space-y-2 p-3 text-sm">
+                <div className="font-bold">
+                  当前终端：{primaryTerminalTitle || "未绑定"}
+                  <span className="ml-1 text-[10px] font-normal">
+                    {primaryTerminalId ? `#${primaryTerminalId.slice(0, 8)}` : ""}
+                  </span>
+                </div>
+                {connectedItemsList.length > 1 ? (
+                  <label className="flex items-center gap-2 text-xs">
+                    切换主终端：
+                    <select
+                      className="rounded border border-[#3a3a3a] bg-white px-2 py-1"
+                      value={primaryTerminalId}
+                      onChange={(event) =>
+                        setSelectedTerminalId(event.target.value)
+                      }
+                    >
+                      {connectedItemsList.map((item: any) => (
+                        <option key={item.id} value={String(item.id)}>
+                          {item.title || item.id}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <div className="flex flex-wrap gap-2 text-xs font-bold">
+                  {primaryTerminalId ? (
+                    <button
+                      type="button"
+                      className="sketch-box sketch-c px-2 py-1 hover:bg-red-50"
+                      onClick={() => {
+                        askConfirm(
+                          `从调度器断开终端「${primaryTerminalTitle}」？`,
+                          () => {
+                            setTerminalPanelOpen(false)
+                            void handleDisconnect(primaryTerminalId)
+                          },
+                        )
+                      }}
+                    >
+                      ✂ 解绑此终端
+                    </button>
+                  ) : (
+                    <span className="font-normal">先在左侧接入一个终端</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+          <div className="terminal-fullscreen-body terminal-body-3col">
+            <div className="terminal-frame">
+              <div className="terminal-titlebar">
+                <span className="dot" />
+                <span className="dot" />
+                <span className="dot" />
+                <span className="ml-2 text-[11px]">
+                  {primaryTerminalTitle || "未绑定终端"}
+                </span>
+                <span className="ml-auto pr-1 text-[10px] font-bold text-stone-400">
+                  终端输出
+                </span>
+              </div>
+              <div className="terminal-body" style={{ minHeight: 0 }}>
+                {primaryTerminalId ? (
+                  <TerminalOutputPanel
+                    key={primaryTerminalId}
+                    itemId={primaryTerminalId}
+                    running={primaryTerminalStatus === "running"}
+                  />
+                ) : (
+                  <div className="p-6 text-center text-xs">
+                    先在左侧接入一个终端
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="terminal-frame">
+              <div className="terminal-titlebar terminal-titlebar-light">
+                <span className="text-[11px] font-bold">
+                  {terminalFeatures.find((f) => f.key === mainView)?.title ??
+                    ""}
+                </span>
+              </div>
+              <div className="terminal-body" style={{ minHeight: 0 }}>
+                {primaryTerminalId ? (
+                  mainView === "chat" ? (
+                    <ChatPanel itemId={primaryTerminalId} />
+                  ) : (
+                    <div
+                      className={
+                        mainView === "files"
+                          ? "h-full min-h-0 bg-white p-3"
+                          : "h-full min-h-0 overflow-y-auto bg-white p-3"
+                      }
+                    >
+                      {mainView === "ws" ? (
+                        <TerminalWsPanel
+                          itemId={primaryTerminalId}
+                          itemTitle={primaryTerminalTitle || "终端"}
+                        />
+                      ) : mainView === "qq" ? (
+                        <RobotConversationDebugPanel itemId={primaryTerminalId} />
+                      ) : mainView === "files" ? (
+                        <ItemFilesPanel itemId={primaryTerminalId} />
+                      ) : mainView === "filters" ? (
+                        <ItemFiltersPanel itemId={primaryTerminalId} />
+                      ) : mainView === "config" ? (
+                        <ItemConfigPanel itemId={primaryTerminalId} />
+                      ) : mainView === "handlers" ? (
+                        <ItemHandlersList itemId={primaryTerminalId} />
+                      ) : mainView === "tasks" ? (
+                        <ScheduledTasksManager itemId={primaryTerminalId} />
+                      ) : mainView === "token" ? (
+                        <TokenUsagePanel itemId={primaryTerminalId} />
+                      ) : null}
+                    </div>
+                  )
+                ) : (
+                  <div className="p-6 text-center text-xs">
+                    先在左侧接入一个终端
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="feature-icon-rail">
+              {terminalFeatures
+                .filter((feature) => feature.key !== "output")
+                .map((feature) => (
+                  <button
+                    key={feature.key}
+                    type="button"
+                    onClick={() => setMainView(feature.key)}
+                    title={feature.title}
+                    className={`feature-icon-btn ${
+                      mainView === feature.key ? "feature-icon-active" : ""
+                    }`}
+                  >
+                    {feature.icon}
+                    <span className="feature-icon-label">{feature.title}</span>
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {expandedCardData ? (
+        <div className="zoom-backdrop" onClick={() => setExpandedCard(null)}>
+          <div
+            className="zoom-card sketch-box sketch-a"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white/95 px-4 py-2 backdrop-blur">
+              <div className="flex items-center gap-2 text-sm font-bold">
+                {expandedCardData.icon}
+                {expandedCardData.title}
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpandedCard(null)}
+                className="rounded p-1 hover:bg-muted"
+                aria-label="关闭"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="p-4 sketch-content">{expandedCardData.content}</div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function TerminalDispatcherPage() {
+  const { itemHandlerId } = Route.useParams()
+  const { data: itemHandler, isLoading } = useQuery({
+    queryFn: () => ItemHandlersService.readItemHandler({ id: itemHandlerId }),
+    queryKey: ["itemHandler", itemHandlerId],
+  })
+
+  if (isLoading || !itemHandler) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="size-5 animate-spin text-muted-foreground" />
       </div>
     )
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-4">
-      <section className="space-y-1.5">
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          <Link to="/item-handlers" className="hover:text-foreground">
-            {t("itemHandlers.pageTitle")}
-          </Link>
-          <ChevronRight className="size-3.5" />
-          <span className="text-foreground">{itemHandler.name}</span>
-        </div>
-
-        <div className="rounded-xl border bg-card/90 px-3 py-2 shadow-sm">
-          <div className="min-w-0 space-y-1.5">
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="break-words text-base font-semibold leading-tight tracking-tight sm:text-lg">
-                  {itemHandler.name}
-                </h1>
-                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                  {connectedItemCount} {t("itemHandlers.detail.connections")}
-                </Badge>
-                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                  {enabledSkills.length} {t("itemHandlers.detail.skills")}
-                </Badge>
-                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                  {enabledMcpServers.length} MCP
-                </Badge>
-                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                  {enabledKnowledgeFiles.length}{" "}
-                  {t("itemHandlers.detail.knowledge")}
-                </Badge>
-              </div>
-              <p className="max-w-3xl text-[11px] leading-4 text-muted-foreground sm:text-xs">
-                {t("itemHandlers.detail.description")}
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <Tabs value={activeTab} onValueChange={activateTab} className="gap-3">
-        <div className="overflow-x-auto">
-          <div className="flex min-w-max items-center justify-between gap-3">
-            <TabsList className="h-auto gap-1 bg-muted/70 p-1">
-              <TabsTrigger value="connections">
-                {t("itemHandlers.detail.connections")}
-              </TabsTrigger>
-              <TabsTrigger value="skills">
-                {t("itemHandlers.detail.skills")}
-              </TabsTrigger>
-              <TabsTrigger value="knowledge">
-                {t("itemHandlers.detail.knowledge")}
-              </TabsTrigger>
-              <TabsTrigger value="mcp">MCP</TabsTrigger>
-              <TabsTrigger value="chatLogs">
-                {t("itemHandlers.detail.chatLogs")}
-              </TabsTrigger>
-              <TabsTrigger value="config">
-                {t("itemHandlers.detail.config")}
-              </TabsTrigger>
-            </TabsList>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={startEditing}
-            >
-              {t("itemHandlers.detail.edit")}
-            </Button>
-          </div>
-        </div>
-
-        <TabsContent value="connections">
-          {!isConnectionsLoaded ? (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center">
-                <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
-                  <Zap className="size-5 text-yellow-500" />
-                </div>
-                <div>
-                  <h2 className="text-base font-semibold">
-                    连接图和终端列表按需加载
-                  </h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    当前已记录 {connectedItemCount}{" "}
-                    个连接。点击后再读取全部终端并绘制连接图。
-                  </p>
-                </div>
-                <Button onClick={() => setIsConnectionsLoaded(true)}>
-                  加载连接图和终端列表
-                </Button>
-              </CardContent>
-            </Card>
-          ) : connectionsLoading ? (
-            <Card>
-              <CardContent className="flex items-center justify-center gap-2 px-6 py-10 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" />
-                正在加载连接图和终端列表...
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-6 lg:grid-cols-3">
-              <Card className="overflow-hidden lg:col-span-2">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2">
-                    <Zap className="size-5 text-yellow-500" />
-                    {t("itemHandlers.detail.connectionDiagram")}
-                  </CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    {t("itemHandlers.detail.connectionDiagramDescription")}
-                  </p>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <ConnectionDiagram
-                    itemHandler={itemHandler}
-                    connectedItems={connectedItemsList}
-                    availableItems={availableItems}
-                    onConnect={handleConnect}
-                    onDisconnect={handleDisconnect}
-                  />
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2">
-                    <Terminal className="size-5 text-blue-500" />
-                    {t("itemHandlers.detail.allItems")}
-                  </CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    {t("itemHandlers.detail.allItemsDescription")}
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  {allItems.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      {t("itemHandlers.detail.noItems")}
-                    </p>
-                  ) : (
-                    <div className="space-y-1">
-                      {visibleAllItems.map((item: any) => (
-                        <ItemWithHandlers
-                          key={item.id}
-                          item={item}
-                          currentHandlerId={itemHandlerId}
-                          isConnected={connectedItemIds.has(item.id)}
-                        />
-                      ))}
-                      <LoadMoreButton
-                        remainingCount={allItemsRemainingCount}
-                        className="w-full"
-                        onClick={() =>
-                          setVisibleAllItemsCount(
-                            (current) => current + LIST_PAGE_SIZE,
-                          )
-                        }
-                      />
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="skills">
-          {hasVisitedTab("skills") ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Zap className="size-5 text-yellow-500" />
-                  {t("itemHandlers.detail.skillsConfiguration")}
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  {t("itemHandlers.detail.skillsConfigurationDescription")}
-                </p>
-              </CardHeader>
-              <CardContent>
-                {skillsLoading ? (
-                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" />
-                    正在加载技能...
-                  </div>
-                ) : (
-                  <SkillSelector
-                    allSkills={skills}
-                    enabledSkills={enabledSkills}
-                    onSkillToggle={handleSkillToggle}
-                  />
-                )}
-              </CardContent>
-            </Card>
-          ) : null}
-        </TabsContent>
-
-        <TabsContent value="mcp">
-          {hasVisitedTab("mcp") ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Server className="size-5 text-purple-500" />
-                  {t("itemHandlers.detail.mcpConfiguration")}
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  {t("itemHandlers.detail.mcpConfigurationDescription")}
-                </p>
-              </CardHeader>
-              <CardContent>
-                {mcpLoading ? (
-                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" />
-                    正在加载 MCP...
-                  </div>
-                ) : (
-                  <MCPSelector
-                    allServers={mcpServers}
-                    enabledServers={enabledMcpServers}
-                    onServerToggle={handleMcpServerToggle}
-                  />
-                )}
-              </CardContent>
-            </Card>
-          ) : null}
-        </TabsContent>
-
-        <TabsContent value="knowledge">
-          {hasVisitedTab("knowledge") ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Terminal className="size-5 text-emerald-500" />
-                  {t("itemHandlers.detail.knowledgeConfiguration")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <KnowledgeBindingSelector
-                  itemHandlerId={itemHandlerId}
-                  enabledKnowledgeFiles={enabledKnowledgeFiles}
-                  onKnowledgeToggle={handleKnowledgeToggle}
-                />
-              </CardContent>
-            </Card>
-          ) : null}
-        </TabsContent>
-
-        <TabsContent value="chatLogs">
-          {hasVisitedTab("chatLogs") ? (
-            connectedItemsLoading ? (
-              <Card>
-                <CardContent className="flex items-center justify-center gap-2 px-6 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" />
-                  正在加载终端关联...
-                </CardContent>
-              </Card>
-            ) : (
-              <ChatLogPanel
-                itemHandlerId={itemHandlerId}
-                connectedItems={connectedItemsList}
-              />
-            )
-          ) : null}
-        </TabsContent>
-
-        <TabsContent value="config">
-          {hasVisitedTab("config") ? (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Settings className="size-5" />
-                      {t("itemHandlers.detail.modelSettings")}
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                      {t("itemHandlers.detail.modelSettingsDescription")}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    {!isEditing ? (
-                      <Button size="sm" onClick={startEditing}>
-                        {t("itemHandlers.detail.edit")}
-                      </Button>
-                    ) : (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={cancelEditing}
-                        >
-                          {t("common.cancel")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={saveChanges}
-                          disabled={isSaving || !editForm.name.trim()}
-                        >
-                          {isSaving ? t("common.loading") : t("common.save")}
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {isEditing ? (
-                  <>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">
-                          {t("common.name")}
-                        </label>
-                        <Input
-                          value={editForm.name}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, name: e.target.value })
-                          }
-                          aria-invalid={!editForm.name.trim()}
-                          required
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">
-                          {t("common.model")}
-                        </label>
-                        <Input
-                          value={editForm.model}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, model: e.target.value })
-                          }
-                          placeholder="e.g., gpt-4"
-                        />
-                      </div>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">
-                          {t("common.apiKey")}
-                        </label>
-                        <PasswordInput
-                          value={editForm.api_key}
-                          onChange={(e) =>
-                            setEditForm({
-                              ...editForm,
-                              api_key: e.target.value,
-                            })
-                          }
-                          placeholder={
-                            (itemHandler as any).has_api_key
-                              ? t("common.replaceApiKey")
-                              : t("common.apiKey")
-                          }
-                          autoComplete="new-password"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">
-                          {t("common.apiUrl")}
-                        </label>
-                        <Input
-                          value={editForm.api_url}
-                          onChange={(e) =>
-                            setEditForm({
-                              ...editForm,
-                              api_url: e.target.value,
-                            })
-                          }
-                          placeholder={t("common.apiUrl")}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">
-                        模型参数 JSON
-                      </label>
-                      <textarea
-                        value={editForm.model_parameters_json}
-                        onChange={(event) =>
-                          setEditForm({
-                            ...editForm,
-                            model_parameters_json: event.target.value,
-                          })
-                        }
-                        className="min-h-28 w-full rounded-md border bg-background px-3 py-2 font-mono text-sm"
-                        placeholder="{}"
-                        spellCheck={false}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        留空或填写 {"{}"} 表示不传可选参数。可配置
-                        temperature、reasoning_effort、top_p 等 LiteLLM 参数。
-                      </p>
-                    </div>
-                    <div className="border-t pt-4">
-                      <h3 className="mb-3 text-sm font-semibold">
-                        Agent Profile
-                      </h3>
-                      <div className="grid gap-4 lg:grid-cols-2">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">Persona</label>
-                          <textarea
-                            value={editForm.agent_profile.persona}
-                            onChange={(e) =>
-                              setEditForm({
-                                ...editForm,
-                                agent_profile: {
-                                  ...editForm.agent_profile,
-                                  persona: e.target.value,
-                                },
-                              })
-                            }
-                            className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                            placeholder="Stable identity, role, and behavior baseline"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">Tone</label>
-                          <textarea
-                            value={editForm.agent_profile.tone}
-                            onChange={(e) =>
-                              setEditForm({
-                                ...editForm,
-                                agent_profile: {
-                                  ...editForm.agent_profile,
-                                  tone: e.target.value,
-                                },
-                              })
-                            }
-                            className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                            placeholder="Voice, style, emotional temperature"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">
-                            Language
-                          </label>
-                          <Input
-                            value={editForm.agent_profile.language}
-                            onChange={(e) =>
-                              setEditForm({
-                                ...editForm,
-                                agent_profile: {
-                                  ...editForm.agent_profile,
-                                  language: e.target.value,
-                                },
-                              })
-                            }
-                            placeholder="e.g., follow user's language, prefer Chinese"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">
-                            Verbosity
-                          </label>
-                          <Input
-                            value={editForm.agent_profile.verbosity}
-                            onChange={(e) =>
-                              setEditForm({
-                                ...editForm,
-                                agent_profile: {
-                                  ...editForm.agent_profile,
-                                  verbosity: e.target.value,
-                                },
-                              })
-                            }
-                            placeholder="e.g., concise by default, expand when needed"
-                          />
-                        </div>
-                        <div className="space-y-2 lg:col-span-2">
-                          <label className="text-sm font-medium">
-                            Tool Policy
-                          </label>
-                          <textarea
-                            value={editForm.agent_profile.tool_policy}
-                            onChange={(e) =>
-                              setEditForm({
-                                ...editForm,
-                                agent_profile: {
-                                  ...editForm.agent_profile,
-                                  tool_policy: e.target.value,
-                                },
-                              })
-                            }
-                            className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                            placeholder="When to call MCP tools and when to answer directly"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">
-                            Response Rules
-                          </label>
-                          <textarea
-                            value={editForm.agent_profile.response_rules}
-                            onChange={(e) =>
-                              setEditForm({
-                                ...editForm,
-                                agent_profile: {
-                                  ...editForm.agent_profile,
-                                  response_rules: e.target.value,
-                                },
-                              })
-                            }
-                            className="min-h-28 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                            placeholder="One rule per line"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">Avoid</label>
-                          <textarea
-                            value={editForm.agent_profile.avoid}
-                            onChange={(e) =>
-                              setEditForm({
-                                ...editForm,
-                                agent_profile: {
-                                  ...editForm.agent_profile,
-                                  avoid: e.target.value,
-                                },
-                              })
-                            }
-                            className="min-h-28 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                            placeholder="One thing to avoid per line"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <KeyValue
-                        label={t("common.name")}
-                        value={itemHandler.name}
-                      />
-                      <KeyValue
-                        label={t("common.model")}
-                        value={itemHandler.model}
-                      />
-                      <KeyValue
-                        label={t("common.apiKey")}
-                        value={
-                          <Badge variant="outline">
-                            {(itemHandler as any).has_api_key
-                              ? t("common.apiKeySaved")
-                              : t("common.noApiKey")}
-                          </Badge>
-                        }
-                      />
-                      <KeyValue
-                        label={t("common.apiUrl")}
-                        value={itemHandler.api_url}
-                      />
-                      <div className="sm:col-span-2">
-                        <ProfileValue
-                          label="模型参数 JSON"
-                          value={JSON.stringify(
-                            (itemHandler as any).model_parameters ?? {},
-                            null,
-                            2,
-                          )}
-                        />
-                      </div>
-                    </div>
-                    <div className="border-t pt-4">
-                      <h3 className="mb-3 text-sm font-semibold">
-                        Agent Profile
-                      </h3>
-                      <div className="grid gap-3 lg:grid-cols-2">
-                        <ProfileValue
-                          label="Persona"
-                          value={(itemHandler as any).agent_profile?.persona}
-                        />
-                        <ProfileValue
-                          label="Tone"
-                          value={(itemHandler as any).agent_profile?.tone}
-                        />
-                        <ProfileValue
-                          label="Language"
-                          value={(itemHandler as any).agent_profile?.language}
-                        />
-                        <ProfileValue
-                          label="Verbosity"
-                          value={(itemHandler as any).agent_profile?.verbosity}
-                        />
-                        <ProfileValue
-                          label="Tool Policy"
-                          value={
-                            (itemHandler as any).agent_profile?.tool_policy
-                          }
-                        />
-                        <ProfileValue
-                          label="Response Rules"
-                          value={
-                            Array.isArray(
-                              (itemHandler as any).agent_profile?.response_rules,
-                            )
-                              ? (itemHandler as any).agent_profile.response_rules.join(
-                                  "\n",
-                                )
-                              : null
-                          }
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <div className="border-t pt-4 mt-4">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <KeyValue label={t("common.id")} value={itemHandler.id} />
-                    <KeyValue
-                      label={t("common.ownerId")}
-                      value={itemHandler.owner_id}
-                    />
-                    <KeyValue
-                      label={t("common.createdAt")}
-                      value={
-                        formatDate(itemHandler.created_at, localeTag) ||
-                        undefined
-                      }
-                    />
-                    <KeyValue
-                      label={t("common.updatedAt")}
-                      value={
-                        formatDate(itemHandler.updated_at, localeTag) ||
-                        undefined
-                      }
-                    />
-                  </div>
-                </div>
-                <div className="mt-4 border-t pt-4">
-                  <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                    <div className="w-full max-w-sm space-y-2">
-                      <label className="text-sm font-semibold">配置示例</label>
-                      <Select
-                        value={selectedModelExampleKey}
-                        onValueChange={setSelectedModelExampleKey}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(MODEL_CONFIG_EXAMPLES).map(
-                            ([key, example]) => (
-                              <SelectItem key={key} value={key}>
-                                {example.label}
-                              </SelectItem>
-                            ),
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {isEditing && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={applyModelExample}
-                      >
-                        应用到当前表单
-                      </Button>
-                    )}
-                  </div>
-                  <div className="grid gap-3 text-sm lg:grid-cols-3">
-                    <div className="min-w-0">
-                      <div className="mb-1 text-xs text-muted-foreground">
-                        Model
-                      </div>
-                      <code
-                        className="block truncate font-mono"
-                        title={selectedModelExample.model}
-                      >
-                        {selectedModelExample.model}
-                      </code>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="mb-1 text-xs text-muted-foreground">
-                        API URL
-                      </div>
-                      <code
-                        className="block truncate font-mono"
-                        title={selectedModelExample.apiUrl || "留空"}
-                      >
-                        {selectedModelExample.apiUrl || "留空"}
-                      </code>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="mb-1 text-xs text-muted-foreground">
-                        模型参数
-                      </div>
-                      <code
-                        className="block truncate font-mono"
-                        title={JSON.stringify(selectedModelExample.parameters)}
-                      >
-                        {JSON.stringify(selectedModelExample.parameters)}
-                      </code>
-                    </div>
-                  </div>
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    {selectedModelExample.note}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
-        </TabsContent>
-      </Tabs>
+    <div
+      className="flex flex-col overflow-hidden bg-white text-zinc-900"
+      style={{
+        height: "calc(100svh - 79px)",
+        margin: "-22px -18px -40px",
+      }}
+    >
+      <TerminalDispatcherBoard
+        key={itemHandlerId}
+        itemHandlerId={itemHandlerId}
+        itemHandler={itemHandler}
+      />
     </div>
   )
 }
-
-export default ItemHandlerDetail
+export default TerminalDispatcherPage

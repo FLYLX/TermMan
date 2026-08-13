@@ -1,4 +1,4 @@
-FROM python:3.10
+FROM python:3.10-slim
 
 ARG USE_CHINA_MIRRORS=true
 
@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         export PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple; \
         export PIP_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple; \
     fi \
-    && uv sync --no-install-workspace
+    && uv sync --no-install-workspace --no-dev
 
 # Copy daemon code
 COPY ./src /app/src
@@ -46,7 +46,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         export PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple; \
         export PIP_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple; \
     fi \
-    && uv sync
+    && uv sync --no-dev
 
 # 设置环境变量
 ENV HOST=0.0.0.0

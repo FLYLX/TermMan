@@ -69,9 +69,10 @@ const en = {
 
   "nav.dashboard": "Data Board",
   "nav.items": "Terminals",
-  "nav.itemHandlers": "TermHandlers",
+  "nav.itemHandlers": "Terminal Dispatchers",
   "nav.robots": "Robot Servers",
   "nav.plugins": "Plugins",
+  "nav.pluginDev": "Plugin Dev",
   "nav.knowledge": "Knowledge",
   "nav.skills": "Skills",
   "nav.mcpServers": "MCP Servers",
@@ -300,6 +301,7 @@ const en = {
   "itemHandlers.detail.knowledge": "Knowledge",
   "itemHandlers.detail.mcp": "MCP",
   "itemHandlers.detail.chatLogs": "Chat Logs",
+  "itemHandlers.detail.memory": "Memory",
   "itemHandlers.detail.config": "Config",
   "itemHandlers.detail.connectionDiagram": "Connection Diagram",
   "itemHandlers.detail.connectionDiagramDescription":
@@ -610,9 +612,10 @@ const zh: Record<TranslationKey, string> = {
 
   "nav.dashboard": "数据看板",
   "nav.items": "终端",
-  "nav.itemHandlers": "TermHandler",
+  "nav.itemHandlers": "终端调度器",
   "nav.robots": "机器人 Server",
   "nav.plugins": "插件",
+  "nav.pluginDev": "插件开发",
   "nav.knowledge": "知识库",
   "nav.skills": "技能",
   "nav.mcpServers": "MCP 服务",
@@ -828,6 +831,7 @@ const zh: Record<TranslationKey, string> = {
   "itemHandlers.detail.skills": "技能",
   "itemHandlers.detail.mcp": "MCP",
   "itemHandlers.detail.chatLogs": "聊天记录",
+  "itemHandlers.detail.memory": "长期记忆",
   "itemHandlers.detail.config": "配置",
   "itemHandlers.detail.connectionDiagram": "连接图",
   "itemHandlers.detail.connectionDiagramDescription":

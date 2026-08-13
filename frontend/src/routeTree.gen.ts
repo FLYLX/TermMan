@@ -17,19 +17,13 @@ import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutSkillsRouteImport } from './routes/_layout/skills'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
-import { Route as LayoutRobotsRouteImport } from './routes/_layout/robots'
 import { Route as LayoutPluginsRouteImport } from './routes/_layout/plugins'
 import { Route as LayoutPluginDevRouteImport } from './routes/_layout/plugin-dev'
 import { Route as LayoutMcpServersRouteImport } from './routes/_layout/mcp-servers'
 import { Route as LayoutKnowledgeRouteImport } from './routes/_layout/knowledge'
-import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
 import { Route as LayoutItemHandlersRouteImport } from './routes/_layout/item-handlers'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
-import { Route as LayoutRobotsIndexRouteImport } from './routes/_layout/robots.index'
-import { Route as LayoutItemsIndexRouteImport } from './routes/_layout/items.index'
 import { Route as LayoutItemHandlersIndexRouteImport } from './routes/_layout/item-handlers.index'
-import { Route as LayoutRobotsRobotIdRouteImport } from './routes/_layout/robots.$robotId'
-import { Route as LayoutItemsItemIdRouteImport } from './routes/_layout/items.$itemId'
 import { Route as LayoutItemHandlersItemHandlerIdRouteImport } from './routes/_layout/item-handlers.$itemHandlerId'
 
 const SignupRoute = SignupRouteImport.update({
@@ -71,11 +65,6 @@ const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutRobotsRoute = LayoutRobotsRouteImport.update({
-  id: '/robots',
-  path: '/robots',
-  getParentRoute: () => LayoutRoute,
-} as any)
 const LayoutPluginsRoute = LayoutPluginsRouteImport.update({
   id: '/plugins',
   path: '/plugins',
@@ -96,11 +85,6 @@ const LayoutKnowledgeRoute = LayoutKnowledgeRouteImport.update({
   path: '/knowledge',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutItemsRoute = LayoutItemsRouteImport.update({
-  id: '/items',
-  path: '/items',
-  getParentRoute: () => LayoutRoute,
-} as any)
 const LayoutItemHandlersRoute = LayoutItemHandlersRouteImport.update({
   id: '/item-handlers',
   path: '/item-handlers',
@@ -111,30 +95,10 @@ const LayoutAdminRoute = LayoutAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutRobotsIndexRoute = LayoutRobotsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => LayoutRobotsRoute,
-} as any)
-const LayoutItemsIndexRoute = LayoutItemsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => LayoutItemsRoute,
-} as any)
 const LayoutItemHandlersIndexRoute = LayoutItemHandlersIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => LayoutItemHandlersRoute,
-} as any)
-const LayoutRobotsRobotIdRoute = LayoutRobotsRobotIdRouteImport.update({
-  id: '/$robotId',
-  path: '/$robotId',
-  getParentRoute: () => LayoutRobotsRoute,
-} as any)
-const LayoutItemsItemIdRoute = LayoutItemsItemIdRouteImport.update({
-  id: '/$itemId',
-  path: '/$itemId',
-  getParentRoute: () => LayoutItemsRoute,
 } as any)
 const LayoutItemHandlersItemHandlerIdRoute =
   LayoutItemHandlersItemHandlerIdRouteImport.update({
@@ -151,20 +115,14 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/admin': typeof LayoutAdminRoute
   '/item-handlers': typeof LayoutItemHandlersRouteWithChildren
-  '/items': typeof LayoutItemsRouteWithChildren
   '/knowledge': typeof LayoutKnowledgeRoute
   '/mcp-servers': typeof LayoutMcpServersRoute
   '/plugin-dev': typeof LayoutPluginDevRoute
   '/plugins': typeof LayoutPluginsRoute
-  '/robots': typeof LayoutRobotsRouteWithChildren
   '/settings': typeof LayoutSettingsRoute
   '/skills': typeof LayoutSkillsRoute
   '/item-handlers/$itemHandlerId': typeof LayoutItemHandlersItemHandlerIdRoute
-  '/items/$itemId': typeof LayoutItemsItemIdRoute
-  '/robots/$robotId': typeof LayoutRobotsRobotIdRoute
   '/item-handlers/': typeof LayoutItemHandlersIndexRoute
-  '/items/': typeof LayoutItemsIndexRoute
-  '/robots/': typeof LayoutRobotsIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -180,11 +138,7 @@ export interface FileRoutesByTo {
   '/skills': typeof LayoutSkillsRoute
   '/': typeof LayoutIndexRoute
   '/item-handlers/$itemHandlerId': typeof LayoutItemHandlersItemHandlerIdRoute
-  '/items/$itemId': typeof LayoutItemsItemIdRoute
-  '/robots/$robotId': typeof LayoutRobotsRobotIdRoute
   '/item-handlers': typeof LayoutItemHandlersIndexRoute
-  '/items': typeof LayoutItemsIndexRoute
-  '/robots': typeof LayoutRobotsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -195,21 +149,15 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/_layout/admin': typeof LayoutAdminRoute
   '/_layout/item-handlers': typeof LayoutItemHandlersRouteWithChildren
-  '/_layout/items': typeof LayoutItemsRouteWithChildren
   '/_layout/knowledge': typeof LayoutKnowledgeRoute
   '/_layout/mcp-servers': typeof LayoutMcpServersRoute
   '/_layout/plugin-dev': typeof LayoutPluginDevRoute
   '/_layout/plugins': typeof LayoutPluginsRoute
-  '/_layout/robots': typeof LayoutRobotsRouteWithChildren
   '/_layout/settings': typeof LayoutSettingsRoute
   '/_layout/skills': typeof LayoutSkillsRoute
   '/_layout/': typeof LayoutIndexRoute
   '/_layout/item-handlers/$itemHandlerId': typeof LayoutItemHandlersItemHandlerIdRoute
-  '/_layout/items/$itemId': typeof LayoutItemsItemIdRoute
-  '/_layout/robots/$robotId': typeof LayoutRobotsRobotIdRoute
   '/_layout/item-handlers/': typeof LayoutItemHandlersIndexRoute
-  '/_layout/items/': typeof LayoutItemsIndexRoute
-  '/_layout/robots/': typeof LayoutRobotsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -221,20 +169,14 @@ export interface FileRouteTypes {
     | '/signup'
     | '/admin'
     | '/item-handlers'
-    | '/items'
     | '/knowledge'
     | '/mcp-servers'
     | '/plugin-dev'
     | '/plugins'
-    | '/robots'
     | '/settings'
     | '/skills'
     | '/item-handlers/$itemHandlerId'
-    | '/items/$itemId'
-    | '/robots/$robotId'
     | '/item-handlers/'
-    | '/items/'
-    | '/robots/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -250,11 +192,7 @@ export interface FileRouteTypes {
     | '/skills'
     | '/'
     | '/item-handlers/$itemHandlerId'
-    | '/items/$itemId'
-    | '/robots/$robotId'
     | '/item-handlers'
-    | '/items'
-    | '/robots'
   id:
     | '__root__'
     | '/_layout'
@@ -264,21 +202,15 @@ export interface FileRouteTypes {
     | '/signup'
     | '/_layout/admin'
     | '/_layout/item-handlers'
-    | '/_layout/items'
     | '/_layout/knowledge'
     | '/_layout/mcp-servers'
     | '/_layout/plugin-dev'
     | '/_layout/plugins'
-    | '/_layout/robots'
     | '/_layout/settings'
     | '/_layout/skills'
     | '/_layout/'
     | '/_layout/item-handlers/$itemHandlerId'
-    | '/_layout/items/$itemId'
-    | '/_layout/robots/$robotId'
     | '/_layout/item-handlers/'
-    | '/_layout/items/'
-    | '/_layout/robots/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -347,13 +279,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutSettingsRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/robots': {
-      id: '/_layout/robots'
-      path: '/robots'
-      fullPath: '/robots'
-      preLoaderRoute: typeof LayoutRobotsRouteImport
-      parentRoute: typeof LayoutRoute
-    }
     '/_layout/plugins': {
       id: '/_layout/plugins'
       path: '/plugins'
@@ -382,13 +307,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutKnowledgeRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/items': {
-      id: '/_layout/items'
-      path: '/items'
-      fullPath: '/items'
-      preLoaderRoute: typeof LayoutItemsRouteImport
-      parentRoute: typeof LayoutRoute
-    }
     '/_layout/item-handlers': {
       id: '/_layout/item-handlers'
       path: '/item-handlers'
@@ -403,40 +321,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/robots/': {
-      id: '/_layout/robots/'
-      path: '/'
-      fullPath: '/robots/'
-      preLoaderRoute: typeof LayoutRobotsIndexRouteImport
-      parentRoute: typeof LayoutRobotsRoute
-    }
-    '/_layout/items/': {
-      id: '/_layout/items/'
-      path: '/'
-      fullPath: '/items/'
-      preLoaderRoute: typeof LayoutItemsIndexRouteImport
-      parentRoute: typeof LayoutItemsRoute
-    }
     '/_layout/item-handlers/': {
       id: '/_layout/item-handlers/'
       path: '/'
       fullPath: '/item-handlers/'
       preLoaderRoute: typeof LayoutItemHandlersIndexRouteImport
       parentRoute: typeof LayoutItemHandlersRoute
-    }
-    '/_layout/robots/$robotId': {
-      id: '/_layout/robots/$robotId'
-      path: '/$robotId'
-      fullPath: '/robots/$robotId'
-      preLoaderRoute: typeof LayoutRobotsRobotIdRouteImport
-      parentRoute: typeof LayoutRobotsRoute
-    }
-    '/_layout/items/$itemId': {
-      id: '/_layout/items/$itemId'
-      path: '/$itemId'
-      fullPath: '/items/$itemId'
-      preLoaderRoute: typeof LayoutItemsItemIdRouteImport
-      parentRoute: typeof LayoutItemsRoute
     }
     '/_layout/item-handlers/$itemHandlerId': {
       id: '/_layout/item-handlers/$itemHandlerId'
@@ -461,43 +351,13 @@ const LayoutItemHandlersRouteChildren: LayoutItemHandlersRouteChildren = {
 const LayoutItemHandlersRouteWithChildren =
   LayoutItemHandlersRoute._addFileChildren(LayoutItemHandlersRouteChildren)
 
-interface LayoutItemsRouteChildren {
-  LayoutItemsItemIdRoute: typeof LayoutItemsItemIdRoute
-  LayoutItemsIndexRoute: typeof LayoutItemsIndexRoute
-}
-
-const LayoutItemsRouteChildren: LayoutItemsRouteChildren = {
-  LayoutItemsItemIdRoute: LayoutItemsItemIdRoute,
-  LayoutItemsIndexRoute: LayoutItemsIndexRoute,
-}
-
-const LayoutItemsRouteWithChildren = LayoutItemsRoute._addFileChildren(
-  LayoutItemsRouteChildren,
-)
-
-interface LayoutRobotsRouteChildren {
-  LayoutRobotsRobotIdRoute: typeof LayoutRobotsRobotIdRoute
-  LayoutRobotsIndexRoute: typeof LayoutRobotsIndexRoute
-}
-
-const LayoutRobotsRouteChildren: LayoutRobotsRouteChildren = {
-  LayoutRobotsRobotIdRoute: LayoutRobotsRobotIdRoute,
-  LayoutRobotsIndexRoute: LayoutRobotsIndexRoute,
-}
-
-const LayoutRobotsRouteWithChildren = LayoutRobotsRoute._addFileChildren(
-  LayoutRobotsRouteChildren,
-)
-
 interface LayoutRouteChildren {
   LayoutAdminRoute: typeof LayoutAdminRoute
   LayoutItemHandlersRoute: typeof LayoutItemHandlersRouteWithChildren
-  LayoutItemsRoute: typeof LayoutItemsRouteWithChildren
   LayoutKnowledgeRoute: typeof LayoutKnowledgeRoute
   LayoutMcpServersRoute: typeof LayoutMcpServersRoute
   LayoutPluginDevRoute: typeof LayoutPluginDevRoute
   LayoutPluginsRoute: typeof LayoutPluginsRoute
-  LayoutRobotsRoute: typeof LayoutRobotsRouteWithChildren
   LayoutSettingsRoute: typeof LayoutSettingsRoute
   LayoutSkillsRoute: typeof LayoutSkillsRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
@@ -506,12 +366,10 @@ interface LayoutRouteChildren {
 const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAdminRoute: LayoutAdminRoute,
   LayoutItemHandlersRoute: LayoutItemHandlersRouteWithChildren,
-  LayoutItemsRoute: LayoutItemsRouteWithChildren,
   LayoutKnowledgeRoute: LayoutKnowledgeRoute,
   LayoutMcpServersRoute: LayoutMcpServersRoute,
   LayoutPluginDevRoute: LayoutPluginDevRoute,
   LayoutPluginsRoute: LayoutPluginsRoute,
-  LayoutRobotsRoute: LayoutRobotsRouteWithChildren,
   LayoutSettingsRoute: LayoutSettingsRoute,
   LayoutSkillsRoute: LayoutSkillsRoute,
   LayoutIndexRoute: LayoutIndexRoute,

@@ -19,6 +19,15 @@ OpenAPI.TOKEN = async () => {
   return localStorage.getItem("access_token") || ""
 }
 
+// Sketch redesign: force the white (light) theme everywhere.
+try {
+  localStorage.setItem("vite-ui-theme", "light")
+  window.document.documentElement.classList.remove("dark")
+  window.document.documentElement.classList.add("light")
+} catch {
+  // ignore storage failures
+}
+
 const handleApiError = (error: Error) => {
   if (
     error instanceof ApiError &&
@@ -50,7 +59,7 @@ declare module "@tanstack/react-router" {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <LocaleProvider defaultLocale="en" storageKey="termman-locale">
-      <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+      <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
         <QueryClientProvider client={queryClient}>
           <RouterProvider router={router} />
           <Toaster richColors closeButton />

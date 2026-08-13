@@ -1,5 +1,5 @@
-import { Code2, Copy, Check, Terminal, MessageSquare, Server, Zap } from "lucide-react"
-import { useState } from "react"
+import { Code2, Copy, Check, ChevronDown, ChevronRight, Terminal, MessageSquare, Server, Zap, type LucideIcon } from "lucide-react"
+import { useState, type ReactNode } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { createFileRoute } from "@tanstack/react-router"
 
@@ -13,36 +13,64 @@ function CodeBlock({ code }: { code: string }) {
     <div className="relative">
       <button
         onClick={() => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
-        className="absolute right-2 top-2 z-10 rounded-md bg-zinc-800 p-1.5 text-zinc-400 hover:text-zinc-100"
+        className="absolute right-2 top-2 z-10 rounded-md bg-stone-200 p-1.5 text-stone-500 hover:text-stone-800"
       >
         {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
       </button>
-      <pre className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950 p-4 text-xs leading-relaxed text-zinc-300">
+      <pre className="overflow-x-auto rounded-lg border border-stone-300 bg-[#fafaf8] p-4 text-xs leading-relaxed text-stone-700">
         <code>{code}</code>
       </pre>
     </div>
   )
 }
 
+function Section({
+  icon: Icon,
+  iconClass,
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  icon: LucideIcon
+  iconClass: string
+  title: string
+  defaultOpen?: boolean
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <Card className="gap-0 border-stone-300 bg-white py-3">
+      <CardHeader
+        className="cursor-pointer select-none px-4"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <CardTitle className="flex items-center gap-2 text-sm text-stone-800">
+          <Icon className={`size-4 ${iconClass}`} />
+          {title}
+          {open ? (
+            <ChevronDown className="ml-auto size-4 text-stone-400" />
+          ) : (
+            <ChevronRight className="ml-auto size-4 text-stone-400" />
+          )}
+        </CardTitle>
+      </CardHeader>
+      {open ? <CardContent className="space-y-3 px-4 pt-3">{children}</CardContent> : null}
+    </Card>
+  )
+}
+
 function PluginDevGuide() {
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-bold text-zinc-100">第三方插件开发指南</h1>
-        <p className="text-sm text-zinc-400">
-          TermMan 插件接口是标准化的。实现以下接口，即可接入任意聊天平台（Discord / Telegram / Kook 等）。
+    <div className="mx-auto max-w-4xl space-y-3 p-4">
+      <div className="space-y-1">
+        <h1 className="text-xl font-bold text-stone-800">第三方插件开发指南</h1>
+        <p className="text-xs text-stone-500">
+          TermMan 插件接口是标准化的。实现以下接口，即可接入任意聊天平台（Discord / Telegram / Kook 等）。点击章节展开详情。
         </p>
       </div>
 
-      <Card className="border-zinc-800 bg-zinc-900/50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-zinc-100">
-            <Server className="size-5 text-cyan-400" />
-            1. 插件注册
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-zinc-400">在 <code className="rounded bg-zinc-800 px-1 text-cyan-300">app/plugins/your_platform/plugin.py</code> 创建插件入口：</p>
+      <Section icon={Server} iconClass="text-cyan-600" title="1. 插件注册">
+          <p className="text-sm text-stone-500">在 <code className="rounded bg-stone-200 px-1 text-cyan-700">app/plugins/your_platform/plugin.py</code> 创建插件入口：</p>
           <CodeBlock code={`from app.services.plugins.contracts import BackendPlugin, PluginEntrypoints
 
 def get_backend_plugin() -> BackendPlugin:
@@ -61,18 +89,10 @@ def get_backend_plugin() -> BackendPlugin:
             shutdown=shutdown,
         ),
     )`} />
-        </CardContent>
-      </Card>
+      </Section>
 
-      <Card className="border-zinc-800 bg-zinc-900/50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-zinc-100">
-            <Zap className="size-5 text-amber-400" />
-            2. Agent Integration（核心接口）
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-zinc-400">所有方法都是<strong>可选</strong>的，不实现的方法使用 NoopAgentIntegration 默认值。</p>
+      <Section icon={Zap} iconClass="text-amber-600" title="2. Agent Integration（核心接口）">
+          <p className="text-sm text-stone-500">所有方法都是<strong>可选</strong>的，不实现的方法使用 NoopAgentIntegration 默认值。</p>
           <CodeBlock code={`class DiscordIntegration:
     name = "discord"
 
@@ -178,19 +198,11 @@ def get_backend_plugin() -> BackendPlugin:
     def builtin_mcp_server_factories(self) -> dict:
         \"\"\"提供 Discord MCP server（send_message/sleep 等工具）\"\"\"
         return {"discord": lambda: DiscordMCPServer()}`} />
-        </CardContent>
-      </Card>
+      </Section>
 
-      <Card className="border-zinc-800 bg-zinc-900/50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-zinc-100">
-            <Terminal className="size-5 text-emerald-400" />
-            3. 接收消息（Item 输入）
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-zinc-400">
-            通过 <code className="rounded bg-zinc-800 px-1 text-cyan-300">collect_chat_response</code> 把消息送入 agent：
+      <Section icon={Terminal} iconClass="text-emerald-600" title="3. 接收消息（Item 输入）">
+          <p className="text-sm text-stone-500">
+            通过 <code className="rounded bg-stone-200 px-1 text-cyan-700">collect_chat_response</code> 把消息送入 agent：
           </p>
           <CodeBlock code={`from app.services.agent.chat_runtime import collect_chat_response
 
@@ -212,41 +224,25 @@ async def handle_discord_message(message: str, channel_id: str, user_id: str):
         return_result=True,
     )
     # result.content = agent 的回复文本`} />
-        </CardContent>
-      </Card>
+      </Section>
 
-      <Card className="border-zinc-800 bg-zinc-900/50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-zinc-100">
-            <MessageSquare className="size-5 text-violet-400" />
-            4. 监控 Item 输出
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-zinc-400">
-            实现 <code className="rounded bg-zinc-800 px-1 text-cyan-300">on_terminal_output</code> 和 <code className="rounded bg-zinc-800 px-1 text-cyan-300">on_item_event</code> 即可拿到 item 的终端输出和生命周期事件：
+      <Section icon={MessageSquare} iconClass="text-violet-600" title="4. 监控 Item 输出">
+          <p className="text-sm text-stone-500">
+            实现 <code className="rounded bg-stone-200 px-1 text-cyan-700">on_terminal_output</code> 和 <code className="rounded bg-stone-200 px-1 text-cyan-700">on_item_event</code> 即可拿到 item 的终端输出和生命周期事件：
           </p>
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
-              <p className="text-xs font-medium text-zinc-300">on_terminal_output</p>
-              <p className="mt-1 text-xs text-zinc-500">每条终端输出都触发（filtered/raw source）</p>
+            <div className="rounded-lg border border-stone-300 bg-stone-50 p-3">
+              <p className="text-xs font-medium text-stone-700">on_terminal_output</p>
+              <p className="mt-1 text-xs text-stone-500">每条终端输出都触发（filtered/raw source）</p>
             </div>
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
-              <p className="text-xs font-medium text-zinc-300">on_item_event</p>
-              <p className="mt-1 text-xs text-zinc-500">item_started / item_stopped / item_error</p>
+            <div className="rounded-lg border border-stone-300 bg-stone-50 p-3">
+              <p className="text-xs font-medium text-stone-700">on_item_event</p>
+              <p className="mt-1 text-xs text-stone-500">item_started / item_stopped / item_error</p>
             </div>
           </div>
-        </CardContent>
-      </Card>
+      </Section>
 
-      <Card className="border-zinc-800 bg-zinc-900/50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-zinc-100">
-            <Code2 className="size-5 text-cyan-400" />
-            5. 完整目录结构
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      <Section icon={Code2} iconClass="text-cyan-600" title="5. 完整目录结构">
           <CodeBlock code={`app/plugins/discord/
 ├── __init__.py
 ├── plugin.py              # get_backend_plugin()
@@ -261,11 +257,10 @@ async def handle_discord_message(message: str, channel_id: str, user_id: str):
 ├── contracts.py           # DiscordReplyTarget
 ├── prompts.py             # Discord 专属 prompt 文本
 └── api.py                 # Discord 管理 API`} />
-        </CardContent>
-      </Card>
+      </Section>
 
-      <div className="rounded-lg border border-cyan-900/50 bg-cyan-950/20 p-4">
-        <p className="text-sm text-cyan-300">
+      <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-4">
+        <p className="text-sm text-cyan-800">
           <strong>卸载效果</strong>：插件禁用后，所有 prompt 自动消失（source_route/ticket_prompt 返回空），
           delivery 自动 fallback 到 web（deliver_ticket 返回 False），
           context 清理（clear_chat_context），
