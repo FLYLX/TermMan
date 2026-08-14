@@ -125,7 +125,6 @@ def test_agent_manager_refreshes_cached_agent_when_skill_revision_changes(monkey
         enabled_skills=["quiet_style"],
         enabled_mcp_servers=[],
         enabled_knowledge_files=[],
-        agent_profile={},
     )
     skill = SkillDefinition(skill_id="quiet_style", name="Quiet Style")
 
@@ -162,7 +161,6 @@ def test_isolated_agents_do_not_share_mutable_context() -> None:
         enabled_skills=[],
         enabled_mcp_servers=[],
         enabled_knowledge_files=[],
-        agent_profile={},
     )
     first = agent_module.Agent.from_handler(
         handler,
@@ -2470,7 +2468,6 @@ def test_running_terminal_job_context_is_injected_into_terminal_prompt() -> None
 
     class FakeAgent:
         _context = SimpleNamespace(
-            agent_profile={},
             enabled_knowledge_files=[],
             skill_revision=0,
         )
@@ -2510,7 +2507,6 @@ def test_last_terminal_command_is_injected_into_terminal_prompt() -> None:
 
     class FakeAgent:
         _context = SimpleNamespace(
-            agent_profile={},
             enabled_knowledge_files=[],
             skill_revision=0,
         )
@@ -2816,7 +2812,6 @@ def test_terminal_feedback_prompt_requires_qq_source_delivery() -> None:
 
     class FakeAgent:
         _context = SimpleNamespace(
-            agent_profile={},
             enabled_knowledge_files=[],
             skill_revision=0,
         )

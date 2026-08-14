@@ -214,7 +214,6 @@ class ItemHandlerBase(SQLModel):
     enabled_skills: Optional[List[str]] = Field(default=None, sa_type=JSON)
     enabled_mcp_servers: Optional[List[str]] = Field(default=None, sa_type=JSON)
     enabled_knowledge_files: Optional[List[str]] = Field(default=None, sa_type=JSON)
-    agent_profile: dict = Field(default_factory=dict, sa_type=JSON)
 
 
 class ItemHandlerCreate(ItemHandlerBase):
@@ -230,7 +229,6 @@ class ItemHandlerUpdate(ItemHandlerBase):
     enabled_skills: Optional[List[str]] = Field(default=None, sa_type=JSON)
     enabled_mcp_servers: Optional[List[str]] = Field(default=None, sa_type=JSON)
     enabled_knowledge_files: Optional[List[str]] = Field(default=None, sa_type=JSON)
-    agent_profile: Optional[dict] = Field(default=None, sa_type=JSON)
     clear_api_key: bool = False
 
 
@@ -261,7 +259,6 @@ class ItemHandlerPublic(SQLModel):
     enabled_skills: Optional[List[str]] = None
     enabled_mcp_servers: Optional[List[str]] = None
     enabled_knowledge_files: Optional[List[str]] = None
-    agent_profile: dict = Field(default_factory=dict)
     has_api_key: bool = False
     id: uuid.UUID
     owner_id: uuid.UUID

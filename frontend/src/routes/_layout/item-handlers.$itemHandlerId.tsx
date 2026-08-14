@@ -67,6 +67,7 @@ import {
 } from "@/components/Robots/api"
 import { RobotDetail } from "@/components/Robots/RobotDetail"
 import { CreateRobotDialog } from "@/components/Robots/RobotManager"
+import { getPluginsQueryOptions, isPluginEnabled } from "@/lib/plugins-api"
 import { useI18n } from "@/components/locale-provider"
 import useCustomToast from "@/hooks/useCustomToast"
 import { isLoggedIn } from "@/hooks/useAuth"
@@ -187,6 +188,8 @@ const DISPATCHER_BOARD_CSS = `
 .dispatcher-box-body { padding-right: 30px; }
 .edge-left-box { border-left: none !important; border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; }
 .edge-right-box { border-right: none !important; border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; }
+.terminal-running { border-color: #16a34a !important; }
+.terminal-stopped { border-color: #dc2626 !important; }
 `
 
 function ScrollColumn({
@@ -460,14 +463,24 @@ function TerminalDispatcherBoard({
     }
   }
 
+  const pluginsQuery = useQuery({
+    ...getPluginsQueryOptions(),
+    enabled: Boolean(itemHandlerId),
+  })
+  const robotPluginEnabled = pluginsQuery.data
+    ? isPluginEnabled(pluginsQuery.data, "TermPaws.robot")
+    : true
+
   const robotsQuery = useQuery({
     queryKey: getRobotsQueryKey(),
     queryFn: () => listRobots(),
+    enabled: robotPluginEnabled,
   })
   const dispatcherRobots = robotsQuery.data?.data ?? []
   const platformsQuery = useQuery({
     queryKey: getRobotPlatformsQueryKey(),
     queryFn: () => listRobotPlatforms(),
+    enabled: robotPluginEnabled,
   })
   const robotPlatforms = Array.isArray(platformsQuery.data)
     ? platformsQuery.data
@@ -792,7 +805,9 @@ function TerminalDispatcherBoard({
     { key: "chat", title: "Web Chat", icon: <MessageSquare className="size-4" /> },
     { key: "output", title: "终端输出", icon: <Terminal className="size-4" /> },
     { key: "ws", title: "WebSocket Server", icon: <Server className="size-4" /> },
-    { key: "qq", title: "QQ 对话调试", icon: <MessageSquare className="size-4" /> },
+    ...(robotPluginEnabled
+      ? [{ key: "qq", title: "QQ 对话调试", icon: <MessageSquare className="size-4" /> }]
+      : []),
     { key: "files", title: "文件", icon: <FileText className="size-4" /> },
     { key: "filters", title: "过滤器", icon: <Filter className="size-4" /> },
     { key: "config", title: "配置", icon: <Settings className="size-4" /> },
@@ -1337,6 +1352,10 @@ function TerminalDispatcherBoard({
                             : "点击打开详情 · 拉圆圈到调度器接入"
                         }
                         className={`relative block w-full px-3 py-2 text-left text-sm edge-right-box ${
+                          item.status === "running"
+                            ? "terminal-running"
+                            : "terminal-stopped"
+                        } ${
                           bound
                             ? `sketch-box sketch-hover ${
                                 index % 2 ? "sketch-b" : "sketch-c"
@@ -1399,6 +1418,7 @@ function TerminalDispatcherBoard({
         </section>
       </div>
 
+      {robotPluginEnabled ? (
       <footer className="relative z-10 mt-4 flex flex-shrink-0 items-end justify-center gap-4 px-4 pb-6 pt-3">
         <span className="bot-tag bot-tag-tool">
           <CreateRobotDialog
@@ -1503,6 +1523,7 @@ function TerminalDispatcherBoard({
           </div>
         ))}
       </footer>
+      ) : null}
 
       {diagnoseOpen ? (
         <div className="zoom-backdrop" onClick={() => setDiagnoseOpen(false)}>

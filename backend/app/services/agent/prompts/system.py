@@ -3,10 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.services.agent.integrations import build_integration_system_prompt
-from app.services.agent.profile import (
-    build_agent_profile_prompt,
-    build_agent_resource_snapshot_prompt,
-)
+from app.services.agent.profile import build_agent_resource_snapshot_prompt
 from app.services.agent.skills import skill_loader
 
 if TYPE_CHECKING:
@@ -52,7 +49,6 @@ def _get_agent_skill_prompts(agent: Agent, category: str) -> list[str]:
 def get_system_prompt(agent: Agent | None = None) -> str:
     prompt_parts: list[str] = []
     has_custom_system_prompt = False
-    profile_prompt = ""
     resource_snapshot_prompt = ""
     persona_prompts: list[str] = []
     integration_prompt = ""
@@ -63,12 +59,7 @@ def get_system_prompt(agent: Agent | None = None) -> str:
             prompt_parts.extend(system_prompts)
             has_custom_system_prompt = True
 
-        context = getattr(agent, "_context", None)
-        if context is not None:
-            profile_prompt = build_agent_profile_prompt(
-                getattr(context, "agent_profile", {}) or {}
-            )
-            resource_snapshot_prompt = build_agent_resource_snapshot_prompt(agent)
+        resource_snapshot_prompt = build_agent_resource_snapshot_prompt(agent)
 
         persona_prompts = _get_agent_skill_prompts(agent, "persona")
         integration_prompt = build_integration_system_prompt(agent)
@@ -79,8 +70,6 @@ def get_system_prompt(agent: Agent | None = None) -> str:
             prompt_parts.append(system_skill.action.prompt)
             has_custom_system_prompt = True
 
-    if profile_prompt:
-        prompt_parts.append(profile_prompt)
     if resource_snapshot_prompt:
         prompt_parts.append(resource_snapshot_prompt)
     if persona_prompts:

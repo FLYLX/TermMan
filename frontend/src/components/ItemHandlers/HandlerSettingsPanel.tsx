@@ -80,48 +80,6 @@ const MODEL_CONFIG_EXAMPLES: Record<string, ModelConfigExample> = {
   },
 }
 
-type AgentProfileForm = {
-  persona: string
-  tone: string
-  language: string
-  verbosity: string
-  tool_policy: string
-  response_rules: string
-  avoid: string
-}
-
-function createAgentProfileForm(profile: any = {}): AgentProfileForm {
-  return {
-    persona: profile?.persona ?? "",
-    tone: profile?.tone ?? "",
-    language: profile?.language ?? "",
-    verbosity: profile?.verbosity ?? "",
-    tool_policy: profile?.tool_policy ?? "",
-    response_rules: Array.isArray(profile?.response_rules)
-      ? profile.response_rules.join("\n")
-      : "",
-    avoid: Array.isArray(profile?.avoid) ? profile.avoid.join("\n") : "",
-  }
-}
-
-function serializeAgentProfile(form: AgentProfileForm) {
-  const lineList = (value: string) =>
-    value
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-
-  return {
-    persona: normalizeOptionalText(form.persona),
-    tone: normalizeOptionalText(form.tone),
-    language: normalizeOptionalText(form.language),
-    verbosity: normalizeOptionalText(form.verbosity),
-    tool_policy: normalizeOptionalText(form.tool_policy),
-    response_rules: lineList(form.response_rules),
-    avoid: lineList(form.avoid),
-  }
-}
-
 function ProfileValue({ label, value }: { label: string; value?: string | null }) {
   return (
     <div className="rounded-md border bg-muted/30 px-3 py-2">
@@ -161,7 +119,6 @@ export function HandlerSettingsPanel({ itemHandler }: { itemHandler: any }) {
     api_url: "",
     model_parameters_json: "{}",
     enabled_skills: [] as string[],
-    agent_profile: createAgentProfileForm(),
   })
 
   useEffect(() => {
@@ -176,7 +133,6 @@ export function HandlerSettingsPanel({ itemHandler }: { itemHandler: any }) {
         2,
       ),
       enabled_skills: (itemHandler as any).enabled_skills ?? [],
-      agent_profile: createAgentProfileForm((itemHandler as any).agent_profile),
     })
     setIsEditing(false)
   }, [itemHandler])
@@ -193,7 +149,6 @@ export function HandlerSettingsPanel({ itemHandler }: { itemHandler: any }) {
         2,
       ),
       enabled_skills: (itemHandler as any).enabled_skills ?? [],
-      agent_profile: createAgentProfileForm((itemHandler as any).agent_profile),
     })
     setIsEditing(true)
   }
@@ -221,7 +176,6 @@ export function HandlerSettingsPanel({ itemHandler }: { itemHandler: any }) {
 
     const replacementApiKey = normalizeOptionalText(editForm.api_key)
     const requestBody: ItemHandlerUpdate & {
-      agent_profile?: Record<string, unknown>
       model_parameters?: Record<string, unknown>
     } = {
       name,
@@ -229,7 +183,6 @@ export function HandlerSettingsPanel({ itemHandler }: { itemHandler: any }) {
       api_url: normalizeOptionalText(editForm.api_url),
       model_parameters: modelParameters,
       enabled_skills: editForm.enabled_skills,
-      agent_profile: serializeAgentProfile(editForm.agent_profile),
     }
     if (replacementApiKey) {
       requestBody.api_key = replacementApiKey
@@ -252,7 +205,6 @@ export function HandlerSettingsPanel({ itemHandler }: { itemHandler: any }) {
           null,
           2,
         ),
-        agent_profile: createAgentProfileForm(requestBody.agent_profile),
       }))
       showSuccessToast(t("itemHandlers.detail.itemHandlerUpdated"))
       setIsEditing(false)
@@ -417,138 +369,6 @@ spellCheck={false}
 temperature、reasoning_effort、top_p 等 LiteLLM 参数。
           </p>
         </div>
-        <div className="border-t pt-4">
-          <h3 className="mb-3 text-sm font-semibold">
-Agent Profile
-          </h3>
-          <div className="grid gap-4 lg:grid-cols-2">
-<div className="space-y-2">
-  <label className="text-sm font-medium">Persona</label>
-  <textarea
-    value={editForm.agent_profile.persona}
-    onChange={(e) =>
-      setEditForm({
-        ...editForm,
-        agent_profile: {
-          ...editForm.agent_profile,
-          persona: e.target.value,
-        },
-      })
-    }
-    className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
-    placeholder="Stable identity, role, and behavior baseline"
-  />
-</div>
-<div className="space-y-2">
-  <label className="text-sm font-medium">Tone</label>
-  <textarea
-    value={editForm.agent_profile.tone}
-    onChange={(e) =>
-      setEditForm({
-        ...editForm,
-        agent_profile: {
-          ...editForm.agent_profile,
-          tone: e.target.value,
-        },
-      })
-    }
-    className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
-    placeholder="Voice, style, emotional temperature"
-  />
-</div>
-<div className="space-y-2">
-  <label className="text-sm font-medium">
-    Language
-  </label>
-  <Input
-    value={editForm.agent_profile.language}
-    onChange={(e) =>
-      setEditForm({
-        ...editForm,
-        agent_profile: {
-          ...editForm.agent_profile,
-          language: e.target.value,
-        },
-      })
-    }
-    placeholder="e.g., follow user's language, prefer Chinese"
-  />
-</div>
-<div className="space-y-2">
-  <label className="text-sm font-medium">
-    Verbosity
-  </label>
-  <Input
-    value={editForm.agent_profile.verbosity}
-    onChange={(e) =>
-      setEditForm({
-        ...editForm,
-        agent_profile: {
-          ...editForm.agent_profile,
-          verbosity: e.target.value,
-        },
-      })
-    }
-    placeholder="e.g., concise by default, expand when needed"
-  />
-</div>
-<div className="space-y-2 lg:col-span-2">
-  <label className="text-sm font-medium">
-    Tool Policy
-  </label>
-  <textarea
-    value={editForm.agent_profile.tool_policy}
-    onChange={(e) =>
-      setEditForm({
-        ...editForm,
-        agent_profile: {
-          ...editForm.agent_profile,
-          tool_policy: e.target.value,
-        },
-      })
-    }
-    className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm"
-    placeholder="When to call MCP tools and when to answer directly"
-  />
-</div>
-<div className="space-y-2">
-  <label className="text-sm font-medium">
-    Response Rules
-  </label>
-  <textarea
-    value={editForm.agent_profile.response_rules}
-    onChange={(e) =>
-      setEditForm({
-        ...editForm,
-        agent_profile: {
-          ...editForm.agent_profile,
-          response_rules: e.target.value,
-        },
-      })
-    }
-    className="min-h-28 w-full rounded-md border bg-background px-3 py-2 text-sm"
-    placeholder="One rule per line"
-  />
-</div>
-<div className="space-y-2">
-  <label className="text-sm font-medium">Avoid</label>
-  <textarea
-    value={editForm.agent_profile.avoid}
-    onChange={(e) =>
-      setEditForm({
-        ...editForm,
-        agent_profile: {
-          ...editForm.agent_profile,
-          avoid: e.target.value,
-        },
-      })
-    }
-    className="min-h-28 w-full rounded-md border bg-background px-3 py-2 text-sm"
-    placeholder="One thing to avoid per line"
-  />
-</div>
-          </div>
-        </div>
       </>
     ) : (
       <div className="space-y-4">
@@ -583,47 +403,6 @@ value={itemHandler.api_url}
     null,
     2,
   )}
-/>
-          </div>
-        </div>
-        <div className="border-t pt-4">
-          <h3 className="mb-3 text-sm font-semibold">
-Agent Profile
-          </h3>
-          <div className="grid gap-3 lg:grid-cols-2">
-<ProfileValue
-  label="Persona"
-  value={(itemHandler as any).agent_profile?.persona}
-/>
-<ProfileValue
-  label="Tone"
-  value={(itemHandler as any).agent_profile?.tone}
-/>
-<ProfileValue
-  label="Language"
-  value={(itemHandler as any).agent_profile?.language}
-/>
-<ProfileValue
-  label="Verbosity"
-  value={(itemHandler as any).agent_profile?.verbosity}
-/>
-<ProfileValue
-  label="Tool Policy"
-  value={
-    (itemHandler as any).agent_profile?.tool_policy
-  }
-/>
-<ProfileValue
-  label="Response Rules"
-  value={
-    Array.isArray(
-      (itemHandler as any).agent_profile?.response_rules,
-    )
-      ? (itemHandler as any).agent_profile.response_rules.join(
-          "\n",
-        )
-      : null
-  }
 />
           </div>
         </div>

@@ -165,3 +165,42 @@
 /* Sketch redesign: force white background & dark ink text (light theme). */
 html, body, #root { background-color: #ffffff; }
 html { color-scheme: light; }
+
+/* Pixel/sketch style for all dialogs (add bot / handler / terminal, etc.) */
+[data-slot="dialog-content"] {
+  border: 2px solid #3a3a3a !important;
+  border-radius: 16px 205px 16px 205px / 205px 16px 205px 16px !important;
+  background: #fff !important;
+  color: #1f1f1f !important;
+  box-shadow: 4px 5px 0 rgba(0,0,0,.14) !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+}
+[data-slot="dialog-content"] button { font-weight: 600; }
+[data-slot="dialog-content"] input,
+[data-slot="dialog-content"] textarea,
+[data-slot="dialog-content"] select {
+  border: 2px solid #3a3a3a !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  color: #1f1f1f !important;
+}
+[data-slot="dialog-content"] input:focus-visible,
+[data-slot="dialog-content"] textarea:focus-visible,
+[data-slot="dialog-content"] select:focus-visible {
+  border-color: #16a34a !important;
+  box-shadow: 2px 3px 0 rgba(0,0,0,.10) !important;
+}
+[data-slot="dialog-overlay"] {
+  background: rgba(244,244,243,.72) !important;
+  backdrop-filter: blur(2px);
+}
+[data-slot="dialog-content"] [data-slot="dialog-close"] {
+  border: 2px solid #3a3a3a;
+  border-radius: 9999px;
+  padding: 2px;
+  background: #fff;
+  color: #dc2626;
+}
+[data-slot="dialog-content"] [data-slot="dialog-close"]:hover {
+  background: #fef2f2;
+}

@@ -20,7 +20,6 @@ from app.models import (
 from app.services.agent.agent import agent_manager
 from app.services.agent.knowledge import knowledge_base_service
 from app.services.agent.model_parameters import normalize_model_parameters_for_model
-from app.services.agent.profile import normalize_agent_profile
 from app.services.llm_health_service import llm_health_service
 
 router = APIRouter(prefix="/item-handlers", tags=["item-handlers"])
@@ -282,10 +281,6 @@ def update_item_handler(
     if "enabled_knowledge_files" in update_dict:
         update_dict["enabled_knowledge_files"] = knowledge_base_service.normalize_enabled_files(
             update_dict.get("enabled_knowledge_files")
-        )
-    if "agent_profile" in update_dict:
-        update_dict["agent_profile"] = normalize_agent_profile(
-            update_dict.get("agent_profile")
         )
     if "model" in update_dict or "model_parameters" in update_dict:
         update_dict["model_parameters"] = normalize_model_parameters_for_model(

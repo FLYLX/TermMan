@@ -30,7 +30,6 @@ def test_minecraft_server_helper_prompt_is_available_when_enabled() -> None:
 
     agent = SimpleNamespace(
         _context=SimpleNamespace(
-            agent_profile={},
             enabled_knowledge_files=[],
             skill_revision=skill_loader.revision,
         ),

@@ -155,9 +155,6 @@ export type ItemHandlerPublic = {
     enabled_skills?: (Array<(string)> | null);
     enabled_mcp_servers?: (Array<(string)> | null);
     enabled_knowledge_files?: (Array<(string)> | null);
-    agent_profile?: {
-        [key: string]: unknown;
-    };
     has_api_key?: boolean;
     id: string;
     owner_id: string;
@@ -173,9 +170,6 @@ export type ItemHandlerUpdate = {
     enabled_skills?: (Array<(string)> | null);
     enabled_mcp_servers?: (Array<(string)> | null);
     enabled_knowledge_files?: (Array<(string)> | null);
-    agent_profile?: ({
-        [key: string]: unknown;
-    } | null);
     clear_api_key?: boolean;
 };
 
