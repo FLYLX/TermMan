@@ -25,7 +25,10 @@ node_modules/
 /_token.txt
 /_apply_patch.txt
 /scripts/upload_testpypi.*
+<<<<<<< HEAD
 /scripts/upload_pypi.*
+=======
+>>>>>>> 2dbe86c (忽略上传脚本)
 
 # packaging build artifacts
 /dist/
