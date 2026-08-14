@@ -1,4 +1,0 @@
-﻿Dispatch: queued
-[assistant] 已回复 QQ：Model request failed: litellm.BadRequestError: OpenAIException - Invalid header "x-dashscope-datainspection" provided in your request.
-[user] hi, 1+1?
-[assistant] 已回复 QQ：Model request failed: litellm.BadRequestError: OpenAIException - Invalid header "x-dashscope-datainspection" provided in your request.

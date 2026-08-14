@@ -1527,7 +1527,6 @@ def init_embedded_bridge() -> APIRouter | None:
                     await _call_optional_adapter_hook(adapter, "shutdown")
                 except Exception as e:
                     logger.error(f"[Bridge] Failed to stop adapter: {e}")
-            _release_singleton_lock()
 
         _startup_callback = startup_nonebot
         _shutdown_callback = shutdown_nonebot

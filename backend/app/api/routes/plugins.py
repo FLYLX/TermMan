@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser
@@ -59,16 +59,22 @@ def get_plugin(plugin_id: str, current_user: CurrentUser) -> PluginPublic:
 
 
 @router.patch("/{plugin_id:path}", response_model=PluginPublic)
-def update_plugin(
+async def update_plugin(
     plugin_id: str,
     body: PluginUpdateBody,
+    request: Request,
     current_user: CurrentUser,
 ) -> PluginPublic:
     _require_superuser(current_user)
     try:
-        plugin_manager.set_plugin_enabled(plugin_id, body.enabled)
+        plugin = plugin_manager.set_plugin_enabled(plugin_id, body.enabled)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Plugin not found") from exc
+    entrypoint = (
+        plugin.entrypoints.startup if body.enabled else plugin.entrypoints.shutdown
+    )
+    if entrypoint is not None:
+        await entrypoint(request.app)
     plugin_manager.reload()
     return PluginPublic.model_validate(_plugin_payload(plugin_id))
 

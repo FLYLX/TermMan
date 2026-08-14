@@ -46,19 +46,22 @@ fastapi_app.include_router(router, prefix="/api")
 app = socketio.ASGIApp(sio, fastapi_app)
 
 
-if __name__ == "__main__":
+def main() -> None:
     # 获取配置
     host = config.get("HOST")
     port = config.get("PORT")
-    
+
     logger.info(f"Starting TermPaws Daemon on {host}:{port}")
     logger.info(f"API Key: {'***' + config.get('API_KEY')[-4:] if config.get('API_KEY') else 'Not set'}")
-    
+
     # 启动服务器
     uvicorn.run(
-        "main:app",
+        app,
         host=host,
         port=port,
-        reload=False,
         log_level="info"
     )
+
+
+if __name__ == "__main__":
+    main()

@@ -53,7 +53,8 @@ async def lifespan(app: FastAPI):
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
-    return f"{route.tags[0]}-{route.name}"
+    tag = route.tags[0] if route.tags else "default"
+    return f"{tag}-{route.name}"
 
 
 if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":
@@ -85,6 +86,44 @@ elif settings.all_cors_origins:
     )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+
+def _mount_frontend() -> None:
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse
+
+    candidates = [
+        Path(__file__).resolve().parent / "static",
+        Path(__file__).resolve().parent.parent.parent / "frontend" / "dist",
+    ]
+    try:
+        from termpaws_frontend import DIST_DIR
+
+        candidates.insert(0, Path(DIST_DIR))
+    except ImportError:
+        pass
+    dist = next((path for path in candidates if (path / "index.html").exists()), None)
+    if dist is None:
+        logger.info("[App] Frontend dist not found, API-only mode")
+        return
+
+    index_html = dist / "index.html"
+    dist_root = dist.resolve()
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(full_path: str):
+        if full_path.startswith(("api/", "docs", "redoc")):
+            return None
+        target = (dist / full_path).resolve()
+        if target.is_file() and str(target).startswith(str(dist_root)):
+            return FileResponse(target)
+        return FileResponse(index_html)
+
+    logger.info("[App] Frontend mounted from %s", dist)
+
+
+_mount_frontend()
 
 
 # 注意：已移除每次请求后更新daemon连接池表的中间件

@@ -1,0 +1,15 @@
+[project]
+name = "termpaws-frontend"
+version = "0.1.0"
+description = "TermPaws web frontend (static assets)"
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["termpaws_frontend"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"../../frontend/dist" = "termpaws_frontend/dist"

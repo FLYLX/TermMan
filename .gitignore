@@ -24,3 +24,17 @@ node_modules/
 # local temp files (may contain tokens)
 /_token.txt
 /_apply_patch.txt
+
+# packaging build artifacts
+/dist/
+/backend/dist/
+/packaging/*/dist/
+
+# debug scratch
+/de_bug/
+
+# daemon runtime dirs (recreated at runtime)
+/daemon/src/workdir/
+/daemon/src/log/
+/daemon/src/data/
+/daemon/src/src/
