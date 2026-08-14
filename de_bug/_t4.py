@@ -16,7 +16,7 @@ for j in jobs.get("jobs", []):
 
 # Check java
 import subprocess
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "bash", "-c", "java -version 2>&1 || echo NO_JAVA"], capture_output=True, text=True)
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "bash", "-c", "java -version 2>&1 || echo NO_JAVA"], capture_output=True, text=True)
 print(f"\nJava: {(result.stdout + result.stderr).strip()[:200]}")
 
 # Token usage

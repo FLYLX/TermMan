@@ -8,7 +8,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 BRIDGE = "http://127.0.0.1:33333"
 BASE = "http://127.0.0.1:28888"
 ITEM = "ea52de0c-51b7-4b49-a43d-985ed2e09579"
-LOG = r"E:\dev\TermMan\dev\TermMan\de_bug\_mock_qq.log"
+LOG = r"E:\dev\TermPaws\dev\TermPaws\de_bug\_mock_qq.log"
 GROUP = 770362397
 USER = 2537134688
 
@@ -115,7 +115,7 @@ while st.is_alive() or (time.time() - t0) < 130:
     replies = [l for l in log_lines_since(log0) if "QQ [" in l]
     # backend errors in last window
     try:
-        logs = subprocess.run(["docker", "logs", "termman-backend-1", "--since", "20s"],
+        logs = subprocess.run(["docker", "logs", "TermPaws-backend-1", "--since", "20s"],
                               capture_output=True, text=True, timeout=20).stdout
         for line in logs.splitlines():
             if ("ERROR" in line or "BadRequest" in line or "Exception" in line) and line not in errors_seen:

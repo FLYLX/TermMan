@@ -1,7 +1,7 @@
-﻿import sys
+import sys
 
 # Revert stream_manager.py
-path = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\stream_manager.py"
+path = r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\stream_manager.py"
 with open(path, "r", encoding="utf-8") as f:
     content = f.read()
 
@@ -31,7 +31,7 @@ with open(path, "w", encoding="utf-8") as f:
 print("OK: stream_manager reverted")
 
 # Revert chat.py - remove passive injection
-path2 = r"E:\dev\TermMan\dev\TermMan\backend\app\api\routes\chat.py"
+path2 = r"E:\dev\TermPaws\dev\TermPaws\backend\app\api\routes\chat.py"
 with open(path2, "r", encoding="utf-8") as f:
     content2 = f.read()
 

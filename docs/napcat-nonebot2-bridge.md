@@ -1,6 +1,6 @@
 # QQ Robot Server / OneBot V11
 
-TermMan runs the QQ robot server as a standalone NoneBot2 microservice from the
+TermPaws runs the QQ robot server as a standalone NoneBot2 microservice from the
 `robot/` subdirectory. The internal Docker Compose service name is still
 `robot-bridge` for compatibility, but its public role is a robot server for QQ
 connector clients.
@@ -8,11 +8,11 @@ connector clients.
 The server exposes OneBot V11 reverse WebSocket at:
 
 ```text
-ws://<termman-host>:<robot-server-port>/onebot/v11/ws
+ws://<TermPaws-host>:<robot-server-port>/onebot/v11/ws
 ```
 
 NapCat, Lagrange, SonwLuma, and compatible OneBot V11 QQ connector clients
-should connect to this endpoint as clients. TermMan receives QQ messages from
+should connect to this endpoint as clients. TermPaws receives QQ messages from
 that socket and routes them into bound terminal agents.
 
 Environment is split by service:
@@ -56,7 +56,7 @@ example:
 ws://203.135.104.22:33333/onebot/v11/ws
 ```
 
-In TermMan, create a robot server with platform `OneBot V11 / QQ Connectors`
+In TermPaws, create a robot server with platform `OneBot V11 / QQ Connectors`
 and set:
 
 - `QQ Self ID`: the QQ account currently logged in to the connector client.

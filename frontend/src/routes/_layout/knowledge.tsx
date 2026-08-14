@@ -11,7 +11,7 @@ export const Route = createFileRoute("/_layout/knowledge")({
   head: () => ({
     meta: [
       {
-        title: "Knowledge - TermMan",
+        title: "Knowledge - TermPaws",
       },
     ],
   }),

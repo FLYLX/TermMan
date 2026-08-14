@@ -1,4 +1,4 @@
-filepath = r"E:\dev\TermMan\dev\TermMan\backend\skills\system\SYSTEM_PROMPT.md"
+filepath = r"E:\dev\TermPaws\dev\TermPaws\backend\skills\system\SYSTEM_PROMPT.md"
 with open(filepath, "r", encoding="utf-8") as f:
     content = f.read()
 

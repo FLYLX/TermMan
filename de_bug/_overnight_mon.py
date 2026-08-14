@@ -3,7 +3,7 @@
 import os, subprocess, time
 from datetime import datetime
 
-CONTAINER = "termman-backend-1"
+CONTAINER = "TermPaws-backend-1"
 INTERVAL = float(os.environ.get("MON_INTERVAL", "120"))     # sample every 2 min
 DURATION_HOURS = float(os.environ.get("MON_HOURS", "14"))
 HERE = os.path.dirname(os.path.abspath(__file__))

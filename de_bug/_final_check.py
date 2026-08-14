@@ -32,5 +32,5 @@ for j in jobs.get("jobs", []):
 
 # Check java
 import subprocess
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "java", "-version"], capture_output=True, text=True)
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "java", "-version"], capture_output=True, text=True)
 print(f"\nJava: {result.stderr[:200] if result.stderr else result.stdout[:200]}")

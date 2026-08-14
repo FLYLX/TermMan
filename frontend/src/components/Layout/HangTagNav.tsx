@@ -53,7 +53,7 @@ export function HangTagNav() {
     enabled: Boolean(currentUser),
   })
 
-  const hasRobotPlugin = isPluginEnabled(plugins, "termman.robot")
+  const hasRobotPlugin = isPluginEnabled(plugins, "TermPaws.robot")
   const hasExternalMcpServers = Boolean(
     mcpServers?.data?.some((server: { name?: string }) => server.name !== "local"),
   )

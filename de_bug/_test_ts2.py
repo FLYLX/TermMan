@@ -1,4 +1,4 @@
-﻿import requests, json, sys, io, time
+import requests, json, sys, io, time
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 BASE = "http://127.0.0.1:28888"
@@ -24,7 +24,7 @@ time.sleep(3)
 # Write a command to generate output
 print("=== Writing echo to terminal ===")
 import subprocess
-subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     "PID=$(ps -eo pid,tty | grep pts | head -1 | awk '{print $1}'); echo 'echo TIMESTAMP_TEST_OK' > /proc/$PID/fd/0"],
     capture_output=True, text=True)
 

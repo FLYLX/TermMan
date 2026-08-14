@@ -1,13 +1,13 @@
-﻿import pathlib
+import pathlib
 
-root = pathlib.Path(r"E:\dev\TermMan\dev\TermMan")
+root = pathlib.Path(r"E:\dev\TermPaws\dev\TermPaws")
 p = root / r"docs\全量对话测试.md"
 text = p.read_text(encoding="utf-8")
 
 old1 = """**检查命令**：
 ```bash
 # 查 workflow 状态
-docker exec -w /app/backend termman-backend-1 python -c "
+docker exec -w /app/backend TermPaws-backend-1 python -c "
 from app.services.agent.task_workflow import task_workflow_manager
 wfs = task_workflow_manager.list_active(item_id='ea52de0c-51b7-4b49-a43d-985ed2e09579')
 for w in wfs: print(w.id, w.status, w.title)
@@ -16,7 +16,7 @@ for w in wfs: print(w.id, w.status, w.title)
 new1 = """**检查命令**：
 ```bash
 # 查回复 ticket 状态（workflow 子系统已移除，任务进度以 plan + ticket 跟踪）
-docker exec -w /app/backend termman-backend-1 python -c "
+docker exec -w /app/backend TermPaws-backend-1 python -c "
 from app.services.agent import state_store
 for t in state_store.load_tickets():
     print(t.get('ticket_id'), t.get('status'))
@@ -41,7 +41,7 @@ text = text.replace(
 old2 = """**检查方法**：
 ```bash
 # 对比闲聊前后 workflow 的 return_targets 数量
-docker exec -w /app/backend termman-backend-1 python -c "
+docker exec -w /app/backend TermPaws-backend-1 python -c "
 from app.services.agent.task_workflow import task_workflow_manager
 wfs = task_workflow_manager.list_active(item_id='ea52de0c-51b7-4b49-a43d-985ed2e09579')
 for w in wfs:
@@ -53,7 +53,7 @@ for w in wfs:
 new2 = """**检查方法**：
 ```bash
 # 对比闲聊前后的 ticket 状态，确认原任务汇报目标不变
-docker exec -w /app/backend termman-backend-1 python -c "
+docker exec -w /app/backend TermPaws-backend-1 python -c "
 from app.services.agent import state_store
 for t in state_store.load_tickets():
     print(t.get('ticket_id'), t.get('status'), t.get('item_id'))

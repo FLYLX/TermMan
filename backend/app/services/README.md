@@ -1,6 +1,6 @@
 # Services 总览
 
-`backend/app/services/` 是 TermMan 后端的业务层。
+`backend/app/services/` 是 TermPaws 后端的业务层。
 
 这里不再按子目录散落很多说明文档，统一只保留这一份总览，后面看结构直接看这个文件。
 

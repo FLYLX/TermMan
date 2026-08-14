@@ -1,6 +1,6 @@
-﻿import re
+import re
 
-f = r"E:\dev\TermMan\dev\TermMan\daemon\src\service\terminal_manager.py"
+f = r"E:\dev\TermPaws\dev\TermPaws\daemon\src\service\terminal_manager.py"
 with open(f, "r", encoding="utf-8") as fh:
     content = fh.read()
 

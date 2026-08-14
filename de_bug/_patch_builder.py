@@ -1,6 +1,6 @@
 import io
 
-path = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\prompts\builder.py"
+path = r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\prompts\builder.py"
 with io.open(path, "r", encoding="utf-8") as handle:
     text = handle.read()
 

@@ -49,7 +49,7 @@ function resolveInitialLocale(
 export function LocaleProvider({
   children,
   defaultLocale = "en",
-  storageKey = "termman-locale",
+  storageKey = "TermPaws-locale",
 }: LocaleProviderProps) {
   const [locale, setLocaleState] = useState<Locale>(() =>
     resolveInitialLocale(storageKey, defaultLocale),

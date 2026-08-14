@@ -1,4 +1,4 @@
-filepath = r"E:\dev\TermMan\dev\TermMan\backend\app\api\routes\chat.py"
+filepath = r"E:\dev\TermPaws\dev\TermPaws\backend\app\api\routes\chat.py"
 with open(filepath, "r", encoding="utf-8") as f:
     content = f.read()
 

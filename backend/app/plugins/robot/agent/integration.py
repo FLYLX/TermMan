@@ -460,9 +460,9 @@ class RobotAgentIntegration:
         args: dict[str, Any],
     ) -> None:
         args.pop("_robot_context_token", None)
-        args.pop("_termman_user_id", None)
-        args.pop("_termman_is_superuser", None)
-        args.pop("_termman_item_id", None)
+        args.pop("_TermPaws_user_id", None)
+        args.pop("_TermPaws_is_superuser", None)
+        args.pop("_TermPaws_item_id", None)
         args.pop("_robot_known_targets", None)
 
         context = _robot_context(agent)
@@ -482,10 +482,10 @@ class RobotAgentIntegration:
             return
 
         if getattr(context, "current_user_id", ""):
-            args["_termman_user_id"] = context.current_user_id
-            args["_termman_is_superuser"] = context.current_user_is_superuser
+            args["_TermPaws_user_id"] = context.current_user_id
+            args["_TermPaws_is_superuser"] = context.current_user_is_superuser
         if getattr(context, "item_id", ""):
-            args["_termman_item_id"] = context.item_id
+            args["_TermPaws_item_id"] = context.item_id
         if getattr(context, "robot_known_targets", None):
             args["_robot_known_targets"] = [
                 dict(target) for target in context.robot_known_targets
@@ -697,7 +697,7 @@ class RobotAgentIntegration:
         return (
             "Current source route:\n"
             f"- current source: QQ robot conversation ({route})\n"
-            "- reply contract: to reply to the current QQ conversation, call `mcp_robot_send_message` in your current response (pass only `text`; it is routed to this conversation automatically). Do not end the turn with plain reply text - final text is NOT auto-delivered. Do not leave the answer only in the TermMan web chat.\n"
+            "- reply contract: to reply to the current QQ conversation, call `mcp_robot_send_message` in your current response (pass only `text`; it is routed to this conversation automatically). Do not end the turn with plain reply text - final text is NOT auto-delivered. Do not leave the answer only in the TermPaws web chat.\n"
             "- reply only to the source: do NOT broadcast the answer to the terminal "
             "or game server console (e.g., say/tell commands). The user must explicitly "
             "ask to '在服务器说/广播/公告' to trigger a console say; reporting a task result "
@@ -725,7 +725,7 @@ class RobotAgentIntegration:
             f"{target_hint}"
             "- REPLY ROUTING: to reply to this QQ conversation, call "
             "`mcp_robot_send_message` in your current response (pass only `text`). "
-            "Plain final text is NOT auto-delivered. Do not leave answers only in TermMan.\n"
+            "Plain final text is NOT auto-delivered. Do not leave answers only in TermPaws.\n"
             "- If the user asks you to send elsewhere, do it then report back here.\n"
             "- Do not duplicate: if already sent via tool, do not restate in final text.\n"
         )

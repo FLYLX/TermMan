@@ -85,7 +85,7 @@ def init_test_data() -> None:
 
         # Create 5 Items with daemon configuration
         # Using the same API key as the daemon for testing
-        daemon_api_key = "termman_daemon_secret_key_2024"
+        daemon_api_key = "TermPaws_daemon_secret_key_2024"
         daemon_host = "daemon"  # 使用容器名称而不是localhost，确保Docker容器内可以正确连接
         daemon_port = 9000
 

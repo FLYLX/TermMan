@@ -54,10 +54,10 @@ _connection_errors: dict[str, dict[str, str]] = {}
 _error_file_path: str = "/tmp/robot_bridge_errors.json"
 _identity_file_path: str = "/tmp/robot_bridge_identities.json"
 _singleton_lock_path: str = str(
-    Path(tempfile.gettempdir()) / "termman_robot_bridge.lock"
+    Path(tempfile.gettempdir()) / "termpaws_robot_bridge.lock"
 )
 _owner_info_path: str = str(
-    Path(tempfile.gettempdir()) / "termman_robot_bridge_owner.json"
+    Path(tempfile.gettempdir()) / "termpaws_robot_bridge_owner.json"
 )
 _singleton_lock_file: Any | None = None
 _singleton_lock_owner = False
@@ -335,7 +335,7 @@ async def _forward_to_owner(
 
     base_url = str(owner_info["base_url"]).rstrip("/")
     shared_secret = settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY
-    headers = {"X-TermMan-Bridge-Token": shared_secret}
+    headers = {"X-TermPaws-Bridge-Token": shared_secret}
     if body is not None:
         headers["Content-Type"] = "application/json"
 
@@ -368,23 +368,23 @@ def _start_ipc_server(send_handler, health_handler, reload_handler) -> str:
     @app.post("/internal/send")
     async def ipc_send(
         body: RobotBridgeSendRequest,
-        x_termman_bridge_token: str | None = Header(default=None),
+        x_termpaws_bridge_token: str | None = Header(default=None),
     ) -> dict[str, Any]:
-        _assert_bridge_permission(x_termman_bridge_token)
+        _assert_bridge_permission(x_termpaws_bridge_token)
         return await send_handler(body)
 
     @app.get("/internal/health")
     async def ipc_health(
-        x_termman_bridge_token: str | None = Header(default=None),
+        x_termpaws_bridge_token: str | None = Header(default=None),
     ) -> dict[str, Any]:
-        _assert_bridge_permission(x_termman_bridge_token)
+        _assert_bridge_permission(x_termpaws_bridge_token)
         return await health_handler()
 
     @app.post("/internal/reload")
     async def ipc_reload(
-        x_termman_bridge_token: str | None = Header(default=None),
+        x_termpaws_bridge_token: str | None = Header(default=None),
     ) -> dict[str, Any]:
-        _assert_bridge_permission(x_termman_bridge_token)
+        _assert_bridge_permission(x_termpaws_bridge_token)
         return await reload_handler()
 
     config = uvicorn.Config(
@@ -1018,7 +1018,7 @@ async def _dispatch_to_backend(
             response = await client.post(
                 f"{settings.ROBOT_BACKEND_URL.rstrip('/')}"
                 f"{settings.API_V1_STR}/robots/{robot_id}/dispatch",
-                headers={"X-TermMan-Bridge-Token": shared_secret},
+                headers={"X-TermPaws-Bridge-Token": shared_secret},
                 content=payload.model_dump_json(),
             )
             response.raise_for_status()
@@ -1054,16 +1054,16 @@ def _build_idle_bridge_router(reason: str) -> APIRouter:
     @router.post("/internal/send")
     async def internal_send(
         body: RobotBridgeSendRequest,
-        x_termman_bridge_token: str | None = Header(default=None),
+        x_termpaws_bridge_token: str | None = Header(default=None),
     ) -> dict[str, Any]:
-        _assert_bridge_permission(x_termman_bridge_token)
+        _assert_bridge_permission(x_termpaws_bridge_token)
         return await _forward_to_owner("/internal/send", body=body)
 
     @router.post("/internal/reload", response_model=RobotBridgeReloadResponse)
     async def internal_reload(
-        x_termman_bridge_token: str | None = Header(default=None),
+        x_termpaws_bridge_token: str | None = Header(default=None),
     ) -> RobotBridgeReloadResponse:
-        _assert_bridge_permission(x_termman_bridge_token)
+        _assert_bridge_permission(x_termpaws_bridge_token)
         try:
             result = await _forward_to_owner("/internal/reload")
         except HTTPException as exc:
@@ -1096,9 +1096,9 @@ def _build_idle_bridge_router(reason: str) -> APIRouter:
 
     @router.get("/internal/health")
     async def internal_health(
-        x_termman_bridge_token: str | None = Header(default=None),
+        x_termpaws_bridge_token: str | None = Header(default=None),
     ) -> dict[str, Any]:
-        _assert_bridge_permission(x_termman_bridge_token)
+        _assert_bridge_permission(x_termpaws_bridge_token)
         try:
             owner_health = await _forward_to_owner(
                 "/internal/health", timeout=5.0, method="GET"
@@ -1334,7 +1334,7 @@ def init_embedded_bridge() -> APIRouter | None:
                     direction="platform_to_bridge",
                     event="event_ignored",
                     status="error",
-                    message=f"No TermMan robot is mapped to identity {bot_identity}",
+                    message=f"No TermPaws robot is mapped to identity {bot_identity}",
                     payload={
                         "platform": platform_id,
                         "bot_identity": bot_identity,
@@ -1343,7 +1343,7 @@ def init_embedded_bridge() -> APIRouter | None:
                     },
                 )
                 logger.warning(
-                    "[Bridge] No TermMan robot is mapped to identity %s",
+                    "[Bridge] No TermPaws robot is mapped to identity %s",
                     bot_identity,
                 )
                 return
@@ -1561,9 +1561,9 @@ def init_embedded_bridge() -> APIRouter | None:
         @_bridge_router.post("/internal/send")
         async def internal_send(
             body: RobotBridgeSendRequest,
-            x_termman_bridge_token: str | None = Header(default=None),
+            x_termpaws_bridge_token: str | None = Header(default=None),
         ) -> dict[str, Any]:
-            _assert_bridge_permission(x_termman_bridge_token)
+            _assert_bridge_permission(x_termpaws_bridge_token)
             try:
                 return await _send_from_owner(body)
             except HTTPException as exc:
@@ -1720,16 +1720,16 @@ def init_embedded_bridge() -> APIRouter | None:
             "/internal/reload", response_model=RobotBridgeReloadResponse
         )
         async def internal_reload(
-            x_termman_bridge_token: str | None = Header(default=None),
+            x_termpaws_bridge_token: str | None = Header(default=None),
         ) -> RobotBridgeReloadResponse:
-            _assert_bridge_permission(x_termman_bridge_token)
+            _assert_bridge_permission(x_termpaws_bridge_token)
             return RobotBridgeReloadResponse.model_validate(await _reload_owner())
 
         @_bridge_router.get("/internal/health")
         async def internal_health(
-            x_termman_bridge_token: str | None = Header(default=None),
+            x_termpaws_bridge_token: str | None = Header(default=None),
         ) -> dict[str, Any]:
-            _assert_bridge_permission(x_termman_bridge_token)
+            _assert_bridge_permission(x_termpaws_bridge_token)
             return await _health_from_owner()
 
         logger.info(

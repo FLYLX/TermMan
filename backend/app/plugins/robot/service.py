@@ -238,7 +238,7 @@ class RobotService:
             for index in range(worker_count):
                 worker = threading.Thread(
                     target=self._dispatch_worker_loop,
-                    name=f"termman-backend-robot-dispatch-{index}",
+                    name=f"TermPaws-backend-robot-dispatch-{index}",
                     daemon=True,
                 )
                 worker.start()
@@ -623,7 +623,7 @@ class RobotService:
                 index = self._dispatch_worker_count
                 worker = threading.Thread(
                     target=self._dispatch_worker_loop,
-                    name=f"termman-backend-robot-dispatch-replacement-{index}",
+                    name=f"TermPaws-backend-robot-dispatch-replacement-{index}",
                     daemon=True,
                 )
                 worker.start()

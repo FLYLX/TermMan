@@ -1,4 +1,4 @@
-﻿import requests, json, time, sys, io, urllib.request
+import requests, json, time, sys, io, urllib.request
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 BASE = "http://127.0.0.1:28888"
@@ -12,7 +12,7 @@ h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 # Clear tokens
 import subprocess
-subprocess.run(["docker", "exec", "termman-backend-1", "python", "-c",
+subprocess.run(["docker", "exec", "TermPaws-backend-1", "python", "-c",
     "import sys;sys.path.insert(0,'/app/backend');from sqlmodel import Session,text;from app.core.db import engine;s=Session(engine);s.exec(text('DELETE FROM token_usage_record'));s.commit();s.close()"],
     capture_output=True, timeout=10)
 print("Cleared\n")
@@ -31,7 +31,7 @@ payload = {"sender_key": "private_2537134688", "text": task,
         "metadata": {"sender_name": "FLY", "sender_id": "2537134688", "conversation_type": "private"}}}
 data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
 req = urllib.request.Request(f"{BASE}/api/v1/robots/{ROBOT}/dispatch", data=data,
-    headers={"Content-Type": "application/json; charset=utf-8", "X-Termman-Bridge-Token": SECRET})
+    headers={"Content-Type": "application/json; charset=utf-8", "X-TermPaws-Bridge-Token": SECRET})
 resp = urllib.request.urlopen(req, timeout=10)
 result = json.loads(resp.read().decode('utf-8'))
 print(f"QQ dispatch: {result.get('success')} {result.get('reason')}")

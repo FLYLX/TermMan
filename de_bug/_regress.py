@@ -8,7 +8,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 BASE = "http://127.0.0.1:28888"
 BRIDGE = "http://127.0.0.1:33333"
 ITEM = "ea52de0c-51b7-4b49-a43d-985ed2e09579"
-LOG = r"E:\dev\TermMan\dev\TermMan\de_bug\_mock_qq.log"
+LOG = r"E:\dev\TermPaws\dev\TermPaws\de_bug\_mock_qq.log"
 
 def login():
     r = requests.post(f"{BASE}/api/v1/login/access-token",
@@ -118,7 +118,7 @@ time.sleep(5)
 reps = replies_since(mark)
 tk1 = tokens(h)
 import subprocess
-ver = subprocess.run(["docker", "exec", "termman-daemon-1", "bash", "-c", "which cmatrix"],
+ver = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "bash", "-c", "which cmatrix"],
                      capture_output=True, timeout=15)
 installed = ver.returncode == 0
 results["T3_install"] = installed and len(reps) > 0

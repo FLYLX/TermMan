@@ -67,7 +67,7 @@ export type RuntimeServiceStats = {
   metadata: Record<string, unknown>
 }
 
-export type TermManRuntimeTotals = {
+export type TermPawsRuntimeTotals = {
   service_count: number
   ok_count: number
   process_count: number
@@ -78,10 +78,10 @@ export type TermManRuntimeTotals = {
   open_fds: number | null
 }
 
-export type TermManRuntimeStatsResponse = {
+export type TermPawsRuntimeStatsResponse = {
   sampled_at: number
   services: RuntimeServiceStats[]
-  totals: TermManRuntimeTotals
+  totals: TermPawsRuntimeTotals
 }
 
 export async function getBackendRuntimeStats() {
@@ -90,8 +90,8 @@ export async function getBackendRuntimeStats() {
   )
 }
 
-export async function getTermManRuntimeStats() {
-  return apiRequest<TermManRuntimeStatsResponse>(
-    "/api/v1/utils/termman-runtime/",
+export async function getTermPawsRuntimeStats() {
+  return apiRequest<TermPawsRuntimeStatsResponse>(
+    "/api/v1/utils/TermPaws-runtime/",
   )
 }

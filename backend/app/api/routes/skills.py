@@ -176,7 +176,7 @@ def generate_skill(
         payload = generate_json_payload(
             item_handler,
             system_prompt=(
-                "You generate TermMan SKILL.md definitions.\n"
+                "You generate TermPaws SKILL.md definitions.\n"
                 "Return only a valid JSON object.\n"
                 "The response must contain exactly these top-level keys: "
                 "trigger, action, safety, content.\n"
@@ -185,7 +185,7 @@ def generate_skill(
                 "Content must be markdown body text only, without YAML frontmatter."
             ),
             user_prompt=(
-                f"Generate a TermMan skill for the following metadata.\n"
+                f"Generate a TermPaws skill for the following metadata.\n"
                 f"skill_id: {body.skill_id}\n"
                 f"name: {body.name}\n"
                 f"description: {body.description}\n"

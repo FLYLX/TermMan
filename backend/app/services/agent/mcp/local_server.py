@@ -974,7 +974,7 @@ class LocalMCPServer:
             page = history_messages[start:end]
 
             lines = [
-                "TermMan item chat history:",
+                "TermPaws item chat history:",
                 f"item_id={item_id}",
                 f"total_matching_messages={total}",
                 f"limit={limit}",
@@ -1552,7 +1552,7 @@ class LocalMCPServer:
 
         thread = threading.Thread(
             target=worker,
-            name=f"termman-job-{item_id[:8]}",
+            name=f"TermPaws-job-{item_id[:8]}",
             daemon=True,
         )
         thread.start()
@@ -2830,7 +2830,7 @@ class LocalMCPServer:
             return {"jsonrpc": "2.0", "id": request_id, "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "termman-local", "version": "1.0.0"}
+                "serverInfo": {"name": "TermPaws-local", "version": "1.0.0"}
             }}
 
         if method == "tools/list":

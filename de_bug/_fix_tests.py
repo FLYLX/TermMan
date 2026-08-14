@@ -1,7 +1,7 @@
-﻿import re
+import re
 
 # === test_agent_runtime_guards.py ===
-f1 = r"E:\dev\TermMan\dev\TermMan\backend\tests\services\test_agent_runtime_guards.py"
+f1 = r"E:\dev\TermPaws\dev\TermPaws\backend\tests\services\test_agent_runtime_guards.py"
 with open(f1, "r", encoding="utf-8") as fh:
     lines = fh.readlines()
 
@@ -47,7 +47,7 @@ with open(f1, "w", encoding="utf-8") as fh:
 print(f"test_agent_runtime_guards.py: removed {len(delete)} lines")
 
 # === test_local_mcp_server.py ===
-f2 = r"E:\dev\TermMan\dev\TermMan\backend\tests\services\test_local_mcp_server.py"
+f2 = r"E:\dev\TermPaws\dev\TermPaws\backend\tests\services\test_local_mcp_server.py"
 with open(f2, "r", encoding="utf-8") as fh:
     lines2 = fh.readlines()
 
@@ -62,7 +62,7 @@ with open(f2, "w", encoding="utf-8") as fh:
     fh.writelines(new_lines2)
 
 # === test_terminal_command_state.py ===
-f3 = r"E:\dev\TermMan\dev\TermMan\backend\tests\services\test_terminal_command_state.py"
+f3 = r"E:\dev\TermPaws\dev\TermPaws\backend\tests\services\test_terminal_command_state.py"
 with open(f3, "r", encoding="utf-8") as fh:
     content = fh.read()
 

@@ -45,7 +45,7 @@ connection_manager = ConnectionManager()
 socket_manager = SocketManager()
 socket_pool_facade = SocketPoolFacade(socket_manager=socket_manager)
 
-_initializer_lock_path = str(Path(tempfile.gettempdir()) / "termman_daemon_initializer.lock")
+_initializer_lock_path = str(Path(tempfile.gettempdir()) / "TermPaws_daemon_initializer.lock")
 _initializer_lock_file: Any | None = None
 _initializer_lock_owner = False
 

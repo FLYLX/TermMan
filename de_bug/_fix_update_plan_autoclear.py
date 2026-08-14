@@ -1,5 +1,5 @@
-﻿import pathlib
-p = pathlib.Path(r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\mcp\local_server.py")
+import pathlib
+p = pathlib.Path(r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\mcp\local_server.py")
 text = p.read_text(encoding="utf-8")
 old = '''        all_completed = all(item["status"] == "completed" for item in normalized)
         # Keep plan on ticket for UI history (don't clear when all completed).

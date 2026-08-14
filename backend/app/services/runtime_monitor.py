@@ -86,7 +86,7 @@ class RuntimeServiceStats(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class TermManRuntimeTotals(BaseModel):
+class TermPawsRuntimeTotals(BaseModel):
     service_count: int
     ok_count: int
     process_count: int
@@ -97,10 +97,10 @@ class TermManRuntimeTotals(BaseModel):
     open_fds: int | None = None
 
 
-class TermManRuntimeStatsResponse(BaseModel):
+class TermPawsRuntimeStatsResponse(BaseModel):
     sampled_at: int
     services: list[RuntimeServiceStats]
-    totals: TermManRuntimeTotals
+    totals: TermPawsRuntimeTotals
 
 
 def _kb_to_bytes(value: str | None) -> int | None:
@@ -621,9 +621,9 @@ def runtime_service_stats(
     )
 
 
-def build_termman_runtime_response(
+def build_TermPaws_runtime_response(
     services: list[RuntimeServiceStats],
-) -> TermManRuntimeStatsResponse:
+) -> TermPawsRuntimeStatsResponse:
     aggregates = [
         service.runtime.aggregate
         for service in services
@@ -633,10 +633,10 @@ def build_termman_runtime_response(
         aggregate.cpu_percent for aggregate in aggregates if aggregate.cpu_percent is not None
     ]
     cpu_percent = round(sum(cpu_values), 1) if cpu_values else None
-    return TermManRuntimeStatsResponse(
+    return TermPawsRuntimeStatsResponse(
         sampled_at=int(time.time()),
         services=services,
-        totals=TermManRuntimeTotals(
+        totals=TermPawsRuntimeTotals(
             service_count=len(services),
             ok_count=sum(1 for service in services if service.status == "ok"),
             process_count=sum(aggregate.process_count for aggregate in aggregates),

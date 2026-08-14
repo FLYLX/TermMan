@@ -40,18 +40,18 @@ def test_backend_runtime_stats_returns_payload_for_superuser(
     assert content["aggregate"]["process_count"] >= 1
 
 
-def test_termman_runtime_stats_requires_superuser(
+def test_TermPaws_runtime_stats_requires_superuser(
     client: TestClient,
     normal_user_token_headers: dict[str, str],
 ) -> None:
     response = client.get(
-        f"{settings.API_V1_STR}/utils/termman-runtime/",
+        f"{settings.API_V1_STR}/utils/TermPaws-runtime/",
         headers=normal_user_token_headers,
     )
     assert response.status_code == 403
 
 
-def test_termman_runtime_stats_returns_backend_service(
+def test_TermPaws_runtime_stats_returns_backend_service(
     client: TestClient,
     superuser_token_headers: dict[str, str],
     monkeypatch,
@@ -65,7 +65,7 @@ def test_termman_runtime_stats_returns_backend_service(
     )
 
     response = client.get(
-        f"{settings.API_V1_STR}/utils/termman-runtime/",
+        f"{settings.API_V1_STR}/utils/TermPaws-runtime/",
         headers=superuser_token_headers,
     )
     assert response.status_code == 200

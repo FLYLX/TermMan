@@ -1,4 +1,4 @@
-﻿import requests, json, sys, io, time, urllib.request
+import requests, json, sys, io, time, urllib.request
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 BASE = "http://127.0.0.1:28888"
@@ -34,7 +34,7 @@ req = urllib.request.Request(
     data=data,
     headers={
         "Content-Type": "application/json; charset=utf-8",
-        "X-Termman-Bridge-Token": SECRET,
+        "X-TermPaws-Bridge-Token": SECRET,
     },
     method="POST"
 )
@@ -78,7 +78,7 @@ for check in range(8):
     
     # Check java process
     import subprocess
-    jr = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+    jr = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
         "ps aux | grep 'server.jar' | grep -v grep | wc -l"],
         capture_output=True, text=True)
     mc = jr.stdout.strip()

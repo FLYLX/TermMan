@@ -73,7 +73,7 @@ else:
 
 # Check java
 import subprocess
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "java", "-version"],
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "java", "-version"],
                        capture_output=True, text=True, timeout=10)
 print(f"\nJava check: exit={result.returncode}")
 if result.returncode == 0:
@@ -84,7 +84,7 @@ else:
     print("  [FAIL] Java not installed")
 
 # Check zombies
-result2 = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c", "ps aux | grep -c defunct"],
+result2 = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c", "ps aux | grep -c defunct"],
                         capture_output=True, text=True, timeout=10)
 zombie_count = result2.stdout.strip()
 print(f"\nZombie processes: {zombie_count}")

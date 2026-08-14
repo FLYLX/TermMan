@@ -1,5 +1,5 @@
-﻿import pathlib
-p = pathlib.Path(r"E:\dev\TermMan\dev\TermMan\backend\app\api\routes\chat.py")
+import pathlib
+p = pathlib.Path(r"E:\dev\TermPaws\dev\TermPaws\backend\app\api\routes\chat.py")
 text = p.read_text(encoding="utf-8")
 old = "@dataclass\ndef get_relevant_memories("
 assert text.count(old) == 1

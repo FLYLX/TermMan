@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  termman-daemon:
+  termpaws-daemon:
     build: .
-    container_name: termman-daemon
+    container_name: termpaws-daemon
     ports:
       - "9000:9000"
       # server port
@@ -15,14 +15,14 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=9000
-      - API_KEY=termman_daemon_secret_key_2024
+      - API_KEY=TermPaws_daemon_secret_key_2024
       - WORKDIR=/app/src/workdir
       - LOG_DIR=/app/log
       - DATA_DIR=/app/src/data
     restart: unless-stopped
     networks:
-      - termman-network
+      - termpaws-network
 
 networks:
-  termman-network:
+  termpaws-network:
     driver: bridge

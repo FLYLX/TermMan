@@ -194,7 +194,7 @@ def _ensure_dispatch_workers() -> asyncio.Queue[RobotDispatchJob]:
         ROBOT_DISPATCH_WORKER_TASKS = [
             loop.create_task(
                 _dispatch_worker(index),
-                name=f"termman-robot-dispatch-worker-{index}",
+                name=f"TermPaws-robot-dispatch-worker-{index}",
             )
             for index in range(worker_count)
         ]
@@ -207,7 +207,7 @@ def _ensure_dispatch_workers() -> asyncio.Queue[RobotDispatchJob]:
         live_tasks.extend(
             loop.create_task(
                 _dispatch_worker(start_index + index),
-                name=f"termman-robot-dispatch-worker-{start_index + index}",
+                name=f"TermPaws-robot-dispatch-worker-{start_index + index}",
             )
             for index in range(missing_count)
         )
@@ -1189,7 +1189,7 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
             direction="platform_to_bridge",
             event="event_ignored",
             status="error",
-            message=f"No TermMan robot is mapped to identity {bot_identity}",
+            message=f"No TermPaws robot is mapped to identity {bot_identity}",
             payload={
                 "platform": platform_id,
                 "bot_identity": bot_identity,
@@ -1198,7 +1198,7 @@ async def handle_robot_message(bot: Bot, event: Event) -> None:
             },
         )
         logger.warning(
-            "[RobotBridge] No TermMan robot is mapped to identity %s", bot_identity
+            "[RobotBridge] No TermPaws robot is mapped to identity %s", bot_identity
         )
         return
 
@@ -1277,9 +1277,9 @@ app.router.on_shutdown.append(shutdown_dispatch_workers)
 @app.post("/internal/send")
 async def internal_send(
     body: RobotBridgeSendRequest,
-    x_termman_bridge_token: str | None = Header(default=None),
+    x_TermPaws_bridge_token: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    _assert_bridge_permission(x_termman_bridge_token)
+    _assert_bridge_permission(x_TermPaws_bridge_token)
 
     robot_id = str(body.robot_id)
     bot = _resolve_bot_for_robot(robot_id)
@@ -1319,17 +1319,17 @@ async def internal_send(
 
 @app.post("/internal/reload", response_model=RobotBridgeReloadResponse)
 async def internal_reload(
-    x_termman_bridge_token: str | None = Header(default=None),
+    x_TermPaws_bridge_token: str | None = Header(default=None),
 ) -> RobotBridgeReloadResponse:
-    _assert_bridge_permission(x_termman_bridge_token)
+    _assert_bridge_permission(x_TermPaws_bridge_token)
     return await asyncio.to_thread(reload_runtime_config)
 
 
 @app.get("/internal/health")
 async def internal_health(
-    x_termman_bridge_token: str | None = Header(default=None),
+    x_TermPaws_bridge_token: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    _assert_bridge_permission(x_termman_bridge_token)
+    _assert_bridge_permission(x_TermPaws_bridge_token)
 
     checked_at = datetime.now(timezone.utc).isoformat()
     connected_bot_count = len(get_bots())

@@ -28,7 +28,7 @@ class IntegratedTerminalTest:
     def __init__(self):
         # 配置参数
         self.daemon_url = "http://localhost:9000"
-        self.api_key = "termman_daemon_secret_key_2024"
+        self.api_key = "TermPaws_daemon_secret_key_2024"
         self.user_uuid = "test_user_123"
         self.terminal_item_uuid = None
         self.terminal_token = None
@@ -292,7 +292,7 @@ class IntegratedTerminalTest:
     def run(self):
         """运行完整测试流程"""
         print("=" * 50)
-        print("TermMan 集成测试")
+        print("TermPaws 集成测试")
         print("=" * 50)
 
         try:

@@ -19,7 +19,7 @@ async def shutdown(app: FastAPI) -> None:
 
 def get_backend_plugin() -> BackendPlugin:
     return BackendPlugin(
-        plugin_id="termman.terminal_ws",
+        plugin_id="TermPaws.terminal_ws",
         name="Terminal WebSocket Servers",
         version="builtin",
         description="Let users create per-terminal WebSocket servers from the Web UI.",

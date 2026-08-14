@@ -631,7 +631,7 @@ export const Route = createFileRoute("/_layout/skills")({
   head: () => ({
     meta: [
       {
-        title: "Skills - TermMan",
+        title: "Skills - TermPaws",
       },
     ],
   }),

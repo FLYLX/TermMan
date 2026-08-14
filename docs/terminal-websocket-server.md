@@ -8,7 +8,7 @@
 
 它不是全局服务，也不会在 backend 启动时自动占用一个固定端口。每个 server 都绑定一个具体 terminal item，外部客户端连接后只能看到这个终端的 stdin/stdout/stderr，也只能向这个终端写入 stdin。
 
-没有创建或启动 WebSocket Server 时，TermMan 的核心终端管理、agent、skill、MCP、robot 插件都不受影响。
+没有创建或启动 WebSocket Server 时，TermPaws 的核心终端管理、agent、skill、MCP、robot 插件都不受影响。
 
 ## 配置
 
@@ -75,7 +75,7 @@ DELETE /api/v1/items/{item_id}/websocket-servers/{server_id}
 ```text
 ws://127.0.0.1:7100/?token=<server-token>
 Authorization: Bearer <server-token>
-X-TermMan-Token: <server-token>
+X-TermPaws-Token: <server-token>
 ```
 
 ## 握手

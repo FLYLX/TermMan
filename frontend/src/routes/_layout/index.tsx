@@ -43,7 +43,7 @@ import {
 import useAuth from "@/hooks/useAuth"
 import {
   type BackendRuntimeStatsResponse,
-  getTermManRuntimeStats,
+  getTermPawsRuntimeStats,
   getBackendRuntimeStats,
   type RuntimeServiceStats,
 } from "@/services/runtime"
@@ -53,7 +53,7 @@ export const Route = createFileRoute("/_layout/")({
   head: () => ({
     meta: [
       {
-        title: "TermMan",
+        title: "TermPaws",
       },
     ],
   }),
@@ -524,7 +524,7 @@ function ServiceRuntimePanel({ services }: { services: RuntimeServiceStats[] }) 
       <CardHeader className="flex flex-row items-center justify-between gap-3 px-5">
         <div className="flex items-center gap-2">
           <Activity className="size-4 text-primary" />
-          <CardTitle>TermMan 资源占用</CardTitle>
+          <CardTitle>TermPaws 资源占用</CardTitle>
         </div>
         <Badge variant="outline">{services.length} 服务</Badge>
       </CardHeader>
@@ -585,9 +585,9 @@ function Dashboard() {
     retry: false,
   })
 
-  const termManRuntimeQuery = useQuery({
-    queryKey: ["dashboard-termman-runtime"],
-    queryFn: getTermManRuntimeStats,
+  const TermPawsRuntimeQuery = useQuery({
+    queryKey: ["dashboard-TermPaws-runtime"],
+    queryFn: getTermPawsRuntimeStats,
     enabled: isAdmin,
     refetchInterval: 5000,
     retry: false,
@@ -683,14 +683,14 @@ function Dashboard() {
     await Promise.allSettled([
       fetchItems(),
       runtimeQuery.refetch(),
-      termManRuntimeQuery.refetch(),
+      TermPawsRuntimeQuery.refetch(),
       bridgeHealthQuery.refetch(),
       robotsQuery.refetch(),
     ])
   }
 
   const runtime = runtimeQuery.data as BackendRuntimeStatsResponse | undefined
-  const termManRuntime = termManRuntimeQuery.data
+  const TermPawsRuntime = TermPawsRuntimeQuery.data
   const bridgeHealth = bridgeHealthQuery.data as ExtendedBridgeHealth | undefined
   const robots = robotsQuery.data?.data ?? []
   const daemons = useMemo(() => groupItemsByDaemon(items), [items])
@@ -791,10 +791,10 @@ function Dashboard() {
       detail: `${formatBytes(runtime?.memory_used_bytes)} / ${formatBytes(runtime?.memory_total_bytes)}`,
     },
     {
-      label: "TermMan CPU",
-      value: normalizeCpuPercent(termManRuntime?.totals.cpu_percent, runtime?.cpu_count),
-      detail: `${formatCpuCores(termManRuntime?.totals.cpu_percent)} · ${
-        termManRuntime?.totals.process_count ?? 0
+      label: "TermPaws CPU",
+      value: normalizeCpuPercent(TermPawsRuntime?.totals.cpu_percent, runtime?.cpu_count),
+      detail: `${formatCpuCores(TermPawsRuntime?.totals.cpu_percent)} · ${
+        TermPawsRuntime?.totals.process_count ?? 0
       } 进程`,
     },
   ]
@@ -804,7 +804,7 @@ function Dashboard() {
       <section className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">TermMan</Badge>
+            <Badge variant="outline">TermPaws</Badge>
             {isAdmin ? (
               <Badge variant="secondary" className="gap-1">
                 <Shield className="size-3" />
@@ -829,7 +829,7 @@ function Dashboard() {
           disabled={
             loading ||
             runtimeQuery.isFetching ||
-            termManRuntimeQuery.isFetching ||
+            TermPawsRuntimeQuery.isFetching ||
             bridgeHealthQuery.isFetching ||
             robotsQuery.isFetching
           }
@@ -838,7 +838,7 @@ function Dashboard() {
             className={`size-4 ${
               loading ||
               runtimeQuery.isFetching ||
-              termManRuntimeQuery.isFetching ||
+              TermPawsRuntimeQuery.isFetching ||
               bridgeHealthQuery.isFetching ||
               robotsQuery.isFetching
                 ? "animate-spin"
@@ -865,10 +865,10 @@ function Dashboard() {
           message={bridgeHealthQuery.error.message}
         />
       ) : null}
-      {termManRuntimeQuery.isError ? (
+      {TermPawsRuntimeQuery.isError ? (
         <ErrorNotice
-          title="TermMan 资源占用不可读"
-          message={termManRuntimeQuery.error.message}
+          title="TermPaws 资源占用不可读"
+          message={TermPawsRuntimeQuery.error.message}
         />
       ) : null}
       {robotsQuery.isError ? (
@@ -892,7 +892,7 @@ function Dashboard() {
         <UsageGaugePanel metrics={usageGaugeMetrics} />
 
         <ServiceRuntimePanel
-          services={termManRuntime?.services ?? []}
+          services={TermPawsRuntime?.services ?? []}
         />
       </section>
 

@@ -1,8 +1,8 @@
-﻿import pathlib, sys
-sys.path.insert(0, r"E:\dev\TermMan\dev\TermMan\de_bug")
+import pathlib, sys
+sys.path.insert(0, r"E:\dev\TermPaws\dev\TermPaws\de_bug")
 import importlib.util
 
-root = pathlib.Path(r"E:\dev\TermMan\dev\TermMan")
+root = pathlib.Path(r"E:\dev\TermPaws\dev\TermPaws")
 
 # reuse delete_test_function logic inline
 import re

@@ -25,8 +25,8 @@ def test_list_builtin_plugins(
     assert response.status_code == 200
     payload = response.json()
     plugin_ids = {plugin["plugin_id"] for plugin in payload["data"]}
-    assert "termman.robot" in plugin_ids
-    assert "termman.terminal_ws" in plugin_ids
+    assert "TermPaws.robot" in plugin_ids
+    assert "TermPaws.terminal_ws" in plugin_ids
 
 
 def test_superuser_can_toggle_builtin_plugin(
@@ -41,14 +41,14 @@ def test_superuser_can_toggle_builtin_plugin(
     plugin_manager.reload()
 
     response = client.patch(
-        f"{settings.API_V1_STR}/plugins/termman.robot",
+        f"{settings.API_V1_STR}/plugins/TermPaws.robot",
         headers=superuser_token_headers,
         json={"enabled": False},
     )
 
     assert response.status_code == 200
     assert response.json()["enabled"] is False
-    assert plugin_manager.get("termman.robot") not in plugin_manager.enabled_plugins()
+    assert plugin_manager.get("TermPaws.robot") not in plugin_manager.enabled_plugins()
 
     from app.plugins.robot import is_robot_plugin_enabled
 

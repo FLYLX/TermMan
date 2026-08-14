@@ -6,7 +6,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 BASE = "http://127.0.0.1:28888"
 ROBOT_ID = "5cbc7f55-04a2-40f6-900a-05e0b0dd652a"
 BRIDGE_TOKEN = "eWn55fo_kaO2TdnsVbbX3bqxNdQzcwjpR448tA5UYeHFwgk03jH1xdmf2v-PrHNM"
-LOG = r"E:\dev\TermMan\dev\TermMan\de_bug\_mock_qq.log"
+LOG = r"E:\dev\TermPaws\dev\TermPaws\de_bug\_mock_qq.log"
 
 # (sender_id, question, expected answer string)
 WAVES = [
@@ -45,7 +45,7 @@ def dispatch(sender_id, text):
     t0 = time.time()
     try:
         r = requests.post(f"{BASE}/api/v1/robots/{ROBOT_ID}/dispatch", json=payload,
-                          headers={"X-Termman-Bridge-Token": BRIDGE_TOKEN}, timeout=30)
+                          headers={"X-TermPaws-Bridge-Token": BRIDGE_TOKEN}, timeout=30)
         return r.status_code, r.text[:120], time.time() - t0
     except Exception as e:
         return 0, str(e)[:120], time.time() - t0

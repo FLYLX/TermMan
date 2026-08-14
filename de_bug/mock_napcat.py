@@ -6,7 +6,7 @@ except ImportError:
     subprocess.run([sys.executable, '-m', 'pip', 'install', 'websockets', '-q'])
     import websockets
 
-LOG = r'E:\dev\TermMan\dev\TermMan\de_bug\_mock_qq.log'
+LOG = r'E:\dev\TermPaws\dev\TermPaws\de_bug\_mock_qq.log'
 WS_URL = 'ws://127.0.0.1:33333/onebot/v11/ws'
 HEADERS = {'X-Self-ID': '10001', 'X-Client-Role': 'Universal', 'Authorization': 'Bearer x0SA-6tPi_ZbWciyKDr7F6e_arctgnMbRRWsK-lwQBs'}
 

@@ -1,4 +1,4 @@
-﻿import requests, time, sys, io, subprocess, threading
+import requests, time, sys, io, subprocess, threading
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 BASE = "http://127.0.0.1:28888"
 ITEM = "ea52de0c-51b7-4b49-a43d-985ed2e09579"
@@ -11,7 +11,7 @@ time.sleep(3)
 print("=== Phase 1: Continuous terminal output ===")
 def write_lines(start, count, delay=0.4):
     for i in range(count):
-        subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+        subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
             f"PID=$(ps -eo pid,tty | grep pts | head -1 | awk '{{print $1}}'); echo '[Server] Player_{start+i} joined the game' > /proc/$PID/fd/0"],
             capture_output=True)
         time.sleep(delay)

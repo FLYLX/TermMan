@@ -38,4 +38,4 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && \
     uv sync --no-dev
 
-CMD ["python", "-m", "termman_robot"]
+CMD ["python", "-m", "termpaws_robot"]

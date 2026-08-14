@@ -111,7 +111,7 @@ print("FINAL VERIFICATION")
 print("=" * 60)
 
 # Check Java
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "java", "-version"],
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "java", "-version"],
                        capture_output=True, text=True, timeout=10)
 print(f"Java: exit={result.returncode}")
 if result.returncode == 0:
@@ -120,7 +120,7 @@ else:
     print(f"  [FAIL] Not installed")
 
 # Check Python 3.6
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "python3.6", "--version"],
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "python3.6", "--version"],
                        capture_output=True, text=True, timeout=10)
 print(f"Python 3.6: exit={result.returncode}")
 if result.returncode != 0:

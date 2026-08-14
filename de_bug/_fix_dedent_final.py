@@ -1,5 +1,5 @@
-﻿import pathlib
-p = pathlib.Path(r"E:\dev\TermMan\dev\TermMan\backend\app\api\routes\chat.py")
+import pathlib
+p = pathlib.Path(r"E:\dev\TermPaws\dev\TermPaws\backend\app\api\routes\chat.py")
 lines = p.read_text(encoding="utf-8").splitlines(keepends=True)
 # 1-based lines 1458..1533 -> 0-based 1457..1532
 start, end = 1457, 1533

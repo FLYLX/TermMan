@@ -282,7 +282,7 @@ export function MemoryManager({ itemId }: MemoryManagerProps) {
         .slice(0, 19)
         .replace(/[:T]/g, "-")
       link.href = url
-      link.download = `termman-memory-${itemId}-${timestamp}.json`
+      link.download = `TermPaws-memory-${itemId}-${timestamp}.json`
       document.body.appendChild(link)
       link.click()
       link.remove()

@@ -1,7 +1,7 @@
 import os
 
 # Fix local_server.py
-path1 = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\mcp\local_server.py"
+path1 = r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\mcp\local_server.py"
 with open(path1, "r", encoding="utf-8") as f:
     content = f.read()
 
@@ -30,7 +30,7 @@ else:
     print("[SKIP] Pattern not found")
 
 # Fix task_watchdog.py
-path2 = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\task_watchdog.py"
+path2 = r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\task_watchdog.py"
 with open(path2, "r", encoding="utf-8") as f:
     content = f.read()
 

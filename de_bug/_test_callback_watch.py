@@ -48,7 +48,7 @@ time.sleep(30)
 log("--- tailing backend logs ---")
 import subprocess
 proc = subprocess.Popen(
-    ["docker", "logs", "termman-backend-1", "--since", "2m", "-f"],
+    ["docker", "logs", "TermPaws-backend-1", "--since", "2m", "-f"],
     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
 start = time.time()
 while time.time() - start < 75:

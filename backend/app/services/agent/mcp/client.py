@@ -123,7 +123,7 @@ class MCPClient:
                 "resources": {},
             },
             "clientInfo": {
-                "name": "TermMan",
+                "name": "TermPaws",
                 "version": "1.0.0",
             },
         })

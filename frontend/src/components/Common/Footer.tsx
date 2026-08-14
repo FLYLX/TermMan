@@ -10,7 +10,7 @@ export function Footer() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap items-center gap-3">
             <span className="inline-flex rounded-full border border-primary/20 bg-primary/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.34em] text-primary">
-              TermMan
+              TermPaws
             </span>
             <p className="text-sm text-muted-foreground">
               {t("brand.footerDescription")}

@@ -1,6 +1,6 @@
-# TermMan Frontend
+# TermPaws Frontend
 
-TermMan 的前端应用，基于 React + TypeScript + Vite 构建。
+TermPaws 的前端应用，基于 React + TypeScript + Vite 构建。
 
 ## 技术栈
 

@@ -1,8 +1,8 @@
 import json, sys
-sys.path.insert(0, r"E:\dev\TermMan\dev\TermMan\backend")
+sys.path.insert(0, r"E:\dev\TermPaws\dev\TermPaws\backend")
 
 # Re-measure after compression
-filepath = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\mcp\local_server.py"
+filepath = r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\mcp\local_server.py"
 with open(filepath, "r", encoding="utf-8") as f:
     content = f.read()
 

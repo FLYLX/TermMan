@@ -1,5 +1,5 @@
-﻿import sys
-path = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\session.py"
+import sys
+path = r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\session.py"
 with open(path, "r", encoding="utf-8") as f:
     content = f.read()
 

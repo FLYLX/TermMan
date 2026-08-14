@@ -354,7 +354,7 @@ class JobRunner:
         thread = threading.Thread(
             target=self.run_job,
             kwargs={**kwargs, "command": command, "job_id": job_id},
-            name=f"termman-daemon-job-{job_id}",
+            name=f"termpaws-daemon-job-{job_id}",
             daemon=True,
         )
         thread.start()

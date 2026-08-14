@@ -222,7 +222,7 @@ class AgentTaskWatchdog:
             self._stop_event.clear()
             self._thread = threading.Thread(
                 target=self._loop,
-                name="termman-agent-task-watchdog",
+                name="TermPaws-agent-task-watchdog",
                 daemon=True,
             )
             self._thread.start()

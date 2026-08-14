@@ -1203,7 +1203,7 @@ class AgentSession:
             f"- QQ conversation: {conversation_key or 'current locked conversation'}\n"
             f"- QQ sender_key: {sender_key or 'unknown'}\n"
             "- Use the terminal output only as evidence for that pending QQ request.\n"
-            "- If you answer or update the user, call `mcp_robot_send_message` so the reply goes back to the locked QQ conversation. Do not leave the answer only in TermMan.\n"
+            "- If you answer or update the user, call `mcp_robot_send_message` so the reply goes back to the locked QQ conversation. Do not leave the answer only in TermPaws.\n"
             "- Treat this pending QQ request as one-shot: send at most one concise QQ status/final message for this command result. If you already sent a QQ message in this turn, do not restate the same conclusion in the final assistant text.\n"
         )
 

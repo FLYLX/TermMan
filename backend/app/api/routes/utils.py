@@ -8,8 +8,8 @@ from app.models import Item, Message
 from app.plugins.robot.bridge_client import robot_bridge_client
 from app.services.runtime_monitor import (
     BackendRuntimeStatsResponse,
-    TermManRuntimeStatsResponse,
-    build_termman_runtime_response,
+    TermPawsRuntimeStatsResponse,
+    build_TermPaws_runtime_response,
     collect_backend_runtime_stats,
     runtime_service_stats,
 )
@@ -254,11 +254,11 @@ def _robot_runtime_service() -> list:
 
 
 @router.get(
-    "/termman-runtime/",
-    response_model=TermManRuntimeStatsResponse,
+    "/TermPaws-runtime/",
+    response_model=TermPawsRuntimeStatsResponse,
     dependencies=[Depends(get_current_active_superuser)],
 )
-def termman_runtime_stats(session: SessionDep) -> TermManRuntimeStatsResponse:
+def TermPaws_runtime_stats(session: SessionDep) -> TermPawsRuntimeStatsResponse:
     services = [
         runtime_service_stats(
             service="backend",
@@ -269,7 +269,7 @@ def termman_runtime_stats(session: SessionDep) -> TermManRuntimeStatsResponse:
     ]
     services.extend(_daemon_runtime_services(session))
     services.extend(_robot_runtime_service())
-    return build_termman_runtime_response(services)
+    return build_TermPaws_runtime_response(services)
 
 
 @router.get("/mem-top/")

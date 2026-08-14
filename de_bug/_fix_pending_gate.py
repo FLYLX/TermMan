@@ -1,7 +1,7 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-p = r"E:\dev\TermMan\dev\TermMan\backend\app\plugins\robot\service.py"
+p = r"E:\dev\TermPaws\dev\TermPaws\backend\app\plugins\robot\service.py"
 s = open(p, encoding="utf-8").read()
 
 old = '''            task_control_message = bool(TASK_CONTROL_MESSAGE_RE.search(message_text))

@@ -36,7 +36,7 @@ class RobotBridgeClient:
     def _headers(self) -> dict[str, str]:
         return {
             "Content-Type": "application/json",
-            "X-TermMan-Bridge-Token": self._shared_secret,
+            "X-TermPaws-Bridge-Token": self._shared_secret,
         }
 
     def _response_error_detail(self, response: httpx.Response) -> str:

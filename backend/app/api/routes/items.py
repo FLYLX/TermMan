@@ -371,7 +371,7 @@ def _build_filter_generation_prompts(
         "explanation": "short explanation",
     }
     system_prompt = (
-        "You design TermMan filter rules.\n"
+        "You design TermPaws filter rules.\n"
         "Return only a valid JSON object with the exact schema described by the user.\n"
         "Generate a small set of precise rules. Avoid duplicate or overly broad regex.\n"
         "Prefer 'block' only for clearly dangerous matches. Use 'replace' for redaction.\n"

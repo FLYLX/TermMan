@@ -866,7 +866,7 @@ def _build_current_source_route_context(
 
     return (
         f"{CURRENT_SOURCE_ROUTE_LABEL}:\n"
-        "- current source: TermMan web chat.\n"
+        "- current source: TermPaws web chat.\n"
         "- reply contract: answer in the normal assistant response for this web chat.\n"
     )
 
@@ -1093,11 +1093,11 @@ def build_terminal_turn_messages(
             )
     else:
         terminal_source_notice = (
-            "来源路由规则：当前输入来自 TermMan 终端流，不是普通网页聊天。"
+            "来源路由规则：当前输入来自 TermPaws 终端流，不是普通网页聊天。"
             "如果终端内容是服务器内玩家/用户在问你、叫你、回复你，回答必须回到同一个来源。"
             "Minecraft/类 Minecraft 控制台请调用 `mcp_local_execute_command`，用 `say <回复内容>` 广播回复，"
             "或用 `tell <玩家名> <回复内容>` 私聊回复。"
-            "不要只在 TermMan 聊天框输出最终回答。"
+            "不要只在 TermPaws 聊天框输出最终回答。"
             "如果只是普通日志、命令状态、服务器提示，或没人和你说话，就不要往服务器发消息。"
         )
         prompt_messages.append({"role": "system", "content": terminal_source_notice})

@@ -1,7 +1,7 @@
-﻿import re
+import re
 
 # === session.py ===
-f = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\session.py"
+f = r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\session.py"
 with open(f, "r", encoding="utf-8") as fh:
     lines = fh.readlines()
 
@@ -137,7 +137,7 @@ with open(f, "w", encoding="utf-8") as fh:
 print(f"session.py: deleted {len(delete)} lines, fixed interrupt message")
 
 # === local_server.py ===
-f2 = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\mcp\local_server.py"
+f2 = r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\mcp\local_server.py"
 with open(f2, "r", encoding="utf-8") as fh:
     content = fh.read()
 

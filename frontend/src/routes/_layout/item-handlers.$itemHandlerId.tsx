@@ -80,7 +80,7 @@ export const Route = createFileRoute("/_layout/item-handlers/$itemHandlerId")({
     }
   },
   head: () => ({
-    meta: [{ title: "终端调度器 - TermMan" }],
+    meta: [{ title: "终端调度器 - TermPaws" }],
   }),
 })
 

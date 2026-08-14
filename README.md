@@ -1,11 +1,11 @@
-# TermMan - 终端管理系统
+# TermPaws - 终端管理系统
 
 一个基于 FastAPI + React 的智能终端管理系统，支持 AI Agent 辅助操作、知识库管理、多终端进程监控。
 
 ## 项目结构
 
 ```
-TermMan/
+TermPaws/
 ├── backend/           # FastAPI 后端服务
 ├── frontend/          # React 前端应用
 ├── daemon/            # 终端守护进程
@@ -168,7 +168,7 @@ Daemon 服务运行在 ws://localhost:9000
 主要环境变量 (`.env`):
 
 ```env
-PROJECT_NAME=TermMan
+PROJECT_NAME=TermPaws
 ENVIRONMENT=local
 
 SQLITE_DATABASE_URL=sqlite:///./sql_app.db

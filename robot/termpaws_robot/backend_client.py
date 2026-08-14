@@ -35,7 +35,7 @@ _EVENT_WORKER_STARTED = False
 def _headers() -> dict[str, str]:
     return {
         "Content-Type": "application/json",
-        "X-TermMan-Bridge-Token": settings.bridge_token,
+        "X-TermPaws-Bridge-Token": settings.bridge_token,
     }
 
 
@@ -135,7 +135,7 @@ def _ensure_event_worker() -> None:
             return
         worker = threading.Thread(
             target=_event_worker,
-            name="termman-robot-debug-event-writer",
+            name="TermPaws-robot-debug-event-writer",
             daemon=True,
         )
         worker.start()

@@ -6,7 +6,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 BASE = "http://127.0.0.1:28888"
 BRIDGE = "http://127.0.0.1:33333"
 ITEM = "ea52de0c-51b7-4b49-a43d-985ed2e09579"
-LOG = r"E:\dev\TermMan\dev\TermMan\de_bug\_mock_qq.log"
+LOG = r"E:\dev\TermPaws\dev\TermPaws\de_bug\_mock_qq.log"
 MSG = "安装java，然后装个1.20.1的服务器，跑完去服务器里面发个你好，然后关掉服务器，配置一下jvm和视距低一点，然后重启"
 
 def login():
@@ -15,7 +15,7 @@ def login():
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 def dexec(cmd):
-    p = subprocess.run(["docker", "exec", "termman-daemon-1", "bash", "-c", cmd],
+    p = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "bash", "-c", cmd],
                        capture_output=True, timeout=20)
     return (p.stdout.decode("utf-8", errors="replace") + p.stderr.decode("utf-8", errors="replace")).strip()
 

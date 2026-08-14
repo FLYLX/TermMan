@@ -1,4 +1,4 @@
-# TermMan Agent 架构
+# TermPaws Agent 架构
 
 ## 部署拓扑
 

@@ -1,4 +1,4 @@
-﻿import requests, json, sys, io, time, subprocess, threading
+import requests, json, sys, io, time, subprocess, threading
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 BASE = "http://127.0.0.1:28888"
@@ -15,7 +15,7 @@ print(f"Terminal start: {r.status_code} {r.text[:100]}")
 time.sleep(2)
 
 # Find the PTY pid
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     "ps -eo pid,tty,cmd | grep pts | grep -v grep"],
     capture_output=True, text=True)
 print(f"PTY processes:\n{result.stdout}")
@@ -31,50 +31,50 @@ else:
 
 # TEST 1: Flood output - 1000 lines rapidly
 print("\n=== TEST 1: Flood 1000 lines ===")
-subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     f"echo 'for i in $(seq 1 1000); do echo flood_line_$i; done' > /proc/{pid}/fd/0"],
     capture_output=True, text=True)
 time.sleep(5)
 
 # Check if terminal is still responsive
-subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     f"echo 'echo ALIVE_CHECK_1' > /proc/{pid}/fd/0"],
     capture_output=True, text=True)
 time.sleep(2)
 
 # Read terminal log tail
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     f"tail -5 /app/log/{ITEM}.log 2>/dev/null || echo 'no log'"],
     capture_output=True, text=True)
 print(f"Log tail:\n{result.stdout}")
 
 # TEST 2: Run a process that produces continuous output for 10s
 print("\n=== TEST 2: Continuous output (yes | head -10000) ===")
-subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     f"echo 'yes continuous_test | head -10000' > /proc/{pid}/fd/0"],
     capture_output=True, text=True)
 time.sleep(8)
 
 # Check responsiveness again
-subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     f"echo 'echo ALIVE_CHECK_2' > /proc/{pid}/fd/0"],
     capture_output=True, text=True)
 time.sleep(2)
 
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     f"tail -3 /app/log/{ITEM}.log 2>/dev/null"],
     capture_output=True, text=True)
 print(f"Log tail after continuous:\n{result.stdout}")
 
 # TEST 3: Kill the shell child and see if daemon detects
 print("\n=== TEST 3: Check daemon thread status ===")
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     "ps -eLo pid,tid,stat,comm | grep -E 'python|PID' | head -20"],
     capture_output=True, text=True)
 print(f"Daemon threads:\n{result.stdout}")
 
 # TEST 4: Check if _read_output thread is alive by checking daemon logs
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     "tail -20 /app/daemon.log 2>/dev/null || echo 'no daemon.log'"],
     capture_output=True, text=True)
 print(f"Daemon log:\n{result.stdout[:500]}")

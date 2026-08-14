@@ -1,4 +1,4 @@
-﻿import requests, json, sys, io, time, subprocess
+import requests, json, sys, io, time, subprocess
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 BASE = "http://127.0.0.1:28888"
@@ -41,13 +41,13 @@ for check in range(12):
     active_jobs = len([j for j in jobs.get("jobs", []) if j.get("status") == "running"])
     
     # MC process
-    jr = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+    jr = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
         "ps aux | grep 'server.jar' | grep -v grep | wc -l"],
         capture_output=True, text=True)
     mc = jr.stdout.strip()
     
     # Daemon mem
-    mr = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+    mr = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
         "cat /proc/1/status | grep VmRSS | awk '{print $2}'"],
         capture_output=True, text=True)
     mem = mr.stdout.strip()
@@ -64,7 +64,7 @@ for check in range(12):
             print(f"  {m.get('role')}: {str(m.get('content',''))[:200]}")
         
         # Check backend logs for errors
-        lr = subprocess.run(["docker", "logs", "termman-backend-1", "--tail", "20"],
+        lr = subprocess.run(["docker", "logs", "TermPaws-backend-1", "--tail", "20"],
             capture_output=True, text=True)
         errs = [l for l in lr.stderr.split('\n') if 'ERROR' in l or 'error' in l.lower()]
         if errs:

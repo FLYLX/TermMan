@@ -41,7 +41,7 @@ export const Route = createFileRoute("/_layout/settings")({
   head: () => ({
     meta: [
       {
-        title: "Settings - TermMan",
+        title: "Settings - TermPaws",
       },
     ],
   }),

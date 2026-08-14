@@ -1,6 +1,6 @@
-﻿import pathlib, re, sys
+import pathlib, re, sys
 
-root = pathlib.Path(r"E:\dev\TermMan\dev\TermMan")
+root = pathlib.Path(r"E:\dev\TermPaws\dev\TermPaws")
 
 def delete_test_function(rel, test_name):
     """Delete a top-level test function (with optional decorators before NEXT test kept intact)."""

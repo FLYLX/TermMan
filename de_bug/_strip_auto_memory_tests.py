@@ -1,6 +1,6 @@
-﻿import ast, pathlib, re, sys
+import ast, pathlib, re, sys
 
-root = pathlib.Path(r"E:\dev\TermMan\dev\TermMan")
+root = pathlib.Path(r"E:\dev\TermPaws\dev\TermPaws")
 
 def delete_tests(rel, names):
     p = root / rel

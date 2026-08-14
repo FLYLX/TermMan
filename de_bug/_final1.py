@@ -21,7 +21,7 @@ print(f"Jobs: {jobs.get('count', 0)}")
 for j in jobs.get("jobs", []):
     print(f"  [{j.get('status','?')}] {j.get('job_id','')} {str(j.get('command',''))[:50]}")
 
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "bash", "-c", "java -version 2>&1 || echo NO_JAVA"], capture_output=True, text=True)
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "bash", "-c", "java -version 2>&1 || echo NO_JAVA"], capture_output=True, text=True)
 print(f"Java: {(result.stdout + result.stderr).strip()[:100]}")
 
 # Last session messages

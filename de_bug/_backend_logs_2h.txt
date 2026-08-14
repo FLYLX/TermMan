@@ -1,11 +1,11 @@
-﻿INFO:     127.0.0.1:34704 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34704 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
 INFO:     127.0.0.1:60374 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
 INFO:     127.0.0.1:46446 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
 INFO:     127.0.0.1:59636 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
 docker : INFO:app.plugins.robot.service:[RobotService] Inbound robot=5cbc7f55-04a2-40f6-900a-05e0b0dd652a sender=privat
 e_2537134688 target=2537134688 text=两个问题：第一，1+1等于？第二，2+2等于？请分开回答我这两个问题
 At line:2 char:1
-+ docker logs termman-backend-1 --since 2h 2>&1 | Out-File -Encoding ut ...
++ docker logs TermPaws-backend-1 --since 2h 2>&1 | Out-File -Encoding ut ...
 + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : NotSpecified: (INFO:app.plugin...2等于？请分开回答我这两个问题:String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
@@ -47,8 +47,8 @@ INFO:     172.19.0.1:43568 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e0
 LiteLLM completion() model= qwen3.8-max; provider = dashscope
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message' on server 'robot' with args: 
 {'messages': ['主人～第一题 1+1=2 喵 (=^･ω･^=)', '第二题 2+2=4 也难不倒小柴 (≧▽≦)'], 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579',
- '_reply_ticket_id': '240e974fca39470589045b070e07887e', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_
-termman_is_superuser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'con
+ '_reply_ticket_id': '240e974fca39470589045b070e07887e', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_
+TermPaws_is_superuser': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'con
 versation': 'private:2537134688', 'target_type': 'private', 'target_id': '2537134688', 'sender': '', 'robot_id': '5cbc7
 f55-04a2-40f6-900a-05e0b0dd652a'}, {'conversation': 'group:777666', 'target_type': 'group', 'target_id': '777666', 'sen
 der': '', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'D7dNbhEPJ_7gJipIb5HzjXrRnECQzv
@@ -139,8 +139,8 @@ INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'ty
 urrent robot conversation.'}]
 INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with args: {'messages': ['主人～第一题 1+1=2
  喵 (=^･ω･^=)', '第二题 2+2=4 也难不倒小柴 (≧▽≦)'], 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '240e9
-74fca39470589045b070e07887e', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True
-, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:253713
+74fca39470589045b070e07887e', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True
+, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:253713
 4688', 'target_type': 'private', 'target_id': '2537134688', 'sender': '', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd
 652a'}, {'conversation': 'group:777666', 'target_type': 'group', 'target_id': '777666', 'sender': '', 'robot_id': '5cbc
 7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'D7dNbhEPJ_7gJipIb5HzjXrRnECQzvS4zrDakcBdne0'}
@@ -672,8 +672,8 @@ INFO:LiteLLM:
 LiteLLM completion() model= qwen3.8-max; provider = dashscope
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message' on server 'robot' with args: 
 {'text': '主人，全部做完啦(≧▽≦) c.txt内容是 alpha 换行 beta，四步都顺利完成了喵~', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_
-ticket_id': '9ff828da3cb74f8787f90f490fdae420', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_i
-s_superuser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation
+ticket_id': '9ff828da3cb74f8787f90f490fdae420', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_i
+s_superuser': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation
 ': 'private:2537134688', 'target_type': 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id
 ': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}, {'conversation': 'group:777666', 'target_type': 'group', 'target_id': '7776
 66', 'sender': '', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'YnbmqWI_2xZN96Tktz38n
@@ -682,7 +682,7 @@ INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'ty
 urrent robot conversation.'}]
 INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with args: {'text': '主人，全部做完啦(≧▽≦) c.t
 xt内容是 alpha 换行 beta，四步都顺利完成了喵~', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '9ff828da3cb74f
-8787f90f490fdae420', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termm
+8787f90f490fdae420', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_termm
 an_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:2537134688', 't
 arget_type': 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a
 -05e0b0dd652a'}, {'conversation': 'group:777666', 'target_type': 'group', 'target_id': '777666', 'sender': '', 'robot_i
@@ -741,12 +741,12 @@ INFO:     172.19.0.1:33942 - "GET /api/v1/items/ HTTP/1.1" 200 OK
 INFO:     172.19.0.1:33942 - "OPTIONS /api/v1/mcp/servers HTTP/1.1" 200 OK
 INFO:     172.19.0.1:33942 - "OPTIONS /api/v1/plugins/ HTTP/1.1" 200 OK
 INFO:     172.19.0.1:33942 - "OPTIONS /api/v1/utils/backend-runtime/ HTTP/1.1" 200 OK
-INFO:     172.19.0.1:33932 - "OPTIONS /api/v1/utils/termman-runtime/ HTTP/1.1" 200 OK
+INFO:     172.19.0.1:33932 - "OPTIONS /api/v1/utils/TermPaws-runtime/ HTTP/1.1" 200 OK
 INFO:     172.19.0.1:33946 - "GET /api/v1/mcp/servers HTTP/1.1" 200 OK
 INFO:     172.19.0.1:33942 - "GET /api/v1/plugins/ HTTP/1.1" 200 OK
 INFO:     172.19.0.1:33932 - "GET /api/v1/utils/backend-runtime/ HTTP/1.1" 200 OK
 INFO:     172.19.0.2:59828 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
-INFO:     172.19.0.1:33962 - "GET /api/v1/utils/termman-runtime/ HTTP/1.1" 200 OK
+INFO:     172.19.0.1:33962 - "GET /api/v1/utils/TermPaws-runtime/ HTTP/1.1" 200 OK
 INFO:     172.19.0.1:33942 - "OPTIONS /api/v1/items/?skip=0&limit=100 HTTP/1.1" 200 OK
 INFO:     172.19.0.1:33942 - "GET /api/v1/items/?skip=0&limit=100 HTTP/1.1" 200 OK
 INFO:     172.19.0.1:33942 - "GET /api/v1/plugins/ HTTP/1.1" 200 OK
@@ -866,7 +866,7 @@ INFO:app.services.connection_pool.daemon_connection:  Source: http://daemon:9000
 INFO:app.services.connection_pool.connection_manager:------------------------------------------------------------------
 --------------
 INFO:app.services.connection_pool.daemon_connection:  Item count: 1
-INFO:app.services.connection_pool.connection_manager:daemon:9000:termman_daemon_secret_key_2024         | connected    
+INFO:app.services.connection_pool.connection_manager:daemon:9000:TermPaws_daemon_secret_key_2024         | connected    
   
 INFO:app.services.connection_pool.daemon_connection:  Room details:
 INFO:app.services.connection_pool.connection_manager:
@@ -876,13 +876,13 @@ INFO:app.services.connection_pool.connection_models:
 ============================================================
 INFO:app.services.connection_pool.daemon_connection:      - SID: 3ON2bY5LioVfDs_1... | User: 909edfa7-714c-498e-9907-7f
 c31c07c143 | IP: 127.0.0.1
-INFO:app.services.connection_pool.connection_models:[BackendConnPool] Created DaemonMainConnState for daemon=termman_da
+INFO:app.services.connection_pool.connection_models:[BackendConnPool] Created DaemonMainConnState for daemon=TermPaws_da
 emon_s...
 INFO:app.services.daemon_initializer:[Backend] Received daemon connection update: type=full_sync, rooms=1
 INFO:app.services.connection_pool.connection_models:============================================================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 0 个
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=disconnected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=disconnected
 INFO:app.services.connection_pool.connection_models:============================================================
 
 INFO:app.services.connection_pool.daemon_connection:  [OK] Triggered connection_update callback
@@ -899,7 +899,7 @@ INFO:app.services.socket_pool.socket_manager:
 1. Item-Token映射表 [daemon_id -> {item_uuid: token}]
 INFO:app.services.socket_pool.socket_manager:--------------------------------------------------------------------------
 ------
-INFO:app.services.socket_pool.socket_manager:  daemon:9000:termman_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
+INFO:app.services.socket_pool.socket_manager:  daemon:9000:TermPaws_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
 fb4-49...
 INFO:app.services.socket_pool.socket_manager:  共 1 个Token
 INFO:app.services.socket_pool.socket_manager:
@@ -936,7 +936,7 @@ INFO:app.services.socket_pool.socket_manager:
 1. Item-Token映射表 [daemon_id -> {item_uuid: token}]
 INFO:app.services.socket_pool.socket_manager:--------------------------------------------------------------------------
 ------
-INFO:app.services.socket_pool.socket_manager:  daemon:9000:termman_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
+INFO:app.services.socket_pool.socket_manager:  daemon:9000:TermPaws_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
 fb4-49...
 INFO:app.services.socket_pool.socket_manager:  共 1 个Token
 INFO:app.services.socket_pool.socket_manager:
@@ -975,7 +975,7 @@ INFO:app.services.connection_pool.connection_models:============================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 1 个
 INFO:app.services.connection_pool.connection_models:    - ea52de0c-51b7-4b49-a... | status=disconnected
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=connected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=connected
 INFO:app.services.connection_pool.connection_models:============================================================
 
 INFO:app.services.connection_pool.connection_models:
@@ -986,10 +986,10 @@ INFO:app.services.connection_pool.connection_models:============================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 1 个
 INFO:app.services.connection_pool.connection_models:    - ea52de0c-51b7-4b49-a... | status=connected
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=connected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=connected
 INFO:app.services.connection_pool.connection_models:============================================================
 
-INFO:app.services.daemon_initializer:Synchronized daemon state for daemon:9000:termman_daemon_secret_key_2024
+INFO:app.services.daemon_initializer:Synchronized daemon state for daemon:9000:TermPaws_daemon_secret_key_2024
 INFO:app.services.daemon_initializer:Daemon initialization completed
 INFO:app.main:[App] Starting MCP servers...
 INFO:app.services.agent.mcp.inprocess_client:[InProcessMCPClient] Initialized server 'local'
@@ -1324,8 +1324,8 @@ INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message' on server 'robot' with args: 
 {'text': 'ls跑完啦主人～目录里有这些(≧▽≦)\nPython-3.6.15/ java17/ mc-server/ mc_server/ logs/ world/ libraries/ versions/ python3.6
 /\n还有 server.jar eula.txt server.properties ops.json whitelist.json banned-*.json mc.log 等', 'item_id': 'ea52de0c-51b7-
-4b49-a43d-985ed2e09579', '_reply_ticket_id': '409c1dd40d0242d184113befa87d7505', '_termman_user_id': 'ed04396a-a605-46f
-4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robo
+4b49-a43d-985ed2e09579', '_reply_ticket_id': '409c1dd40d0242d184113befa87d7505', '_TermPaws_user_id': 'ed04396a-a605-46f
+4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robo
 t_known_targets': [{'conversation': 'private:2537134688', 'target_type': 'private', 'target_id': '2537134688', 'sender'
 : 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'NUcSMqsmR5_HHueU
 zaQxC5SyY0AbxYnc_89czGj9n80'}
@@ -1334,8 +1334,8 @@ urrent robot conversation.'}]
 INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with args: {'text': 'ls跑完啦主人～目录里有这些(≧▽
 ≦)\nPython-3.6.15/ java17/ mc-server/ mc_server/ logs/ world/ libraries/ versions/ python3.6/\n还有 server.jar eula.txt s
 erver.properties ops.json whitelist.json banned-*.json mc.log 等', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_
-reply_ticket_id': '409c1dd40d0242d184113befa87d7505', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_ter
-mman_is_superuser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conver
+reply_ticket_id': '409c1dd40d0242d184113befa87d7505', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_ter
+mman_is_superuser': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conver
 sation': 'private:2537134688', 'target_type': 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'ro
 bot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'NUcSMqsmR5_HHueUzaQxC5SyY0AbxYnc_89czGj9n80
 '}
@@ -1756,15 +1756,15 @@ INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to
 -51b7-4b49-a43d-985ed2e09579
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message' on server 'robot' with args: 
 {'text': '主人～三个后台任务全部完成啦(≧▽≦) A用时5秒 B用时12秒 C用时14秒 都成功退出 没有报错喵', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_re
-ply_ticket_id': '02fbbf30639a4c999f9df1b96978e6b8', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termm
-an_is_superuser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversa
+ply_ticket_id': '02fbbf30639a4c999f9df1b96978e6b8', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termm
+an_is_superuser': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversa
 tion': 'private:2537134688', 'target_type': 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robo
 t_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'upNX8Dr6pIAMlBFJJpTrvmlWK6nZyFWLolilQd1GICI'}
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'Message sent to c
 urrent robot conversation.'}]
 INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with args: {'text': '主人～三个后台任务全部完成啦(≧▽
 ≦) A用时5秒 B用时12秒 C用时14秒 都成功退出 没有报错喵', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '02fbbf3063
-9a4c999f9df1b96978e6b8', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_t
+9a4c999f9df1b96978e6b8', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_t
 ermman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:2537134688'
 , 'target_type': 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-
 900a-05e0b0dd652a'}], '_robot_context_token': 'upNX8Dr6pIAMlBFJJpTrvmlWK6nZyFWLolilQd1GICI'}
@@ -1860,18 +1860,18 @@ INFO:app.services.connection_pool.connection_manager:Daemon ID                  
   
 INFO:app.services.connection_pool.connection_manager:------------------------------------------------------------------
 --------------
-INFO:app.services.connection_pool.connection_manager:daemon:9000:termman_daemon_secret_key_2024         | connected    
+INFO:app.services.connection_pool.connection_manager:daemon:9000:TermPaws_daemon_secret_key_2024         | connected    
   
 INFO:app.services.connection_pool.connection_manager:
 ============================================================
 INFO:app.services.connection_pool.connection_models:
 ============================================================
-INFO:app.services.connection_pool.connection_models:[BackendConnPool] Created DaemonMainConnState for daemon=termman_da
+INFO:app.services.connection_pool.connection_models:[BackendConnPool] Created DaemonMainConnState for daemon=TermPaws_da
 emon_s...
 INFO:app.services.connection_pool.connection_models:============================================================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 0 个
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=disconnected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=disconnected
 INFO:app.services.connection_pool.connection_models:============================================================
 
 INFO:app.services.connection_pool.daemon_connection:
@@ -1900,7 +1900,7 @@ INFO:app.services.socket_pool.socket_manager:
 1. Item-Token映射表 [daemon_id -> {item_uuid: token}]
 INFO:app.services.socket_pool.socket_manager:--------------------------------------------------------------------------
 ------
-INFO:app.services.socket_pool.socket_manager:  daemon:9000:termman_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
+INFO:app.services.socket_pool.socket_manager:  daemon:9000:TermPaws_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
 fb4-49...
 INFO:app.services.socket_pool.socket_manager:  共 1 个Token
 INFO:app.services.socket_pool.socket_manager:
@@ -1937,7 +1937,7 @@ INFO:app.services.socket_pool.socket_manager:
 1. Item-Token映射表 [daemon_id -> {item_uuid: token}]
 INFO:app.services.socket_pool.socket_manager:--------------------------------------------------------------------------
 ------
-INFO:app.services.socket_pool.socket_manager:  daemon:9000:termman_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
+INFO:app.services.socket_pool.socket_manager:  daemon:9000:TermPaws_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
 fb4-49...
 INFO:app.services.socket_pool.socket_manager:  共 1 个Token
 INFO:app.services.socket_pool.socket_manager:
@@ -1976,7 +1976,7 @@ INFO:app.services.connection_pool.connection_models:============================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 1 个
 INFO:app.services.connection_pool.connection_models:    - ea52de0c-51b7-4b49-a... | status=disconnected
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=connected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=connected
 INFO:app.services.connection_pool.connection_models:============================================================
 
 INFO:app.services.connection_pool.connection_models:
@@ -1987,10 +1987,10 @@ INFO:app.services.connection_pool.connection_models:============================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 1 个
 INFO:app.services.connection_pool.connection_models:    - ea52de0c-51b7-4b49-a... | status=connected
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=connected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=connected
 INFO:app.services.connection_pool.connection_models:============================================================
 
-INFO:app.services.daemon_initializer:Synchronized daemon state for daemon:9000:termman_daemon_secret_key_2024
+INFO:app.services.daemon_initializer:Synchronized daemon state for daemon:9000:TermPaws_daemon_secret_key_2024
 INFO:app.services.daemon_initializer:Daemon initialization completed
 INFO:app.main:[App] Starting MCP servers...
 INFO:app.services.agent.mcp.inprocess_client:[InProcessMCPClient] Initialized server 'local'
@@ -2419,15 +2419,15 @@ INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_tool_result
 e0c-51b7-4b49-a43d-985ed2e09579
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message' on server 'robot' with args: 
 {'text': '主人～3个后台任务全部完成啦(≧▽≦) A(5s) B(12s) C(14s) 都成功退出喵～', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_
-ticket_id': '4bf991c7412d4a3fb24f39571b6513b9', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_i
-s_superuser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation
+ticket_id': '4bf991c7412d4a3fb24f39571b6513b9', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_i
+s_superuser': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation
 ': 'private:2537134688', 'target_type': 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id
 ': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': '1oL9L56d_js6nn5YIT5m6n108FGgA7DAXMiOkVrsIy4'}
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'Message sent to c
 urrent robot conversation.'}]
 INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with args: {'text': '主人～3个后台任务全部完成啦(≧▽
 ≦) A(5s) B(12s) C(14s) 都成功退出喵～', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '4bf991c7412d4a
-3fb24f39571b6513b9', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termm
+3fb24f39571b6513b9', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_termm
 an_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:2537134688', 't
 arget_type': 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a
 -05e0b0dd652a'}], '_robot_context_token': '1oL9L56d_js6nn5YIT5m6n108FGgA7DAXMiOkVrsIy4'}
@@ -12581,7 +12581,7 @@ rgs: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'limit': 40, 'query': '
 45828fcbca9a68d704ea'}
 [LocalMCPServer] call_tool: name=read_chat_history, args={'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'limit': 4
 0, 'query': 'jdk', '_reply_ticket_id': 'cc2974acc29145828fcbca9a68d704ea'}
-[LocalMCPServer] Tool 'read_chat_history' result: [{'type': 'text', 'text': 'TermMan item chat history:\nitem_id=ea52de
+[LocalMCPServer] Tool 'read_chat_history' result: [{'type': 'text', 'text': 'TermPaws item chat history:\nitem_id=ea52de
 0c-51b7-4b49-a43d-985ed2e09579\ntotal_matching_messages=3\nlimit=40\noffset=0\norder=oldest_to_newest\nquery=jdk\n\nMes
 sages:\n[1] 2026-08-04T01:44:50.999401 agent_thinking (role=assistant)\nThe user is requesting the installation of Java
  8. This is a multi-step task. According to the action framework, the first action must be mcp_local_update_plan to enu
@@ -12611,7 +12611,7 @@ loading via curl from somewhere (probably a foreign source, which is slow).\n\nT
 irror. Let me cancel the running job and check the chat history to figure out what exactly was being installed.\n\nLet 
 me do both: cancel the job and read the chat history. These are independent so they can be run in parallel.\n\nUse this
  as short-term evidence for previous work; do not quote raw history unless the user asks.'}]
-INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'TermMan item chat
+INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'TermPaws item chat
  history:\nitem_id=ea52de0c-51b7-4b49-a43d-985ed2e09579\ntotal_matching_messages=3\nlimit=40\noffset=0\norder=oldest_to
 _newest\nquery=jdk\n\nMessages:\n[1] 2026-08-04T01:44:50.999401 agent_thinking (role=assistant)\nThe user is requesting
  the installation of Java 8. This is a multi-step task. According to the action framework, the first action must be mcp
@@ -12845,15 +12845,15 @@ INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to
 -51b7-4b49-a43d-985ed2e09579
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message' on server 'robot' with args: 
 {'text': '北京', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '52a81fcf6e73433caf1bff854452ab54
-', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_item_id': 'ea52
+', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_TermPaws_item_id': 'ea52
 de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:2537134688', 'target_type': 'priv
 ate', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], 
 '_robot_context_token': 'iOZN5KJVzxNv6HrEden8BgJ--pnZgCww4teafdu3lww'}
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'Message sent to c
 urrent robot conversation.'}]
 INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with args: {'text': '北京', 'item_id': '
-ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '52a81fcf6e73433caf1bff854452ab54', '_termman_user_id': 'ed0
-4396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e
+ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '52a81fcf6e73433caf1bff854452ab54', '_TermPaws_user_id': 'ed0
+4396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e
 09579', '_robot_known_targets': [{'conversation': 'private:2537134688', 'target_type': 'private', 'target_id': '2537134
 688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'iO
 ZN5KJVzxNv6HrEden8BgJ--pnZgCww4teafdu3lww'}
@@ -14084,7 +14084,7 @@ rgs: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'limit': 15, 'query': '
 5828fcbca9a68d704ea'}
 [LocalMCPServer] call_tool: name=read_chat_history, args={'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'limit': 1
 5, 'query': '镜像', '_reply_ticket_id': 'cc2974acc29145828fcbca9a68d704ea'}
-[LocalMCPServer] Tool 'read_chat_history' result: [{'type': 'text', 'text': 'TermMan item chat history:\nitem_id=ea52de
+[LocalMCPServer] Tool 'read_chat_history' result: [{'type': 'text', 'text': 'TermPaws item chat history:\nitem_id=ea52de
 0c-51b7-4b49-a43d-985ed2e09579\ntotal_matching_messages=9\nlimit=15\noffset=0\norder=oldest_to_newest\nquery=镜像\n\nMess
 ages:\n[1] 2026-08-04T01:56:20.556473 qq_user (role=user)\n换个国内镜像吧，国外源太慢了\n[2] 2026-08-04T01:58:04.125295 agent_thinkin
 g (role=assistant)\nLet me think about the situation. The user is in a private QQ chat. There\'s a running job (job_id=
@@ -14108,7 +14108,7 @@ b was trying to install JDK 8, failed via apt (Debian 13 doesn\'t have openjdk-8
  curl from somewhere (probably a foreign source, which is slow).\n\nThe user wants to switch to a domestic mirror. Let 
 me cancel the running job and check the chat history to figure out what exactly was being installed.\n\nLet me do both:
  cancel the job and read the chat history. These are independent so they can be run in parallel.\n[5] 2026-08-04T01:58:
-12.909811 agent_tool_result (role=assistant, tool_name=mcp_local_read_chat_history)\nTermMan item chat history:\nitem_i
+12.909811 agent_tool_result (role=assistant, tool_name=mcp_local_read_chat_history)\nTermPaws item chat history:\nitem_i
 d=ea52de0c-51b7-4b49-a43d-985ed2e09579\ntotal_matching_messages=3\nlimit=40\noffset=0\norder=oldest_to_newest\nquery=jd
 k\n\nMessages:\n[1] 2026-08-04T01:44:50.999401 agent_thinking (role=assistant)\nThe user is requesting the installation
  of Java 8. This is a multi-step task. According to the action framework, the first action must be mcp_local_update_pla
@@ -14169,7 +14169,7 @@ INFO:     127.0.0.1:40572 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
 INFO:     172.19.0.1:43424 - "GET /api/v1/robots/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/conversation-controllers HTTP/1.1" 200 OK
 INFO:     172.19.0.1:43424 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/plan HTTP/1.1" 200 OK
 INFO:     172.19.0.1:43424 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage/by-task HTTP/1.1" 200 OK
-INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'TermMan item chat
+INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'TermPaws item chat
  history:\nitem_id=ea52de0c-51b7-4b49-a43d-985ed2e09579\ntotal_matching_messages=9\nlimit=15\noffset=0\norder=oldest_to
 _newest\nquery=镜像\n\nMessages:\n[1] 2026-08-04T01:56:20.556473 qq_user (role=user)\n换个国内镜像吧，国外源太慢了\n[2] 2026-08-04T01:5
 8:04.125295 agent_thinking (role=assistant)\nLet me think about the situation. The user is in a private QQ chat. There\
@@ -14193,7 +14193,7 @@ load started\n\nSo the job was trying to install JDK 8, failed via apt (Debian 1
 l back to downloading via curl from somewhere (probably a foreign source, which is slow).\n\nThe user wants to switch t
 o a domestic mirror. Let me cancel the running job and check the chat history to figure out what exactly was being inst
 alled.\n\nLet me do both: cancel the job and read the chat history. These are independent so they can be run in paralle
-l.\n[5] 2026-08-04T01:58:12.909811 agent_tool_result (role=assistant, tool_name=mcp_local_read_chat_history)\nTermMan i
+l.\n[5] 2026-08-04T01:58:12.909811 agent_tool_result (role=assistant, tool_name=mcp_local_read_chat_history)\nTermPaws i
 tem chat history:\nitem_id=ea52de0c-51b7-4b49-a43d-985ed2e09579\ntotal_matching_messages=3\nlimit=40\noffset=0\norder=o
 ldest_to_newest\nquery=jdk\n\nMessages:\n[1] 2026-08-04T01:44:50.999401 agent_thinking (role=assistant)\nThe user is re
 questing the installation of Java 8. This is a multi-step task. According to the action framework, the first action mus
@@ -19435,18 +19435,18 @@ INFO:app.services.connection_pool.connection_manager:Daemon ID                  
   
 INFO:app.services.connection_pool.connection_manager:------------------------------------------------------------------
 --------------
-INFO:app.services.connection_pool.connection_manager:daemon:9000:termman_daemon_secret_key_2024         | connected    
+INFO:app.services.connection_pool.connection_manager:daemon:9000:TermPaws_daemon_secret_key_2024         | connected    
   
 INFO:app.services.connection_pool.connection_manager:
 ============================================================
 INFO:app.services.connection_pool.connection_models:
 ============================================================
-INFO:app.services.connection_pool.connection_models:[BackendConnPool] Created DaemonMainConnState for daemon=termman_da
+INFO:app.services.connection_pool.connection_models:[BackendConnPool] Created DaemonMainConnState for daemon=TermPaws_da
 emon_s...
 INFO:app.services.connection_pool.connection_models:============================================================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 0 个
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=disconnected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=disconnected
 INFO:app.services.connection_pool.connection_models:============================================================
 
 INFO:app.services.connection_pool.daemon_connection:
@@ -19475,7 +19475,7 @@ INFO:app.services.socket_pool.socket_manager:
 1. Item-Token映射表 [daemon_id -> {item_uuid: token}]
 INFO:app.services.socket_pool.socket_manager:--------------------------------------------------------------------------
 ------
-INFO:app.services.socket_pool.socket_manager:  daemon:9000:termman_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
+INFO:app.services.socket_pool.socket_manager:  daemon:9000:TermPaws_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
 fb4-49...
 INFO:app.services.socket_pool.socket_manager:  共 1 个Token
 INFO:app.services.socket_pool.socket_manager:
@@ -19512,7 +19512,7 @@ INFO:app.services.socket_pool.socket_manager:
 1. Item-Token映射表 [daemon_id -> {item_uuid: token}]
 INFO:app.services.socket_pool.socket_manager:--------------------------------------------------------------------------
 ------
-INFO:app.services.socket_pool.socket_manager:  daemon:9000:termman_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
+INFO:app.services.socket_pool.socket_manager:  daemon:9000:TermPaws_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
 fb4-49...
 INFO:app.services.socket_pool.socket_manager:  共 1 个Token
 INFO:app.services.socket_pool.socket_manager:
@@ -19554,7 +19554,7 @@ INFO:app.services.connection_pool.connection_models:============================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 1 个
 INFO:app.services.connection_pool.connection_models:    - ea52de0c-51b7-4b49-a... | status=disconnected
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=connected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=connected
 INFO:app.services.connection_pool.connection_models:============================================================
 
 INFO:app.services.connection_pool.connection_models:
@@ -19565,10 +19565,10 @@ INFO:app.services.connection_pool.connection_models:============================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 1 个
 INFO:app.services.connection_pool.connection_models:    - ea52de0c-51b7-4b49-a... | status=connected
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=connected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=connected
 INFO:app.services.connection_pool.connection_models:============================================================
 
-INFO:app.services.daemon_initializer:Synchronized daemon state for daemon:9000:termman_daemon_secret_key_2024
+INFO:app.services.daemon_initializer:Synchronized daemon state for daemon:9000:TermPaws_daemon_secret_key_2024
 INFO:app.services.daemon_initializer:Daemon initialization completed
 INFO:app.main:[App] Starting MCP servers...
 INFO:app.services.agent.mcp.inprocess_client:[InProcessMCPClient] Initialized server 'local'
@@ -20426,15 +20426,15 @@ INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to
 -51b7-4b49-a43d-985ed2e09579
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message' on server 'robot' with args: 
 {'text': '2 喵(≧▽≦)', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '4aea068e8df741188fd6b8f9fb
-c77187', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_item_id':
+c77187', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_TermPaws_item_id':
  'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:2537134688', 'target_type':
  'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652
 a'}], '_robot_context_token': 'w5DAXxtUVg606_gPNcYgU488L9tACmc_IoYlzlsEuPw'}
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'Message sent to c
 urrent robot conversation.'}]
 INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with args: {'text': '2 喵(≧▽≦)', 'item_
-id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '4aea068e8df741188fd6b8f9fbc77187', '_termman_user_id'
-: 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-9
+id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '4aea068e8df741188fd6b8f9fbc77187', '_TermPaws_user_id'
+: 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-9
 85ed2e09579', '_robot_known_targets': [{'conversation': 'private:2537134688', 'target_type': 'private', 'target_id': '2
 537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token
 ': 'w5DAXxtUVg606_gPNcYgU488L9tACmc_IoYlzlsEuPw'}
@@ -21354,15 +21354,15 @@ INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to
 -51b7-4b49-a43d-985ed2e09579
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message' on server 'robot' with args: 
 {'text': '主人～后台任务跑完啦，输出 LONG_JOB_DONE，用时60秒，一切正常喵(≧▽≦)', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_tic
-ket_id': '39b4cf59a66b4414a9556fa4782ddb30', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_s
-uperuser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 
+ket_id': '39b4cf59a66b4414a9556fa4782ddb30', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_s
+uperuser': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 
 'private:2537134688', 'target_type': 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': 
 '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'QKixd2ZjSDHPCMUbF8eToh8wOc-wnRn8R7UEOSEmku8'}
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'Message sent to c
 urrent robot conversation.'}]
 INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with args: {'text': '主人～后台任务跑完啦，输出 LON
 G_JOB_DONE，用时60秒，一切正常喵(≧▽≦)', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '39b4cf59a66b4414a
-9556fa4782ddb30', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_
+9556fa4782ddb30', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_TermPaws_
 item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:2537134688', 'targ
 et_type': 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05
 e0b0dd652a'}], '_robot_context_token': 'QKixd2ZjSDHPCMUbF8eToh8wOc-wnRn8R7UEOSEmku8'}
@@ -24510,20 +24510,20 @@ INFO:app.services.connection_pool.connection_manager:Daemon ID                  
   
 INFO:app.services.connection_pool.connection_manager:------------------------------------------------------------------
 --------------
-INFO:app.services.connection_pool.connection_manager:daemon:9000:termman_daemon_secret_key_2024         | connected    
+INFO:app.services.connection_pool.connection_manager:daemon:9000:TermPaws_daemon_secret_key_2024         | connected    
   
 INFO:app.services.connection_pool.connection_manager:
 ============================================================
 INFO:app.services.connection_pool.connection_models:
 ============================================================
-INFO:app.services.connection_pool.connection_models:[BackendConnPool] Created DaemonMainConnState for daemon=termman_da
+INFO:app.services.connection_pool.connection_models:[BackendConnPool] Created DaemonMainConnState for daemon=TermPaws_da
 emon_s...
 INFO:app.services.connection_pool.connection_models:============================================================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 0 个
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
 INFO:app.services.connection_pool.daemon_connection:
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=disconnected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=disconnected
 INFO:app.services.connection_pool.daemon_connection:[DaemonConnection] Received full connection snapshot from daemon
 INFO:app.services.connection_pool.connection_models:============================================================
 
@@ -24550,7 +24550,7 @@ INFO:app.services.socket_pool.socket_manager:
 1. Item-Token映射表 [daemon_id -> {item_uuid: token}]
 INFO:app.services.socket_pool.socket_manager:--------------------------------------------------------------------------
 ------
-INFO:app.services.socket_pool.socket_manager:  daemon:9000:termman_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
+INFO:app.services.socket_pool.socket_manager:  daemon:9000:TermPaws_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
 fb4-49...
 INFO:app.services.socket_pool.socket_manager:  共 1 个Token
 INFO:app.services.socket_pool.socket_manager:
@@ -24587,7 +24587,7 @@ INFO:app.services.socket_pool.socket_manager:
 1. Item-Token映射表 [daemon_id -> {item_uuid: token}]
 INFO:app.services.socket_pool.socket_manager:--------------------------------------------------------------------------
 ------
-INFO:app.services.socket_pool.socket_manager:  daemon:9000:termman_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
+INFO:app.services.socket_pool.socket_manager:  daemon:9000:TermPaws_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
 fb4-49...
 INFO:app.services.socket_pool.socket_manager:  共 1 个Token
 INFO:app.services.socket_pool.socket_manager:
@@ -24626,7 +24626,7 @@ INFO:app.services.connection_pool.connection_models:============================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 1 个
 INFO:app.services.connection_pool.connection_models:    - ea52de0c-51b7-4b49-a... | status=disconnected
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=connected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=connected
 INFO:app.services.connection_pool.connection_models:============================================================
 
 INFO:app.services.connection_pool.connection_models:
@@ -24637,10 +24637,10 @@ INFO:app.services.connection_pool.connection_models:============================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 1 个
 INFO:app.services.connection_pool.connection_models:    - ea52de0c-51b7-4b49-a... | status=connected
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=connected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=connected
 INFO:app.services.connection_pool.connection_models:============================================================
 
-INFO:app.services.daemon_initializer:Synchronized daemon state for daemon:9000:termman_daemon_secret_key_2024
+INFO:app.services.daemon_initializer:Synchronized daemon state for daemon:9000:TermPaws_daemon_secret_key_2024
 INFO:app.services.daemon_initializer:Daemon initialization completed
 INFO:app.main:[App] Starting MCP servers...
 INFO:app.services.agent.mcp.inprocess_client:[InProcessMCPClient] Initialized server 'local'
@@ -25145,7 +25145,7 @@ Batches:   0%|          | 0/1 [00:00<?, ?it/s]INFO:app.services.agent.stream_man
 king to 1 chat subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message' on server 'robot' with args: 
 {'text': '2', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': 'd13c3d0b2a4a472fba5ddb12a1a28cbe'
-, '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_item_id': 'ea52d
+, '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_TermPaws_item_id': 'ea52d
 e0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:2537134688', 'target_type': 'priva
 te', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '
 _robot_context_token': 'ebz04V85mbtXo4vdjk36wPeXLNutZTcOW8wZmw5wLgc'}
@@ -25155,8 +25155,8 @@ Batches: 100%|██████████| 1/1 [00:00<00:00,  6.41it/s]
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'Message sent to c
 urrent robot conversation.'}]
 INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with args: {'text': '2', 'item_id': 'e
-a52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': 'd13c3d0b2a4a472fba5ddb12a1a28cbe', '_termman_user_id': 'ed04
-396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e0
+a52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': 'd13c3d0b2a4a472fba5ddb12a1a28cbe', '_TermPaws_user_id': 'ed04
+396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e0
 9579', '_robot_known_targets': [{'conversation': 'private:2537134688', 'target_type': 'private', 'target_id': '25371346
 88', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'ebz
 04V85mbtXo4vdjk36wPeXLNutZTcOW8wZmw5wLgc'}
@@ -26393,15 +26393,15 @@ INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to
 -51b7-4b49-a43d-985ed2e09579
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message' on server 'robot' with args: 
 {'text': '主人~后台任务跑完啦喵 输出是 LONG_JOB_DONE (≧▽≦)', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': 
-'f30541aa80a64710a2a15c8daea1deb8', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser'
-: True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:
+'f30541aa80a64710a2a15c8daea1deb8', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser'
+: True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:
 2537134688', 'target_type': 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55
 -04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': '2PmhIoMQSY7maRt3TpJr6ca162p83de7jtFrJlDvJJQ'}
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'Message sent to c
 urrent robot conversation.'}]
 INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with args: {'text': '主人~后台任务跑完啦喵 输出是 L
 ONG_JOB_DONE (≧▽≦)', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': 'f30541aa80a64710a2a15c8dae
-a1deb8', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_item_id':
+a1deb8', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_TermPaws_item_id':
  'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:2537134688', 'target_type':
  'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652
 a'}], '_robot_context_token': '2PmhIoMQSY7maRt3TpJr6ca162p83de7jtFrJlDvJJQ'}
@@ -28917,7 +28917,7 @@ rgs: {'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'limit': 30, 'query': '
 0bc1c4e64a8ac977b4cdba1fa'}
 [LocalMCPServer] call_tool: name=read_chat_history, args={'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', 'limit': 3
 0, 'query': 'download', '_reply_ticket_id': '70af63d0bc1c4e64a8ac977b4cdba1fa'}
-[LocalMCPServer] Tool 'read_chat_history' result: [{'type': 'text', 'text': 'TermMan item chat history:\nitem_id=ea52de
+[LocalMCPServer] Tool 'read_chat_history' result: [{'type': 'text', 'text': 'TermPaws item chat history:\nitem_id=ea52de
 0c-51b7-4b49-a43d-985ed2e09579\ntotal_matching_messages=4\nlimit=30\noffset=0\norder=oldest_to_newest\nquery=download\n
 \nMessages:\n[1] 2026-08-04T02:19:06.261184 agent_thinking (role=assistant)\nThe user is requesting the installation of
  Java 8. This is a multi-step task (installation, verification). First, let me create a plan.\n\nThere\'s a background 
@@ -28949,7 +28949,7 @@ downloading something — the command starts with `set -e; ARCH=$(uname -m); cas
 d it\'s been running for 1236 seconds. I need to restore the context to figure out what\'s being downloaded. Let me rea
 d the chat history.\n\nUse this as short-term evidence for previous work; do not quote raw history unless the user asks
 .'}]
-INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'TermMan item chat
+INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'TermPaws item chat
  history:\nitem_id=ea52de0c-51b7-4b49-a43d-985ed2e09579\ntotal_matching_messages=4\nlimit=30\noffset=0\norder=oldest_to
 _newest\nquery=download\n\nMessages:\n[1] 2026-08-04T02:19:06.261184 agent_thinking (role=assistant)\nThe user is reque
 sting the installation of Java 8. This is a multi-step task (installation, verification). First, let me create a plan.\
@@ -29074,7 +29074,7 @@ INFO:     172.19.0.1:57978 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e0
 INFO:     127.0.0.1:40236 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
 INFO:     172.19.0.1:46462 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
 INFO:     172.19.0.1:46478 - "GET /api/v1/items/ea52de0c-51b7-4b49-a43d-985ed2e09579/token-usage HTTP/1.1" 200 OK
-[LocalMCPServer] Tool 'read_chat_history' result: [{'type': 'text', 'text': 'TermMan item chat history:\nitem_id=ea52de
+[LocalMCPServer] Tool 'read_chat_history' result: [{'type': 'text', 'text': 'TermPaws item chat history:\nitem_id=ea52de
 0c-51b7-4b49-a43d-985ed2e09579\ntotal_matching_messages=5\nlimit=20\noffset=0\norder=oldest_to_newest\nquery=tarch\n\nM
 essages:\n[1] 2026-08-04T02:19:41.827719 agent_thinking (role=assistant)\nLet me analyze the situation. This is a backg
 round job callback from a QQ session. The task is "帮我安装java8，装好了告诉我" (help me install Java 8, tell me when it\'s done).
@@ -29098,7 +29098,7 @@ l and restart.\n\nLet me proceed step by step. First block: update_plan + prepar
 gn source is too slow. There\'s a background job running (cf1ca6888308), which is downloading something — the command s
 tarts with `set -e; ARCH=$(uname -m); case "$ARCH" in x86_64) TARCH=x64;; ...`, and it\'s been running for 1236 seconds
 . I need to restore the context to figure out what\'s being downloaded. Let me read the chat history.\n[4] 2026-08-04T0
-2:20:55.448468 agent_tool_result (role=assistant, tool_name=mcp_local_read_chat_history)\nTermMan item chat history:\ni
+2:20:55.448468 agent_tool_result (role=assistant, tool_name=mcp_local_read_chat_history)\nTermPaws item chat history:\ni
 tem_id=ea52de0c-51b7-4b49-a43d-985ed2e09579\ntotal_matching_messages=4\nlimit=30\noffset=0\norder=oldest_to_newest\nque
 ry=download\n\nMessages:\n[1] 2026-08-04T02:19:06.261184 agent_thinking (role=assistant)\nThe user is requesting the in
 stallation of Java 8. This is a multi-step task (installation, verification). First, let me create a plan.\n\nThere\'s 
@@ -29114,7 +29114,7 @@ RCH=…` — this looks like a Temurin/Adoptium JDK download (the TARCH=x64 nami
 r wants to switch to a domestic mirror because the foreign source is too slow.\n\nLet me read more of the chat history 
 to get the full command. I\'ll query the history with a different query to check the full command.\n\nUse this as short
 -term evidence for previous work; do not quote raw history unless the user asks.'}]
-INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'TermMan item chat
+INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'TermPaws item chat
  history:\nitem_id=ea52de0c-51b7-4b49-a43d-985ed2e09579\ntotal_matching_messages=5\nlimit=20\noffset=0\norder=oldest_to
 _newest\nquery=tarch\n\nMessages:\n[1] 2026-08-04T02:19:41.827719 agent_thinking (role=assistant)\nLet me analyze the s
 ituation. This is a background job callback from a QQ session. The task is "帮我安装java8，装好了告诉我" (help me install Java 8, 
@@ -30091,8 +30091,8 @@ INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_thinking to
 -51b7-4b49-a43d-985ed2e09579
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message' on server 'robot' with args: 
 {'text': '换清华源搞定啦喵～99M 只用了9秒 (≧▽≦) JDK 8u502 装好在 /opt/java8，java -version 验证通过', 'item_id': 'ea52de0c-51b7-4b49-a43d-98
-5ed2e09579', '_reply_ticket_id': '70af63d0bc1c4e64a8ac977b4cdba1fa', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf
-0edfe7c', '_termman_is_superuser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targ
+5ed2e09579', '_reply_ticket_id': '70af63d0bc1c4e64a8ac977b4cdba1fa', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf
+0edfe7c', '_TermPaws_is_superuser': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targ
 ets': [{'conversation': 'private:2537134688', 'target_type': 'private', 'target_id': '2537134688', 'sender': 'private_2
 537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'VVp0rFiuCbdx3kNHItcuacRCmhIy
 -P12cHqBXTsg1Dc'}
@@ -30100,8 +30100,8 @@ INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'ty
 urrent robot conversation.'}]
 INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with args: {'text': '换清华源搞定啦喵～99M 只用了9
 秒 (≧▽≦) JDK 8u502 装好在 /opt/java8，java -version 验证通过', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket
-_id': '70af63d0bc1c4e64a8ac977b4cdba1fa', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_supe
-ruser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'pr
+_id': '70af63d0bc1c4e64a8ac977b4cdba1fa', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_supe
+ruser': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'pr
 ivate:2537134688', 'target_type': 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5c
 bc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'VVp0rFiuCbdx3kNHItcuacRCmhIy-P12cHqBXTsg1Dc'}
 INFO:app.services.agent.stream_manager:[StreamManager] Emitted agent_qq_reply to 1 chat subscriber(s) for item ea52de0c
@@ -30433,18 +30433,18 @@ INFO:app.services.connection_pool.connection_manager:Daemon ID                  
   
 INFO:app.services.connection_pool.connection_manager:------------------------------------------------------------------
 --------------
-INFO:app.services.connection_pool.connection_manager:daemon:9000:termman_daemon_secret_key_2024         | connected    
+INFO:app.services.connection_pool.connection_manager:daemon:9000:TermPaws_daemon_secret_key_2024         | connected    
   
 INFO:app.services.connection_pool.connection_manager:
 ============================================================
 INFO:app.services.connection_pool.connection_models:
 ============================================================
-INFO:app.services.connection_pool.connection_models:[BackendConnPool] Created DaemonMainConnState for daemon=termman_da
+INFO:app.services.connection_pool.connection_models:[BackendConnPool] Created DaemonMainConnState for daemon=TermPaws_da
 emon_s...
 INFO:app.services.connection_pool.connection_models:============================================================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 0 个
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=disconnected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=disconnected
 INFO:app.services.connection_pool.connection_models:============================================================
 
 INFO:app.services.connection_pool.daemon_connection:
@@ -30473,7 +30473,7 @@ INFO:app.services.socket_pool.socket_manager:
 1. Item-Token映射表 [daemon_id -> {item_uuid: token}]
 INFO:app.services.socket_pool.socket_manager:--------------------------------------------------------------------------
 ------
-INFO:app.services.socket_pool.socket_manager:  daemon:9000:termman_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
+INFO:app.services.socket_pool.socket_manager:  daemon:9000:TermPaws_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
 fb4-49...
 INFO:app.services.socket_pool.socket_manager:  共 1 个Token
 INFO:app.services.socket_pool.socket_manager:
@@ -30510,7 +30510,7 @@ INFO:app.services.socket_pool.socket_manager:
 1. Item-Token映射表 [daemon_id -> {item_uuid: token}]
 INFO:app.services.socket_pool.socket_manager:--------------------------------------------------------------------------
 ------
-INFO:app.services.socket_pool.socket_manager:  daemon:9000:termman_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
+INFO:app.services.socket_pool.socket_manager:  daemon:9000:TermPaws_daemon_sec... | ea52de0c-51b7-4b49-a... | c05aa640-5
 fb4-49...
 INFO:app.services.socket_pool.socket_manager:  共 1 个Token
 INFO:app.services.socket_pool.socket_manager:
@@ -30550,7 +30550,7 @@ INFO:app.services.connection_pool.connection_models:============================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 1 个
 INFO:app.services.connection_pool.connection_models:    - ea52de0c-51b7-4b49-a... | status=disconnected
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=connected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=connected
 INFO:app.services.connection_pool.connection_models:============================================================
 
 INFO:app.services.connection_pool.connection_models:
@@ -30561,10 +30561,10 @@ INFO:app.services.connection_pool.connection_models:============================
 INFO:app.services.connection_pool.connection_models:  Room监听连接池: 1 个
 INFO:app.services.connection_pool.connection_models:    - ea52de0c-51b7-4b49-a... | status=connected
 INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=connected
+INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=connected
 INFO:app.services.connection_pool.connection_models:============================================================
 
-INFO:app.services.daemon_initializer:Synchronized daemon state for daemon:9000:termman_daemon_secret_key_2024
+INFO:app.services.daemon_initializer:Synchronized daemon state for daemon:9000:TermPaws_daemon_secret_key_2024
 INFO:app.services.daemon_initializer:Daemon initialization completed
 INFO:app.main:[App] Starting MCP servers...
 INFO:app.services.agent.mcp.inprocess_client:[InProcessMCPClient] Initialized server 'local'
@@ -31451,13 +31451,13 @@ deduplicated': 0, 'pending_turns_kicked': 0, 'buffered_results_flushed': 0}
 INFO:LiteLLM:Wrapper: Completed Call, calling success_handler
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message' on server 'robot' with args: 
 {'target_type': 'private', 'target_id': '2537134688', 'messages': ['主人，四个任务全部搞定啦 (≧▽≦)', 'c.txt 内容是 alpha 换行 beta 喵~'],
- 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_termman_user_id': '909edfa7-714c-498e-9907-7fc31c07c143', '_termm
-an_is_superuser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579'}
+ 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_TermPaws_user_id': '909edfa7-714c-498e-9907-7fc31c07c143', '_termm
+an_is_superuser': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579'}
 INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'text', 'text': 'Message sent to Q
 Q private 2537134688.'}]
 INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with args: {'target_type': 'private', 
 'target_id': '2537134688', 'messages': ['主人，四个任务全部搞定啦 (≧▽≦)', 'c.txt 内容是 alpha 换行 beta 喵~'], 'item_id': 'ea52de0c-51b7-
-4b49-a43d-985ed2e09579', '_termman_user_id': '909edfa7-714c-498e-9907-7fc31c07c143', '_termman_is_superuser': True, '_t
+4b49-a43d-985ed2e09579', '_TermPaws_user_id': '909edfa7-714c-498e-9907-7fc31c07c143', '_TermPaws_is_superuser': True, '_t
 ermman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579'}
 INFO:app.services.agent.session:[AgentSession] Tool mcp_robot_send_message executed
 INFO:     127.0.0.1:40164 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK

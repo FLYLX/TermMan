@@ -18,7 +18,7 @@ NEW_MESSAGING_PROMPT_SOURCE = '''ROBOT_MESSAGING_PROMPT = (
     "只有用户明确询问历史、偏好、前文，或当前消息离开前文无法理解时，才用 `mcp_robot_read_conversation_memory` 读取当前 QQ 会话 .log 记忆；不要为判断本轮是否要回复、是否已发送而读旧 .log。\\n"
     "读取时只看默认返回的最近几条；旧 .log 是背景，不是新消息，不要补回旧消息。\\n"
     "不要在可见回复里提到“没对齐、按口径修改、上下文判断”等内部过程，除非用户明确在讨论这些。\\n"
-    "最终 assistant 文本是 TermMan 内部回复，不会自动发送到 QQ。\\n"
+    "最终 assistant 文本是 TermPaws 内部回复，不会自动发送到 QQ。\\n"
     f"\\n{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
     f"{ROBOT_SENDER_IDENTITY_INSTRUCTION}"
     f"{ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION}"

@@ -173,7 +173,7 @@ class TerminalWebSocketServer:
         if auth_header.lower().startswith("bearer "):
             return auth_header[7:].strip()
 
-        token_header = str(request_headers.get("X-TermMan-Token", "") or "").strip()
+        token_header = str(request_headers.get("X-TermPaws-Token", "") or "").strip()
         if token_header:
             return token_header
 

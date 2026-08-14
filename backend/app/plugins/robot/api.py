@@ -342,9 +342,9 @@ def get_bridge_health(current_user: CurrentUser) -> dict:
 @router.get("/bridge/runtime-config")
 def get_bridge_runtime_config(
     session: SessionDep,
-    x_termman_bridge_token: str | None = Header(default=None),
+    x_TermPaws_bridge_token: str | None = Header(default=None),
 ) -> dict:
-    assert_bridge_permission(x_termman_bridge_token)
+    assert_bridge_permission(x_TermPaws_bridge_token)
 
     robots = session.exec(
         select(Robot).where(
@@ -757,9 +757,9 @@ def dispatch_robot_message(
     session: SessionDep,
     id: uuid.UUID,
     body: RobotInboundMessage,
-    x_termman_bridge_token: str | None = Header(default=None),
+    x_TermPaws_bridge_token: str | None = Header(default=None),
 ) -> RobotDispatchResponse:
-    assert_bridge_permission(x_termman_bridge_token)
+    assert_bridge_permission(x_TermPaws_bridge_token)
     robot = get_robot_or_404(session, id)
     return robot_service.handle_inbound_message(session, robot, body)
 
@@ -769,9 +769,9 @@ def ingest_robot_debug_event(
     session: SessionDep,
     id: uuid.UUID,
     body: dict,
-    x_termman_bridge_token: str | None = Header(default=None),
+    x_TermPaws_bridge_token: str | None = Header(default=None),
 ) -> dict:
-    assert_bridge_permission(x_termman_bridge_token)
+    assert_bridge_permission(x_TermPaws_bridge_token)
     get_robot_or_404(session, id)
     record_robot_event(
         str(id),
@@ -1192,7 +1192,7 @@ def get_robot_debug(
             "event_count": len(events),
             "last_event_at": events[0].get("timestamp") if events else None,
             "qq_event_hint": (
-                "Robot server is connected, but no QQ connector message event has reached TermMan yet. "
+                "Robot server is connected, but no QQ connector message event has reached TermPaws yet. "
                 "Check the reverse WebSocket endpoint and whether the logged-in QQ account is receiving messages."
                 if connected and not robot_health.get("last_message_event_at")
                 else None

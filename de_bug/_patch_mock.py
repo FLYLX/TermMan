@@ -1,5 +1,5 @@
 import io
-path = r"E:\dev\TermMan\dev\TermMan\de_bug\mock_napcat.py"
+path = r"E:\dev\TermPaws\dev\TermPaws\de_bug\mock_napcat.py"
 with io.open(path, "r", encoding="utf-8") as handle:
     text = handle.read()
 old = "HEADERS = {'X-Self-ID': '10001', 'X-Client-Role': 'Universal'}"

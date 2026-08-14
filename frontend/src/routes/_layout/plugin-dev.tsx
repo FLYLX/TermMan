@@ -65,7 +65,7 @@ function PluginDevGuide() {
       <div className="space-y-1">
         <h1 className="text-xl font-bold text-stone-800">第三方插件开发指南</h1>
         <p className="text-xs text-stone-500">
-          TermMan 插件接口是标准化的。实现以下接口，即可接入任意聊天平台（Discord / Telegram / Kook 等）。点击章节展开详情。
+          TermPaws 插件接口是标准化的。实现以下接口，即可接入任意聊天平台（Discord / Telegram / Kook 等）。点击章节展开详情。
         </p>
       </div>
 
@@ -75,10 +75,10 @@ function PluginDevGuide() {
 
 def get_backend_plugin() -> BackendPlugin:
     return BackendPlugin(
-        plugin_id="termman.discord",
+        plugin_id="TermPaws.discord",
         name="Discord",
         version="1.0.0",
-        description="Discord bot integration for TermMan",
+        description="Discord bot integration for TermPaws",
         builtin=False,
         category="messaging",
         enabled=lambda: settings.DISCORD_PLUGIN_ENABLED,

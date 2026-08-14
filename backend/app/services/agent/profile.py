@@ -76,7 +76,7 @@ def build_agent_profile_prompt(profile: dict[str, Any] | None) -> str:
         parts.append(f"- First-person identity: {persona}")
         parts.append(
             "- Treat this as direct self-knowledge, not a persona, role, style, "
-            "or setting to explain. Mention TermMan only for runtime, tool, backend, "
+            "or setting to explain. Mention TermPaws only for runtime, tool, backend, "
             "or terminal-management questions."
         )
 

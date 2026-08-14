@@ -10,7 +10,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 BRIDGE = "http://127.0.0.1:33333"
 BASE = "http://127.0.0.1:28888"
 ITEM = "ea52de0c-51b7-4b49-a43d-985ed2e09579"
-LOG = r"E:\dev\TermMan\dev\TermMan\de_bug\_mock_qq.log"
+LOG = r"E:\dev\TermPaws\dev\TermPaws\de_bug\_mock_qq.log"
 
 _msg_id = int(time.time()) % 10000 * 100
 def send_qq(text):
@@ -51,7 +51,7 @@ def new_replies(n0):
         return [l.strip() for l in f.readlines()[n0:] if "QQ [" in l]
 
 def dexec(cmd, timeout=20):
-    p = subprocess.run(["docker", "exec", "termman-daemon-1", "bash", "-c", cmd],
+    p = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "bash", "-c", cmd],
                        capture_output=True, timeout=timeout)
     return (p.stdout.decode("utf-8", errors="replace") + p.stderr.decode("utf-8", errors="replace")).strip()
 

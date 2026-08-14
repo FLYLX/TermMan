@@ -1,4 +1,4 @@
-﻿import requests, json, sys, io, time, subprocess
+import requests, json, sys, io, time, subprocess
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 BASE = "http://127.0.0.1:28888"
@@ -16,7 +16,7 @@ print(f"Baseline: {baseline}")
 
 # Write to terminal
 print("Writing 'echo FLOW_TEST_999' to terminal...")
-subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     "echo 'echo FLOW_TEST_999' > /proc/19/fd/0"],
     capture_output=True, text=True)
 

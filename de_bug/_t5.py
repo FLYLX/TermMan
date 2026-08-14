@@ -8,7 +8,7 @@ token = r.json()["access_token"]
 h = {"Authorization": f"Bearer {token}"}
 
 # Check java
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "bash", "-c", "java -version 2>&1 || echo NO_JAVA"], capture_output=True, text=True)
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "bash", "-c", "java -version 2>&1 || echo NO_JAVA"], capture_output=True, text=True)
 java_out = (result.stdout + result.stderr).strip()
 print(f"Java: {java_out[:200]}")
 

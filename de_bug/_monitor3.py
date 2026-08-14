@@ -40,7 +40,7 @@ else:
 
 # Check java
 import subprocess
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "java", "-version"],
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "java", "-version"],
                        capture_output=True, text=True, timeout=10)
 print(f"\nJava check: exit={result.returncode}")
 print(f"  stderr: {result.stderr[:200]}")

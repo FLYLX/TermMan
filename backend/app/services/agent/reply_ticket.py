@@ -375,7 +375,7 @@ class ReplyTicketManager:
             item_id=str(item_id),
             handler_id=str(handler_id),
             source_type=SOURCE_WEB,
-            source_label="TermMan web chat",
+            source_label="TermPaws web chat",
             request_message=str(message or "").strip()[:500],
         )
         ticket.extra_targets = extract_explicit_qq_targets(message)
@@ -454,7 +454,7 @@ class ReplyTicketManager:
             source_type=SOURCE_WEB,
         )
         with self._lock:
-            ticket.source_label = "TermMan scheduled task"
+            ticket.source_label = "TermPaws scheduled task"
             ticket.request_message = str(request_message or message or "").strip()[:4000]
             ticket.scheduled_task_id = str(scheduled_task_id or "").strip()
             ticket.scheduled_execution_id = str(
@@ -670,7 +670,7 @@ class ReplyTicketManager:
                 f"- ticket_id: {ticket.ticket_id}\n"
                 f"- schedule_id: {ticket.scheduled_task_id}\n"
                 f"- execution_id: {ticket.scheduled_execution_id or 'unknown'}\n"
-                "- source: TermMan scheduled task\n"
+                "- source: TermPaws scheduled task\n"
                 "- treat terminal/background-job feedback as the continuation of this "
                 "scheduled execution.\n"
                 "- on failure, keep the task for transient failures. Delete it with "
@@ -699,7 +699,7 @@ class ReplyTicketManager:
             return (
                 "Authoritative reply ticket:\n"
                 f"- ticket_id: {ticket.ticket_id}\n"
-                "- source: TermMan web chat\n"
+                "- source: TermPaws web chat\n"
                 f"{targets_hint}"
                 "- REPLY ROUTING: this conversation originated from the web chat. "
                 "Reply directly in this web response.\n"

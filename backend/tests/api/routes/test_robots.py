@@ -327,7 +327,7 @@ def test_dispatch_robot_message_routes_to_item_agent(
 
     response = client.post(
         f"{settings.API_V1_STR}/robots/{robot_id}/dispatch",
-        headers={"X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY},
+        headers={"X-TermPaws-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET or settings.SECRET_KEY},
         json={
             "sender_key": "group_group-1_member-1",
             "text": "/term alpha status?",
@@ -484,7 +484,7 @@ def test_dispatch_robot_message_rejects_invalid_bridge_token(
 
     response = client.post(
         f"{settings.API_V1_STR}/robots/{robot_id}/dispatch",
-        headers={"X-TermMan-Bridge-Token": "wrong-token"},
+        headers={"X-TermPaws-Bridge-Token": "wrong-token"},
         json={
             "sender_key": "friend_openid",
             "text": "ping",

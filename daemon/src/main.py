@@ -15,7 +15,7 @@ from service import terminal_manager
 
 # 创建FastAPI应用
 fastapi_app = FastAPI(
-    title="TermMan Daemon",
+    title="TermPaws Daemon",
     description="Terminal Management Daemon API",
     version="0.1.0"
 )
@@ -35,7 +35,7 @@ def root():
     Daemon健康检查接口
     """
     return {
-        "message": "TermMan Daemon is running",
+        "message": "TermPaws Daemon is running",
         "version": "0.1.0"
     }
 
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     host = config.get("HOST")
     port = config.get("PORT")
     
-    logger.info(f"Starting TermMan Daemon on {host}:{port}")
+    logger.info(f"Starting TermPaws Daemon on {host}:{port}")
     logger.info(f"API Key: {'***' + config.get('API_KEY')[-4:] if config.get('API_KEY') else 'Not set'}")
     
     # 启动服务器

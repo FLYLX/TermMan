@@ -1,5 +1,5 @@
-﻿import pathlib
-p = pathlib.Path(r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\reply_ticket.py")
+import pathlib
+p = pathlib.Path(r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\reply_ticket.py")
 text = p.read_text(encoding="utf-8")
 old = '                    "conversation_generation": ticket.conversation_generation,\n                    "workflow": workflow,\n'
 new = '                    "conversation_generation": ticket.conversation_generation,\n                    "workflow": None,\n'

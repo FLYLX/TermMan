@@ -1,4 +1,4 @@
-filepath = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\prompts\policy.py"
+filepath = r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\prompts\policy.py"
 with open(filepath, "r", encoding="utf-8") as f:
     c = f.read()
 old = "        max_recent_messages=8,"

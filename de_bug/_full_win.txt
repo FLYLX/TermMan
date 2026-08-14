@@ -1,4 +1,4 @@
-﻿2026-08-03T16:12:23.795271119Z INFO:     127.0.0.1:47220 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
+2026-08-03T16:12:23.795271119Z INFO:     127.0.0.1:47220 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
 2026-08-03T16:12:33.883185029Z INFO:     127.0.0.1:59554 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
 2026-08-03T16:12:43.970721376Z INFO:     127.0.0.1:38902 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
 2026-08-03T16:12:54.058679163Z INFO:     127.0.0.1:46696 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
@@ -81,7 +81,7 @@
 2026-08-03T16:25:40.974186336Z INFO:     127.0.0.1:54014 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
 docker : 2026-08-03T16:25:41.669478597Z INFO:     Shutting down
 At line:2 char:1
-+ docker logs --since 20m -t termman-backend-1 2>&1 | Out-File -Encodin ...
++ docker logs --since 20m -t TermPaws-backend-1 2>&1 | Out-File -Encodin ...
 + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : NotSpecified: (2026-08-03T16:2...  Shutting down:String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
@@ -122,21 +122,21 @@ n: http://daemon:9000
                 | Status         
 2026-08-03T16:26:27.594716913Z INFO:app.services.connection_pool.connection_manager:-----------------------------------
 ---------------------------------------------
-2026-08-03T16:26:27.594720450Z INFO:app.services.connection_pool.connection_manager:daemon:9000:termman_daemon_secret_k
+2026-08-03T16:26:27.594720450Z INFO:app.services.connection_pool.connection_manager:daemon:9000:TermPaws_daemon_secret_k
 ey_2024         | connected      
 2026-08-03T16:26:27.594736772Z INFO:app.services.connection_pool.connection_manager:
 2026-08-03T16:26:27.594740339Z ============================================================
 2026-08-03T16:26:27.594809254Z INFO:app.services.connection_pool.connection_models:
 2026-08-03T16:26:27.594814906Z ============================================================
 2026-08-03T16:26:27.595065582Z INFO:app.services.connection_pool.connection_models:[BackendConnPool] Created DaemonMain
-ConnState for daemon=termman_daemon_s...
+ConnState for daemon=TermPaws_daemon_s...
 2026-08-03T16:26:27.595205823Z INFO:app.services.connection_pool.connection_models:====================================
 ========================
 2026-08-03T16:26:27.595211775Z INFO:app.services.connection_pool.connection_models:  Room监听连接池: 0 个
 2026-08-03T16:26:27.595246126Z INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
 2026-08-03T16:26:27.595414292Z INFO:app.services.connection_pool.daemon_connection:
 2026-08-03T16:26:27.595422007Z @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-2026-08-03T16:26:27.595470171Z INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=d
+2026-08-03T16:26:27.595470171Z INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=d
 isconnected
 2026-08-03T16:26:27.595552373Z INFO:app.services.connection_pool.daemon_connection:[DaemonConnection] Received full con
 nection snapshot from daemon
@@ -164,7 +164,7 @@ m ea52de0c-51b7-4b49-a43d-985ed2e09579
 2026-08-03T16:26:27.607607376Z 1. Item-Token映射表 [daemon_id -> {item_uuid: token}]
 2026-08-03T16:26:27.607621614Z INFO:app.services.socket_pool.socket_manager:-------------------------------------------
 -------------------------------------
-2026-08-03T16:26:27.607625130Z INFO:app.services.socket_pool.socket_manager:  daemon:9000:termman_daemon_sec... | ea52d
+2026-08-03T16:26:27.607625130Z INFO:app.services.socket_pool.socket_manager:  daemon:9000:TermPaws_daemon_sec... | ea52d
 e0c-51b7-4b49-a... | c05aa640-5fb4-49...
 2026-08-03T16:26:27.607631623Z INFO:app.services.socket_pool.socket_manager:  共 1 个Token
 2026-08-03T16:26:27.607635391Z INFO:app.services.socket_pool.socket_manager:
@@ -203,7 +203,7 @@ ket for Item ea52de0c-51b7-4b49-a43d-985ed2e09579
 2026-08-03T16:26:27.617083657Z 1. Item-Token映射表 [daemon_id -> {item_uuid: token}]
 2026-08-03T16:26:27.617096752Z INFO:app.services.socket_pool.socket_manager:-------------------------------------------
 -------------------------------------
-2026-08-03T16:26:27.617101201Z INFO:app.services.socket_pool.socket_manager:  daemon:9000:termman_daemon_sec... | ea52d
+2026-08-03T16:26:27.617101201Z INFO:app.services.socket_pool.socket_manager:  daemon:9000:TermPaws_daemon_sec... | ea52d
 e0c-51b7-4b49-a... | c05aa640-5fb4-49...
 2026-08-03T16:26:27.617130944Z INFO:app.services.socket_pool.socket_manager:  共 1 个Token
 2026-08-03T16:26:27.617137557Z INFO:app.services.socket_pool.socket_manager:
@@ -248,7 +248,7 @@ Connection for item=ea52de0c-51b7-4b49-a43d-985ed2e09579
 2026-08-03T16:26:27.617666371Z INFO:app.services.connection_pool.connection_models:    - ea52de0c-51b7-4b49-a... | stat
 us=disconnected
 2026-08-03T16:26:27.617669527Z INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-2026-08-03T16:26:27.617705312Z INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=c
+2026-08-03T16:26:27.617705312Z INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=c
 onnected
 2026-08-03T16:26:27.617711093Z INFO:app.services.connection_pool.connection_models:====================================
 ========================
@@ -263,12 +263,12 @@ onnected
 2026-08-03T16:26:27.617813039Z INFO:app.services.connection_pool.connection_models:    - ea52de0c-51b7-4b49-a... | stat
 us=connected
 2026-08-03T16:26:27.617816025Z INFO:app.services.connection_pool.connection_models:  Daemon主连接状态: 1 个
-2026-08-03T16:26:27.617819031Z INFO:app.services.connection_pool.connection_models:    - termman_daemon_s... | status=c
+2026-08-03T16:26:27.617819031Z INFO:app.services.connection_pool.connection_models:    - TermPaws_daemon_s... | status=c
 onnected
 2026-08-03T16:26:27.617849711Z INFO:app.services.connection_pool.connection_models:====================================
 ========================
 2026-08-03T16:26:27.617860793Z 
-2026-08-03T16:26:27.626841323Z INFO:app.services.daemon_initializer:Synchronized daemon state for daemon:9000:termman_d
+2026-08-03T16:26:27.626841323Z INFO:app.services.daemon_initializer:Synchronized daemon state for daemon:9000:TermPaws_d
 aemon_secret_key_2024
 2026-08-03T16:26:32.220903600Z INFO:     127.0.0.1:36770 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
 2026-08-03T16:26:42.307599791Z INFO:     127.0.0.1:44424 - "GET /api/v1/utils/health-check/ HTTP/1.1" 200 OK
@@ -861,8 +861,8 @@ subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
 2026-08-03T16:31:30.170097759Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message
 ' on server 'robot' with args: {'target_type': 'private', 'target_id': '2537134688', 'messages': ['主人～三个后台任务都跑完啦 (≧▽≦)'
 , 'JOB_A 5秒、JOB_B 12秒、JOB_C 14秒，全部成功退出，没有失败喵～'], 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id':
- '0413127254534b23aa3170464774cf82', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser
-': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private
+ '0413127254534b23aa3170464774cf82', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser
+': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private
 :2537134688', 'target_type': 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f5
 5-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'T97g9fG-p7UNiWbmGm3TW32hjkv7NOBrLsuhSJIQaqA'}
 2026-08-03T16:31:30.421230850Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Tool result: [{'type': 'te
@@ -870,7 +870,7 @@ xt', 'text': 'Message sent to current robot conversation.'}]
 2026-08-03T16:31:30.421260969Z INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with ar
 gs: {'target_type': 'private', 'target_id': '2537134688', 'messages': ['主人～三个后台任务都跑完啦 (≧▽≦)', 'JOB_A 5秒、JOB_B 12秒、JOB_C
  14秒，全部成功退出，没有失败喵～'], 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '0413127254534b23aa3170464
-774cf82', '_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_item_id'
+774cf82', '_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_TermPaws_item_id'
 : 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:2537134688', 'target_type'
 : 'private', 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd65
 2a'}], '_robot_context_token': 'T97g9fG-p7UNiWbmGm3TW32hjkv7NOBrLsuhSJIQaqA'}
@@ -943,7 +943,7 @@ subscriber(s) for item ea52de0c-51b7-4b49-a43d-985ed2e09579
 2026-08-03T16:32:02.410988955Z INFO:app.services.agent.mcp.server_manager:[MCPServerManager] Calling tool 'send_message
 ' on server 'robot' with args: {'text': '主人～三个后台任务都跑完啦，A/B/C 全部成功 (≧▽≦) 喵～', 'target_type': 'private', 'target_id': '25
 37134688', 'item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '171bfde8858a4d61b771ae3192b03f25', '
-_termman_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_item_id': 'ea52de0c
+_TermPaws_user_id': 'ed04396a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_TermPaws_item_id': 'ea52de0c
 -51b7-4b49-a43d-985ed2e09579', '_robot_known_targets': [{'conversation': 'private:2537134688', 'target_type': 'private'
 , 'target_id': '2537134688', 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_ro
 bot_context_token': 'RXUh3Ob6tFwbIDxJgJ_titpR2LJueSaNTdCrVUcwXeA'}
@@ -951,8 +951,8 @@ bot_context_token': 'RXUh3Ob6tFwbIDxJgJ_titpR2LJueSaNTdCrVUcwXeA'}
 xt', 'text': 'Message sent to current robot conversation.'}]
 2026-08-03T16:32:02.441897410Z INFO:app.services.agent.agent:[Agent] Executed MCP tool 'mcp_robot_send_message' with ar
 gs: {'text': '主人～三个后台任务都跑完啦，A/B/C 全部成功 (≧▽≦) 喵～', 'target_type': 'private', 'target_id': '2537134688', 'item_id': 'ea52
-de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '171bfde8858a4d61b771ae3192b03f25', '_termman_user_id': 'ed04396
-a-a605-46f4-9e07-8fcdf0edfe7c', '_termman_is_superuser': True, '_termman_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e0957
+de0c-51b7-4b49-a43d-985ed2e09579', '_reply_ticket_id': '171bfde8858a4d61b771ae3192b03f25', '_TermPaws_user_id': 'ed04396
+a-a605-46f4-9e07-8fcdf0edfe7c', '_TermPaws_is_superuser': True, '_TermPaws_item_id': 'ea52de0c-51b7-4b49-a43d-985ed2e0957
 9', '_robot_known_targets': [{'conversation': 'private:2537134688', 'target_type': 'private', 'target_id': '2537134688'
 , 'sender': 'private_2537134688', 'robot_id': '5cbc7f55-04a2-40f6-900a-05e0b0dd652a'}], '_robot_context_token': 'RXUh3O
 b6tFwbIDxJgJ_titpR2LJueSaNTdCrVUcwXeA'}

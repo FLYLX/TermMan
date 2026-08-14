@@ -58,7 +58,7 @@ declare module "@tanstack/react-router" {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <LocaleProvider defaultLocale="en" storageKey="termman-locale">
+    <LocaleProvider defaultLocale="en" storageKey="TermPaws-locale">
       <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
         <QueryClientProvider client={queryClient}>
           <RouterProvider router={router} />

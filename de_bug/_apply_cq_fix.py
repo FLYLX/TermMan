@@ -1,6 +1,6 @@
 import io, sys
 
-path = r"E:\dev\TermMan\dev\TermMan\robot\termman_robot\platforms.py"
+path = r"E:\dev\TermPaws\dev\TermPaws\robot\TermPaws_robot\platforms.py"
 with io.open(path, "r", encoding="utf-8") as handle:
     text = handle.read()
 

@@ -1,4 +1,4 @@
-﻿# TermMan MCP 工具清单
+# TermPaws MCP 工具清单
 
 > 所有工具在 Agent 调用时自动加前缀 `mcp_local_` 或 `mcp_robot_`。
 

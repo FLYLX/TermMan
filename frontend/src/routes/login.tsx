@@ -45,7 +45,7 @@ export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
       {
-        title: "Log In - TermMan",
+        title: "Log In - TermPaws",
       },
     ],
   }),

@@ -658,8 +658,8 @@ function RobotCard({
                       </span>
                       <span className="font-medium text-foreground">
                         {locale === "zh"
-                          ? "QQ 接入端接入 TermMan"
-                          : "QQ connector to TermMan"}
+                          ? "QQ 接入端接入 TermPaws"
+                          : "QQ connector to TermPaws"}
                       </span>
                     </div>
                     <div className="mt-2 grid gap-1 pl-5 text-[11px] text-muted-foreground">

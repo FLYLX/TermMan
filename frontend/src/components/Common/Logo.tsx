@@ -32,7 +32,7 @@ function LogoWordmark({ className }: { className?: string }) {
           Terminal Ops
         </span>
         <span className="text-lg font-semibold tracking-tight text-foreground">
-          TermMan
+          TermPaws
         </span>
       </div>
     </div>

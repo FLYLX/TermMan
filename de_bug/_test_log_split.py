@@ -55,7 +55,7 @@ async def main():
     # check both logs
     for f in ["ea52de0c-51b7-4b49-a43d-985ed2e09579.log", "ea52de0c-51b7-4b49-a43d-985ed2e09579.jobs.log"]:
         r = subprocess.run(
-            ["docker","exec","termman-backend-1","sh","-c",
+            ["docker","exec","TermPaws-backend-1","sh","-c",
              f"wc -c /app/backend/app/services/log/{f} /app/.runtime/item_logs/{f} 2>/dev/null; echo ---; tail -c 400 /app/backend/app/services/log/{f} 2>/dev/null || tail -c 400 /app/.runtime/item_logs/{f} 2>/dev/null"],
             capture_output=True, text=True)
         log(f"--- {f} ---")

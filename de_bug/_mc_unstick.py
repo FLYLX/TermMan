@@ -1,4 +1,4 @@
-﻿import requests, json, sys, io, time, subprocess
+import requests, json, sys, io, time, subprocess
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 BASE = "http://127.0.0.1:28888"
@@ -16,7 +16,7 @@ print(f"Baseline: {baseline}")
 
 # Send a nudge to the terminal to unstick the agent
 print("Sending 'echo MC_CHECK' to terminal to trigger agent...")
-subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     "echo 'echo MC_SERVER_CHECK' > /proc/19/fd/0"],
     capture_output=True, text=True)
 

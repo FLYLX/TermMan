@@ -154,7 +154,7 @@ def test_yui_identity_prompt_is_direct_and_hides_persona_resource_name() -> None
 
     assert "你就是平泽唯" in prompt
     assert "我是唯" in prompt
-    assert "不要追加能力清单或 TermMan 介绍" in prompt
+    assert "不要追加能力清单或 TermPaws 介绍" in prompt
     assert "hirasawa_yui_persona" not in prompt
     assert "平泽唯人格 Skill" not in prompt
 
@@ -182,5 +182,5 @@ def test_no_persona_prompt_keeps_identity_blank() -> None:
 
     assert "默认身份规则" in prompt
     assert "没有 persona skill 就保持空白身份" in prompt
-    assert "不要自称 TermMan" in prompt
+    assert "不要自称 TermPaws" in prompt
     assert "人格身份层" not in prompt

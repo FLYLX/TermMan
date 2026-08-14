@@ -11,7 +11,7 @@ BRIDGE = "http://127.0.0.1:33333"
 BASE = "http://127.0.0.1:28888"
 ITEM_ID = "ea52de0c-51b7-4b49-a43d-985ed2e09579"  # 测试项目-5
 SENDER_QQ = 2537134688
-LOG = r"E:\dev\TermMan\dev\TermMan\de_bug\_mock_qq.log"
+LOG = r"E:\dev\TermPaws\dev\TermPaws\de_bug\_mock_qq.log"
 
 _msg_id = int(time.time()) % 100000 * 10
 
@@ -135,7 +135,7 @@ final = get_tokens(h)
 print(f"\n  Tokens: +{final.get('total_tokens',0)-baseline.get('total_tokens',0)}, "
       f"turns +{final.get('total_turns',0)-baseline.get('total_turns',0)}")
 
-res = subprocess.run(["docker", "exec", "termman-daemon-1", "java", "-version"],
+res = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "java", "-version"],
                      capture_output=True, text=True, timeout=15)
 ver = (res.stderr or res.stdout).strip().splitlines()
 print(f"\n  docker exec java -version: exit={res.returncode}")

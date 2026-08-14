@@ -69,7 +69,7 @@ async def shutdown(app: FastAPI) -> None:
 
 def get_backend_plugin() -> BackendPlugin:
     return BackendPlugin(
-        plugin_id="termman.robot",
+        plugin_id="TermPaws.robot",
         name="Robot",
         version="builtin",
         description="Optional QQ robot server integration through OneBot V11 connectors and MCP.",

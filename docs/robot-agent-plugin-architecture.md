@@ -4,11 +4,11 @@
 
 ## 目标
 
-这次重构的目标是把 QQ robot 能力从 TermMan 的 agent 核心里拆出去。
+这次重构的目标是把 QQ robot 能力从 TermPaws 的 agent 核心里拆出去。
 
 重构后的边界是：
 
-- TermMan 的核心功能仍然是自动管理 terminal、item、agent、skill 和 MCP。
+- TermPaws 的核心功能仍然是自动管理 terminal、item、agent、skill 和 MCP。
 - Robot 是可选插件；没有 robot、没有 robot bridge、插件关闭时，agent 核心不应该主动调用 robot bridge。
 - 有 robot 时，robot 通过插件注册自己的 prompt、MCP server、内置 skill、群聊记忆、消息发送、回复反思和 fallback。
 - 群聊唤醒隔离：一个群 @/回复机器人时，只唤醒这个群对应的 agent turn；其他群不被这次消息唤醒。
@@ -498,4 +498,4 @@ channel:<频道号> -> channel-<频道号>.log
 
 这次重构后，robot 不再是 agent 核心的一部分，而是一个可选插件。
 
-核心 agent 只暴露 integration hook；robot 插件自己注册 QQ 相关能力。没有 robot 时，TermMan 仍然只做 terminal/agent/MCP/skill 管理；有 robot 时，robot 通过 MCP 和 skill 接入，并且按会话隔离唤醒、日志和回复投递。
+核心 agent 只暴露 integration hook；robot 插件自己注册 QQ 相关能力。没有 robot 时，TermPaws 仍然只做 terminal/agent/MCP/skill 管理；有 robot 时，robot 通过 MCP 和 skill 接入，并且按会话隔离唤醒、日志和回复投递。

@@ -1,6 +1,6 @@
-﻿import pathlib, re
+import pathlib, re
 
-root = pathlib.Path(r"E:\dev\TermMan\dev\TermMan")
+root = pathlib.Path(r"E:\dev\TermPaws\dev\TermPaws")
 
 # ---- SKILL.md ----
 p = root / r"backend\skills\terminal_mcp\SKILL.md"

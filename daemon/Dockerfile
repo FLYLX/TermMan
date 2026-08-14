@@ -51,7 +51,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # 设置环境变量
 ENV HOST=0.0.0.0
 ENV PORT=9000
-ENV API_KEY=termman_daemon_secret_key_2024
+ENV API_KEY=TermPaws_daemon_secret_key_2024
 ENV TERMINAL_SHELL=/bin/sh
 ENV TERMINAL_ENCODING=utf-8
 ENV WORKDIR=/app/src/workdir
@@ -75,4 +75,4 @@ CMD ["python", "src/main.py"]
 
 # 日志目录说明：
 # 容器内日志路径：/app/log
-# 建议启动时映射到主机：-v e:/dev/TermMan/dev/TermMan/daemon/log:/app/log
+# 建议启动时映射到主机：-v e:/dev/TermPaws/dev/TermPaws/daemon/log:/app/log

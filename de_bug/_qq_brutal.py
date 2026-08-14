@@ -9,7 +9,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 BRIDGE = "http://127.0.0.1:33333"
 BASE = "http://127.0.0.1:28888"
 ITEM = "ea52de0c-51b7-4b49-a43d-985ed2e09579"
-LOG = r"E:\dev\TermMan\dev\TermMan\de_bug\_mock_qq.log"
+LOG = r"E:\dev\TermPaws\dev\TermPaws\de_bug\_mock_qq.log"
 GROUP = 770362397
 USER = 2537134688
 USER2 = 987654321
@@ -118,7 +118,7 @@ def pending_snapshot(h):
 
 def backend_errors_since(seconds, seen):
     try:
-        p = subprocess.run(["docker", "logs", "termman-backend-1", "--since", f"{seconds}s"],
+        p = subprocess.run(["docker", "logs", "TermPaws-backend-1", "--since", f"{seconds}s"],
                            capture_output=True, timeout=30)
         out = p.stdout.decode("utf-8", errors="replace") + p.stderr.decode("utf-8", errors="replace")
         new = []

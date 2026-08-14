@@ -1,4 +1,4 @@
-filepath = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\mcp\local_server.py"
+filepath = r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\mcp\local_server.py"
 with open(filepath, "r", encoding="utf-8") as f:
     content = f.read()
 
@@ -6,7 +6,7 @@ changes = 0
 
 # 1. read_chat_history
 old = '''            description=(
-                "Read recent TermMan chat/agent/terminal history for the current item. "
+                "Read recent TermPaws chat/agent/terminal history for the current item. "
                 "Use this when the user refers to previous work or context, such as "
                 "'刚才', '前面', '之前', '继续', '上一个任务', '你忘了', or asks what was done. "
                 "This is short-term evidence, not long-term memory."

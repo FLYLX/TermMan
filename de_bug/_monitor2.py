@@ -63,7 +63,7 @@ for j in r.json().get("jobs", []):
 # Check java
 print("\n--- Java check ---")
 import subprocess
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "java", "-version"],
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "java", "-version"],
                        capture_output=True, text=True, timeout=10)
 print(f"  stdout: {result.stdout[:200]}")
 print(f"  stderr: {result.stderr[:200]}")

@@ -1,4 +1,4 @@
-﻿import requests, json, time, sys, io
+import requests, json, time, sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 BASE = "http://127.0.0.1:28888"
 ITEM = "ea52de0c-51b7-4b49-a43d-985ed2e09579"
@@ -8,7 +8,7 @@ h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 # Clear tokens
 import subprocess
-subprocess.run(["docker", "exec", "termman-backend-1", "python", "-c",
+subprocess.run(["docker", "exec", "TermPaws-backend-1", "python", "-c",
     "import sys;sys.path.insert(0,'/app/backend');from sqlmodel import Session,text;from app.core.db import engine;s=Session(engine);s.exec(text('DELETE FROM token_usage_record'));s.commit();s.close()"],
     capture_output=True, timeout=10)
 

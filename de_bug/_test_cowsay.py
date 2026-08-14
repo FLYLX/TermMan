@@ -55,7 +55,7 @@ else:
 
 # Verify cowsay
 import subprocess
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "cowsay", "test"],
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "cowsay", "test"],
                        capture_output=True, text=True, timeout=10)
 print(f"\ncowsay test: exit={result.returncode}")
 if result.returncode == 0:

@@ -1,4 +1,4 @@
-"""TermMan comprehensive test script - tests web chat, QQ dispatch, and complex task."""
+"""TermPaws comprehensive test script - tests web chat, QQ dispatch, and complex task."""
 import requests, time, json, sys
 
 BASE = "http://127.0.0.1:28888"
@@ -35,7 +35,7 @@ def qq_dispatch(message, sender_key="private_2537134688", sender_name="FLY", sen
     }
     r = requests.post(f"{BASE}/api/v1/robots/{ROBOT_ID}/dispatch",
                       json=payload,
-                      headers={"X-Termman-Bridge-Token": BRIDGE_TOKEN},
+                      headers={"X-TermPaws-Bridge-Token": BRIDGE_TOKEN},
                       timeout=timeout)
     return r.status_code, r.json()
 
@@ -77,7 +77,7 @@ def wait_for_workflow_complete(token, timeout=300, poll_interval=5):
 
 # ============ MAIN ============
 print("=" * 60)
-print("TermMan Comprehensive Test")
+print("TermPaws Comprehensive Test")
 print("=" * 60)
 
 token = login()

@@ -28,7 +28,7 @@ def test_idle_bridge_reload_without_enabled_robot_does_not_503(
         response = client.post(
             "/robot-bridge/internal/reload",
             headers={
-                "X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET
+                "X-TermPaws-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET
                 or settings.SECRET_KEY,
             },
         )
@@ -77,7 +77,7 @@ def test_idle_bridge_reload_with_enabled_robot_schedules_restart(
         response = client.post(
             "/robot-bridge/internal/reload",
             headers={
-                "X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET
+                "X-TermPaws-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET
                 or settings.SECRET_KEY,
             },
         )
@@ -127,7 +127,7 @@ def test_idle_bridge_reload_with_missing_owner_does_not_restart_proxy_worker(
         response = client.post(
             "/robot-bridge/internal/reload",
             headers={
-                "X-TermMan-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET
+                "X-TermPaws-Bridge-Token": settings.ROBOT_BRIDGE_SHARED_SECRET
                 or settings.SECRET_KEY,
             },
         )

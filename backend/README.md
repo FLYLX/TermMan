@@ -1,8 +1,8 @@
-# TermMan Backend - 终端管理系统后端
+# TermPaws Backend - 终端管理系统后端
 
 ## 概述
 
-TermMan Backend 是终端管理系统的核心后端服务，基于 FastAPI 构建。它作为「凭证唯一签发中心」，负责所有 Token/凭证的签发、用户权限管理、以及与 Daemon 的通信协调。
+TermPaws Backend 是终端管理系统的核心后端服务，基于 FastAPI 构建。它作为「凭证唯一签发中心」，负责所有 Token/凭证的签发、用户权限管理、以及与 Daemon 的通信协调。
 
 ## 核心架构
 
@@ -261,7 +261,7 @@ Browser ─── WS连接 ───► Daemon
 
 ```env
 # 项目配置
-PROJECT_NAME=TermMan
+PROJECT_NAME=TermPaws
 API_V1_STR=/api/v1
 SECRET_KEY=your_secret_key_here
 ACCESS_TOKEN_EXPIRE_MINUTES=11520  # 8天
@@ -311,7 +311,7 @@ fastapi dev app/main.py
 
 ```bash
 # 构建
-docker build -t termman-backend .
+docker build -t TermPaws-backend .
 
 # 运行
 docker run -d \
@@ -319,7 +319,7 @@ docker run -d \
   -e SECRET_KEY=your_secret_key \
   -e FIRST_SUPERUSER=admin@example.com \
   -e FIRST_SUPERUSER_PASSWORD=admin123 \
-  termman-backend
+  TermPaws-backend
 ```
 
 ### Docker Compose

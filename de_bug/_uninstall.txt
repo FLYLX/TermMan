@@ -1,7 +1,7 @@
-﻿=== Uninstalling Java 21 ===
+=== Uninstalling Java 21 ===
 python : Traceback (most recent call last):
 At line:47 char:6
-+ "@ | python - 2>&1 | Out-File -Encoding utf8 E:\dev\TermMan\dev\TermM ...
++ "@ | python - 2>&1 | Out-File -Encoding utf8 E:\dev\TermPaws\dev\TermM ...
 +      ~~~~~~~~~~~~~
     + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError

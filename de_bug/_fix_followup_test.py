@@ -1,5 +1,5 @@
-﻿import pathlib
-p = pathlib.Path(r"E:\dev\TermMan\dev\TermMan\backend\tests\services\test_robot_service.py")
+import pathlib
+p = pathlib.Path(r"E:\dev\TermPaws\dev\TermPaws\backend\tests\services\test_robot_service.py")
 text = p.read_text(encoding="utf-8")
 old = '''    queued_jobs: list[Any] = []
     persisted_messages: list[str] = []

@@ -9,7 +9,7 @@ class Logger:
     日志写入工具类
     """
     def __init__(self):
-        self.logger = logging.getLogger("termman-daemon")
+        self.logger = logging.getLogger("termpaws-daemon")
         self.logger.setLevel(logging.INFO)
         self._setup_handlers()
 

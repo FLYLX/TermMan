@@ -1,9 +1,9 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 # 1) reply_intent.py: recognize bare NRN (the token our own callback templates teach)
-p1 = r"E:\dev\TermMan\dev\TermMan\backend\app\plugins\robot\reply_intent.py"
+p1 = r"E:\dev\TermPaws\dev\TermPaws\backend\app\plugins\robot\reply_intent.py"
 s1 = open(p1, encoding="utf-8").read()
 old1 = '    "silent",\n    "silence",\n}'
 new1 = '    "silent",\n    "silence",\n    "nrn",\n}'
@@ -13,7 +13,7 @@ open(p1, "w", encoding="utf-8", newline="").write(s1)
 print("reply_intent: OK")
 
 # 2) chat.py: NRN guard in ticket fallback delivery
-p2 = r"E:\dev\TermMan\dev\TermMan\backend\app\api\routes\chat.py"
+p2 = r"E:\dev\TermPaws\dev\TermPaws\backend\app\api\routes\chat.py"
 s2 = open(p2, encoding="utf-8").read()
 old2 = '''    from app.plugins.robot.internal_trace import sanitize_robot_visible_text
 

@@ -180,7 +180,7 @@ services:
       - traefik.http.routers.${STACK_NAME?Variable not set}-frontend-http.middlewares=https-redirect
 
   daemon:
-    image: '${DOCKER_IMAGE_DAEMON:-termman-daemon}:${TAG-latest}'
+    image: '${DOCKER_IMAGE_DAEMON:-termpaws-daemon}:${TAG-latest}'
     build:
       context: ./daemon
       dockerfile: Dockerfile
@@ -198,7 +198,7 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=9000
-      - API_KEY=termman_daemon_secret_key_2024
+      - API_KEY=termpaws_daemon_secret_key_2024
       - TERMINAL_SHELL=/bin/sh
       - TERMINAL_ENCODING=utf-8
       - WORKDIR=/app/src/workdir

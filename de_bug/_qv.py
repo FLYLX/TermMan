@@ -7,12 +7,12 @@ r = requests.post(f"{BASE}/api/v1/login/access-token", data={"username": "admin@
 token = r.json()["access_token"]
 h = {"Authorization": f"Bearer {token}"}
 
-subprocess.run(["docker", "exec", "termman-backend-1", "python", "-c",
+subprocess.run(["docker", "exec", "TermPaws-backend-1", "python", "-c",
     "import sys;sys.path.insert(0,'/app/backend');from sqlmodel import Session,text;from app.core.db import engine;s=Session(engine);s.exec(text('DELETE FROM token_usage_record'));s.commit();s.close()"],
     capture_output=True)
 
 # Remove sl first
-subprocess.run(["docker", "exec", "termman-daemon-1", "bash", "-c", "apt-get remove -y sl 2>/dev/null"], capture_output=True, timeout=15)
+subprocess.run(["docker", "exec", "TermPaws-daemon-1", "bash", "-c", "apt-get remove -y sl 2>/dev/null"], capture_output=True, timeout=15)
 
 print("=== QUICK VERIFY: install sl ===")
 r2 = requests.post(f"{BASE}/api/v1/chat/{ITEM}", json={

@@ -1,7 +1,7 @@
 [project]
-name = "termman-robot-bridge"
+name = "termpaws-robot-bridge"
 version = "0.1.0"
-description = "Standalone NoneBot2 QQ robot server for TermMan"
+description = "Standalone NoneBot2 QQ robot server for TermPaws"
 requires-python = ">=3.10,<4.0"
 dependencies = [
     "fastapi[standard]<1.0.0,>=0.114.2",
@@ -24,7 +24,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["termman_robot"]
+packages = ["termpaws_robot"]
 
 [tool.ruff]
 target-version = "py310"

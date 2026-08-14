@@ -16,13 +16,13 @@
 
 ## 当前内置插件
 
-- `termman.robot`
+- `TermPaws.robot`
   - 类型：`messaging`
   - 目录：`backend/app/plugins/robot/`
   - 能力：API、agent integration、startup/shutdown
   - 作用：QQ robot server、OneBot V11 QQ 接入、robot MCP、robot conversation memory。
 
-- `termman.terminal_ws`
+- `TermPaws.terminal_ws`
   - 类型：`terminal`
   - 目录：`backend/app/plugins/terminal_ws/`
   - 能力：API、shutdown
@@ -49,7 +49,7 @@ POST  /api/v1/plugins/reload
 
 ```json
 {
-  "plugin_id": "termman.robot",
+  "plugin_id": "TermPaws.robot",
   "name": "Robot",
   "version": "builtin",
   "description": "Optional QQ robot server integration through OneBot V11 connectors and MCP.",
@@ -101,7 +101,7 @@ backend/app/plugins/
 ```py
 def get_backend_plugin() -> BackendPlugin:
     return BackendPlugin(
-        plugin_id="termman.example",
+        plugin_id="TermPaws.example",
         name="Example",
         version="builtin",
         category="example",
@@ -160,7 +160,7 @@ robot 插件启用时才注册 `RobotAgentIntegration`；禁用后 agent hook �
 
 要扩展成真正插件市场，还需要：
 
-- 插件 manifest，例如 `.termman-plugin/plugin.json`
+- 插件 manifest，例如 `.TermPaws-plugin/plugin.json`
 - 插件包下载、安装、卸载、更新
 - sha256 与签名校验
 - 权限声明与授权 UI

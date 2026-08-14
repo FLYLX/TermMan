@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-ROBOT_PLUGIN_ID = "termman.robot"
+ROBOT_PLUGIN_ID = "TermPaws.robot"
 
 
 def is_robot_plugin_enabled() -> bool:

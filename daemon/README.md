@@ -1,8 +1,8 @@
-# TermMan Daemon - 终端管理守护进程
+# TermPaws Daemon - 终端管理守护进程
 
 ## 概述
 
-TermMan Daemon 是一个轻量级的终端管理守护进程，负责管理终端子进程的生命周期、处理 WebSocket 连接、以及与 Backend 的通信。它采用「凭证唯一签发中心」架构，Backend 负责所有 Token/凭证的签发，Daemon 仅做凭证验证。
+TermPaws Daemon 是一个轻量级的终端管理守护进程，负责管理终端子进程的生命周期、处理 WebSocket 连接、以及与 Backend 的通信。它采用「凭证唯一签发中心」架构，Backend 负责所有 Token/凭证的签发，Daemon 仅做凭证验证。
 
 ## 核心架构
 
@@ -330,10 +330,10 @@ TERMINAL_BUFFER_SIZE=8192
 
 ```env
 # Backend (.env)
-SECRET_KEY=termman_secret_key_for_access_token_2024
+SECRET_KEY=TermPaws_secret_key_for_access_token_2024
 
 # Daemon (.env)
-SECRET_KEY=termman_secret_key_for_access_token_2024
+SECRET_KEY=TermPaws_secret_key_for_access_token_2024
 ```
 
 ## 运行
@@ -352,7 +352,7 @@ python src/main.py
 
 ```bash
 # 构建
-docker build -t termman-daemon .
+docker build -t TermPaws-daemon .
 
 # 运行
 docker run -d \
@@ -360,7 +360,7 @@ docker run -d \
   -e API_KEY=your_api_key \
   -e SECRET_KEY=your_secret_key \
   -v ./log:/app/log \
-  termman-daemon
+  TermPaws-daemon
 ```
 
 ## 安全注意事项

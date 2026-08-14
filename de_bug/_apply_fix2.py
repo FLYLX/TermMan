@@ -1,7 +1,7 @@
 import re
 
 # Fix 1: Add tini to Dockerfile
-path = r"E:\dev\TermMan\dev\TermMan\daemon\Dockerfile"
+path = r"E:\dev\TermPaws\dev\TermPaws\daemon\Dockerfile"
 with open(path, "r", encoding="utf-8") as f:
     content = f.read()
 
@@ -23,7 +23,7 @@ else:
     print(f"[SKIP] CMD pattern not found in Dockerfile")
 
 # Fix 2: Add zombie reaper to job_runner.py
-path2 = r"E:\dev\TermMan\dev\TermMan\daemon\src\service\job_runner.py"
+path2 = r"E:\dev\TermPaws\dev\TermPaws\daemon\src\service\job_runner.py"
 with open(path2, "r", encoding="utf-8") as f:
     content = f.read()
 

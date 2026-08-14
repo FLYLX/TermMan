@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from robot.termman_robot.platforms import build_inbound_message
+from robot.termpaws_robot.platforms import build_inbound_message
 
 
 @dataclass

@@ -1,5 +1,5 @@
-﻿import pathlib
-p = pathlib.Path(r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\prompts\policy.py")
+import pathlib
+p = pathlib.Path(r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\prompts\policy.py")
 text = p.read_text(encoding="utf-8")
 old = "\n\n@dataclass(frozen=True)\n\nEXPLICIT_MEMORY_CUES = ("
 new = "\n\n\nEXPLICIT_MEMORY_CUES = ("

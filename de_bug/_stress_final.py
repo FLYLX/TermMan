@@ -1,4 +1,4 @@
-﻿import requests, json, sys, io, time, subprocess
+import requests, json, sys, io, time, subprocess
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 BASE = "http://127.0.0.1:28888"
@@ -15,7 +15,7 @@ print(f"Terminal: {r.status_code} {r.text[:80]}")
 time.sleep(3)
 
 # Get shell PID
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     "ps -eo pid,tty,cmd | grep pts | grep '/bin/sh' | grep -v grep | awk '{print $1}'"],
     capture_output=True, text=True)
 pid = result.stdout.strip().split('\n')[0] if result.stdout.strip() else None
@@ -24,13 +24,13 @@ if not pid:
     print("FATAL: no shell"); sys.exit(1)
 
 def daemon_mem():
-    r2 = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+    r2 = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
         "cat /proc/1/status | grep -E 'VmRSS|Threads'"],
         capture_output=True, text=True)
     return r2.stdout.strip().replace('\n', ' | ')
 
 def write_term(cmd):
-    subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+    subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
         f"echo '{cmd}' > /proc/{pid}/fd/0"], capture_output=True, text=True)
 
 # === TEST 1: Flood 2000 lines ===
@@ -56,7 +56,7 @@ write_term(f"cd {mc_dir} && /opt/amazon-corretto-25.0.4.7.1-linux-x64/bin/java -
 
 for check in range(4):
     time.sleep(20)
-    mc_r = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+    mc_r = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
         "ps aux | grep 'server.jar' | grep -v grep | wc -l"],
         capture_output=True, text=True)
     mc = mc_r.stdout.strip()
@@ -70,7 +70,7 @@ time.sleep(3)
 print(f"\n=== TEST 4: Stop MC ===")
 write_term("stop")
 time.sleep(8)
-mc_r = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+mc_r = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     "ps aux | grep 'server.jar' | grep -v grep | wc -l"],
     capture_output=True, text=True)
 print(f"MC after stop: {mc_r.stdout.strip()}")
@@ -79,7 +79,7 @@ print(f"MC after stop: {mc_r.stdout.strip()}")
 print(f"\n=== TEST 5: Responsiveness ===")
 write_term("echo FINAL_ALIVE_CHECK")
 time.sleep(3)
-result = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
     f"tail -5 /app/log/{ITEM}.log 2>/dev/null"],
     capture_output=True, text=True)
 print(f"Log tail:\n{result.stdout}")

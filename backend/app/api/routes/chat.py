@@ -638,7 +638,7 @@ def _current_task_origin(agent: "Agent") -> dict[str, str]:
         }
     return {
         "type": "web",
-        "label": "TermMan web chat",
+        "label": "TermPaws web chat",
         "reply_rule": "reply in the current web chat response",
     }
 

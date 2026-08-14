@@ -108,7 +108,7 @@ def test_robot_mcp_send_message_noops_no_reply_intent(monkeypatch) -> None:
             "text": "[no_qq_reply]",
             "target_type": "group",
             "target_id": "123456",
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
         },
     )
 
@@ -236,7 +236,7 @@ def test_robot_mcp_send_message_blocks_internal_tool_trace(monkeypatch) -> None:
             ),
             "target_type": "group",
             "target_id": "123456",
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
         },
     )
 
@@ -268,7 +268,7 @@ def test_robot_mcp_send_message_blocks_dsml_tool_trace(monkeypatch) -> None:
             ),
             "target_type": "group",
             "target_id": "123456",
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
         },
     )
 
@@ -313,7 +313,7 @@ def test_robot_mcp_send_message_sanitizes_mixed_internal_trace(
             ),
             "target_type": "group",
             "target_id": "123456",
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
         },
     )
 
@@ -351,7 +351,7 @@ def test_robot_mcp_send_message_extracts_degraded_send_payload(monkeypatch) -> N
             ),
             "target_type": "group",
             "target_id": "123456",
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
         },
     )
 
@@ -386,7 +386,7 @@ def test_robot_mcp_send_message_uses_explicit_target(monkeypatch) -> None:
             "text": "notify group",
             "target_type": "group",
             "target_id": "123456",
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
         },
     )
 
@@ -423,7 +423,7 @@ def test_robot_mcp_send_message_uses_llm_chosen_messages(monkeypatch) -> None:
             "messages": ["我先看一下", "等我确认一下状态"],
             "target_type": "group",
             "target_id": "123456",
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
         },
     )
 
@@ -460,7 +460,7 @@ def test_robot_mcp_send_message_unwraps_structured_text_blocks(monkeypatch) -> N
             ],
             "target_type": "group",
             "target_id": "123456",
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
         },
     )
 
@@ -497,7 +497,7 @@ def test_robot_mcp_send_message_rejects_long_group_text(monkeypatch) -> None:
             "text": "x" * 97,
             "target_type": "group",
             "target_id": "123456",
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
         },
     )
 
@@ -532,7 +532,7 @@ def test_robot_mcp_send_message_compacts_paragraphs_inside_each_message(
             "messages": ["我先看一下\n\n可能是桥接还没接上", "等我确认一下状态"],
             "target_type": "group",
             "target_id": "123456",
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
         },
     )
 
@@ -565,7 +565,7 @@ def test_robot_mcp_send_message_accepts_stamped_target_aliases(monkeypatch) -> N
             "text": "alias target",
             "mcp_target_type": "private",
             "mcp_target_id": "654321",
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
         },
     )
     conversation_result = server.call_tool(
@@ -573,7 +573,7 @@ def test_robot_mcp_send_message_accepts_stamped_target_aliases(monkeypatch) -> N
         {
             "text": "conversation target",
             "conversation": "group:123456",
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
             "_robot_known_targets": [
                 {
                     "conversation": "group:123456",
@@ -622,7 +622,7 @@ def test_robot_mcp_send_message_allows_visible_context_reply_to_without_active_c
         {
             "text": "tell Alice",
             "reply_to": "Alice",
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
             "_robot_known_targets": [
                 {
                     "conversation": "group:123456",
@@ -678,7 +678,7 @@ def test_robot_mcp_send_message_blocks_only_context_target_without_active_contex
         "send_message",
         {
             "text": "single target",
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
             "_robot_known_targets": [
                 {
                     "conversation": "private:654321",
@@ -1005,7 +1005,7 @@ def test_robot_mcp_recalls_long_term_memory_scoped_to_active_context(monkeypatch
             "recall_memory",
             {
                 "_robot_context_token": token,
-                "_termman_item_id": "item-1",
+                "_TermPaws_item_id": "item-1",
                 "query": "nickname",
                 "n_results": 3,
             },
@@ -1119,7 +1119,7 @@ def test_robot_mcp_lists_long_term_memory_scoped_to_active_context(monkeypatch) 
             "list_memories",
             {
                 "_robot_context_token": token,
-                "_termman_item_id": "item-1",
+                "_TermPaws_item_id": "item-1",
             },
         )
     finally:
@@ -1139,7 +1139,7 @@ def test_robot_mcp_list_memories_requires_active_qq_context() -> None:
 
     result = server.call_tool(
         "list_memories",
-        {"_termman_item_id": "item-1"},
+        {"_TermPaws_item_id": "item-1"},
     )
 
     assert "requires an active QQ robot conversation context" in result[0]["text"]
@@ -1239,7 +1239,7 @@ def test_robot_mcp_recall_uses_scoped_memory_fallback(monkeypatch) -> None:
             "recall_memory",
             {
                 "_robot_context_token": token,
-                "_termman_item_id": "item-1",
+                "_TermPaws_item_id": "item-1",
                 "query": "server port",
                 "n_results": 3,
             },
@@ -1342,7 +1342,7 @@ def test_robot_mcp_relation_enumeration_recalls_old_group_facts(monkeypatch) -> 
             "recall_memory",
             {
                 "_robot_context_token": token,
-                "_termman_item_id": "item-1",
+                "_TermPaws_item_id": "item-1",
                 "query": "还有谁是猫娘",
             },
         )
@@ -1395,7 +1395,7 @@ def test_robot_mcp_save_memory_persists_scoped_long_term_memory(monkeypatch) -> 
             "save_memory",
             {
                 "_robot_context_token": token,
-                "_termman_item_id": "item-1",
+                "_TermPaws_item_id": "item-1",
                 "content": "\u4f60\u53eb\u5927\u72d7",
                 "memory_type": "fact",
             },
@@ -1882,7 +1882,7 @@ def test_robot_mcp_send_message_blocks_broadcast_without_active_context(monkeypa
         {
             "text": "critical alert",
             "broadcast": True,
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
             "_robot_known_targets": [
                 {
                     "conversation": "group:123456",
@@ -2044,7 +2044,7 @@ def test_robot_mcp_compress_memories_merges_and_deletes(monkeypatch) -> None:
             "compress_memories",
             {
                 "_robot_context_token": token,
-                "_termman_item_id": "item-1",
+                "_TermPaws_item_id": "item-1",
                 "memory_ids": ["aaaa1111", "bbbb2222"],
                 "content": "服务器端口是 43906",
             },
@@ -2106,7 +2106,7 @@ def test_robot_mcp_compress_memories_rejects_out_of_scope(monkeypatch) -> None:
             "compress_memories",
             {
                 "_robot_context_token": token,
-                "_termman_item_id": "item-1",
+                "_TermPaws_item_id": "item-1",
                 "memory_ids": ["aaaa1111", "bbbb2222"],
                 "content": "合并后的记忆",
             },
@@ -2150,7 +2150,7 @@ def test_robot_mcp_compress_memories_reports_unmatched_ids(monkeypatch) -> None:
             "compress_memories",
             {
                 "_robot_context_token": token,
-                "_termman_item_id": "item-1",
+                "_TermPaws_item_id": "item-1",
                 "memory_ids": ["aaaa1111", "zzzz9999"],
                 "content": "合并后的记忆",
             },
@@ -2216,7 +2216,7 @@ def test_robot_mcp_send_message_fans_out_to_explicit_targets(monkeypatch) -> Non
                 {"target_type": "private", "target_id": "2537134688"},
                 {"target_type": "group", "target_id": "770362397"},
             ],
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
         },
     )
 
@@ -2256,7 +2256,7 @@ def test_robot_mcp_send_message_targets_partial_failure(monkeypatch) -> None:
                 {"target_type": "private", "target_id": "2537134688"},
                 {"target_type": "group", "target_id": "770362397"},
             ],
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
         },
     )
 
@@ -2284,7 +2284,7 @@ def test_robot_mcp_send_message_targets_notes_skipped_duplicate(monkeypatch) -> 
     args = {
         "text": "hello",
         "targets": [{"target_type": "group", "target_id": "770362397"}],
-        "_termman_user_id": "user-1",
+        "_TermPaws_user_id": "user-1",
     }
 
     first = server.call_tool("send_message", args)
@@ -2311,7 +2311,7 @@ def test_robot_mcp_send_message_targets_rejects_conflicting_args(monkeypatch) ->
     base_args = {
         "text": "hello",
         "targets": [{"target_type": "group", "target_id": "770362397"}],
-        "_termman_user_id": "user-1",
+        "_TermPaws_user_id": "user-1",
     }
 
     for conflicting in (
@@ -2334,7 +2334,7 @@ def test_robot_mcp_send_message_targets_rejects_invalid_entries() -> None:
         {
             "text": "hello",
             "targets": [{"target_type": "group"}],
-            "_termman_user_id": "user-1",
+            "_TermPaws_user_id": "user-1",
         },
     )
 

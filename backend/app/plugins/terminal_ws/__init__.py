@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-TERMINAL_WS_PLUGIN_ID = "termman.terminal_ws"
+TERMINAL_WS_PLUGIN_ID = "TermPaws.terminal_ws"
 
 
 def is_terminal_ws_plugin_enabled() -> bool:

@@ -1,4 +1,4 @@
-﻿import requests, json, sys, io, time
+import requests, json, sys, io, time
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 BASE = "http://127.0.0.1:28888"
@@ -38,7 +38,7 @@ for check in range(6):
 
     # Check java
     import subprocess
-    result = subprocess.run(["docker", "exec", "termman-daemon-1", "sh", "-c",
+    result = subprocess.run(["docker", "exec", "TermPaws-daemon-1", "sh", "-c",
         "ps aux | grep 'server.jar' | grep -v grep | wc -l"],
         capture_output=True, text=True)
     print(f"MC process: {result.stdout.strip()}")

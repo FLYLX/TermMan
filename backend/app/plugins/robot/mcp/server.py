@@ -86,7 +86,7 @@ class RobotMCPServer:
         self.register_tool(
             name="send_message",
             description=(
-                "Send a QQ message through the TermMan connector. In an incoming "
+                "Send a QQ message through the TermPaws connector. In an incoming "
                 "QQ-triggered turn, call with only text/messages to reply to the "
                 "current conversation; target parameters are not allowed there "
                 "(cross-conversation sends are blocked). Outside an active QQ "
@@ -887,8 +887,8 @@ class RobotMCPServer:
         from app.core.db import engine
         from app.models import Robot
 
-        user_id = str(args.get("_termman_user_id") or "").strip()
-        is_superuser = bool(args.get("_termman_is_superuser"))
+        user_id = str(args.get("_TermPaws_user_id") or "").strip()
+        is_superuser = bool(args.get("_TermPaws_is_superuser"))
         if not user_id and not is_superuser:
             raise ValueError(
                 "robot_id is required outside an active robot conversation context"
@@ -912,9 +912,9 @@ class RobotMCPServer:
         )
 
     def _assert_user_can_use_robot(self, robot: Any, args: dict) -> None:
-        if bool(args.get("_termman_is_superuser")):
+        if bool(args.get("_TermPaws_is_superuser")):
             return
-        user_id = str(args.get("_termman_user_id") or "").strip()
+        user_id = str(args.get("_TermPaws_user_id") or "").strip()
         if not user_id:
             raise ValueError("Not authorized to use this robot")
         if str(robot.owner_id) != user_id:
@@ -1689,7 +1689,7 @@ class RobotMCPServer:
         if memory_type not in LONG_TERM_MEMORY_TYPES:
             return [{"type": "text", "text": f"Error: invalid memory_type: {memory_type}"}]
 
-        item_id = str(args.get("_termman_item_id") or args.get("item_id") or "").strip()
+        item_id = str(args.get("_TermPaws_item_id") or args.get("item_id") or "").strip()
         if not item_id:
             return [{"type": "text", "text": "Error: item_id unavailable"}]
 
@@ -1779,7 +1779,7 @@ class RobotMCPServer:
         return [
             {
                 "type": "text",
-                "text": f"Memory saved to TermMan long-term memory (ID: {str(memory_id)[:8]}...).",
+                "text": f"Memory saved to TermPaws long-term memory (ID: {str(memory_id)[:8]}...).",
             }
         ]
 
@@ -1799,7 +1799,7 @@ class RobotMCPServer:
         if not content:
             return [{"type": "text", "text": "Error: content required"}]
 
-        item_id = str(args.get("_termman_item_id") or args.get("item_id") or "").strip()
+        item_id = str(args.get("_TermPaws_item_id") or args.get("item_id") or "").strip()
         if not item_id:
             return [{"type": "text", "text": "Error: item_id unavailable"}]
 
@@ -1985,7 +1985,7 @@ class RobotMCPServer:
         if memory_type is not None and memory_type not in LONG_TERM_MEMORY_TYPES:
             return [{"type": "text", "text": f"Error: invalid memory_type: {memory_type}"}]
 
-        item_id = str(args.get("_termman_item_id") or args.get("item_id") or "").strip()
+        item_id = str(args.get("_TermPaws_item_id") or args.get("item_id") or "").strip()
         if not item_id:
             return [{"type": "text", "text": "Error: item_id unavailable"}]
 
@@ -2091,7 +2091,7 @@ class RobotMCPServer:
         if memory_type is not None and memory_type not in LONG_TERM_MEMORY_TYPES:
             return [{"type": "text", "text": f"Error: invalid memory_type: {memory_type}"}]
 
-        item_id = str(args.get("_termman_item_id") or args.get("item_id") or "").strip()
+        item_id = str(args.get("_TermPaws_item_id") or args.get("item_id") or "").strip()
         if not item_id:
             return [{"type": "text", "text": "Error: item_id unavailable"}]
 
@@ -2156,7 +2156,7 @@ class RobotMCPServer:
             return [
                 {
                     "type": "text",
-                    "text": f"No TermMan long-term memory matched {query!r}{scope}.",
+                    "text": f"No TermPaws long-term memory matched {query!r}{scope}.",
                 }
             ]
 
@@ -2792,7 +2792,7 @@ class RobotMCPServer:
                 "result": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "termman-robot", "version": "1.0.0"},
+                    "serverInfo": {"name": "TermPaws-robot", "version": "1.0.0"},
                 },
             }
 

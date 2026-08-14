@@ -1,9 +1,9 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 # ---------- 1) input_merge_buffer.distinct_item_ids ----------
-p = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\input_merge_buffer.py"
+p = r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\input_merge_buffer.py"
 s = open(p, encoding="utf-8").read()
 old = '''    def peek(self, item_id: str, scope_key: str = "") -> list[MergeBufferEntry]:'''
 new = '''    def distinct_item_ids(self) -> list[str]:
@@ -21,7 +21,7 @@ open(p, "w", encoding="utf-8", newline="").write(s)
 print("1 buffer distinct_item_ids: OK")
 
 # ---------- 2) robot_service.sweep_pending_conversations ----------
-p = r"E:\dev\TermMan\dev\TermMan\backend\app\plugins\robot\service.py"
+p = r"E:\dev\TermPaws\dev\TermPaws\backend\app\plugins\robot\service.py"
 s = open(p, encoding="utf-8").read()
 old = '''    def reap_stuck_dispatch_jobs(self) -> int:'''
 new = '''    def sweep_pending_conversations(self) -> dict[str, int]:
@@ -92,7 +92,7 @@ open(p, "w", encoding="utf-8", newline="").write(s)
 print("2 service sweep: OK")
 
 # ---------- 3) integration hook ----------
-p = r"E:\dev\TermMan\dev\TermMan\backend\app\plugins\robot\agent\integration.py"
+p = r"E:\dev\TermPaws\dev\TermPaws\backend\app\plugins\robot\agent\integration.py"
 s = open(p, encoding="utf-8").read()
 old = '''    def reap_stuck_dispatch_jobs(self) -> int:
         from app.plugins.robot.service import robot_service
@@ -113,7 +113,7 @@ open(p, "w", encoding="utf-8", newline="").write(s)
 print("3 integration hook: OK")
 
 # ---------- 4) watchdog pass ----------
-p = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\task_watchdog.py"
+p = r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\task_watchdog.py"
 s = open(p, encoding="utf-8").read()
 old = '''    try:
         from app.services.agent.integrations.registry import get_agent_integrations

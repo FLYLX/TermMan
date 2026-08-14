@@ -126,7 +126,7 @@ def test_terminal_ws_token_accepts_query_header_or_bearer() -> None:
 
     header_ws = FakeWebSocket()
     header_ws.path = "/terminal"
-    header_ws.request_headers = {"X-TermMan-Token": "test-token"}
+    header_ws.request_headers = {"X-TermPaws-Token": "test-token"}
     assert server._token_is_valid(server._extract_token(header_ws))
 
     bearer_ws = FakeWebSocket()

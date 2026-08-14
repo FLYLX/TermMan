@@ -1,5 +1,5 @@
 # Fix 1: policy.py - all max_recent_messages to 6
-filepath1 = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\prompts\policy.py"
+filepath1 = r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\prompts\policy.py"
 with open(filepath1, "r", encoding="utf-8") as f:
     c1 = f.read()
 
@@ -32,7 +32,7 @@ with open(filepath1, "w", encoding="utf-8", newline="\n") as f:
     f.write(c1)
 
 # Fix 2 & 3: builder.py - skip agent_action, truncate verbose types
-filepath2 = r"E:\dev\TermMan\dev\TermMan\backend\app\services\agent\prompts\builder.py"
+filepath2 = r"E:\dev\TermPaws\dev\TermPaws\backend\app\services\agent\prompts\builder.py"
 with open(filepath2, "r", encoding="utf-8") as f:
     c2 = f.read()
 

@@ -1,6 +1,6 @@
-﻿import re, pathlib, sys
+import re, pathlib, sys
 
-root = pathlib.Path(r"E:\dev\TermMan\dev\TermMan")
+root = pathlib.Path(r"E:\dev\TermPaws\dev\TermPaws")
 
 def edit(rel, pairs, must_all=True):
     p = root / rel

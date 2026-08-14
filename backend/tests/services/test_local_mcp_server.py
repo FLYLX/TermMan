@@ -188,7 +188,7 @@ def test_read_chat_history_tool_returns_recent_trimmed_context(monkeypatch) -> N
     )
 
     text = result[0]["text"]
-    assert "TermMan item chat history" in text
+    assert "TermPaws item chat history" in text
     assert "Latest session summary" in text
     assert "Current task: install Java" in text
     assert "install java" not in text
@@ -1248,7 +1248,7 @@ def test_web_reply_ticket_blocks_robot_send_for_terminal_feedback() -> None:
         reply_ticket_manager.reset()
 
     assert "QQ" in warning
-    assert "TermMan web chat" in warning
+    assert "TermPaws web chat" in warning
     assert "REPLY ROUTING" in prompt
 
 

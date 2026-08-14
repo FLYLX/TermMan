@@ -1,6 +1,6 @@
 import type { ItemPublic } from "@/client"
 
-const ITEM_SNAPSHOT_STORAGE_KEY = "termman:item-detail-snapshots"
+const ITEM_SNAPSHOT_STORAGE_KEY = "TermPaws:item-detail-snapshots"
 
 type ItemWithExtras = ItemPublic & {
   daemon_url?: string

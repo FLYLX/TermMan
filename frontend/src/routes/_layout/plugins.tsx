@@ -322,7 +322,7 @@ export const Route = createFileRoute("/_layout/plugins")({
   head: () => ({
     meta: [
       {
-        title: "Plugins - TermMan",
+        title: "Plugins - TermPaws",
       },
     ],
   }),
