@@ -2,7 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useEffect } from "react"
 
 import { ItemHandlersService } from "@/client"
-import AddItemHandler from "@/components/ItemHandlers/AddItemHandler"
+
+import { TerminalDispatcherBoard } from "./item-handlers.$itemHandlerId"
 
 export const Route = createFileRoute("/_layout/item-handlers/")({
   component: ItemHandlersIndex,
@@ -30,7 +31,7 @@ function ItemHandlersIndex() {
           })
         }
       } catch {
-        // stay on empty state
+        // stay on empty-state board
       }
     })()
     return () => {
@@ -39,11 +40,14 @@ function ItemHandlersIndex() {
   }, [navigate])
 
   return (
-    <div className="flex flex-col items-center justify-center gap-4 py-24">
-      <p className="text-sm text-muted-foreground">
-        还没有调度器，先创建一个。
-      </p>
-      <AddItemHandler />
+    <div
+      className="flex flex-col overflow-hidden bg-white text-zinc-900"
+      style={{
+        height: "calc(100svh - 79px)",
+        margin: "-22px -18px -40px",
+      }}
+    >
+      <TerminalDispatcherBoard itemHandlerId="" itemHandler={null} />
     </div>
   )
 }

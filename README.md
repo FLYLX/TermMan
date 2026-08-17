@@ -17,6 +17,14 @@ termpaws run                # 首次运行自动生成配置并打印管理员�
 
 浏览器打开 http://localhost:8000 。配置文件在 `~/.termpaws/.env`，改完重启生效。
 
+Linux 生产部署可注册为 systemd 服务（开机自启、崩溃自动重启）：
+
+```bash
+sudo termpaws service install   # 一键注册并启动
+systemctl status termpaws       # 查看状态
+journalctl -u termpaws -f       # 查看日志
+```
+
 远程主机装终端代理：
 
 ```bash

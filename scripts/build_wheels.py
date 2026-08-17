@@ -24,7 +24,7 @@ def main() -> None:
     for pkg in PACKAGES:
         print(f"==> building {pkg.relative_to(ROOT)}")
         subprocess.run(
-            [sys.executable, "-m", "build", "--wheel", "--outdir", str(OUT), str(pkg)],
+            [sys.executable, "-m", "build", "--wheel", "--no-isolation", "--outdir", str(OUT), str(pkg)],
             check=True,
         )
 

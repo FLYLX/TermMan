@@ -51,7 +51,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
             -e 's|https://mirror.sjtu.edu.cn/pytorch-wheels/cpu|https://download.pytorch.org/whl/cpu|g' \
             uv.lock pyproject.toml; \
     fi \
-    && uv sync --frozen --no-install-workspace --package app --no-dev
+    && uv sync --frozen --no-install-workspace --package termpaws-backend --no-dev
 
 # Cache the embedding model before application source is copied so normal code
 # changes do not trigger another network download. China builds try the mirror
@@ -80,6 +80,9 @@ COPY ./backend/app /app/backend/app
 
 COPY ./backend/skills /app/backend/skills
 
+# hatchling force-include targets must exist even if they are empty data dirs
+RUN mkdir -p /app/backend/knowledge
+
 COPY ./backend/mcp_servers.json /app/mcp_servers.json
 
 # Sync the project
@@ -103,7 +106,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
             -e 's|https://mirror.sjtu.edu.cn/pytorch-wheels/cpu|https://download.pytorch.org/whl/cpu|g' \
             uv.lock pyproject.toml backend/pyproject.toml; \
     fi \
-    && uv sync --frozen --package app --no-dev
+    && uv sync --frozen --package termpaws-backend --no-dev
 
 WORKDIR /app/backend/
 

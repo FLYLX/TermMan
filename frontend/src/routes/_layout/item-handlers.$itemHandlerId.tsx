@@ -267,7 +267,7 @@ function TerminalMemoryPanel({ connectedItems }: { connectedItems: any[] }) {
   )
 }
 
-function TerminalDispatcherBoard({
+export function TerminalDispatcherBoard({
   itemHandlerId,
   itemHandler,
 }: {
@@ -294,6 +294,7 @@ function TerminalDispatcherBoard({
     queryFn: () =>
       ItemHandlerAssociationsService.getItemsForHandler({ itemHandlerId }),
     queryKey: ["itemHandler-items", itemHandlerId],
+    enabled: Boolean(itemHandlerId),
   })
   const connectedItemsList = useMemo<any[]>(
     () => (connectedItems as any[]) || [],
@@ -357,6 +358,10 @@ function TerminalDispatcherBoard({
   }, [expandedCard, terminalPanelOpen, botDetailId])
 
   const handleSkillToggle = async (skillId: string, enable: boolean) => {
+    if (!itemHandlerId) {
+      showErrorToast("先创建一个调度器")
+      return
+    }
     try {
       const newSkills = enable
         ? [...enabledSkills, skillId]
@@ -375,6 +380,10 @@ function TerminalDispatcherBoard({
   }
 
   const handleMcpServerToggle = async (serverName: string, enable: boolean) => {
+    if (!itemHandlerId) {
+      showErrorToast("先创建一个调度器")
+      return
+    }
     try {
       const newServers = enable
         ? [...enabledMcpServers, serverName]
@@ -393,6 +402,10 @@ function TerminalDispatcherBoard({
   }
 
   const handleKnowledgeToggle = async (filePath: string, enable: boolean) => {
+    if (!itemHandlerId) {
+      showErrorToast("先创建一个调度器")
+      return
+    }
     try {
       const newFiles = enable
         ? [...enabledKnowledgeFiles, filePath]
@@ -1124,8 +1137,14 @@ function TerminalDispatcherBoard({
       key: "config",
       title: "模型配置",
       icon: <Settings className="size-4" />,
-      summary: String(itemHandler.model || ""),
-      content: <HandlerSettingsPanel itemHandler={itemHandler} />,
+      summary: String(itemHandler?.model || ""),
+      content: itemHandler ? (
+        <HandlerSettingsPanel itemHandler={itemHandler} />
+      ) : (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          先在左侧创建一个调度器。
+        </p>
+      ),
     },
   ]
   const expandedCardData =

@@ -98,14 +98,11 @@ function Login() {
           onSubmit={form.handleSubmit(onSubmit)}
           className="flex flex-col gap-6"
         >
-          <div className="flex flex-col gap-2 text-left">
-            <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.34em] text-primary">
-              {t("brand.loginBadge")}
-            </span>
-            <h1 className="text-2xl font-bold tracking-tight">
+          <div className="flex flex-col gap-1 text-left">
+            <h1 className="text-xl font-black tracking-tight">
               {t("brand.loginTitle")}
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs text-[#565654]">
               {t("brand.loginDescription")}
             </p>
           </div>
@@ -123,6 +120,7 @@ function Login() {
                       placeholder={copy.emailPlaceholder}
                       type="email"
                       autoComplete="username"
+                      className="rounded-[10px] border-2 border-[#3a3a3a] bg-white"
                       {...field}
                     />
                   </FormControl>
@@ -150,6 +148,7 @@ function Login() {
                       data-testid="password-input"
                       placeholder={copy.passwordPlaceholder}
                       autoComplete="current-password"
+                      className="rounded-[10px] border-2 border-[#3a3a3a] bg-white"
                       {...field}
                     />
                   </FormControl>
@@ -160,7 +159,7 @@ function Login() {
 
             <LoadingButton
               type="submit"
-              className="w-full"
+              className="w-full border-2 border-[#3a3a3a] bg-white font-bold text-[#1f1f1f] shadow-[3px_4px_0_rgba(0,0,0,0.10)] hover:bg-[#f4f4f3]"
               loading={loginMutation.isPending}
             >
               {copy.submit}

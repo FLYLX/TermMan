@@ -63,6 +63,45 @@ def _run_prestart() -> None:
     init_data()
 
 
+SYSTEMD_UNIT = """\
+[Unit]
+Description=TermPaws
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={exe} run
+Restart=always
+RestartSec=5
+Environment=TERMPAWS_HOME={home}
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+
+def _service(args: list[str]) -> None:
+    exe = Path(sys.executable).parent / "termpaws"
+    home = os.environ.get("TERMPAWS_HOME", str(Path.home() / ".termpaws"))
+    unit = SYSTEMD_UNIT.format(exe=exe, home=home)
+
+    if args[:1] == ["install"]:
+        if sys.platform != "linux":
+            sys.exit("service install is only supported on Linux (systemd)")
+        unit_path = Path("/etc/systemd/system/termpaws.service")
+        try:
+            unit_path.write_text(unit, encoding="utf-8")
+        except PermissionError:
+            sys.exit(f"Permission denied, re-run with sudo or write {unit_path} manually")
+        import subprocess
+
+        subprocess.run(["systemctl", "daemon-reload"], check=True)
+        subprocess.run(["systemctl", "enable", "--now", "termpaws"], check=True)
+        print("[TermPaws] Service installed and started: systemctl status termpaws")
+    else:
+        print(unit)
+
+
 def main() -> None:
     args = sys.argv[1:]
     command = args[0] if args else "serve"
@@ -79,8 +118,10 @@ def main() -> None:
         )
     elif command == "migrate":
         _run_prestart()
+    elif command == "service":
+        _service(args[1:])
     else:
-        print("usage: termpaws [run|serve|migrate]", file=sys.stderr)
+        print("usage: termpaws [run|serve|migrate|service [install]]", file=sys.stderr)
         raise SystemExit(2)
 
 
