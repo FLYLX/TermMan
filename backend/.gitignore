@@ -8,3 +8,5 @@ htmlcov
 .venv
 chroma_data/
 /knowledge/
+
+/bundled_fastembed_cache/

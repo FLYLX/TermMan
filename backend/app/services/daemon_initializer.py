@@ -45,7 +45,17 @@ connection_manager = ConnectionManager()
 socket_manager = SocketManager()
 socket_pool_facade = SocketPoolFacade(socket_manager=socket_manager)
 
-_initializer_lock_path = str(Path(tempfile.gettempdir()) / "TermPaws_daemon_initializer.lock")
+def _user_tmp_dir() -> Path:
+    base = Path(tempfile.gettempdir())
+    if os.name == "nt":
+        return base
+    # /tmp is shared and tmpfs can race on concurrent creation; keep per-user.
+    per_user = base / f"termpaws-{os.getuid()}"
+    per_user.mkdir(mode=0o700, exist_ok=True)
+    return per_user
+
+
+_initializer_lock_path = str(_user_tmp_dir() / "TermPaws_daemon_initializer.lock")
 _initializer_lock_file: Any | None = None
 _initializer_lock_owner = False
 
@@ -55,8 +65,16 @@ def _acquire_initializer_lock() -> bool:
     if _initializer_lock_owner:
         return True
 
-    Path(_initializer_lock_path).parent.mkdir(parents=True, exist_ok=True)
-    lock_file = open(_initializer_lock_path, "a+")
+    try:
+        Path(_initializer_lock_path).parent.mkdir(parents=True, exist_ok=True)
+        lock_file = open(_initializer_lock_path, "a+")
+    except OSError as exc:
+        logger.warning(
+            "[DaemonInit] Cannot open lock file %s: %s; skip initializer",
+            _initializer_lock_path,
+            exc,
+        )
+        return False
     try:
         if os.name == "nt":
             import msvcrt

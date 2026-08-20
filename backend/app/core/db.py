@@ -30,6 +30,9 @@ if sqlalchemy.__version__ >= "2.0":
 
 
 def init_db(session: Session) -> None:
+    if not settings.FIRST_SUPERUSER_PASSWORD:
+        # 无初始密码模式：不预建超管，等待首个访问者通过 /utils/setup 设置
+        return
     # Tables should be created with Alembic migrations
     # But if you don't want to use migrations, create
     # the tables un-commenting the next lines

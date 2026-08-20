@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useNavigate } from "@tanstack/react-router"
 import { Plus } from "lucide-react"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
@@ -54,6 +55,7 @@ const AddItemHandler = ({
 }: AddItemHandlerProps) => {
   const [isOpen, setIsOpen] = useState(false)
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { t } = useI18n()
   const { showSuccessToast, showErrorToast } = useCustomToast()
 
@@ -76,10 +78,17 @@ const AddItemHandler = ({
   const mutation = useMutation({
     mutationFn: (data: ItemHandlerCreate) =>
       ItemHandlersService.createItemHandler({ requestBody: data }),
-    onSuccess: () => {
+    onSuccess: (created: any) => {
       showSuccessToast(t("itemHandlers.handlerCreated"))
       form.reset()
       setIsOpen(false)
+      // 创建完直接切到该调度器，激活拉线圆圈
+      if (created?.id) {
+        void navigate({
+          to: "/item-handlers/$itemHandlerId",
+          params: { itemHandlerId: String(created.id) },
+        })
+      }
     },
     onError: handleError.bind(showErrorToast),
     onSettled: () => {

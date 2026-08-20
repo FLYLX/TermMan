@@ -109,7 +109,7 @@ const DISPATCHER_BOARD_CSS = `
 .board-wires .wire-dash { stroke-dasharray: 8 5; opacity: .45; }
 .board-wires .wire-preview { stroke: #6b7280; stroke-width: 3; stroke-dasharray: 9 5; opacity: .95; }
 .dispatcher-board .board-grid, .dispatcher-board .board-grid section, .dispatcher-board .board-grid aside { pointer-events: none; }
-.dispatcher-board .board-grid button, .dispatcher-board .board-grid a, .dispatcher-board .board-grid .wire-handle, .dispatcher-board .board-grid .item-del, .dispatcher-board .board-grid select, .dispatcher-board .board-grid input { pointer-events: auto; }
+.dispatcher-board .board-grid button, .dispatcher-board .board-grid a, .dispatcher-board .board-grid .wire-handle, .dispatcher-board .board-grid .item-del, .dispatcher-board .board-grid select, .dispatcher-board .board-grid input, .dispatcher-board .board-grid textarea, .dispatcher-board .board-grid .pe-auto, .dispatcher-board .board-grid .pe-auto * { pointer-events: auto; }
 .wire-handle { position: absolute; right: -7px; top: 50%; width: 13px; height: 13px; margin-top: -6px; border-radius: 9999px; background: #fff; border: 2px solid #3a3a3a; cursor: crosshair; z-index: 30; }
 .wire-handle:hover { background: #e5e5e3; border-color: #1f1f1f; }
 .main-terminal-block { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 130px; width: 100%; cursor: pointer; }
@@ -483,6 +483,9 @@ export function TerminalDispatcherBoard({
   const robotPluginEnabled = pluginsQuery.data
     ? isPluginEnabled(pluginsQuery.data, "TermPaws.robot")
     : true
+  const terminalWsPluginEnabled = pluginsQuery.data
+    ? isPluginEnabled(pluginsQuery.data, "TermPaws.terminal_ws")
+    : true
 
   const robotsQuery = useQuery({
     queryKey: getRobotsQueryKey(),
@@ -817,7 +820,15 @@ export function TerminalDispatcherBoard({
   const terminalFeatures = [
     { key: "chat", title: "Web Chat", icon: <MessageSquare className="size-4" /> },
     { key: "output", title: "终端输出", icon: <Terminal className="size-4" /> },
-    { key: "ws", title: "WebSocket Server", icon: <Server className="size-4" /> },
+    ...(terminalWsPluginEnabled
+      ? [
+          {
+            key: "ws",
+            title: "WebSocket Server",
+            icon: <Server className="size-4" />,
+          },
+        ]
+      : []),
     ...(robotPluginEnabled
       ? [{ key: "qq", title: "QQ 对话调试", icon: <MessageSquare className="size-4" /> }]
       : []),
@@ -828,6 +839,15 @@ export function TerminalDispatcherBoard({
     { key: "tasks", title: "定时任务", icon: <Zap className="size-4" /> },
     { key: "token", title: "Token 统计", icon: <Brain className="size-4" /> },
   ]
+  useEffect(() => {
+    if (!terminalWsPluginEnabled && mainView === "ws") {
+      setMainView("chat")
+    }
+    if (!robotPluginEnabled && mainView === "qq") {
+      setMainView("chat")
+    }
+  }, [terminalWsPluginEnabled, robotPluginEnabled, mainView])
+
   const [itemAction, setItemAction] = useState<
     "start" | "stop" | "restart" | null
   >(null)
@@ -1305,13 +1325,13 @@ export function TerminalDispatcherBoard({
 
         <section className="relative z-30 flex min-h-0 flex-col justify-center pb-4 pt-18">
           <ScrollColumn className="scroll-col-pad" arrows={false}>
-            <div className="mx-auto grid w-full max-w-xl auto-rows-[68px] grid-cols-4 grid-flow-dense gap-2.5">
+            <div className="mx-auto grid w-full max-w-md auto-rows-[56px] grid-cols-4 grid-flow-dense gap-2">
               {boardCards.map((card) => (
                 <button
                   key={card.key}
                   type="button"
                   onClick={() => setExpandedCard(card.key)}
-                  className={`glass-box sketch-hover col-span-2 flex flex-col justify-center px-4 py-3 text-left ${
+                  className={`glass-box sketch-hover col-span-2 flex flex-col justify-center px-3 py-2 text-left ${
                     card.key === "bindings" ||
                     card.key === "chatLogs" ||
                     card.key === "config"
@@ -1319,7 +1339,7 @@ export function TerminalDispatcherBoard({
                       : ""
                   }`}
                 >
-                  <div className="flex items-center gap-1.5 text-sm font-semibold">
+                  <div className="flex items-center gap-1.5 text-[13px] font-semibold">
                     {card.icon}
                     {card.title}
                   </div>

@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useLocation, useNavigate } from "@tanstack/react-router"
 import {
@@ -42,6 +42,18 @@ export function HangTagNav() {
   const { user: currentUser, logout } = useAuth()
   const { t, locale, setLocale } = useI18n()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const closeTimerRef = useRef<number | null>(null)
+
+  const cancelScheduledClose = () => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+  }
+  const scheduleClose = () => {
+    cancelScheduledClose()
+    closeTimerRef.current = window.setTimeout(() => setUserMenuOpen(false), 250)
+  }
 
   const { data: plugins } = useQuery({
     ...getPluginsQueryOptions(),
@@ -123,7 +135,11 @@ export function HangTagNav() {
           </button>
         )
       })}
-      <div className="tag-user-anchor">
+      <div
+        className="tag-user-anchor"
+        onMouseEnter={cancelScheduledClose}
+        onMouseLeave={scheduleClose}
+      >
         <button
           type="button"
           onClick={() => setUserMenuOpen((v) => !v)}

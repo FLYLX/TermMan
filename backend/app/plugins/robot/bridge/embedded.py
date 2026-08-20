@@ -51,14 +51,22 @@ _stale_onebot_message_future_grace_seconds = 900.0
 _onebot_message_timezone_offset_candidates_seconds = (8 * 3600,)
 _initialized = False
 _connection_errors: dict[str, dict[str, str]] = {}
-_error_file_path: str = "/tmp/robot_bridge_errors.json"
-_identity_file_path: str = "/tmp/robot_bridge_identities.json"
-_singleton_lock_path: str = str(
-    Path(tempfile.gettempdir()) / "termpaws_robot_bridge.lock"
-)
-_owner_info_path: str = str(
-    Path(tempfile.gettempdir()) / "termpaws_robot_bridge_owner.json"
-)
+
+
+def _user_tmp_dir() -> Path:
+    base = Path(tempfile.gettempdir())
+    if os.name == "nt":
+        return base
+    # /tmp is shared and tmpfs can race on concurrent creation; keep per-user.
+    per_user = base / f"termpaws-{os.getuid()}"
+    per_user.mkdir(mode=0o700, exist_ok=True)
+    return per_user
+
+
+_error_file_path: str = str(_user_tmp_dir() / "robot_bridge_errors.json")
+_identity_file_path: str = str(_user_tmp_dir() / "robot_bridge_identities.json")
+_singleton_lock_path: str = str(_user_tmp_dir() / "termpaws_robot_bridge.lock")
+_owner_info_path: str = str(_user_tmp_dir() / "termpaws_robot_bridge_owner.json")
 _singleton_lock_file: Any | None = None
 _singleton_lock_owner = False
 _singleton_lock_guard = threading.Lock()
@@ -67,27 +75,36 @@ _ipc_thread: threading.Thread | None = None
 _ipc_base_url: str | None = None
 _startup_callback: Any | None = None
 _shutdown_callback: Any | None = None
-_restart_scheduled = False
-_restart_guard = threading.Lock()
 _loaded_robot_config_signature: dict[str, Any] = {}
+_app_ref: Any | None = None
 
 
-def _schedule_process_restart(reason: str) -> bool:
-    global _restart_scheduled
+def set_bridge_app(app: Any) -> None:
+    global _app_ref
+    _app_ref = app
 
-    with _restart_guard:
-        if _restart_scheduled:
-            return False
-        _restart_scheduled = True
 
-    def _restart() -> None:
-        _remove_owner_info()
-        time.sleep(0.2)
-        os._exit(0)
-
-    logger.warning("[Bridge] Backend restart scheduled: %s", reason)
-    threading.Thread(target=_restart, daemon=True).start()
-    return True
+async def hot_reload_bridge() -> dict[str, Any]:
+    """Restart the embedded bridge in place (no process restart)."""
+    global _initialized, _bridge_router
+    await stop_embedded_bridge()
+    _initialized = False
+    _bridge_router = None
+    router = init_embedded_bridge()
+    if _app_ref is not None:
+        _app_ref.router.routes[:] = [
+            route
+            for route in _app_ref.router.routes
+            if not str(getattr(route, "path", "")).startswith("/robot-bridge")
+        ]
+        if router is not None:
+            _app_ref.include_router(router)
+    await start_embedded_bridge()
+    loaded, _, _, _ = _current_enabled_robot_config_signature()
+    return {
+        "success": True,
+        "detail": f"Bridge reloaded in place with {len(loaded)} robot(s)",
+    }
 
 
 def _normalize_connection_errors(raw: Any) -> dict[str, dict[str, str]]:
@@ -153,8 +170,16 @@ def _acquire_singleton_lock() -> bool:
         if _singleton_lock_owner:
             return True
 
-        Path(_singleton_lock_path).parent.mkdir(parents=True, exist_ok=True)
-        lock_file = open(_singleton_lock_path, "a+")
+        try:
+            Path(_singleton_lock_path).parent.mkdir(parents=True, exist_ok=True)
+            lock_file = open(_singleton_lock_path, "a+")
+        except OSError as exc:
+            logger.warning(
+                "[Bridge] Cannot open lock file %s: %s; bridge stays idle",
+                _singleton_lock_path,
+                exc,
+            )
+            return False
         try:
             if os.name == "nt":
                 import msvcrt
@@ -1071,23 +1096,11 @@ def _build_idle_bridge_router(reason: str) -> APIRouter:
                 raise
             robots, _, _, _ = _current_enabled_robot_config_signature()
             if robots:
-                if reason != "no_enabled_robots":
-                    return RobotBridgeReloadResponse(
-                        success=False,
-                        detail=(
-                            f"Bridge is idle ({reason}) and owner is not available; "
-                            "restart the backend after fixing bridge startup"
-                        ),
-                    )
-                scheduled = _schedule_process_restart(
-                    f"embedded robot bridge was idle ({reason}); reload requested with enabled robots"
+                result = await hot_reload_bridge()
+                return RobotBridgeReloadResponse(
+                    success=bool(result.get("success")),
+                    detail=str(result.get("detail") or ""),
                 )
-                detail = (
-                    "Bridge was idle and a backend restart was scheduled to load enabled robots"
-                    if scheduled
-                    else "Bridge was idle and a backend restart is already scheduled"
-                )
-                return RobotBridgeReloadResponse(success=True, detail=detail)
             return RobotBridgeReloadResponse(
                 success=True,
                 detail=f"Bridge is idle ({reason}); no enabled robots are configured",
@@ -1653,17 +1666,7 @@ def init_embedded_bridge() -> APIRouter | None:
         async def _reload_owner() -> dict[str, Any]:
             _, _, _, current_signature = _current_enabled_robot_config_signature()
             if current_signature != _loaded_robot_config_signature:
-                scheduled = _schedule_process_restart(
-                    "embedded robot bridge config changed; full reload required"
-                )
-                return {
-                    "success": True,
-                    "detail": (
-                        "Bridge config changed and a backend restart was scheduled"
-                        if scheduled
-                        else "Bridge config changed and a backend restart is already scheduled"
-                    ),
-                }
+                return await hot_reload_bridge()
 
             errors: list[str] = []
             called_hooks = 0

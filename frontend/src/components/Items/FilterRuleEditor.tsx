@@ -343,8 +343,8 @@ export function FilterRuleEditor({
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <div className="p-4 space-y-4 border-t">
-                    <div className="flex flex-wrap items-end gap-4">
-                      <div className="space-y-1">
+                    <div className="grid gap-3 sm:grid-cols-[240px_minmax(0,1fr)]">
+                      <div className="space-y-1.5">
                         <Label className="text-xs">过滤器名称</Label>
                         <Input
                           value={filter.name}
@@ -352,10 +352,9 @@ export function FilterRuleEditor({
                             updateFilter(filterIndex, { name: e.target.value })
                           }
                           placeholder="过滤器名称"
-                          className="w-48"
                         />
                       </div>
-                      <div className="min-w-0 flex-1 space-y-1">
+                      <div className="min-w-0 space-y-1.5">
                         <Label className="text-xs">说明</Label>
                         <Input
                           value={filter.reason || ""}
@@ -367,37 +366,38 @@ export function FilterRuleEditor({
                           placeholder="为什么添加这条规则"
                         />
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">处理方式</Label>
-                        <div className="flex gap-1">
-                          {Object.entries(ACTION_TYPE_LABELS).map(
-                            ([type, info]) => (
-                              <button
-                                key={type}
-                                type="button"
-                                onClick={() =>
-                                  updateFilter(filterIndex, {
-                                    action_type:
-                                      type as FilterRule["action_type"],
-                                  })
-                                }
-                                className={`px-3 py-1.5 text-xs rounded-md transition-all ${
-                                  filter.action_type === type
-                                    ? type === "block"
-                                      ? "bg-red-500 text-white shadow-sm"
-                                      : type === "ignore"
-                                        ? "bg-gray-500 text-white shadow-sm"
-                                        : type === "log"
-                                          ? "bg-blue-500 text-white shadow-sm"
-                                          : "bg-amber-500 text-white shadow-sm"
-                                    : "bg-muted hover:bg-muted/80"
-                                }`}
-                              >
-                                {info.label}
-                              </button>
-                            ),
-                          )}
-                        </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">处理方式</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(ACTION_TYPE_LABELS).map(
+                          ([type, info]) => (
+                            <button
+                              key={type}
+                              type="button"
+                              title={info.description}
+                              onClick={() =>
+                                updateFilter(filterIndex, {
+                                  action_type:
+                                    type as FilterRule["action_type"],
+                                })
+                              }
+                              className={`px-4 py-2 text-sm rounded-md transition-all ${
+                                filter.action_type === type
+                                  ? type === "block"
+                                    ? "bg-red-500 text-white shadow-sm"
+                                    : type === "ignore"
+                                      ? "bg-gray-500 text-white shadow-sm"
+                                      : type === "log"
+                                        ? "bg-blue-500 text-white shadow-sm"
+                                        : "bg-amber-500 text-white shadow-sm"
+                                  : "bg-muted hover:bg-muted/80"
+                              }`}
+                            >
+                              {info.label}
+                            </button>
+                          ),
+                        )}
                       </div>
                     </div>
 

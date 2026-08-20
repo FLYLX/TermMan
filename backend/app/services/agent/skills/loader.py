@@ -15,7 +15,18 @@ class SkillLoader:
 
     def __init__(self, skills_dir: Path | None = None):
         if skills_dir is None:
-            skills_dir = Path(__file__).parent.parent.parent.parent.parent / "skills"
+            import os
+
+            home = os.environ.get("TERMPAWS_HOME")
+            candidates = []
+            if home:
+                candidates.append(Path(home) / "skills")
+            # bundled in wheel (app/skills) vs repo dev layout (backend/skills)
+            candidates.append(Path(__file__).parent.parent.parent.parent / "skills")
+            candidates.append(Path(__file__).parent.parent.parent.parent.parent / "skills")
+            skills_dir = next(
+                (path for path in candidates if path.exists()), candidates[0]
+            )
         self.skills_dir = Path(skills_dir)
         self._skills: dict[str, SkillDefinition] = {}
         self._revision = 0

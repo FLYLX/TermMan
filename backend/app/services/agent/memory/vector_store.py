@@ -73,45 +73,33 @@ class EmbeddingService:
             raise RuntimeError(self._load_error)
 
         if self._model is None:
-            logger.info("[Embedding] Loading %s model...", model_name)
-            from sentence_transformers import SentenceTransformer
+            logger.info("[Embedding] Loading local model %s...", model_name)
+            from fastembed import TextEmbedding
 
             try:
-                self._model = SentenceTransformer(model_name, local_files_only=True)
-                logger.info("[Embedding] Model loaded from local cache")
-            except Exception as local_error:
-                if not settings.EMBEDDING_ALLOW_REMOTE_LOAD:
-                    self._load_error = f"local embedding model unavailable: {local_error}"
-                    logger.warning(
-                        "[Embedding] Local model unavailable and remote loading is disabled; using fallback embeddings: %s",
-                        local_error,
-                    )
-                    raise RuntimeError(self._load_error) from local_error
+                # 本地缓存命中则直接用，缺失则自动下载（默认国内镜像源）
+                self._model = TextEmbedding(model_name=model_name)
+                logger.info("[Embedding] Local model loaded")
+            except Exception as exc:
+                self._load_error = str(exc)
                 logger.warning(
-                    "[Embedding] Local model cache unavailable, trying remote load because EMBEDDING_ALLOW_REMOTE_LOAD=true: %s",
-                    local_error,
+                    "[Embedding] 本地模型不可用且下载失败，本次使用降级检索: %s",
+                    exc,
                 )
-                try:
-                    self._model = SentenceTransformer(model_name)
-                    logger.info("[Embedding] Model loaded successfully")
-                except Exception as e:
-                    self._load_error = str(e)
-                    logger.warning(
-                        "[Embedding] Model unavailable; long-term memory search/write will be skipped: %s",
-                        e,
-                    )
-                    raise
+                raise RuntimeError(self._load_error) from exc
 
     def encode(self, texts: str | list[str]) -> list[list[float]]:
-        self._ensure_model()
         if isinstance(texts, str):
             texts = [texts]
-        embeddings = self._model.encode(
-            texts,
-            convert_to_numpy=True,
-            normalize_embeddings=True,
-        )
-        return embeddings.tolist()
+        if self._use_remote():
+            return self._encode_remote(texts)
+        self._ensure_model()
+        vectors: list[list[float]] = []
+        for embedding in self._model.embed(list(texts)):
+            vector = [float(v) for v in embedding]
+            norm = math.sqrt(sum(v * v for v in vector)) or 1.0
+            vectors.append([v / norm for v in vector])
+        return vectors
 
     def encode_single(self, text: str) -> list[float]:
         return self.encode([text])[0]
@@ -1789,7 +1777,7 @@ class VectorStoreService:
                 by_key[key].append(memory)
 
         ids_to_delete: list[str] = []
-        for key, group in by_key.items():
+        for _key, group in by_key.items():
             if len(group) < 2:
                 continue
             group.sort(

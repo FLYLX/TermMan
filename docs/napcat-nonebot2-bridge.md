@@ -35,25 +35,17 @@ powershell -ExecutionPolicy Bypass -File scripts/init-env.ps1
 The init script syncs `ROBOT_BRIDGE_SHARED_SECRET` from the root `.env` into
 `robot/.env` so the backend and robot server use the same internal token.
 
-For Docker Compose, keep the backend-to-server URL on the internal network:
+The robot bridge is always embedded in the backend process and shares its
+port. Only the shared secret needs configuration:
 
 ```env
-ROBOT_BRIDGE_EMBEDDED=false
-ROBOT_BACKEND_URL=http://backend:8000
-ROBOT_BRIDGE_URL=http://robot-bridge:7000
-ROBOT_BRIDGE_HOST_PORT=33333
 ROBOT_BRIDGE_SHARED_SECRET=changethis
 ```
 
-The backend calls only `ROBOT_BRIDGE_URL`. It does not try alternate robot
-server addresses at runtime.
-
-If the QQ connector runs outside Docker, expose the robot server with
-`ROBOT_BRIDGE_HOST_PORT` and configure the connector with the host URL, for
-example:
+Configure the QQ connector (NapCat, etc.) with the backend URL, for example:
 
 ```text
-ws://203.135.104.22:33333/onebot/v11/ws
+ws://203.135.104.22:28888/robot-bridge/onebot/v11/ws
 ```
 
 In TermPaws, create a robot server with platform `OneBot V11 / QQ Connectors`

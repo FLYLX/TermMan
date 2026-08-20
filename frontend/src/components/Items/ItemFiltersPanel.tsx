@@ -1,23 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import {
-  Filter,
-  Loader2,
-  Play,
-  RefreshCw,
-  Shield,
-  Terminal,
-} from "lucide-react"
+import { Filter, Loader2, Play, Shield } from "lucide-react"
 
 import { type ItemUpdate, ItemsService } from "@/client"
-import { FilterGeneratorCard } from "@/components/Items/FilterGeneratorCard"
+import { FilterGeneratorDialog } from "@/components/Items/FilterGeneratorCard"
 import {
   type FilterRule,
   FilterRuleEditor,
 } from "@/components/Items/FilterRuleEditor"
+import { SketchDialog } from "@/components/Items/SketchDialog"
 import { useI18n } from "@/components/locale-provider"
 import useCustomToast from "@/hooks/useCustomToast"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -151,15 +144,105 @@ function getOutputFilterRules(item: any): Record<string, FilterRule> {
     : createDefaultOutputRules()
 }
 
+interface FilterTestDialogProps {
+  title: string
+  description: string
+  inputLabel: string
+  inputPlaceholder: string
+  onRun: (text: string) => Promise<Record<string, unknown>>
+}
+
+function FilterTestDialog({
+  title,
+  description,
+  inputLabel,
+  inputPlaceholder,
+  onRun,
+}: FilterTestDialogProps) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState("")
+  const [result, setResult] = useState<Record<string, unknown> | null>(null)
+  const [running, setRunning] = useState(false)
+
+  const handleRun = async () => {
+    if (!text.trim()) {
+      return
+    }
+    setRunning(true)
+    try {
+      setResult(await onRun(text))
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => setOpen(true)}
+      >
+        <Play className="mr-2 size-4" />
+        测试
+      </Button>
+      <SketchDialog open={open} onClose={() => setOpen(false)} title={title} description={description}>
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">
+              {inputLabel}
+            </Label>
+            <Textarea
+              placeholder={inputPlaceholder}
+              className="h-40 font-mono text-xs"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+          </div>
+          <Button
+            size="sm"
+            onClick={handleRun}
+            disabled={running || !text.trim()}
+            className="w-full"
+          >
+            {running ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <Play className="mr-2 size-4" />
+            )}
+            运行测试
+          </Button>
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">结果</Label>
+            <div className="h-40 overflow-auto rounded-md border bg-muted/30 p-3">
+              {result ? (
+                <pre className="whitespace-pre-wrap text-xs font-mono">
+                  {String(result.result || "")}
+                </pre>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  运行测试后结果显示在这里
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </SketchDialog>
+    </>
+  )
+}
+
 export function ItemFiltersPanel({ itemId }: { itemId: string }) {
   const { t } = useI18n()
   const queryClient = useQueryClient()
-  const { showSuccessToast, showErrorToast } = useCustomToast()
+  const { showErrorToast } = useCustomToast()
 
   const { data: item } = useQuery({
     queryKey: ["items", "detail", itemId],
     queryFn: () => ItemsService.readItem({ id: itemId }),
     select: (data) => data as any,
+    refetchInterval: 5000,
   })
 
   const [inputFilterEnabled, setInputFilterEnabled] = useState(false)
@@ -170,19 +253,6 @@ export function ItemFiltersPanel({ itemId }: { itemId: string }) {
   const [outputFilterRules, setOutputFilterRules] = useState<
     Record<string, FilterRule>
   >(createDefaultOutputRules())
-
-  const [inputTestText, setInputTestText] = useState("")
-  const [inputTestResult, setInputTestResult] = useState<Record<
-    string,
-    unknown
-  > | null>(null)
-  const [isTestingInputFilter, setIsTestingInputFilter] = useState(false)
-  const [outputTestCommand, setOutputTestCommand] = useState("")
-  const [outputTestResult, setOutputTestResult] = useState<Record<
-    string,
-    unknown
-  > | null>(null)
-  const [isTestingOutputFilter, setIsTestingOutputFilter] = useState(false)
 
   const inputSignature = useMemo(
     () => serializeFilterState(inputFilterEnabled, inputFilterRules),
@@ -196,24 +266,43 @@ export function ItemFiltersPanel({ itemId }: { itemId: string }) {
   const outputSyncedSignatureRef = useRef("")
   const initializedRef = useRef(false)
 
+  // Adopt server state on first load and whenever the local state is clean
+  // (i.e. not being edited), so Agent/MCP-side rule changes appear without a
+  // manual sync button.
   useEffect(() => {
-    if (!item || initializedRef.current) {
+    if (!item) {
       return
     }
-    initializedRef.current = true
-    setInputFilterEnabled(item.input_filter_enabled || false)
-    setInputFilterRules(getInputFilterRules(item))
-    setOutputFilterEnabled(item.output_filter_enabled || false)
-    setOutputFilterRules(getOutputFilterRules(item))
+    const serverInputEnabled = item.input_filter_enabled || false
+    const serverInputRules = getInputFilterRules(item)
+    const serverOutputEnabled = item.output_filter_enabled || false
+    const serverOutputRules = getOutputFilterRules(item)
+
+    if (!initializedRef.current) {
+      initializedRef.current = true
+      setInputFilterEnabled(serverInputEnabled)
+      setInputFilterRules(serverInputRules)
+      setOutputFilterEnabled(serverOutputEnabled)
+      setOutputFilterRules(serverOutputRules)
+    } else {
+      if (inputSyncedSignatureRef.current === inputSignature) {
+        setInputFilterEnabled(serverInputEnabled)
+        setInputFilterRules(serverInputRules)
+      }
+      if (outputSyncedSignatureRef.current === outputSignature) {
+        setOutputFilterEnabled(serverOutputEnabled)
+        setOutputFilterRules(serverOutputRules)
+      }
+    }
     inputSyncedSignatureRef.current = serializeFilterState(
-      item.input_filter_enabled || false,
-      getInputFilterRules(item),
+      serverInputEnabled,
+      serverInputRules,
     )
     outputSyncedSignatureRef.current = serializeFilterState(
-      item.output_filter_enabled || false,
-      getOutputFilterRules(item),
+      serverOutputEnabled,
+      serverOutputRules,
     )
-  }, [item])
+  }, [item, inputSignature, outputSignature])
 
   // Debounced auto-save for input filter
   useEffect(() => {
@@ -297,51 +386,7 @@ export function ItemFiltersPanel({ itemId }: { itemId: string }) {
     t,
   ])
 
-  const handleTestInputFilter = async () => {
-    if (!inputTestText.trim()) {
-      showErrorToast(t("items.detail.enterTestText"))
-      return
-    }
-    setIsTestingInputFilter(true)
-    try {
-      const result = await ItemsService.testInputFilter({
-        id: itemId,
-        requestBody: { test_text: inputTestText },
-      })
-      setInputTestResult(result)
-    } catch (error) {
-      showErrorToast(t("items.detail.inputFilterTestFailed"))
-    } finally {
-      setIsTestingInputFilter(false)
-    }
-  }
-
-  const handleTestOutputFilter = async () => {
-    if (!outputTestCommand.trim()) {
-      showErrorToast(t("items.detail.enterTestCommand"))
-      return
-    }
-    setIsTestingOutputFilter(true)
-    try {
-      const result = await ItemsService.testOutputFilter({
-        id: itemId,
-        requestBody: { command: outputTestCommand },
-      })
-      setOutputTestResult(result)
-    } catch (error) {
-      showErrorToast(t("items.detail.outputFilterTestFailed"))
-    } finally {
-      setIsTestingOutputFilter(false)
-    }
-  }
-
-  const handleSyncInputFilterRules = async () => {
-    initializedRef.current = false
-    await queryClient.invalidateQueries({
-      queryKey: ["items", "detail", itemId],
-    })
-    showSuccessToast("已同步后端过滤规则")
-  }
+  const [target, setTarget] = useState<"input" | "output">("input")
 
   if (!item) {
     return (
@@ -351,224 +396,102 @@ export function ItemFiltersPanel({ itemId }: { itemId: string }) {
     )
   }
 
+  const isInput = target === "input"
+  const enabled = isInput ? inputFilterEnabled : outputFilterEnabled
+  const setEnabled = isInput ? setInputFilterEnabled : setOutputFilterEnabled
+
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-2">
-            <Filter className="mt-1 size-5 text-blue-500" />
-            <div>
-              <h2 className="text-xl font-semibold">
-                {t("items.detail.inputFilterSettings")}
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                {t("items.detail.inputFilterFlowDescription")}
-              </p>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="text-sm font-medium">{t("common.enabled")}</span>
+      <div className="flex justify-center">
+        <div className="inline-flex rounded-full border-2 border-[#3a3a3a] bg-white p-1 shadow-[3px_4px_0_rgba(0,0,0,0.10)]">
+          {(
+            [
+              { key: "input", label: "终端 → Agent", icon: Filter },
+              { key: "output", label: "Agent → 终端", icon: Shield },
+            ] as const
+          ).map(({ key, label, icon: Icon }) => (
             <button
+              key={key}
               type="button"
-              onClick={() => setInputFilterEnabled(!inputFilterEnabled)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                inputFilterEnabled ? "bg-blue-500" : "bg-muted"
+              onClick={() => setTarget(key)}
+              className={`flex items-center gap-2 rounded-full px-5 py-2 text-sm font-bold transition-all ${
+                target === key
+                  ? "bg-[#3a3a3a] text-white"
+                  : "text-[#565654] hover:bg-muted"
               }`}
             >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  inputFilterEnabled ? "translate-x-6" : "translate-x-1"
-                }`}
-              />
+              <Icon className="size-4" />
+              {label}
             </button>
-          </div>
+          ))}
         </div>
-
-        <div className="mb-4 rounded-xl border bg-muted/20 p-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Filter className="size-4 text-blue-500" />
-                <span>Agent 噪声过滤规则</span>
-                <Badge variant="outline" className="text-[10px]">
-                  {Object.keys(inputFilterRules).length}
-                </Badge>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Agent 通过 MCP 写入的规则会显示在下面。
-              </p>
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => void handleSyncInputFilterRules()}
-            >
-              <RefreshCw className="mr-2 size-4" />
-              同步后端规则
-            </Button>
-          </div>
-        </div>
-
-        <FilterGeneratorCard
-          itemId={itemId}
-          target="input"
-          currentRules={inputFilterRules}
-          onApply={setInputFilterRules}
-        />
-
-        <FilterRuleEditor
-          value={inputFilterRules}
-          onChange={setInputFilterRules}
-          defaultRules={createDefaultInputRules()}
-        />
-
-        <div className="mt-4 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <Terminal className="size-4 text-blue-500" />
-            <span className="text-sm font-medium">
-              {t("items.detail.testInputFilter")}
-            </span>
-          </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">
-                {t("items.detail.inputText")}
-              </Label>
-              <Textarea
-                placeholder={t("items.detail.pasteTerminalOutput")}
-                className="h-40 font-mono text-xs"
-                value={inputTestText}
-                onChange={(e) => setInputTestText(e.target.value)}
-              />
-              <Button
-                size="sm"
-                onClick={handleTestInputFilter}
-                disabled={isTestingInputFilter}
-                className="w-full"
-              >
-                {isTestingInputFilter ? (
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                ) : (
-                  <Play className="mr-2 size-4" />
-                )}
-                {t("items.detail.testFilter")}
-              </Button>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">
-                {t("items.detail.filterResult")}
-              </Label>
-              <div className="h-40 overflow-auto rounded-md border bg-muted/30 p-3">
-                {inputTestResult ? (
-                  <pre className="whitespace-pre-wrap text-xs font-mono">
-                    {String(inputTestResult.result || "")}
-                  </pre>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    {t("items.detail.clickTestFilter")}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      </div>
 
       <section className="rounded-2xl border bg-card/85 p-4 shadow-sm">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-2">
-            <Shield className="mt-1 size-5 text-orange-500" />
-            <div>
-              <h2 className="text-xl font-semibold">
-                {t("items.detail.outputFilterSettings")}
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                {t("items.detail.outputFilterFlowDescription")}
-              </p>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="text-sm font-medium">{t("common.enabled")}</span>
-            <button
-              type="button"
-              onClick={() => setOutputFilterEnabled(!outputFilterEnabled)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                outputFilterEnabled ? "bg-orange-500" : "bg-muted"
+        <div className="mb-4 flex items-center justify-end gap-2">
+          <FilterGeneratorDialog
+            itemId={itemId}
+            target={target}
+            currentRules={isInput ? inputFilterRules : outputFilterRules}
+            onApply={isInput ? setInputFilterRules : setOutputFilterRules}
+          />
+          <FilterTestDialog
+            title={
+              isInput
+                ? t("items.detail.testInputFilter")
+                : t("items.detail.testOutputFilter")
+            }
+            description={
+              isInput
+                ? "粘贴一段终端输出，查看经过滤后 Agent 实际看到的内容。"
+                : "输入一条命令，查看过滤器判定结果。"
+            }
+            inputLabel={
+              isInput
+                ? t("items.detail.inputText")
+                : t("items.detail.commandToTest")
+            }
+            inputPlaceholder={
+              isInput
+                ? t("items.detail.pasteTerminalOutput")
+                : t("items.detail.enterCommandToTest")
+            }
+            onRun={async (text) =>
+              isInput
+                ? ItemsService.testInputFilter({
+                    id: itemId,
+                    requestBody: { test_text: text },
+                  })
+                : ItemsService.testOutputFilter({
+                    id: itemId,
+                    requestBody: { command: text },
+                  })
+            }
+          />
+          <span className="text-sm font-medium">{t("common.enabled")}</span>
+          <button
+            type="button"
+            onClick={() => setEnabled(!enabled)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              enabled ? "bg-[#3a3a3a]" : "bg-muted"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                enabled ? "translate-x-6" : "translate-x-1"
               }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  outputFilterEnabled ? "translate-x-6" : "translate-x-1"
-                }`}
-              />
-            </button>
-          </div>
+            />
+          </button>
         </div>
-
-        <FilterGeneratorCard
-          itemId={itemId}
-          target="output"
-          currentRules={outputFilterRules}
-          onApply={setOutputFilterRules}
-        />
 
         <FilterRuleEditor
-          value={outputFilterRules}
-          onChange={setOutputFilterRules}
-          defaultRules={createDefaultOutputRules()}
+          key={target}
+          value={isInput ? inputFilterRules : outputFilterRules}
+          onChange={isInput ? setInputFilterRules : setOutputFilterRules}
+          defaultRules={
+            isInput ? createDefaultInputRules() : createDefaultOutputRules()
+          }
         />
-
-        <div className="mt-4 rounded-lg border border-orange-500/30 bg-orange-500/5 p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <Shield className="size-4 text-orange-500" />
-            <span className="text-sm font-medium">
-              {t("items.detail.testOutputFilter")}
-            </span>
-          </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">
-                {t("items.detail.commandToTest")}
-              </Label>
-              <Textarea
-                placeholder={t("items.detail.enterCommandToTest")}
-                className="h-32 font-mono text-xs"
-                value={outputTestCommand}
-                onChange={(e) => setOutputTestCommand(e.target.value)}
-              />
-              <Button
-                size="sm"
-                onClick={handleTestOutputFilter}
-                disabled={isTestingOutputFilter}
-                className="w-full"
-              >
-                {isTestingOutputFilter ? (
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                ) : (
-                  <Play className="mr-2 size-4" />
-                )}
-                {t("items.detail.testCommand")}
-              </Button>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">
-                {t("items.detail.filterResult")}
-              </Label>
-              <div className="h-32 overflow-auto rounded-md border bg-muted/30 p-3">
-                {outputTestResult ? (
-                  <pre className="whitespace-pre-wrap text-xs font-mono">
-                    {String(outputTestResult.result || "")}
-                  </pre>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    {t("items.detail.clickTestCommand")}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
       </section>
     </div>
   )

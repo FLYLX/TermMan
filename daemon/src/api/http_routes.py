@@ -1,6 +1,5 @@
 from typing import Any, Optional
 
-import requests
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -116,36 +115,32 @@ def _extract_bearer_token(request: Request) -> str:
     return token
 
 
-def _verify_file_ticket_with_backend(ticket: str, op: str) -> dict[str, Any]:
-    backend_url = config.get("BACKEND_URL", "http://backend:8000")
-    verify_url = f"{backend_url}/api/v1/items/file-ticket/verify"
+def _verify_file_ticket(ticket: str, op: str) -> dict[str, Any]:
+    """HMAC 本地验票，无需回调 Backend。"""
+    import base64
+    import hashlib
+    import hmac
+    import json
+    import time
 
     try:
-        response = requests.post(
-            verify_url,
-            json={"ticket": ticket, "op": op},
-            headers={"X-Daemon-Api-Key": config.get("API_KEY", "")},
-            timeout=5,
-        )
-    except requests.exceptions.Timeout as exc:
-        logger.error(f"[File] Ticket verification timed out: op={op}")
-        raise HTTPException(status_code=504, detail="Ticket verification timeout") from exc
-    except requests.RequestException as exc:
-        logger.error(f"[File] Ticket verification failed: op={op}, error={exc}")
-        raise HTTPException(status_code=502, detail="Ticket verification request failed") from exc
-
-    if response.status_code != 200:
-        detail = "Ticket verification failed"
-        try:
-            detail = response.json().get("detail", detail)
-        except Exception:
-            pass
-        raise HTTPException(status_code=response.status_code, detail=detail)
-
-    result = response.json()
-    if not result.get("success"):
-        raise HTTPException(status_code=401, detail=result.get("error", "Invalid file ticket"))
-    return result
+        raw, signature = ticket.rsplit(".", 1)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid ticket format")
+    expected = hmac.new(
+        config.get("API_KEY", "").encode(), raw.encode(), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        raise HTTPException(status_code=401, detail="Invalid ticket signature")
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(raw.encode()))
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid ticket payload")
+    if time.time() > float(payload.get("expire_ts") or 0):
+        raise HTTPException(status_code=401, detail="Ticket expired")
+    if payload.get("op") != op:
+        raise HTTPException(status_code=401, detail="Ticket operation mismatch")
+    return {"success": True, **payload}
 
 
 def _raise_file_service_error(error: FileServiceError):
@@ -382,7 +377,7 @@ async def upload_file(
     file: UploadFile = File(...),
 ):
     ticket = _extract_bearer_token(request)
-    ticket_info = _verify_file_ticket_with_backend(ticket, "upload")
+    ticket_info = _verify_file_ticket(ticket, "upload")
 
     try:
         return await file_service.save_upload(
@@ -402,7 +397,7 @@ async def download_file(
     request: Request,
 ):
     ticket = _extract_bearer_token(request)
-    ticket_info = _verify_file_ticket_with_backend(ticket, "download")
+    ticket_info = _verify_file_ticket(ticket, "download")
 
     try:
         metadata = file_service.get_download_metadata(

@@ -92,9 +92,6 @@ services:
       BACKEND_AUTO_RELOAD: "${BACKEND_AUTO_RELOAD:-false}"
       BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: "${BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS:-5}"
       ROBOT_PLUGIN_ENABLED: "${ROBOT_PLUGIN_ENABLED:-true}"
-      ROBOT_BRIDGE_EMBEDDED: "${ROBOT_BRIDGE_EMBEDDED:-false}"
-      ROBOT_BACKEND_URL: "${ROBOT_BACKEND_URL:-http://backend:8000}"
-      ROBOT_BRIDGE_URL: "${ROBOT_BRIDGE_URL:-http://robot-bridge:7000}"
       ROBOT_CONVERSATION_MEMORY_DIR: "${ROBOT_CONVERSATION_MEMORY_DIR:-/app/backend/.runtime/robot_conversation_memory}"
       AGENT_STATE_STORE_PATH: "${AGENT_STATE_STORE_PATH:-/app/backend/.runtime/agent_state.db}"
       TERMINAL_WS_DEFAULT_HOST: "${TERMINAL_WS_DEFAULT_HOST:-0.0.0.0}"
@@ -103,27 +100,6 @@ services:
       TERMINAL_WS_DEFAULT_HEARTBEAT_INTERVAL_SECONDS: "${TERMINAL_WS_DEFAULT_HEARTBEAT_INTERVAL_SECONDS:-30}"
       LITELLM_LOCAL_MODEL_COST_MAP: "${LITELLM_LOCAL_MODEL_COST_MAP:-True}"
       MALLOC_ARENA_MAX: "${MALLOC_ARENA_MAX:-2}"
-
-  robot-bridge:
-    restart: unless-stopped
-    build:
-      context: .
-      dockerfile: robot/Dockerfile
-      args:
-        - USE_CHINA_MIRRORS=${USE_CHINA_MIRRORS:-true}
-    ports:
-      - "${ROBOT_BRIDGE_HOST_PORT:-33333}:7000"
-    environment:
-      ROBOT_BRIDGE_PUBLIC_URL: "${ROBOT_BRIDGE_PUBLIC_URL:-}"
-    develop:
-      watch:
-        - path: ./robot
-          action: sync
-          target: /app/robot
-          ignore:
-            - ./robot/.venv
-        - path: ./robot/pyproject.toml
-          action: rebuild
 
   mailcatcher:
     profiles:

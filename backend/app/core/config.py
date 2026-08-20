@@ -83,15 +83,14 @@ class Settings(BaseSettings):
         return bool(self.SMTP_HOST and self.EMAILS_FROM_EMAIL)
 
     EMAIL_TEST_USER: EmailStr = "test@example.com"
-    FIRST_SUPERUSER: EmailStr
-    FIRST_SUPERUSER_PASSWORD: str
+    FIRST_SUPERUSER: EmailStr = "admin@example.com"
+    FIRST_SUPERUSER_PASSWORD: str = ""
 
     CHROMA_PERSIST_DIR: str = str(BACKEND_DIR / "chroma_data")
     EMBEDDING_MODEL_NAME: str = "BAAI/bge-small-zh-v1.5"
     EMBEDDING_ALLOW_REMOTE_LOAD: bool = False
     KNOWLEDGE_BASE_DIR: str = str(BACKEND_DIR / "knowledge")
     ROBOT_PLUGIN_ENABLED: bool = True
-    ROBOT_BRIDGE_EMBEDDED: bool = False
     ROBOT_BRIDGE_URL: str = "http://robot-bridge:7000"
     ROBOT_BACKEND_URL: str = "http://backend:8000"
     ROBOT_BRIDGE_SHARED_SECRET: str | None = None
@@ -112,24 +111,25 @@ class Settings(BaseSettings):
     AGENT_WATCHDOG_WAITING_JOB_STALE_SECONDS: float = 21600.0
     ROBOT_CONVERSATION_MEMORY_DIR: str = str(BACKEND_DIR.parent / ".runtime" / "robot_conversation_memory")
     ROBOT_CONVERSATION_MEMORY_MAX_BYTES: int = 1024 * 1024
-    DAEMON_HOST_PORT: int | None = None
+    DAEMON_HOST_PORT: int | None = 39999
     DAEMON_PUBLIC_URL: str | None = None
     DAEMON_PUBLIC_HOST: str | None = None
     DAEMON_PUBLIC_PORT: int | None = None
     DAEMON_PUBLIC_WS_SCHEME: Literal["ws", "wss"] = "ws"
     TERMINAL_WS_DEFAULT_HOST: str = "0.0.0.0"
-    TERMINAL_WS_DEFAULT_PORT_START: int = 7100
-    TERMINAL_WS_DEFAULT_PORT_END: int = 7199
+    TERMINAL_WS_DEFAULT_PORT_START: int = 32000
+    TERMINAL_WS_DEFAULT_PORT_END: int = 32111
     TERMINAL_WS_DEFAULT_HEARTBEAT_INTERVAL_SECONDS: float = 30.0
 
     @model_validator(mode="after")
     def _apply_robot_bridge_defaults(self) -> Self:
-        if self.ROBOT_BRIDGE_EMBEDDED:
-            self.ROBOT_BRIDGE_URL = "http://127.0.0.1:8000/robot-bridge"
-            if self.ROBOT_BACKEND_URL == "http://backend:8000":
-                self.ROBOT_BACKEND_URL = "http://127.0.0.1:8000"
-            if self.ROBOT_BRIDGE_HOST == "0.0.0.0":
-                self.ROBOT_BRIDGE_HOST = "127.0.0.1"
+        # Bridge is always embedded in the backend process; self-reference URLs
+        # point at the same process.
+        port = os.environ.get("BACKEND_PORT", "8000")
+        self.ROBOT_BRIDGE_URL = f"http://127.0.0.1:{port}/robot-bridge"
+        self.ROBOT_BACKEND_URL = f"http://127.0.0.1:{port}"
+        if self.ROBOT_BRIDGE_HOST == "0.0.0.0":
+            self.ROBOT_BRIDGE_HOST = "127.0.0.1"
         return self
 
     # Security checks commented out as requested

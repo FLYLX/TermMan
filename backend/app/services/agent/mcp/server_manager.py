@@ -19,10 +19,17 @@ class MCPServerManager:
     def __init__(self, config_dir: Path | None = None):
         if config_dir is None:
             import os
-            if os.path.exists("/app/mcp_servers.json"):
+
+            home = os.environ.get("TERMPAWS_HOME")
+            if home and (Path(home) / self.CONFIG_FILE).exists():
+                config_dir = Path(home)
+            elif (Path(__file__).parent.parent.parent.parent / self.CONFIG_FILE).exists():
+                # bundled default inside the installed package (app/mcp_servers.json)
+                config_dir = Path(__file__).parent.parent.parent.parent
+            elif os.path.exists("/app/mcp_servers.json"):
                 config_dir = Path("/app")
             else:
-                config_dir = Path(__file__).parent.parent.parent.parent.parent
+                config_dir = Path(home) if home else Path(__file__).parent.parent.parent.parent.parent
 
         self.config_dir = Path(config_dir)
         self._servers: dict[str, MCPServer] = {}

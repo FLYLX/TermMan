@@ -24,6 +24,8 @@ node_modules/
 # local temp files (may contain tokens)
 /_token.txt
 /_apply_patch.txt
+/scripts/upload_testpypi.*
+/scripts/upload_pypi.*
 
 # packaging build artifacts
 /dist/

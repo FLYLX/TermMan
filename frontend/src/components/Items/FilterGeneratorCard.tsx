@@ -9,6 +9,7 @@ import useCustomToast from "@/hooks/useCustomToast"
 import { apiRequest } from "@/lib/api-request"
 
 import type { FilterRule } from "./FilterRuleEditor"
+import { SketchDialog } from "./SketchDialog"
 
 type FilterTarget = "input" | "output"
 
@@ -21,20 +22,21 @@ type FilterGenerationResponse = {
   model: string
 }
 
-interface FilterGeneratorCardProps {
+interface FilterGeneratorDialogProps {
   itemId: string
   target: FilterTarget
   currentRules: Record<string, FilterRule>
   onApply: (rules: Record<string, FilterRule>) => void
 }
 
-export function FilterGeneratorCard({
+export function FilterGeneratorDialog({
   itemId,
   target,
   currentRules,
   onApply,
-}: FilterGeneratorCardProps) {
+}: FilterGeneratorDialogProps) {
   const { showErrorToast, showSuccessToast } = useCustomToast()
+  const [open, setOpen] = useState(false)
   const [instruction, setInstruction] = useState("")
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedRules, setGeneratedRules] = useState<Record<
@@ -47,15 +49,15 @@ export function FilterGeneratorCard({
     target === "input"
       ? {
           flow: "Terminal output -> Agent",
-          promptLabel: "Prompt for terminal output -> Agent filter",
+          promptLabel: "描述你想要的过滤效果（终端输出 → Agent）",
           placeholder:
-            "Example: ignore progress bars, log error prompts, redact access tokens from terminal output.",
+            "例如：忽略进度条、把 error 提示标记为需关注、给 access token 打码。",
         }
       : {
           flow: "Agent command -> terminal",
-          promptLabel: "Prompt for Agent command -> terminal filter",
+          promptLabel: "描述你想要的过滤效果（Agent 命令 → 终端）",
           placeholder:
-            "Example: block destructive disk commands, log sudo usage, redact passwords before execution.",
+            "例如：拦截 rm -rf 等危险命令、记录 sudo 使用、执行前给密码打码。",
         }
 
   const previewJson = useMemo(() => {
@@ -67,7 +69,7 @@ export function FilterGeneratorCard({
 
   const handleGenerate = async () => {
     if (!instruction.trim()) {
-      showErrorToast("Describe the filter you want to generate first")
+      showErrorToast("先描述要生成的过滤规则")
       return
     }
 
@@ -87,7 +89,7 @@ export function FilterGeneratorCard({
       setGeneratedRules(result.rules)
       setExplanation(result.explanation || "")
       setModel(result.model || "")
-      showSuccessToast("Generated filter JSON")
+      showSuccessToast("规则已生成")
     } catch (error) {
       showErrorToast(
         error instanceof Error ? error.message : "Failed to generate filter",
@@ -102,16 +104,27 @@ export function FilterGeneratorCard({
       return
     }
     onApply(generatedRules)
-    showSuccessToast("Applied generated filter JSON to the editor")
+    showSuccessToast("已应用到编辑器")
+    setOpen(false)
   }
 
   return (
-    <div className="mb-4 rounded-xl border border-dashed bg-muted/20 p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Sparkles className="size-4 text-amber-500" />
-            <span className="text-sm font-medium">Generate With LLM</span>
+    <>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => setOpen(true)}
+      >
+        <Sparkles className="mr-2 size-4" />
+        LLM 生成
+      </Button>
+      <SketchDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={
+          <span className="flex items-center gap-2">
+            用 LLM 生成过滤规则
             <Badge variant="outline" className="text-[10px] uppercase">
               {targetMeta.flow}
             </Badge>
@@ -120,62 +133,66 @@ export function FilterGeneratorCard({
                 {model}
               </Badge>
             )}
+          </span>
+        }
+        description="生成结果预览确认后再应用，应用会自动保存。"
+      >
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">
+              {targetMeta.promptLabel}
+            </Label>
+            <Textarea
+              value={instruction}
+              onChange={(event) => setInstruction(event.target.value)}
+              placeholder={targetMeta.placeholder}
+              className="min-h-24 text-sm"
+            />
           </div>
-        </div>
-        <div className="flex gap-2">
+
           <Button
             type="button"
             size="sm"
             onClick={handleGenerate}
             disabled={isGenerating}
+            className="w-full"
           >
             {isGenerating ? (
               <Loader2 className="mr-2 size-4 animate-spin" />
             ) : (
               <Sparkles className="mr-2 size-4" />
             )}
-            Generate
+            生成
           </Button>
+
+          {explanation && (
+            <p className="text-xs text-muted-foreground">{explanation}</p>
+          )}
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">
+              生成结果预览
+            </Label>
+            <Textarea
+              readOnly
+              value={previewJson}
+              placeholder="生成的规则会显示在这里"
+              className="min-h-48 font-mono text-xs"
+            />
+          </div>
+
           <Button
             type="button"
             size="sm"
             variant="outline"
             onClick={handleApply}
             disabled={!generatedRules}
+            className="w-full"
           >
-            Apply JSON
+            应用到编辑器
           </Button>
         </div>
-      </div>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <div className="space-y-2">
-          <Label className="text-xs text-muted-foreground">
-            {targetMeta.promptLabel}
-          </Label>
-          <Textarea
-            value={instruction}
-            onChange={(event) => setInstruction(event.target.value)}
-            placeholder={targetMeta.placeholder}
-            className="min-h-32 text-sm"
-          />
-          {explanation && (
-            <p className="text-xs text-muted-foreground">{explanation}</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <Label className="text-xs text-muted-foreground">
-            Generated JSON preview
-          </Label>
-          <Textarea
-            readOnly
-            value={previewJson}
-            placeholder="Generated rules will appear here."
-            className="min-h-32 font-mono text-xs"
-          />
-        </div>
-      </div>
-    </div>
+      </SketchDialog>
+    </>
   )
 }

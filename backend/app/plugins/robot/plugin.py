@@ -32,16 +32,15 @@ def register_agent_integration() -> None:
 async def startup(app: FastAPI) -> None:
     global _bridge_router_included, _embedded_bridge_started
 
-    if not settings.ROBOT_BRIDGE_EMBEDDED:
-        return
-
     from app.plugins.robot.bridge.embedded import (
         get_bridge_router,
         init_embedded_bridge,
+        set_bridge_app,
         start_embedded_bridge,
     )
 
     logger.info("[RobotPlugin] Initializing embedded robot bridge...")
+    set_bridge_app(app)
     init_embedded_bridge()
     bridge_router = get_bridge_router()
     if bridge_router and not _bridge_router_included:

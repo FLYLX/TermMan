@@ -24,9 +24,6 @@ services:
       - EMAILS_FROM_EMAIL=${EMAILS_FROM_EMAIL:-}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - ROBOT_PLUGIN_ENABLED=${ROBOT_PLUGIN_ENABLED:-true}
-      - ROBOT_BRIDGE_EMBEDDED=${ROBOT_BRIDGE_EMBEDDED:-false}
-      - ROBOT_BACKEND_URL=${ROBOT_BACKEND_URL:-http://backend:8000}
-      - ROBOT_BRIDGE_URL=${ROBOT_BRIDGE_URL:-http://robot-bridge:7000}
       - ROBOT_CONVERSATION_MEMORY_DIR=${ROBOT_CONVERSATION_MEMORY_DIR:-/app/backend/.runtime/robot_conversation_memory}
       - AGENT_STATE_STORE_PATH=${AGENT_STATE_STORE_PATH:-/app/backend/.runtime/agent_state.db}
       - ROBOT_QQ_IS_SANDBOX=${ROBOT_QQ_IS_SANDBOX:-false}
@@ -70,9 +67,6 @@ services:
       - EMAILS_FROM_EMAIL=${EMAILS_FROM_EMAIL:-}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - ROBOT_PLUGIN_ENABLED=${ROBOT_PLUGIN_ENABLED:-true}
-      - ROBOT_BRIDGE_EMBEDDED=${ROBOT_BRIDGE_EMBEDDED:-false}
-      - ROBOT_BACKEND_URL=${ROBOT_BACKEND_URL:-http://backend:8000}
-      - ROBOT_BRIDGE_URL=${ROBOT_BRIDGE_URL:-http://robot-bridge:7000}
       - ROBOT_CONVERSATION_MEMORY_DIR=${ROBOT_CONVERSATION_MEMORY_DIR:-/app/backend/.runtime/robot_conversation_memory}
       - AGENT_STATE_STORE_PATH=${AGENT_STATE_STORE_PATH:-/app/backend/.runtime/agent_state.db}
       - ROBOT_QQ_IS_SANDBOX=${ROBOT_QQ_IS_SANDBOX:-false}
@@ -127,26 +121,6 @@ services:
 
       # Enable redirection for HTTP and HTTPS
       - traefik.http.routers.${STACK_NAME?Variable not set}-backend-http.middlewares=https-redirect
-
-  robot-bridge:
-    image: '${DOCKER_IMAGE_ROBOT:-robot}:${TAG-latest}'
-    build:
-      context: .
-      dockerfile: robot/Dockerfile
-      args:
-        - USE_CHINA_MIRRORS=${USE_CHINA_MIRRORS:-true}
-    restart: always
-    networks:
-      - default
-    depends_on:
-      backend:
-        condition: service_healthy
-    env_file:
-      - ./robot/.env
-    environment:
-      - ROBOT_BRIDGE_PUBLIC_URL=${ROBOT_BRIDGE_PUBLIC_URL:-}
-    volumes:
-      - ./robot:/app/robot
 
   frontend:
     image: '${DOCKER_IMAGE_FRONTEND?Variable not set}:${TAG-latest}'

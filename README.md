@@ -15,7 +15,7 @@ pip install termpaws        # 前后端一体
 termpaws run                # 首次运行自动生成配置并打印管理员密码
 ```
 
-浏览器打开 http://localhost:8000 。配置文件在 `~/.termpaws/.env`，改完重启生效。
+浏览器打开 http://localhost:28888 。配置文件在 `~/.termpaws/.env`，改完重启生效。
 
 Linux 生产部署可注册为 systemd 服务（开机自启、崩溃自动重启）：
 
@@ -31,6 +31,8 @@ journalctl -u termpaws -f       # 查看日志
 pip install termpaws-daemon
 termpaws-daemon
 ```
+
+端口：backend `28888`（页面+API+robot-bridge 全部同源，NapCat 连 `ws://host:28888/robot-bridge/onebot/v11/ws`）、daemon `39999`、终端 WS `32000-32111`。
 
 ### Docker
 

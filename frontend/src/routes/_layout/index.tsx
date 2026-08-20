@@ -466,6 +466,8 @@ function serviceIcon(kind: string) {
 }
 
 function ServiceRuntimePanel({ services }: { services: RuntimeServiceStats[] }) {
+  // robot bridge is embedded in the backend process; its stats duplicate backend's
+  const visibleServices = services.filter((service) => service.service !== "robot")
   const hostLabel = (service: RuntimeServiceStats) =>
     service.runtime?.hostname || service.url || "未知节点"
   const serviceIpAddresses = (service: RuntimeServiceStats) =>
@@ -526,18 +528,18 @@ function ServiceRuntimePanel({ services }: { services: RuntimeServiceStats[] }) 
           <Activity className="size-4 text-primary" />
           <CardTitle>TermPaws 资源占用</CardTitle>
         </div>
-        <Badge variant="outline">{services.length} 服务</Badge>
+        <Badge variant="outline">{visibleServices.length} 服务</Badge>
       </CardHeader>
       <CardContent className="px-5">
-        {services.length === 0 ? (
+        {visibleServices.length === 0 ? (
           <Alert>
             <AlertTitle>暂无服务指标</AlertTitle>
             <AlertDescription>
-              当前还没有读取到 backend、daemon 或 robot 的运行时数据。
+              当前还没有读取到 backend 或 daemon 的运行时数据。
             </AlertDescription>
           </Alert>
         ) : (
-          <div className="space-y-2">{services.map(serviceLine)}</div>
+          <div className="space-y-2">{visibleServices.map(serviceLine)}</div>
         )}
       </CardContent>
     </Card>

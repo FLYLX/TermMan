@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+﻿FROM python:3.11-slim
 
 ARG USE_CHINA_MIRRORS=true
 ARG EMBEDDING_MODEL_NAME=BAAI/bge-small-zh-v1.5
@@ -9,7 +9,7 @@ ENV HF_HUB_DOWNLOAD_TIMEOUT=120
 
 # Install uv
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#installing-uv
-COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /uvx /bin/
 
 # Compile bytecode
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#compiling-bytecode
@@ -21,7 +21,6 @@ ENV UV_LINK_MODE=copy
 
 ENV UV_HTTP_TIMEOUT=1200
 ENV UV_CONCURRENT_DOWNLOADS=1
-ENV UV_TORCH_BACKEND=cpu
 ENV PIP_TIMEOUT=1200
 
 WORKDIR /app/
@@ -60,8 +59,8 @@ RUN set -u; \
     download_embedding_model() { \
         endpoint="$1"; \
         echo "Downloading embedding model ${EMBEDDING_MODEL_NAME} from ${endpoint}"; \
-        HF_ENDPOINT="$endpoint" timeout 240s python -c \
-            "import os; from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ['EMBEDDING_MODEL_NAME'])"; \
+        HF_ENDPOINT="$endpoint" HF_HUB_DISABLE_XET=1 timeout 240s python -c \
+            "import os; from fastembed import TextEmbedding; TextEmbedding(os.environ['EMBEDDING_MODEL_NAME'])"; \
     }; \
     if [ "$USE_CHINA_MIRRORS" = "true" ]; then \
         download_embedding_model https://hf-mirror.com \

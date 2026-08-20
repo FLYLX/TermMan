@@ -644,10 +644,13 @@ def get_terminal_token(
     if not daemon_status["daemon_online"]:
         raise HTTPException(status_code=400, detail="Daemon is not connected")
     
-    temp_token_info = auth_service.generate_terminal_temp_token(
+    if not item.api_key:
+        raise HTTPException(status_code=400, detail="Item has no daemon key")
+    temp_token_info = auth_service.generate_terminal_token_hmac(
         item_uuid=str(id),
         user_id=str(current_user.id),
-        expire_minutes=5
+        api_key=item.api_key,
+        expire_minutes=5,
     )
     
     logger.info(f"Generated terminal temp token for user={current_user.id}, item={id}")
@@ -674,12 +677,14 @@ def verify_terminal_token(
     
     if str(id) != item_uuid:
         return {"success": False, "error": "Item UUID mismatch"}
-    
-    result = auth_service.validate_terminal_temp_token(
-        token=temp_token,
-        item_uuid=item_uuid,
-        mark_used=True
-    )
+
+    item = session.get(Item, id)
+    if not item or not item.api_key:
+        result = {"success": False, "error": "Item has no daemon key"}
+    else:
+        result = auth_service.verify_terminal_token_hmac(
+            temp_token, item_uuid, item.api_key
+        )
     
     if result["success"]:
         logger.info(f"Terminal temp token verified for item={id}, user={result['user_id']}")

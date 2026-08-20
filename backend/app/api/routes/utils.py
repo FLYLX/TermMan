@@ -1,5 +1,6 @@
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from pydantic.networks import EmailStr
 from sqlmodel import select
 
@@ -34,6 +35,40 @@ def test_email(email_to: EmailStr) -> Message:
         html_content=email_data.html_content,
     )
     return Message(message="Test email sent")
+
+
+class SetupBody(BaseModel):
+    email: EmailStr | None = None
+    password: str
+
+
+@router.get("/setup-required")
+def setup_required(session: SessionDep) -> dict:
+    from app.models import User
+
+    existing = session.exec(select(User).where(User.is_superuser == True)).first()  # noqa: E712
+    return {"required": existing is None}
+
+
+@router.post("/setup")
+def setup_admin(body: SetupBody, session: SessionDep) -> Message:
+    from app import crud
+    from app.core.config import settings
+    from app.models import User, UserCreate
+
+    existing = session.exec(select(User).where(User.is_superuser == True)).first()  # noqa: E712
+    if existing is not None:
+        raise HTTPException(status_code=403, detail="Setup already completed")
+    if len(body.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    email = body.email or settings.FIRST_SUPERUSER
+    if session.exec(select(User).where(User.email == email)).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+    crud.create_user(
+        session=session,
+        user_create=UserCreate(email=email, password=body.password, is_superuser=True),
+    )
+    return Message(message="Admin account created")
 
 
 @router.get("/health-check/")

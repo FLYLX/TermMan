@@ -1,9 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod"
+import { useQuery } from "@tanstack/react-query"
 import {
   createFileRoute,
   Link as RouterLink,
   redirect,
 } from "@tanstack/react-router"
+import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
@@ -22,6 +24,8 @@ import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
 import { PasswordInput } from "@/components/ui/password-input"
 import useAuth, { isLoggedIn } from "@/hooks/useAuth"
+import useCustomToast from "@/hooks/useCustomToast"
+import { apiRequest } from "@/lib/api-request"
 
 const formSchema = z.object({
   username: z.email(),
@@ -51,9 +55,121 @@ export const Route = createFileRoute("/login")({
   }),
 })
 
+function SetupForm({
+  onDone,
+}: {
+  onDone: (email: string, password: string) => void
+}) {
+  const { locale } = useI18n()
+  const { showErrorToast } = useCustomToast()
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirm, setConfirm] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+
+  const handleSubmit = async () => {
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      showErrorToast(
+        locale === "zh" ? "请输入有效的邮箱地址" : "Enter a valid email",
+      )
+      return
+    }
+    if (password.length < 8) {
+      showErrorToast(locale === "zh" ? "密码至少 8 位" : "At least 8 characters")
+      return
+    }
+    if (password !== confirm) {
+      showErrorToast(
+        locale === "zh" ? "两次输入的密码不一致" : "Passwords do not match",
+      )
+      return
+    }
+    setSubmitting(true)
+    try {
+      await apiRequest("/api/v1/utils/setup", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      })
+      onDone(email, password)
+    } catch (error) {
+      showErrorToast(
+        error instanceof Error ? error.message : "Setup failed",
+      )
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-1 text-left">
+        <h1 className="text-xl font-black tracking-tight">
+          {locale === "zh" ? "初始化管理员" : "Admin setup"}
+        </h1>
+        <p className="text-xs text-[#565654]">
+          {locale === "zh"
+            ? "第一个访问者设置管理员账号和密码，设置完成即成为超管。"
+            : "The first visitor sets the admin email and password."}
+        </p>
+      </div>
+      <div className="grid gap-4">
+        <div className="space-y-1.5">
+          <span className="text-xs text-[#565654]">
+            {locale === "zh" ? "管理员邮箱" : "Admin email"}
+          </span>
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="admin@example.com"
+            autoComplete="username"
+            className="rounded-[10px] border-2 border-[#3a3a3a] bg-white"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <span className="text-xs text-[#565654]">
+            {locale === "zh" ? "新密码（至少 8 位）" : "New password (min 8)"}
+          </span>
+          <PasswordInput
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            className="rounded-[10px] border-2 border-[#3a3a3a] bg-white"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <span className="text-xs text-[#565654]">
+            {locale === "zh" ? "确认密码" : "Confirm password"}
+          </span>
+          <PasswordInput
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            autoComplete="new-password"
+            className="rounded-[10px] border-2 border-[#3a3a3a] bg-white"
+          />
+        </div>
+        <LoadingButton
+          type="button"
+          className="w-full border-2 border-[#3a3a3a] bg-white font-bold text-[#1f1f1f] shadow-[3px_4px_0_rgba(0,0,0,0.10)] hover:bg-[#f4f4f3]"
+          loading={submitting}
+          disabled={!email || !password}
+          onClick={() => void handleSubmit()}
+        >
+          {locale === "zh" ? "创建管理员并登录" : "Create admin & log in"}
+        </LoadingButton>
+      </div>
+    </div>
+  )
+}
+
 function Login() {
   const { loginMutation } = useAuth()
   const { locale, t } = useI18n()
+  const { data: setupState } = useQuery({
+    queryKey: ["setup-required"],
+    queryFn: () =>
+      apiRequest<{ required: boolean }>("/api/v1/utils/setup-required"),
+    staleTime: 0,
+  })
   const copy =
     locale === "zh"
       ? {
@@ -89,6 +205,21 @@ function Login() {
   const onSubmit = (data: FormData) => {
     if (loginMutation.isPending) return
     loginMutation.mutate(data)
+  }
+
+  if (setupState?.required) {
+    return (
+      <AuthLayout>
+        <SetupForm
+          onDone={(email, password) =>
+            loginMutation.mutate({
+              username: email,
+              password,
+            })
+          }
+        />
+      </AuthLayout>
+    )
   }
 
   return (

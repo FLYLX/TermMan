@@ -1,4 +1,7 @@
+import hashlib
+import hmac
 import socketio
+import time
 import uuid as uuid_lib
 import requests
 import re
@@ -145,44 +148,40 @@ def _complete_terminal_command(command: str, cursor: int, current_workdir: str) 
     }
 
 
-async def verify_temp_token_with_backend(temp_token: str, item_uuid: str) -> dict:
-    """
-    向Backend验证临时Token
-    
-    Args:
-        temp_token: 临时Token
-        item_uuid: Item UUID
-        
-    Returns:
-        验证结果 {success, user_id, error}
-    """
+def _verify_temp_token_locally(temp_token: str, item_uuid: str) -> dict:
+    """HMAC tokens are verified with the daemon's own API_KEY — no backend
+    callback needed. Returns None if the token is not in HMAC format."""
+    parts = temp_token.split(".")
+    if len(parts) != 4:
+        return None
+    token_item_uuid, user_id, expire_ts_raw, signature = parts
+    if token_item_uuid != item_uuid:
+        return {"success": False, "error": "Token item_uuid mismatch"}
     try:
-        backend_url = config.get("BACKEND_URL", "http://backend:8000")
-        url = f"{backend_url}/api/v1/items/{item_uuid}/verify-terminal-token"
-        
-        response = requests.post(
-            url,
-            json={
-                "temp_token": temp_token,
-                "item_uuid": item_uuid
-            },
-            timeout=5
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            logger.info(f"[Auth] Temp token verified: item={item_uuid}, user={result.get('user_id')}")
-            return result
-        else:
-            logger.warning(f"[Auth] Temp token verification failed: status={response.status_code}")
-            return {"success": False, "error": f"Backend returned {response.status_code}"}
-            
-    except requests.exceptions.Timeout:
-        logger.error(f"[Auth] Temp token verification timeout")
-        return {"success": False, "error": "Backend timeout"}
-    except Exception as e:
-        logger.error(f"[Auth] Temp token verification error: {e}")
-        return {"success": False, "error": str(e)}
+        expire_ts = int(expire_ts_raw)
+    except ValueError:
+        return {"success": False, "error": "Invalid token expiry"}
+    if time.time() > expire_ts:
+        return {"success": False, "error": "Token expired"}
+    payload = f"{token_item_uuid}.{user_id}.{expire_ts_raw}"
+    expected = hmac.new(
+        config.get("API_KEY").encode(), payload.encode(), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        return {"success": False, "error": "Invalid token signature"}
+    return {"success": True, "user_id": user_id}
+
+
+def verify_temp_token(temp_token: str, item_uuid: str) -> dict:
+    """HMAC 本地验签，无需回调 Backend。"""
+    result = _verify_temp_token_locally(temp_token, item_uuid)
+    if result is None:
+        return {"success": False, "error": "Invalid token format"}
+    if result.get("success"):
+        logger.info(f"[Auth] Temp token verified: item={item_uuid}, user={result.get('user_id')}")
+    else:
+        logger.warning(f"[Auth] Temp token verification failed: {result.get('error')}")
+    return result
 
 
 @sio.event
@@ -207,7 +206,7 @@ async def connect(sid, environ, auth=None):
         browser_conn.ip = ip_address
         logger.info(f"[WebSocket] Browser connected (pending temp token auth): {sid}, IP: {ip_address}, item={item_uuid}")
         
-        result = await verify_temp_token_with_backend(temp_token, item_uuid)
+        result = verify_temp_token(temp_token, item_uuid)
         
         if result.get("success"):
             user_uuid = result.get("user_id")
