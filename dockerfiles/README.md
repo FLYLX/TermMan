@@ -18,10 +18,6 @@ One Dockerfile per deployment shape. All build straight from PyPI, no source che
 docker build -f dockerfiles/aio.Dockerfile -t termpaws:aio dockerfiles
 docker run -d -p 28888:28888 -p 32000-32111:32000-32111 termpaws:aio
 
-# aio-napcat：backend + frontend + NapCat 同容器
-docker build -f dockerfiles/aio-napcat.Dockerfile -t termpaws:aio-napcat dockerfiles
-docker run -d -p 28888:28888 -p 6099:6099 -p 32000-32111:32000-32111 termpaws:aio-napcat
-
 # backend only
 docker build -f dockerfiles/backend.Dockerfile -t termpaws:backend dockerfiles
 docker run -d -p 28888:28888 termpaws:backend
