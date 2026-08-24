@@ -11,20 +11,32 @@ One Dockerfile per deployment shape. All build straight from PyPI, no source che
 | `daemon.Dockerfile` | daemon only（终端节点） | 39999 |
 | `napcat.Dockerfile` | NapCatQQ only（QQ 协议连接器） | 6099 |
 
-## Build & run
+## Build & run（一键）
 
 ```bash
-# all-in-one（最常用）
-docker build -f dockerfiles/aio.Dockerfile -t termpaws .
-docker run -d -p 28888:28888 -p 39999:39999 termpaws
+# aio：backend + frontend（最常用，开 http://localhost:28888）
+docker build -f dockerfiles/aio.Dockerfile -t termpaws:aio dockerfiles
+docker run -d -p 28888:28888 -p 32000-32111:32000-32111 termpaws:aio
 
-# 只跑 daemon（远程主机上）
-docker build -f dockerfiles/daemon.Dockerfile -t termpaws-daemon .
-docker run -d -p 39999:39999 termpaws-daemon
+# aio-napcat：backend + frontend + NapCat 同容器
+docker build -f dockerfiles/aio-napcat.Dockerfile -t termpaws:aio-napcat dockerfiles
+docker run -d -p 28888:28888 -p 6099:6099 -p 32000-32111:32000-32111 termpaws:aio-napcat
 
-# NapCat
-docker build -f dockerfiles/napcat.Dockerfile -t napcat .
-docker run -d -p 6099:6099 napcat
+# backend only
+docker build -f dockerfiles/backend.Dockerfile -t termpaws:backend dockerfiles
+docker run -d -p 28888:28888 termpaws:backend
+
+# frontend only
+docker build -f dockerfiles/frontend.Dockerfile -t termpaws:frontend dockerfiles
+docker run -d -p 27777:27777 termpaws:frontend
+
+# daemon only（装在受控主机上）
+docker build -f dockerfiles/daemon.Dockerfile -t termpaws:daemon dockerfiles
+docker run -d -p 39999:39999 termpaws:daemon
+
+# NapCat only
+docker build -f dockerfiles/napcat.Dockerfile -t termpaws:napcat dockerfiles
+docker run -d -p 6099:6099 termpaws:napcat
 ```
 
 All images accept `--build-arg TERMPAWS_VERSION=x.y.z`（napcat 用 `--build-arg NAPCAT_VERSION=x.y.z`）to pin a specific release.
