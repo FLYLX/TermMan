@@ -4,8 +4,8 @@ One Dockerfile per deployment shape. All build straight from PyPI, no source che
 
 | File | What you get | Ports |
 |---|---|---|
-| `all-in-one.Dockerfile` | backend + frontend（同源单端口） | 28888, 32000-32111 |
-| `napcat-aio.Dockerfile` | backend + frontend + NapCatQQ（同容器双进程） | 28888, 6099, 32000-32111 |
+| `aio.Dockerfile` | backend + frontend（同源单端口） | 28888, 32000-32111 |
+| `aio-napcat.Dockerfile` | backend + frontend + NapCatQQ（同容器双进程） | 28888, 6099, 32000-32111 |
 | `backend.Dockerfile` | backend only（API + 内嵌 robot bridge，无页面） | 28888 |
 | `frontend.Dockerfile` | frontend only（静态 UI，需要指向一个 backend） | 27777 |
 | `daemon.Dockerfile` | daemon only（终端节点） | 39999 |
@@ -15,7 +15,7 @@ One Dockerfile per deployment shape. All build straight from PyPI, no source che
 
 ```bash
 # all-in-one（最常用）
-docker build -f dockerfiles/all-in-one.Dockerfile -t termpaws .
+docker build -f dockerfiles/aio.Dockerfile -t termpaws .
 docker run -d -p 28888:28888 -p 39999:39999 termpaws
 
 # 只跑 daemon（远程主机上）
@@ -33,4 +33,4 @@ All images accept `--build-arg TERMPAWS_VERSION=x.y.z`（napcat 用 `--build-arg
 
 - **backend 添加 daemon**：Web UI → 终端 → daemon 地址 `http://<daemon-host>:39999`，api_key 看 daemon 容器日志（首跑打印 `API Key: tpd_...`）
 - **frontend-only 容器**：需要反代 `/api` 和 `/robot-bridge` 到 backend 地址
-- **NapCat**：打开 `http://localhost:6099` 配置 OneBot V11 反向 WS：`ws://<termpaws-host>:28888/robot-bridge/onebot/v11/ws`（napcat-aio 同容器内直接填 `ws://127.0.0.1:28888/robot-bridge/onebot/v11/ws`）
+- **NapCat**：打开 `http://localhost:6099` 配置 OneBot V11 反向 WS：`ws://<termpaws-host>:28888/robot-bridge/onebot/v11/ws`（aio-napcat 同容器内直接填 `ws://127.0.0.1:28888/robot-bridge/onebot/v11/ws`）
