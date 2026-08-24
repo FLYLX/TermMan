@@ -1,2 +1,2 @@
 [tool.uv.workspace]
-members = ["backend", "robot"]
+members = ["backend"]
