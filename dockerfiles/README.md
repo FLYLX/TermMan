@@ -5,7 +5,6 @@ One Dockerfile per deployment shape. All build straight from PyPI, no source che
 | File | What you get | Ports |
 |---|---|---|
 | `aio.Dockerfile` | backend + frontend（同源单端口） | 28888, 32000-32111 |
-| `aio-napcat.Dockerfile` | backend + frontend + NapCatQQ（同容器双进程） | 28888, 6099, 32000-32111 |
 | `backend.Dockerfile` | backend only（API + 内嵌 robot bridge，无页面） | 28888 |
 | `frontend.Dockerfile` | frontend only（静态 UI，需要指向一个 backend） | 27777 |
 | `daemon.Dockerfile` | daemon only（终端节点） | 39999 |
