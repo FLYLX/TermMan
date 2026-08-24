@@ -83,8 +83,8 @@ function SkillsPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-181px)] min-h-[400px] border rounded-lg overflow-hidden">
-      <div className="w-72 border-r flex flex-col bg-muted/30 shrink-0">
+    <div className="flex h-full min-h-0 border rounded-lg overflow-hidden bg-card/60 backdrop-blur-sm">
+      <div className="w-60 border-r flex flex-col bg-muted/30 shrink-0">
         <div className="p-3 border-b space-y-2 shrink-0">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold">Skills</h2>
@@ -639,11 +639,7 @@ export const Route = createFileRoute("/_layout/skills")({
 
 function Skills() {
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Skills</h1>
-        <p className="text-muted-foreground">Manage your skill library</p>
-      </div>
+    <div className="flex h-[calc(100svh-115px)] flex-col">
       <Suspense fallback={<PendingItems />}>
         <SkillsPage />
       </Suspense>

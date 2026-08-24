@@ -12,11 +12,11 @@ function LogoMark({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "flex size-10 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 shadow-lg shadow-primary/10",
+        "flex size-10 items-center justify-center rounded-2xl border-2 border-[#3a3a3a] bg-white/80 shadow-[3px_4px_0_rgba(0,0,0,0.10)] backdrop-blur-sm",
         className,
       )}
     >
-      <span className="font-mono text-xs font-semibold uppercase tracking-[0.24em] text-primary">
+      <span className="font-mono text-xs font-semibold uppercase tracking-[0.24em] text-[#3a3a3a]">
         TM
       </span>
     </div>

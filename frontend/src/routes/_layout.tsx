@@ -16,8 +16,10 @@ export const Route = createFileRoute("/_layout")({
 })
 
 const HANG_LAYOUT_CSS = `
-.hang-layout { min-height: 100svh; background: #f4f4f3; color: #1f1f1f; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.tag-rail { position: relative; display: flex; align-items: flex-start; justify-content: center; gap: 14px; padding: 14px 96px 8px; background: linear-gradient(180deg, #f7f7f6 0%, #f1f1f0 55%, rgba(244,244,243,0) 100%); }
+.hang-layout { position: relative; min-height: 100svh; background: linear-gradient(135deg, #f5f1e8 0%, #f2f4ef 55%, #e9efec 100%); color: #1f1f1f; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.hang-layout::before { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none; background-image: linear-gradient(to right, rgba(58,58,58,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(58,58,58,0.05) 1px, transparent 1px); background-size: 28px 28px; }
+.hang-layout > * { position: relative; z-index: 1; }
+.tag-rail { position: relative; z-index: 35; display: flex; align-items: flex-start; justify-content: center; gap: 14px; padding: 14px 96px 8px; background: linear-gradient(180deg, #f7f5ef 0%, #f1efe9 55%, rgba(244,242,236,0) 100%); }
 .tag-rail-line { position: absolute; top: 8px; left: 0; right: 0; height: 2px; background: #555; }
 .tag-user-anchor { position: absolute; right: 20px; top: 36px; }
 .hang-tag { position: relative; margin-top: 0; transform-origin: top center; transform: translateY(calc(-100% + 12px)); border: 2px solid #3a3a3a; border-top: none; background: #fff; color: #242424; padding: 18px 14px 9px; font-weight: 700; font-size: 12px; line-height: 1.2; display: flex; flex-direction: column; align-items: center; gap: 4px; box-shadow: 3px 4px 0 rgba(0,0,0,.10); border-radius: 0 0 18px 18px; cursor: pointer; transition: transform .3s cubic-bezier(.2,.8,.3,1), box-shadow .18s ease, background .18s ease; }

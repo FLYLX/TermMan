@@ -157,22 +157,22 @@ export function RobotConversationDebugPanel({ itemId }: { itemId: string }) {
   const rows = getRows(data)
 
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/70 text-xs text-slate-300">
-      <div className="flex h-9 items-center justify-between border-b border-zinc-800 px-3">
-        <div className="flex min-w-0 items-center gap-2 font-medium text-slate-200">
-          <Bot className="size-3.5 shrink-0 text-cyan-300" />
+    <div className="overflow-hidden rounded-lg border-2 border-[#3a3a3a] bg-white/70 text-xs text-[#1f1f1f] backdrop-blur-sm">
+      <div className="flex h-9 items-center justify-between border-b border-[#3a3a3a]/25 px-3">
+        <div className="flex min-w-0 items-center gap-2 font-medium text-[#1f1f1f]">
+          <Bot className="size-3.5 shrink-0 text-cyan-700" />
           <span className="truncate">{t("items.detail.qqConversationDebug")}</span>
         </div>
-        {isFetching ? <RefreshCw className="size-3 animate-spin text-slate-500" /> : null}
+        {isFetching ? <RefreshCw className="size-3 animate-spin text-muted-foreground" /> : null}
       </div>
       {rows.length === 0 ? (
-        <div className="px-3 py-2 font-mono text-[11px] text-slate-500">
+        <div className="px-3 py-2 font-mono text-[11px] text-muted-foreground">
           {t("items.detail.qqNoConversations")}
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[34rem] table-fixed border-collapse text-left font-mono text-[11px]">
-            <thead className="bg-zinc-900/80 text-[10px] uppercase tracking-[0.08em] text-slate-500">
+            <thead className="bg-muted/40 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
               <tr>
                 <th className="w-[9rem] px-3 py-2 font-medium">{t("robots.pageTitle")}</th>
                 <th className="px-3 py-2 font-medium">{t("items.detail.qqConversation")}</th>
@@ -191,17 +191,17 @@ export function RobotConversationDebugPanel({ itemId }: { itemId: string }) {
                     ? t("items.detail.qqAwake")
                     : t("items.detail.qqSleeping")
                 const statusClass = processing
-                  ? "bg-cyan-500/15 text-cyan-300"
+                  ? "bg-cyan-500/15 text-cyan-700"
                   : awake
-                    ? "bg-emerald-500/15 text-emerald-300"
-                    : "bg-slate-700/70 text-slate-300"
+                    ? "bg-emerald-500/15 text-emerald-700"
+                    : "bg-muted text-muted-foreground"
                 return (
                   <tr
                     key={`${robot.robot_id}:${controller.conversation_key}`}
-                    className="border-t border-zinc-900/90"
+                    className="border-t border-muted"
                   >
-                    <td className="truncate px-3 py-2 text-slate-300">{robot.robot_name}</td>
-                    <td className="truncate px-3 py-2 text-slate-400">
+                    <td className="truncate px-3 py-2 text-foreground">{robot.robot_name}</td>
+                    <td className="truncate px-3 py-2 text-muted-foreground">
                       {conversationLabel(controller)}
                     </td>
                     <td className="px-3 py-2">
@@ -216,7 +216,7 @@ export function RobotConversationDebugPanel({ itemId }: { itemId: string }) {
                         {statusLabel}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-slate-400">
+                    <td className="px-3 py-2 text-muted-foreground">
                       <span className="inline-flex h-6 items-center gap-1.5">
                         {awake ? (
                           <CountdownRing
@@ -224,7 +224,7 @@ export function RobotConversationDebugPanel({ itemId }: { itemId: string }) {
                             totalSeconds={robot.reply_context_window_seconds}
                           />
                         ) : processing ? (
-                          <Loader2 className="size-3 animate-spin text-cyan-300" />
+                          <Loader2 className="size-3 animate-spin text-cyan-700" />
                         ) : (
                           <Moon className="size-3 text-slate-500" />
                         )}

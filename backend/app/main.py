@@ -117,8 +117,17 @@ def _mount_frontend() -> None:
             return None
         target = (dist / full_path).resolve()
         if target.is_file() and str(target).startswith(str(dist_root)):
-            return FileResponse(target)
-        return FileResponse(index_html)
+            # hashed assets are immutable; everything else (incl. index.html) no-cache
+            immutable = full_path.startswith("assets/")
+            return FileResponse(
+                target,
+                headers={
+                    "Cache-Control": "public, max-age=31536000, immutable"
+                    if immutable
+                    else "no-cache"
+                },
+            )
+        return FileResponse(index_html, headers={"Cache-Control": "no-cache"})
 
     logger.info("[App] Frontend mounted from %s", dist)
 

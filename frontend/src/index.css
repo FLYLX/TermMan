@@ -204,3 +204,15 @@ html { color-scheme: light; }
 [data-slot="dialog-content"] [data-slot="dialog-close"]:hover {
   background: #fef2f2;
 }
+
+@keyframes blob-float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(36px, -24px) scale(1.06); }
+}
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(12px) scale(.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dash-flow {
+  to { stroke-dashoffset: -24; }
+}

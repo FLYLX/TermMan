@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react"
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router"
+import { createPortal } from "react-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Bot,
@@ -86,10 +87,11 @@ export const Route = createFileRoute("/_layout/item-handlers/$itemHandlerId")({
 })
 
 const DISPATCHER_BOARD_CSS = `
-.dispatcher-board { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #1f1f1f; }
+.dispatcher-board { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #1f1f1f; background: linear-gradient(135deg, #f5f1e8 0%, #f2f4ef 55%, #e9efec 100%); }
+.dispatcher-board::before { content: ""; position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(to right, rgba(58,58,58,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(58,58,58,0.05) 1px, transparent 1px); background-size: 28px 28px; }
 .dispatcher-board .text-muted-foreground { color: #565654; }
 .dispatcher-board .text-foreground { color: #1f1f1f; }
-.sketch-box { background: #fff; border: 2px solid #3a3a3a; box-shadow: 3px 4px 0 rgba(0,0,0,.10); color: #1f1f1f; }
+.sketch-box { background: rgba(255,255,255,.62); backdrop-filter: blur(3px) saturate(1.05); -webkit-backdrop-filter: blur(3px) saturate(1.05); border: 2px solid #3a3a3a; box-shadow: 3px 4px 0 rgba(0,0,0,.10); color: #1f1f1f; }
 .glass-box { background: rgba(255,255,255,.42); backdrop-filter: blur(3px) saturate(1.05); -webkit-backdrop-filter: blur(3px) saturate(1.05); border: 2px solid rgba(58,58,58,.75); box-shadow: 3px 4px 0 rgba(0,0,0,.07); color: #1f1f1f; border-radius: 14px; }
 .glass-box.sketch-hover:hover { background: rgba(255,255,255,.62); }
 .sketch-a { border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px; }
@@ -98,7 +100,7 @@ const DISPATCHER_BOARD_CSS = `
 .sketch-hover { transition: transform .15s ease, box-shadow .15s ease; cursor: pointer; }
 .sketch-hover:hover { transform: translate(-1px, -2px) rotate(-.3deg); box-shadow: 4px 6px 0 rgba(0,0,0,.14); background: #fbfbfa; }
 .sketch-active { outline: 3px solid #6b7280; outline-offset: 2px; }
-.sketch-tray { background: #f4f4f3; border: 2px dashed #6b6b69; border-radius: 18px; }
+.sketch-tray { background: rgba(244,244,243,.5); backdrop-filter: blur(3px); border: 2px dashed #6b6b69; border-radius: 18px; }
 .sketch-tray-hint { background: #e5e5e3; border-color: #525250; outline: 3px dashed #6b7280; outline-offset: 2px; }
 .sketch-drop-target { outline: 3px dashed #4b5563; outline-offset: 3px; }
 .board-wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
@@ -112,8 +114,13 @@ const DISPATCHER_BOARD_CSS = `
 .dispatcher-board .board-grid button, .dispatcher-board .board-grid a, .dispatcher-board .board-grid .wire-handle, .dispatcher-board .board-grid .item-del, .dispatcher-board .board-grid select, .dispatcher-board .board-grid input, .dispatcher-board .board-grid textarea, .dispatcher-board .board-grid .pe-auto, .dispatcher-board .board-grid .pe-auto * { pointer-events: auto; }
 .wire-handle { position: absolute; right: -7px; top: 50%; width: 13px; height: 13px; margin-top: -6px; border-radius: 9999px; background: #fff; border: 2px solid #3a3a3a; cursor: crosshair; z-index: 30; }
 .wire-handle:hover { background: #e5e5e3; border-color: #1f1f1f; }
+.board-card { animation: card-in .32s cubic-bezier(.2,.8,.3,1) backwards; }
+.board-card:nth-child(3n+1) { animation-delay: .04s; }
+.board-card:nth-child(3n+2) { animation-delay: .09s; }
+.board-card:nth-child(3n) { animation-delay: .14s; }
+.wire-preview { animation: dash-flow .9s linear infinite; }
 .main-terminal-block { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 130px; width: 100%; cursor: pointer; }
-.terminal-titlebar { display: flex; align-items: center; gap: 6px; background: #1b2127; color: #9ae6b4; padding: 6px 10px; border-bottom: 2px solid #3a3a3a; }
+.terminal-titlebar { display: flex; align-items: center; gap: 6px; background: #efece3; color: #3a3a3a; padding: 6px 10px; border-bottom: 2px solid #3a3a3a; }
 .terminal-titlebar .dot { width: 9px; height: 9px; border-radius: 50%; background: #4a5563; border: 1.5px solid #161616; }
 .drawer-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.28); animation: drawer-fade .15s ease-out; }
 .terminal-detail-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 45; width: min(720px, 94vw); background: #fff; border-left: 2px solid #3a3a3a; box-shadow: -6px 0 0 rgba(0,0,0,.10); display: flex; flex-direction: column; animation: drawer-in-right .2s ease-out; }
@@ -145,7 +152,7 @@ const DISPATCHER_BOARD_CSS = `
 .terminal-fullscreen-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 2px solid #3a3a3a; background: #fff; }
 .terminal-fullscreen-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; padding: 14px; overflow: hidden; }
 .terminal-fullscreen-body.terminal-body-3col { grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; }
-.terminal-titlebar-light { background: #fff; color: #3a3a3a; }
+.terminal-titlebar-light { background: rgba(255,255,255,.75); backdrop-filter: blur(4px); color: #3a3a3a; }
 .terminal-fullscreen-body .terminal-frame { flex: 1; min-height: 0; display: flex; flex-direction: column; height: 100%; }
 .terminal-fullscreen-body .terminal-body { flex: 1; min-height: 0; background: #fff; }
 .feature-icon-rail { display: flex; flex-direction: column; gap: 6px; width: 44px; overflow: hidden; overflow-y: auto; padding: 4px; border: 2px solid #3a3a3a; border-radius: 14px; background: #fff; box-shadow: 2px 3px 0 rgba(0,0,0,.10); transition: width .22s ease; scrollbar-width: none; }
@@ -169,16 +176,16 @@ const DISPATCHER_BOARD_CSS = `
 .scroll-arrow:hover { color: #6b7280; transform: scale(1.15); }
 .scroll-col { scrollbar-width: none; }
 .scroll-col::-webkit-scrollbar { display: none; }
-.host-shade-0 { background: #ffffff; }
-.host-shade-1 { background: #f0f0ef; }
-.host-shade-2 { background: #e3e3e1; }
-.host-shade-3 { background: #d6d6d3; }
-.host-shade-4 { background: #c9c9c6; }
+.host-shade-0 { background: rgba(255,255,255,.45); backdrop-filter: blur(2px); }
+.host-shade-1 { background: rgba(240,240,239,.45); backdrop-filter: blur(2px); }
+.host-shade-2 { background: rgba(227,227,225,.45); backdrop-filter: blur(2px); }
+.host-shade-3 { background: rgba(214,214,211,.45); backdrop-filter: blur(2px); }
+.host-shade-4 { background: rgba(201,201,198,.45); backdrop-filter: blur(2px); }
 .btn-add-compact { display: inline-flex; align-items: center; justify-content: center; gap: 0; border: 2px solid #16a34a !important; background: #fff !important; color: #16a34a !important; font-weight: 900; font-size: 15px; line-height: 1; min-width: 26px; height: 26px; padding: 0; border-radius: 9999px !important; cursor: pointer; box-shadow: 1px 2px 0 rgba(0,0,0,.12); }
 .btn-add-compact:hover { background: #f0faf4 !important; color: #15803d !important; }
 .btn-add-compact svg { margin-right: 0 !important; width: 14px; height: 14px; color: #16a34a !important; stroke-width: 3; }
 .edge-add-wrap { display: flex; justify-content: center; padding: 2px 0 8px; }
-.edge-add-frame { display: inline-flex; align-items: center; justify-content: center; padding: 5px; border: 2px solid #3a3a3a; background: #fff; box-shadow: 3px 4px 0 rgba(0,0,0,.10); transition: transform .15s ease, box-shadow .15s ease; }
+.edge-add-frame { display: inline-flex; align-items: center; justify-content: center; padding: 5px; border: 2px solid #3a3a3a; background: rgba(255,255,255,.62); backdrop-filter: blur(3px); box-shadow: 3px 4px 0 rgba(0,0,0,.10); transition: transform .15s ease, box-shadow .15s ease; }
 .edge-add-frame:hover { transform: translate(-1px, -2px) rotate(-.5deg); box-shadow: 4px 6px 0 rgba(0,0,0,.14); }
 .edge-add-frame-left { border-radius: 18px 60px 18px 60px / 60px 18px 60px 18px; }
 .edge-add-frame-right { border-radius: 60px 18px 60px 18px / 18px 60px 18px 60px; }
@@ -1323,21 +1330,15 @@ export function TerminalDispatcherBoard({
           </ScrollColumn>
         </aside>
 
-        <section className="relative z-30 flex min-h-0 flex-col justify-center pb-4 pt-18">
+        <section className="relative z-30 flex min-h-0 flex-col justify-center pb-10 pt-28">
           <ScrollColumn className="scroll-col-pad" arrows={false}>
-            <div className="mx-auto grid w-full max-w-md auto-rows-[56px] grid-cols-4 grid-flow-dense gap-2">
+            <div className="mx-auto grid w-full max-w-md auto-rows-[64px] grid-cols-4 grid-flow-dense gap-2">
               {boardCards.map((card) => (
                 <button
                   key={card.key}
                   type="button"
                   onClick={() => setExpandedCard(card.key)}
-                  className={`glass-box sketch-hover col-span-2 flex flex-col justify-center px-3 py-2 text-left ${
-                    card.key === "bindings" ||
-                    card.key === "chatLogs" ||
-                    card.key === "config"
-                      ? "row-span-2"
-                      : ""
-                  }`}
+                  className="glass-box sketch-hover board-card col-span-2 flex flex-col justify-center px-3 py-2 text-left"
                 >
                   <div className="flex items-center gap-1.5 text-[13px] font-semibold">
                     {card.icon}
@@ -1403,7 +1404,7 @@ export function TerminalDispatcherBoard({
                                   ? "sketch-active"
                                   : ""
                               }`
-                            : "sketch-tray sketch-hover cursor-crosshair border-dashed bg-white"
+                            : "sketch-tray sketch-hover cursor-crosshair border-dashed"
                         }`}
                       >
                         <div className="font-bold">{item.title || item.id}</div>
@@ -1660,6 +1661,7 @@ export function TerminalDispatcherBoard({
       ) : null}
 
       {botDetailId ? (
+        createPortal(
         <div className="bot-detail-panel">
           <div className="flex items-center gap-2 border-b-2 border-[#3a3a3a] bg-white px-3 py-2">
             <button
@@ -1677,10 +1679,13 @@ export function TerminalDispatcherBoard({
           <div className="min-h-0 flex-1 overflow-y-auto">
             <RobotDetail robotId={botDetailId} />
           </div>
-        </div>
+        </div>,
+        document.body,
+        )
       ) : null}
 
       {terminalPanelOpen ? (
+        createPortal(
         <div className="terminal-fullscreen">
           <div className="terminal-fullscreen-header">
             <button
@@ -1861,8 +1866,8 @@ export function TerminalDispatcherBoard({
                     <div
                       className={
                         mainView === "files"
-                          ? "h-full min-h-0 bg-white p-3"
-                          : "h-full min-h-0 overflow-y-auto bg-white p-3"
+                          ? "h-full min-h-0 bg-white/70 p-3 backdrop-blur-sm"
+                          : "h-full min-h-0 overflow-y-auto bg-white/70 p-3 backdrop-blur-sm"
                       }
                     >
                       {mainView === "ws" ? (
@@ -1913,7 +1918,9 @@ export function TerminalDispatcherBoard({
                 ))}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
+        )
       ) : null}
 
       {expandedCardData ? (
@@ -1961,7 +1968,7 @@ function TerminalDispatcherPage() {
 
   return (
     <div
-      className="flex flex-col overflow-hidden bg-white text-zinc-900"
+      className="flex flex-col overflow-hidden text-zinc-900"
       style={{
         height: "calc(100svh - 79px)",
         margin: "-22px -18px -40px",

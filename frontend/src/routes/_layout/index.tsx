@@ -16,9 +16,8 @@ import {
   Trash2,
   User,
   Wifi,
-  type LucideIcon,
 } from "lucide-react"
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { ItemHandlerAssociationsService, ItemsService } from "@/client/sdk.gen"
 import {
@@ -122,13 +121,6 @@ type ExtendedBridgeHealth = BridgeHealthResponse & {
   ipc_owner?: Record<string, unknown>
 }
 
-type KeyValue = {
-  label: string
-  value: ReactNode
-  hint?: string
-  icon?: LucideIcon
-}
-
 const UNKNOWN = "未上报"
 
 function formatBytes(value: number | null | undefined) {
@@ -160,13 +152,6 @@ function formatPercent(
   return `${value.toFixed(value >= 10 ? 0 : 1)}%`
 }
 
-function boundedPercent(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return null
-  }
-  return Math.max(0, Math.min(100, value))
-}
-
 function normalizeCpuPercent(
   value: number | null | undefined,
   cpuCount: number | null | undefined,
@@ -184,135 +169,6 @@ function formatCpuCores(value: number | null | undefined) {
   }
   const cores = value / 100
   return `${cores.toFixed(cores >= 10 ? 1 : 2)} 核`
-}
-
-function percentToneClass(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return "text-muted-foreground"
-  }
-  if (value >= 85) {
-    return "text-red-500"
-  }
-  if (value >= 70) {
-    return "text-amber-500"
-  }
-  return "text-emerald-500"
-}
-
-function PercentGauge({
-  value,
-  label = "使用率",
-  size = "md",
-}: {
-  value: number | null | undefined
-  label?: string
-  size?: "sm" | "md"
-}) {
-  const bounded = boundedPercent(value)
-  const gaugeValue = bounded ?? 0
-  const isSmall = size === "sm"
-  const displayValue = bounded === null ? "--" : formatPercent(bounded, "--")
-
-  return (
-    <div
-      className={`relative shrink-0 ${isSmall ? "size-11" : "size-16"}`}
-      aria-label={`${label}: ${displayValue}`}
-      title={`${label}: ${displayValue}`}
-    >
-      <svg className="size-full -rotate-90" viewBox="0 0 44 44">
-        <circle
-          cx="22"
-          cy="22"
-          r="18"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="4"
-          className="text-muted-foreground/20"
-        />
-        <circle
-          cx="22"
-          cy="22"
-          r="18"
-          fill="none"
-          pathLength="100"
-          stroke="currentColor"
-          strokeDasharray={`${gaugeValue} 100`}
-          strokeLinecap="round"
-          strokeWidth="4"
-          className={percentToneClass(value)}
-        />
-      </svg>
-      <span
-        className={`absolute inset-0 flex items-center justify-center font-semibold tabular-nums ${
-          isSmall ? "text-[10px]" : "text-xs"
-        }`}
-      >
-        {displayValue}
-      </span>
-    </div>
-  )
-}
-
-type UsageGaugeMetric = {
-  label: string
-  value: number | null | undefined
-  detail?: ReactNode
-}
-
-function UsageGaugePanel({ metrics }: { metrics: UsageGaugeMetric[] }) {
-  return (
-    <Card className="gap-3 py-4">
-      <CardHeader className="flex flex-row items-center gap-2 px-5">
-        <Gauge className="size-4 text-primary" />
-        <CardTitle>使用率</CardTitle>
-      </CardHeader>
-      <CardContent className="px-5">
-        <div className="grid gap-3 sm:grid-cols-3">
-          {metrics.map((metric) => (
-            <div
-              key={metric.label}
-              className="flex min-w-0 items-center gap-3 rounded-md border bg-background px-4 py-3"
-            >
-              <PercentGauge value={metric.value} label={metric.label} />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{metric.label}</p>
-                {metric.detail ? (
-                  <p className="mt-1 break-words text-xs text-muted-foreground">
-                    {metric.detail}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function formatFrequency(value: number | null | undefined) {
-  if (value === null || value === undefined) {
-    return UNKNOWN
-  }
-  if (value >= 1000) {
-    return `${(value / 1000).toFixed(2)}GHz`
-  }
-  return `${value.toFixed(0)}MHz`
-}
-
-function formatSeconds(value: number | null | undefined) {
-  if (value === null || value === undefined) {
-    return UNKNOWN
-  }
-  if (value < 60) {
-    return `${Math.round(value)} 秒`
-  }
-  if (value < 3600) {
-    return `${Math.floor(value / 60)} 分 ${Math.round(value % 60)} 秒`
-  }
-  const hours = Math.floor(value / 3600)
-  const minutes = Math.floor((value % 3600) / 60)
-  return `${hours} 小时 ${minutes} 分`
 }
 
 function statusLabel(status: string | null | undefined) {
@@ -403,55 +259,6 @@ function StatusPill({
       />
       {label}
     </span>
-  )
-}
-
-function CompactSummaryTable({
-  title,
-  icon: Icon,
-  rows,
-}: {
-  title: string
-  icon: LucideIcon
-  rows: KeyValue[]
-}) {
-  return (
-    <Card className="gap-3 py-4">
-      <CardHeader className="flex flex-row items-center gap-2 px-5">
-        <Icon className="size-4 text-primary" />
-        <CardTitle className="text-base">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="px-5">
-        <div className="grid gap-2 sm:grid-cols-2">
-          {rows.map((row) => {
-            const RowIcon = row.icon
-            return (
-              <div
-                key={row.label}
-                className="flex min-w-0 items-start gap-3 rounded-md border bg-background px-3 py-2.5"
-              >
-                {RowIcon ? (
-                  <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                    <RowIcon className="size-4" />
-                  </span>
-                ) : null}
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground">{row.label}</p>
-                  <div className="mt-1 min-w-0 break-words text-sm font-medium leading-snug">
-                    {row.value}
-                  </div>
-                  {row.hint ? (
-                    <p className="mt-1 break-words text-xs text-muted-foreground">
-                      {row.hint}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </CardContent>
-    </Card>
   )
 }
 
@@ -553,6 +360,52 @@ function ErrorNotice({ title, message }: { title: string; message: string }) {
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
     </Alert>
+  )
+}
+
+type StripStat = {
+  label: string
+  value: string
+  detail?: string
+  percent?: number | null
+  icon: typeof Cpu
+}
+
+function StatStrip({ stats }: { stats: StripStat[] }) {
+  return (
+    <Card className="gap-0 py-3 [animation:card-in_.3s_ease-out]">
+      <CardContent className="grid grid-cols-2 gap-x-4 gap-y-3 px-5 sm:grid-cols-3 xl:grid-cols-6">
+        {stats.map((stat) => {
+          const Icon = stat.icon
+          return (
+            <div key={stat.label} className="flex min-w-0 flex-col gap-1">
+              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                <Icon className="size-3.5 shrink-0" />
+                {stat.label}
+              </span>
+              <span className="truncate text-lg font-bold tabular-nums leading-tight">
+                {stat.value}
+              </span>
+              {stat.percent != null ? (
+                <div className="h-1 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-1 rounded-full bg-foreground/60 transition-[width] duration-500"
+                    style={{
+                      width: `${Math.min(Math.max(stat.percent ?? 0, 0), 100)}%`,
+                    }}
+                  />
+                </div>
+              ) : null}
+              {stat.detail ? (
+                <span className="truncate text-[10px] text-muted-foreground">
+                  {stat.detail}
+                </span>
+              ) : null}
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -741,66 +594,6 @@ function Dashboard() {
       ? `${onebotClientCount} 个 QQ 接入端`
       : `机器人 ${connectedRobotCount}/${loadedRobotCount} · QQ 接入 ${onebotClientCount}`
 
-  const systemSummaryRows: KeyValue[] = [
-    {
-      label: "CPU 型号",
-      value: runtime?.cpu_model ?? UNKNOWN,
-      icon: Cpu,
-    },
-    {
-      label: "核心 / 主频",
-      value: `${runtime?.cpu_count ?? UNKNOWN} 核 · ${formatFrequency(runtime?.cpu_frequency_mhz)}`,
-      icon: Gauge,
-    },
-    {
-      label: "后端运行",
-      value: formatSeconds(runtime?.current_process.uptime_seconds),
-      icon: Server,
-    },
-  ]
-  const operationSummaryRows: KeyValue[] = [
-    {
-      label: "连接状态",
-      value: robotConnectionValue,
-      hint: robotConnectionHint,
-      icon: Bot,
-    },
-    {
-      label: "终端",
-      value: `${itemStats.running}/${itemStats.total} 运行中`,
-      icon: Terminal,
-    },
-    {
-      label: "Daemon",
-      value: `${onlineDaemonCount}/${daemons.length} 在线`,
-      icon: Plug,
-    },
-    {
-      label: "浏览器",
-      value: `${itemStats.browserConnections} 连接`,
-      icon: Wifi,
-    },
-  ]
-  const usageGaugeMetrics: UsageGaugeMetric[] = [
-    {
-      label: "后端 CPU",
-      value: normalizeCpuPercent(runtime?.aggregate.cpu_percent, runtime?.cpu_count),
-      detail: `${formatCpuCores(runtime?.aggregate.cpu_percent)} · ${runtime?.cpu_count ?? UNKNOWN} 核`,
-    },
-    {
-      label: "系统内存",
-      value: runtime?.memory_percent,
-      detail: `${formatBytes(runtime?.memory_used_bytes)} / ${formatBytes(runtime?.memory_total_bytes)}`,
-    },
-    {
-      label: "TermPaws CPU",
-      value: normalizeCpuPercent(TermPawsRuntime?.totals.cpu_percent, runtime?.cpu_count),
-      detail: `${formatCpuCores(TermPawsRuntime?.totals.cpu_percent)} · ${
-        TermPawsRuntime?.totals.process_count ?? 0
-      } 进程`,
-    },
-  ]
-
   return (
     <div className="space-y-3">
       <section className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -877,26 +670,52 @@ function Dashboard() {
         <ErrorNotice title="机器人列表不可读" message={robotsQuery.error.message} />
       ) : null}
 
-      <section className="grid gap-3 xl:grid-cols-2">
-        <CompactSummaryTable
-          title="系统摘要"
-          icon={Gauge}
-          rows={systemSummaryRows}
-        />
-        <CompactSummaryTable
-          title="运行摘要"
-          icon={Wifi}
-          rows={operationSummaryRows}
-        />
-      </section>
+      <StatStrip
+        stats={[
+          {
+            label: "后端 CPU",
+            value: formatPercent(
+              normalizeCpuPercent(runtime?.aggregate.cpu_percent, runtime?.cpu_count),
+            ),
+            detail: `${formatCpuCores(runtime?.aggregate.cpu_percent)} · ${runtime?.cpu_count ?? UNKNOWN} 核`,
+            percent: normalizeCpuPercent(runtime?.aggregate.cpu_percent, runtime?.cpu_count),
+            icon: Cpu,
+          },
+          {
+            label: "系统内存",
+            value: formatPercent(runtime?.memory_percent),
+            detail: `${formatBytes(runtime?.memory_used_bytes)} / ${formatBytes(runtime?.memory_total_bytes)}`,
+            percent: runtime?.memory_percent,
+            icon: Gauge,
+          },
+          {
+            label: "终端",
+            value: `${itemStats.running}/${itemStats.total}`,
+            detail: itemStats.error > 0 ? `${itemStats.error} 个错误` : "运行中/总数",
+            icon: Terminal,
+          },
+          {
+            label: "Daemon",
+            value: `${onlineDaemonCount}/${daemons.length}`,
+            detail: "在线/总数",
+            icon: Plug,
+          },
+          {
+            label: "机器人",
+            value: robotConnectionValue,
+            detail: robotConnectionHint,
+            icon: Bot,
+          },
+          {
+            label: "浏览器",
+            value: `${itemStats.browserConnections}`,
+            detail: "连接数",
+            icon: Wifi,
+          },
+        ]}
+      />
 
-      <section className="grid items-start gap-3 xl:grid-cols-2">
-        <UsageGaugePanel metrics={usageGaugeMetrics} />
-
-        <ServiceRuntimePanel
-          services={TermPawsRuntime?.services ?? []}
-        />
-      </section>
+      <ServiceRuntimePanel services={TermPawsRuntime?.services ?? []} />
 
       <Card className="gap-3 py-3">
         <CardHeader
