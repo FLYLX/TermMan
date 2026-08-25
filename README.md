@@ -6,45 +6,61 @@ AI 驱动的多终端管理平台：一个 Web 界面统一管理所有主机终
 ![任务调度](docs/images/shot_dispatcher.png)
 ![抽屉终端](docs/images/shot_drawer.png)
 
-## 快速开始（Docker，推荐）
+## 部署方式总览
 
-### 一体机（backend + frontend，单容器单端口）
+| 方式 | 用途 | 入口 |
+|---|---|---|
+| **生产部署** | 服务器跑正式版（PyPI 拉包，免源码） | `dockerfiles/` |
+| **开发模式** | 改代码、热更新、本地调试 | 根目录 `compose.yml` |
 
-```bash
-git clone https://github.com/FLYLX/TermMan.git && cd TermMan
-docker build -f dockerfiles/aio.Dockerfile -t termpaws:aio dockerfiles
-docker run -d --name termpaws \
-  -p 28888:28888 -p 32000-32111:32000-32111 \
-  -v termpaws-data:/root/.termpaws \
-  termpaws:aio
-```
+> ⚠️ 根目录的 `docker compose up` 是**开发模式**（从源码构建 + 挂载源码热更新），生产请用 `dockerfiles/`。
 
-打开 http://localhost:28888 ，按页面提示创建管理员账号。配置/数据库/向量库/知识库全部持久化在 `termpaws-data` 卷里（`/root/.termpaws/termpaws.json` 是配置文件）。
+## 生产部署（推荐）
 
-### daemon（装到每一台受控主机）
+在你想存数据的文件夹里执行，配置/数据库直接落在当前目录：
 
 ```bash
-docker build -f dockerfiles/daemon.Dockerfile -t termpaws:daemon dockerfiles
-docker run -d --name termpaws-daemon \
-  -p 39999:39999 \
-  -v termpaws-daemon-data:/opt/termpaws-daemon \
-  termpaws:daemon
+git clone -b master --depth 1 --filter=blob:none --sparse https://github.com/FLYLX/TermMan.git
+cd TermMan && git sparse-checkout set dockerfiles
+
+# 启动 backend+frontend（含 daemon 可选）
+docker compose -f dockerfiles/compose.yml up -d termpaws daemon
 ```
 
-日志里找 `API Key: tpd_...`，在 Web 界面添加终端时填入：`http://<daemon主机IP>:39999` + 该 key。
+打开 http://localhost:28888 创建管理员。数据就在当前文件夹：`termpaws-data/`（backend 配置+数据库）和 `daemon-data/`（daemon 配置+工作目录）。
+
+### daemon（装到其他受控主机）
+
+```bash
+docker compose -f dockerfiles/compose.yml up -d daemon
+# 或单独一台机器同样拉 dockerfiles 后只起 daemon
+```
+
+`docker logs termpaws-daemon | grep "API Key"` 拿 key，Web 界面添加终端：`http://<daemon主机IP>:39999` + key。
 
 ### NapCat（QQ 机器人，可选）
 
 ```bash
-docker build -f dockerfiles/napcat.Dockerfile -t termpaws:napcat dockerfiles
-docker run -d --name napcat -p 6099:6099 termpaws:napcat
+docker compose -f dockerfiles/compose.yml --profile napcat up -d
 ```
 
 打开日志里带 token 的 WebUI 地址（`http://localhost:6099/webui?token=...`），登录 QQ 后配置 OneBot V11 反向 WS：`ws://<termpaws地址>:28888/robot-bridge/onebot/v11/ws`。
 
-### 其他镜像
+### 单独镜像（不需要 compose 时）
 
-`dockerfiles/` 下还有 `backend.Dockerfile`（纯 API）和 `frontend.Dockerfile`（纯静态前端，需自行反代 `/api`）。全部支持 `--build-arg TERMPAWS_VERSION=x.y.z` 钉版本。
+`dockerfiles/` 下也可单独 build：`aio.Dockerfile`（一体机）、`backend.Dockerfile`、`frontend.Dockerfile`、`daemon.Dockerfile`、`napcat.Dockerfile`。全部默认拉 PyPI 最新版，`--build-arg TERMPAWS_VERSION=x.y.z` 可钉版。
+
+## 开发模式（改代码用）
+
+```bash
+git clone https://github.com/FLYLX/TermMan.git && cd TermMan
+docker compose up -d --build    # 根目录 compose.yml：源码构建 + 热更新
+```
+
+- backend `uvicorn` 热重载、frontend vite 热更新、daemon 源码挂载
+- frontend dev server http://localhost:5173 ，backend http://localhost:28888
+
+生产环境**不要**用根目录 compose。
 
 ## pip 安装（备选）
 
