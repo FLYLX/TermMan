@@ -1,0 +1,42 @@
+# 数据落在「当前目录」——在哪个文件夹 docker compose up，数据就映射到哪个文件夹
+# Linux / Windows 通用（相对路径两个系统都认）
+
+services:
+  termpaws:
+    build:
+      context: .
+      dockerfile: aio.Dockerfile
+    image: termpaws:aio
+    container_name: termpaws
+    restart: unless-stopped
+    ports:
+      - "28888:28888"
+      - "32000-32111:32000-32111"
+    volumes:
+      - ./termpaws-data:/root/.termpaws
+
+  daemon:
+    build:
+      context: .
+      dockerfile: daemon.Dockerfile
+    image: termpaws-daemon:latest
+    container_name: termpaws-daemon
+    restart: unless-stopped
+    ports:
+      - "39999:39999"
+    volumes:
+      - ./daemon-data:/opt/termpaws-daemon
+
+  napcat:
+    build:
+      context: .
+      dockerfile: napcat.Dockerfile
+    image: napcat:latest
+    container_name: napcat
+    restart: unless-stopped
+    ports:
+      - "6099:6099"
+    volumes:
+      - ./napcat-data:/app/napcat/config
+    profiles:
+      - napcat   # 默认不启动，需要时: docker compose --profile napcat up -d
