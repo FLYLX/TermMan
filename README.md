@@ -20,8 +20,8 @@ AI 驱动的多终端管理平台：一个 Web 界面统一管理所有主机终
 在你想存数据的文件夹里执行，配置/数据库直接落在当前目录：
 
 ```bash
-git clone -b master --depth 1 --filter=blob:none --sparse https://github.com/FLYLX/TermMan.git
-cd TermMan && git sparse-checkout set dockerfiles
+git clone -b master --depth 1 --filter=blob:none --sparse https://github.com/FLYLX/TermPaws.git
+cd TermPaws && git sparse-checkout set dockerfiles
 
 # 启动 backend+frontend（含 daemon 可选）
 docker compose -f dockerfiles/compose.yml up -d termpaws daemon
@@ -53,7 +53,7 @@ docker compose -f dockerfiles/compose.yml --profile napcat up -d
 ## 开发模式（改代码用）
 
 ```bash
-git clone https://github.com/FLYLX/TermMan.git && cd TermMan
+git clone https://github.com/FLYLX/TermPaws.git && cd TermPaws
 docker compose up -d --build    # 根目录 compose.yml：源码构建 + 热更新
 ```
 
