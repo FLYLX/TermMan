@@ -1303,6 +1303,7 @@ class LocalMCPServer:
                 "working_directory": item.working_directory,
                 "timeout_seconds": timeout_seconds,
                 "tail_lines": tail_lines,
+                "item_title": item.title,
             }
 
             # Check for duplicate running command

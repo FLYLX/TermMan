@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 # TermPaws web frontend only (static UI, expects a reachable backend API).
-ARG TERMPAWS_VERSION=0.1.9
+ARG TERMPAWS_VERSION=0.2.1
 
 RUN pip install --no-cache-dir \
       --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple \

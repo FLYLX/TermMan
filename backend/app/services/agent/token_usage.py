@@ -30,12 +30,16 @@ class TokenUsageRecord(SQLModel, table=True):
 
 def init_token_usage_table() -> None:
     from sqlalchemy import inspect
+    from sqlalchemy.exc import NoSuchTableError
 
     with engine.begin() as conn:
-        columns = {
-            column["name"]
-            for column in inspect(conn).get_columns("token_usage_record")
-        }
+        try:
+            columns = {
+                column["name"]
+                for column in inspect(conn).get_columns("token_usage_record")
+            }
+        except NoSuchTableError:
+            columns = set()
         if columns and "handler_id" not in columns:
             # Legacy item-keyed table: usage stats are ephemeral, recreate.
             TokenUsageRecord.__table__.drop(conn)

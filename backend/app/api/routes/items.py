@@ -451,10 +451,42 @@ def reconnect_daemon(
     return result
 
 
+def _assert_unique_title_per_daemon(
+    session: SessionDep,
+    *,
+    title: str,
+    socket_host: str | None,
+    socket_port: int | None,
+    api_key: str | None,
+    exclude_id: uuid.UUID | None = None,
+) -> None:
+    """同一 daemon（host:port:key）内终端标题必须唯一（workdir 以标题命名）。"""
+    from sqlmodel import select
+
+    stmt = select(Item).where(
+        Item.title == title,
+        Item.socket_host == socket_host,
+        Item.socket_port == socket_port,
+    )
+    for other in session.exec(stmt).all():
+        if exclude_id is None or other.id != exclude_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"同一 daemon 下已存在标题为「{title}」的终端，请换个标题",
+            )
+
+
 @router.post("/", response_model=ItemPublic)
 def create_item(
     *, session: SessionDep, current_user: CurrentUser, item_in: ItemCreate
 ) -> Any:
+    _assert_unique_title_per_daemon(
+        session,
+        title=item_in.title,
+        socket_host=item_in.socket_host,
+        socket_port=item_in.socket_port,
+        api_key=item_in.api_key,
+    )
     item = Item.model_validate(item_in, update={"owner_id": current_user.id})
     session.add(item)
     session.commit()
@@ -474,9 +506,17 @@ def update_item(
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     _check_item_permission(item, current_user)
-    
+
     update_dict = item_in.model_dump(exclude_unset=True)
     item.sqlmodel_update(update_dict)
+    _assert_unique_title_per_daemon(
+        session,
+        title=item.title,
+        socket_host=item.socket_host,
+        socket_port=item.socket_port,
+        api_key=item.api_key,
+        exclude_id=item.id,
+    )
     session.add(item)
     session.commit()
     session.refresh(item)

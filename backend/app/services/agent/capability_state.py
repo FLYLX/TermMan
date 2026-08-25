@@ -2,36 +2,84 @@
 
 Tools and skill guides are exposed to the agent through a compact catalog.
 When the agent calls `mcp_local_prepare_capabilities`, the requested tool
-schemas / guide prompts are marked loaded for the item and stay available
-for subsequent turns of that item.
+schemas / guide prompts are marked loaded for the item. Loaded tools are
+further gated by a hot-LRU window: freshly loaded tools and recently used
+tools stay, stale ones age out back to the catalog.
 """
 from __future__ import annotations
 
 import threading
-from typing import Iterable
+import time
+from collections.abc import Iterable
+
+HOT_TTL_SECONDS = 1800.0
+HOT_MAX_TOOLS = 8
+FRESH_MAX_TOOLS = 5
 
 _LOCK = threading.Lock()
-_STATE: dict[str, dict[str, set[str]]] = {}
+_STATE: dict[str, dict] = {}
 
 
-def _entry(item_id: str) -> dict[str, set[str]]:
+def _entry(item_id: str) -> dict:
     key = str(item_id or "")
     with _LOCK:
-        return _STATE.setdefault(key, {"tools": set(), "guides": set()})
+        return _STATE.setdefault(
+            key, {"tools": set(), "guides": set(), "usage": {}, "loaded_at": {}}
+        )
 
 
 def ensure_loaded(item_id: str, *, tools: Iterable[str] = (), guides: Iterable[str] = ()) -> None:
     if not item_id:
         return
     entry = _entry(item_id)
+    now = time.time()
     with _LOCK:
-        entry["tools"].update(str(name) for name in tools if str(name).strip())
+        for name in tools:
+            name = str(name)
+            if not name.strip():
+                continue
+            entry["tools"].add(name)
+            entry["loaded_at"].setdefault(name, now)
         entry["guides"].update(str(name) for name in guides if str(name).strip())
 
 
-def get_loaded_tools(item_id: str) -> frozenset[str]:
+def record_tool_use(item_id: str, tool_name: str) -> None:
+    if not item_id or not tool_name:
+        return
+    entry = _entry(item_id)
     with _LOCK:
-        return frozenset(_STATE.get(str(item_id or ""), {}).get("tools", ()))
+        usage = entry["usage"].setdefault(str(tool_name), {"last_used": 0.0, "count": 0})
+        usage["last_used"] = time.time()
+        usage["count"] += 1
+
+
+def get_loaded_tools(item_id: str) -> frozenset[str]:
+    entry = _STATE.get(str(item_id or ""))
+    if not entry:
+        return frozenset()
+    now = time.time()
+    with _LOCK:
+        loaded = entry["tools"]
+        usage = entry["usage"]
+        loaded_at = entry["loaded_at"]
+        # fresh（未用过的）：按加载时间倒序，限 FRESH_MAX_TOOLS
+        fresh = sorted(
+            (name for name in loaded if name not in usage),
+            key=lambda name: loaded_at.get(name, 0.0),
+            reverse=True,
+        )[:FRESH_MAX_TOOLS]
+        # hot（30min 内用过）：按调用频次+最近使用排序，填满剩余名额
+        hot = sorted(
+            (
+                name
+                for name in loaded
+                if name in usage and now - usage[name]["last_used"] <= HOT_TTL_SECONDS
+            ),
+            key=lambda name: (usage[name]["count"], usage[name]["last_used"]),
+            reverse=True,
+        )
+    selected = fresh + [name for name in hot if name not in fresh]
+    return frozenset(selected[:HOT_MAX_TOOLS])
 
 
 def get_loaded_guides(item_id: str) -> frozenset[str]:

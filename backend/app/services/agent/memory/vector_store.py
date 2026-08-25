@@ -91,8 +91,6 @@ class EmbeddingService:
     def encode(self, texts: str | list[str]) -> list[list[float]]:
         if isinstance(texts, str):
             texts = [texts]
-        if self._use_remote():
-            return self._encode_remote(texts)
         self._ensure_model()
         vectors: list[list[float]] = []
         for embedding in self._model.embed(list(texts)):

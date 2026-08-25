@@ -53,7 +53,8 @@ class TerminalService:
             user_uuid,
             item_uuid=item_uuid,
             working_directory=item.working_directory,
-            command=item.command
+            command=item.command,
+            item_title=item.title,
         )
         if not result.get("success"):
             return result

@@ -49,6 +49,7 @@ class InternalJobRunRequest(BaseModel):
     timeout_seconds: int = 600
     tail_lines: int = 80
     env: Optional[dict[str, str]] = None
+    item_title: Optional[str] = None
 
 
 class InternalJobCancelRequest(BaseModel):
@@ -190,6 +191,10 @@ def run_item_job(
         f"timeout={payload.timeout_seconds} tail_lines={payload.tail_lines} "
         f"command={payload.command!r} cwd={payload.working_directory!r}"
     )
+    if payload.item_title:
+        from service.item_path_service import item_path_service
+
+        item_path_service.register_item_title(item_uuid, payload.item_title)
     _require_active_main_terminal(item_uuid)
     job_user_uuid, working_directory = _resolve_job_context(
         item_uuid,

@@ -212,7 +212,7 @@ class DaemonConnection:
     def get_status(self) -> ConnectionStatus:
         return self.status
 
-    def terminal_start_http(self, user_uuid: str, item_uuid: str, working_directory: str = None, command: str = None) -> Dict[str, Any]:
+    def terminal_start_http(self, user_uuid: str, item_uuid: str, working_directory: str = None, command: str = None, item_title: str = None) -> Dict[str, Any]:
         """
         鍚姩缁堢 - 鍚屾鏂规硶
         
@@ -233,7 +233,9 @@ class DaemonConnection:
             data["working_directory"] = working_directory
         if command:
             data["command"] = command
-        
+        if item_title:
+            data["item_title"] = item_title
+
         return self._emit_and_wait_sync("terminal/start", data)
 
     def terminal_stop_http(self, item_uuid: str) -> Dict[str, Any]:
@@ -346,6 +348,7 @@ class DaemonConnection:
         timeout_seconds: int = 600,
         tail_lines: int = 80,
         env: dict[str, str] | None = None,
+        item_title: str | None = None,
     ) -> Dict[str, Any]:
         url = f"{self.config.base_url}/api/internal/items/{item_uuid}/jobs/run"
         payload: Dict[str, Any] = {
@@ -355,6 +358,7 @@ class DaemonConnection:
             "timeout_seconds": timeout_seconds,
             "tail_lines": tail_lines,
             "env": env or {},
+            "item_title": item_title,
         }
         headers = {"X-API-Key": self.config.api_key}
         # Async start returns immediately; no need to wait out the job.

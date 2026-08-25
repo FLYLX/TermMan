@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import re
 import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -163,7 +162,11 @@ class Agent:
             api_url=handler.api_url,
             model_parameters=handler.model_parameters or {},
             enabled_skills=handler.enabled_skills or [],
-            enabled_mcp_servers=handler.enabled_mcp_servers or [],
+            enabled_mcp_servers=(
+                handler.enabled_mcp_servers
+                if handler.enabled_mcp_servers is not None
+                else ["local"]
+            ),
             enabled_knowledge_files=handler.enabled_knowledge_files or [],
         )
         agent._load_skills()
@@ -364,7 +367,11 @@ class Agent:
         self._context.api_url = handler.api_url
         self._context.model_parameters = handler.model_parameters or {}
         self._context.enabled_skills = handler.enabled_skills or []
-        self._context.enabled_mcp_servers = handler.enabled_mcp_servers or []
+        self._context.enabled_mcp_servers = (
+            handler.enabled_mcp_servers
+            if handler.enabled_mcp_servers is not None
+            else ["local"]
+        )
         self._context.enabled_knowledge_files = handler.enabled_knowledge_files or []
         self._load_skills()
 
@@ -458,6 +465,10 @@ class Agent:
         try:
             result = await mcp_server_manager.call_tool(server_name, actual_tool_name, args)
             logger.info(f"[Agent] Executed MCP tool '{tool_name}' with args: {args}")
+            if self._context and self._context.item_id:
+                from app.services.agent.capability_state import record_tool_use
+
+                record_tool_use(self._context.item_id, tool_name)
             return {"success": True, "result": result}
         except Exception as e:
             logger.error(f"[Agent] Error executing MCP tool '{tool_name}': {e}")

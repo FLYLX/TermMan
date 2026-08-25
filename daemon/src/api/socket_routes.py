@@ -306,9 +306,15 @@ async def on_verify_access_token(sid, data):
 async def on_terminal_start(sid, data):
     user_uuid = data.get("user_uuid")
     item_uuid = data.get("item_uuid")
+    item_title = data.get("item_title")
     working_directory = data.get("working_directory")
     command = data.get("command")
     request_id = data.get("request_id")
+
+    if item_title:
+        from service.item_path_service import item_path_service
+
+        item_path_service.register_item_title(item_uuid, item_title)
     
     logger.info(f"[WebSocket] Terminal start: item={item_uuid}, user={user_uuid}")
     

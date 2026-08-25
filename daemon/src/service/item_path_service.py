@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -13,9 +14,22 @@ class ItemPathService:
         self.workdir_base = Path(workdir_base).resolve(strict=False)
         self.files_root = Path("/").resolve(strict=False)
         self.workdir_base.mkdir(parents=True, exist_ok=True)
+        self._title_by_item: dict[str, str] = {}
+
+    @staticmethod
+    def slugify(title: str) -> str:
+        slug = re.sub(r'[\\/:*?"<>|\s]+', "_", (title or "").strip()).strip("._")
+        return slug[:64]
+
+    def register_item_title(self, item_uuid: str, title: str | None) -> None:
+        slug = self.slugify(title or "")
+        if item_uuid and slug:
+            self._title_by_item[str(item_uuid)] = slug
 
     def get_item_root(self, user_uuid: str, item_uuid: str) -> Path:
-        root = (self.workdir_base / user_uuid / item_uuid).resolve(strict=False)
+        # 目录名用终端标题 slug（同 daemon 内标题唯一），没有则用 item_uuid
+        dirname = self._title_by_item.get(str(item_uuid)) or str(item_uuid)
+        root = (self.workdir_base / dirname).resolve(strict=False)
         self._ensure_within_root(self.workdir_base, root)
         root.mkdir(parents=True, exist_ok=True)
         return root

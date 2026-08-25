@@ -74,7 +74,23 @@ async def update_plugin(
         plugin.entrypoints.startup if body.enabled else plugin.entrypoints.shutdown
     )
     if entrypoint is not None:
-        await entrypoint(request.app)
+        # bridge 热重启与在飞轮次叠加时可能出现瞬时竞态（如 NoneBot 重建期
+        # 的计时器类型抖动），重试一次即可；真正的错误第二次必现并上报
+        import asyncio
+        import logging
+
+        for attempt in range(2):
+            try:
+                await entrypoint(request.app)
+                break
+            except Exception as exc:
+                if attempt == 0:
+                    logging.getLogger(__name__).warning(
+                        "[Plugins] toggle %s failed once (%s), retrying", plugin_id, exc
+                    )
+                    await asyncio.sleep(0.5)
+                else:
+                    raise
     plugin_manager.reload()
     return PluginPublic.model_validate(_plugin_payload(plugin_id))
 

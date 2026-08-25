@@ -256,6 +256,21 @@ function getRobotReplyContextWindowSeconds(robot: RobotRecord) {
   )
 }
 
+function getRobotWakeWords(robot: RobotRecord): string {
+  const raw = robot.config?.options?.wake_words
+  if (Array.isArray(raw)) {
+    return raw.map((word) => String(word)).filter(Boolean).join(", ")
+  }
+  return typeof raw === "string" ? raw : ""
+}
+
+function parseWakeWords(value: string): string[] {
+  return value
+    .split(/[,，]/)
+    .map((word) => word.trim())
+    .filter(Boolean)
+}
+
 function getReplyMessageTypeLabel(
   copy: {
     replyPrivate: string
@@ -572,6 +587,9 @@ function useRobotDetailUiCopy() {
           replyWindowTitle: "唤醒保持",
           replyWindowDescription: "唤醒后同一会话继续进 Agent；0 表示不保持。",
           replyWindowInvalid: "唤醒保持必须是 0 到 3600 的整数秒",
+          wakeWordsTitle: "唤醒词",
+          wakeWordsPlaceholder: "例如：小p, paws, 猫猫",
+          wakeWordsDescription: "消息里包含任一唤醒词即唤醒机器人（同 @ 效果），多个用逗号分隔。",
           replyWindowValue: (seconds: number) =>
             seconds > 0 ? `${seconds} 秒` : "不保持",
           keepCurrentSecret: "留空则保留当前值",
@@ -675,6 +693,10 @@ function useRobotDetailUiCopy() {
             "After wakeup, the same conversation continues to reach the Agent. 0 disables the window.",
           replyWindowInvalid:
             "Wake window must be an integer from 0 to 3600 seconds",
+          wakeWordsTitle: "Wake words",
+          wakeWordsPlaceholder: "e.g. paws, kitty",
+          wakeWordsDescription:
+            "A message containing any wake word wakes the robot (same as @). Separate multiple words with commas.",
           replyWindowValue: (seconds: number) =>
             seconds > 0 ? `${seconds}s` : "Off",
           keepCurrentSecret: "Leave blank to keep current value",
@@ -1396,6 +1418,7 @@ function RobotBasicConfigPanel({
     replyMessageTypes: getRobotReplyMessageTypes(robot),
     mentionMatchMode: getRobotMentionMatchMode(robot),
     replyContextWindowSeconds: String(getRobotReplyContextWindowSeconds(robot)),
+    wakeWords: getRobotWakeWords(robot),
   }))
 
   useEffect(() => {
@@ -1407,6 +1430,7 @@ function RobotBasicConfigPanel({
         replyMessageTypes: getRobotReplyMessageTypes(robot),
         mentionMatchMode: getRobotMentionMatchMode(robot),
         replyContextWindowSeconds: String(getRobotReplyContextWindowSeconds(robot)),
+        wakeWords: getRobotWakeWords(robot),
       })
     }
   }, [isEditing, platform, robot])
@@ -1435,6 +1459,7 @@ function RobotBasicConfigPanel({
     options.reply_message_types = form.replyMessageTypes
     options.mention_match_mode = form.mentionMatchMode
     options.reply_context_window_seconds = replyContextWindowSeconds
+    options.wake_words = parseWakeWords(form.wakeWords)
 
     setIsSaving(true)
     try {
@@ -1610,6 +1635,25 @@ function RobotBasicConfigPanel({
                 />
                 <div className="text-xs text-muted-foreground">
                   {copy.replyWindowDescription}
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="robot-edit-wake-words">
+                  {copy.wakeWordsTitle}
+                </Label>
+                <Input
+                  id="robot-edit-wake-words"
+                  placeholder={copy.wakeWordsPlaceholder}
+                  value={form.wakeWords}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      wakeWords: event.target.value,
+                    }))
+                  }
+                />
+                <div className="text-xs text-muted-foreground">
+                  {copy.wakeWordsDescription}
                 </div>
               </div>
             </div>

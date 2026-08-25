@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     await plugin_manager.startup(app)
 
+    # SPA catch-all 必须在所有插件路由（robot-bridge 等）注册之后再挂载，
+    # 否则按注册顺序会优先命中 catch-all 吞掉插件路由
+    _mount_frontend()
+
     initialize_daemon_connections()
 
     from app.services.agent.mcp import mcp_server_manager
@@ -113,7 +117,7 @@ def _mount_frontend() -> None:
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_fallback(full_path: str):
-        if full_path.startswith(("api/", "docs", "redoc")):
+        if full_path.startswith(("api/", "docs", "redoc", "robot-bridge/")):
             return None
         target = (dist / full_path).resolve()
         if target.is_file() and str(target).startswith(str(dist_root)):
@@ -132,7 +136,6 @@ def _mount_frontend() -> None:
     logger.info("[App] Frontend mounted from %s", dist)
 
 
-_mount_frontend()
 
 
 # 注意：已移除每次请求后更新daemon连接池表的中间件

@@ -11,6 +11,7 @@ from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from math import ceil
+from typing import Any
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
@@ -1276,7 +1277,7 @@ class RobotService:
         if not robot.is_enabled:
             return RobotDispatchResponse(success=True, ignored=True, reason="robot_disabled")
 
-        direct_reply_trigger = self._message_directly_addresses_bot(message)
+        direct_reply_trigger = self._message_directly_addresses_bot(message, robot)
         conversation_key = self._conversation_key(message)
         text = (message.text or "").strip()
         if not text and not direct_reply_trigger:
@@ -2772,12 +2773,33 @@ class RobotService:
         except (TypeError, ValueError):
             return max(0, DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS)
 
-    def _message_directly_addresses_bot(self, message: RobotInboundMessage) -> bool:
+    def _wake_words(self, robot: Robot) -> list[str]:
+        config = robot.config if isinstance(robot.config, dict) else {}
+        options = config.get("options") if isinstance(config.get("options"), dict) else {}
+        raw = options.get("wake_words")
+        words: list[str] = []
+        if isinstance(raw, str):
+            words = [part.strip() for part in raw.replace("，", ",").split(",")]
+        elif isinstance(raw, list):
+            words = [str(part).strip() for part in raw]
+        return [word for word in words if word]
+
+    def _message_contains_wake_word(self, message: RobotInboundMessage, robot: Robot) -> bool:
+        text = (message.text or "").strip().lower()
+        if not text:
+            return False
+        return any(word.lower() in text for word in self._wake_words(robot))
+
+    def _message_directly_addresses_bot(self, message: RobotInboundMessage, robot: Robot | None = None) -> bool:
         if self._conversation_message_type(message) == REPLY_MESSAGE_TYPE_PRIVATE:
             return True
         if bool(message.reply_target.metadata.get("replied_to_bot")):
             return True
-        return self._message_mentions_bot_self_id(message)
+        if self._message_mentions_bot_self_id(message):
+            return True
+        if robot is not None and self._message_contains_wake_word(message, robot):
+            return True
+        return False
 
     def _reply_context_key(
         self,
@@ -4202,6 +4224,8 @@ class RobotService:
             self._conversation_routes.pop(key, None)
 
     def _chunk_text(self, robot: Robot, text: str) -> list[str]:
+        """只在内容超长时按自然边界（段落/换行）兜底切分，不做机械分段——
+        口语化短消息由模型自己写（见 ROBOT_HUMAN_STYLE_INSTRUCTION）。"""
         normalized = (text or "").strip()
         if not normalized:
             return []

@@ -1877,6 +1877,35 @@ def _require_chat_handler(
     return prepared
 
 
+def _run_chat_turn_sync(
+    message: str,
+    history: list,
+    handler,
+    item_id: str,
+    agent,
+) -> tuple[str, str]:
+    """在 worker 线程里跑完整个 agent 轮次——同步生成器会阻塞数分钟，
+    绝不能在事件循环里直接迭代（会把整个 backend 卡死）。"""
+    content = ""
+    error_message = ""
+    for chunk in generate_stream(
+        message=message,
+        history=history,
+        handler=handler,
+        item_id=item_id,
+        agent=agent,
+        turn_serialized=True,
+    ):
+        if not chunk.startswith("data: "):
+            continue
+        payload = json.loads(chunk[6:].strip())
+        if payload.get("type") == "agent_response":
+            content = payload.get("content", content)
+        elif payload.get("type") in {"agent_error", "error"}:
+            error_message = payload.get("content", error_message)
+    return content, error_message
+
+
 @router.post("/{item_id}")
 async def chat(
     item_id: str,
@@ -1884,6 +1913,8 @@ async def chat(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> dict:
+    from fastapi.concurrency import run_in_threadpool
+
     prepared = _require_chat_handler(session, item_id, current_user)
     lease = await agent_turn_coordinator.acquire_async(
         agent_turn_key(str(prepared[0].id))
@@ -1897,30 +1928,14 @@ async def chat(
         )
         matched_skills: list = []
 
-        content = ""
-        error_message = ""
-        tool_dispatched = False
-
-        for chunk in generate_stream(
-            message=request.message,
-            history=request.history,
-            handler=handler,
-            item_id=item_id,
-            agent=agent,
-            turn_serialized=True,
-        ):
-            if not chunk.startswith("data: "):
-                continue
-
-            payload = json.loads(chunk[6:].strip())
-            if payload.get("type") == "agent_response":
-                content = payload.get("content", content)
-            elif payload.get("type") == "agent_action":
-                tool_dispatched = True
-            elif payload.get("type") == "agent_error":
-                error_message = payload.get("content", error_message)
-            elif payload.get("type") == "error":
-                error_message = payload.get("content", error_message)
+        content, error_message = await run_in_threadpool(
+            _run_chat_turn_sync,
+            request.message,
+            request.history,
+            handler,
+            item_id,
+            agent,
+        )
     finally:
         lease.release()
 

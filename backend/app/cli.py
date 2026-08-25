@@ -191,7 +191,6 @@ def _warm_embedding_model() -> None:
 def _serve() -> None:
     host = os.environ.get("BACKEND_HOST", "0.0.0.0")
     port = int(os.environ.get("BACKEND_PORT", "28888"))
-    os.environ["BACKEND_PORT"] = str(port)
     import threading
 
     threading.Thread(target=_warm_embedding_model, daemon=True).start()
@@ -225,6 +224,8 @@ def main() -> None:
 
     if command in {"serve", "run"}:
         _ensure_config()
+        # settings 在 prestart 阶段就会实例化，端口必须在此之前就位
+        os.environ.setdefault("BACKEND_PORT", "28888")
         if os.environ.get("TERMPAWS_SKIP_PRESTART", "").lower() not in {"1", "true", "yes"}:
             _run_prestart()
         _serve()
