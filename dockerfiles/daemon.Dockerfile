@@ -9,5 +9,7 @@ RUN pip install --no-cache-dir \
 
 WORKDIR /opt/termpaws-daemon
 EXPOSE 39999
+# 游戏服务器端口范围（Minecraft 等，由 daemon 拉起的进程绑定）
+EXPOSE 25565-43906
 
 CMD ["termpaws-daemon"]
