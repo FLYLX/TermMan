@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
 import { useLocation } from "@tanstack/react-router"
+import { useEffect, useState } from "react"
 
 import { HangTagNav } from "@/components/Layout/HangTagNav"
 import { isLoggedIn } from "@/hooks/useAuth"
@@ -32,7 +33,7 @@ const HANG_LAYOUT_CSS = `
 .sketch-mini-box { border: 2px solid #3a3a3a; border-radius: 10px; background: #fff; font-weight: 700; font-size: 12px; }
 .hang-page { padding: 6px 18px 14px; animation: page-drop .3s cubic-bezier(.2,.8,.3,1); }
 @keyframes page-drop { from { transform: translateY(-22px); opacity: 0; } to { transform: none; opacity: 1; } }
-.hang-page .rounded-lg, .hang-page .rounded-xl, .hang-page .rounded-md { border-radius: 16px 205px 16px 205px / 205px 16px 205px 16px; }
+.hang-page .rounded-lg, .hang-page .rounded-xl, .hang-page .rounded-2xl, .hang-page .rounded-3xl, .hang-page .rounded-md { border-radius: 16px 205px 16px 205px / 205px 16px 205px 16px; }
 .hang-page .rounded-full { border-radius: 9999px; }
 .hang-page .border { border-color: #3d3d3d; }
 .hang-page .border-t, .hang-page .border-b, .hang-page .border-l, .hang-page .border-r { border-color: #3d3d3d; }
@@ -45,7 +46,28 @@ const HANG_LAYOUT_CSS = `
 .hang-page button, .hang-page [role="button"] { font-weight: 600; }
 .hang-page input:not(.code-editor), .hang-page select { color: #1f1f1f; }
 .hang-page textarea:not(.code-editor) { color: #1f1f1f; }
+.version-badge { position: fixed; right: 12px; bottom: 10px; z-index: 10; border: 2px solid #3a3a3a; border-radius: 10px 3px 10px 3px / 3px 10px 3px 10px; background: rgba(255,255,255,.75); backdrop-filter: blur(2px); color: #565654; font-size: 11px; font-weight: 700; padding: 2px 8px; box-shadow: 2px 2px 0 rgba(0,0,0,.08); pointer-events: none; }
 `
+
+function VersionBadge() {
+  const [version, setVersion] = useState("")
+
+  useEffect(() => {
+    fetch("/api/v1/utils/version/")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.version) {
+          setVersion(String(data.version))
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  if (!version) {
+    return null
+  }
+  return <div className="version-badge">v{version}</div>
+}
 
 function Layout() {
   const location = useLocation()
@@ -57,6 +79,7 @@ function Layout() {
       <main key={location.pathname} className="hang-page">
         <Outlet />
       </main>
+      <VersionBadge />
     </div>
   )
 }

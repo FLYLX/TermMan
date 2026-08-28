@@ -7,12 +7,13 @@ from litellm import completion
 from sqlmodel import Session, select
 
 from app.api.deps import CurrentUser
+from app.core.config import settings
 from app.models import Item, ItemHandler, ItemHandlerItem
 from app.services.llm_completion import build_litellm_completion_kwargs
 
 logger = logging.getLogger(__name__)
 
-REQUEST_TIMEOUT = 120
+REQUEST_TIMEOUT = settings.CHAT_LLM_TIMEOUT_SECONDS
 
 
 class LlmGenerationError(Exception):

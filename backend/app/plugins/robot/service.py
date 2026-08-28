@@ -8,7 +8,7 @@ import threading
 import time
 import uuid
 from collections import Counter
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from math import ceil
 from typing import Any
@@ -157,6 +157,8 @@ class PendingRobotChatInput:
     trigger_reason: str
     reply_target: RobotReplyTarget
     enqueued_at: datetime
+    # 入站时已落盘缓存的图片（公开路径），跟进轮次要还原给 agent
+    image_urls: tuple[str, ...] = ()
     # True once the entry has been written to long-term memory by a first
     # drain; requeued copies must not be persisted again.
 
@@ -195,6 +197,9 @@ class QueuedRobotChatJob:
     reply_ticket_id: str = ""
     pending_reply_id: str = ""
     job_id: str = ""
+    image_urls: list[str] = field(default_factory=list)
+    # 仅图识开关开启时非空：喂给多模态模型；image_urls 是展示用（始终缓存）
+    agent_image_urls: list[str] = field(default_factory=list)
     # Pending inputs drained into this job's batch message. Kept so a dispatch
     # skipped by the generation guard can return them to the merge buffer
     # instead of dropping them silently.
@@ -759,6 +764,9 @@ class RobotService:
                                 reply_requires_awake=job.reply_requires_awake,
                                 reply_ticket_id=job.reply_ticket_id,
                                 request_message=self._job_request_display(job),
+                                image_urls=job.image_urls or None,
+                                agent_image_urls=job.agent_image_urls or None,
+                                force_image_vision=bool(job.agent_image_urls),
                             ),
                             timeout=settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS,
                         )
@@ -789,6 +797,19 @@ class RobotService:
                         job,
                         f"turn exceeded {settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS}s",
                     )
+                    # 超时必须释放 processing hold：job 已死，控制器继续挂着
+                    # processing 会让后续消息全部堆进队列且永远没有轮次来消费。
+                    if (
+                        self._session_has_running_terminal_jobs(str(job.item_id))
+                        or self._item_has_running_jobs(str(job.item_id))
+                    ):
+                        self._extend_processing_for_active_jobs(
+                            robot, job.conversation_key,
+                        )
+                    else:
+                        self._release_processing_hold(
+                            robot.id, job.conversation_key,
+                        )
                     self._enqueue_pending_chat_followup(
                         robot=robot,
                         conversation_key=job.conversation_key,
@@ -796,23 +817,20 @@ class RobotService:
                     return
                 response_text = self._visible_agent_response_text(response)
                 robot_message_sent = response.robot_message_sent
-                _agent_sess = None
-                try:
-                    from app.services.agent.session import agent_session_manager
-                    _agent_sess = agent_session_manager.get_session(str(job.item_id))
-                except Exception:
-                    pass
                 if (
                     not response_text
                     and not robot_message_sent
                     and job.direct_reply_trigger
                     and job.route_key != BACKGROUND_JOB_ROUTE_KEY
-                    and not (_agent_sess and _agent_sess.has_running_terminal_job())
                 ):
+                    # 直接触发但空回复：只记录，不再自动补跑第二轮。
+                    # prompt 层的"必须回复"规则是防沉默的正解；整轮纠正重试
+                    # 是双发放大器（送达检测一旦有洞，单发变双发）且白费一倍 LLM 调用。
                     record_robot_event(
                         str(job.robot_id),
                         direction="backend_worker",
-                        event="dispatch_empty_reply_retry",
+                        event="dispatch_empty_reply_direct_trigger",
+                        status="ignored",
                         payload={
                             "item_id": str(job.item_id),
                             "conversation": job.conversation_key,
@@ -820,78 +838,18 @@ class RobotService:
                         },
                     )
                     logger.info(
-                        "[RobotService] Empty reply for direct trigger robot=%s raw=%r; retrying once with corrective note",
+                        "[RobotService] Empty reply for direct trigger robot=%s raw=%r (no corrective retry)",
                         job.robot_id,
                         preview_text(response.content, limit=200),
                     )
-                    retry_message = (
-                        "[Internal corrective turn]\n"
-                        f"（对方在直接问你：{job.message_text or job.message}。"
-                        "用你自己的口气回一句就行，别不理人。）"
-                    )
-                    remaining_timeout = (
-                        settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS
-                        - (time.monotonic() - job_started_at)
-                    )
-                    if remaining_timeout <= 30:
-                        logger.info(
-                            "[RobotService] Skip corrective retry for robot=%s: no time budget left (%.1fs)",
-                            job.robot_id,
-                            remaining_timeout,
-                        )
-                    else:
-                        try:
-                            response = asyncio.run(
-                                asyncio.wait_for(
-                                    self._chat_with_item(
-                                        session=session,
-                                        robot=robot,
-                                        item=item,
-                                        message=retry_message,
-                                        sender_key=job.sender_key,
-                                        reply_target=job.reply_target,
-                                        conversation_key=job.conversation_key,
-                                        conversation_generation=job.conversation_generation,
-                                        reply_requires_awake=job.reply_requires_awake,
-                                        reply_ticket_id=job.reply_ticket_id,
-                                        request_message=self._job_request_display(job),
-                                    ),
-                                    timeout=remaining_timeout,
-                                )
-                            )
-                        except TimeoutError:
-                            record_robot_event(
-                                str(job.robot_id),
-                                direction="backend_worker",
-                                event="dispatch_job_timeout",
-                                status="error",
-                                payload={
-                                    "item_id": str(job.item_id),
-                                    "route_key": job.route_key,
-                                    "timeout_seconds": settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS,
-                                },
-                            )
-                            self._record_job_timeout_silent(
-                                job,
-                                f"corrective retry exceeded {settings.ROBOT_BACKEND_JOB_TIMEOUT_SECONDS}s",
-                            )
-                            self._enqueue_pending_chat_followup(
-                                robot=robot,
-                                conversation_key=job.conversation_key,
-                            )
-                            return
-                        response_text = self._visible_agent_response_text(response)
-                        robot_message_sent = response.robot_message_sent
-                        if not response_text and not robot_message_sent:
-                            logger.warning(
-                                "[RobotService] Corrective retry still empty for robot=%s raw=%r",
-                                job.robot_id,
-                            preview_text(response.content, limit=300),
-                        )
                 if response_text and not robot_message_sent:
-                    robot_message_sent = self._send_visible_agent_response(
-                        job,
-                        response_text,
+                    # 最终文本不再由系统代发到 QQ：回复的唯一出口是
+                    # mcp_robot_send_message，契约干净、结构上不可能双发。
+                    # 模型没调工具的回复只进 web 聊天历史。
+                    logger.info(
+                        "[RobotService] Final text without tool send is NOT auto-delivered: robot=%s text=%r",
+                        job.robot_id,
+                        preview_text(response_text, limit=200),
                     )
                 self._apply_reply_context_result(
                     robot,
@@ -949,6 +907,7 @@ class RobotService:
                     )
             except RobotServiceError as exc:
                 self._record_and_send_job_error(job, exc.message)
+                self._release_processing_hold(robot.id, job.conversation_key)
                 self._enqueue_pending_chat_followup(
                     robot=robot,
                     conversation_key=job.conversation_key,
@@ -959,6 +918,7 @@ class RobotService:
                     exc.detail if isinstance(exc.detail, str) else "Robot dispatch failed"
                 )
                 self._record_and_send_job_error(job, detail)
+                self._release_processing_hold(robot.id, job.conversation_key)
                 self._enqueue_pending_chat_followup(
                     robot=robot,
                     conversation_key=job.conversation_key,
@@ -973,6 +933,7 @@ class RobotService:
                     job,
                     str(exc) or "Robot dispatch failed.",
                 )
+                self._release_processing_hold(robot.id, job.conversation_key)
                 self._enqueue_pending_chat_followup(
                     robot=robot,
                     conversation_key=job.conversation_key,
@@ -1301,12 +1262,21 @@ class RobotService:
             "ls",
         }:
             return self._binding_listing_response(session, robot, message, conversation_key)
-        self._remember_inbound_conversation_memory(
-            robot,
-            message,
-            conversation_key,
-            self._agent_visible_message_text(text),
+        # 会被并入排队（忙+唤醒窗内）的消息先不写 .log：否则在跑的轮次
+        # 会通过实况上下文/读 .log 看到"未回答的问题"并提前回答，
+        # 跟进轮次再答一遍 → 重复回复。排队条目在跟进轮次派发时才落 .log。
+        will_park_pending = bool(
+            command.mode == "chat"
+            and reply_context_active
+            and self.conversation_has_active_dispatch(robot.id, conversation_key)
         )
+        if not will_park_pending:
+            self._remember_inbound_conversation_memory(
+                robot,
+                message,
+                conversation_key,
+                self._agent_visible_message_text(text),
+            )
         if self._message_requests_conversation_sleep(command_parse_text) and (
             direct_reply_trigger or reply_context_active or controller_gate.sleeping
         ):
@@ -1432,6 +1402,9 @@ class RobotService:
                     ),
                 )
             message_text = self._agent_visible_message_text(message_text)
+            inbound_image_urls = self._cache_inbound_images(message.text)
+            if not message_text and inbound_image_urls:
+                message_text = "[图片]"
             if not message_text:
                 record_robot_event(
                     str(robot.id),
@@ -1485,6 +1458,7 @@ class RobotService:
                     sender_label=self._sender_memory_label(message),
                     trigger_reason=trigger_reason,
                     reply_target=message.reply_target,
+                    image_urls=inbound_image_urls,
                 )
                 record_robot_event(
                     str(robot.id),
@@ -1534,6 +1508,12 @@ class RobotService:
                 trigger_reason=trigger_reason,
                 inbound_message=message.model_copy(deep=True),
                 enqueued_at=self._now(),
+                image_urls=inbound_image_urls,
+                agent_image_urls=(
+                    inbound_image_urls
+                    if self._image_recognition_enabled(robot)
+                    else []
+                ),
             )
             if not self._enqueue_chat_job(queued_job):
                 self._clear_reply_context_window_for_key(
@@ -1726,6 +1706,7 @@ class RobotService:
         sender_label: str,
         trigger_reason: str,
         reply_target: RobotReplyTarget,
+        image_urls: list[str] | None = None,
     ) -> int:
         entry = PendingRobotChatInput(
             item_id=item_id,
@@ -1736,11 +1717,40 @@ class RobotService:
             trigger_reason=trigger_reason or "active_chat_window",
             reply_target=reply_target.model_copy(deep=True),
             enqueued_at=self._now(),
+            image_urls=tuple(image_urls or ()),
         )
         _scope_item, scope_key = self._pending_chat_scope(robot.id, conversation_key)
         pending_size, evicted = input_merge_buffer.add(
             self._chat_input_to_merge_entry(entry, scope_key)
         )
+
+        # 排队的消息也立即写进聊天历史（带图片标记）：前端能完整看到
+        # 用户发了什么，而不是只有被直接派发的那一条。
+        try:
+            from app.services.agent.history.chat import append_chat_message
+            from app.services.agent.stream_manager import stream_manager
+
+            display_parts = [entry.message_text] if entry.message_text.strip() else []
+            display_parts.extend(f"![图片]({url})" for url in entry.image_urls)
+            display_content = "\n".join(display_parts) or "[空消息]"
+            history_event = append_chat_message(
+                str(item_id),
+                role="user",
+                content=display_content,
+                message_type="qq_user",
+                extra={
+                    "sender_key": entry.sender_key,
+                    "sender_label": entry.sender_label,
+                    "source": "qq",
+                    "pending": True,
+                },
+            )
+            stream_manager.broadcast_chat_event(str(item_id), history_event)
+        except Exception:
+            logger.exception(
+                "[RobotService] Failed to persist pending chat input: item=%s",
+                item_id,
+            )
 
         if evicted:
             record_robot_event(
@@ -1901,51 +1911,11 @@ class RobotService:
             )
             index += 1
         lines.append(
-            "Messages from the same sender are one evolving intent: use earlier lines only as context and answer that sender once based on the latest unresolved request. "
-            "If multiple distinct senders each asked the bot something, answer each sender once in order. Default to one concise QQ bubble; use separate messages only for those distinct senders."
+            "每条内容不同的消息都是独立问题，逐条各答一次（如 1+1、2+2 要分别回答）；"
+            "同一内容重复的才算同一条，只答一次。"
+            "If multiple distinct senders each asked the bot something, answer each sender once in order. Default to one concise QQ bubble per question."
         )
         return "\n".join(lines)
-
-    def _filter_superseded_user_instructions(
-        self,
-        robot: Robot,
-        conversation_key: str,
-        entries: list[PendingRobotChatInput],
-    ) -> list[PendingRobotChatInput]:
-        """Latest-instruction-wins: when several user messages queue up, only
-        the newest one per sender is a live instruction. Older ones are
-        superseded — they stay visible via live context, but no turn is
-        spent on them (rapid conflicting instructions no longer cause
-        backlog thrash). Job callbacks and ticket entries always survive."""
-        newest_index_by_sender: dict[str, int] = {}
-        for index, entry in enumerate(entries):
-            if entry.trigger_reason in USER_INSTRUCTION_TRIGGER_REASONS:
-                newest_index_by_sender[entry.sender_key] = index
-        if not newest_index_by_sender:
-            return entries
-        kept: list[PendingRobotChatInput] = []
-        dropped = 0
-        for index, entry in enumerate(entries):
-            if (
-                entry.trigger_reason in USER_INSTRUCTION_TRIGGER_REASONS
-                and newest_index_by_sender.get(entry.sender_key) != index
-            ):
-                dropped += 1
-                continue
-            kept.append(entry)
-        if dropped:
-            record_robot_event(
-                str(robot.id),
-                direction="backend_queue",
-                event="pending_chat_superseded_drop",
-                status="ignored",
-                payload={
-                    "conversation": conversation_key,
-                    "dropped": dropped,
-                    "kept": len(kept),
-                },
-            )
-        return kept
 
     def _enqueue_pending_chat_followup(
         self,
@@ -1961,11 +1931,6 @@ class RobotService:
             if visible_text
             and (not direct_wakeup_only or self._pending_chat_entry_is_direct_wakeup(entry))
         ]
-        entries = self._filter_superseded_user_instructions(
-            robot,
-            conversation_key,
-            entries,
-        )
         if not entries:
             return False
 
@@ -1981,6 +1946,11 @@ class RobotService:
             entries,
             conversation_key=conversation_key,
         )
+        batch_image_urls: list[str] = []
+        for entry in entries:
+            for url in entry.image_urls:
+                if url not in batch_image_urls:
+                    batch_image_urls.append(url)
         live_context_card = self._recent_live_context_card(
             robot=robot,
             conversation_key=conversation_key,
@@ -2021,6 +1991,7 @@ class RobotService:
             composed_message=composed_message,
             batch_text=batch_text,
             conversation_generation=conversation_generation,
+            image_urls=batch_image_urls,
         )
         if not dispatched:
             self._prepend_pending_chat_inputs(robot.id, conversation_key, entries)
@@ -2056,6 +2027,21 @@ class RobotService:
                 "queue": self.dispatch_queue_snapshot(),
             },
         )
+        # 排队条目在派发成功后才落 .log（入站时故意没写）：在跑的轮次不会把
+        # 它们当成"未回答的问题"提前回答，跟进轮次独占回答权；失败重排不重复写。
+        for entry in entries:
+            try:
+                robot_conversation_memory.append_user_message(
+                    robot.id,
+                    conversation_key,
+                    entry.message_text,
+                    sender=entry.sender_label or entry.sender_key,
+                )
+            except Exception:
+                logger.debug(
+                    "[RobotService] Failed to write pending entry to conversation memory",
+                    exc_info=True,
+                )
         return True
 
     def _dispatch_pending_batch_to_session_queue(
@@ -2068,6 +2054,7 @@ class RobotService:
         composed_message: str,
         batch_text: str,
         conversation_generation: int,
+        image_urls: list[str] | None = None,
     ) -> bool:
         """Feed the merged pending batch into the item's system input queue.
 
@@ -2140,6 +2127,8 @@ class RobotService:
                     query=latest.message_text,
                     reply_ticket_id=ticket.ticket_id,
                     source_label=f"QQ {conversation_key}",
+                    image_urls=list(image_urls or []),
+                    force_image_vision=self._image_recognition_enabled(robot),
                 )
             )
             return True
@@ -2162,7 +2151,7 @@ class RobotService:
     ) -> str:
         if not conversation_key:
             return ""
-        line_budget, strategy, hint = self._recent_live_context_budget(
+        line_budget, _strategy, _hint = self._recent_live_context_budget(
             current_message_text,
             trigger_reason=trigger_reason,
             requested_lines=lines,
@@ -2207,11 +2196,10 @@ class RobotService:
         if not recent_lines:
             return ""
         return (
-            "[Recent QQ live context; background only, progressive budget, "
-            "answer only current/pending messages]\n"
-            f"- context_budget: {strategy}; latest {line_budget} line(s) only\n"
-            f"- context_hint: {hint}\n"
-            "- context_rule: use only evidence from this QQ conversation. If the current short message is still ambiguous, call `mcp_robot_read_conversation_memory` once; if it remains unclear, ask one brief clarification instead of guessing or inventing a correction.\n"
+            "[Recent QQ live context; latest "
+            f"{line_budget} line(s), background only; answer only current/pending "
+            "messages; unclear → call `mcp_robot_read_conversation_memory` once, "
+            "still unclear → ask one brief clarification]\n"
             + "\n".join(recent_lines)
         )
 
@@ -2772,6 +2760,46 @@ class RobotService:
             return max(0, int(raw_value if raw_value is not None else DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS))
         except (TypeError, ValueError):
             return max(0, DEFAULT_REPLY_CONTEXT_WINDOW_SECONDS)
+
+    def _image_recognition_enabled(self, robot: Robot) -> bool:
+        """图识开关：开启后，被触发的消息里附带的图片会下载并传给多模态模型。"""
+        config = robot.config if isinstance(robot.config, dict) else {}
+        options = config.get("options") if isinstance(config.get("options"), dict) else {}
+        raw_value = options.get("image_recognition")
+        if isinstance(raw_value, bool):
+            return raw_value
+        return str(raw_value or "").strip().lower() in {"1", "true", "yes", "on", "启用", "开"}
+
+    def _cache_inbound_images(self, text: str) -> list[str]:
+        """入站图片立即下载落盘（NapCat 的 url 会过期且对浏览器防盗链），
+        返回本地公开路径列表，用于历史展示与（开关开启时）喂给模型。"""
+        urls = self._extract_cq_image_urls(text)
+        if not urls:
+            return []
+        from .image_store import public_image_path, store_image_from_url
+
+        cached: list[str] = []
+        for url in urls:
+            name = store_image_from_url(url)
+            if name:
+                cached.append(public_image_path(name))
+        return cached
+
+    @staticmethod
+    def _extract_cq_image_urls(text: str) -> list[str]:
+        """从 raw_message 的 [CQ:image,...,url=...] 段提取图片地址。
+        CQ 码参数按规范做了 HTML 转义（& -> &amp;），需要反转义还原真实 URL。"""
+        import html as _html
+
+        urls: list[str] = []
+        for match in re.finditer(r"\[CQ:image,([^\]]*)\]", str(text or "")):
+            params = match.group(1)
+            url_match = re.search(r"(?:^|,)url=([^,\]]+)", params)
+            if url_match:
+                url = _html.unescape(url_match.group(1).strip())
+                if url.startswith(("http://", "https://")):
+                    urls.append(url)
+        return urls
 
     def _wake_words(self, robot: Robot) -> list[str]:
         config = robot.config if isinstance(robot.config, dict) else {}
@@ -3889,16 +3917,9 @@ class RobotService:
         if sender_id and sender_id != display_name:
             sender_label = f"{display_name} ({sender_id})"
 
-        return "\n".join(
-            [
-                "[Current QQ sender; authoritative for this turn]",
-                f"- sender: {sender_label}",
-                (
-                    "- first_person_rule: In [Current QQ message], "
-                    f"'我/我的/我是谁' refers to {sender_label}, not the bot "
-                    "or another person from recent context."
-                ),
-            ]
+        return (
+            f"[Current QQ sender: {sender_label}; 本条消息里的"
+            "“我/我的/我是谁”都指这个人，不指你或上下文其他人]"
         )
 
     def _agent_reply_reference_context_card(
@@ -3965,21 +3986,6 @@ class RobotService:
         if not bot_self_ids:
             return ""
 
-        mentioned_self = self._message_mentions_bot_self_id(message)
-        replied_to_self = bool(message.reply_target.metadata.get("replied_to_bot"))
-        private_chat = self._conversation_message_type(message) == REPLY_MESSAGE_TYPE_PRIVATE
-        addressed_to_bot = private_chat or mentioned_self or replied_to_self
-        if trigger_reason:
-            reason = trigger_reason
-        elif replied_to_self:
-            reason = "reply_to_bot"
-        elif mentioned_self:
-            reason = "mention_bot"
-        elif private_chat:
-            reason = "private_chat"
-        else:
-            reason = "none"
-
         self_id_label = ", ".join(bot_self_ids)
         bot_identity = message.reply_target.metadata.get("bot_identity")
         bot_identity = bot_identity if isinstance(bot_identity, dict) else {}
@@ -3997,15 +4003,9 @@ class RobotService:
             identity_lines.append(f"- QQ display name: {display_name} (this name is you)")
         if aliases:
             identity_lines.append(f"- known QQ names: {', '.join(dict.fromkeys(aliases))}")
-        identity_lines.extend(
-            [
-                f"- addressed_to_bot: {str(addressed_to_bot).lower()}",
-                f"- direct_reason: {reason}",
-                f"- mentioned_self: {str(mentioned_self).lower()}",
-                f"- replied_to_self: {str(replied_to_self).lower()}",
-                "- identity_rule: QQ mentions/replies to this self_id are addressing you; "
-                "an @ segment showing this QQ display name also refers to you.",
-            ]
+        identity_lines.append(
+            "- identity_rule: @/回复指向上述 self_id 或名字就是在叫你；"
+            "是否直接叫你由消息头的 trigger 字段给出，不要再猜。"
         )
         return "\n".join(identity_lines)
 
@@ -4145,6 +4145,9 @@ class RobotService:
         reply_requires_awake: bool = False,
         reply_ticket_id: str = "",
         request_message: str = "",
+        image_urls: list[str] | None = None,
+        force_image_vision: bool = False,
+        agent_image_urls: list[str] | None = None,
     ) -> ChatResponseResult:
         owner = session.get(User, robot.owner_id)
         if owner is None:
@@ -4165,6 +4168,9 @@ class RobotService:
                 reply_ticket_id=reply_ticket_id,
                 robot_request_message=request_message,
                 return_result=True,
+                image_urls=image_urls,
+                force_image_vision=force_image_vision,
+                agent_image_urls=agent_image_urls,
             )
             if isinstance(result, ChatResponseResult):
                 return result

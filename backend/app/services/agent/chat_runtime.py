@@ -142,6 +142,9 @@ async def _collect_chat_response_unserialized(
     return_result: bool = False,
     prepared: tuple[ItemHandler, Item] | None = None,
     prepared_agent: tuple[ItemHandler, Item, Agent] | None = None,
+    image_urls: list[str] | None = None,
+    force_image_vision: bool = False,
+    agent_image_urls: list[str] | None = None,
 ) -> str | ChatResponseResult:
     from app.api.routes.chat import generate_stream
 
@@ -190,6 +193,9 @@ async def _collect_chat_response_unserialized(
             source_type="qq" if integration_contexts else "web",
             reply_ticket_id=reply_ticket_id,
             turn_serialized=True,
+            image_urls=image_urls,
+            force_image_vision=force_image_vision,
+            agent_image_urls=agent_image_urls,
         ):
             if not chunk.startswith("data: "):
                 continue
@@ -298,6 +304,9 @@ async def collect_chat_response(
     robot_request_message: str = "",
     reply_ticket_id: str = "",
     return_result: bool = False,
+    image_urls: list[str] | None = None,
+    force_image_vision: bool = False,
+    agent_image_urls: list[str] | None = None,
 ) -> str | ChatResponseResult:
     from app.services.agent.turn_coordinator import (
         agent_turn_coordinator,
@@ -337,6 +346,9 @@ async def collect_chat_response(
             return_result=return_result,
             prepared=prepared,
             prepared_agent=prepared_agent,
+            image_urls=image_urls,
+            force_image_vision=force_image_vision,
+            agent_image_urls=agent_image_urls,
         )
     finally:
         lease.release()

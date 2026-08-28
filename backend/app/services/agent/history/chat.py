@@ -27,6 +27,12 @@ SUMMARY_REFRESH_CHAR_DELTA = 600
 SUMMARY_MAX_SECTION_ITEMS = 2
 SUMMARY_MAX_ITEM_LENGTH = 120
 
+# 历史硬上限：terminal_output 每 ~1.2s 追加一条，无上限会让 sqlite JSON
+# 无限膨胀，每轮全量读+解析+写回形成 GB 级内存churn。摘要消息保留旧上下文。
+HISTORY_MAX_MESSAGES = 200
+HISTORY_MAX_CHARS = 262_144
+TERMINAL_OUTPUT_MAX_CHARS = 4_000
+
 
 def _get_or_create_chat_session(session: Session, item_id: str) -> ItemChatSession:
     chat_session = session.exec(
@@ -84,11 +90,14 @@ def _get_summary_index(messages: list[dict[str, Any]]) -> int | None:
     return None
 
 
-def _get_summary_source_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _get_summary_source_messages(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     return [
         message
         for message in messages
-        if message.get("type") in SUMMARY_SOURCE_TYPES and str(message.get("content", "")).strip()
+        if message.get("type") in SUMMARY_SOURCE_TYPES
+        and str(message.get("content", "")).strip()
     ]
 
 
@@ -122,10 +131,17 @@ def _collect_summary_section(
 
 def _build_session_summary_content(messages: list[dict[str, Any]]) -> str:
     goal_items = _collect_summary_section(messages, allowed_types={"chat_user"})
-    terminal_items = _collect_summary_section(messages, allowed_types={"terminal_output"})
+    terminal_items = _collect_summary_section(
+        messages, allowed_types={"terminal_output"}
+    )
     result_items = _collect_summary_section(
         messages,
-        allowed_types={"agent_response", "agent_warning", "agent_error", "chat_assistant"},
+        allowed_types={
+            "agent_response",
+            "agent_warning",
+            "agent_error",
+            "chat_assistant",
+        },
     )
 
     sections: list[str] = ["当前共享会话摘要"]
@@ -152,7 +168,10 @@ def _build_session_summary_message(
     source_count = len(source_messages)
     source_chars = _get_total_source_chars(source_messages)
 
-    if source_count < SUMMARY_MIN_MESSAGE_COUNT and source_chars < SUMMARY_MIN_CHAR_COUNT:
+    if (
+        source_count < SUMMARY_MIN_MESSAGE_COUNT
+        and source_chars < SUMMARY_MIN_CHAR_COUNT
+    ):
         return None
 
     content = _build_session_summary_content(source_messages)
@@ -209,6 +228,43 @@ def _apply_session_summary(messages: list[dict[str, Any]]) -> list[dict[str, Any
     return [next_summary, *messages_without_summary]
 
 
+def _truncate_terminal_output_message(message: dict[str, Any]) -> dict[str, Any]:
+    if message.get("type") != "terminal_output":
+        return message
+    content = str(message.get("content", ""))
+    if len(content) <= TERMINAL_OUTPUT_MAX_CHARS:
+        return message
+    return {**message, "content": content[:TERMINAL_OUTPUT_MAX_CHARS].rstrip() + "\n…"}
+
+
+def _enforce_history_caps(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    summary_messages = [
+        message for message in messages if message.get("type") == SESSION_SUMMARY_TYPE
+    ][:1]
+    rest = [
+        message for message in messages if message.get("type") != SESSION_SUMMARY_TYPE
+    ]
+
+    kept: list[dict[str, Any]] = []
+    total_chars = 0
+    for message in reversed(rest):
+        content_chars = len(str(message.get("content", "")))
+        if kept and (
+            len(kept) >= HISTORY_MAX_MESSAGES
+            or total_chars + content_chars > HISTORY_MAX_CHARS
+        ):
+            break
+        kept.append(message)
+        total_chars += content_chars
+    kept.reverse()
+    return [*summary_messages, *kept]
+
+
+def _finalize_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    summarized = _apply_session_summary(messages)
+    return _enforce_history_caps(summarized)
+
+
 def append_chat_message(
     item_id: str,
     *,
@@ -232,14 +288,18 @@ def append_chat_message(
     with Session(engine) as session:
         chat_session = _get_or_create_chat_session(session, item_id)
         existing_messages = list(chat_session.messages or [])
-        chat_session.messages = _apply_session_summary([*existing_messages, message])
+        chat_session.messages = _finalize_messages(
+            [*existing_messages, _truncate_terminal_output_message(message)]
+        )
         session.add(chat_session)
         session.commit()
 
     return message
 
 
-def append_chat_messages(item_id: str, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def append_chat_messages(
+    item_id: str, messages: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     if not messages:
         return []
 
@@ -249,7 +309,11 @@ def append_chat_messages(item_id: str, messages: list[dict[str, Any]]) -> list[d
             content=str(message.get("content", "")),
             message_type=message.get("type"),
             timestamp=message.get("timestamp"),
-            extra={key: value for key, value in message.items() if key not in {"role", "content", "type", "timestamp"}},
+            extra={
+                key: value
+                for key, value in message.items()
+                if key not in {"role", "content", "type", "timestamp"}
+            },
         )
         for message in messages
     ]
@@ -257,8 +321,11 @@ def append_chat_messages(item_id: str, messages: list[dict[str, Any]]) -> list[d
     with Session(engine) as session:
         chat_session = _get_or_create_chat_session(session, item_id)
         existing_messages = list(chat_session.messages or [])
-        chat_session.messages = _apply_session_summary(
-            [*existing_messages, *normalized_messages]
+        chat_session.messages = _finalize_messages(
+            [
+                *existing_messages,
+                *[_truncate_terminal_output_message(m) for m in normalized_messages],
+            ]
         )
         session.add(chat_session)
         session.commit()
@@ -266,21 +333,27 @@ def append_chat_messages(item_id: str, messages: list[dict[str, Any]]) -> list[d
     return normalized_messages
 
 
-def replace_chat_messages(item_id: str, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def replace_chat_messages(
+    item_id: str, messages: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     normalized_messages = [
         _normalize_message(
             role=message.get("role"),
             content=str(message.get("content", "")),
             message_type=message.get("type"),
             timestamp=message.get("timestamp"),
-            extra={key: value for key, value in message.items() if key not in {"role", "content", "type", "timestamp"}},
+            extra={
+                key: value
+                for key, value in message.items()
+                if key not in {"role", "content", "type", "timestamp"}
+            },
         )
         for message in messages
     ]
 
     with Session(engine) as session:
         chat_session = _get_or_create_chat_session(session, item_id)
-        chat_session.messages = _apply_session_summary(normalized_messages)
+        chat_session.messages = _finalize_messages(normalized_messages)
         session.add(chat_session)
         session.commit()
 

@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 
 import sentry_sdk
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from starlette.middleware.cors import CORSMiddleware
 
@@ -70,6 +72,22 @@ app = FastAPI(
     generate_unique_id_function=custom_generate_unique_id,
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    try:
+        body = await request.body()
+        logger.error(
+            "[422] %s %s errors=%s body=%s",
+            request.method,
+            request.url.path,
+            exc.errors(),
+            body[:2000],
+        )
+    except Exception:
+        logger.error("[422] %s %s errors=%s", request.method, request.url.path, exc.errors())
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 # Set all CORS enabled origins
 if settings.ENVIRONMENT == "local":

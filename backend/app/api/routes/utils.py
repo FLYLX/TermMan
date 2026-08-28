@@ -76,6 +76,17 @@ async def health_check() -> bool:
     return True
 
 
+@router.get("/version/")
+async def version() -> dict:
+    try:
+        from importlib.metadata import version as pkg_version
+
+        app_version = pkg_version("termpaws-backend")
+    except Exception:
+        app_version = "dev"
+    return {"version": app_version}
+
+
 @router.get("/mem-snapshot/")
 async def mem_snapshot():
     import gc, resource, types, collections
@@ -166,6 +177,194 @@ async def malloc_test():
     except Exception as exc:
         mi = {"err": str(exc)}
     return {"rss_before_mb": round(before/1024,1), "rss_after_mb": round(after/1024,1), "rss_freed_mb": round((before-after)/1024,1), "malloc_trim_return": trimmed, "threads": th, "mallinfo": mi}
+
+@router.get("/mem-debug/")
+async def mem_debug() -> dict:
+    """综合内存诊断：分配器状态、jemalloc 统计、smaps 构成、最大匿名映射、
+    embedding 模型状态、数据文件大小。"""
+    import ctypes
+    import gc
+    import glob
+    import os
+    import tracemalloc
+
+    out: dict = {}
+
+    def _read(path: str) -> str:
+        try:
+            with open(path, errors="replace") as f:
+                return f.read()
+        except Exception:
+            return ""
+
+    env_raw = open("/proc/self/environ", "rb").read().replace(b"\0", b"\n").decode(errors="replace")
+    out["allocator_env"] = [
+        line
+        for line in env_raw.splitlines()
+        if line.startswith(("MALLOC_CONF", "PYTHONMALLOC", "LD_PRELOAD", "EMBEDDING_MODEL_NAME"))
+    ]
+    maps = _read("/proc/self/maps")
+    out["jemalloc_loaded"] = "libjemalloc" in maps
+
+    try:
+        lib = ctypes.CDLL(None)
+        mallctl = lib.mallctl
+        epoch = ctypes.c_size_t(0)
+        esz = ctypes.c_size_t(ctypes.sizeof(epoch))
+        mallctl(b"epoch", ctypes.byref(epoch), ctypes.byref(esz), ctypes.byref(epoch), esz)
+        mb = 1048576
+        stats = {}
+        for name in (
+            "stats.allocated",
+            "stats.active",
+            "stats.resident",
+            "stats.retained",
+            "stats.mapped",
+        ):
+            val = ctypes.c_size_t(0)
+            sz = ctypes.c_size_t(ctypes.sizeof(val))
+            if mallctl(name.encode(), ctypes.byref(val), ctypes.byref(sz), None, 0) == 0:
+                stats[name.split(".")[1] + "_mb"] = round(val.value / mb, 1)
+        out["jemalloc"] = stats
+    except AttributeError:
+        out["jemalloc"] = None
+
+    rollup = _read("/proc/self/smaps_rollup")
+    out["smaps_rollup"] = {
+        k: int(v.split()[0]) // 1024
+        for line in rollup.splitlines()
+        if ":" in line and line.split(":")[0] in {"Rss", "Pss", "Anonymous", "Private_Clean", "Private_Dirty", "Shared_Clean", "Shared_Dirty"}
+        for k, v in [line.split(":")]
+    }
+
+    big_regions = []
+    cur: dict = {}
+    for line in _read("/proc/self/smaps").splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        if "-" in parts[0] and len(parts) >= 5 and all(c in "0123456789abcdef-" for c in parts[0]):
+            if cur.get("rss", 0) >= 16 * 1024:
+                big_regions.append(cur)
+            perms = parts[1] if len(parts) > 1 else ""
+            name = parts[-1] if len(parts) >= 6 else ""
+            cur = {"perms": perms, "name": name, "rss": 0, "anon": 0}
+        elif line.startswith("Rss:"):
+            cur["rss"] = int(parts[1])
+        elif line.startswith("Anonymous:"):
+            cur["anon"] = int(parts[1])
+    if cur.get("rss", 0) >= 16 * 1024:
+        big_regions.append(cur)
+    big_regions.sort(key=lambda r: -r["rss"])
+    out["top_regions"] = [
+        {"rss_mb": round(r["rss"] / 1024, 1), "anon_mb": round(r["anon"] / 1024, 1), "perms": r["perms"], "name": r["name"][:80]}
+        for r in big_regions[:15]
+    ]
+
+    gc.collect()
+    out["gc_objects"] = len(gc.get_objects())
+    if tracemalloc.is_tracing():
+        cur_tm, peak_tm = tracemalloc.get_traced_memory()
+        out["tracemalloc_mb"] = {"current": round(cur_tm / 1048576, 1), "peak": round(peak_tm / 1048576, 1)}
+    out["threads"] = len(glob.glob("/proc/self/task/*"))
+
+    try:
+        from app.core.config import settings
+
+        out["embedding_model_name"] = settings.EMBEDDING_MODEL_NAME
+    except Exception as exc:
+        out["embedding_model_name"] = f"err:{exc}"
+    try:
+        from app.services.agent.memory.vector_store import EmbeddingService
+
+        svc = EmbeddingService()
+        out["embedding_loaded"] = svc._model is not None
+        out["embedding_load_error"] = svc._load_error
+    except Exception as exc:
+        out["embedding_loaded"] = f"err:{exc}"
+
+    try:
+        from app.core.config import settings as _s
+
+        data_files = {}
+        for path in (
+            os.environ.get("SQLITE_DATABASE_URL", "").replace("sqlite:///", ""),
+            _s.CHROMA_PERSIST_DIR,
+            os.environ.get("AGENT_STATE_STORE_PATH", ""),
+            os.environ.get("ROBOT_CONVERSATION_MEMORY_DIR", ""),
+        ):
+            if not path:
+                continue
+            try:
+                if os.path.isfile(path):
+                    data_files[path] = round(os.path.getsize(path) / 1048576, 1)
+                elif os.path.isdir(path):
+                    total = sum(
+                        os.path.getsize(os.path.join(dp, f))
+                        for dp, _, fns in os.walk(path)
+                        for f in fns
+                    )
+                    data_files[path + "/"] = round(total / 1048576, 1)
+            except Exception:
+                pass
+        out["data_files_mb"] = data_files
+    except Exception as exc:
+        out["data_files_mb"] = f"err:{exc}"
+
+    return out
+
+
+@router.get("/jemalloc-stats/")
+async def jemalloc_stats():
+    """jemalloc mallctl 统计：allocated=活跃分配，retained=已释放但未归还 OS。
+    retained 远大于 allocated 说明 decay 未生效。"""
+    import ctypes
+
+    def vmrss_kb():
+        try:
+            for line in open("/proc/self/status"):
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1])
+        except Exception:
+            return -1
+        return -1
+
+    mb = 1024 * 1024
+    out = {"rss_mb": round(vmrss_kb() / 1024, 1), "jemalloc": False}
+    try:
+        lib = ctypes.CDLL(None)
+        mallctl = lib.mallctl
+    except AttributeError:
+        return out
+    out["jemalloc"] = True
+    try:
+        epoch = ctypes.c_size_t(0)
+        esz = ctypes.c_size_t(ctypes.sizeof(epoch))
+        mallctl(
+            b"epoch",
+            ctypes.byref(epoch),
+            ctypes.byref(esz),
+            ctypes.byref(epoch),
+            esz,
+        )
+    except Exception:
+        pass
+    for name in (
+        "stats.allocated",
+        "stats.active",
+        "stats.resident",
+        "stats.retained",
+        "stats.mapped",
+    ):
+        val = ctypes.c_size_t(0)
+        size = ctypes.c_size_t(ctypes.sizeof(val))
+        try:
+            if lib.mallctl(name.encode(), ctypes.byref(val), ctypes.byref(size), None, 0) == 0:
+                out[name.split(".")[1] + "_mb"] = round(val.value / mb, 1)
+        except Exception:
+            pass
+    return out
+
 
 @router.get("/gc-diff/")
 async def gc_diff(action: str = "diff", top: int = 30):

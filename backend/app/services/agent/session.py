@@ -18,6 +18,7 @@ from uuid import uuid4
 
 from litellm import completion
 
+from app.core.config import settings
 from app.core.tool_markup import extract_dsml_tool_calls
 from app.services.agent.agent import Agent, agent_manager
 from app.services.agent.history.chat import append_chat_message
@@ -68,11 +69,11 @@ from app.services.terminal_runtime_state import get_terminal_runtime_state
 
 logger = logging.getLogger(__name__)
 
-REQUEST_TIMEOUT = 120
+REQUEST_TIMEOUT = settings.CHAT_LLM_TIMEOUT_SECONDS
 MAX_ITERATIONS = 6
 LOOP_DETECTION_WINDOW = 8
 LOOP_THRESHOLD = 4
-MAX_QUEUE_SIZE = 100
+MAX_QUEUE_SIZE = 20
 MAX_TOOL_CALLS = 15
 MAX_REPEATED_LOG_READS = 2
 MAX_NO_PROGRESS_STEPS = 5
@@ -560,6 +561,8 @@ class InputMessage:
     # All reply routes merged into this input (ticket ids, in arrival order).
     # Set by _merge_input_batch; delivery fans out per route afterwards.
     merged_ticket_ids: tuple[str, ...] = ()
+    image_urls: list[str] = field(default_factory=list)
+    force_image_vision: bool = False
 
 
 @dataclass
@@ -2028,7 +2031,9 @@ class AgentSession:
                 except queue.Empty:
                     break
 
-            batch = [msg for msg in batch if not self._is_stale_input(msg)]
+            # 不按时间丢弃任何输入：队列上限（MAX_QUEUE_SIZE=20）就是唯一的
+            # 背压阀。终端刷屏由 _merge_terminal_queue_input 在入队时合并兜底，
+            # 用户消息无论排多久都必须被处理。
             if not batch:
                 with self.lock:
                     if self.input_queue.empty():
@@ -2058,13 +2063,6 @@ class AgentSession:
         """Legacy compat: wake the consumer."""
         self._wake_event.set()
 
-    def _is_stale_input(self, input_msg: InputMessage) -> bool:
-        if input_msg.input_type == InputType.SCHEDULED_TASK:
-            return False
-        if input_msg.reply_ticket_id:
-            return False
-        return (datetime.now() - input_msg.timestamp).total_seconds() > 60
-
     def _merge_input_batch(self, batch: list[InputMessage]) -> InputMessage:
         """Merge multiple queued inputs into a single InputMessage."""
         source_labels = {
@@ -2074,7 +2072,13 @@ class AgentSession:
         }
         sections: list[str] = []
         merged_ticket_ids: list[str] = []
+        merged_image_urls: list[str] = []
+        merged_force_vision = False
         for msg in batch:
+            for url in msg.image_urls:
+                if url not in merged_image_urls:
+                    merged_image_urls.append(url)
+            merged_force_vision = merged_force_vision or msg.force_image_vision
             label = msg.source_label or source_labels.get(
                 msg.input_type, msg.input_type.value
             )
@@ -2109,6 +2113,8 @@ class AgentSession:
             reply_ticket_id=primary_ticket,
             callback=last_callback,
             merged_ticket_ids=tuple(merged_ticket_ids),
+            image_urls=merged_image_urls,
+            force_image_vision=merged_force_vision,
         )
 
     def process_input(self, input_msg: InputMessage):
@@ -2688,23 +2694,6 @@ class AgentSession:
                             self.item_id,
                             qq_ticket.ticket_id,
                         )
-                try:
-                    from app.services.agent.integrations.hooks import (
-                        extract_integration_targets_from_text,
-                    )
-
-                    extract_integration_targets_from_text(
-                        item_id=str(self.item_id),
-                        user_message=str(input_msg.content or ""),
-                        final_text=turn_final_content,
-                        delivery_key=f"item:{self.item_id}",
-                    )
-                except Exception:
-                    logger.exception(
-                        "[AgentSession] Explicit QQ target backfill failed: item=%s",
-                        self.item_id,
-                    )
-
             _chat_loop_mgr.__exit__(None, None, None)
         except Exception as exc:
             _chat_loop_mgr.__exit__(*sys.exc_info())
@@ -2919,6 +2908,8 @@ class AgentSession:
             message=input_msg.content,
             query=input_msg.query or input_msg.content,
             pending_context=pending_context,
+            image_urls=input_msg.image_urls or None,
+            force_image_vision=input_msg.force_image_vision,
         )
         query = input_msg.query or input_msg.content
         # Always inject authoritative live terminal state (cheap daemon call);

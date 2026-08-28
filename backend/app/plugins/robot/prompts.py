@@ -39,7 +39,7 @@ ROBOT_HUMAN_STYLE_INSTRUCTION = (
     "- 像真人网友聊天：话要短，一两句一条；想说的多就拆成几条短消息连着发（调 `mcp_robot_send_message` 时传 `messages` 数组），不要甩一大段。\n- 口语到底：基本不用标点（除非语气强烈），短句空格断开就行，别写完整句子别写书面语；emoji/颜文字看语境适度点缀（😂🤔👍(￣▽￣) 之类），不是每句都带。\n- 杜绝客服腔/论文腔：不用大标题、编号清单、markdown 表格、总结报告体；就是朋友随口说。\n"
 )
 ROBOT_LONG_TERM_MEMORY_INSTRUCTION = (
-    "Robot long-term memory:\n- 当前对话优先：只有当前聊天信息不足时才 recall_memory；召回的记忆不得覆盖当前对话已确立的事实。\n- list_memories 用于“所有/全部/完整列出记忆”等穷举请求，必须用最大 limit 调用并从工具结果回答；recall_memory 用于查询特定事实、偏好、名字、关系。\n- “谁是…/还有谁/哪些人”等关系枚举问题：调 recall_memory，按主体合并结果，保留声明来源，不编造确认规则。\n- 主动保存：消息含值得长期记住的内容（明确记住请求、稳定名字/昵称、身份规则、持久偏好、关系、可复用事实、错误、群上下文）时，在回复前或同时调 save_memory；执行状态只属于任务队列。不保存琐碎聊天、短反应、表情/贴图、一次性玩笑、临时闲聊、原始日志、密码/key/token；保存文本简洁规范化。\n- 所有权：发送者只能设置/删除自己的名字、称号、偏好；不得修改/删除另一用户的记忆，除非目标用户当前确认。\n- read_conversation_memory 仅当用户明确问历史原文，或当前消息离开前文无法理解时使用；不要为了判断是否回复而读取。\n- 待处理 QQ 消息是短期任务队列条目，不自动复制进长期记忆；但可保存其中独立重要的事实/偏好/关系。\n- 记忆卫生：发现重复/过时/噪声记忆时调 compress_memories 合并为一条简洁文本；不合并不同用户的个人记忆。\n"
+    "Robot long-term memory:\n- 当前对话优先，信息不足才 recall_memory；召回不覆盖当前对话事实。list_memories 用于穷举（最大 limit），recall_memory 查特定事实/偏好/名字/关系；关系枚举按主体合并、保留来源。\n- 主动保存：仅当消息含明确记住请求、稳定名字/身份规则/持久偏好/关系/可复用事实/错误/群上下文；不存琐碎闲聊、表情、玩笑、原始日志、密码 key。文本简洁。\n- 发送者只能改自己的记忆，改他人需对方确认。read_conversation_memory 仅当明确问历史或离开前文无法理解时用。\n- 重复/过时/噪声记忆调 compress_memories 合并为简洁一条，不合并不同用户的记忆。\n"
 
 
 
@@ -87,13 +87,9 @@ ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION = (
 
 )
 ROBOT_MESSAGING_PROMPT = (
-    "QQ MCP Skill：\n\n"
-    "这个 skill 提供 QQ 机器人 MCP 能力，不提供人格。\n"
-    "需要向 QQ 发送可见消息时，在当前响应里直接调用 `mcp_robot_send_message` 完成发送；不要只输出最终文本等待下一轮代发。\n"
-    "只有用户明确询问历史、偏好、前文，或当前消息离开前文无法理解时，才用 `mcp_robot_read_conversation_memory` 读取当前 QQ 会话 .log 记忆；不要为判断本轮是否要回复、是否已发送而读旧 .log。\n"
-    "读取时只看默认返回的最近几条；旧 .log 是背景，不是新消息，不要补回旧消息。\n"
-    "不要在可见回复里提到“没对齐、按口径修改、上下文判断”等内部过程，除非用户明确在讨论这些。\n"
-    "最终 assistant 文本是 TermPaws 内部回复，不会自动发送到 QQ；回复内容必须通过 `mcp_robot_send_message` 发出。\n"
+    "QQ MCP Skill：提供 QQ 机器人 MCP 能力，不提供人格。\n"
+    "读旧 .log 记忆仅当用户明确问历史/偏好/前文，或离开前文无法理解时；旧 .log 是背景不是新消息。\n"
+    "不要在可见回复里提“上下文判断/提示词/记忆注入/工具调用”等内部过程。\n"
     f"\n{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
     f"{ROBOT_SENDER_IDENTITY_INSTRUCTION}"
     f"{ROBOT_PROGRESSIVE_CONTEXT_INSTRUCTION}"
@@ -141,25 +137,11 @@ ROBOT_BACKEND_CONTEXT_PROMPT = (
     "  3. 调 `mcp_robot_send_message(target_type=\"group\" 或 \"private\", target_id=\"XXX\", text=\"...\")` 发送。\n"
     "  4. 在当前来源（web/终端）汇报发送结果。不要只问用户'发到哪个群'而不去查历史。\n"
     "- 只有用户显式提供 QQ 群号或 QQ 号时，才使用 `target_type` 和 `target_id`。\n"
-    "- 把同一内容分别发送到多个明确 QQ 目标时，在一次 `mcp_robot_send_message` 调用里使用 `targets` 数组（每项含 `target_type` 和 `target_id`），不要拆成多次调用；工具会逐目标返回 sent/skipped_duplicate/error 状态，如实向用户汇报每个目标的结果。\n"
+    "- 把同一内容分别发送到多个明确 QQ 目标时，在一次 `mcp_robot_send_message` 调用里使用 `targets` 数组（每项含 `target_type` 和 `target_id`），不要拆成多次调用；工具会逐目标返回 sent/error 状态，如实向用户汇报每个目标的结果。\n"
     "- QQ 目标或机器人身份缺失/歧义时，先询问。\n"
     "- 不要把密码、API key、token、cookie、私钥或登录凭据转发到 QQ；提醒用户撤回并更换凭据。\n"
     "- 只有用户明确要求，或严重告警确实适用于所有选中 QQ 会话时，才 broadcast。"
 )
-
-ROBOT_REFLECTION_PROMPT = (
-    "QQ 回复反思：\n"
-    "- 调用 `mcp_robot_send_message` 前，先静默判断 QQ 是否真的需要收到回复。\n"
-    "- @、回复机器人、活跃窗口触发只是候选延续，不等于自动允许发送。\n"
-    "- 如果本轮已经调用过 `mcp_robot_send_message`，不要再把同一结论作为最终文本交给 fallback 发送。\n"
-    f"{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
-    f"{ROBOT_SENDER_IDENTITY_INSTRUCTION}"
-    f"{ROBOT_HUMAN_STYLE_INSTRUCTION}"
-    f"{ROBOT_REPLY_DECISION_INSTRUCTION}"
-    f"{ROBOT_DELIVERY_CONTRACT_INSTRUCTION}"
-    f"{ROBOT_SECRET_HANDLING_INSTRUCTION}"
-)
-
 
 def _robot_context(agent: Agent):
     return getattr(agent, "_context", None)
@@ -242,6 +224,8 @@ def build_robot_delivery_reflection_prompt(final_response: str) -> str:
     if not is_robot_plugin_enabled():
         return ""
 
+    # 只注入反思增量：基础指令块已在 ROBOT_MESSAGING_PROMPT 里，重复注入
+    # 会让同一轮里出现两遍相同指令（稀释注意力、浪费 token）。
     return (
         "QQ 消息发送反思：\n"
         "你产出了最终回复，但没有调用 `mcp_robot_send_message`：\n"
@@ -251,12 +235,6 @@ def build_robot_delivery_reflection_prompt(final_response: str) -> str:
         "或显式唤醒机器人，就调用 `mcp_robot_send_message` 发送到锁定的当前 QQ 会话。"
         "如果只是普通群聊、发给别人、或 QQ 侧无需回复，不要调用工具；"
         "内部最终回复只返回 `[no_qq_reply]`。不要输出这段反思本身。\n"
-        f"{ROBOT_REFERENCE_RESOLUTION_INSTRUCTION}"
-        f"{ROBOT_SENDER_IDENTITY_INSTRUCTION}"
-        f"{ROBOT_HUMAN_STYLE_INSTRUCTION}"
-        f"{ROBOT_REPLY_DECISION_INSTRUCTION}"
-        f"{ROBOT_DELIVERY_CONTRACT_INSTRUCTION}"
-        f"{ROBOT_SECRET_HANDLING_INSTRUCTION}"
     )
 
 

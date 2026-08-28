@@ -131,8 +131,9 @@ def _contains_robot_sleep_tool_execution(line: str) -> bool:
 def _is_robot_send_success_line(line: str) -> bool:
     return (
         line.startswith("Message sent to QQ ")
-        or line == "Message sent to current robot conversation."
+        or line.startswith("Message sent to current robot conversation.")
         or line.startswith("Broadcast sent to ")
+        or line.startswith("Multi-target QQ send to ")
     )
 
 

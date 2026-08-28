@@ -16,6 +16,7 @@ from litellm import completion
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, SessionDep
+from app.core.config import settings
 from app.core.tool_markup import extract_dsml_tool_calls
 from app.models import Item, ItemHandler
 from app.services.agent.agent import agent_manager
@@ -30,9 +31,7 @@ from app.services.agent.history.chat import (
 from app.services.agent.integrations import (
     extract_integration_context_targets,
     fallback_is_delivery_result,
-    get_delivery_retry_decision,
     record_integration_context_targets,
-    record_integration_delivery_correction,
 )
 from app.services.agent.memory.vector_store import vector_store
 from app.services.agent.pending_context import (
@@ -92,7 +91,7 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 3
 RETRY_DELAY = 1
-REQUEST_TIMEOUT = 120
+REQUEST_TIMEOUT = settings.CHAT_LLM_TIMEOUT_SECONDS
 MAX_ITERATIONS = 6
 LOOP_DETECTION_WINDOW = 6
 LOOP_THRESHOLD = 3
@@ -145,11 +144,13 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = []
+    images: list[str] = []
 
 
 class ChatStreamRequest(BaseModel):
     message: str
     history: list[ChatMessage] = []
+    images: list[str] = []
 
 
 def get_relevant_memories(
@@ -293,13 +294,24 @@ def _qq_display_text(text: str) -> str:
     """Raw QQ text for chat history / web UI display. The composed agent
     message ends with a `[Current QQ message]` marker; everything before it
     (sender cards, impression cards, live context) is model-only context.
+    [CQ:image] segments are rewritten as markdown images so the web UI can
+    render them inline.
     """
+    def _cq_image_to_markdown(match: re.Match) -> str:
+        params = match.group(1)
+        url_match = re.search(r"(?:^|,)url=([^,\]]+)", params)
+        if not url_match:
+            return "[图片]"
+        return f"![图片]({url_match.group(1).strip()})"
+
     marker = "[Current QQ message]"
     if marker in text:
         tail = text.rsplit(marker, 1)[1].strip()
         if tail:
-            return tail
-    return text.strip() or text
+            text = tail
+    else:
+        text = text.strip() or text
+    return re.sub(r"\[CQ:image,([^\]]*)\]", _cq_image_to_markdown, text)
 
 
 def _persist_and_broadcast_event(
@@ -439,6 +451,19 @@ def _complete_confirmed_external_delivery(ticket_id: str) -> bool:
     if not ticket:
         return True
     return reply_ticket_manager.mark_delivered(ticket_id)
+
+
+def _ticket_has_open_plan_steps(ticket_id: str) -> bool:
+    """票据的计划还有 pending/in_progress 步骤时，裸发送只是中间汇报，
+    不能提前结束本轮（剩余步骤仍需继续跑）。"""
+    ticket = reply_ticket_manager.get(ticket_id)
+    if not ticket or not ticket.plan:
+        return False
+    return any(
+        str(step.get("status") or "").strip().lower() in {"pending", "in_progress"}
+        for step in ticket.plan
+        if isinstance(step, dict)
+    )
 
 
 def _run_async_from_sync(coro_factory):
@@ -955,6 +980,9 @@ def _generate_stream_unserialized(
     latest_only_context: bool = False,
     source_type: str = SOURCE_WEB,
     reply_ticket_id: str = "",
+    image_urls: list[str] | None = None,
+    force_image_vision: bool = False,
+    agent_image_urls: list[str] | None = None,
 ) -> Generator[str, None, None]:
     if agent is None:
         agent = agent_manager.get_or_create(handler)
@@ -1011,6 +1039,8 @@ def _generate_stream_unserialized(
         query=message,
         latest_only_context=latest_only_context,
         pending_context=pending_context,
+        image_urls=agent_image_urls or image_urls,
+        force_image_vision=force_image_vision or bool(agent_image_urls),
     )
     # Authoritative live terminal state is cheap (one daemon HTTP call) and
     # prevents stale-memory answers about terminal status; inject it for
@@ -1059,6 +1089,16 @@ def _generate_stream_unserialized(
             display_content = _qq_display_text(message)
         elif normalized_source_type == SOURCE_QQ:
             display_content = _qq_display_text(reply_ticket.request_message or message)
+            if image_urls:
+                image_marks = "\n".join(
+                    f"![图片]({url})" for url in image_urls if url.strip()
+                )
+                if image_marks:
+                    display_content = (
+                        f"{display_content}\n{image_marks}"
+                        if display_content.strip()
+                        else image_marks
+                    )
         user_event = _persist_and_broadcast_event(
             item_id,
             role="user",
@@ -1076,10 +1116,8 @@ def _generate_stream_unserialized(
     delivery_tool_sent_by_integration = False
     qq_message_sent_this_turn = False
     confirmed_external_delivery_to_qq = False
-    delivery_retry_used_by_integration: dict[str, bool] = {}
     pending_async_delivery = False
     thinking_only_retry_used = False
-    delivery_retry_used = False
     from app.core.config import settings as chat_settings
 
     turn_started_at = time.monotonic()
@@ -1327,25 +1365,6 @@ def _generate_stream_unserialized(
                 final_response = strip_think_tags(guard_fabricated_tool_trace(iteration_content))
                 if finalization_only and not final_response:
                     break
-                delivery_retry_decision = None
-                if not delivery_tool_sent_by_integration and not qq_message_sent_this_turn:
-                    delivery_retry_decision = get_delivery_retry_decision(
-                        agent=agent,
-                        messages=messages,
-                        tools=iteration_tools,
-                        final_response=final_response,
-                        retry_used_by_integration=delivery_retry_used_by_integration,
-                    )
-                if delivery_retry_decision is not None and not delivery_retry_used:
-                    delivery_retry_used = True
-                    record_integration_delivery_correction(
-                        agent,
-                        integration_name=delivery_retry_decision.integration_name,
-                        item_id=item_id,
-                        final_response=final_response,
-                    )
-                    messages.append(delivery_retry_decision.correction_message)
-                    continue
 
                 if normalized_source_type == SOURCE_WEB and not internal_agent_callback:
                     try:
@@ -1387,27 +1406,6 @@ def _generate_stream_unserialized(
                     yield _to_sse({"done": True})
                     return
 
-                ticket_events = _deliver_reply_ticket_final_response(
-                    agent=agent,
-                    item_id=item_id,
-                    content=final_response,
-                    include_hidden_tool_results=include_hidden_tool_results,
-                    reply_ticket_id=reply_ticket.ticket_id,
-                )
-                if ticket_events:
-                    for event in ticket_events:
-                        yield _to_sse(event)
-                    if not internal_agent_callback:
-                        _append_conversation_memory(
-                            item_id,
-                            user_message=message,
-                            assistant_message=final_response,
-                            matched_skills=matched_skills,
-                            agent=agent,
-                        )
-                    _broadcast_agent_status(item_id, "idle")
-                    yield _to_sse({"done": True})
-                    return
                 response_event = _persist_and_broadcast_event(
                     item_id,
                     role="assistant",
@@ -1727,6 +1725,23 @@ def _generate_stream_unserialized(
                     ):
                         delivery_tool_sent_by_integration = True
 
+                # A bare send (no explicit destination) is a reply to the
+                # current conversation — the whole point of the turn is done,
+                # so end here and skip the extra wrap-up LLM call. Sends
+                # carrying explicit targets continue the turn so the agent
+                # can deliver the remaining targets. Never stop while the
+                # ticket's plan has unfinished steps: the send was an
+                # intermediate note and the remaining steps still need turns.
+                if (
+                    tool_name == ROBOT_SEND_TOOL_NAME
+                    and qq_message_sent_this_turn
+                    and not robot_send_has_explicit_destination(tool_args)
+                    and not _ticket_has_open_plan_steps(reply_ticket.ticket_id)
+                ):
+                    _broadcast_agent_status(item_id, "idle")
+                    yield _to_sse({"done": True})
+                    return
+
                 if (
                     tool_name in COMMAND_TOOL_NAMES
                     and result.get("success")
@@ -1835,6 +1850,9 @@ def generate_stream(
     source_type: str = SOURCE_WEB,
     reply_ticket_id: str = "",
     turn_serialized: bool = False,
+    image_urls: list[str] | None = None,
+    force_image_vision: bool = False,
+    agent_image_urls: list[str] | None = None,
 ) -> Generator[str, None, None]:
     if turn_serialized:
         yield from _generate_stream_unserialized(
@@ -1847,6 +1865,9 @@ def generate_stream(
             latest_only_context=latest_only_context,
             source_type=source_type,
             reply_ticket_id=reply_ticket_id,
+            image_urls=image_urls,
+            force_image_vision=force_image_vision,
+            agent_image_urls=agent_image_urls,
         )
         return
     with agent_turn_coordinator.turn(agent_turn_key(str(handler.id))):
@@ -1860,6 +1881,9 @@ def generate_stream(
             latest_only_context=latest_only_context,
             source_type=source_type,
             reply_ticket_id=reply_ticket_id,
+            image_urls=image_urls,
+            force_image_vision=force_image_vision,
+            agent_image_urls=agent_image_urls,
         )
 
 
@@ -1883,6 +1907,7 @@ def _run_chat_turn_sync(
     handler,
     item_id: str,
     agent,
+    image_urls: list[str] | None = None,
 ) -> tuple[str, str]:
     """在 worker 线程里跑完整个 agent 轮次——同步生成器会阻塞数分钟，
     绝不能在事件循环里直接迭代（会把整个 backend 卡死）。"""
@@ -1895,6 +1920,7 @@ def _run_chat_turn_sync(
         item_id=item_id,
         agent=agent,
         turn_serialized=True,
+        image_urls=image_urls,
     ):
         if not chunk.startswith("data: "):
             continue
@@ -1935,6 +1961,7 @@ async def chat(
             handler,
             item_id,
             agent,
+            request.images or None,
         )
     finally:
         lease.release()
@@ -2002,6 +2029,7 @@ async def chat_stream(
         query=request.message,
         completion_callback=_on_complete,
         source_label="web 聊天",
+        image_urls=list(request.images or []),
     )
     agent_session.add_output_callback(_on_output)
     import asyncio as _aio

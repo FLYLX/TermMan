@@ -129,7 +129,9 @@ const DISPATCHER_BOARD_CSS = `
 .terminal-frame { border: 3px solid #3a3a3a; box-shadow: 3px 4px 0 rgba(0,0,0,.14); border-radius: 18px 60px 18px 60px / 60px 18px 60px 18px; overflow: hidden; background: #fff; }
 @keyframes drawer-in-right { from { transform: translateX(100%); } to { transform: translateX(0); } }
 @keyframes drawer-fade { from { opacity: 0; } to { opacity: 1; } }
-.bot-detail-panel { position: fixed; left: 0; right: 0; bottom: 0; top: 0; z-index: 60; background: #f4f4f3; display: flex; flex-direction: column; animation: bot-panel-up .25s cubic-bezier(.2,.8,.3,1); }
+.bot-detail-panel { position: fixed; left: 0; right: 0; bottom: 0; top: 0; z-index: 60; background: linear-gradient(135deg, #f5f1e8 0%, #f2f4ef 55%, #e9efec 100%); color: #1f1f1f; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; display: flex; flex-direction: column; animation: bot-panel-up .25s cubic-bezier(.2,.8,.3,1); }
+.bot-detail-panel::before { content: ""; position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(to right, rgba(58,58,58,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(58,58,58,0.05) 1px, transparent 1px); background-size: 28px 28px; }
+.bot-detail-panel > * { position: relative; z-index: 1; }
 @keyframes bot-panel-up { from { transform: translateY(60px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 .zoom-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 2rem; background: rgba(255,255,255,.72); backdrop-filter: blur(2px); }
 .zoom-backdrop-feature { z-index: 70; }
@@ -1676,7 +1678,7 @@ export function TerminalDispatcherBoard({
               机器人详情
             </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="hang-page min-h-0 flex-1 overflow-y-auto">
             <RobotDetail robotId={botDetailId} />
           </div>
         </div>,

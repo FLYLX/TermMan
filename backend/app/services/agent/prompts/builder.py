@@ -888,6 +888,8 @@ def build_chat_turn_messages(
     query: str = "",
     latest_only_context: bool = False,
     pending_context: str = "",
+    image_urls: list[str] | None = None,
+    force_image_vision: bool = False,
 ) -> list[dict[str, str]]:
     effective_query = query or message
     policy = resolve_prompt_memory_policy(PromptTurnType.CHAT)
@@ -1003,7 +1005,19 @@ def build_chat_turn_messages(
     user_content = message.strip()
     if terminal_label and not user_content.startswith("[Robot message"):
         user_content = f"[来自终端：{terminal_label}] {user_content}"
-    prompt_messages.append({"role": "user", "content": user_content})
+    if image_urls:
+        from app.services.agent.vision import build_user_content, supports_vision_model
+
+        agent_context = getattr(agent, "_context", None)
+        handler_model = str(getattr(agent_context, "model", "") or "")
+        user_message_content: Any = build_user_content(
+            user_content,
+            image_urls,
+            vision_enabled=force_image_vision or supports_vision_model(handler_model),
+        )
+    else:
+        user_message_content = user_content
+    prompt_messages.append({"role": "user", "content": user_message_content})
     return _dedupe_adjacent_messages(prompt_messages)
 
 

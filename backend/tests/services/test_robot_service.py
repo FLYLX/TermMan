@@ -768,14 +768,9 @@ def test_agent_message_context_marks_bot_self_mention_for_agent() -> None:
     assert "mentions=Bot (10001) (you)" in text
     assert "[Robot identity; background only]" in text
     assert "- self_id: 10001 (this QQ id is you, the bot)" in text
-    assert "- addressed_to_bot: true" in text
-    assert "- direct_reason: mention_bot" in text
-    assert "- mentioned_self: true" in text
-    assert "- replied_to_self: false" in text
-    assert "QQ mentions/replies to this self_id are addressing you" in text
-    assert "[Current QQ sender; authoritative for this turn]" in text
-    assert "- sender: Alice (u1)" in text
-    assert "'我/我的/我是谁' refers to Alice (u1)" in text
+    assert "@/回复指向上述 self_id 或名字就是在叫你" in text
+    assert "[Current QQ sender: Alice (u1);" in text
+    assert "都指这个人" in text
 
 
 def test_agent_message_context_uses_bot_qq_name_for_self_mention() -> None:
@@ -843,8 +838,8 @@ def test_agent_message_identity_question_is_anchored_to_current_sender() -> None
         trigger_reason="mention_bot",
     )
 
-    assert "- sender: EX_GuguX (20002)" in text
-    assert "'我/我的/我是谁' refers to EX_GuguX (20002)" in text
+    assert "[Current QQ sender: EX_GuguX (20002);" in text
+    assert "都指这个人" in text
     assert text.endswith("[Current QQ message]\n我是谁")
 
 
@@ -1457,8 +1452,7 @@ def test_robot_message_includes_recent_live_context_without_current_duplicate(
     assert response.success is True
     messages = _process_captured_chat_job(monkeypatch, captured["job"])
     text = messages[0]
-    assert "[Recent QQ live context; background only" in text
-    assert "context_budget: expanded" in text
+    assert "[Recent QQ live context; latest" in text
     assert "换国内源吧" in text
     assert text.count("换好了吗") == 1
     assert text.endswith("[Current QQ message]\n换好了吗")
@@ -1498,11 +1492,11 @@ def test_recent_live_context_uses_progressive_budget(
 
     # Directly-addressed turns always get the full window; the message text
     # is never pattern-matched to shrink the budget.
-    assert "context_budget: expanded" in clear_direct_card
+    assert "latest 12 line(s)" in clear_direct_card
     assert "上一条" in clear_direct_card
-    assert "context_budget: expanded" in expanded_card
+    assert "latest 12 line(s)" in expanded_card
     assert "上一条" in expanded_card
-    assert "context_budget: active_window" in active_card
+    assert "latest 6 line(s)" in active_card
     assert calls == [48, 48, 24]
 
 
@@ -1538,11 +1532,11 @@ def test_recent_live_context_keeps_user_lines_when_bot_replies_repeat(
     # Active-window turns always get the small sample budget; if the sample
     # is ambiguous the agent escalates via read_conversation_memory instead
     # of the budget being guessed from the message text.
-    assert "context_budget: active_window" in card
+    assert "latest 6 line(s)" in card
     assert "你怎么不说话了" in card
     assert card.count(repeated_reply) == 1
     assert "回冬啊" not in card
-    assert "ask one brief clarification instead of guessing" in card
+    assert "ask one brief clarification" in card
 
 
 def test_prepare_queued_chat_message_excludes_later_pending_messages(
@@ -2722,7 +2716,7 @@ def test_direct_wakeup_job_reaches_agent_even_if_controller_window_expires(
     assert all("wake after delay" in message for message in captured_messages)
 
 
-def test_visible_agent_response_without_robot_tool_is_sent_to_qq(
+def test_visible_agent_response_without_tool_send_is_not_auto_delivered(
     db: Session,
     monkeypatch,
 ) -> None:
@@ -2779,16 +2773,10 @@ def test_visible_agent_response_without_robot_tool_is_sent_to_qq(
 
     robot_service._process_chat_job(job)
 
-    assert sent_messages == [(robot.id, job.reply_target, "install done")]
-    assert robot_service.conversation_controller_allows_reply(
-        robot.id,
-        job.conversation_key,
-        job.conversation_generation,
-        requires_awake=True,
-    )
+    assert sent_messages == []
 
 
-def test_visible_agent_response_is_sent_after_long_processing(
+def test_visible_agent_response_is_not_auto_delivered_after_long_processing(
     db: Session,
     monkeypatch,
 ) -> None:
@@ -2849,7 +2837,7 @@ def test_visible_agent_response_is_sent_after_long_processing(
 
     robot_service._process_chat_job(job)
 
-    assert sent_messages == [(robot.id, job.reply_target, "Forge 已经安装好了")]
+    assert sent_messages == []
 
 
 def test_direct_wakeup_countdown_starts_after_agent_result(
@@ -3095,7 +3083,7 @@ def test_pending_followup_includes_recent_live_context_without_duplicate(
     )
     assert len(queued_jobs) == 1
     message = queued_jobs[0]["composed_message"]
-    assert "[Recent QQ live context; background only" in message
+    assert "[Recent QQ live context; latest" in message
     assert fact in message
     assert confirmation in message
     assert message.count(current_question) == 1
@@ -3214,10 +3202,10 @@ def test_pending_qq_batch_merges_same_sender_into_one_reply_intent(
     assert len(queued_jobs) == 1
     job = queued_jobs[0]
     assert job["followup_reply_target"].metadata["allow_multiple_reply_messages"] is False
-    # Latest-instruction-wins: the older same-sender line is superseded.
-    assert "Are you there?" not in job["composed_message"]
+    # 内容不同的消息是独立问题，全部保留逐条回答。
+    assert "Are you there?" in job["composed_message"]
     assert "Reply now" in job["composed_message"]
-    assert "one evolving intent" in job["composed_message"]
+    assert "独立问题" in job["composed_message"]
 
 
 def test_plain_task_control_message_dispatches_immediately_while_processing(
@@ -4358,7 +4346,7 @@ def test_failed_job_drains_pending_chat_inputs_into_followup(
     assert enqueued, "failed job should drain pending inputs into a followup batch"
 
 
-def test_empty_direct_reply_retries_once_with_corrective_note(
+def test_empty_direct_reply_is_logged_without_corrective_retry(
     db: Session,
     monkeypatch,
 ) -> None:
@@ -4424,9 +4412,7 @@ def test_empty_direct_reply_retries_once_with_corrective_note(
 
     async def fake_chat(**kwargs):
         calls.append(str(kwargs["message"]))
-        if len(calls) == 1:
-            return ChatResponseResult(content="", robot_message_sent=False)
-        return ChatResponseResult(content="你好呀", robot_message_sent=False)
+        return ChatResponseResult(content="", robot_message_sent=False)
 
     monkeypatch.setattr(robot_service, "_chat_with_item", fake_chat)
     delivered: list[str] = []
@@ -4438,10 +4424,8 @@ def test_empty_direct_reply_retries_once_with_corrective_note(
 
     robot_service._process_chat_job(job)
 
-    assert len(calls) == 2, "empty direct reply should trigger exactly one retry"
-    assert "Internal corrective turn" in calls[1]
-    assert "别不理人" in calls[1]
-    assert delivered == ["你好呀"]
+    assert len(calls) == 1, "empty direct reply must not trigger a corrective retry"
+    assert delivered == []
 
 
 def test_internal_retry_prefix_counts_as_internal_callback() -> None:

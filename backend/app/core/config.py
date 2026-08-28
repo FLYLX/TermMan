@@ -101,6 +101,9 @@ class Settings(BaseSettings):
     ROBOT_BACKEND_DISPATCH_QUEUE_SIZE: int = 50
     ROBOT_BACKEND_DISPATCH_WORKERS: int = 1
     ROBOT_BACKEND_JOB_TIMEOUT_SECONDS: float = 240.0
+    # 单次 LLM 调用超时（连接+流式读取共用）：中继卡顿按此快速失败，
+    # 避免一次卡顿吃掉整个轮次预算。可用环境变量覆盖。
+    CHAT_LLM_TIMEOUT_SECONDS: int = 60
     ROBOT_BACKEND_DISPATCH_HARD_TIMEOUT_SECONDS: float = 300.0
     AGENT_TURN_TIMEOUT_SECONDS: float = 900.0
     AGENT_STATE_STORE_PATH: str = str(BACKEND_DIR.parent / ".runtime" / "agent_state.db")

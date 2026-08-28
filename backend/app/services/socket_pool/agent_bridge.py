@@ -1,11 +1,18 @@
 import logging
+import time
 
 from sqlmodel import Session, select
 
 from app.core.db import engine
 from app.models import Item, ItemHandlerItem
+from app.services.agent.prompts.builder import is_critical_terminal_event
 
 logger = logging.getLogger(__name__)
+
+# 空闲 agent 被"未经过滤的终端输出"触发轮次的冷却：只放行严重事件且限速，
+# 否则高音量终端（如游戏服务器日志）会让 agent 每 ~1.2s 跑一轮完整 LLM turn，
+# Python 对象高速churn导致内存高水位、并持续烧 LLM token。
+_UNSOLICITED_TURN_COOLDOWN_SECONDS = 120.0
 
 
 class AgentInputBridge:
@@ -18,9 +25,33 @@ class AgentInputBridge:
     - pass raw + filtered terminal output into stream_manager
     """
 
+    def __init__(self) -> None:
+        self._last_unsolicited_turn_at: dict[str, float] = {}
+
+    def _should_skip_unsolicited_output(
+        self, item_uuid: str, item: Item | None, raw_output: str
+    ) -> bool:
+        from app.services.agent.session import agent_session_manager
+
+        session = agent_session_manager.get_session(item_uuid)
+        if session and session.has_pending_command():
+            return False
+        if item and item.input_filter_enabled:
+            return False
+        if not is_critical_terminal_event(raw_output):
+            return True
+        now = time.monotonic()
+        last = self._last_unsolicited_turn_at.get(item_uuid, 0.0)
+        if now - last < _UNSOLICITED_TURN_COOLDOWN_SECONDS:
+            return True
+        self._last_unsolicited_turn_at[item_uuid] = now
+        return False
+
     def handle_stream(self, item_uuid: str, data: dict[str, object]) -> None:
         if data.get("source") == "job":
-            logger.info("[AgentInputBridge] Skipping daemon job stream for item %s", item_uuid)
+            logger.info(
+                "[AgentInputBridge] Skipping daemon job stream for item %s", item_uuid
+            )
             return
         logger.info(
             "[AgentInputBridge] handle_stream: item=%s stdout_len=%s stderr_len=%s",
@@ -37,11 +68,22 @@ class AgentInputBridge:
                 return
 
             item = self._load_item(item_uuid)
+            if self._should_skip_unsolicited_output(item_uuid, item, raw_output):
+                logger.info(
+                    "[AgentInputBridge] Suppressed unsolicited terminal output for item %s "
+                    "(no pending command, filter disabled, non-critical)",
+                    item_uuid,
+                )
+                return
             filtered_output = self._build_filtered_output(item, data, raw_output)
 
-            handler_id = item_handler_context.get_handler(item_uuid) or self._load_handler_id(item_uuid)
+            handler_id = item_handler_context.get_handler(
+                item_uuid
+            ) or self._load_handler_id(item_uuid)
             if not handler_id:
-                logger.info("[AgentInputBridge] No handler found for item %s", item_uuid)
+                logger.info(
+                    "[AgentInputBridge] No handler found for item %s", item_uuid
+                )
                 return
 
             stream_manager.process_stream(
@@ -58,7 +100,12 @@ class AgentInputBridge:
                 len(raw_output),
             )
         except Exception as exc:
-            logger.error("[AgentInputBridge] Failed to bridge stream for item %s: %s", item_uuid, exc, exc_info=True)
+            logger.error(
+                "[AgentInputBridge] Failed to bridge stream for item %s: %s",
+                item_uuid,
+                exc,
+                exc_info=True,
+            )
 
     def _load_handler_id(self, item_uuid: str) -> str | None:
         with Session(engine) as session:
@@ -71,9 +118,7 @@ class AgentInputBridge:
 
     def _load_item(self, item_uuid: str) -> Item | None:
         with Session(engine) as session:
-            return session.exec(
-                select(Item).where(Item.id == item_uuid)
-            ).first()
+            return session.exec(select(Item).where(Item.id == item_uuid)).first()
 
     def _build_raw_output(self, data: dict[str, object]) -> str:
         stdout = data.get("stdout", "")
@@ -97,5 +142,7 @@ class AgentInputBridge:
             event = input_filter.filter(data)
             return event.raw_content if event else ""
         except Exception as exc:
-            logger.debug("[AgentInputBridge] Filter error for item %s: %s", item.id, exc)
+            logger.debug(
+                "[AgentInputBridge] Filter error for item %s: %s", item.id, exc
+            )
             return raw_output

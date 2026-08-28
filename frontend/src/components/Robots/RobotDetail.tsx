@@ -264,6 +264,16 @@ function getRobotWakeWords(robot: RobotRecord): string {
   return typeof raw === "string" ? raw : ""
 }
 
+function getRobotImageRecognition(robot: RobotRecord): boolean {
+  const raw = robot.config?.options?.image_recognition
+  if (typeof raw === "boolean") {
+    return raw
+  }
+  return ["1", "true", "yes", "on", "启用", "开"].includes(
+    String(raw ?? "").trim().toLowerCase(),
+  )
+}
+
 function parseWakeWords(value: string): string[] {
   return value
     .split(/[,，]/)
@@ -590,6 +600,8 @@ function useRobotDetailUiCopy() {
           wakeWordsTitle: "唤醒词",
           wakeWordsPlaceholder: "例如：小p, paws, 猫猫",
           wakeWordsDescription: "消息里包含任一唤醒词即唤醒机器人（同 @ 效果），多个用逗号分隔。",
+          imageRecognitionTitle: "图识功能",
+          imageRecognitionDescription: "开启后，被触发的消息里附带的图片会传给多模态模型识别（需要模型支持看图）。",
           replyWindowValue: (seconds: number) =>
             seconds > 0 ? `${seconds} 秒` : "不保持",
           keepCurrentSecret: "留空则保留当前值",
@@ -697,6 +709,9 @@ function useRobotDetailUiCopy() {
           wakeWordsPlaceholder: "e.g. paws, kitty",
           wakeWordsDescription:
             "A message containing any wake word wakes the robot (same as @). Separate multiple words with commas.",
+          imageRecognitionTitle: "Image recognition",
+          imageRecognitionDescription:
+            "When enabled, images in triggered messages are passed to the multimodal model (requires a vision-capable model).",
           replyWindowValue: (seconds: number) =>
             seconds > 0 ? `${seconds}s` : "Off",
           keepCurrentSecret: "Leave blank to keep current value",
@@ -1419,6 +1434,7 @@ function RobotBasicConfigPanel({
     mentionMatchMode: getRobotMentionMatchMode(robot),
     replyContextWindowSeconds: String(getRobotReplyContextWindowSeconds(robot)),
     wakeWords: getRobotWakeWords(robot),
+    imageRecognition: getRobotImageRecognition(robot),
   }))
 
   useEffect(() => {
@@ -1431,6 +1447,7 @@ function RobotBasicConfigPanel({
         mentionMatchMode: getRobotMentionMatchMode(robot),
         replyContextWindowSeconds: String(getRobotReplyContextWindowSeconds(robot)),
         wakeWords: getRobotWakeWords(robot),
+        imageRecognition: getRobotImageRecognition(robot),
       })
     }
   }, [isEditing, platform, robot])
@@ -1460,6 +1477,7 @@ function RobotBasicConfigPanel({
     options.mention_match_mode = form.mentionMatchMode
     options.reply_context_window_seconds = replyContextWindowSeconds
     options.wake_words = parseWakeWords(form.wakeWords)
+    options.image_recognition = form.imageRecognition
 
     setIsSaving(true)
     try {
@@ -1656,6 +1674,23 @@ function RobotBasicConfigPanel({
                   {copy.wakeWordsDescription}
                 </div>
               </div>
+              <label className="flex items-center gap-3 rounded-lg border bg-background/60 px-3 py-2">
+                <Checkbox
+                  checked={form.imageRecognition}
+                  onCheckedChange={(checked) =>
+                    setForm((current) => ({
+                      ...current,
+                      imageRecognition: Boolean(checked),
+                    }))
+                  }
+                />
+                <span className="text-sm">
+                  {copy.imageRecognitionTitle}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {copy.imageRecognitionDescription}
+                  </span>
+                </span>
+              </label>
             </div>
             <div className="grid gap-3">
               <div className="text-sm font-medium">{copy.credentials}</div>
@@ -2491,8 +2526,11 @@ export function RobotDetail({ robotId }: { robotId: string }) {
   const debugQuery = useQuery({
     queryKey: getRobotDebugQueryKey(robotId),
     queryFn: () => getRobotDebug(robotId),
-    enabled: Boolean(robotId) && hasVisitedTab("debug"),
-    refetchInterval: activeTab === "debug" ? 5000 : false,
+    enabled:
+      Boolean(robotId) &&
+      (hasVisitedTab("debug") || activeTab === "connection"),
+    refetchInterval:
+      activeTab === "debug" || activeTab === "connection" ? 5000 : false,
   })
 
   const robot = robotQuery.data as RobotRecord | undefined

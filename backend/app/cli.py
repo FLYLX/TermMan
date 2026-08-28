@@ -5,9 +5,108 @@ import secrets
 import sys
 from pathlib import Path
 
-import uvicorn
+M_ARENA_MAX = -8
+_REEXEC_GUARD = "_TERMPAWS_ALLOCATOR_REEXEC"
+
+
+def _find_jemalloc() -> str | None:
+    import platform
+
+    arch = {
+        "x86_64": "x86_64",
+        "amd64": "x86_64",
+        "aarch64": "aarch64",
+        "arm64": "aarch64",
+    }.get(platform.machine().lower())
+    if arch:
+        bundled = (
+            Path(__file__).resolve().parent
+            / "_vendor"
+            / f"libjemalloc-linux-{arch}.so.2"
+        )
+        if bundled.exists():
+            return str(bundled)
+
+    import glob
+
+    for pattern in (
+        "/usr/lib/*/libjemalloc.so.2",
+        "/usr/lib/libjemalloc.so.2",
+        "/usr/local/lib/libjemalloc.so.2",
+        "/lib/*/libjemalloc.so.2",
+    ):
+        for path in glob.glob(pattern):
+            return path
+    import ctypes.util
+
+    return ctypes.util.find_library("jemalloc")
+
+
+def _jemalloc_loaded() -> bool:
+    try:
+        with open("/proc/self/maps") as f:
+            return "libjemalloc" in f.read()
+    except OSError:
+        return False
+
+
+def _tune_glibc_malloc() -> None:
+    """glibc 默认按核心数创建多个 malloc arena，多线程下每条消息的小额 native
+    分配散落在各 arena 形成碎片且永不归还系统（RSS 只涨不降）。把 arena 数量压到
+    2，等效于 MALLOC_ARENA_MAX=2 但不依赖外部环境变量。"""
+    if os.environ.get("MALLOC_ARENA_MAX"):
+        return
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        if libc.mallopt(ctypes.c_int(M_ARENA_MAX), ctypes.c_int(2)) != 1:
+            raise OSError(ctypes.get_errno(), "mallopt(M_ARENA_MAX) failed")
+        print("[TermPaws] malloc tuned: arena_max=2", flush=True)
+    except Exception as exc:
+        print(f"[TermPaws] malloc tuning skipped: {exc}", flush=True)
+
+
+def _setup_allocator() -> None:
+    """统一使用 jemalloc（主动归还空闲内存，多线程碎片率远低于 glibc malloc）。
+    wheel 内置了 linux x86_64/aarch64 的 libjemalloc（app/_vendor/），启动时
+    re-exec 注入 LD_PRELOAD；极端情况下（其它架构且系统无 jemalloc）退回
+    glibc arena 调优。
+
+    jemalloc 5.x 默认 muzzy_decay_ms=0：大额 transient 分配释放后进入 muzzy
+    状态且永不归还（RSS 涨到高水位后下不来），必须显式开启 decay。
+    同时注入 PYTHONMALLOC=malloc，避免 CPython obmalloc arena 的高水位驻留。"""
+    if sys.platform != "linux":
+        return
+    if _jemalloc_loaded():
+        print("[TermPaws] allocator: jemalloc", flush=True)
+        return
+    if not os.environ.get(_REEXEC_GUARD):
+        lib = _find_jemalloc()
+        if lib:
+            env = dict(os.environ)
+            env[_REEXEC_GUARD] = "1"
+            existing = env.get("LD_PRELOAD")
+            env["LD_PRELOAD"] = lib if not existing else f"{lib}:{existing}"
+            env.setdefault(
+                "MALLOC_CONF", "dirty_decay_ms:5000,muzzy_decay_ms:5000"
+            )
+            # CPython obmalloc arena 一旦 mmap 就几乎不归还（碎片化的高水位驻留，
+            # 消息洪峰过后 RSS 下不来）。让 Python 对象直接走 jemalloc，
+            # 释放后由 jemalloc 复用并随 decay 归还 OS。
+            env.setdefault("PYTHONMALLOC", "malloc")
+            print(f"[TermPaws] allocator: re-exec with jemalloc ({lib})", flush=True)
+            os.execve(sys.executable, [sys.executable, *sys.argv], env)
+    _tune_glibc_malloc()
+
+
+_setup_allocator()
+
+# uvicorn 及后续所有重依赖必须在分配器切换（可能 re-exec）之后导入
+import uvicorn  # noqa: E402
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+
 
 def _default_config(db_path: str) -> dict:
     return {
@@ -49,7 +148,10 @@ def _ensure_config() -> Path:
         )
         _inject_config(config)
         print(f"[TermPaws] First run: created config at {json_file}", flush=True)
-        print("[TermPaws] 未初始化管理员——打开网页后按提示设置管理员账号和密码", flush=True)
+        print(
+            "[TermPaws] 未初始化管理员——打开网页后按提示设置管理员账号和密码",
+            flush=True,
+        )
 
     home.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("CHROMA_PERSIST_DIR", str(home / "chroma_data"))
@@ -105,7 +207,9 @@ def _run_prestart() -> None:
     alembic_ini = BACKEND_DIR / "alembic.ini"
     if alembic_ini.exists():
         alembic_cfg = AlembicConfig(str(alembic_ini))
-        alembic_cfg.set_main_option("script_location", str(BACKEND_DIR / "app" / "alembic"))
+        alembic_cfg.set_main_option(
+            "script_location", str(BACKEND_DIR / "app" / "alembic")
+        )
         alembic_command.upgrade(alembic_cfg, "head")
 
     init_data()
@@ -142,12 +246,17 @@ def _service(args: list[str]) -> None:
         try:
             unit_path.write_text(unit, encoding="utf-8")
         except PermissionError:
-            sys.exit(f"Permission denied, re-run with sudo or write {unit_path} manually")
+            sys.exit(
+                f"Permission denied, re-run with sudo or write {unit_path} manually"
+            )
         import subprocess
 
         subprocess.run(["systemctl", "daemon-reload"], check=True)
         subprocess.run(["systemctl", "enable", "--now", "termpaws"], check=True)
-        print("[TermPaws] Service installed and started: systemctl status termpaws", flush=True)
+        print(
+            "[TermPaws] Service installed and started: systemctl status termpaws",
+            flush=True,
+        )
     else:
         print(unit)
 
@@ -226,7 +335,11 @@ def main() -> None:
         _ensure_config()
         # settings 在 prestart 阶段就会实例化，端口必须在此之前就位
         os.environ.setdefault("BACKEND_PORT", "28888")
-        if os.environ.get("TERMPAWS_SKIP_PRESTART", "").lower() not in {"1", "true", "yes"}:
+        if os.environ.get("TERMPAWS_SKIP_PRESTART", "").lower() not in {
+            "1",
+            "true",
+            "yes",
+        }:
             _run_prestart()
         _serve()
     elif command == "migrate":

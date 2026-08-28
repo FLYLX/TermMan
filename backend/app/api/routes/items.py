@@ -1061,6 +1061,7 @@ def get_item_plan(
     return {
         "item_id": str(id),
         "plan": plan,
+        "plans": reply_ticket_manager.active_plans_for_item(str(id)),
         "updated": bool(plan),
     }
 

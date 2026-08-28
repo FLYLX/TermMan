@@ -25,11 +25,21 @@ def build_litellm_completion_kwargs(
     parameters = dict(default_parameters or {})
     parameters.update(model_parameters or {})
 
+    effective_model = model
+    if (
+        effective_model
+        and api_base
+        and "/" not in effective_model.strip()
+    ):
+        # 自定义 OpenAI 兼容端点（api_base 已给）时，裸模型名统一走
+        # openai/ 泛用通道，用户不必手写 deepseek/zhipu 等 provider 前缀。
+        effective_model = f"openai/{effective_model.strip()}"
+
     kwargs: dict[str, Any] = {
-        "model": model,
+        "model": effective_model,
         "messages": messages,
     }
-    kwargs.update(normalize_model_parameters_for_model(model, parameters))
+    kwargs.update(normalize_model_parameters_for_model(effective_model, parameters))
 
     if timeout is not None:
         kwargs["timeout"] = timeout

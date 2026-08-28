@@ -3,8 +3,8 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException
-from fastapi.responses import PlainTextResponse, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 from sqlmodel import col, select
 
@@ -320,6 +320,17 @@ def _manual_send_target(body: RobotManualSendBody) -> RobotReplyTarget:
 @router.get("/platforms", response_model=list[RobotPlatformPublic])
 def list_robot_platform_metadata() -> list[RobotPlatformPublic]:
     return list_supported_robot_platforms()
+
+
+@router.get("/images/{name}")
+def get_robot_image(name: str) -> FileResponse:
+    """入站图片的本地缓存。uuid 文件名不可猜测，无需鉴权（同下载票据模式）。"""
+    from .image_store import image_file_path
+
+    path = image_file_path(name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(path)
 
 
 @router.get("/bridge/health")
@@ -817,6 +828,7 @@ def diagnose_robot_chain(
     session: SessionDep,
     current_user: CurrentUser,
     id: uuid.UUID,
+    request: Request,
 ) -> dict:
     from app.services import backend_conn_pool
 
@@ -890,6 +902,7 @@ def diagnose_robot_chain(
                 or onebot_socket.get("ws_url")
                 or robot_status.get("reverse_ws_url")
                 or health_data.get("onebot_reverse_ws_url")
+                or _default_reverse_ws_url(request)
             )
             socket_status = {
                 "status": "ok" if socket_connected else "waiting",
@@ -1108,11 +1121,18 @@ def send_robot_manual_message(
     }
 
 
+def _default_reverse_ws_url(request: Request) -> str:
+    """静态推导 NapCat 反向 WS 地址（还没连接时也要显示给用户）。"""
+    host = request.headers.get("host") or request.url.hostname or "localhost"
+    return f"ws://{host}/robot-bridge/onebot/v11/ws"
+
+
 @router.get("/{id}/debug")
 def get_robot_debug(
     session: SessionDep,
     current_user: CurrentUser,
     id: uuid.UUID,
+    request: Request,
     limit: int = 100,
 ) -> dict:
     robot = get_robot_or_404(session, id)
@@ -1136,6 +1156,7 @@ def get_robot_debug(
         or bridge_health.get("onebot_reverse_ws_url")
         or onebot_socket.get("ws_url")
         or robot_health.get("ws_url")
+        or _default_reverse_ws_url(request)
     )
     if reverse_ws_url:
         onebot_socket = {

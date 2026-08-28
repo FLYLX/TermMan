@@ -1,6 +1,6 @@
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
-import { Activity, Brain, ChevronDown, ChevronUp, Download, ExternalLink, Loader2, Lock, Send, Square, Terminal, Trash2 } from "lucide-react"
+import { Activity, Brain, ChevronDown, ChevronUp, Download, ExternalLink, ImagePlus, Loader2, Lock, Send, Square, Terminal, Trash2, X } from "lucide-react"
 import {
   useEffect,
   useEffectEvent,
@@ -642,14 +642,22 @@ function RobotMessageCard({
                   </span>
                 </div>
                 <div className="whitespace-pre-wrap break-words">
-                  {pending.content || "[空消息]"}
+                  {pending.content ? (
+                    <ChatRichContent content={pending.content} />
+                  ) : (
+                    "[空消息]"
+                  )}
                 </div>
               </div>
             ))}
           </div>
         ) : (
           <div className="whitespace-pre-wrap break-words">
-            {display.body || "[空消息]"}
+            {display.body ? (
+              <ChatRichContent content={display.body} />
+            ) : (
+              "[空消息]"
+            )}
           </div>
         )}
       </div>
@@ -1090,6 +1098,198 @@ const ThinkingBlock = memo(function ThinkingBlock({
   )
 })
 
+const CHAT_IMAGE_PATTERN = /!\[([^\]]*)\]\(((?:https?:\/\/|\/)[^)\s]+)\)/g
+
+function ChatRichContent({ content }: { content: string }) {
+  const parts: Array<{ kind: "text" | "image"; value: string; alt?: string }> =
+    []
+  let lastIndex = 0
+  for (const match of content.matchAll(CHAT_IMAGE_PATTERN)) {
+    const index = match.index ?? 0
+    if (index > lastIndex) {
+      parts.push({ kind: "text", value: content.slice(lastIndex, index) })
+    }
+    parts.push({ kind: "image", value: match[2], alt: match[1] })
+    lastIndex = index + match[0].length
+  }
+  if (lastIndex < content.length) {
+    parts.push({ kind: "text", value: content.slice(lastIndex) })
+  }
+  if (parts.every((part) => part.kind === "text")) {
+    return <>{content}</>
+  }
+  return (
+    <>
+      {parts.map((part, index) =>
+        part.kind === "image" ? (
+          <img
+            key={index}
+            src={part.value}
+            alt={part.alt || "图片"}
+            loading="lazy"
+            className="my-1 block max-w-56 rounded-md border bg-background"
+          />
+        ) : (
+          <span key={index}>{part.value}</span>
+        ),
+      )}
+    </>
+  )
+}
+
+const TASK_STEP_STATUS_ICON: Record<string, string> = {
+  in_progress: "▶",
+  pending: "○",
+  completed: "✓",
+  cancelled: "✕",
+}
+
+function ChatTaskStrip({ itemId }: { itemId: string }) {
+  const planQuery = useQuery({
+    queryKey: ["item-plan", itemId],
+    queryFn: async () => {
+      const token = localStorage.getItem("access_token") || ""
+      const response = await fetch(
+        `${OpenAPI.BASE}/api/v1/items/${itemId}/plan`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
+      if (!response.ok) {
+        return { plans: [] }
+      }
+      return response.json()
+    },
+    refetchInterval: 5000,
+  })
+  const jobsQuery = useQuery({
+    queryKey: ["item-jobs", itemId],
+    queryFn: async () => {
+      const token = localStorage.getItem("access_token") || ""
+      const response = await fetch(
+        `${OpenAPI.BASE}/api/v1/items/${itemId}/jobs`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
+      if (!response.ok) {
+        return { jobs: [] }
+      }
+      return response.json()
+    },
+    refetchInterval: 5000,
+  })
+
+  const tasks: Array<Record<string, unknown>> = Array.isArray(
+    planQuery.data?.plans,
+  )
+    ? planQuery.data.plans
+    : []
+  const jobs: Array<Record<string, unknown>> = Array.isArray(
+    jobsQuery.data?.jobs,
+  )
+    ? jobsQuery.data.jobs
+    : []
+  if (tasks.length === 0 && jobs.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="mt-2 space-y-1 text-xs">
+      {tasks.map((task) => {
+        const steps: Array<Record<string, unknown>> = Array.isArray(task.plan)
+          ? (task.plan as Array<Record<string, unknown>>)
+          : []
+        const done = Number(task.done ?? 0)
+        const total = Number(task.total ?? steps.length)
+        const title =
+          String(task.request ?? "").trim() ||
+          `任务 ${String(task.ticket_id ?? "").slice(0, 8)}`
+        return (
+          <details
+            key={String(task.ticket_id)}
+            className="group rounded-lg border bg-muted/20"
+          >
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-2.5 py-1.5 [&::-webkit-details-marker]:hidden">
+              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {title}
+              </span>
+              <span className="shrink-0 text-muted-foreground">
+                {done}/{total}
+              </span>
+            </summary>
+            <div className="space-y-0.5 border-t px-2.5 py-1.5">
+              {steps.map((step, index) => {
+                const status = String(step.status ?? "pending")
+                const stepDone =
+                  status === "completed" || status === "cancelled"
+                return (
+                  <div
+                    key={index}
+                    className={`flex items-center gap-1.5 ${stepDone ? "text-muted-foreground line-through" : ""}`}
+                  >
+                    <span className="shrink-0">
+                      {TASK_STEP_STATUS_ICON[status] ?? "○"}
+                    </span>
+                    <span className="break-all">
+                      {String(step.step ?? "")}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </details>
+        )
+      })}
+      {jobs.length > 0 ? (
+        <div className="space-y-1">
+          {jobs.map((job, index) => {
+            const command = String(job.command ?? "")
+            const elapsed = Math.round(Number(job.elapsed_seconds ?? 0))
+            const tailLines = String(job.output_tail ?? "")
+              .split("\n")
+              .filter((line) => line.trim())
+            const lastOutput = tailLines[tailLines.length - 1] ?? ""
+            return (
+              <details
+                key={String(job.job_id ?? index)}
+                className="group rounded-lg border bg-muted/20"
+              >
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2.5 py-1.5 [&::-webkit-details-marker]:hidden">
+                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+                  <Loader2 className="size-3 shrink-0 animate-spin" />
+                  <span
+                    className="max-w-64 truncate font-medium"
+                    title={command}
+                  >
+                    {command}
+                  </span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {elapsed}s
+                  </span>
+                  {lastOutput ? (
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                      · {lastOutput}
+                    </span>
+                  ) : null}
+                </summary>
+                {tailLines.length > 0 ? (
+                  <div className="max-h-40 space-y-0.5 overflow-y-auto whitespace-pre-wrap break-all border-t px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground">
+                    {tailLines.map((line, lineIndex) => (
+                      <div key={lineIndex}>{line}</div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="border-t px-2.5 py-1.5 text-muted-foreground">
+                    暂无输出
+                  </div>
+                )}
+              </details>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 const ChatMessageRow = memo(function ChatMessageRow({
   message,
 }: {
@@ -1127,7 +1327,11 @@ const ChatMessageRow = memo(function ChatMessageRow({
               message.role === "terminal" ? "font-mono" : "font-sans"
             }`}
           >
-            {visibleContent}
+            {typeof visibleContent === "string" ? (
+              <ChatRichContent content={visibleContent} />
+            ) : (
+              visibleContent
+            )}
           </div>
         </div>
       )}
@@ -1139,6 +1343,31 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
   const queryClient = useQueryClient()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
+  const [pendingImages, setPendingImages] = useState<string[]>([])
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
+
+  const MAX_CHAT_IMAGES = 4
+
+  const handleImageFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) {
+      return
+    }
+    const selected = Array.from(files)
+      .filter((file) => file.type.startsWith("image/"))
+      .slice(0, MAX_CHAT_IMAGES - pendingImages.length)
+    for (const file of selected) {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = typeof reader.result === "string" ? reader.result : ""
+        if (result.startsWith("data:image/")) {
+          setPendingImages((prev) =>
+            prev.length >= MAX_CHAT_IMAGES ? prev : [...prev, result],
+          )
+        }
+      }
+      reader.readAsDataURL(file)
+    }
+  }
   const [isLoading, setIsLoading] = useState(false)
   const [handler, setHandler] = useState<ItemHandlerPublic | null>(null)
   const [historyError, setHistoryError] = useState<string | null>(null)
@@ -1698,7 +1927,8 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
 
   const sendMessage = async () => {
     const messageText = input.trim()
-    if (!messageText || !handler) {
+    const images = pendingImages
+    if ((!messageText && images.length === 0) || !handler) {
       return
     }
 
@@ -1708,13 +1938,17 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
         ...prev,
         prepareChatMessageForState({
           role: "user",
-          content: messageText,
+          content:
+            images.length > 0
+              ? `${messageText || ""}[图片×${images.length}]`
+              : messageText,
           type: "chat_user",
           localEcho: true,
         }),
       ]),
     )
     setInput("")
+    setPendingImages([])
     setAgentStatus({
         text: "\u56de\u590d\u4e2d",
         kind: "replying",
@@ -1739,6 +1973,7 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
           body: JSON.stringify({
             message: messageText,
             history,
+            images,
           }),
         },
       )
@@ -1979,6 +2214,27 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
         </div>
 
         <div className="flex gap-2">
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              handleImageFiles(event.target.files)
+              event.target.value = ""
+            }}
+          />
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            title="上传图片（多模态模型可看图）"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={!handler || pendingImages.length >= MAX_CHAT_IMAGES}
+          >
+            <ImagePlus className="size-4" />
+          </Button>
           <Input
             value={input}
             onChange={(event) => setInput(event.target.value)}
@@ -1995,11 +2251,39 @@ export function ChatPanel({ itemId }: ChatPanelProps) {
           <Button
             size="icon"
             onClick={() => void sendMessage()}
-            disabled={!input.trim() || !handler}
+            disabled={(!input.trim() && pendingImages.length === 0) || !handler}
           >
             <Send className="size-4" />
           </Button>
         </div>
+        {pendingImages.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {pendingImages.map((dataUrl, index) => (
+              <div
+                key={`${index}-${dataUrl.length}`}
+                className="relative rounded-lg border bg-muted/20 p-1"
+              >
+                <img
+                  src={dataUrl}
+                  alt={`pending-${index}`}
+                  className="h-14 w-14 rounded-md object-cover"
+                />
+                <button
+                  type="button"
+                  className="absolute -right-2 -top-2 flex size-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm hover:text-foreground"
+                  onClick={() =>
+                    setPendingImages((prev) =>
+                      prev.filter((_, i) => i !== index),
+                    )
+                  }
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <ChatTaskStrip itemId={itemId} />
       </div>
     </div>
   )

@@ -1043,7 +1043,10 @@ async def _dispatch_to_backend(
             response = await client.post(
                 f"{settings.ROBOT_BACKEND_URL.rstrip('/')}"
                 f"{settings.API_V1_STR}/robots/{robot_id}/dispatch",
-                headers={"X-TermPaws-Bridge-Token": shared_secret},
+                headers={
+                    "X-TermPaws-Bridge-Token": shared_secret,
+                    "Content-Type": "application/json",
+                },
                 content=payload.model_dump_json(),
             )
             response.raise_for_status()

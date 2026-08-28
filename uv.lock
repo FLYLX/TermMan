@@ -5065,7 +5065,7 @@ wheels = [
 
 [[package]]
 name = "termpaws-backend"
-version = "0.1.9"
+version = "0.6.0"
 source = { editable = "backend" }
 dependencies = [
     { name = "alembic" },

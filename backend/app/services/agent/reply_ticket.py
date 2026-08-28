@@ -584,6 +584,35 @@ class ReplyTicketManager:
         ticket = max(candidates, key=lambda entry: entry.updated_at)
         return ticket, list(ticket.plan)
 
+    def active_plans_for_item(self, item_id: str) -> list[dict[str, Any]]:
+        """该 item 所有带计划的票据（多任务展示用），按更新时间倒序。"""
+        with self._lock:
+            now = datetime.now()
+            entries = []
+            for ticket in self._tickets.values():
+                if ticket.item_id != str(item_id) or not ticket.plan:
+                    continue
+                if (now - ticket.updated_at).total_seconds() > PLAN_LOOKUP_FRESH_SECONDS:
+                    continue
+                done = sum(
+                    1
+                    for step in ticket.plan
+                    if str(step.get("status")) in {"completed", "cancelled"}
+                )
+                entries.append(
+                    {
+                        "ticket_id": ticket.ticket_id,
+                        "request": ticket.request_message or ticket.command or "",
+                        "status": ticket.status,
+                        "updated_at": ticket.updated_at.isoformat(),
+                        "done": done,
+                        "total": len(ticket.plan),
+                        "plan": list(ticket.plan),
+                    }
+                )
+            entries.sort(key=lambda entry: entry["updated_at"], reverse=True)
+            return entries
+
     def mark_task_plan(self, ticket_id: str, task_request_id: str) -> None:
         with self._lock:
             ticket_id = self._resolve_ticket_id_locked(ticket_id)

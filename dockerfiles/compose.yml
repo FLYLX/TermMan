@@ -22,8 +22,11 @@ services:
     image: termpaws-daemon:latest
     container_name: termpaws-daemon
     restart: unless-stopped
-    ports:
-      - "39999:39999"
+    # 游戏服务器（Minecraft 等）由 daemon 拉起，端口（25565~43906 任意值）
+    # 必须对外可达。直接共享宿主机网络是最稳的方式：
+    # 映射整个范围会让 docker-proxy 为每个端口起一个进程（1.8 万个），必崩。
+    # 仅 Linux 可用；daemon API 仍在 39999 端口（直接绑宿主机）。
+    network_mode: host
     volumes:
       - ./daemon-data:/opt/termpaws-daemon
 
